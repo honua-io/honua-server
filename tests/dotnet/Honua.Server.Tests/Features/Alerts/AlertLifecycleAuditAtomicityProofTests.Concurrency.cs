@@ -6,6 +6,7 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -14,6 +15,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 public sealed partial class AlertLifecycleAuditAtomicityProofTests
 {
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ApplyAsync_SnoozeWhileAcknowledgementWritesAudit_DoesNotDeadlock()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));

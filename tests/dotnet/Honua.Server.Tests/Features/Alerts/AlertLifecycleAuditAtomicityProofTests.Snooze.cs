@@ -44,6 +44,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ApplyAsync_CriticalSnooze_PreservesExistingAcknowledgementAndAudit()
     {
         using var acknowledged = await PostAsync("acknowledge", "critical-before-snooze");
@@ -75,6 +76,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
     }
 
     [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
     [InlineData(0)]
     [InlineData(8)]
     public async Task SuppressAsync_InvalidDeadline_RejectsLegacyCaller(int days)
@@ -88,6 +90,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task SuppressAsync_CriticalAlert_RejectsLegacyCaller()
     {
         await SetCriticalSeverityAsync();
@@ -100,6 +103,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
     }
 
     [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
     [InlineData(0)]
     [InlineData(8)]
     public async Task ApplyAsync_InvalidDeadline_RejectsWithoutAuditIntent(int days)
@@ -114,6 +118,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ApplyAsync_SevenDayBoundaryAndExpiredRetry_ReplaysSingleIntent()
     {
         await using var scope = _fixture.Services.CreateAsyncScope();

@@ -7,6 +7,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Db.Postgres.Features.Alerts;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -14,6 +15,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 public sealed partial class AlertLifecycleAuditAtomicityProofTests
 {
     [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
     [InlineData("2026-03-07T12:00:00Z")]
     [InlineData("2026-10-31T12:00:00Z")]
     public async Task SuppressAsync_DaylightSavingBoundary_EnforcesElapsedHours(string timestamp)
