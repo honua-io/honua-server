@@ -227,20 +227,25 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
         public static async Task<FenceScope> CreateAsync(PostgresFixture database)
         {
             var schema = await database.CreateIsolatedSchemaAsync("generation_fence");
-            var scope = new FenceScope(database, schema);
+            FenceScope? scope = null;
             try
             {
+                scope = new FenceScope(database, schema);
                 await using var connection = await scope.OpenAsync();
                 await ExecuteAsync(connection, """
                     CREATE SEQUENCE generations CACHE 1 NO CYCLE;
                     CREATE TABLE changes (generation bigint PRIMARY KEY);
                     """);
-                return scope;
+                var initialized = scope;
+                scope = null;
+                return initialized;
             }
-            catch
+            finally
             {
-                await scope.DisposeAsync();
-                throw;
+                if (scope is not null)
+                {
+                    await scope.DisposeAsync();
+                }
             }
         }
 
