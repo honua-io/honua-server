@@ -159,7 +159,7 @@ public sealed class StreamSubscriberSecurityTests
         projected.ChangedAttributes.Should().BeNull();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(BinaryOperator.Like, false)]
     [InlineData(BinaryOperator.NotLike, false)]
     [InlineData(BinaryOperator.Like, true)]

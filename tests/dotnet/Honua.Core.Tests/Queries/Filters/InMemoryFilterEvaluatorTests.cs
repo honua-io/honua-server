@@ -244,7 +244,7 @@ public sealed class InMemoryFilterEvaluatorTests
         InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeTrue();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(256, true)]
     [InlineData(257, false)]
     public void Evaluate_Like_EnforcesPatternLengthBoundary(int length, bool accepted)
@@ -265,7 +265,7 @@ public sealed class InMemoryFilterEvaluatorTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(32, true)]
     [InlineData(33, false)]
     public void Evaluate_Like_EnforcesWildcardBoundary(int count, bool accepted)
