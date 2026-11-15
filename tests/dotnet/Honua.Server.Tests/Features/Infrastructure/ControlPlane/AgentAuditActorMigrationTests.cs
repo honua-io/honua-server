@@ -15,12 +15,14 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [Fact]
-    public async Task AgentMigration_UsesExistingAuditSchemaAndDeclaresCompatibilityReview()
+    public async Task AgentMigration_AddsAgentPrincipalWithoutChangingActorType()
     {
         var sql = await ReadMigrationAsync("168_AddAgentAuditActor.sql");
-        sql.Should().Contain("ALTER TABLE honua.audit_log").And.NotContain("$HonuaSchema$");
+        sql.Should().Contain("ADD COLUMN IF NOT EXISTS actor_agent").And.NotContain("DROP CONSTRAINT");
         MigrationSafetyClassifier.Classify("168_AddAgentAuditActor.sql", sql).Classification
             .Should().Be(MigrationSafetyClassification.Expand);
+        MigrationReaderCompatibility.Declare("168_AddAgentAuditActor.sql", sql).Classification
+            .Should().Be(MigrationReaderCompatibilityClassification.Expand);
     }
 
     [IntegrationTest]
@@ -38,23 +40,31 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
 
             await ApplyAsync("168_AddAgentAuditActor.sql", schema);
             await ApplyAsync("168_AddAgentAuditActor.sql", schema);
-            await InsertAsync(schema, "Agent", "entry-Agent");
             await database.ExecuteAsync($"UPDATE \"{schema}\".audit_log SET actor = 'changed'; DELETE FROM \"{schema}\".audit_log");
+            await InsertAsync(schema, "ApiKey", "entry-agent", "agent-1");
+
             await using var connection = await database.DataSource.OpenConnectionAsync();
             await using var command = new NpgsqlCommand(
-                $"SELECT actor_type, actor, prev_hash, entry_hash FROM \"{schema}\".audit_log ORDER BY audit_id", connection);
+                $"SELECT actor_type, actor, prev_hash, entry_hash, actor_agent FROM \"{schema}\".audit_log ORDER BY audit_id",
+                connection);
             await using var reader = await command.ExecuteReaderAsync();
-            var actors = new List<string>();
+            var actors = new List<(string Type, string Hash, string? Agent)>();
             while (await reader.ReadAsync())
             {
-                var actorType = reader.GetString(0);
                 reader.GetString(1).Should().Be("stable-principal");
                 reader.IsDBNull(2).Should().BeTrue();
-                reader.GetString(3).TrimEnd().Should().Be($"entry-{actorType}");
-                actors.Add(actorType);
+                actors.Add((
+                    reader.GetString(0),
+                    reader.GetString(3).TrimEnd(),
+                    reader.IsDBNull(4) ? null : reader.GetString(4)));
             }
 
-            actors.Should().Equal("Anonymous", "UserId", "ApiKey", "System", "Agent");
+            actors.Should().Equal(
+                ("Anonymous", "entry-Anonymous", null),
+                ("UserId", "entry-UserId", null),
+                ("ApiKey", "entry-ApiKey", null),
+                ("System", "entry-System", null),
+                ("ApiKey", "entry-agent", "agent-1"));
         }
         finally
         {
@@ -70,10 +80,13 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
         {
             await ApplyAsync("033_CreateAuditLog.sql", schema);
             await ApplyAsync("168_AddAgentAuditActor.sql", schema);
-            var insert = () => InsertAsync(schema, "Unknown");
-            var failure = await insert.Should().ThrowAsync<PostgresException>();
-            failure.Which.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
-            failure.Which.ConstraintName.Should().Be("chk_audit_log_actor_type");
+            foreach (var actorType in new[] { "Unknown", "Agent" })
+            {
+                var insert = () => InsertAsync(schema, actorType);
+                var failure = await insert.Should().ThrowAsync<PostgresException>();
+                failure.Which.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+                failure.Which.ConstraintName.Should().Be("chk_audit_log_actor_type");
+            }
         }
         finally
         {
@@ -81,14 +94,26 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
         }
     }
 
-    private Task InsertAsync(string schema, string actorType, string? entryHash = null)
+    private Task InsertAsync(string schema, string actorType, string? entryHash = null, string? actorAgent = null)
     {
-        var hashColumns = entryHash is null ? "" : ", prev_hash, entry_hash";
-        var hashValues = entryHash is null ? "" : ", NULL, '" + entryHash + "'";
+        var extraColumns = "";
+        var extraValues = "";
+        if (entryHash is not null)
+        {
+            extraColumns += ", prev_hash, entry_hash";
+            extraValues += ", NULL, '" + entryHash + "'";
+        }
+
+        if (actorAgent is not null)
+        {
+            extraColumns += ", actor_agent";
+            extraValues += ", '" + actorAgent + "'";
+        }
+
         return database.ExecuteAsync($"""
             INSERT INTO "{schema}".audit_log
-                (timestamp, event_type, actor, actor_type, resource_type, action, outcome, correlation_id{hashColumns})
-            VALUES (now(), 'AdminAction', 'stable-principal', '{actorType}', 'test', 'test', 'Success', 'migration-test'{hashValues})
+                (timestamp, event_type, actor, actor_type, resource_type, action, outcome, correlation_id{extraColumns})
+            VALUES (now(), 'AdminAction', 'stable-principal', '{actorType}', 'test', 'test', 'Success', 'migration-test'{extraValues})
             """);
     }
 
