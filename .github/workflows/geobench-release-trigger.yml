@@ -1,0 +1,81 @@
+name: Trigger Geobench Release Benchmarks
+
+# Fires on every GitHub release publication (triggered when a release is
+# published from a tag, including pre-releases).  Dispatches a
+# repository_dispatch event to the geobench repo instructing it to run the
+# full benchmark suite against the newly published image.
+#
+# Secrets required:
+#   GEOBENCH_DISPATCH_TOKEN  — PAT with "repo" scope on honua-io/geobench
+#                               (contents:write / actions:write is sufficient).
+#                               If absent, the dispatch step exits with a
+#                               warning rather than failing the release.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to benchmark (e.g. v1.2.3)'
+        required: true
+      save_baseline:
+        description: 'Promote results as new baseline in geobench (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch geobench benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=${{ github.event.release.prerelease }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch to geobench
+        env:
+          DISPATCH_TOKEN: ${{ secrets.GEOBENCH_DISPATCH_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+          SAVE_BASELINE_INPUT: ${{ github.event.inputs.save_baseline || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISPATCH_TOKEN}" ]; then
+            echo "::warning::GEOBENCH_DISPATCH_TOKEN is not set; geobench benchmark was not triggered for ${TAG}."
+            echo "Add the GEOBENCH_DISPATCH_TOKEN secret (PAT with repo scope on honua-io/geobench) to enable per-release benchmarks."
+            exit 0
+          fi
+
+          # For GA releases (non-pre-release), promote results as the new
+          # baseline so the regression checker has an up-to-date reference.
+          # Manual workflow_dispatch runs respect the explicit input.
+          save_baseline="${SAVE_BASELINE_INPUT}"
+          if [ "${EVENT_NAME}" = "release" ] && [ "${PRERELEASE}" = "false" ]; then
+            save_baseline="true"
+          fi
+
+          echo "Dispatching geobench benchmark for ${TAG} (save_baseline=${save_baseline})"
+
+          payload=$(printf '{"event_type":"honua-server-release","client_payload":{"release_tag":"%s","honua_image":"ghcr.io/honua-io/honua-server:%s","regression_threshold":"0.20","runs":"3","save_baseline":"%s"}}' \
+            "${TAG}" "${TAG}" "${save_baseline}")
+
+          GH_TOKEN="${DISPATCH_TOKEN}" gh api repos/honua-io/geobench/dispatches \
+            --method POST \
+            --input - <<< "${payload}"
+
+          echo "Dispatch sent — geobench will run benchmarks against ${TAG}."
+          echo "Monitor progress at: https://github.com/honua-io/geobench/actions"
