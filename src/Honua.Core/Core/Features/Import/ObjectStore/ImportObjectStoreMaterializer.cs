@@ -4,6 +4,7 @@
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.Import.ObjectStore;
 
@@ -94,14 +95,8 @@ public static class ImportObjectStoreMaterializer
             }
 
             var extension = Path.GetExtension(request.FileName);
-            tempPath = Path.Join(Path.GetTempPath(), $"honua-import-object-{Guid.NewGuid():N}{extension}");
-            await using (var file = new FileStream(tempPath, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                Options = FileOptions.Asynchronous,
-            }))
+            tempPath = PrivateTempFile.NewPath("honua-import-object-", extension);
+            await using (var file = PrivateTempFile.Create(tempPath, FileOptions.Asynchronous, bufferSize: 4096))
             {
                 await stream.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
             }

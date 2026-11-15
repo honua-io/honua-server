@@ -373,7 +373,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
         return new PostgresStorageMappedFeatureReader(
             new FixtureConnectionProvider(fixture.ConnectionString),
             pool,
-            new MetadataV2Resource(),
+            new MetadataV2Object(),
             mapping,
             connection: null,
             connectionEncryptionService: null,
@@ -385,10 +385,10 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
         bool unqualifiedMapping = false, string? connectionString = null,
         IAdoNetDatabaseConnectionProvider? connectionProvider = null)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "branch-test", Name = "Branch test" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
