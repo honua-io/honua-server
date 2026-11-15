@@ -32,7 +32,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         using var text = JsonDocument.Parse(content[0].GetProperty("text").GetString()!);
         JsonElement.DeepEquals(text.RootElement, handle).Should().BeTrue();
         handle.GetProperty("status").GetString().Should().Be("Completed", handle.GetRawText());
-        var details = handle.GetProperty("result").GetProperty("details");
+        var details = handle.GetProperty("details");
         details.GetProperty("schema").GetString().Should().Be("public");
         details.GetProperty("table").GetString().Should().Be(_firstTable);
         details.GetProperty("serviceName").GetString().Should().Be(_serviceName);
