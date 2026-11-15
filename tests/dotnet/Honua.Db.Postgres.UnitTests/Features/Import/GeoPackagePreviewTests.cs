@@ -215,8 +215,8 @@ public sealed class GeoPackagePreviewTests
             });
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().StartWith("sourceLayer must be at most 128 characters.");
-            result.ErrorMessage.Should().NotContain(new string('x', 129));
+            result.ErrorMessage.Should().StartWith("sourceLayer must be at most 129 characters.");
+            result.ErrorMessage.Should().NotContain(new string('x', 130));
         }
         finally
         {

@@ -332,7 +332,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
                 catch (InvalidDataException ex)
                 {
-                    errorMessage = ex.Message;
+                    errorMessage = SanitizeImportValidationMessage(ex);
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,

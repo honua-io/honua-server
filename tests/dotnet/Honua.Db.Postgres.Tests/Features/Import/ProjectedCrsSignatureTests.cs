@@ -45,6 +45,17 @@ public sealed class ProjectedCrsSignatureTests
     }
 
     [Fact]
+    public void UnrecognisedDatum_NeverMatches_EvenWithIdenticalParameters()
+    {
+        var unknown = ProjectedCrsSignature.TryCreate(EsriProjectedPrj.MgaZone55UnknownDatum);
+        var gda94 = ProjectedCrsSignature.TryCreate(EsriProjectedPrj.MgaZone55);
+
+        unknown!.Datum.EpsgCode.Should().BeNull();
+        unknown.Matches(gda94!).Should().BeFalse();
+        unknown.Matches(unknown).Should().BeFalse("an unknown datum cannot be verified, not even against itself");
+    }
+
+    [Fact]
     public void ShiftedFalseEasting_DoesNotMatch()
     {
         var shifted = ProjectedCrsSignature.TryCreate(
