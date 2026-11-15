@@ -165,7 +165,7 @@ internal sealed partial class StreamingFileImportService
 
                     if (format == SupportedFileFormat.Csv)
                     {
-                        var alias = PreserveCsvSourceId(feature, typedColumnInference);
+                        var alias = PreserveCsvSourceId(feature, typedColumnInference, csvGeometryDiagnostics!.Headers);
                         csvSourceIdAlias ??= alias;
                     }
 
