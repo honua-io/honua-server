@@ -28,13 +28,16 @@ internal sealed class TenantSchemaRoutingMiddleware(
 
     private readonly TenantSchemaOptions _options = options.Value;
 
+    private static bool IsTenantIndependent(HttpContext context)
+        => context.GetEndpoint()?.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null;
+
     public async Task InvokeAsync(HttpContext context)
     {
         var tenantContext = context.RequestServices.GetService<ITenantContext>();
-        if (tenantContext is null || !tenantContext.RequireTenantId(out var tenantId, out _))
+        if (IsTenantIndependent(context) || tenantContext is null || !tenantContext.RequireTenantId(out var tenantId, out _))
         {
-            // No tenant resolved (anonymous with no default): leave the schema context untouched
-            // so the connection uses its configured default schema. Behavior matches single-tenant.
+            // Tenant-independent control-plane route, or no tenant resolved (anonymous with no default):
+            // leave the schema context untouched so the connection uses its configured default schema.
             await _next(context).ConfigureAwait(false);
             return;
         }

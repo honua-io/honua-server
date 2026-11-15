@@ -24,7 +24,7 @@ internal sealed partial class TileOperationExecutionCore
         var fallback = services.GetRequiredService<ITileProvider>();
         var resolver = new TileFeatureProviderResolver(services.GetService<FeatureProviderQueryRouter>());
         var service = string.IsNullOrWhiteSpace(request.ServiceId) ? null : snapshot.FindService(request.ServiceId);
-        IEnumerable<MetadataV2Publication> publications = service is null
+        IEnumerable<MetadataV2Layer> publications = service is null
             ? snapshot.Index.PublicationsById.Values
             : snapshot.PublicationsForService(service.Metadata.Id);
         var sources = new Dictionary<int, TileSource>();

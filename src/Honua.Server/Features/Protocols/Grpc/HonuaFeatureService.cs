@@ -454,7 +454,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         return response;
 
         async Task<FeatureEditBatch> ValidateGrpcMutationsAsync(
-            MetadataV2Resource resource,
+            MetadataV2Object resource,
             FeatureEditBatch batch,
             CancellationToken cancellationToken)
         {
@@ -887,8 +887,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private static GrpcLayerContext CreateLayerContext(
         MetadataV2Service service,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         int storageLayerId,
         MetadataV2GraphSnapshot? snapshot)
     {
@@ -913,7 +913,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 .Select(field => field.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase));
     }
 
-    private static SpatialReference ToSpatialReference(MetadataV2Resource resource)
+    private static SpatialReference ToSpatialReference(MetadataV2Object resource)
     {
         var srid = resource.ReadSrid();
         return srid.HasValue ? SpatialReference.Create(srid.Value) : SpatialReference.WGS84;
@@ -1070,7 +1070,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     // A where clause that names a masked field is refused.
     private static async Task<SqlFragment?> BindWhereClauseAsync(
         string? where,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IServiceProvider requestServices,
         CancellationToken cancellationToken)
     {
@@ -1220,7 +1220,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureEditBatch editBatch)
     {
         var httpContext = context.GetHttpContext();
@@ -1266,7 +1266,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     // An edit kind the publication omits is rejected.
     private static void EnsureDeclaredEditCapabilities(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         FeatureEditBatch editBatch)
     {
         Check(!editBatch.Creates.IsDefaultOrEmpty, AuthorizationOperation.Insert);
@@ -1306,7 +1306,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private static async Task EnsureReadAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var httpContext = context.GetHttpContext();
 
@@ -1348,8 +1348,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private readonly record struct GrpcLayerContext(
         MetadataV2Service Service,
-        MetadataV2Publication Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
         int StorageLayerId,
         MetadataV2GraphSnapshot? Snapshot,
         SpatialReference SpatialReference,
