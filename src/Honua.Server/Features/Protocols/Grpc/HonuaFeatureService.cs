@@ -358,7 +358,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
         editBatch = await EnsureEditTargetsVisibleAsync(
-            layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
+            globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
@@ -661,7 +661,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
     private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
-        int storageLayerId,
+        GlobalIdEdit globalIds,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
@@ -693,7 +693,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         foreach (var objectId in targets)
         {
             var existing = await _featureReader
-                .GetAsync(storageLayerId, objectId, cancellationToken)
+                .GetAsync(globalIds.Layer.StorageLayerId, objectId, cancellationToken)
                 .ConfigureAwait(false);
             if (existing is null)
             {
@@ -703,6 +703,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
 
             storedById[objectId] = existing.Value;
+            if (globalIds.Field is { } field && GrpcGlobalIds.Read(existing.Value.Attributes, field) is { } globalId)
+            {
+                globalIds.ExistingGlobalIds[objectId] = globalId;
+            }
         }
 
         if (editBatch.Updates.IsDefaultOrEmpty)

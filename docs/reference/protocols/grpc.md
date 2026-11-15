@@ -123,6 +123,22 @@ Notes:
   native `DescribeLayer` RPC for the missing descriptor. Current `geospatial.v1`
   carries all four fields.
 
+## Managed global-ID integrity
+
+Declaring `editing.globalIdField` on a managed feature layer creates a per-layer
+unique UUID expression index. Uppercase and braced spellings identify the same
+UUID. Missing and empty values do not conflict. The index also serves UUID
+lookups and enforces uniqueness for concurrent writes and rows hidden by row
+security. Object-ID-mode update and delete results carry the stored global ID
+when the caller may see its field.
+
+Migration and metadata activation refuse existing duplicate UUIDs or invalid
+UUID values without rewriting features. Repair those values explicitly before
+retrying. A failed activation leaves the previous metadata revision current.
+Once created, identity indexes remain in place across metadata changes, including
+removal of a declaration. This preserves identity while older readers continue
+serving during a rolling update.
+
 ## Versioning and deprecation policy
 
 Every protobuf package carries a major-version suffix (`geospatial.v1`, future `geospatial.v2`); a service lives under exactly one major version, and versions are hosted side by side.

@@ -248,7 +248,9 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
             MaskedContext(masks));
 
         response.GlobalIdFieldName.Should().BeEmpty();
-        response.Features.Should().OnlyContain(feature => feature.GlobalId.Length == 0);
+        var feature = response.Features.Should().ContainSingle().Subject;
+        feature.GlobalId.Should().BeEmpty();
+        feature.Attributes.Should().NotContainKey("globalid");
     }
 
     private GrpcFeatureServiceTests.TestServerCallContext MaskedContext(IFieldMaskSource masks, params string[] operations)
