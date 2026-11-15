@@ -190,8 +190,8 @@ public sealed class GrpcTypedValueTests
     [UnitTest]
     public void Predicate_UuidColumnMatchesLowercase_TextColumnMatchesStoredSpellings()
     {
-        var uuid = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.Uuid }] };
-        var text = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.String }] };
+        var uuid = new MetadataV2Object { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.Uuid }] };
+        var text = new MetadataV2Object { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.String }] };
 
         GrpcGlobalIds.Predicate(uuid, "GlobalID", [GlobalId]).Should().Be($"GlobalID IN ('{GlobalId}')");
         GrpcGlobalIds.Predicate(text, "GlobalID", [GlobalId]).Should().Contain($"'{{{GlobalId.ToUpperInvariant()}}}'");
@@ -211,7 +211,7 @@ public sealed class GrpcTypedValueTests
         => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type), DecimalBatch(value)))
             .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
 
-    private static MetadataV2Resource NumericResource(MetadataV2FieldType type)
+    private static MetadataV2Object NumericResource(MetadataV2FieldType type)
         => new() { SchemaFields = [new MetadataV2Field { Name = "n", TypeValue = type }] };
 
     private static FeatureEditBatch DecimalBatch(string value)
@@ -222,7 +222,7 @@ public sealed class GrpcTypedValueTests
     {
         var batch = Batch(ImmutableDictionary<string, object?>.Empty.Add("signed", DateTimeOffset.UnixEpoch));
 
-        FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(new MetadataV2Resource(), batch))
+        FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(new MetadataV2Object(), batch))
             .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
     }
 
