@@ -14,6 +14,32 @@ from quickstart_testing import PACKAGE_IMAGES, QuickstartFixture
 
 
 class ConsolePackageTests(QuickstartFixture, unittest.TestCase):
+    def test_quickstart_cli_rejects_malformed_image_locks_before_writing(self):
+        cases = [
+            (None, 'The image lock must be a JSON object'),
+            ([], 'The image lock must be a JSON object'),
+        ]
+        for name in PACKAGE_IMAGES:
+            for value in (None, 123, [], {}):
+                cases.append((dict(PACKAGE_IMAGES, **{name: value}),
+                              'The image lock must contain immutable sha256 references'))
+        for lock, message in cases:
+            with self.subTest(lock=lock), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'install'
+                package(path, PACKAGE_IMAGES, 'test')
+                (path / 'images.json').write_text(json.dumps(lock))
+                before = {file.relative_to(path): file.read_bytes()
+                          for file in path.rglob('*') if file.is_file()}
+
+                result = subprocess.run([sys.executable, str(path / 'quickstart.py'), '--init-only'],
+                                        capture_output=True, text=True)
+
+                self.assertEqual(1, result.returncode)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertEqual(before, {file.relative_to(path): file.read_bytes()
+                                          for file in path.rglob('*') if file.is_file()})
+
     def test_quickstart_cli_explains_why_console_cannot_be_enabled(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'install'

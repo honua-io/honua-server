@@ -273,7 +273,10 @@ def initialize(directory, profiles=()):
     """Creates or migrates the install. Returns only non-secret settings."""
     directory = Path(directory).resolve()
     lock = json.loads((directory / 'images.json').read_text())
-    if not all(IMMUTABLE.fullmatch(lock[name]) for name in ('server', 'executor', 'worker')):
+    if not isinstance(lock, dict):
+        raise ValueError('The image lock must be a JSON object')
+    if not all(isinstance(lock.get(name), str) and IMMUTABLE.fullmatch(lock[name])
+               for name in ('server', 'executor', 'worker')):
         raise ValueError('The image lock must contain immutable sha256 references')
     env_file = directory / '.env'
     existing = env_file.read_text() if env_file.exists() else ''
