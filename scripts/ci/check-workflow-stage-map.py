@@ -66,17 +66,18 @@ def policy_literals(root):
     return rules, review
 
 
-def contains_literal(text, literals, joined=False):
+def matches_words(text, literals):
     haystack = spaced(text)
-    collapsed = compact(text) if joined else ""
     for literal in literals:
         parts = [re.escape(part) + r"s?" for part in spaced(literal).split()]
-        if re.search(r"\b" + r"\s+".join(parts) + r"\b", haystack):
-            return True
-        token = compact(literal)
-        if joined and token and token in collapsed:
+        if parts and re.search(r"\b" + r"\s+".join(parts) + r"\b", haystack):
             return True
     return False
+
+
+def matches_run_together(text, literals):
+    collapsed = compact(text)
+    return any(token and token in collapsed for token in (compact(item) for item in literals))
 
 
 def source_file(root, source):
@@ -110,9 +111,13 @@ def check_binding(root, surface, binding, rules, review):
     # Review-rule words are contextual, so they bind callable spellings only.
     # OKF verbs keep the action's own name; a protocol spelling records why.
     reason = binding.get("literalReason")
-    retired = (contains_literal(operation, rules, joined=True)
-               or contains_literal(operation, list(WORKFLOW_TERMS), joined=True)
-               or contains_literal(operation, review))
+    # Review words stay on word boundaries so "slot" does not match "slotted".
+    # Unambiguous policy rules also match when their words are run together.
+    retired = (matches_words(operation, rules)
+               or matches_run_together(operation, rules)
+               or matches_words(operation, WORKFLOW_TERMS)
+               or matches_run_together(operation, WORKFLOW_TERMS)
+               or matches_words(operation, review))
     if retired and not (isinstance(reason, str) and reason.strip()):
         raise ValueError(f"retired operation spelling needs literalReason: {operation}")
 
@@ -131,16 +136,18 @@ def check_surfaces(root, row, rules, review):
 
 def check_row(root, row, action, rules, review):
     if (row["verb"] != action["verb"]
-            or contains_literal(row["verb"], rules, joined=True)
-            or contains_literal(row["verb"], WORKFLOW_TERMS, joined=True)):
+            or matches_words(row["verb"], rules) or matches_run_together(row["verb"], rules)
+            or matches_words(row["verb"], WORKFLOW_TERMS)
+            or matches_run_together(row["verb"], WORKFLOW_TERMS)):
         raise ValueError("stage verb differs from OKF action or uses a retired term")
     if sorted(item["concept"] for item in row["objects"]) != concepts(action):
         raise ValueError("objects differ from OKF action inputs/outputs")
     for item in row["objects"]:
         terms = canonical_terms(root).get(item["concept"])
         if item["terms"] != terms or any(
-                contains_literal(term, rules, joined=True)
-                or contains_literal(term, WORKFLOW_TERMS, joined=True) for term in item["terms"]):
+                matches_words(term, rules) or matches_run_together(term, rules)
+                or matches_words(term, WORKFLOW_TERMS)
+                or matches_run_together(term, WORKFLOW_TERMS) for term in item["terms"]):
             raise ValueError(f"object term differs from canonical concept: {item['concept']}")
     check_surfaces(root, row, rules, review)
     for interface in action.get("interfaces", []):

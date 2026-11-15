@@ -137,6 +137,13 @@ class StageMapTests(unittest.TestCase):
                 binding["literalReason"] = "Exact source spelling kept so the binding can be found."
                 self.assertEqual([], self.errors())
 
+    def test_review_word_inside_another_word_is_not_retired(self):
+        binding = self.row["surfaces"]["sdk"]["bindings"][0]
+        binding["operation"] = "slotted_count"
+        binding.pop("literalReason", None)
+        self.write("docs/sdk.md", "slotted_count()\n`honua layers`\n`honua_list_layers`\n")
+        self.assertEqual([], self.errors())
+
     def test_docs_gate_triggers_for_every_recorded_source(self):
         root = checker.REPO
         workflow = yaml.load((root / ".github/workflows/docs-link-gate.yml").read_text(),
