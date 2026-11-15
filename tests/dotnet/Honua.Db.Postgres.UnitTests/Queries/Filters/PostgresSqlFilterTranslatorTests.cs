@@ -32,6 +32,30 @@ public class PostgresSqlFilterTranslatorTests
         result.Sql.Should().NotContain("::double precision");
     }
 
+    [Theory]
+    [InlineData(TemporalOperator.Before)]
+    [InlineData(TemporalOperator.Intersects)]
+    public void Translate_OffsetTemporalPredicate_BindsExactEpochSeconds(TemporalOperator op)
+    {
+        var resource = CreateResource() with { SchemaFields = [Field("instant", MetadataV2FieldType.TimestampOffset)] };
+        var instant = DateTimeOffset.Parse("2026-11-15T00:00:00.0000001Z", System.Globalization.CultureInfo.InvariantCulture);
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new TemporalPredicate(op, new PropertyReference("instant"), new Literal(instant, LiteralType.DateTime)), resource);
+        result.Parameters.Should().Equal((instant.UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond);
+        result.Sql.Should().Contain("regexp_replace(").And.Contain("::numeric");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Time, "::time")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "::timestamptz")]
+    public void Translate_TemporalHour_ExtractsFromTemporalType(MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with { SchemaFields = [Field("instant", type)] };
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new FunctionCall("HOUR", [new PropertyReference("instant")]), resource);
+        result.Sql.Should().StartWith("EXTRACT(HOUR FROM ").And.Contain(cast);
+    }
+
     [Fact]
     public void SRV_DB_017_TimePropertyUsesExactSeconds()
     {

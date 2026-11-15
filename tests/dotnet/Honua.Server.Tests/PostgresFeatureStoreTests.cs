@@ -219,6 +219,12 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
             OrderBy = [new OrderByClause("exact_time", true, type)]
         });
         Assert.Equal(new[] { earlier, later }, ordered.Items.Select(row => row.Attributes["exact_time"]));
+        var distinct = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery
+        {
+            Distinct = true, OutFields = ["exact_time"],
+            OrderBy = [new OrderByClause("exact_time", true, type)]
+        });
+        Assert.Equal(new[] { earlier, later }, distinct.Items.Select(row => row.Attributes["exact_time"]));
         var value = type == MetadataV2FieldType.TimestampOffset
             ? (object)ExactAttributeValues.ParseTimestampOffset(earlier)
             : ExactAttributeValues.ParseTime(earlier);
@@ -227,6 +233,20 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
                 new Literal(value, type == MetadataV2FieldType.TimestampOffset ? LiteralType.DateTime : LiteralType.Text)), resource);
         var matched = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = filter });
         Assert.Equal(earlier, Assert.Single(matched.Items).Attributes["exact_time"]);
+        if (type == MetadataV2FieldType.TimestampOffset)
+        {
+            var before = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+                new TemporalPredicate(TemporalOperator.Before, new PropertyReference("exact_time"),
+                    new Literal(ExactAttributeValues.ParseTimestampOffset(later), LiteralType.DateTime)), resource);
+            var beforeRows = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = before });
+            Assert.Equal(earlier, Assert.Single(beforeRows.Items).Attributes["exact_time"]);
+        }
+        var hour = type == MetadataV2FieldType.Time ? 12d : 0d;
+        var hourFilter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new FunctionCall("HOUR", [new PropertyReference("exact_time")]),
+                BinaryOperator.Equal, new Literal(hour, LiteralType.Number)), resource);
+        var hourRows = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = hourFilter });
+        Assert.Equal(2, hourRows.Items.Length);
     }
 
     private static byte[] CreatePointWkb(double x, double y)

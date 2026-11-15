@@ -82,11 +82,11 @@ internal sealed partial class FeatureQueryBuilder
                     MetadataV2FieldType.Float => $"{expression}::real",
                     MetadataV2FieldType.Double => $"{expression}::double precision",
                     MetadataV2FieldType.Decimal => $"{expression}::numeric",
-                    MetadataV2FieldType.TimestampOffset => $"{expression}::timestamptz",
+                    MetadataV2FieldType.TimestampOffset => ExactTemporalSql.Timestamp(expression),
                     MetadataV2FieldType.Boolean => $"{expression}::boolean",
                     MetadataV2FieldType.DateTime => BuildEpochAwareOrderByCast(expression, "timestamptz"),
                     MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(expression, "date"),
-                    MetadataV2FieldType.Time => $"{expression}::time",
+                    MetadataV2FieldType.Time => ExactTemporalSql.Time(expression),
                     MetadataV2FieldType.Uuid => $"{expression}::uuid",
                     _ => expression
                 };
