@@ -37,6 +37,7 @@ on:
       - 'docs/okf/**'
       - 'docs/llms.txt'
       - 'docs/guides/workflows/stage-map.v1.json'
+      - 'docs/developer/api-specs/admin-api.json'
       - 'docs/.gitbook.yaml'
       # Shipped config the anchor manifest sweeps for runtime docs URLs.
       - 'docs/guides/deploy/examples/**'

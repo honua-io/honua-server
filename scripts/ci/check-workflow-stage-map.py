@@ -57,9 +57,7 @@ def source_file(root, source):
     return path
 
 
-def check_binding(root, row, surface, binding):
-    if binding.get("verb") != row["verb"]:
-        raise ValueError(f"{surface} verb differs from stage verb")
+def check_binding(root, surface, binding):
     path = source_file(root, binding["source"])
     operation = binding["operation"]
     if surface == "rest":
@@ -81,6 +79,18 @@ def check_binding(root, row, surface, binding):
         raise ValueError(f"retired operation spelling needs literalReason: {operation}")
 
 
+def check_surfaces(root, row):
+    if set(row["surfaces"]) != set(SURFACES):
+        raise ValueError("every REST/SDK/CLI/MCP/skill surface must be recorded")
+    for surface, entry in row["surfaces"].items():
+        bindings = entry["bindings"]
+        if bool(bindings) == bool(entry.get("gap")):
+            raise ValueError(f"{surface} needs bindings or an explicit gap, exclusively")
+        for binding in bindings:
+            if binding.get("verb") != row["verb"]:
+                raise ValueError(f"{surface} verb differs from stage verb")
+            check_binding(root, surface, binding)
+
 def check_row(root, row, action):
     if row["verb"] != action["verb"] or RETIRED.search(row["verb"].replace("_", " ")):
         raise ValueError("stage verb differs from OKF action or uses a retired term")
@@ -90,14 +100,7 @@ def check_row(root, row, action):
         terms = canonical_terms(root).get(item["concept"])
         if item["terms"] != terms or any(RETIRED.search(term) for term in item["terms"]):
             raise ValueError(f"object term differs from canonical concept: {item['concept']}")
-    if set(row["surfaces"]) != set(SURFACES):
-        raise ValueError("every REST/SDK/CLI/MCP/skill surface must be recorded")
-    for surface, entry in row["surfaces"].items():
-        bindings = entry["bindings"]
-        if bool(bindings) == bool(entry.get("gap")):
-            raise ValueError(f"{surface} needs bindings or an explicit gap, exclusively")
-        for binding in bindings:
-            check_binding(root, row, surface, binding)
+    check_surfaces(root, row)
     for interface in action.get("interfaces", []):
         if interface["kind"] not in KINDS:
             continue
