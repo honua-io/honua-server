@@ -109,26 +109,23 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
 
             var jobId = await SubmitJobAsync(client, ExecuteRequestBody());
 
-            // The enrichment job is dismissed through the SHARED lifecycle endpoint, so
-            // it inherits that endpoint's full outcome set and the race with the worker
-            // (the small seed-layer job can finish before the DELETE lands):
-            //   * 200 + "dismissed"   — the job was cancelled before it went terminal;
-            //   * 200 + live status   — cancellation was requested while the worker owns
-            //                           terminal state (BuildDismissOutcomeResult returns
-            //                           the plain status info in that case);
-            //   * 409                 — the job already reached a terminal state.
-            // Assert the shared contract rather than one racy branch: the endpoint
-            // answered for THIS job id with a canonical OGC status, or refused it as
-            // already-terminal.
             using var dismissResponse = await client.DeleteAsync($"/ogc/processes/jobs/{jobId}");
-            dismissResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict);
+            dismissResponse.StatusCode.Should().BeOneOf(
+                HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.Conflict);
             using var dismissDoc = JsonDocument.Parse(await dismissResponse.Content.ReadAsStringAsync());
-            if (dismissResponse.StatusCode == HttpStatusCode.OK)
+            if (dismissResponse.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted)
             {
                 dismissDoc.RootElement.GetProperty("jobID").GetString().Should().Be(
                     jobId, "the shared dismiss endpoint must answer for the enrichment job it was given");
-                dismissDoc.RootElement.GetProperty("status").GetString().Should().BeOneOf(
-                    "dismissed", "accepted", "running", "successful", "failed");
+                var status = dismissDoc.RootElement.GetProperty("status").GetString();
+                if (dismissResponse.StatusCode == HttpStatusCode.OK)
+                {
+                    status.Should().Be("dismissed");
+                }
+                else
+                {
+                    status.Should().BeOneOf("accepted", "running", "successful", "failed");
+                }
             }
             else
             {

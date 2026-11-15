@@ -163,11 +163,40 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         restart.AppliedScripts.Should().BeEmpty("the journal prevents replay on restart");
     }
 
+    private static string ReadReviewedIndexRemoval()
+    {
+        using var stream = typeof(MigrationReaderCompatibility).Assembly
+            .GetManifestResourceStream("Honua.Core.RemoveUnusedFeatureIndexes.sql")
+            ?? throw new InvalidOperationException("The reviewed index-removal script is missing.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    private static async Task AssertReviewedFeatureIndexesAsync(Npgsql.NpgsqlConnection connection, bool removed)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) FILTER (WHERE indexname = ANY(ARRAY[
+                'idx_features_attributes_gin', 'idx_features_attributes_keys',
+                'idx_features_geometry_nn', 'idx_features_geometry_3d', 'idx_features_envelope',
+                'idx_features_attr_dates', 'idx_features_attr_timestamps', 'idx_features_temporal_attrs'])),
+                count(*) FILTER (WHERE indexname = ANY(ARRAY[
+                'idx_features_layer_id', 'idx_features_geometry', 'idx_features_geography',
+                'idx_features_attributes', 'idx_features_layer_objectid']))
+            FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'features';
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt64(0).Should().Be(removed ? 0 : 8);
+        reader.GetInt64(1).Should().Be(5, "the composite, primary spatial and general attribute indexes must remain");
+    }
+
     [IntegrationTheory]
     [Operation(Operations.TestInfrastructure)]
     [InlineData("expand", true)]
     [InlineData("opted-out", false)]
     [InlineData("contract", false)]
+    [InlineData("reviewed-index-removal", true)]
     public async Task CanonicalRunner_RollbackAcrossNewerDeclaredMigration_StartsOnlyWhenItVerifiesExpand(
         string kind, bool rollbackStarts)
     {
@@ -195,9 +224,12 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetString(2).Should().Be("expand");
         }
 
-        const string future = "Honua.Server.Migrations.999_FutureRollbackProbe.sql";
+        var future = kind == "reviewed-index-removal"
+            ? "Honua.Server.Migrations.999_RemoveUnusedFeatureIndexes.sql"
+            : "Honua.Server.Migrations.999_FutureRollbackProbe.sql";
         var sql = kind switch
         {
+            "reviewed-index-removal" => ReadReviewedIndexRemoval(),
             "expand" => "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);",
             "opted-out" => "-- honua:reader-incompatible reason=older readers write rows the new trigger rejects\n" +
                 "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);",
@@ -205,9 +237,18 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                 "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);\n" +
                 "ALTER TABLE honua.future_rollback_probe RENAME COLUMN id TO probe_id;",
         };
+        if (kind == "reviewed-index-removal")
+        {
+            await AssertReviewedFeatureIndexesAsync(connection, removed: false);
+        }
+
         command.CommandText = sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@script, now());";
         command.Parameters.AddWithValue("script", future);
         await command.ExecuteNonQueryAsync();
+        if (kind == "reviewed-index-removal")
+        {
+            await AssertReviewedFeatureIndexesAsync(connection, removed: true);
+        }
         await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(
             connection, [MigrationReaderCompatibility.Declare(future, sql)], CancellationToken.None);
 
@@ -235,6 +276,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         if (rollbackStarts)
         {
             await skippedMigrationsStartup.Should().NotThrowAsync();
+            if (kind == "reviewed-index-removal")
+            {
+                await AssertFeatureReadWriteAfterIndexRemovalAsync(connection);
+            }
         }
         else
         {
@@ -242,6 +287,23 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             refusal.UnknownMigrations.Should().Equal(future);
             refusal.DeclarationRefusals.Should().ContainKey(future);
         }
+    }
+
+    private static async Task AssertFeatureReadWriteAfterIndexRemovalAsync(Npgsql.NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO honua.layers (layer_id, layer_name, table_name, geometry_type)
+            VALUES (990775, 'index_rollback_probe', 'features', 'Point');
+            INSERT INTO public.features (objectid, layer_id, attributes)
+            VALUES (99077501, 990775, '{"name":"before"}');
+            UPDATE public.features SET attributes = '{"name":"after"}'
+            WHERE layer_id = 990775 AND objectid = 99077501;
+            SELECT attributes ->> 'name' FROM public.features
+            WHERE layer_id = 990775 AND objectid = 99077501;
+            """;
+        (await command.ExecuteScalarAsync()).Should().Be("after",
+            "the prepared reader must retain feature import, edit and query behavior after removing optional indexes");
     }
 
     [IntegrationTheory]

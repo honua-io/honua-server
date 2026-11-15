@@ -182,9 +182,9 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
     }
 
     private static void AddGenerateKmlLayer(
-        List<MetadataV2Resource> resources,
+        List<MetadataV2Object> resources,
         List<MetadataV2StorageBinding> bindings,
-        List<MetadataV2Publication> publications,
+        List<MetadataV2Layer> publications,
         string serviceId,
         int layerId,
         string name,
@@ -194,10 +194,10 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
         var resourceId = $"res-{serviceId}-{layerId}";
         var bindingId = $"bind-{serviceId}-{layerId}";
 
-        resources.Add(new MetadataV2Resource
+        resources.Add(new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             SchemaFields =
@@ -212,7 +212,7 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
                     SemanticRoles = ["geometry"],
                 },
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference
                 {
@@ -223,7 +223,7 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
                 GeometryType = geometryType,
                 PrimaryGeometryField = "shape",
             },
-            Display = new MetadataV2ResourceDisplay
+            Display = new MetadataV2ObjectDisplay
             {
                 DefaultVisibility = true,
                 DisplayField = "name",
@@ -239,15 +239,15 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
             StorageLayerId = layerId,
         });
 
-        publications.Add(new MetadataV2Publication
+        publications.Add(new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{serviceId}-{layerId}", Name = name },
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = bindingId,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
-            Identifier = new MetadataV2PublicationIdentifier
+            PublicationType = MetadataV2LayerType.EsriMapLayer,
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerId.ToString(CultureInfo.InvariantCulture),
                 IsNumeric = true,

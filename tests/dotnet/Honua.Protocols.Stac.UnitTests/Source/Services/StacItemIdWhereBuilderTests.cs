@@ -55,7 +55,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void GetCandidateFields_UniqueCanonicalRole_IncludesPrimaryFallbackAndSkipsNonUniqueNames()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -76,7 +76,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void GetCandidateFields_NonUniqueIdColumn_UsesObjectId()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -93,7 +93,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void GetCandidateFields_ExplicitIdField_UsesThatSchemaField()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -120,7 +120,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void ResolveItemId_AttributeBag_UsesCanonicalValueWhenItIsNotASchemaColumn()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer }]
         };
@@ -135,7 +135,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void ResolveItemId_NonUniqueIdColumn_UsesObjectIdInsteadOfRepeatedAttribute()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -154,7 +154,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void RewriteStacCoreQueryables_StringIdentity_KeepsStringLiteral()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -179,7 +179,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void RewriteStacCoreQueryables_ObjectIdFallback_CoercesNumericString()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -204,7 +204,7 @@ public sealed class StacItemIdWhereBuilderTests
     [UnitTest]
     public void TryBuildSortOrder_Id_UsesResolvedIdentityField()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -241,10 +241,10 @@ public sealed class StacItemIdWhereBuilderTests
         Assert.False(StacContinuationTokens.IsCursor("portal-token"));
     }
 
-    private static MetadataV2Resource CreateResource() => new()
+    private static MetadataV2Object CreateResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res-items", Name = "items" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         SchemaFields =
         [
             new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
