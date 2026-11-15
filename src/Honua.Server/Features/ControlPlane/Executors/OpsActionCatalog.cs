@@ -79,31 +79,43 @@ internal static class OpsActionCatalog
             },
             [OpsActionNames.PauseChannel] = HumanAction with
             {
-                BlastRadius = OpsBlastRadius.LayerOrService, DataRisk = OpsDataRisk.None,
-                CostRisk = OpsCostRisk.None, SecurityRisk = OpsSecurityRisk.None,
+                BlastRadius = OpsBlastRadius.LayerOrService,
+                DataRisk = OpsDataRisk.None,
+                CostRisk = OpsCostRisk.None,
+                SecurityRisk = OpsSecurityRisk.None,
             },
             [OpsActionNames.ResumeChannel] = HumanAction with
             {
-                BlastRadius = OpsBlastRadius.LayerOrService, DataRisk = OpsDataRisk.None,
-                CostRisk = OpsCostRisk.None, SecurityRisk = OpsSecurityRisk.None,
+                BlastRadius = OpsBlastRadius.LayerOrService,
+                DataRisk = OpsDataRisk.None,
+                CostRisk = OpsCostRisk.None,
+                SecurityRisk = OpsSecurityRisk.None,
             },
             [OpsActionNames.TuneBoundedAdmission] = HumanAction with
             {
-                BlastRadius = OpsBlastRadius.LayerOrService, DataRisk = OpsDataRisk.None,
-                CostRisk = OpsCostRisk.None, SecurityRisk = OpsSecurityRisk.None,
+                BlastRadius = OpsBlastRadius.LayerOrService,
+                DataRisk = OpsDataRisk.None,
+                CostRisk = OpsCostRisk.None,
+                SecurityRisk = OpsSecurityRisk.None,
             },
             [OpsActionNames.ComposeRestartService] = HumanAction with
             {
-                DataRisk = OpsDataRisk.None, CostRisk = OpsCostRisk.None, SecurityRisk = OpsSecurityRisk.None,
+                DataRisk = OpsDataRisk.None,
+                CostRisk = OpsCostRisk.None,
+                SecurityRisk = OpsSecurityRisk.None,
             },
             [OpsActionNames.ComposeApplyConfig] = HumanAction,
             [OpsActionNames.RestartEcs] = HumanAction with
             {
-                DataRisk = OpsDataRisk.None, CostRisk = OpsCostRisk.None, SecurityRisk = OpsSecurityRisk.None,
+                DataRisk = OpsDataRisk.None,
+                CostRisk = OpsCostRisk.None,
+                SecurityRisk = OpsSecurityRisk.None,
             },
             [OpsActionNames.RestartLambda] = HumanAction with
             {
-                DataRisk = OpsDataRisk.None, CostRisk = OpsCostRisk.None, SecurityRisk = OpsSecurityRisk.None,
+                DataRisk = OpsDataRisk.None,
+                CostRisk = OpsCostRisk.None,
+                SecurityRisk = OpsSecurityRisk.None,
             },
             [OpsActionNames.SetConfig] = HumanAction,
             ["data.delete"] = HumanAction with { DataRisk = OpsDataRisk.Irrecoverable },

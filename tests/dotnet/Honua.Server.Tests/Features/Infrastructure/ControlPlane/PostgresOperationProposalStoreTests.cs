@@ -187,12 +187,16 @@ public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter d
         var gateway = CanonicalOperationGatewayTestComposition.Build(store, ladder, []);
         var request = new OperationGatewayRequest
         {
-            Kind = OperationClass.AdminConfigChange, RequestedByAgent = "ops-findings",
-            ActionDiscriminator = OpsActionNames.RedriveDeadLetters, IdempotencyKey = "stable-finding",
+            Kind = OperationClass.AdminConfigChange,
+            RequestedByAgent = "ops-findings",
+            ActionDiscriminator = OpsActionNames.RedriveDeadLetters,
+            IdempotencyKey = "stable-finding",
             Plan = new OperationProposalPlan { Summary = "Redrive one", ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(1) },
             AutonomyContext = new OperationGatewayAutonomyContext
             {
-                FindingId = "stable-finding", Rule = "alert-dispatch-backlog", ActionMarkedAutoSafe = true
+                FindingId = "stable-finding",
+                Rule = "alert-dispatch-backlog",
+                ActionMarkedAutoSafe = true
             }
         };
         var first = await gateway.CreateApprovalProposalAsync("instance-first", request);

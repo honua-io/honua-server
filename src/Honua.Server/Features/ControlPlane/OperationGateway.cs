@@ -660,7 +660,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 return new OperationGatewayResult
                 {
-                    Outcome = OperationGatewayOutcome.Failed, Decision = decision,
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
                     Message = "Durable approval batch storage is unavailable."
                 };
             }
