@@ -34,6 +34,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     internal const string RuleDbBoundedAdmissionPressure = "db-bounded-admission-pressure";
     internal const string RuleServingLatencySlo = "serving-latency-slo-breach";
     internal const string RulePlatformReleaseRuntimeDivergence = "platform-release-runtime-divergence";
+    internal const string RuleCdnPurgeBudget = "cdn-purge-budget";
 
     // BackendName of the in-process baseline batch backend (which reports a KubernetesJob target kind).
     private const string InProcessLocalBackendName = "local";
@@ -59,6 +60,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly OpsFindingsCollectionLedger _collectionLedger;
     private readonly TimeProvider _clock;
     private readonly IManagedComposeObserver? _managedComposeObserver;
+    private readonly ICdnPurgeBudget? _cdnPurgeBudget;
 
     // A signal older than this window cannot authorize a proposal.
     private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
@@ -76,6 +78,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsExtendedSignals? extendedSignals = null)
     {
         _managedComposeObserver = extendedSignals?.ManagedComposeObserver;
+        _cdnPurgeBudget = extendedSignals?.CdnPurgeBudget;
         _options = options;
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
@@ -128,6 +131,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
+        await EvaluateCdnPurgeBudgetAsync(now, findings, cancellationToken).ConfigureAwait(false);
         var catalogSource = await EvaluateCatalogRollbacksAsync(findings, cancellationToken).ConfigureAwait(false);
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
             ?? EvidencePostureFactory.NotConfigured(
