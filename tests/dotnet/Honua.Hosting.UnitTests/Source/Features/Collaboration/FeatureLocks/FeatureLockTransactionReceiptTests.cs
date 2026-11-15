@@ -34,7 +34,7 @@ public sealed partial class FeatureLockEnforcingFeatureWriterTests
     [Operation(Operations.ApplyEdits)]
     public async Task Transaction_ReceiptUnsupported_DefaultDoesNotCommitUnkeyed()
     {
-        var provider = new LegacyTransaction();
+        await using var provider = new LegacyTransaction();
         IFeatureWriterTransaction transaction = provider;
         transaction.SupportsDurableReceipts.Should().BeFalse();
         var receipt = new FeatureWriterTransactionReceipt
