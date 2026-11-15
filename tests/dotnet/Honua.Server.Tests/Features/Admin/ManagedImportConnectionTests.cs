@@ -136,7 +136,7 @@ public sealed class ManagedImportConnectionTests
 #pragma warning disable CA2000 // The service provider disposes the registered data source.
         var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
 #pragma warning restore CA2000
-        using var services = Services(encryption, reloaded, dataSource: dataSource);
+        using var services = Services(encryption, reloaded, dataSource);
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
@@ -162,23 +162,32 @@ public sealed class ManagedImportConnectionTests
     private static ServiceProvider Services(
         RememberingEncryption encryption,
         string? connectionString,
-        ISecureConnectionRegistry? registry = null,
-        Npgsql.NpgsqlDataSource? dataSource = null)
+        ISecureConnectionRegistry? registry = null)
+        => Compose(encryption, connectionString, registry ?? new InMemorySecureConnectionRegistry()).BuildServiceProvider();
+
+    private static ServiceProvider Services(
+        RememberingEncryption encryption,
+        string? connectionString,
+        Npgsql.NpgsqlDataSource dataSource)
+    {
+        var services = Compose(encryption, connectionString, new InMemorySecureConnectionRegistry());
+        services.AddSingleton(dataSource);
+        return services.BuildServiceProvider();
+    }
+
+    private static ServiceCollection Compose(
+        RememberingEncryption encryption,
+        string? connectionString,
+        ISecureConnectionRegistry registry)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:DefaultConnection"] = connectionString
         }).Build();
-        var services = new ServiceCollection()
+        return new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
             .AddSingleton<IConnectionEncryptionService>(encryption)
-            .AddSingleton(registry ?? new InMemorySecureConnectionRegistry());
-        if (dataSource is not null)
-        {
-            services.AddSingleton(dataSource);
-        }
-
-        return services.BuildServiceProvider();
+            .AddSingleton(registry);
     }
 
     private sealed class RememberingEncryption : IConnectionEncryptionService

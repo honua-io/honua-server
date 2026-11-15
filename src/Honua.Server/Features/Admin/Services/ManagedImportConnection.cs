@@ -45,125 +45,128 @@ internal static partial class ManagedImportConnection
 
     private static async Task EnsureCoreAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
+        var work = await PrepareAsync(services, cancellationToken).ConfigureAwait(false);
+        if (work is null)
+        {
+            return;
+        }
+
+        var existing = await work.Registry.GetConnectionAsync(Id, work.CancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            await CreateWhenNamedAsync(work).ConfigureAwait(false);
+            return;
+        }
+
+        if (await StoresAsync(work, existing).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await RefreshAsync(work, existing).ConfigureAwait(false);
+    }
+
+    private static async Task<EnsureWork?> PrepareAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
         var registry = services.GetService<ISecureConnectionRegistry>();
         var encryption = services.GetService<IConnectionEncryptionService>();
         var configuration = services.GetService<IConfiguration>();
         if (registry is null || encryption is null || configuration is null)
         {
-            return;
+            return null;
         }
 
         var connectionString = await ResolveServerConnectionStringAsync(services, configuration, cancellationToken)
             .ConfigureAwait(false);
-        if (!TryRead(connectionString, out var target))
+        var target = ReadDatabase(connectionString);
+        if (target is null || connectionString is null)
         {
-            return;
+            return null;
         }
 
-        var existing = await registry.GetConnectionAsync(Id, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
+        return new EnsureWork
         {
-            var name = await ChooseNameAsync(registry, encryption, connectionString!, cancellationToken).ConfigureAwait(false);
-            if (name is null)
-            {
-                return;
-            }
-
-            await CreateAsync(registry, encryption, connectionString!, target, name, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (await StoresAsync(encryption, existing, connectionString!, cancellationToken).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        await RefreshAsync(registry, encryption, existing, connectionString!, target, cancellationToken).ConfigureAwait(false);
+            Registry = registry,
+            Encryption = encryption,
+            ConnectionString = connectionString,
+            Target = target.Value,
+            CancellationToken = cancellationToken,
+        };
     }
 
-    private static async Task CreateAsync(
-        ISecureConnectionRegistry registry,
-        IConnectionEncryptionService encryption,
-        string connectionString,
-        ImportDatabase target,
-        string name,
-        CancellationToken cancellationToken)
+    private static async Task CreateWhenNamedAsync(EnsureWork work)
     {
-        var connection = await BuildAsync(encryption, connectionString, target, name, cancellationToken).ConfigureAwait(false);
+        var name = await ChooseNameAsync(work).ConfigureAwait(false);
+        if (name is not null)
+        {
+            await CreateAsync(work, name).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task CreateAsync(EnsureWork work, string name)
+    {
+        var connection = await BuildAsync(work, name).ConfigureAwait(false);
         try
         {
-            await registry.CreateConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+            await work.Registry.CreateConnectionAsync(connection, work.CancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            if (await registry.GetConnectionAsync(Id, cancellationToken).ConfigureAwait(false) is null)
+            if (await work.Registry.GetConnectionAsync(Id, work.CancellationToken).ConfigureAwait(false) is null)
             {
                 throw;
             }
         }
     }
 
-    private static async Task RefreshAsync(
-        ISecureConnectionRegistry registry,
-        IConnectionEncryptionService encryption,
-        DataConnection existing,
-        string connectionString,
-        ImportDatabase target,
-        CancellationToken cancellationToken)
+    private static async Task RefreshAsync(EnsureWork work, DataConnection existing)
     {
-        var encrypted = await encryption.EncryptConnectionStringAsync(connectionString).ConfigureAwait(false);
+        var encrypted = await work.Encryption.EncryptConnectionStringAsync(work.ConnectionString).ConfigureAwait(false);
+        var target = work.Target;
         existing.Host = target.Host;
-        existing.Port = target.Port;
-        existing.DatabaseName = target.DatabaseName;
-        existing.Username = target.Username;
-        existing.SslRequired = target.SslRequired;
+        existing.Port = target.Address.Port;
+        existing.DatabaseName = target.Address.DatabaseName;
+        existing.Username = target.Address.Username;
+        existing.SslRequired = RequiresSsl(target.SslMode);
         existing.SslMode = target.SslMode;
         existing.EncryptedConnectionString = encrypted;
-        existing.EncryptionKeyVersion = await encryption.GetCurrentKeyVersionAsync().ConfigureAwait(false);
+        existing.EncryptionKeyVersion = await work.Encryption.GetCurrentKeyVersionAsync().ConfigureAwait(false);
         existing.IsEncrypted = true;
         existing.SecretRef = null;
         existing.SecretType = null;
-        await registry.UpdateConnectionAsync(existing, cancellationToken).ConfigureAwait(false);
+        await work.Registry.UpdateConnectionAsync(existing, work.CancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<DataConnection> BuildAsync(
-        IConnectionEncryptionService encryption,
-        string connectionString,
-        ImportDatabase target,
-        string name,
-        CancellationToken cancellationToken)
+    private static async Task<DataConnection> BuildAsync(EnsureWork work, string name)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        work.CancellationToken.ThrowIfCancellationRequested();
+        var target = work.Target;
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name,
             target.Host,
-            target.Port,
-            target.DatabaseName,
-            target.Username,
-            await encryption.EncryptConnectionStringAsync(connectionString).ConfigureAwait(false),
-            await encryption.GetCurrentKeyVersionAsync().ConfigureAwait(false),
+            target.Address.Port,
+            target.Address.DatabaseName,
+            target.Address.Username,
+            await work.Encryption.EncryptConnectionStringAsync(work.ConnectionString).ConfigureAwait(false),
+            await work.Encryption.GetCurrentKeyVersionAsync().ConfigureAwait(false),
             CreatedBy,
             Description,
-            target.SslRequired,
+            RequiresSsl(target.SslMode),
             target.SslMode);
         connection.ConnectionId = Id;
         connection.Id = Id.ToString("D");
         return connection;
     }
 
-    private static async Task<bool> StoresAsync(
-        IConnectionEncryptionService encryption,
-        DataConnection existing,
-        string connectionString,
-        CancellationToken cancellationToken)
+    private static async Task<bool> StoresAsync(EnsureWork work, DataConnection existing)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        work.CancellationToken.ThrowIfCancellationRequested();
         try
         {
-            var stored = await encryption.DecryptConnectionStringAsync(
+            var stored = await work.Encryption.DecryptConnectionStringAsync(
                 existing.EncryptedConnectionString,
                 existing.EncryptionKeyVersion).ConfigureAwait(false);
-            return string.Equals(stored, connectionString, StringComparison.Ordinal);
+            return string.Equals(stored, work.ConnectionString, StringComparison.Ordinal);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -171,45 +174,50 @@ internal static partial class ManagedImportConnection
         }
     }
 
-    private static bool TryRead(string? connectionString, out ImportDatabase target)
+    private static ImportDatabase? ReadDatabase(string? connectionString)
     {
-        target = default;
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return false;
+            return null;
         }
 
-        NpgsqlConnectionStringBuilder builder;
+        var builder = Builder(connectionString);
+        if (builder is null || Rejects(builder))
+        {
+            return null;
+        }
+
+        return new ImportDatabase(
+            builder.Host,
+            new DatabaseAddress(builder.Port, builder.Database, builder.Username),
+            MapSsl(builder.SslMode));
+    }
+
+    private static NpgsqlConnectionStringBuilder? Builder(string connectionString)
+    {
         try
         {
-            builder = new NpgsqlConnectionStringBuilder(connectionString);
+            return new NpgsqlConnectionStringBuilder(connectionString);
         }
         catch (ArgumentException)
         {
-            return false;
+            return null;
         }
+    }
 
-        if (string.IsNullOrWhiteSpace(builder.Host) ||
+    private static bool Rejects(NpgsqlConnectionStringBuilder builder)
+    {
+        return string.IsNullOrWhiteSpace(builder.Host) ||
             builder.Host.Length > 255 ||
             string.IsNullOrWhiteSpace(builder.Database) ||
             builder.Database.Length > 64 ||
             string.IsNullOrWhiteSpace(builder.Username) ||
             builder.Username.Length > 64 ||
-            builder.Port is < 1 or > 65535)
-        {
-            return false;
-        }
-
-        var sslMode = MapSsl(builder.SslMode);
-        target = new ImportDatabase(
-            builder.Host,
-            builder.Port,
-            builder.Database,
-            builder.Username,
-            sslMode is StoreSslMode.Require or StoreSslMode.VerifyCa or StoreSslMode.VerifyFull,
-            sslMode);
-        return true;
+            builder.Port is < 1 or > 65535;
     }
+
+    private static bool RequiresSsl(StoreSslMode mode) =>
+        mode is StoreSslMode.Require or StoreSslMode.VerifyCa or StoreSslMode.VerifyFull;
 
     private static StoreSslMode MapSsl(Npgsql.SslMode mode) => mode switch
     {
@@ -222,25 +230,21 @@ internal static partial class ManagedImportConnection
         _ => StoreSslMode.Prefer
     };
 
-    private static async Task<string?> ChooseNameAsync(
-        ISecureConnectionRegistry registry,
-        IConnectionEncryptionService encryption,
-        string connectionString,
-        CancellationToken cancellationToken)
+    private static async Task<string?> ChooseNameAsync(EnsureWork work)
     {
-        if (await RepresentsServerAsync(registry, encryption, Name, connectionString, cancellationToken).ConfigureAwait(false) ||
-            await RepresentsServerAsync(registry, encryption, FallbackName, connectionString, cancellationToken).ConfigureAwait(false))
+        if (await RepresentsServerAsync(work, Name).ConfigureAwait(false) ||
+            await RepresentsServerAsync(work, FallbackName).ConfigureAwait(false))
         {
             return null;
         }
 
-        var named = await registry.GetConnectionByNameAsync(Name, cancellationToken).ConfigureAwait(false);
+        var named = await work.Registry.GetConnectionByNameAsync(Name, work.CancellationToken).ConfigureAwait(false);
         if (named is null || named.ConnectionId == Id)
         {
             return Name;
         }
 
-        var fallback = await registry.GetConnectionByNameAsync(FallbackName, cancellationToken).ConfigureAwait(false);
+        var fallback = await work.Registry.GetConnectionByNameAsync(FallbackName, work.CancellationToken).ConfigureAwait(false);
         return fallback is null || fallback.ConnectionId == Id ? FallbackName : null;
     }
 
@@ -274,17 +278,12 @@ internal static partial class ManagedImportConnection
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<bool> RepresentsServerAsync(
-        ISecureConnectionRegistry registry,
-        IConnectionEncryptionService encryption,
-        string name,
-        string connectionString,
-        CancellationToken cancellationToken)
+    private static async Task<bool> RepresentsServerAsync(EnsureWork work, string name)
     {
-        var named = await registry.GetConnectionByNameAsync(name, cancellationToken).ConfigureAwait(false);
+        var named = await work.Registry.GetConnectionByNameAsync(name, work.CancellationToken).ConfigureAwait(false);
         return named is not null &&
             named.ConnectionId != Id &&
-            await StoresAsync(encryption, named, connectionString, cancellationToken).ConfigureAwait(false);
+            await StoresAsync(work, named).ConfigureAwait(false);
     }
 
     private static partial class Log
@@ -293,11 +292,16 @@ internal static partial class ManagedImportConnection
         public static partial void LeftUnchanged(ILogger logger, Exception exception);
     }
 
-    private readonly record struct ImportDatabase(
-        string Host,
-        int Port,
-        string DatabaseName,
-        string Username,
-        bool SslRequired,
-        StoreSslMode SslMode);
+    private sealed class EnsureWork
+    {
+        public required ISecureConnectionRegistry Registry { get; init; }
+        public required IConnectionEncryptionService Encryption { get; init; }
+        public required string ConnectionString { get; init; }
+        public required ImportDatabase Target { get; init; }
+        public required CancellationToken CancellationToken { get; init; }
+    }
+
+    private readonly record struct DatabaseAddress(int Port, string DatabaseName, string Username);
+
+    private readonly record struct ImportDatabase(string Host, DatabaseAddress Address, StoreSslMode SslMode);
 }
