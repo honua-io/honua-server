@@ -47,7 +47,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
+        if (AgentApprovalRule.Applies(descriptor, context.Roles))
         {
             var agentGuardrail = ResolveGuardrail(gatewayRequest);
             return agentGuardrail.Tier == GuardrailTier.Blocked
