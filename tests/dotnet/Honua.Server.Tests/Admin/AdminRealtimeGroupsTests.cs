@@ -39,7 +39,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         await using var log = await RealtimeLogHarness.CreateAsync(database);
         var dispatcher = log.CreateDispatcher();
         var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcher) };
-        using var host = CreateFactory(log, dispatcher, storage, inProcess: true);
+        using var host = CreateInProcessFactory(log, dispatcher, storage);
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         using var response = await client.GetAsync("/api/v1/admin/live?topics=proposals,operate-events", HttpCompletionOption.ResponseHeadersRead);
@@ -90,7 +90,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcher) };
         using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
         await tail.StartAsync(default);
-        using var host = CreateFactory(log, dispatcher, storage);
+        using var host = CreatePostgresFactory(log, dispatcher, storage);
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         using var response = await client.GetAsync("/api/v1/admin/live?topics=operate-events", HttpCompletionOption.ResponseHeadersRead);
@@ -126,7 +126,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         var dispatcher = log.CreateDispatcher();
         using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
         await tail.StartAsync(default);
-        using var host = CreateFactory(log, dispatcher);
+        using var host = CreatePostgresFactory(log, dispatcher);
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         using var initial = await client.GetAsync("/api/v1/admin/live?topics=ops-health", HttpCompletionOption.ResponseHeadersRead);
@@ -158,8 +158,8 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         using var tailB = log.CreateTail(dispatcherB, null, new RealtimeOptions());
         await tailA.StartAsync(default);
         await tailB.StartAsync(default);
-        using var hostA = CreateFactory(log, dispatcherA, storage);
-        using var hostB = CreateFactory(log, dispatcherB, storage);
+        using var hostA = CreatePostgresFactory(log, dispatcherA, storage);
+        using var hostB = CreatePostgresFactory(log, dispatcherB, storage);
         using var clientB = hostB.CreateClient();
         clientB.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         using var response = await clientB.GetAsync("/api/v1/admin/live", HttpCompletionOption.ResponseHeadersRead);
@@ -220,7 +220,19 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         (await ReadFrameAsync(reader)).Kind.Should().Be("ProposalResolved");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null, bool inProcess = false)
+    private static WebApplicationFactory<Program> CreatePostgresFactory(
+        RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null)
+        => CreateFactory(new LiveFactorySeed(
+            new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log)),
+            storage));
+
+    private static WebApplicationFactory<Program> CreateInProcessFactory(
+        RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage storage)
+        => CreateFactory(new LiveFactorySeed(
+            new InProcessRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log)),
+            storage));
+
+    private static WebApplicationFactory<Program> CreateFactory(LiveFactorySeed seed)
         => ConfiguredWebApplicationFactory.Create(builder =>
         {
             TestWebApplicationFactory.ConfigureForTests(builder);
@@ -229,21 +241,20 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
                 new Dictionary<string, string?> { ["HONUA_ADMIN_PASSWORD"] = AdminPassword }));
             builder.ConfigureTestServices(services =>
             {
-                services.Replace(ServiceDescriptor.Singleton<IRealtimeFanoutProvider>(
-                    inProcess
-                        ? new InProcessRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log))
-                        : new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log))));
-                if (storage is not null)
+                services.Replace(ServiceDescriptor.Singleton(seed.Provider));
+                if (seed.Storage is not null)
                 {
                     var retention = Options.Create(new ControlPlaneRetentionOptions());
                     services.Replace(ServiceDescriptor.Singleton<IOperationProposalStore>(new PostgresOperationProposalStore(
-                        storage, retention, NullLogger<PostgresOperationProposalStore>.Instance)));
+                        seed.Storage, retention, NullLogger<PostgresOperationProposalStore>.Instance)));
                     services.Replace(ServiceDescriptor.Singleton<IWorkflowOperationStore>(new PostgresWorkflowOperationStore(
-                        storage, new WorkflowOperationRetention(retention, Options.Create(new MetadataReleaseOperationOptions())),
+                        seed.Storage, new WorkflowOperationRetention(retention, Options.Create(new MetadataReleaseOperationOptions())),
                         NullLogger<PostgresWorkflowOperationStore>.Instance)));
                 }
             });
         });
+
+    private sealed record LiveFactorySeed(IRealtimeFanoutProvider Provider, ControlPlaneStorage? Storage);
 
     private static async Task<SseFrame> ReadFrameAsync(StreamReader reader)
     {

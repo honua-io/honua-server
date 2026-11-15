@@ -14,6 +14,10 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
 {
     private const int SubscriberCapacity = 256;
 
+    // A client that stops reading can fill the socket while the request stays open. Bound each
+    // write so subscription closure still reaches the slow-consumer reset and disposes the stream.
+    private static readonly TimeSpan ResponseWriteDeadline = TimeSpan.FromSeconds(10);
+
     public async Task HandleAsync(HttpContext context)
     {
         var topics = ParseTopics(context.Request.Query["topics"].ToString());
@@ -43,7 +47,8 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         try
         {
             await WriteAsync(context, "id: admin:" + after.Value.ToString(CultureInfo.InvariantCulture) + "\nevent: status\ndata: " +
-                JsonSerializer.Serialize(CreateStatus(topics), AdminRealtimeJsonContext.Default.AdminRealtimeStatus) + "\n\n").ConfigureAwait(false);
+                JsonSerializer.Serialize(CreateStatus(topics), AdminRealtimeJsonContext.Default.AdminRealtimeStatus) + "\n\n",
+                channel.Reader.Completion).ConfigureAwait(false);
             await StreamWithResetAsync(context, channel.Reader, subscription).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is OperationCanceledException or IOException or ChannelClosedException)
@@ -64,7 +69,7 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
             ChannelClosedException { InnerException: RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer } })
         {
             await WriteAsync(context, Format(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer,
-                subscription.Position))).ConfigureAwait(false);
+                subscription.Position)), subscriptionCompleted: null).ConfigureAwait(false);
         }
     }
 
@@ -108,14 +113,14 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
             if (completed == tick)
             {
                 if (!await tick.ConfigureAwait(false)) { return; }
-                await WriteAsync(context, ": heartbeat\n\n").ConfigureAwait(false);
+                await WriteAsync(context, ": heartbeat\n\n", reader.Completion).ConfigureAwait(false);
                 tick = heartbeat.WaitForNextTickAsync(context.RequestAborted).AsTask();
                 continue;
             }
             if (!await available.ConfigureAwait(false)) { return; }
             while (reader.TryRead(out var delivery))
             {
-                await WriteAsync(context, Format(delivery)).ConfigureAwait(false);
+                await WriteAsync(context, Format(delivery), reader.Completion).ConfigureAwait(false);
             }
             available = reader.WaitToReadAsync(context.RequestAborted).AsTask();
         }
@@ -129,9 +134,45 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         _ => ": heartbeat\n\n"
     };
 
-    private static async Task WriteAsync(HttpContext context, string frame)
+    private static async Task WriteAsync(HttpContext context, string frame, Task? subscriptionCompleted)
     {
-        await context.Response.WriteAsync(frame, context.RequestAborted).ConfigureAwait(false);
-        await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        timeout.CancelAfter(ResponseWriteDeadline);
+        if (subscriptionCompleted is not null)
+        {
+            _ = subscriptionCompleted.ContinueWith(
+                static (_, state) =>
+                {
+                    try
+                    {
+                        ((CancellationTokenSource)state!).Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // The write already finished and disposed its deadline.
+                    }
+                },
+                timeout,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        try
+        {
+            await context.Response.WriteAsync(frame, timeout.Token).ConfigureAwait(false);
+            await context.Response.Body.FlushAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (subscriptionCompleted?.IsCompleted == true
+            && !context.RequestAborted.IsCancellationRequested)
+        {
+            var error = subscriptionCompleted.Exception?.GetBaseException();
+            throw error switch
+            {
+                RealtimeSubscriptionClosedException or ChannelClosedException => error,
+                not null => new ChannelClosedException(error.Message, error),
+                _ => new ChannelClosedException()
+            };
+        }
     }
 }
