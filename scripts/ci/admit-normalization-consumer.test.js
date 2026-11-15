@@ -50,15 +50,18 @@ test('other producers and base repositories cannot enter cancellation group', as
   assert.equal(await admitNormalization(state), null);
 });
 
-test('metadata edits and drafts have isolated groups; head changes and base retargets share the PR group', () => {
+test('eligible events share a PR/head group; metadata edits, drafts and other heads stay isolated', () => {
   const source = fs.readFileSync('.github/workflows/normalize-derived-artifacts.yml', 'utf8');
   const expression = source.match(/group: normalization-producer-\$\{\{ (.+) \}\}/)[1];
-  function group({action, changes = {}, draft = false, runId = 1}) {
-    const github = {event: {action, changes, pull_request: {number: 42, draft}}, run_id: runId};
-    return vm.runInNewContext(expression, {github, format: (_, id) => `ignored-${id}`});
+  function group({action, changes = {}, draft = false, runId = 1, head = 'current-head'}) {
+    const github = {event: {action, changes, pull_request: {number: 42, draft, head: {sha: head}}}, run_id: runId};
+    const format = (template, ...values) => template.replace(/\{(\d+)\}/g, (_, index) => values[Number(index)]);
+    return vm.runInNewContext(expression, {github, format});
   }
-  assert.equal(group({action: 'synchronize'}), 42);
-  assert.equal(group({action: 'edited', changes: {base: {ref: {from: 'old-base'}}}}), 42);
+  assert.equal(group({action: 'synchronize'}), '42-current-head');
+  assert.equal(group({action: 'ready_for_review'}), '42-current-head');
+  assert.equal(group({action: 'edited', changes: {base: {ref: {from: 'old-base'}}}}), '42-current-head');
+  assert.equal(group({action: 'synchronize', head: 'previous-head'}), '42-previous-head');
   // GitHub resolves absent properties to null, modeled for a title/body edit.
   const metadata = {base: {ref: {from: null}}};
   assert.equal(group({action: 'edited', changes: metadata}), 'ignored-1');

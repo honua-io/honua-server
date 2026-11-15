@@ -22,7 +22,8 @@ internal static class ObservabilityAuditEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability", "Audit")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         group.MapGet("", HandleList)
             .WithDisplayName("List Audit Log Entries")

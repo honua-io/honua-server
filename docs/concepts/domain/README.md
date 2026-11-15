@@ -24,6 +24,7 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | [Draft](content-version.md) | Mutable authoring state for a supported Studio kind, with a generation for optimistic concurrency. |
 | [Version](content-version.md) | An immutable saved snapshot of a supported Studio kind, identified by its version identifier and content hash. |
 | [Released](content-version.md) | A Version active at its governed route. Go live means activate that Version; saving and previewing do not activate it. |
+| [Go live](publication.md) | Activate a saved Map or App Version at its governed route; that Version becomes Released. |
 | [Catalog](catalog.md) | The browsable listing of accessible Services, Layers, and Apps. Listing grants no access. |
 | [Proposal](approval.md) | A requested change and its target and evidence, submitted for an authorized decision. |
 | [Approval](approval.md) | The authorized decision on a Proposal. AwaitingApproval is the canonical waiting state; the Approval page defines the current authority rules. |

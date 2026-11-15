@@ -61,7 +61,7 @@ public static class ServiceCollectionExtensions
         // submit/poll/chunk loop survives transient workspace failures (HTTP 408/429/5xx
         // and transient network faults) with exponential backoff and jitter.
         services
-            .AddHttpClient<IDatabricksStatementClient, DatabricksStatementClient>(
+            .AddHttpClient<DatabricksStatementClient>(
                 DatabricksServiceClientName.Default,
                 client =>
                 {
@@ -76,12 +76,12 @@ public static class ServiceCollectionExtensions
                 })
             .AddHttpResiliencePolicy(DatabricksServiceClientName.ResilienceServiceType, BuildResilienceOptions(options));
 
-        services.AddSingleton<IDatabricksFeatureQueryBuilder, DatabricksFeatureQueryBuilder>();
+        services.AddSingleton<DatabricksFeatureQueryBuilder>();
         services.AddScoped<IDatabricksFeatureDataAccess, DatabricksFeatureDataAccess>();
 
         services.AddScoped<DatabricksFeatureStore>(sp => new DatabricksFeatureStore(
             sp.GetRequiredService<DatabricksLayerMappingRegistry>(),
-            sp.GetRequiredService<IDatabricksFeatureQueryBuilder>(),
+            sp.GetRequiredService<DatabricksFeatureQueryBuilder>(),
             sp.GetRequiredService<IDatabricksFeatureDataAccess>(),
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DatabricksFeatureStore>());

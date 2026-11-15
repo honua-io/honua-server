@@ -13,6 +13,39 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcIntegrationTests
 {
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeService")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeService")]
+    public async Task DescribeService_WithoutServiceId_ReturnsInvalidArgument(string serviceId)
+    {
+        var call = async () => await _client!.DescribeServiceAsync(new Proto.DescribeServiceRequest
+        {
+            ServiceId = serviceId
+        }, _headers);
+
+        (await call.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeLayer")]
+    public async Task DescribeLayer_WithoutServiceId_ReturnsInvalidArgument(string serviceId)
+    {
+        var call = async () => await _client!.DescribeLayerAsync(new Proto.DescribeLayerRequest
+        {
+            ServiceId = serviceId,
+            LayerId = WebAppFixture.TestLayerId
+        }, _headers);
+
+        (await call.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
