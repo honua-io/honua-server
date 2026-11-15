@@ -89,6 +89,31 @@ public sealed class ConfigurationGenerationMigrationTests(DatabaseFixtureAdapter
         (await GenerationAsync(harness)).Should().Be(initial + 2);
     }
 
+    [IntegrationTest]
+    public async Task SceneAndPolicyChanges_AdvanceTheSharedGenerationForEveryWrite()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await harness.InstallSceneAndPolicyTablesAsync();
+        var initial = await GenerationAsync(harness);
+
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("scene_datasets")} (id, name, asset_root, created_by) VALUES ('scene', 'Scene', '/scenes/scene', 'test')");
+        (await GenerationAsync(harness)).Should().Be(initial + 1);
+        await harness.ExecuteAsync($"UPDATE {harness.Table("scene_datasets")} SET name = 'Renamed' WHERE id = 'scene'");
+        (await GenerationAsync(harness)).Should().Be(initial + 2);
+        await harness.ExecuteAsync($"DELETE FROM {harness.Table("scene_datasets")} WHERE id = 'scene'");
+        (await GenerationAsync(harness)).Should().Be(initial + 3);
+
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("rbac_rls_policies")} (role, service, layer, attribute, claim_type) VALUES ('*', 'roads', '0', 'district', 'district')");
+        (await GenerationAsync(harness)).Should().Be(initial + 4);
+        await harness.ExecuteAsync($"DELETE FROM {harness.Table("rbac_rls_policies")} WHERE service = 'roads'");
+        (await GenerationAsync(harness)).Should().Be(initial + 5);
+
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("rbac_field_mask_policies")} (role, service, layer, attribute) VALUES ('*', 'roads', '0', 'owner')");
+        (await GenerationAsync(harness)).Should().Be(initial + 6);
+        await harness.ExecuteAsync($"UPDATE {harness.Table("rbac_field_mask_policies")} SET attribute = 'name' WHERE service = 'roads'");
+        (await GenerationAsync(harness)).Should().Be(initial + 7);
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(ConfigurationGenerationMigrationTests));
 
