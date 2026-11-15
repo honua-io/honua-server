@@ -85,6 +85,45 @@ public sealed class McpPromptCatalogTests
         message.Content.Text.Should().NotContain("{criteria}");
     }
 
+    [UnitTheory]
+    [InlineData("site_selection_analysis")]
+    [InlineData("hazard_assessment")]
+    [InlineData("permit_review")]
+    [InlineData("dashboard_scaffolding")]
+    [InlineData("setup_and_publish")]
+    public void Get_ArgumentsContainingPlaceholders_PreservesEveryLiteralValue(string name)
+    {
+        var descriptor = McpPromptCatalog.List().Prompts.Single(prompt => prompt.Name == name);
+        var tokens = string.Concat(descriptor.Arguments.Select(argument => "{" + argument.Name + "}"));
+        var arguments = descriptor.Arguments.ToDictionary(
+            argument => argument.Name,
+            argument => $"{argument.Name}: LITERAL_{tokens}_END é 🌍 $1 <&>",
+            StringComparer.Ordinal);
+
+        var text = McpPromptCatalog.Get(name, arguments).Messages[0].Content.Text;
+
+        foreach (var value in arguments.Values)
+        {
+            text.Should().Contain(value);
+        }
+    }
+
+    [UnitTest]
+    public void Render_RepeatedAndUnknownTokens_PreservesTemplateAndOptionalDefaults()
+    {
+        var prompt = new McpPromptDefinition("literal", "Literal", "Literal", [
+            new("first", "First", true), new("second", "Second", false),
+        ], "{first}|{second}|{first}|{{first}}|{jobId}|{");
+
+        var text = prompt.Render(new Dictionary<string, string>
+        {
+            ["first"] = "  {second} é 🌍 $1  ",
+            ["second"] = "   ",
+        }).Messages[0].Content.Text;
+
+        text.Should().Be("{second} é 🌍 $1|(not specified)|{second} é 🌍 $1|{{second} é 🌍 $1}|{jobId}|{");
+    }
+
     [UnitTest]
     public void Get_OmittedOptionalArgument_RendersANeutralPlaceholderNotTheRawToken()
     {

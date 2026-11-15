@@ -1,13 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text;
+using System.Text.RegularExpressions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Prompts;
 
-internal sealed record McpPromptDefinition(
+internal sealed partial record McpPromptDefinition(
     string Name,
     string Title,
     string Description,
@@ -50,7 +50,7 @@ internal sealed record McpPromptDefinition(
 
     private string Substitute(IReadOnlyDictionary<string, string>? arguments)
     {
-        var builder = new StringBuilder(Template);
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var argument in Arguments)
         {
             var hasValue = arguments is not null
@@ -67,11 +67,15 @@ internal sealed record McpPromptDefinition(
                 ? arguments![argument.Name].Trim()
                 : UnspecifiedOptionalPlaceholder;
 
-            builder.Replace("{" + argument.Name + "}", value);
+            values[argument.Name] = value;
         }
 
-        return builder.ToString();
+        return PlaceholderPattern().Replace(Template, match =>
+            values.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value);
     }
+
+    [GeneratedRegex(@"\{([^{}]+)\}", RegexOptions.CultureInvariant)]
+    private static partial Regex PlaceholderPattern();
 }
 
 internal sealed record McpPromptArgumentDefinition(string Name, string Description, bool Required);

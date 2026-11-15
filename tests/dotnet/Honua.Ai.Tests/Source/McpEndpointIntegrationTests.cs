@@ -964,6 +964,29 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "prompts/get")]
+    public async Task PromptsGet_ArgumentContainingPlaceholder_PreservesLiteralText()
+    {
+        using var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"prompts-get-literal","method":"prompts/get","params":{
+                "name":"site_selection_analysis",
+                "arguments":{"objective":"LITERAL_{criteria}_END","studyArea":"{objective}",
+                    "criteria":"é 🌍 $1 <&>"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var text = document.RootElement.GetProperty("result").GetProperty("messages")[0]
+            .GetProperty("content").GetProperty("text").GetString();
+        text.Should().Contain("for LITERAL_{criteria}_END within {objective}.");
+        text.Should().Contain("criteria: é 🌍 $1 <&>.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     public async Task PromptsGet_MissingRequiredArgument_ReturnsInvalidParamsJsonRpcError()
     {
         var response = await PostRpcAsync("""
