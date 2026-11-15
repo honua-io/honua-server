@@ -48,7 +48,9 @@ public sealed class DescriptiveMetadataResolverTests
         const string datasetDescription = "  Dataset description\t\r\n";
         var graph = CrosswalkFixtures.Graph(resource: new MetadataV2ObjectMetadata
         {
-            Id = "dataset", Name = "dataset", Description = datasetDescription,
+            Id = "dataset",
+            Name = "dataset",
+            Description = datasetDescription,
         });
         var layer = new MetadataV2Layer
         {
