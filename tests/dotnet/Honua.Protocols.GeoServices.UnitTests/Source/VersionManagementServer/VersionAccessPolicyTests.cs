@@ -229,31 +229,34 @@ public sealed class VersionAccessPolicyTests
             "an administrator can inspect conflicts on any version");
     }
 
-    // ---- CanEditVersion — feature edits through FeatureServer ------------------------------
+    // ---- Feature edits through FeatureServer: public versions are open to every editor; ----
+    // ---- other versions take edits only from callers who may manage them -------------------
 
     [UnitTest]
-    public void CanEditVersion_PublicVersion_AnyEditorCanEdit()
+    public void IsOpenToEveryEditor_PublicVersion_AnyEditorCanEdit()
     {
         var version = MakeVersion("alice", VersionAccess.Public);
 
-        VersionAccessPolicy.CanEditVersion(version, callerName: "bob", isAdmin: false).Should().BeTrue(
+        VersionAccessPolicy.IsOpenToEveryEditor(version).Should().BeTrue(
             "public versions accept edits from any caller who can edit the service");
     }
 
     [UnitTest]
-    public void CanEditVersion_ProtectedOrPrivateVersion_OnlyOwnerOrAdminCanEdit()
+    public void IsOpenToEveryEditor_ProtectedOrPrivateVersion_OnlyOwnerOrAdminCanEdit()
     {
         foreach (var access in new[] { VersionAccess.Protected, VersionAccess.Private })
         {
             var version = MakeVersion("Alice", access);
 
-            VersionAccessPolicy.CanEditVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            VersionAccessPolicy.IsOpenToEveryEditor(version).Should().BeFalse(
+                $"a {access} version is not open to every editor");
+            VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
                 $"a non-owner must not edit a {access} version, even when it can read it");
-            VersionAccessPolicy.CanEditVersion(version, callerName: null, isAdmin: false).Should().BeFalse(
+            VersionAccessPolicy.CanManageVersion(version, callerName: null, isAdmin: false).Should().BeFalse(
                 $"an anonymous caller must not edit a {access} version");
-            VersionAccessPolicy.CanEditVersion(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            VersionAccessPolicy.CanManageVersion(version, callerName: "alice", isAdmin: false).Should().BeTrue(
                 $"the owner edits its own {access} version");
-            VersionAccessPolicy.CanEditVersion(version, callerName: "admin", isAdmin: true).Should().BeTrue(
+            VersionAccessPolicy.CanManageVersion(version, callerName: "admin", isAdmin: true).Should().BeTrue(
                 $"an administrator edits any {access} version");
         }
     }

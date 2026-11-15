@@ -50,7 +50,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     /// <summary>The service-scoped data-editor role (<c>RbacOptions.DataEditorServicePrefix</c>).</summary>
     private const string EditorRole = "data-editor:" + WebAppFixture.TestServiceId;
 
-    /// <summary>The data-editor role for the renamed branch-versioning publication.</summary>
+    // The data-editor role for the renamed branch-versioning publication.
     private const string PublicationEditorRole = "data-editor:" + BranchVersioningPublicationFixture.ServiceName;
 
     private const string PublicationLayerBase =
@@ -246,11 +246,9 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         document.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
-    /// <summary>
-    /// A protected version is readable by every query caller but takes feature edits only from
-    /// its owner: a non-owner editor's applyEdits is refused and writes nothing, while the owner
-    /// edits it and the same non-owner still edits a public version of the same owner.
-    /// </summary>
+    // A protected version is readable by every query caller but takes feature edits only from
+    // its owner: a non-owner editor's applyEdits is refused and writes nothing, while the owner
+    // edits it and the same non-owner still edits a public version of the same owner.
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
