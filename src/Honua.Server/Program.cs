@@ -241,8 +241,6 @@ builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-// Enable Aspire integrations only when Aspire configuration is present.
-var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
@@ -266,47 +264,26 @@ var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastr
     requiresDurableDistributedEvents);
 ConnectionMultiplexer? connectedRedis = null;
 
-if (useAspire)
+var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
+var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
+if (tracingSection.Exists() || tracingEnabled)
 {
-    // Add Aspire service defaults (OTel, health, resilience)
-    builder.AddServiceDefaults();
+    builder.AddTelemetryDefaults();
+}
 
-    // Add Npgsql with connection from Aspire
-    builder.AddNpgsqlDataSource("DefaultConnection");
-
-    // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+// Add Redis if configured, otherwise fallback to in-memory cache
+if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+{
+    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
+    builder.Services.AddStackExchangeRedisCache(options =>
     {
-        builder.AddRedisDistributedCache("redis");
-    }
-    else
-    {
-        builder.Services.AddDistributedMemoryCache();
-    }
+        options.Configuration = redisCacheConnectionString;
+        options.InstanceName = cacheKeyPrefix;
+    });
 }
 else
 {
-    var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
-    var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
-    if (tracingSection.Exists() || tracingEnabled)
-    {
-        builder.AddTelemetryDefaults();
-    }
-
-    // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-    {
-        var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-        builder.Services.AddStackExchangeRedisCache(options =>
-        {
-            options.Configuration = redisCacheConnectionString;
-            options.InstanceName = cacheKeyPrefix;
-        });
-    }
-    else
-    {
-        builder.Services.AddDistributedMemoryCache();
-    }
+    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
@@ -2090,12 +2067,6 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
-
-// Map health endpoints for Aspire dashboard (only when Aspire is enabled)
-if (useAspire)
-{
-    app.MapDefaultEndpoints();
-}
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
