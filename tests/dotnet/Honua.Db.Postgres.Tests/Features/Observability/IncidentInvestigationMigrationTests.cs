@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using DbUp.Engine.Preprocessors;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.TestKit;
@@ -165,11 +166,17 @@ public sealed partial class IncidentInvestigationMigrationTests(PostgresFixture 
         return (await File.ReadAllTextAsync(path)).Replace("honua.", "$HonuaSchema$.", StringComparison.Ordinal);
     }
 
+    private static string PreprocessMigration(string schema, string sql) =>
+        new VariableSubstitutionPreprocessor(new Dictionary<string, string>
+        {
+            ["HonuaSchema"] = $"\"{schema}\""
+        }).Process(sql);
+
     private async Task ExecuteAsync(string schema, string sql)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(
-            sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
+            PreprocessMigration(schema, sql), connection);
         await command.ExecuteNonQueryAsync();
     }
 }
