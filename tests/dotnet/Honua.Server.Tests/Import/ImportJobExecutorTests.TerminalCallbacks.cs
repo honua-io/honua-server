@@ -32,7 +32,7 @@ public sealed partial class ImportJobExecutorTests
         using var provider = CreateGeoServerProvider(importer);
         var (jobs, manager, executor) = CreateGeoServerExecutor(provider);
         await manager.SubmitAsync(request, GeoServerImportProgress.CreateInitial(
-            request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl));
+            request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl), CancellationToken.None);
 
         var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
             Substitute.For<IJobExecutionContext>(), CancellationToken.None);
