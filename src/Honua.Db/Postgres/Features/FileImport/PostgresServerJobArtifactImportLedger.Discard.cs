@@ -62,17 +62,23 @@ internal sealed partial class PostgresServerJobArtifactImportLedger
 
         await ImportedDatasetSpatialMetadata.DeleteTableFactsAsync(
             connection, transaction, _metadataSchema, (request.Schema, physical), cancellationToken).ConfigureAwait(false);
+        await SpendReceiptAsync(transaction, scopeKey, cancellationToken).ConfigureAwait(false);
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        return StagedImportDiscardOutcome.Discarded;
+    }
+
+    private async Task SpendReceiptAsync(NpgsqlTransaction transaction, string scopeKey, CancellationToken cancellationToken)
+    {
         await using (var spend = new NpgsqlCommand(
             $"UPDATE {_table} SET fingerprint = @discarded, updated_at = now() WHERE scope_key = @scope_key",
-            connection, transaction))
+            transaction.Connection!, transaction))
         {
             spend.Parameters.AddWithValue("discarded", DiscardedFingerprint(scopeKey));
             spend.Parameters.AddWithValue("scope_key", scopeKey);
             await spend.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-        return StagedImportDiscardOutcome.Discarded;
     }
 
     private static async Task<StagedImportDiscardOutcome?> TryDropOwnedAsync(
