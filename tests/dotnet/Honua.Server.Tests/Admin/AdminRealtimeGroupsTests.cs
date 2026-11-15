@@ -221,8 +221,9 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     }
 
     private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null, bool inProcess = false)
-        => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        => ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["HONUA_ADMIN_PASSWORD"] = AdminPassword }));

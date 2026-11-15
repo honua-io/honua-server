@@ -78,8 +78,7 @@ public sealed class AdminLiveEndpointTests
             writer.TryComplete(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
             return subscription;
         });
-        using var factory = CreateFactory().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.Replace(ServiceDescriptor.Singleton(provider))));
+        using var factory = CreateFactory(provider);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
 
@@ -91,11 +90,17 @@ public sealed class AdminLiveEndpointTests
         body.Should().EndWith("event: reset\ndata: {\"reason\":\"slow-consumer\",\"head\":256}\n\n");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
-        => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+    private static WebApplicationFactory<Program> CreateFactory(IRealtimeFanoutProvider? provider = null)
+        => ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["HONUA_ADMIN_PASSWORD"] = AdminPassword }));
+            if (provider is not null)
+            {
+                builder.ConfigureTestServices(services =>
+                    services.Replace(ServiceDescriptor.Singleton(provider)));
+            }
         });
 }
