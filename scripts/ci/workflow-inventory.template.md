@@ -1164,3 +1164,10 @@ Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
 376.298 seconds. The other three classes are unchanged. This overlaps the
 class measurement and is not added to it. Complete CI-job setup and build
 duration remain unmeasured.
+### PrintingTools endpoint application lifetime
+
+`PrintingToolsEndpointTests` keeps one default application for the class. Each case creates its own admin client, as the per-case application did. Jobs are addressed by generated id, and every assertion stays. The class remains in Server Features Spec Printing and Static Maps 3. No runner count, required check name, required aggregate dependency, workflow, or shard definition changes.
+
+A paired build-host run passed the same 22 cases with zero skips, one process each. VSTest case time was 1 minute 41 seconds before and 2 seconds after, because the one application start is now class-fixture time. Fixture-inclusive TRX duration fell from 110.869 to 24.444 seconds, saving 86.424 seconds (1.44 test-run runner-minutes). Compilation, admission and copyback are excluded.
+
+The whole Spec Printing and Static Maps 3 filter passed the same 142 cases with zero skips in both runs. VSTest reported 4 minutes 29 seconds before and 2 minutes 7 seconds after. TRX wall time fell from 281.6 to 152.9 seconds, saving 128.7 seconds (2.15 runner-minutes) per shard run.

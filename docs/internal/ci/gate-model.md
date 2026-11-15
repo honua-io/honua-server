@@ -1368,6 +1368,29 @@ Connections shard on selected PR runs and twice-daily full trunk runs. This
 changes no runner count, required check name, required aggregate dependency,
 workflow, or shard definition.
 
+### PrintingTools endpoint application lifetime
+
+`PrintingToolsEndpointTests` keeps one default application for the class. Each
+case creates its own admin client, as the per-case application did. Jobs are
+addressed by generated id. The incomplete-job result assertion still accepts
+either a completed parameter object or the GeoServices 400 error. No
+assertion, test selection, runner count, required check name, required
+aggregate dependency, workflow, or shard definition changes. The class stays in Server Features Spec Printing and Static
+Maps 3 on selected PR runs and twice-daily full trunk runs.
+
+A paired build-host run passed the same 22 cases with zero skips, one process
+each. VSTest case time was 1 minute 41 seconds before and 2 seconds after,
+because the one application start is now class-fixture time. Fixture-inclusive
+TRX duration fell from 110.869 to 24.444 seconds, saving
+86.424 seconds (1.44 test-run runner-minutes). Compilation, admission and
+copyback are excluded.
+
+The whole Spec Printing and Static Maps 3 filter ran as a paired build-host run
+with one process each. Both passed the same 142 cases with zero skips and an
+identical case and outcome list. VSTest reported 4 minutes 29 seconds before and
+2 minutes 7 seconds after. TRX wall time fell from 281.6 to 152.9 seconds,
+saving 128.7 seconds (2.15 runner-minutes) per shard run.
+
 ### Feature stream snapshot and conformance application lifetime
 
 `FeatureStreamSnapshotEndpointsTests` and
