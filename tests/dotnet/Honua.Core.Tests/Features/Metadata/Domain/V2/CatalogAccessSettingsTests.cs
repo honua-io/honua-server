@@ -85,4 +85,30 @@ public sealed class CatalogAccessSettingsTests
             CatalogAccessSettings.Match(before, after).Should().BeFalse("{0} on {1} guards access", key, container);
         }
     }
+
+    [UnitTest]
+    public void Match_GuardedFlagMovedBetweenFieldsOrFieldRenamed_DoesNotMatch()
+    {
+        const string current = """{"fields":[{"name":"notes","hidden":false},{"name":"ssn","hidden":true}]}""";
+        const string swapped = """{"fields":[{"name":"ssn","hidden":false},{"name":"notes","hidden":true}]}""";
+        const string renamed = """{"fields":[{"name":"notes","hidden":false},{"name":"ssn_last4","hidden":true}]}""";
+        CatalogAccessSettings.Match(current, swapped).Should().BeFalse();
+        CatalogAccessSettings.Match(current, renamed).Should().BeFalse();
+        CatalogAccessSettings.Match(current, """{"fields":[{"name":"SSN","hidden":true},{"name":"notes","hidden":false}]}""")
+            .Should().BeTrue("field names compare case-insensitively and order does not matter");
+    }
+
+    [UnitTest]
+    public void Match_GuardedFlagMovedBetweenUnidentifiedElements_DoesNotMatch()
+        => CatalogAccessSettings.Match(
+                """{"rules":[{"x":1,"isEnabled":false},{"x":2,"isEnabled":true}]}""",
+                """{"rules":[{"x":1,"isEnabled":true},{"x":2,"isEnabled":false}]}""")
+            .Should().BeFalse();
+
+    [UnitTest]
+    public void Match_StorageBindingRepointed_DoesNotMatch()
+        => CatalogAccessSettings.Match(
+                """{"storageBindings":[{"id":"b","locator":"public.parcels_redacted"}]}""",
+                """{"storageBindings":[{"id":"b","locator":"public.parcels"}]}""")
+            .Should().BeFalse();
 }

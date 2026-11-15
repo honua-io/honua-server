@@ -66,8 +66,13 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         }
 
         var (priorDocument, currentDocument) = documents.Value;
+        var graph = JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
+            ?? throw new InvalidDataException("The prior catalog document is missing.");
 
-        if (!CatalogAccessSettings.Match(priorDocument, currentDocument))
+        // The guard compares what would actually be published: the earlier document after reconciliation.
+        graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
+        var restoredDocument = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
+        if (!CatalogAccessSettings.Match(restoredDocument, currentDocument))
         {
             // Restoring the earlier document would change who may access a resource; that is never
             // decided from serving telemetry. The watch ends and the activation stays as published.
@@ -76,8 +81,6 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
             return CatalogRollbackOutcome.RefusedAccessChange;
         }
 
-        var graph = JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
-            ?? throw new InvalidDataException("The prior catalog document is missing.");
         var restored = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
         await RecordRollbackAsync(transaction, (request, restored.Revision), cancellationToken).ConfigureAwait(false);
         try

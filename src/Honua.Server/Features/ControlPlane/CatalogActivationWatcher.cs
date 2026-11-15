@@ -100,6 +100,13 @@ internal sealed partial class CatalogActivationWatcher(
             return;
         }
 
+        if (scoped.GetService<IOptionsMonitor<ControlPlaneOptions>>()?.CurrentValue.AutomaticCatalogRollback != true)
+        {
+            Log.RegressionReported(logger, watch.Id, reason);
+            await store.ExpireAsync(watch.Id, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var outcome = await store.TryRollbackAsync(new(watch.Id, reason), cancellationToken).ConfigureAwait(false);
         if (outcome == CatalogRollbackOutcome.RefusedAccessChange)
         {
@@ -171,6 +178,10 @@ internal sealed partial class CatalogActivationWatcher(
         [LoggerMessage(EventId = 10331, Level = LogLevel.Warning,
             Message = "Catalog activation watch could not complete; durable pending work will be retried.")]
         public static partial void WatchUnavailable(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 10334, Level = LogLevel.Error,
+            Message = "Catalog activation {ActivationId} regressed ({Reason}); automatic rollback is off, so review it.")]
+        public static partial void RegressionReported(ILogger logger, long activationId, string reason);
 
         [LoggerMessage(EventId = 10333, Level = LogLevel.Error,
             Message = "Catalog activation {ActivationId} regressed ({Reason}) but changed access settings, so it was not rolled back automatically; review it.")]

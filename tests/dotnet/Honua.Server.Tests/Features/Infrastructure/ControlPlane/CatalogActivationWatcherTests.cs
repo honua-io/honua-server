@@ -75,6 +75,18 @@ public sealed class CatalogActivationWatcherTests
     }
 
     [UnitTest]
+    public async Task RunOnceAsync_RegressionWithAutomaticRollbackOff_ReportsAndEndsTheWatchWithoutChangingTheCatalog()
+    {
+        _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() });
+        _health.ReadLatencyAsync(default, default, default, default).ReturnsForAnyArgs(new[] { Row(-2, 0), Row(6, 40), Row(7, 40) });
+        using var watcher = Watcher(automatic: false);
+        await watcher.RunOnceAsync(default);
+        await _store.DidNotReceiveWithAnyArgs().TryRollbackAsync(default!, default);
+        await _store.Received(1).ExpireAsync(1, Arg.Any<CancellationToken>());
+        await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task RunOnceAsync_RegressionOnActivationThatChangedAccess_IsNotRolledBackOrPurged()
     {
         _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() });
@@ -205,10 +217,12 @@ public sealed class CatalogActivationWatcherTests
     public void PurgeBackoff_IsAQuarterOfTheRollbackAgeBetweenOneAndThirtyMinutes(int ageMinutes, int seconds)
         => Assert.Equal(TimeSpan.FromSeconds(seconds), CatalogActivationWatcher.PurgeBackoff(TimeSpan.FromMinutes(ageMinutes)));
 
-    private CatalogActivationWatcher Watcher(int seconds = 300, ILeaseStore? leases = null)
+    private CatalogActivationWatcher Watcher(int seconds = 300, ILeaseStore? leases = null, bool automatic = true)
     {
+        var controlPlane = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+        controlPlane.CurrentValue.Returns(new ControlPlaneOptions { AutomaticCatalogRollback = automatic });
         var collection = new ServiceCollection().AddSingleton(_store).AddSingleton(_health)
-            .AddSingleton<TimeProvider>(_clock)
+            .AddSingleton<TimeProvider>(_clock).AddSingleton(controlPlane)
             .AddSingleton(Options.Create(new TracingOptions { ServingLatencyWindowSeconds = seconds }));
         if (leases is not null)
         {
