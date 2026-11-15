@@ -3,14 +3,13 @@
 
 using System.Collections.Immutable;
 using Grpc.Core;
+using Honua.Infrastructure.Validation;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -22,7 +21,6 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
-using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -295,26 +293,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
         // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
 
-        var editBatch = ToEditBatch(request);
-        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
-        EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
-        EnsureEditLimits(editBatch, _editLimits);
-        (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
-            .ConfigureAwait(false);
-        editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        if (layer.Snapshot is { } snapshot)
-        {
-            var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
-                ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
-            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
-            {
-                throw new RpcException(new Status(
-                    StatusCode.FailedPrecondition,
-                    "The layer's storage binding does not support managed writes."));
-            }
-        }
+        var prepared = await PrepareGrpcEditAsync(new EditCall(request, layer, context)).ConfigureAwait(false);
+        var editBatch = prepared.Batch;
+        var globalIds = prepared.GlobalIds;
 
         var idempotencyKey = request.IdempotencyKey?.Trim();
         GrpcApplyEditsReceipts.Entry? keyedEdit = null;
@@ -342,47 +323,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return FilterResultGlobalIds(globalIds, keyedEdit.Response);
         }
 
-        editBatch = await ResolveGlobalIdTargetsAsync(globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
-
-        // Per-row geometry-change semantics mirror the inline publish path
-        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
-        // geometry when the request feature carries non-null WKB. Deletes default to
-        // false. Captured before stored geometry is merged into omitted update fields,
-        // or an attribute-only update would over-report as a geometry change.
-        var requestBatch = editBatch;
+        prepared = await PrepareGrpcTargetsAsync(prepared).ConfigureAwait(false);
+        editBatch = prepared.Batch;
+        var requestBatch = prepared.RequestBatch;
         var perOperationGeometryChanged = BuildPerOperationGeometryChanged(requestBatch);
-
-        // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
-        // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
-        // target MUST be pre-resolved through the RLS-enforced reader and fail closed when a
-        // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
-        // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
-        // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
-        // The same read supplies stored geometry for a partial update. Omitted attributes
-        // are merged from the locked row by the writer, not from this snapshot.
-        editBatch = await EnsureEditTargetsVisibleAsync(
-            layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
-
-        var grpcHttpContext = context.GetHttpContext()
-            ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
-
-        // The same owner policy the REST edit protocols apply. A gRPC editor must not
-        // update or delete another principal's row, and inserts stamp the owner (#6357).
-        var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
-            layer.StorageLayerId,
-            layer.Resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext),
-            context.CancellationToken).ConfigureAwait(false);
-        if (!ownerPrepared.IsAllowed)
-        {
-            throw new RpcException(new Status(
-                StatusCode.PermissionDenied,
-                ownerPrepared.DenialReason ?? "Edit not permitted."));
-        }
-
-        editBatch = ownerPrepared.Batch;
+        var grpcHttpContext = context.GetHttpContext();
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,
@@ -455,82 +400,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             context).ConfigureAwait(false);
 
         return response;
-
-        async Task<FeatureEditBatch> ValidateGrpcMutationsAsync(
-            MetadataV2Resource resource,
-            FeatureEditBatch batch,
-            CancellationToken cancellationToken)
-        {
-            var geometryValidator = context.GetHttpContext()?.RequestServices.GetService<IGeometryValidator>()
-                ?? new WkbGeometryValidator(
-                    Options.Create(new LimitsOptions()),
-                    new Honua.Core.Features.FeatureStore.ReadOnlyProviders.ReadOnlyGeometryTopologyValidator("gRPC"),
-                    _logger);
-            var mutationValidator = new FeatureMutationValidator(geometryValidator);
-            var creates = await ValidateFeaturesAsync(batch.Creates, isUpdate: false).ConfigureAwait(false);
-            var updates = await ValidateFeaturesAsync(batch.Updates, isUpdate: true).ConfigureAwait(false);
-            return batch with { Creates = creates, Updates = updates };
-
-            async Task<ImmutableArray<Feature>> ValidateFeaturesAsync(ImmutableArray<Feature> features, bool isUpdate)
-            {
-                if (features.IsDefaultOrEmpty)
-                {
-                    return features.IsDefault ? ImmutableArray<Feature>.Empty : features;
-                }
-
-                var validated = ImmutableArray.CreateBuilder<Feature>(features.Length);
-                foreach (var feature in features)
-                {
-                    var geometry = feature.Geometry;
-                    if (geometry is { Length: > 0 })
-                    {
-                        var geometryResult = await mutationValidator
-                            .ValidateGeometryAsync(resource, geometry, cancellationToken)
-                            .ConfigureAwait(false);
-                        if (!geometryResult.IsValid)
-                        {
-                            throw new RpcException(new Status(
-                                StatusCode.InvalidArgument,
-                                BoundEditValidationMessage(geometryResult.ErrorMessage, "Invalid geometry.")));
-                        }
-
-                        geometry = geometryResult.Geometry;
-                    }
-
-                    var attributesResult = mutationValidator.ValidateAttributes(
-                        resource,
-                        feature.Attributes,
-                        ValidationExtensions.AttributeValidationMode.Strict,
-                        isUpdate);
-                    if (!attributesResult.IsValid)
-                    {
-                        throw new RpcException(new Status(
-                            StatusCode.InvalidArgument,
-                            BoundEditValidationMessage(attributesResult.ErrorMessage, "Invalid attributes.")));
-                    }
-
-                    validated.Add(feature with
-                    {
-                        Geometry = geometry,
-                        Attributes = attributesResult.Value ?? feature.Attributes,
-                    });
-                }
-
-                return validated.MoveToImmutable();
-            }
-        }
-
-        static string BoundEditValidationMessage(string? message, string fallback)
-        {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return fallback;
-            }
-
-            var singleLine = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
-            const int maxLength = 240;
-            return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
-        }
     }
 
     // Records this attempt on this node before any later step can fail, so a retry here

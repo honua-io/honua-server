@@ -120,6 +120,7 @@ public static class OperationRegistry
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream"),
         new(Grpc, "geospatial.v1.FeatureService/ApplyEdits"),
+        new(Grpc, "geospatial.v1.FeatureService/ApplyServiceEdits"),
 
         // gRPC ProcessService methods (geospatial.v1.ProcessService)
         new(Grpc, "geospatial.v1.ProcessService/ValidatePlan"),

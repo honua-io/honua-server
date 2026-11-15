@@ -368,6 +368,42 @@ public sealed class GrpcFeatureServiceTests
         AssertNoReadWriteOrOutbox();
     }
 
+    [UnitTheory]
+    [InlineData(true, StatusCode.PermissionDenied)]
+    [InlineData(false, StatusCode.FailedPrecondition)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyServiceEdits_SecondLayerDenied_RejectsBeforeTransaction(
+        bool denyAccess, StatusCode expectedStatus)
+    {
+        var secondService = denyAccess
+            ? CreateService("test", accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-editor"] })
+            : _testService;
+        var second = CreateTriple(secondService, _testResource);
+        second = second with
+        {
+            Publication = second.Publication with
+            {
+                Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true },
+                Capabilities = denyAccess ? ["Query", "Create"] : ["Query"]
+            },
+            StorageLayerId = 1
+        };
+        _resourceValidator.ValidateServiceLayerV2Async("test", 1, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(second));
+        var request = new Proto.ApplyServiceEditsRequest { ServiceId = "test" };
+        foreach (var layerId in new[] { 0, 1 })
+        {
+            request.Edits.Add(new Proto.ServiceLayerEdits { LayerId = layerId, Adds = { new Proto.Feature() } });
+        }
+
+        var act = async () => await _sut.ApplyServiceEdits(request, CreateCallContext(CreateAuthenticatedUser("data-editor")));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(expectedStatus);
+        AssertNoReadWriteOrOutbox();
+        _featureWriter.ReceivedCalls().Should().BeEmpty("every layer must pass preflight before opening a transaction");
+    }
+
     private void UseDeclaredCapabilities(params string[] capabilities)
     {
         var triple = CreateTriple(_testService, _testResource);

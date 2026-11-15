@@ -2,11 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -54,13 +54,8 @@ internal static class GrpcServiceCollectionExtensions
         });
 
         services.TryAddSingleton<GrpcExceptionInterceptor>();
-        services.TryAddSingleton<GrpcApplyEditsReceipts>(sp =>
-            new GrpcApplyEditsReceipts(
-                sp.GetService<NpgsqlDataSource>() is { } dataSource
-                    ? new PostgresFeatureEditIdempotencyReceipts(
-                        dataSource,
-                        sp.GetService<PostgresSchemaConfiguration>()?.MetadataSchema)
-                    : null));
+        services.TryAddSingleton<GrpcApplyEditsReceipts>(sp => new GrpcApplyEditsReceipts(ResolveEditReceipts(sp)));
+        services.TryAddSingleton<GrpcServiceEditsReceipts>(sp => new GrpcServiceEditsReceipts(ResolveEditReceipts(sp)));
 #if !HONUA_EXCLUDE_GEOSERVICES
         services.TryAddScoped<SpatialReferenceResolver>();
 #endif
@@ -70,4 +65,10 @@ internal static class GrpcServiceCollectionExtensions
 
         return services;
     }
+
+    private static PostgresFeatureEditIdempotencyReceipts? ResolveEditReceipts(IServiceProvider services)
+        => services.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new PostgresFeatureEditIdempotencyReceipts(
+                dataSource, services.GetService<PostgresSchemaConfiguration>()?.MetadataSchema)
+            : null;
 }
