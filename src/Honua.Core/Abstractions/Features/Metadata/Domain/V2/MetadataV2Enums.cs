@@ -391,5 +391,11 @@ public enum MetadataV2FieldType
     Geometry,
 
     [JsonStringEnumMemberName("geography")]
-    Geography
+    Geography,
+
+    [JsonStringEnumMemberName("decimal")]
+    Decimal,
+
+    [JsonStringEnumMemberName("timestamp-offset")]
+    TimestampOffset
 }

@@ -76,7 +76,7 @@ workflow:
       effect: "read"
       effectTarget: "observation"
       preconditions:
-        - "Composition and dependency validation are current."
+        - "Map content and dependency validation are current."
       authorization:
         - "Read the version and required dependency metadata."
       idempotency: "Read-only checks."
@@ -187,7 +187,7 @@ workflow:
 
 # Publish and share a saved map
 
-Routine [map composition](compose-map.md) stays in the direct edit-and-preview loop. This workflow is the separate transition that makes a saved version available through a serving route.
+Routine [Map](compose-map.md) stays in the direct edit-and-preview loop. This workflow is the separate transition that makes a saved version available through a serving route.
 
 Identify the current saved version, hash, route, audience, and data dependencies.
 Every MCP caller is an agent, administrators included, so

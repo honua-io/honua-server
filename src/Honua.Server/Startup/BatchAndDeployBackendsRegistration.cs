@@ -3,6 +3,10 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Observability.Abstractions;
+#if !HONUA_EXCLUDE_AWS
+using Honua.Server.Features.Infrastructure.Caching;
+#endif
 using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.Options;
@@ -18,6 +22,7 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
+        services.AddScoped<IOpsExternalEventConsumer, DeploymentSettledCdnConsumer>();
         services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
         services.AddSingleton<ILambdaAliasRecycle, AwsSdkLambdaAliasRecycle>();
         services.AddSingleton<Honua.ControlPlane.Executors.IGovernedWorkloadExecutor, Honua.ControlPlane.Executors.AwsGovernedWorkloadExecutor>();
