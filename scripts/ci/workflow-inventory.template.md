@@ -117,10 +117,9 @@ contexts — the fleet lander selects on `mergeable`, not on
 PR-time CodeQL security analysis comes from `codeql.yml`'s own
 `pull_request` lane: code-scanning **default setup is `not-configured`** for this
 repository, and every entry in `/code-scanning/analyses` carries
-`analysis_key: .github/workflows/codeql.yml:analyze`. The separate
-`dynamic/github-code-scanning/codeql` runs titled `Code Quality: PR #N` are
-GitHub **Code Quality**, a different product that publishes no security
-analysis.
+`analysis_key: .github/workflows/codeql.yml:analyze`. GitHub **Code Quality**, a
+different product that publishes no security analysis, is switched off for this
+repository.
 
 `ci.yml` and `pr-gate.yml` PostgreSQL services use assigned host ports rather
 than fixed 5432 bindings. Full-CI jobs export the assigned port to database tests,
@@ -185,10 +184,6 @@ Trusted consumer admission resolves the live PR and cancels only older producer
 generations before per-attempt validation. Observe mode retains envelope
 validation and drift reporting; trunk regeneration publishes generated documents.
 Live-head checks and compare-and-swap remain required before branch mutation.
-
-GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`.
-Trusted default-branch supersession code cancels only active runs for older PR
-heads, rechecking live state. Current-head coverage and trunk scans stay protected.
 
 Auto-merge keeps `cancel-in-progress: false` and `queue: max` so live eligibility
 is applied in event order. Review helpers (resolver, attestation, bridge) queue superseded events
@@ -521,7 +516,6 @@ which is why both the run count and exact observed span are recorded.
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
-| `code-quality-supersession.yml` | Cancel superseded Code Quality | `pull_request_target`, managed `workflow_run` | Trusted default-branch controller cancels only older active managed C# Code Quality runs for the same verified PR; preserves current-head coverage. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 

@@ -1486,13 +1486,9 @@ installed after-change proof and timing remain pending.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
-GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
-workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
-reconciles PR and managed-workflow start events using trusted default-branch code.
-It cancels only active managed Code Quality runs for the same PR whose SHA differs
-from the live PR head, rechecking that head before each cancellation. Current-head
-coverage, trunk scans, required checks and other PRs remain protected. The helper
-checks out no PR code and grants only Actions write, contents read and PR read.
+GitHub-managed Code Quality is switched off for this repository, so there is no
+managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
+only C# analysis that runs.
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
 already cancel superseded PR runs through their existing per-PR concurrency groups.
 
