@@ -208,6 +208,73 @@ public sealed class LayerValidationHelpersV2Tests
             "the challenge names the credential family the caller attempted");
     }
 
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ResolveCanonicalWriteService_SecondaryPublication_ReturnsThePrimaryService()
+    {
+        var (context, graph) = BuildCanonicalContext();
+        var secondary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-secondary");
+
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context, secondary, graph.Resources[0], CancellationToken.None);
+
+        canonical.Should().NotBeNull("a write through a secondary publication must also clear the canonical service");
+        canonical!.Value.Service!.Metadata.Id.Should().Be("svc-primary");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ResolveCanonicalWriteService_PrimaryPublication_ReturnsNull()
+    {
+        var (context, graph) = BuildCanonicalContext();
+        var primary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-primary");
+
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context, primary, graph.Resources[0], CancellationToken.None);
+
+        canonical.Should().BeNull("the canonical publication's own service check already covers it");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ResolveCanonicalWriteService_NoPrimaryPublication_ReturnsNull()
+    {
+        var (context, graph) = BuildContext(allowAnonymous: true);
+
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context, graph.Publications[0], graph.Resources[0], CancellationToken.None);
+
+        canonical.Should().BeNull("a resource without a primary publication has no canonical service to enforce");
+    }
+
+    private static (HttpContext Context, MetadataV2Graph Graph) BuildCanonicalContext()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-primary", "primary-service", protocols: [ServiceProtocols.OgcFeatures])
+            .AddService("svc-secondary", "secondary-service", protocols: [ServiceProtocols.OgcFeatures])
+            .AddResource("res-shared", "shared-resource")
+            .AddPublication(
+                "pub-primary",
+                "svc-primary",
+                "res-shared",
+                layerIndex: 0,
+                serviceLocalId: "shared",
+                isPrimary: true)
+            .AddPublication(
+                "pub-secondary",
+                "svc-secondary",
+                "res-shared",
+                layerIndex: 0,
+                serviceLocalId: "shared")
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity());
+        return (context, graph);
+    }
+
     private static HttpContext BuildTenantScopedContext(string requestTenant, string? authenticatedTenant)
     {
         var (context, graph) = BuildContext(allowAnonymous: false);

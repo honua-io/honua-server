@@ -1052,7 +1052,7 @@ internal static partial class LayerValidationHelpers
     }
 
     // A write through a non-primary publication also requires data-editor authorization on the canonical service.
-    private static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
+    internal static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
         HttpContext context,
         MetadataV2ValidationResult validation,
         AuthorizationOperation? operation,
@@ -1063,46 +1063,15 @@ internal static partial class LayerValidationHelpers
             return null;
         }
 
-        // If the matched publication IS the canonical primary, no extra check needed.
-        if (validation.Publication.IsPrimary)
+        var canonical = await ResolveCanonicalWriteServiceAsync(
+            context,
+            validation.Publication,
+            validation.Resource,
+            cancellationToken).ConfigureAwait(false);
+        if (canonical is not { } target)
         {
             return null;
         }
-
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        MetadataV2Layer? canonical = null;
-        // Not converted to `.FirstOrDefault(...)`: the predicate needs two intermediate
-        // values computed per candidate (the resolved resource and the resolved service),
-        // reused across the equality and visibility checks — inlining them into a single
-        // LINQ predicate would duplicate the lookups or require a less readable local
-        // function.
-        foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.IsPrimary && snapshot.IsRoutable(pub)))
-        {
-            var pubResource = snapshot.ResolveResource(pub);
-            if (pubResource is null) continue;
-            if (string.Equals(pubResource.Metadata.Id, validation.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                var pubService = snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var resolvedPubService)
-                    ? resolvedPubService
-                    : null;
-                if (!TenantScopeHelpers.IsPublicationVisible(context, pub, pubResource, pubService))
-                {
-                    continue;
-                }
-                canonical = pub;
-                break;
-            }
-        }
-
-        if (canonical is null)
-        {
-            // No primary publication declared — nothing to enforce.
-            return null;
-        }
-
-        MetadataV2Service? canonicalService = snapshot.Index.ServicesById.TryGetValue(canonical.ServiceId, out var cs)
-            ? cs
-            : null;
 
         // Re-evaluate data-editor authorization against the canonical service, preserving
         // the per-operation narrowing (BH3-001/BH3-014) when the caller supplied an operation.
@@ -1110,15 +1079,56 @@ internal static partial class LayerValidationHelpers
             ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
                 validation.Resource,
-                canonicalService,
+                target.Service,
                 op,
                 cancellationToken).ConfigureAwait(false)
             : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
                 validation.Resource,
-                canonicalService,
+                target.Service,
                 cancellationToken).ConfigureAwait(false);
     }
+
+    // The canonical service whose data-editor grant a write through a non-primary publication must also hold.
+    // Null when the publication is itself primary or the resource has no visible primary publication.
+    internal static async Task<CanonicalWriteService?> ResolveCanonicalWriteServiceAsync(
+        HttpContext context,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
+        CancellationToken cancellationToken)
+    {
+        if (publication.IsPrimary)
+        {
+            return null;
+        }
+
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        // Not converted to `.FirstOrDefault(...)`: the predicate needs two intermediate
+        // values computed per candidate (the resolved resource and the resolved service),
+        // reused across the equality and visibility checks.
+        foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.IsPrimary && snapshot.IsRoutable(pub)))
+        {
+            var pubResource = snapshot.ResolveResource(pub);
+            if (pubResource is null ||
+                !string.Equals(pubResource.Metadata.Id, resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var pubService = snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var resolvedPubService)
+                ? resolvedPubService
+                : null;
+            if (TenantScopeHelpers.IsPublicationVisible(context, pub, pubResource, pubService))
+            {
+                return new CanonicalWriteService(pubService);
+            }
+        }
+
+        // No primary publication declared — nothing to enforce.
+        return null;
+    }
+
+    internal readonly record struct CanonicalWriteService(MetadataV2Service? Service);
 
     public static async Task<MetadataV2ValidationResult> ValidateLayerWriteAccessV2Async(
         HttpContext context,

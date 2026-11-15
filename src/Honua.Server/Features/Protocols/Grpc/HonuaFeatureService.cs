@@ -295,7 +295,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
 
         var editBatch = ToEditBatch(request);
-        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+        await EnsureWriteAccessAsync(context, layer.Service, layer.Publication, layer.Resource, editBatch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
         (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
@@ -1242,10 +1242,19 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
+        MetadataV2Layer publication,
         MetadataV2Object resource,
         FeatureEditBatch editBatch)
     {
         var httpContext = context.GetHttpContext();
+
+        // Writes through a secondary publication also need the canonical service's grant,
+        // as on the REST and OGC API Features write paths.
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            httpContext,
+            publication,
+            resource,
+            context.CancellationToken).ConfigureAwait(false);
 
         // Match the REST ApplyEdits seam: conversion first establishes the bounded
         // set of requested edit kinds, then every present kind must independently
@@ -1282,6 +1291,18 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 context.CancellationToken).ConfigureAwait(false);
 
             ThrowIfAccessDenied(decision);
+
+            if (canonical is { } target)
+            {
+                var canonicalDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+                    httpContext,
+                    resource,
+                    target.Service,
+                    operation,
+                    context.CancellationToken).ConfigureAwait(false);
+
+                ThrowIfAccessDenied(canonicalDecision);
+            }
         }
     }
 

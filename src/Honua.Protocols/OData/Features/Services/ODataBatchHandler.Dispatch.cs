@@ -396,6 +396,23 @@ internal sealed partial class ODataBatchHandler
                     "Access to one or more requested layers is forbidden."));
             }
 
+            // Writes through a secondary publication also need the canonical service's grant,
+            // as on single-entity OData writes.
+            var canonicalResult = await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
+                context,
+                validation,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+            if (canonicalResult != null)
+            {
+                return (null, CreateErrorResponseFromResult(
+                    requestId,
+                    canonicalResult,
+                    StatusCodes.Status403Forbidden,
+                    "Forbidden",
+                    "Access to one or more requested layers is forbidden."));
+            }
+
             // Declared publication capabilities bound $batch writes the same way they bound
             // single-entity OData writes (SEC-5): 405, because no caller may edit this way.
             var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(

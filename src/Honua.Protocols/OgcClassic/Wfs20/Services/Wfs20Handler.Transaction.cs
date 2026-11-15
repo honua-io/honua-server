@@ -1229,6 +1229,18 @@ internal sealed partial class Wfs20Handler
             {
                 return rbacError;
             }
+
+            // Writes through a secondary publication also need the canonical service's grant,
+            // as on OGC API Features and single-entity OData writes.
+            var canonicalError = await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
+                context,
+                layerValidation,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+            if (canonicalError != null)
+            {
+                return canonicalError;
+            }
         }
 
         // Declared capabilities of the advertised feature type's publication bound every
