@@ -1,5 +1,7 @@
 # CI Gate Model
 
+A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
@@ -143,8 +145,12 @@ for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Superseded normalization producers
-and consumers exit neutrally before producing data or mutating a branch.
+review/admission state before acting. Normalization producers and consumers
+cancel superseded work per PR. Draft and metadata-only producer events use
+isolated groups so they cannot cancel eligible generation. A trusted consumer
+admission job resolves the live PR and rejects old-head completions before
+entering the producer-generation concurrency group. Live-head checks and compare-and-swap
+remain required before producing data or mutating a branch.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
 
@@ -164,7 +170,9 @@ earlier one could not.
 | **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run is assigned to an owning lane |
 | **4 Full** | `schedule` 07:23 and 13:23 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
-Full runs use off-hour minutes to reduce schedule-delivery contention. The
+Full runs use off-hour minutes to reduce schedule-delivery contention. GitHub still delivers these crons hours late, so
+`full-ci-dispatch.yml` dispatches the full run itself on trunk pushes between 22:00 and
+03:00 Pacific when no full run is active and trunk head has no full result (at most two a night). The
 half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
 20 hours, independently of affected CI activity. It also reports outstanding work without a usable
 result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
@@ -360,6 +368,8 @@ carries two independent gate lanes per sampled operation:
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
 
+Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
+
 ## Verification receipts and batch landing (quality-contract amendment, 2026-09)
 
 The fleet lander (honua-flow `tools/land-ready-prs.sh`, `tools/land-batch.sh`)
@@ -530,7 +540,12 @@ host and read its heartbeat, nothing else) and runs
   which carries no job condition.
 
 Draft Format and admission/control jobs also use the fork-guarded light selector;
-with `HONUA_LIGHT_RUNNER` unset they stay hosted. The existing
+with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
+matrix, affected-shard selection, the affected-shard aggregate, CI router validation
+and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
+`RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
+step so setup steps cannot replace the failure checks under test. Several self-hosted accounts share one host,
+and a fixed `/tmp` path collides across them. The existing
 even-index affected-shard split additionally requires independent version-1 heavy
 availability from the same current-instance heartbeat. An integer idle-heavy count
 from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
@@ -725,12 +740,18 @@ and successful jobs. Full CI also checks the merged foundation TRX outcomes;
 foundation security build and test failures count even when built separately.
 `CI Gate` depends on these enforced test summaries.
 
-Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`, and
-both aggregates download every attempt into its own directory. A failed-jobs
-rerun re-runs only failed or cancelled shards; each shard's highest attempt is
-the one counted, so a rerun's receipt replaces the earlier attempt's and a
-shard the rerun did not repeat keeps its earlier passing receipt. A newer
-failing attempt still overrides an older passing one. Before this change the
+Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`.
+The PR Gate aggregate (`scripts/ci/download-affected-receipts.py`) lists the
+run's artifacts and downloads only the newest id for each selected shard whose
+attempt is at most the current run attempt. It reads the compact receipt
+matrix (shard name and artifact suffix), not the execution matrix, so test
+filters stay out of the job environment. A shard a failed-jobs rerun did
+not repeat keeps its earlier receipt; an expired, ambiguous, digest-missing,
+digest-malformed or digest-mismatched newest receipt fails closed and is not replaced by an older copy. Full CI still
+downloads every attempt directory by name, without merging them. Each shard's
+highest attempt present is the one counted, so a rerun's receipt replaces the
+earlier attempt's. A newer failing attempt still overrides an older passing one.
+Before this change the
 aggregates merged same-named artifacts, and GitHub's artifact ids do not follow
 upload order: on honua-server#7648 run 43603773296 attempt 2, attempt 1's empty
 `Packages and Temporal` artifact outranked attempt 2's receipt, leaving 5/6
@@ -738,6 +759,11 @@ receipts. This adds no jobs or runners and changes no required check names or
 `needs`; the receipt count, TRX re-verification and job-result checks are
 unchanged. The quarantine publisher keeps one artifact per shard, the newest
 attempt.
+
+`CapabilitiesMetadataXmlTests` is outside the Wms namespace, so it is not part of
+the OGC Classic Maps class partition. The shard `OGC Classic Capabilities Metadata`
+claims that class alone. Its dispatch rank is an unmeasured 6.0 until a full run
+records it. The WMS children keep the original namespace cut, budgets and paths.
 
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
@@ -1427,6 +1453,27 @@ Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
+
+GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
+workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
+reconciles PR and managed-workflow start events using trusted default-branch code.
+It cancels only active managed Code Quality runs for the same PR whose SHA differs
+from the live PR head, rechecking that head before each cancellation. Current-head
+coverage, trunk scans, required checks and other PRs remain protected. The helper
+checks out no PR code and grants only Actions write, contents read and PR read.
+CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
+already cancel superseded PR runs through their existing per-PR concurrency groups.
+
+Normalization consumer admission reads the exact producer attempt before joining
+its per-PR cancellation group. Only a successful envelope-packaging job admits
+validation; late same-SHA metadata or draft skips cannot cancel useful work.
+Publication of generated documents stays with the trunk producer: feature PRs
+keep envelope validation and drift reporting, and the consumer stays in observe
+mode. Trusted admission cancels only consumers of older producer generations
+associated with that PR; delayed old completions cannot cancel newer work. Only
+admission has Actions write permission for cancellation. Validation retains
+read-only Actions, Contents and Pull requests permissions, and its existing
+installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
 

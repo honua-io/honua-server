@@ -189,6 +189,14 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
+    internal static void MutateGraph(WebAppFixture fixture, Func<MetadataV2Graph, MetadataV2Graph> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        WriteGraph(fixture, provider, mutate(snapshot.Graph) with { Revision = snapshot.Graph.Revision + 1 });
+    }
+
     internal static void MutateResourceObjectMetadata(
         WebAppFixture fixture,
         int layerIndex,
