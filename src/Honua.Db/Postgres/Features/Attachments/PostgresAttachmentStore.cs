@@ -42,8 +42,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         IAttachmentOrphanLedger? orphanLedger = null,
         AttachmentLimits? attachmentLimits = null,
         PostgresAttachmentMigrationContract? migrationContract = null,
-        string? canonicalSchemaName = null,
-        string? featureSchemaName = null)
+        AttachmentStoreSchemaOptions? schemaOptions = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         // Null is a database-only host. Feature-store resolution includes this store for
@@ -55,12 +54,12 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         _ = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
         _configuredSchema = string.IsNullOrWhiteSpace(schemaName)
             ? PostgresSchemaConfiguration.DefaultMetadataSchema : schemaName;
-        _canonicalSchema = string.IsNullOrWhiteSpace(canonicalSchemaName) ? _configuredSchema : canonicalSchemaName;
+        _canonicalSchema = string.IsNullOrWhiteSpace(schemaOptions?.CanonicalSchemaName) ? _configuredSchema : schemaOptions.CanonicalSchemaName;
         _ = SchemaSearchPath.ValidateAndQuote(_canonicalSchema);
         _migrationContract = migrationContract;
         // Match FeatureDataAccess: an unset Database:Schema uses the connection search path.
-        _featureTable = string.IsNullOrEmpty(featureSchemaName)
-            ? "features" : SchemaSearchPath.QualifyTable("features", featureSchemaName);
+        _featureTable = string.IsNullOrEmpty(schemaOptions?.FeatureSchemaName)
+            ? "features" : SchemaSearchPath.QualifyTable("features", schemaOptions.FeatureSchemaName);
     }
 
     /// <summary>

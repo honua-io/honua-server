@@ -355,8 +355,7 @@ internal static class ServiceCollectionExtensions
                 attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
                     ?? new AttachmentLimits(),
                 migrationContract: coreSchemaMigrations.Attachments,
-                canonicalSchemaName: schemaConfiguration.MetadataSchema,
-                featureSchemaName: configuration["Database:Schema"]));
+                schemaOptions: new AttachmentStoreSchemaOptions(schemaConfiguration.MetadataSchema, configuration["Database:Schema"])));
         AddAttachmentUploadServices(services, configuration, schemaConfiguration);
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();

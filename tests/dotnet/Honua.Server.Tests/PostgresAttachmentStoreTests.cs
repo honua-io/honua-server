@@ -74,7 +74,7 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
             NullLogger<PostgresAttachmentStore>.Instance,
             _schemaName,
             migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
-            featureSchemaName: _schemaName);
+            schemaOptions: new AttachmentStoreSchemaOptions(null, _schemaName));
 
         // Use the exact production attachment migrations instead of an incomplete
         // hand-authored import shape. The schema remains isolated per test.

@@ -36,13 +36,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
             session.Request.LayerId, session.Request.FeatureId).ConfigureAwait(false);
         await CopyVerifiedChunksAsync(database, session, Stream.Null).ConfigureAwait(false);
         var preparedStoragePath = await publishContent(session, cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(preparedStoragePath, AttachmentUploadObjectKey.ForSession(session.SessionId), StringComparison.Ordinal))
-        {
-            throw Failure(AttachmentUploadFailure.InvalidContent, "Publication must use the upload session object key.");
-        }
         var request = session.Request;
-        var attachment = Attachment.CreateForUpload(0, request.FeatureId, request.LayerId, request.Filename,
-            request.ContentType, request.ExpectedSize, preparedStoragePath, string.Join(',', request.Keywords));
+        var attachment = CreatePublishedAttachment(session, preparedStoragePath);
         var published = await publisher.PublishUploadAsync(new AttachmentPublicationTransaction(connection, transaction, cancellationToken), attachment, request.ReplaceAttachmentId).ConfigureAwait(false);
         published = published with
         {
@@ -52,6 +47,17 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         await SaveCommitReceiptAsync(database, key, published).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return published;
+    }
+
+    private static Attachment CreatePublishedAttachment(AttachmentUploadSession session, string preparedStoragePath)
+    {
+        if (!string.Equals(preparedStoragePath, AttachmentUploadObjectKey.ForSession(session.SessionId), StringComparison.Ordinal))
+        {
+            throw Failure(AttachmentUploadFailure.InvalidContent, "Publication must use the upload session object key.");
+        }
+        var request = session.Request;
+        return Attachment.CreateForUpload(0, request.FeatureId, request.LayerId, request.Filename,
+            request.ContentType, request.ExpectedSize, preparedStoragePath, string.Join(',', request.Keywords));
     }
 
     private async Task SaveCommitReceiptAsync(SessionDatabase database, AttachmentUploadSessionKey key, Attachment attachment)

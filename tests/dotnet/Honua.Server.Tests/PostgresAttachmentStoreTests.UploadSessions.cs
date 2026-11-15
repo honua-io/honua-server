@@ -96,7 +96,7 @@ public partial class PostgresAttachmentStoreTests
             attachmentLimits: new Honua.Core.Configuration.AttachmentLimits
             {
                 MaxAttachmentsPerFeature = 1, MaxAttachmentSize = 1024, MaxTotalAttachmentSize = 1024
-            }, migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!, featureSchemaName: _schemaName);
+            }, migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!, schemaOptions: new AttachmentStoreSchemaOptions(null, _schemaName));
         var store = new PostgresAttachmentUploadSessionStore(new TestDatabaseConnectionProvider(_fixture.DataSource), _schemaName, publisher);
         var keys = await Task.WhenAll(Enumerable.Range(0, 2).Select(index =>
             PrepareCommitSessionAsync(store, CreateSessionRequest() with { IdempotencyKey = $"quota-{index}" })));
