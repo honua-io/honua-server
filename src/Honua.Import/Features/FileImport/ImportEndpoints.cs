@@ -298,7 +298,7 @@ internal static partial class ImportEndpoints
         {
             throw;
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException or JsonException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, file.FileName, ex);
@@ -454,7 +454,7 @@ internal static partial class ImportEndpoints
         {
             throw;
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException or JsonException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, staged.File?.FileName ?? "unknown", ex);
