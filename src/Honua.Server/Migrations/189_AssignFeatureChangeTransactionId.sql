@@ -5,7 +5,7 @@
 -- Description: Feature-change triggers assign a transaction id before nextval. The global
 --              writer lock remains the correctness barrier. This ordering is the precondition
 --              for a later committed-prefix fence; it does not publish a watermark or
---              narrow the lock (#7505).
+--              narrow the lock.
 -- Dependencies: Requires the change-tracking functions from migration 137.
 
 CREATE OR REPLACE FUNCTION honua.track_feature_changes()
@@ -81,7 +81,7 @@ BEGIN
     END IF;
 
     -- Assign the transaction id before consuming a generation. A snapshot fence
-    -- treats an allocator with no transaction id as idle and can publish past it (#7505).
+    -- treats an allocator with no transaction id as idle and can publish past it.
     PERFORM pg_current_xact_id();
     PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
     gen := nextval('honua.sync_generation');
@@ -182,7 +182,7 @@ BEGIN
     END IF;
 
     -- Assign the transaction id before consuming a generation. A snapshot fence
-    -- treats an allocator with no transaction id as idle and can publish past it (#7505).
+    -- treats an allocator with no transaction id as idle and can publish past it.
     PERFORM pg_current_xact_id();
     PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
     gen := nextval('honua.sync_generation');
@@ -212,6 +212,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION honua.track_feature_changes() IS
-    'Records DEFAULT feature changes and assigns the transaction id before generation allocation (#7505)';
+    'Records DEFAULT feature changes and assigns the transaction id before generation allocation';
 COMMENT ON FUNCTION honua.track_version_edits() IS
-    'Records branch overlay changes and assigns the transaction id before generation allocation (#7505)';
+    'Records branch overlay changes and assigns the transaction id before generation allocation';

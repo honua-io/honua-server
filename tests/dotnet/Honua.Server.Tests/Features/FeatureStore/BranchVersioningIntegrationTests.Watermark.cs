@@ -107,9 +107,10 @@ public sealed partial class BranchVersioningIntegrationTests
         }
 
         await using var observer = await OpenSchemaConnectionAsync();
-        await AssertAllocationVisibilityAsync(observer, transactionId, generation, "in progress", visible: false);
+        var open = new ObservedAllocation(transactionId, generation, "in progress", RowVisible: false);
+        await AssertAllocationVisibilityAsync(observer, open);
         await transaction.CommitAsync();
-        await AssertAllocationVisibilityAsync(observer, transactionId, generation, "committed", visible: true);
+        await AssertAllocationVisibilityAsync(observer, open with { Status = "committed", RowVisible = true });
     }
 
     private async Task AssertAllocationAssignsTransactionIdBeforeNextvalAsync(string functionName)
@@ -136,12 +137,13 @@ public sealed partial class BranchVersioningIntegrationTests
         locked.Should().BeLessThan(allocated);
     }
 
-    private static async Task AssertAllocationVisibilityAsync(
-        NpgsqlConnection observer,
-        string transactionId,
-        long generation,
-        string expectedStatus,
-        bool visible)
+    private readonly record struct ObservedAllocation(
+        string TransactionId,
+        long Generation,
+        string Status,
+        bool RowVisible);
+
+    private static async Task AssertAllocationVisibilityAsync(NpgsqlConnection observer, ObservedAllocation expected)
     {
         const string sql = """
             SELECT pg_xact_status(CAST(@transaction_id AS xid8))::text,
@@ -151,11 +153,11 @@ public sealed partial class BranchVersioningIntegrationTests
                        WHERE generation = @generation)
             """;
         await using var command = new NpgsqlCommand(sql, observer);
-        command.Parameters.AddWithValue("transaction_id", transactionId);
-        command.Parameters.AddWithValue("generation", generation);
+        command.Parameters.AddWithValue("transaction_id", expected.TransactionId);
+        command.Parameters.AddWithValue("generation", expected.Generation);
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
-        reader.GetString(0).Should().Be(expectedStatus);
-        reader.GetBoolean(1).Should().Be(visible);
+        reader.GetString(0).Should().Be(expected.Status);
+        reader.GetBoolean(1).Should().Be(expected.RowVisible);
     }
 }
