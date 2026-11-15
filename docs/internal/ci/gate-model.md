@@ -771,9 +771,13 @@ checkpoints from branch dispatches are ignored. It validates source workflow/rep
 evidence and hashes, and never executes downloaded data or checks out the triggering branch.
 Job-level concurrency filters cancelled and fork completions before admission, serializes
 issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
-Each sweep discovers all retained evidence artifacts, including reruns of old source runs,
-selects each shard's highest attempt, and processes at most 25 completed source runs.
-Remaining artifacts stay discoverable for the next event or scheduled sweep.
+Each sweep lists the bounded histories of CI and PR Gate, selects completed trusted runs
+updated since the checkpoint, and reads artifacts per source run. It never lists the
+repository-wide artifact collection. Full creation-ordered histories preserve discovery
+of recent reruns of old source runs. The sweep selects each shard's highest attempt and
+publishes at most 25 source runs. Its update watermark retains a five-minute overlap and
+never passes the oldest deferred run, including runs with equal timestamps. Remaining
+evidence stays discoverable for the next event or scheduled sweep.
 
 Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
 upload replays from the previous successful checkpoint. Successful skipped jobs are ignored
@@ -784,8 +788,8 @@ legacy backfill from reopening expired/closed issues. Missing new
 checkpoints, unsafe archives, excessive inventory and untrusted sources fail closed.
 Migration reconciles every retained artifact rather than treating one successful legacy
 event as a global watermark; first installation
-backfills 14 days. The checkpoint retains processed IDs while artifacts remain available,
-and expires after 90 days. Recovery therefore requires source evidence still retained by
+backfills 14 days. The checkpoint retains processed IDs from source runs inspected
+in the current sweep and expires after 90 days. Recovery therefore requires source evidence still retained by
 GitHub. The existing 25-method cap, 14-day expiry, proof validation and required gates remain
 unchanged. This adds no PR-time jobs or runners; recovery uses one publisher job per sweep.
 
