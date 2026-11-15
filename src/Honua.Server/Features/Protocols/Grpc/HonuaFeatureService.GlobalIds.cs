@@ -32,7 +32,29 @@ internal sealed partial class HonuaFeatureService
 
         public ImmutableArray<string> AssignedAddIds { get; init; } = [];
 
-        public Dictionary<long, string> ExistingGlobalIds { get; init; } = [];
+        public IReadOnlyDictionary<long, string> ExistingGlobalIds { get; init; } = new Dictionary<long, string>();
+    }
+
+    // Update and delete targets read through the caller's row-level view, keyed by object ID.
+    private readonly record struct VisibleEditTargets(FeatureEditBatch Batch, IReadOnlyDictionary<long, Feature> Stored);
+
+    private static Dictionary<long, string> StoredGlobalIds(IReadOnlyDictionary<long, Feature> stored, string? field)
+    {
+        var globalIds = new Dictionary<long, string>(stored.Count);
+        if (field is null)
+        {
+            return globalIds;
+        }
+
+        foreach (var (objectId, feature) in stored)
+        {
+            if (GrpcGlobalIds.Read(feature.Attributes, field) is { } globalId)
+            {
+                globalIds[objectId] = globalId;
+            }
+        }
+
+        return globalIds;
     }
 
     private readonly record struct QueryGlobalIds(GrpcLayerContext Layer, IServiceProvider Services, string? Field);
@@ -348,7 +370,7 @@ internal sealed partial class HonuaFeatureService
     }
 
     private static void StampStoredIds(
-        RepeatedField<Proto.EditResult> results, IEnumerable<long> objectIds, Dictionary<long, string> storedIds)
+        RepeatedField<Proto.EditResult> results, IEnumerable<long> objectIds, IReadOnlyDictionary<long, string> storedIds)
     {
         var index = 0;
         foreach (var objectId in objectIds)

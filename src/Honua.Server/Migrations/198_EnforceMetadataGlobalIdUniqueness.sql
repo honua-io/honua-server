@@ -1,3 +1,6 @@
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
 -- Unique UUID expressions enforce identity even for concurrent writers and rows hidden by RLS.
 -- Activation fails atomically if existing values conflict; no feature is rewritten or removed.
 -- Identity indexes persist when metadata changes, including while an older reader serves requests.
@@ -78,6 +81,12 @@ BEGIN
             AND resource->'storageBindingIds' ? (binding->'metadata'->>'id')
     LOOP
         index_name := 'idx_features_gid_' || md5(identity.layer_id::text || ':' || identity.field_name);
+        -- CREATE INDEX takes a ShareLock and checks ownership before IF NOT EXISTS applies,
+        -- so an existing index must not reach it on every metadata save.
+        CONTINUE WHEN EXISTS (
+            SELECT 1 FROM pg_class existing
+            JOIN pg_class features ON features.oid = identity.feature_table
+            WHERE existing.relname = index_name AND existing.relnamespace = features.relnamespace);
         EXECUTE format(
             'CREATE UNIQUE INDEX IF NOT EXISTS %I ON %s ((NULLIF(attributes->>%L, '''')::uuid)) WHERE layer_id = %s',
             index_name, identity.feature_table, identity.field_name, identity.layer_id);

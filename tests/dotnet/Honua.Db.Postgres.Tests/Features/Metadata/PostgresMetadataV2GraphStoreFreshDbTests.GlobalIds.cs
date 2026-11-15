@@ -127,6 +127,39 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     }
 
     [IntegrationTest]
+    public async Task IndexSync_ExistingGlobalIdIndex_DoesNotWaitForFeatureWriters()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("global_id_resync");
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"CREATE TABLE \"{schema}\".features (layer_id integer NOT NULL, attributes jsonb NOT NULL)";
+            await command.ExecuteNonQueryAsync();
+            var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
+                "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+            await store.SaveAsync(GlobalIdGraph(schema), expectedEtag: null);
+            await using var writer = await fixture.DataSource.OpenConnectionAsync();
+            await using var pendingWrite = await writer.BeginTransactionAsync();
+            await using (var insert = new NpgsqlCommand($"INSERT INTO \"{schema}\".features VALUES (7, '{{}}')", writer, pendingWrite))
+            {
+                await insert.ExecuteNonQueryAsync();
+            }
+
+            command.CommandText = $"SET lock_timeout = '2s'; SELECT \"{schema}\".sync_metadata_global_id_indexes()";
+            var resync = async () => await command.ExecuteNonQueryAsync();
+
+            await resync.Should().NotThrowAsync();
+            await pendingWrite.RollbackAsync();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task SaveAsync_GlobalIdLayer_RejectsDuplicatesHiddenByRowSecurity()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_rls");

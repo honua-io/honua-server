@@ -139,6 +139,10 @@ when the caller may see its field.
 Migration and metadata activation refuse existing duplicate UUIDs or invalid
 UUID values without rewriting features. Repair those values explicitly before
 retrying. A failed activation leaves the previous metadata revision current.
+The first activation that declares a global-ID field builds its index inside the
+activation transaction, so feature writes to the managed table wait until that
+build commits. On a large table, declare the field during a quiet period.
+Later activations find the existing index and do not lock the table.
 Once created, identity indexes remain in place across metadata changes, including
 removal of a declaration. This preserves identity while older readers continue
 serving during a rolling update.

@@ -360,8 +360,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
-        editBatch = await EnsureEditTargetsVisibleAsync(
-            globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
+        var visibleTargets = await EnsureEditTargetsVisibleAsync(
+            layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
+        editBatch = visibleTargets.Batch;
+        globalIds = globalIds with { ExistingGlobalIds = StoredGlobalIds(visibleTargets.Stored, globalIds.Field) };
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
@@ -663,14 +665,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     }
 
     // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
-    private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
-        GlobalIdEdit globalIds,
+    private async Task<VisibleEditTargets> EnsureEditTargetsVisibleAsync(
+        int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
         if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
         {
-            return editBatch;
+            return new VisibleEditTargets(editBatch, new Dictionary<long, Feature>());
         }
 
         // Collect distinct target objectids across updates and deletes; a single hidden/missing
@@ -696,7 +698,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         foreach (var objectId in targets)
         {
             var existing = await _featureReader
-                .GetAsync(globalIds.Layer.StorageLayerId, objectId, cancellationToken)
+                .GetAsync(storageLayerId, objectId, cancellationToken)
                 .ConfigureAwait(false);
             if (existing is null)
             {
@@ -706,15 +708,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
 
             storedById[objectId] = existing.Value;
-            if (globalIds.Field is { } field && GrpcGlobalIds.Read(existing.Value.Attributes, field) is { } globalId)
-            {
-                globalIds.ExistingGlobalIds[objectId] = globalId;
-            }
         }
 
         if (editBatch.Updates.IsDefaultOrEmpty)
         {
-            return editBatch;
+            return new VisibleEditTargets(editBatch, storedById);
         }
 
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
@@ -752,12 +750,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
         }
 
-        return editBatch with
-        {
-            Updates = mergedUpdates.MoveToImmutable(),
-            // Count is not known up front, so this builder cannot use MoveToImmutable.
-            Preconditions = preconditions.ToImmutable()
-        };
+        return new VisibleEditTargets(
+            editBatch with
+            {
+                Updates = mergedUpdates.MoveToImmutable(),
+                // Count is not known up front, so this builder cannot use MoveToImmutable.
+                Preconditions = preconditions.ToImmutable()
+            },
+            storedById);
     }
 
     // Omitted geometry keeps the stored geometry because there is no protobuf signal for clearing it, and omitted attributes are merged from the locked row.
