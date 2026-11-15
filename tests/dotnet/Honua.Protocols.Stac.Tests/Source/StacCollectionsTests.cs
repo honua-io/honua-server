@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
@@ -19,6 +20,8 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 [Protocol(TestProtocols.Stac)]
 public sealed class StacCollectionsTests : IAsyncLifetime
 {
+    private static readonly string[] OldExtensionKeywords = ["old-extension"];
+
     private static readonly string[] ExpectedCollectionKeywords = ["imagery", "ops-demo"];
     private static readonly string[] ExpectedCollectionExtensions =
     [
@@ -26,10 +29,57 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
     ];
 
+    private static readonly string[] ContactProvidersWithoutHostRoles = ["Catalog contact", "Rights owner"];
+
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData("folder")]
+    [InlineData("environment")]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_ParentGovernance_UsesFolderOrEnvironment(string source)
+    {
+        var useFolder = source == "folder";
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var governance = snapshot.Graph.Metadata with
+        {
+            Language = "de",
+            License = "CC-BY-4.0",
+            Contacts = [new MetadataV2ResponsibleParty { Name = "Regional GIS", Url = "https://gis.example.org" }],
+        };
+        var graph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Metadata = useFolder ? snapshot.Graph.Metadata : governance,
+            Folders = useFolder
+                ? [.. snapshot.Graph.Folders, new MetadataV2Folder { Metadata = governance with { Id = "folder.governance", Name = "governance" } }]
+                : snapshot.Graph.Folders,
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                FolderId = useFolder ? "folder.governance" : null,
+                Metadata = service.Metadata with { Language = null, License = null, Contacts = [], ContactPoint = null },
+            }).ToArray(),
+            Resources = snapshot.Graph.Resources.Select(resource => resource with
+            {
+                Metadata = resource.Metadata with { Language = null, License = null, Contacts = [], ContactPoint = null },
+            }).ToArray(),
+        };
+        _fixture.GetService<TestMetadataV2GraphProvider>()!.SetGraph(graph, schema: _fixture.CurrentSchema);
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("language").GetProperty("code").GetString().Should().Be("de");
+        json.RootElement.GetProperty("license").GetString().Should().Be("CC-BY-4.0");
+        json.RootElement.GetProperty("providers").EnumerateArray().Should().Contain(provider =>
+            provider.GetProperty("name").GetString() == "Regional GIS" &&
+            provider.GetProperty("url").GetString() == "https://gis.example.org");
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -122,9 +172,11 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             stacExtension: JsonSerializer.SerializeToElement(new
             {
                 license = "CC-BY-4.0",
-                keywords = ExpectedCollectionKeywords,
                 extensions = ExpectedCollectionExtensions
             }));
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with { Keywords = ExpectedCollectionKeywords });
 
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
@@ -145,6 +197,70 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             .Select(static element => element.GetString())
             .Should()
             .BeEquivalentTo(ExpectedCollectionExtensions);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_EditedThemesAndLanguage_DeclareTheirStacExtensions()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with { Themes = ["ENVI"], Language = "de" });
+
+        using var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("language").GetProperty("code").GetString().Should().Be("de");
+        root.GetProperty("themes")[0].GetProperty("concepts")[0].GetProperty("id").GetString().Should().Be("ENVI");
+        var declared = root.GetProperty("stac_extensions").EnumerateArray().Select(value => value.GetString()).ToArray();
+        declared.Should().Contain("https://stac-extensions.github.io/language/v1.0.0/schema.json")
+            .And.Contain("https://stac-extensions.github.io/themes/v1.0.0/schema.json");
+    }
+
+    [IntegrationTheory]
+    [InlineData("/stac/collections", "coastal")]
+    [InlineData("/stac/collections/0", "coastal")]
+    [InlineData("/stac/collections", null)]
+    [InlineData("/stac/collections/0", null)]
+    [Operation(Operations.Query)]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollections_EditedDatasetKeywords_OverrideExtensionAndLabels(string path, string? keyword)
+    {
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            stacExtension: JsonSerializer.SerializeToElement(new { keywords = OldExtensionKeywords }));
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with
+            {
+                Keywords = keyword is null ? [] : [keyword],
+                Labels = new Dictionary<string, string> { ["old-label"] = "operations" }
+            });
+
+        using var response = await _fixture.Client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var collection = json.RootElement.TryGetProperty("collections", out var collections)
+            ? collections.EnumerateArray().Single(candidate =>
+                candidate.GetProperty("id").GetString() == WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture))
+            : json.RootElement;
+        if (keyword is null)
+        {
+            (collection.TryGetProperty("keywords", out var emittedKeywords) &&
+                emittedKeywords.ValueKind != JsonValueKind.Null).Should().BeFalse();
+        }
+        else
+        {
+            collection.GetProperty("keywords").EnumerateArray()
+                .Select(value => value.GetString()).Should().Equal(keyword);
+        }
     }
 
     [IntegrationTest]
@@ -253,9 +369,9 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithContactOnly_ProjectsHostProvider()
+    public async Task GetCollection_WithContactOnly_PreservesProviderWithoutRole()
     {
-        const string contactName = "Example data host";
+        const string contactName = "Example data contact";
         const string contactUrl = "https://example.test/contact";
         UpdateGovernanceMetadata(
             license: "MIT",
@@ -270,15 +386,13 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
         provider.GetProperty("name").GetString().Should().Be(contactName);
         provider.GetProperty("url").GetString().Should().Be(contactUrl);
-        provider.GetProperty("roles").EnumerateArray()
-            .Select(static role => role.GetString())
-            .Should().Equal("host");
+        provider.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithUrlOnlyContact_DerivesHostProviderName()
+    public async Task GetCollection_WithUrlOnlyContact_DerivesProviderNameWithoutRole()
     {
         const string contactUrl = "https://catalog.example.test/contact";
         UpdateGovernanceMetadata(
@@ -294,15 +408,13 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
         provider.GetProperty("name").GetString().Should().Be("catalog.example.test");
         provider.GetProperty("url").GetString().Should().Be(contactUrl);
-        provider.GetProperty("roles").EnumerateArray()
-            .Select(static role => role.GetString())
-            .Should().Equal("host");
+        provider.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithEmailOnlyContact_DerivesHostProviderName()
+    public async Task GetCollection_WithEmailOnlyContact_DerivesProviderNameWithoutRole()
     {
         UpdateGovernanceMetadata(
             license: "MIT",
@@ -316,15 +428,92 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
         provider.GetProperty("name").GetString().Should().Be("example.test");
-        provider.GetProperty("roles").EnumerateArray()
-            .Select(static role => role.GetString())
-            .Should().Equal("host");
+        provider.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithPublisherAndContact_ProjectsProducerAndHostProviders()
+    public async Task GetCollection_ProcessorContact_ProjectsProcessorRole()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            Contacts = [new MetadataV2ResponsibleParty { Role = "processor", Name = "Imagery processor" }],
+        });
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var provider = json.RootElement.GetProperty("providers").EnumerateArray()
+            .Single(provider => provider.GetProperty("name").GetString() == "Imagery processor");
+        provider.GetProperty("roles").EnumerateArray().Select(role => role.GetString())
+            .Should().Equal("processor");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithMultipleContactRoles_PreservesIdentityWithoutInventingHostRoles()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            Contacts =
+            [
+                new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Catalog contact", Url = "https://example.test/contact" },
+                new MetadataV2ResponsibleParty { Role = "rightsHolder", Name = "Rights owner" },
+                new MetadataV2ResponsibleParty { Role = "processor", Name = "Imagery processor" },
+                new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Imagery processor" },
+            ],
+        });
+
+        using var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
+        foreach (var name in ContactProvidersWithoutHostRoles)
+        {
+            var provider = providers.Should().ContainSingle(candidate =>
+                candidate.GetProperty("name").GetString() == name).Which;
+            var hasRoles = provider.TryGetProperty("roles", out var roles) && roles.ValueKind != JsonValueKind.Null;
+            hasRoles.Should().BeFalse("these contact roles do not identify a STAC storage host");
+        }
+        providers.Single(provider => provider.GetProperty("name").GetString() == "Catalog contact")
+            .GetProperty("url").GetString().Should().Be("https://example.test/contact");
+        var processor = providers.Should().ContainSingle(provider =>
+            provider.GetProperty("name").GetString() == "Imagery processor").Which;
+        processor.GetProperty("roles").EnumerateArray().Select(role => role.GetString())
+            .Should().Equal("processor");
+    }
+
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_BlankContactName_UsesOrganization(string? name)
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            Contacts = [new MetadataV2ResponsibleParty { Role = "processor", Name = name, Organization = "  Imagery organization  " }],
+        });
+
+        using var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var provider = json.RootElement.GetProperty("providers").EnumerateArray()
+            .Single(provider => provider.GetProperty("name").GetString() == "Imagery organization");
+        provider.GetProperty("roles").EnumerateArray().Select(role => role.GetString())
+            .Should().Equal("processor");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithPublisherAndContact_ProjectsProducerAndContactProviders()
     {
         UpdateGovernanceMetadata(
             license: "MIT",
@@ -332,7 +521,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             publisher: "Example producer",
             contactPoint: new MetadataV2ContactPoint
             {
-                Name = "Example data host",
+                Name = "Example data contact",
                 Url = "https://example.test/contact"
             });
 
@@ -345,9 +534,9 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         providers.Should().Contain(provider =>
             provider.GetProperty("name").GetString() == "Example producer" &&
             provider.GetProperty("roles")[0].GetString() == "producer");
-        providers.Should().Contain(provider =>
-            provider.GetProperty("name").GetString() == "Example data host" &&
-            provider.GetProperty("roles")[0].GetString() == "host");
+        var contact = providers.Should().ContainSingle(provider =>
+            provider.GetProperty("name").GetString() == "Example data contact").Which;
+        contact.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
