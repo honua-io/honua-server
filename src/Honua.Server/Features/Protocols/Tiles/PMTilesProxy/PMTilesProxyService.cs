@@ -93,17 +93,8 @@ internal sealed class PMTilesProxyService
             return true;
         }
 
-        var providerPrefix = NormalizeKeySegment(_storageOptions.Provider switch
-        {
-            CloudStorageProvider.AwsS3 => _storageOptions.AwsS3?.KeyPrefix,
-            CloudStorageProvider.AzureBlob => _storageOptions.AzureBlob?.BlobPrefix,
-            _ => null
-        });
-
         var key = metadata.StoragePath ?? metadata.FileId;
-        var expectedPrefix = string.IsNullOrEmpty(providerPrefix)
-            ? publishPrefix + "/"
-            : providerPrefix + "/" + publishPrefix + "/";
+        var expectedPrefix = PMTilesPublishKeyRoot.Resolve(_storageOptions) + "/";
         return key.StartsWith(expectedPrefix, StringComparison.Ordinal);
     }
 

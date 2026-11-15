@@ -4,9 +4,9 @@
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Services;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -95,9 +95,9 @@ internal static class ImageServerServiceCollectionExtensions
         services.TryAddSingleton<IDatumTransformationCatalog>(static _ => GeoServicesDatumTransformationCatalog.Create());
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();
         services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
-        services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();
-        services.AddSingleton<IImageServerLegendSwatchBuilder, ImageServerLegendSwatchBuilder>();
-        services.AddSingleton<IImageServerRasterFunctionPlanner, ImageServerRasterFunctionPlanner>();
+        services.AddSingleton<ImageServerCatalogFilterEvaluator>();
+        services.AddSingleton<ImageServerLegendSwatchBuilder>();
+        services.AddSingleton<ImageServerRasterFunctionPlanner>();
 
         // Multidimensional coverage info builder. IMultidimensionalCoverageStore is
         // registered by the active data provider and is optional here: deployments

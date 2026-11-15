@@ -19,6 +19,10 @@ public interface IStudioPackageStore
     /// <summary>Gets a mutable package draft by identifier.</summary>
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default);
+
     /// <summary>Updates a mutable package draft.</summary>
     Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default);
 

@@ -34,6 +34,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     internal const string RuleDbBoundedAdmissionPressure = "db-bounded-admission-pressure";
     internal const string RuleServingLatencySlo = "serving-latency-slo-breach";
     internal const string RulePlatformReleaseRuntimeDivergence = "platform-release-runtime-divergence";
+    internal const string RuleCdnPurgeBudget = "cdn-purge-budget";
 
     // BackendName of the in-process baseline batch backend (which reports a KubernetesJob target kind).
     private const string InProcessLocalBackendName = "local";
@@ -59,6 +60,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly OpsFindingsCollectionLedger _collectionLedger;
     private readonly TimeProvider _clock;
     private readonly IManagedComposeObserver? _managedComposeObserver;
+    private readonly OpsSelfChecks? _selfChecks;
+    private readonly ICdnPurgeBudget? _cdnPurgeBudget;
 
     // A signal older than this window cannot authorize a proposal.
     private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
@@ -76,6 +79,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsExtendedSignals? extendedSignals = null)
     {
         _managedComposeObserver = extendedSignals?.ManagedComposeObserver;
+        _selfChecks = extendedSignals?.SelfChecks;
+        _cdnPurgeBudget = extendedSignals?.CdnPurgeBudget;
         _options = options;
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
@@ -87,6 +92,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         _jobStore = jobStore;
         _databasePressureSignal = extendedSignals?.DatabasePressureSignal;
         _admissionGate = extendedSignals?.AdmissionGate;
+        _catalogActivationWatches = extendedSignals?.CatalogActivationWatches;
         _rollupStore = extendedSignals?.RollupStore;
         _externalEventStore = extendedSignals?.ExternalEventStore;
         _collectionLedger = extendedSignals?.CollectionLedger ?? new OpsFindingsCollectionLedger();
@@ -127,20 +133,38 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
+        var selfCheckEvaluation = _selfChecks is null ? null
+            : await _selfChecks.EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        if (selfCheckEvaluation is not null)
+        {
+            findings.AddRange(selfCheckEvaluation.Findings);
+        }
+        await EvaluateCdnPurgeBudgetAsync(now, findings, cancellationToken).ConfigureAwait(false);
+        var catalogSource = await EvaluateCatalogRollbacksAsync(findings, cancellationToken).ConfigureAwait(false);
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
             ?? EvidencePostureFactory.NotConfigured(
                 EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
                 EvidencePostureVocabulary.BackendKinds.DurableStore,
                 WorkflowOperationStoreBackendId);
 
-        var storeSources = new List<EvidenceSourceEnvelope> { workflowSource };
+        var storeSources = new List<EvidenceSourceEnvelope> { workflowSource, catalogSource };
+        if (selfCheckEvaluation is not null)
+        {
+            storeSources.AddRange(selfCheckEvaluation.Sources);
+        }
         var externalSource = await EvaluateExternalEventsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         if (externalSource is not null)
         {
             storeSources.Add(externalSource);
         }
 
-        return new OpsFindingsEvaluation
+        return CreateEvaluation(now, findings,
+            BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets));
+    }
+
+    private static OpsFindingsEvaluation CreateEvaluation(
+        DateTimeOffset now, IReadOnlyList<OpsFinding> findings, EvidencePosture posture)
+        => new()
         {
             EvaluatedAt = now,
             // Most urgent first; stable ordering by rule then id keeps output deterministic.
@@ -149,9 +173,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets),
+            Posture = posture,
         };
-    }
 
     private EvidencePosture BuildEvidencePosture(
         DateTimeOffset now,
@@ -468,15 +491,16 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         string explanation;
         if (deadLettersOverThreshold)
         {
+            var redriveCount = (int)Math.Clamp(backlog.DeadLetteredCount, 1, 500);
             action = new OpsFindingRecommendedAction
             {
                 Kind = OperationClass.AdminConfigChange,
                 ActionDiscriminator = OpsActionNames.RedriveDeadLetters,
-                Summary = $"Redrive {backlog.DeadLetteredCount} dead-lettered alert dispatch row(s) for redelivery.",
-                ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(),
+                Summary = $"Redrive up to {redriveCount} dead-lettered alert dispatch row(s) for redelivery.",
+                ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(redriveCount),
                 Reason = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries.",
-                AutoSafe = true,
-                BlastRadius = backlog.DeadLetteredCount > int.MaxValue ? int.MaxValue : (int)Math.Max(1, backlog.DeadLetteredCount),
+                AutoSafe = false,
+                BlastRadius = redriveCount,
             };
             explanation = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog {backlog.PendingCount}). Redriving re-enqueues them for redelivery; channel-attributed failures also produce a scoped isolation finding whose pause action remains approval-gated.";
         }

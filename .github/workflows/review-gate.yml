@@ -98,8 +98,7 @@ jobs:
             // that can no longer merge. Attesting one anyway spends the trusted job
             // to stamp a RED status onto an already-merged commit, because
             // `pull request is not open` is scored as a blocking reason. `reopened`
-            // re-fires this workflow with the pull request open again, and
-            // claude-review.yml already sheds closed subjects the same way.
+            // re-fires this workflow with the pull request open again.
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
             }

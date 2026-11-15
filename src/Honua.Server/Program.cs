@@ -24,6 +24,7 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Federation;
 using Honua.Server.Features.Admin.Jobs;
@@ -375,6 +376,9 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         return;
     }
 
+    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -721,6 +725,17 @@ Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(bu
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
+if (builder.Configuration.GetValue<bool>("ExternalEdits:Enabled")
+    && Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Caching.ExternalLayerChangeWorker>();
+}
+
+
+if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.ControlPlane.CatalogActivationWatcher>();
+}
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
@@ -992,6 +1007,7 @@ if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolve
 
 // Register shared validation services
 builder.Services.AddValidationServices();
+builder.Services.AddLocalProcessWorkspaces();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(
@@ -1082,7 +1098,7 @@ if (replicaProvider != DataProviderNames.DuckDb &&
 
 // The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
 // lease row in the system database. A host with no system database has one node, so an in-process
-// lock is enough. The async job store below still uses Redis when it is configured.
+// lock is enough.
 if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
 {
     builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
@@ -1093,10 +1109,6 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
     sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
         ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
         : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
-builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
-    new Honua.Infrastructure.Coordination.RedisVersionJobStore(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 if (offlineSyncEnabled)
@@ -1124,7 +1136,7 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
-builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration);
 // ---- End extracted block
 
 // ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
@@ -1977,6 +1989,7 @@ app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
 app.MapStudioSessionEndpoints();
+app.MapLocalProcessWorkspaces();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);
@@ -1999,6 +2012,7 @@ app.MapGeocodingOperationsEndpoints();
 
 // Configure feature-change streaming transport (#501)
 app.MapFeatureStreamEndpoints();
+app.MapRealtimeNotificationEndpoints();
 app.MapFeatureStreamConformanceEndpoints();
 
 // Configure security endpoints (CSP violation reporting)

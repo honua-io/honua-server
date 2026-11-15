@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
@@ -104,6 +105,64 @@ internal sealed class StreamSubscriptionFilter
         return Matches(envelope, geometryEnvelope, propertiesJson, ref parsedProperties, ref propertiesParsed);
     }
 
+    // A change made directly in the database names no service; it reaches a subscription whose
+    // service publishes the layer, or an unscoped subscription when any service publishes it.
+    private bool MatchesService(FeatureStreamEnvelope envelope)
+    {
+        if (envelope.ServiceId.Length == 0)
+        {
+            return MatchesDatabaseChangeRoute(envelope.LayerId);
+        }
+
+        if (_routabilityGuard is not null &&
+            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId))
+        {
+            return false;
+        }
+
+        if (_resolvedServiceId is not null)
+        {
+            return _routabilityGuard is not null
+                   || string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal);
+        }
+
+        return _serviceId is null || string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison);
+    }
+
+    // True when the routability snapshot, not the subscription's own criteria, turns this change
+    // away. That snapshot can lag a publish by its refresh interval, so such a change must still be
+    // read from the store rather than treated as offered.
+    internal bool RejectedByRoutability(FeatureStreamEnvelope envelope)
+    {
+        if (_routabilityGuard is null)
+        {
+            return false;
+        }
+
+        if (envelope.ServiceId.Length > 0)
+        {
+            return !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId);
+        }
+
+        var subscribedService = _resolvedServiceId ?? _serviceId;
+        return subscribedService is null
+            ? !_routabilityGuard.IsLayerRoutable(envelope.LayerId)
+            : !_routabilityGuard.IsRoutable(subscribedService, envelope.LayerId, _resolvedServiceId);
+    }
+
+    private bool MatchesDatabaseChangeRoute(int layerId)
+    {
+        var subscribedService = _resolvedServiceId ?? _serviceId;
+        if (_routabilityGuard is null)
+        {
+            return subscribedService is null;
+        }
+
+        return subscribedService is null
+            ? _routabilityGuard.IsLayerRoutable(layerId)
+            : _routabilityGuard.IsRoutable(subscribedService, layerId, _resolvedServiceId);
+    }
+
     internal bool Matches(
         FeatureStreamEnvelope envelope,
         double[]? geometryEnvelope,
@@ -111,21 +170,7 @@ internal sealed class StreamSubscriptionFilter
         ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
         ref bool propertiesParsed)
     {
-        if (_routabilityGuard is not null &&
-            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId))
-        {
-            return false;
-        }
-
-        // 1. Service filter — cheapest, short-circuits first.
-        if (_resolvedServiceId is not null && _routabilityGuard is null &&
-            !string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (_resolvedServiceId is null && _serviceId is not null &&
-            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison))
+        if (!MatchesService(envelope))
         {
             return false;
         }
@@ -149,7 +194,7 @@ internal sealed class StreamSubscriptionFilter
             }
         }
 
-        if (_subscriberSecurity is not null && !_subscriberSecurity.Allows(envelope))
+        if (_subscriberSecurity is not null && !AllowsSubscriber(envelope))
         {
             return false;
         }
@@ -215,8 +260,7 @@ internal sealed class StreamSubscriptionFilter
                 return false;
             }
 
-            if (_attributeFilter is not null &&
-                !InMemoryFilterEvaluator.Evaluate(_attributeFilter, parsedProperties))
+            if (_attributeFilter is not null && !AttributeMatches(parsedProperties))
             {
                 return false;
             }
@@ -231,8 +275,46 @@ internal sealed class StreamSubscriptionFilter
         return true;
     }
 
+    private bool AllowsSubscriber(FeatureStreamEnvelope envelope)
+    {
+        try
+        {
+            return _subscriberSecurity!.Allows(envelope);
+        }
+        catch (Exception ex) when (IsUnevaluableLike(ex))
+        {
+            return false;
+        }
+    }
+
+    private bool AttributeMatches(IReadOnlyDictionary<string, JsonElement> properties)
+    {
+        try
+        {
+            return InMemoryFilterEvaluator.Evaluate(_attributeFilter!, properties);
+        }
+        catch (Exception ex) when (IsUnevaluableLike(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsUnevaluableLike(Exception exception)
+        => exception is UnevaluableLikePatternException or RegexMatchTimeoutException;
+
     internal FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
-        => _subscriberSecurity?.Project(envelope) ?? envelope;
+    {
+        if (envelope.ServiceId.Length == 0)
+        {
+            var serviceId = _resolvedServiceId ?? _serviceId ?? _routabilityGuard?.ResolveLayerServiceId(envelope.LayerId);
+            if (serviceId is not null)
+            {
+                envelope = envelope with { ServiceId = serviceId, SourceId = serviceId };
+            }
+        }
+
+        return _subscriberSecurity?.Project(envelope) ?? envelope;
+    }
 
     private static bool MatchesTemporal(
         IReadOnlyDictionary<string, JsonElement> properties,

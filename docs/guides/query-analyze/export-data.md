@@ -17,6 +17,8 @@ Which formats are available depends on the surface: OGC API Features items serve
 
    Open `/ogc/features/collections/{collectionId}/items?limit=1000&f=geojson` or the same URL with `f=csv` at the deployment origin. Save the response as `features.geojson` or `features.csv`.
 
+   OGC CSV includes the feature identifier first, then the requested properties, then the serialized geometry. Property names stay unchanged. If a property uses `id` or `geometry` (case-insensitive), the corresponding generated column uses the first available suffix, such as `id_1` or `geometry_2`, so these columns remain distinct.
+
 2. Check which encoded formats your layer advertises, then export GeoParquet or GeoArrow from the FeatureServer query endpoint. Any `where`/`outFields`/geometry filter from [query features](query-features.md) applies:
 
    Open `/rest/services/{service}/FeatureServer/0?f=json` and inspect the response's `supportedQueryFormats`. To download encoded data, open `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&outFields=*&f=parquet` or the same URL with `f=arrow`.

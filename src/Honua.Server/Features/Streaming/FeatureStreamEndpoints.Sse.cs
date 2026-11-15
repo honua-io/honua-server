@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
@@ -22,7 +23,7 @@ internal static partial class FeatureStreamEndpoints
         if (id.HasValue)
         {
             await response.WriteAsync(
-                string.Concat("id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n"),
+                string.Concat("id: ", FeatureStreamCursor.Format(id.Value), "\n"),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -33,6 +34,70 @@ internal static partial class FeatureStreamEndpoints
                 "data: ", json, "\n\n"),
             cancellationToken).ConfigureAwait(false);
     }
+
+    private readonly record struct SseHandshake(
+        HttpContext Context,
+        FeatureStreamSession Session,
+        IStreamSubscriptionFilter? Filter,
+        FeatureStreamCursor Requested,
+        long InitialLiveCursor);
+
+    // False when the client left while the opening frames were being written.
+    private static async Task<bool> WriteSseHandshakeAsync(SseHandshake handshake, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WriteSseEventAsync(
+                handshake.Context.Response,
+                "status",
+                new FeatureStreamStatusFrame
+                {
+                    Status = "connected",
+                    Message = "Feature stream connected.",
+                    SessionId = handshake.Session.SessionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                null,
+                cancellationToken).ConfigureAwait(false);
+
+            if (handshake.Requested.Kind == FeatureStreamCursorKind.Epoch)
+            {
+                await WriteSseResetAsync(
+                    handshake.Context.Response,
+                    new FeatureStreamResetFrame
+                    {
+                        Reason = RealtimeResetReasons.CursorEpoch,
+                        Head = FeatureStreamCursor.Format(handshake.InitialLiveCursor)
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await AnnounceSseSubscriptionAsync(handshake.Context, handshake.Session, handshake.Filter).ConfigureAwait(false);
+            await handshake.Context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    private static Task WriteSseResetAsync(HttpResponse response, FeatureStreamResetFrame reset, CancellationToken cancellationToken)
+        => WriteSseEventAsync(
+            response,
+            "reset",
+            reset,
+            FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
+            null,
+            cancellationToken);
 
     private static async Task WriteSseTerminalErrorAsync(
         HttpResponse response,
@@ -75,18 +140,16 @@ internal static partial class FeatureStreamEndpoints
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        var cursorParam = context.Request.Query["cursor"].ToString();
-        long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-
-        // Also check Last-Event-ID header (standard SSE reconnect mechanism).
-        if (!cursor.HasValue)
+        var requested = FeatureStreamCursor.Parse(
+            context.Request.Query["cursor"].ToString(),
+            context.Request.Headers["Last-Event-ID"].ToString());
+        if (requested.Kind == FeatureStreamCursorKind.Invalid)
         {
-            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
-            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var lei))
-            {
-                cursor = lei;
-            }
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
         }
+
+        var cursor = requested.Position;
 
         // Seal the live boundary before announcing admission. A client may commit
         // immediately after receiving headers; taking this cursor afterwards can
@@ -97,51 +160,11 @@ internal static partial class FeatureStreamEndpoints
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";
 
-        try
+        if (!await WriteSseHandshakeAsync(
+            new(context, session, subscriptionFilter, requested, initialLiveCursor),
+            context.RequestAborted).ConfigureAwait(false))
         {
-            await WriteSseEventAsync(
-                context.Response,
-                "status",
-                new FeatureStreamStatusFrame
-                {
-                    Status = "connected",
-                    Message = "Feature stream connected.",
-                    SessionId = session.SessionId
-                },
-                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
-                null,
-                context.RequestAborted).ConfigureAwait(false);
-
-            if (subscriptionFilter is not null)
-            {
-                await WriteSseEventAsync(
-                    context.Response,
-                    "status",
-                    new FeatureStreamStatusFrame
-                    {
-                        Status = "subscribed",
-                        Message = "Initial subscription accepted.",
-                        SessionId = session.SessionId,
-                        SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
-                    },
-                    FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
-                    null,
-                    context.RequestAborted).ConfigureAwait(false);
-            }
-
-            await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-            return; // Client disconnected during handshake.
-        }
-        catch (IOException)
-        {
-            return; // Client disconnected during handshake.
-        }
-        catch (ObjectDisposedException)
-        {
-            return; // Client disconnected during handshake.
+            return;
         }
 
         if (subscriptionFilter is not null)
@@ -161,7 +184,7 @@ internal static partial class FeatureStreamEndpoints
         // Snapshot-then-delta: a baseline replaces the delta stream when the subscription is
         // fresh, or when the supplied resume cursor has fallen outside the retained window.
         string? snapshotReason = null;
-        if (IsSnapshotMode(mode) && subscriptionFilter is StreamSubscriptionFilter)
+        if ((cursor.HasValue || IsSnapshotMode(mode)) && subscriptionFilter is StreamSubscriptionFilter)
         {
             try
             {
@@ -181,6 +204,22 @@ internal static partial class FeatureStreamEndpoints
         {
             try
             {
+                if (cursor.HasValue)
+                {
+                    var head = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+                    await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, linkedCts.Token)
+                        .ConfigureAwait(false);
+                    var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, subscriptionFilter);
+                    if (snapshotScopeError is not null)
+                    {
+                        await WriteSseTerminalErrorAsync(context.Response, session.SessionId,
+                            FeatureStreamSessionManager.DefaultSubscriptionId,
+                            snapshotScopeError, linkedCts.Token).ConfigureAwait(false);
+                        await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
+                        return;
+                    }
+                }
+
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,
@@ -288,7 +327,9 @@ internal static partial class FeatureStreamEndpoints
             }
             catch (FeatureStreamReplayWindowGapException)
             {
-                sessionManager.DisconnectSession(session.SessionId);
+                await RecoverSseReplayGapAsync(
+                    new SseReplayRecovery(deps, logger, context) { Session = session, Filter = subscriptionFilter, Mode = mode },
+                    linkedCts.Token).ConfigureAwait(false);
                 return;
             }
             catch (IOException)
@@ -384,6 +425,14 @@ internal static partial class FeatureStreamEndpoints
                     catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
                     {
                         // Ignore expected cancellation for the alternate waiter.
+                    }
+
+                    if (sessionManager.StorePollSkipCursor(session.SessionId, replayCursor) is { } covered)
+                    {
+                        replayCursor = covered;
+                        liveDelivered.AdvanceFloor(replayCursor);
+                        nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
+                        continue;
                     }
 
                     replayCursor = await ReplayToSseAsync(
@@ -503,7 +552,14 @@ internal static partial class FeatureStreamEndpoints
                 // drain, run the poll inline now — otherwise continuous broadcast
                 // traffic could keep us pinned in the read branch and the
                 // durable-store sweep would never fire.
-                if (DateTimeOffset.UtcNow >= nextPollAt)
+                if (DateTimeOffset.UtcNow >= nextPollAt &&
+                    sessionManager.StorePollSkipCursor(session.SessionId, replayCursor) is { } drainedThrough)
+                {
+                    replayCursor = drainedThrough;
+                    liveDelivered.AdvanceFloor(replayCursor);
+                    nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
+                }
+                else if (DateTimeOffset.UtcNow >= nextPollAt)
                 {
                     replayCursor = await ReplayToSseAsync(
                         context.Response,
@@ -528,7 +584,9 @@ internal static partial class FeatureStreamEndpoints
         }
         catch (FeatureStreamReplayWindowGapException)
         {
-            sessionManager.DisconnectSession(session.SessionId);
+            await RecoverSseReplayGapAsync(
+                new SseReplayRecovery(deps, logger, context) { Session = session, Filter = subscriptionFilter, Mode = mode },
+                linkedCts.Token).ConfigureAwait(false);
         }
         catch (IOException)
         {
@@ -537,6 +595,110 @@ internal static partial class FeatureStreamEndpoints
         catch (ObjectDisposedException)
         {
             // Response stream already disposed.
+        }
+    }
+
+    private static async Task AnnounceSseSubscriptionAsync(
+        HttpContext context,
+        FeatureStreamSession session,
+        IStreamSubscriptionFilter? subscriptionFilter)
+    {
+        if (subscriptionFilter is not null)
+        {
+            await WriteSseEventAsync(
+                context.Response,
+                "status",
+                new FeatureStreamStatusFrame
+                {
+                    Status = "subscribed",
+                    Message = "Initial subscription accepted.",
+                    SessionId = session.SessionId,
+                    SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                null,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+    }
+
+    private sealed record SseReplayRecovery(
+        FeatureStreamDependencies Dependencies,
+        ILogger Logger,
+        HttpContext Context)
+    {
+        public required FeatureStreamSession Session { get; init; }
+        public IStreamSubscriptionFilter? Filter { get; init; }
+        public FeatureStreamSubscriptionMode Mode { get; init; }
+    }
+
+    private static async Task RecoverSseReplayGapAsync(
+        SseReplayRecovery recovery,
+        CancellationToken cancellationToken)
+    {
+        var deps = recovery.Dependencies;
+        var response = recovery.Context.Response;
+        try
+        {
+            var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+            await WriteSseResetAsync(response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, cancellationToken).ConfigureAwait(false);
+            var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, recovery.Filter);
+            if (snapshotScopeError is not null)
+            {
+                await WriteSseTerminalErrorAsync(response, recovery.Session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId, snapshotScopeError, cancellationToken).ConfigureAwait(false);
+                await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await EmitSseRecoverySnapshotAsync(recovery, cancellationToken).ConfigureAwait(false);
+
+            await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            // The response is ending; the last complete snapshot remains the checkpoint.
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            FeatureStreamLog.SnapshotEmitFailed(
+                recovery.Logger,
+                recovery.Session.SessionId,
+                FeatureStreamSessionManager.DefaultSubscriptionId,
+                exception);
+            await WriteSseTerminalErrorAsync(
+                response,
+                recovery.Session.SessionId,
+                FeatureStreamSessionManager.DefaultSubscriptionId,
+                "The baseline snapshot could not be completed. Reconnect to take a fresh snapshot.",
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task EmitSseRecoverySnapshotAsync(SseReplayRecovery recovery, CancellationToken cancellationToken)
+    {
+        var deps = recovery.Dependencies;
+        var response = recovery.Context.Response;
+        if (recovery.Filter is StreamSubscriptionFilter { LayerIds: not null } filter)
+        {
+            var snapshotResult = await EmitSnapshotAsync(
+                deps,
+                recovery.Logger,
+                CreateSseSnapshotSink(recovery.Mode, response),
+                recovery.Session.SessionId,
+                FeatureStreamSessionManager.DefaultSubscriptionId,
+                deps.SessionManager.GetDefaultSubscriptionGeneration(recovery.Session.SessionId),
+                filter,
+                FeatureStreamSnapshotReasons.CursorExpired,
+                cancellationToken).ConfigureAwait(false);
+            if (!snapshotResult.Complete)
+            {
+                await WriteSseTerminalErrorAsync(
+                    response,
+                    recovery.Session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 }

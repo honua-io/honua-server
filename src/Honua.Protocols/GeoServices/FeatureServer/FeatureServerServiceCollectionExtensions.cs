@@ -1,15 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Query;
-using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Security;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -26,8 +26,8 @@ internal static class FeatureServerServiceCollectionExtensions
         services.TryAddSingleton<IDatumTransformationCatalog>(static _ => GeoServicesDatumTransformationCatalog.Create());
 
         services.AddScoped<PbfQueryFormatter>();
-        services.AddScoped<IQueryFormatter, QueryFormatter>();
-        services.AddScoped<IFeatureQueryValidator, FeatureQueryValidator>();
+        services.AddScoped<QueryFormatter>();
+        services.AddScoped<FeatureQueryValidator>();
         services.AddScoped<IGeometryValidator, GeometryValidator>();
         services.TryAddScoped<FeatureServerSpatialReferenceResolver>();
         services.AddScoped<IFeatureServerQueryServices, FeatureServerQueryServices>();

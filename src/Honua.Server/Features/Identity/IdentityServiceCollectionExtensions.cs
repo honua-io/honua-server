@@ -4,8 +4,8 @@
 using Honua.Server.Features.Identity.Saml;
 using Honua.Server.Features.Identity.Scim;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Identity;
@@ -31,8 +31,8 @@ public static class IdentityServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddSingleton<IValidateOptions<SamlAuthenticationOptions>, SamlAuthenticationOptionsValidator>();
         services.TryAddSingleton<Honua.Infrastructure.Security.ITokenReplayStore, Honua.Infrastructure.Security.InMemoryTokenReplayStore>();
-        services.TryAddSingleton<ISamlAssertionReplayCache, SamlAssertionReplayCache>();
-        services.TryAddSingleton<ISamlAssertionValidator, SamlAssertionValidator>();
+        services.TryAddSingleton<SamlAssertionReplayCache>();
+        services.TryAddSingleton<SamlAssertionValidator>();
 
         return services;
     }

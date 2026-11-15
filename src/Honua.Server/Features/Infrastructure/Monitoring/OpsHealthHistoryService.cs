@@ -7,11 +7,6 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-internal interface IOpsHealthHistoryService
-{
-    Task<OpsHealthHistoryResponse> GetAsync(OpsHealthHistoryQuery query, CancellationToken cancellationToken = default);
-}
-
 internal sealed record OpsHealthHistoryQuery
 {
     public required OpsHealthRollupTier Tier { get; init; }
@@ -116,7 +111,7 @@ internal sealed record OpsHealthHistoryQuery
     }
 }
 
-internal sealed class OpsHealthHistoryService : IOpsHealthHistoryService
+internal sealed class OpsHealthHistoryService
 {
     private readonly IOpsHealthRollupStore? _store;
 

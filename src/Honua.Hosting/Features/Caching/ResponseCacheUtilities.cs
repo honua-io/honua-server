@@ -158,6 +158,27 @@ internal static class ResponseCacheUtilities
         ArgumentNullException.ThrowIfNull(cached);
         ArgumentNullException.ThrowIfNull(etagService);
 
+        if (ConfigurationResponseETag.GetSource(context) is not null && cached.ETag is not null)
+        {
+            return new GenerationCachedResult(cached, etagService);
+        }
+
+        return CreateResponseResult(context, cached, etagService);
+    }
+
+    private sealed class GenerationCachedResult(CachedResponse cached, IETagService etagService) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            var etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, cached.ETag!)
+                .ConfigureAwait(false);
+            await CreateResponseResult(httpContext, cached with { ETag = etag }, etagService)
+                .ExecuteAsync(httpContext).ConfigureAwait(false);
+        }
+    }
+
+    private static IResult CreateResponseResult(HttpContext context, CachedResponse cached, IETagService etagService)
+    {
         if (!string.IsNullOrWhiteSpace(cached.ETag))
         {
             var ifMatch = context.Request.Headers.IfMatch.ToString();

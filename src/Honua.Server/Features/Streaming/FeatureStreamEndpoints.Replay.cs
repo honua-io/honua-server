@@ -3,41 +3,13 @@
 
 using System.Net.WebSockets;
 using System.Text.Json;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
 
 internal static partial class FeatureStreamEndpoints
 {
-    internal static bool HasReplayWindowGap(long requestedCursor, long firstAvailableCursor)
-        => requestedCursor < long.MaxValue && firstAvailableCursor > requestedCursor + 1;
-
-    internal static bool TryFindReplayWindowGap(
-        IReadOnlyList<FeatureChangeEvent> events,
-        long requestedCursor,
-        out long previousCursor,
-        out long firstAvailableCursor)
-    {
-        previousCursor = requestedCursor;
-        firstAvailableCursor = requestedCursor;
-
-        foreach (var evt in events)
-        {
-            var expectedCursor = previousCursor == long.MaxValue
-                ? long.MaxValue
-                : previousCursor + 1;
-            if (evt.Cursor != expectedCursor)
-            {
-                firstAvailableCursor = evt.Cursor;
-                return true;
-            }
-
-            previousCursor = evt.Cursor;
-        }
-
-        return false;
-    }
-
     private static async Task<long> ReplayToWebSocketAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,
@@ -54,12 +26,16 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDeliveredCursorWindow? liveDelivered = null)
     {
         var cursor = fromCursor;
-        var requiredThroughCursor = fromCursor;
         var delivered = 0L;
+        await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
+            new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), fromCursor, cancellationToken)
+            .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
-            var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
-            ThrowIfReplayWindowHasGap(events, cursor, logger, sessionId, subscriptionId);
+            var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
+            await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
+                new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
+                .ConfigureAwait(false);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
@@ -132,23 +108,43 @@ internal static partial class FeatureStreamEndpoints
 
             if (events.Count < batchSize)
             {
-                requiredThroughCursor = await ValidateReplayTailAsync(
-                    eventStore,
-                    cursor,
-                    requiredThroughCursor,
-                    logger,
-                    sessionId,
-                    subscriptionId,
-                    cancellationToken).ConfigureAwait(false);
-                if (requiredThroughCursor <= cursor)
-                {
-                    break;
-                }
+                await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
+                    new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
+                    .ConfigureAwait(false);
+                break;
             }
         }
 
         sessionManager?.RecordReplayEventsDelivered(WebSocketTransport, delivered);
         return cursor;
+    }
+
+    private sealed record WebSocketReplayContext(
+        FeatureStreamReplayContext Replay,
+        WebSocket Socket,
+        SemaphoreSlim WriteLock);
+
+    private static async Task EnsureWebSocketReplayableAfterAsync(
+        WebSocketReplayContext context,
+        long cursor,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EnsureReplayableAfterAsync(context.Replay, cursor, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            // Send before the caller disconnects the session and cancels its write token.
+            var head = await context.Replay.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+            await SendWebSocketJsonAsync(context.Socket, context.WriteLock,
+                JsonSerializer.SerializeToUtf8Bytes(new FeatureStreamResetFrame
+                {
+                    Reason = RealtimeResetReasons.Retention,
+                    Head = FeatureStreamCursor.Format(head)
+                }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async Task<long> ReplayToSseAsync(
@@ -166,12 +162,14 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDeliveredCursorWindow? liveDelivered = null)
     {
         var cursor = fromCursor;
-        var requiredThroughCursor = fromCursor;
         var delivered = 0L;
+        await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), fromCursor, cancellationToken)
+            .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
-            var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
-            ThrowIfReplayWindowHasGap(events, cursor, logger, sessionId, subscriptionId);
+            var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
+            await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
+                .ConfigureAwait(false);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
@@ -226,18 +224,9 @@ internal static partial class FeatureStreamEndpoints
 
             if (events.Count < batchSize)
             {
-                requiredThroughCursor = await ValidateReplayTailAsync(
-                    eventStore,
-                    cursor,
-                    requiredThroughCursor,
-                    logger,
-                    sessionId,
-                    subscriptionId,
-                    cancellationToken).ConfigureAwait(false);
-                if (requiredThroughCursor <= cursor)
-                {
-                    break;
-                }
+                await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
+                    .ConfigureAwait(false);
+                break;
             }
         }
 
@@ -245,84 +234,34 @@ internal static partial class FeatureStreamEndpoints
         return cursor;
     }
 
-    internal static async Task<long> ValidateReplayTailAsync(
-        IFeatureChangeEventStore eventStore,
+    // Validate retention against the incoming cursor before delivering each page: advancing the
+    // cursor first can hide a gap introduced while the query was running. A short read proves
+    // exhaustion because generations are allocated under a lock held to commit.
+    internal sealed record FeatureStreamReplayContext(
+        IFeatureChangeEventStore EventStore,
+        ILogger Logger,
+        Guid SessionId,
+        string? SubscriptionId);
+
+    internal static async Task EnsureReplayableAfterAsync(
+        FeatureStreamReplayContext context,
         long replayCursor,
-        long requiredThroughCursor,
-        ILogger logger,
-        Guid sessionId,
-        string? subscriptionId,
         CancellationToken cancellationToken)
     {
-        // A previous short batch observed this durable head and deliberately retried so an
-        // append racing that first query would not be mistaken for a gap. Redis commands are
-        // ordered: if the retry still cannot reach the already-observed head, at least one
-        // required payload is unavailable and replay must fail closed.
-        if (replayCursor < requiredThroughCursor)
-        {
-            ThrowReplayWindowGap(
-                replayCursor,
-                requiredThroughCursor,
-                logger,
-                sessionId,
-                subscriptionId);
-        }
-
-        // Empty and short batches are not proof of exhaustion. A Redis payload can expire or
-        // be evicted while its durable cursor remains advanced. Re-read the typed window before
-        // ending; if a concurrent append advanced the head, retry once through that observed
-        // boundary. The next short batch either reaches it or takes the fail-closed branch above.
-        var retentionWindow = await eventStore
-            .GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
-        if (retentionWindow.HasGapAfter(replayCursor))
-        {
-            var firstAvailableCursor = retentionWindow.IsEmpty
-                ? retentionWindow.CurrentCursor
-                : retentionWindow.OldestRetainedCursor;
-            ThrowReplayWindowGap(
-                replayCursor,
-                firstAvailableCursor,
-                logger,
-                sessionId,
-                subscriptionId);
-        }
-
-        return retentionWindow.CurrentCursor;
-    }
-
-    private static void ThrowIfReplayWindowHasGap(
-        IReadOnlyList<FeatureChangeEvent> events,
-        long requestedCursor,
-        ILogger logger,
-        Guid sessionId,
-        string? subscriptionId)
-    {
-        if (!TryFindReplayWindowGap(
-                events,
-                requestedCursor,
-                out var previousCursor,
-                out var firstAvailableCursor))
+        var window = await context.EventStore.GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
+        if (!window.HasGapAfter(replayCursor))
         {
             return;
         }
 
-        ThrowReplayWindowGap(previousCursor, firstAvailableCursor, logger, sessionId, subscriptionId);
-    }
-
-    private static void ThrowReplayWindowGap(
-        long previousCursor,
-        long firstAvailableCursor,
-        ILogger logger,
-        Guid sessionId,
-        string? subscriptionId)
-    {
+        var firstAvailableCursor = window.IsEmpty ? window.CurrentCursor : window.OldestRetainedCursor;
         FeatureStreamLog.ReplayWindowGapDetected(
-            logger,
-            sessionId,
-            subscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
-            previousCursor,
+            context.Logger,
+            context.SessionId,
+            context.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
+            replayCursor,
             firstAvailableCursor);
-        throw new FeatureStreamReplayWindowGapException(previousCursor, firstAvailableCursor);
+        throw new FeatureStreamReplayWindowGapException(replayCursor, firstAvailableCursor);
     }
 
     // The sequence stays absent when no session can honor it, and a generation that is not current is not stamped.
