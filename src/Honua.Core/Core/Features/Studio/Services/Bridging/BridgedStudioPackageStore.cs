@@ -42,6 +42,13 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.GetDraftAsync(draftId, cancellationToken);
 
+    public Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default)
+        => _inner.GetDraftRevisionAsync(draftId, generation, cancellationToken);
+
+    public Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(
+        StudioDraftRevisionQuery query, CancellationToken cancellationToken = default)
+        => _inner.ListDraftRevisionsAsync(query, cancellationToken);
+
     /// <inheritdoc />
     public Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
         => _inner.UpdateDraftAsync(draft, cancellationToken);
