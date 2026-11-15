@@ -8,6 +8,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -186,6 +187,65 @@ public sealed class StreamingGeoJsonReaderTests
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
+    [UnitTest]
+    public async Task ValidateAsync_NullGeometry_ImportsTheFeatureWithAWarning()
+    {
+        // RFC 7946 section 3.2 allows "geometry": null for an unlocated feature (#7732).
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "FeatureCollection",
+            features = Enumerable.Range(0, 4).Select(index => new
+            {
+                type = "Feature",
+                geometry = index == 1 ? null : new { type = "Point", coordinates = new[] { index, index } },
+                properties = new { ordinal = index },
+            }),
+        });
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        var validation = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        validation.IsValid.Should().BeTrue();
+        var issue = validation.Issues.Should().ContainSingle().Subject;
+        issue.Code.Should().Be(ImportValidationErrorCodes.GeometryMissing);
+        issue.Severity.Should().Be(ImportValidationSeverity.Warning);
+        issue.FeatureIndex.Should().Be(2);
+        var features = new List<NetTopologySuite.Features.IFeature>();
+        await foreach (var feature in new StreamingGeoJsonReader().ReadFeaturesAsync(stream)) features.Add(feature);
+        features.Should().HaveCount(4);
+        features[1].Geometry.Should().BeNull();
+        features[1].Attributes["ordinal"].Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_AbsentGeometryMember_StillRejectsTheFile()
+    {
+        const string json = """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"a":1}}]}""";
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        var validation = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        validation.IsValid.Should().BeFalse();
+        validation.Issues.Should().ContainSingle(issue => issue.Code == ImportValidationErrorCodes.GeometryMissing
+            && issue.Severity == ImportValidationSeverity.Error);
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_ManyNullGeometries_DoNotHideALaterError()
+    {
+        var features = Enumerable.Range(0, 150)
+            .Select(_ => (object)new { type = "Feature", geometry = (object?)null, properties = new { } })
+            .Append(new { type = "Feature", geometry = new { type = "Hexagon", coordinates = new[] { 0, 0 } }, properties = new { } });
+        var json = JsonSerializer.Serialize(new { type = "FeatureCollection", features });
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        var validation = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        validation.IsValid.Should().BeFalse("warnings must not use up the issue budget an error needs");
+        validation.Issues.Should().Contain(issue => issue.Code == ImportValidationErrorCodes.GeometryUnknownType
+            && issue.FeatureIndex == 151);
+    }
+
     [Fact]
     public async Task ValidateAsync_WithSelfIntersectingPolygon_ReportsNonFatalRepairWarning()
     {
