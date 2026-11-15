@@ -9,6 +9,7 @@ using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -18,6 +19,8 @@ namespace Honua.Server.Tests.Realtime;
 // is what a serving process runs: its listener, its tail, its dispatcher, its relay and its stream
 // sessions, over the one shared database. Edits are plain SQL, so no task knows about them except
 // through the change log.
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture database) : IClassFixture<FeatureChangeDatabaseFixture>
 {
     private const int Edits = 200;

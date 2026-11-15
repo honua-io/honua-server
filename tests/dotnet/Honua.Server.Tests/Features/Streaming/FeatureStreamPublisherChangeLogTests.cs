@@ -7,12 +7,15 @@ using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Tests.Realtime;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class FeatureStreamPublisherChangeLogTests(FeatureChangeDatabaseFixture database) : IClassFixture<FeatureChangeDatabaseFixture>
 {
     private const int LayerId = 734301;

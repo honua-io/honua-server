@@ -11,6 +11,7 @@ using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -20,6 +21,8 @@ namespace Honua.Server.Tests.Realtime;
 // honua.feature_changes read as the features family: changes made by any session, including plain
 // SQL, are events with their generation as the position. Each test class uses a migrated database;
 // assertions remain scoped to the test layer.
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database) : IClassFixture<FeatureChangeDatabaseFixture>
 {
     private static readonly TimeSpan _deliveryTimeout = TimeSpan.FromSeconds(10);
