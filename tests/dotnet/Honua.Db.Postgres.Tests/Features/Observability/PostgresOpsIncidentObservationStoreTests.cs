@@ -15,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Db.Postgres.Tests.Features.Observability;
 
 [Collection("Database")]
-public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fixture)
+public sealed partial class PostgresOpsIncidentObservationStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task AppendAsync_ConcurrentRedeliveryAndNewInstance_PreservesOriginalEvidence()
@@ -198,6 +198,11 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
         WithStoresAsync((store, _) => action(store));
 
     private async Task WithStoresAsync(Func<IOpsIncidentObservationStore, IOpsIncidentObservationStore, Task> action)
+        => await WithProvidersAsync(async (provider, restarted) =>
+            await action(provider.GetRequiredService<IOpsIncidentObservationStore>(),
+                restarted.GetRequiredService<IOpsIncidentObservationStore>()));
+
+    private async Task WithProvidersAsync(Func<IServiceProvider, IServiceProvider, Task> action)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresOpsIncidentObservationStoreTests));
         try
@@ -215,11 +220,11 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
             await using var scope = provider.CreateAsyncScope();
             var store = scope.ServiceProvider.GetService<IOpsIncidentObservationStore>();
             store.Should().NotBeNull("configured PostgreSQL must retain operational observations without an inbox read");
-            await ApplyMigrationAsync(schema);
+            await ApplyMigrationAsync(schema, "169_CreateOpsIncidentObservations.sql");
+            await ApplyMigrationAsync(schema, "172_CreateOpsIncidentEpisodes.sql");
             await using var restartedProvider = services.BuildServiceProvider();
             await using var restartedScope = restartedProvider.CreateAsyncScope();
-            var restarted = restartedScope.ServiceProvider.GetRequiredService<IOpsIncidentObservationStore>();
-            await action(store!, restarted);
+            await action(scope.ServiceProvider, restartedScope.ServiceProvider);
         }
         finally
         {
@@ -227,9 +232,9 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
         }
     }
 
-    private async Task ApplyMigrationAsync(string schema)
+    private async Task ApplyMigrationAsync(string schema, string migration)
     {
-        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "169_CreateOpsIncidentObservations.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", migration));
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
