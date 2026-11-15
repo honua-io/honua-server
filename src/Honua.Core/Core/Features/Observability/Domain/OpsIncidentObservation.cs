@@ -26,6 +26,8 @@ public sealed record OpsIncidentObservationQuery(
     DateTimeOffset Since,
     int Limit = 100);
 
-public sealed record OpsIncidentObservationPage(
-    IReadOnlyList<OpsIncidentObservation> Observations,
-    bool Truncated);
+public sealed record OpsIncidentObservationPage
+{
+    public required IReadOnlyList<OpsIncidentObservation> Observations { get; init; }
+    public required bool Truncated { get; init; }
+}
