@@ -13,14 +13,15 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed partial class AwsEcsAlbDeployBackendTests
 {
     [UnitTest]
-    public async Task PlanAsync_AlarmAdmissionBlocked_ReportsBlockingReason()
+    public async Task PlanAsync_AlarmAdmissionBlocked_ReportsRetryableWarning()
     {
         var (backend, admission, clients) = CreateAlarmBlockedBackend();
 
         var plan = await backend.PlanAsync(CreateSpec());
 
         plan.IsReadyToSubmit.Should().BeFalse();
-        plan.BlockingReasons.Should().Contain("Deployment alarm admission is blocked.");
+        plan.BlockingReasons.Should().BeEmpty();
+        plan.Warnings.Should().Contain("Deployment alarm admission is blocked.");
         await admission.Received(1).GetBlockingReasonAsync("prod-ecs", Arg.Any<CancellationToken>());
         clients.Alb.ReceivedCalls().Should().BeEmpty();
         clients.Ecs.ReceivedCalls().Should().BeEmpty();
@@ -31,15 +32,27 @@ public sealed partial class AwsEcsAlbDeployBackendTests
     [InlineData("promote")]
     [InlineData("prepare")]
     [InlineData("activate")]
+    [InlineData("complete")]
     public async Task ExecuteAsync_AlarmAdmissionBlocked_RefusesBeforeProviderCalls(string boundary)
     {
         var (backend, admission, clients) = CreateAlarmBlockedBackend();
         var operation = CreateOperation();
+        if (boundary == "complete")
+        {
+            operation = operation with
+            {
+                Deploy = operation.Deploy! with
+                {
+                    DesiredRevision = "registry.example/honua/server@sha256:" + new string('a', 64)
+                }
+            };
+        }
         Func<Task> execute = boundary switch
         {
             "start" => async () => { await backend.StartAsync(operation); },
             "promote" => async () => { await backend.PromoteAsync(operation); },
             "prepare" => async () => { await backend.EnsurePreparationAdmittedAsync(operation, default); },
+            "complete" => async () => { await backend.CompleteProtectionAsync(operation); },
             _ => async () => { await backend.ActivateCheckpointAsync(operation, default); }
         };
 

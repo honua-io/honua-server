@@ -574,15 +574,17 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         AppendImageConvergencePlan(spec, blockingReasons, warnings);
 
-        if (AlarmAdmission is not null &&
-            await AlarmAdmission.GetBlockingReasonAsync(spec.TargetId, cancellationToken).ConfigureAwait(false) is { } alarmReason)
+        var alarmReason = AlarmAdmission is null ? null :
+            await AlarmAdmission.GetBlockingReasonAsync(spec.TargetId, cancellationToken).ConfigureAwait(false);
+        if (alarmReason is not null)
         {
-            blockingReasons.Add(alarmReason);
+            // Admission is checked again at execution; transient alarm state must not become a persisted blocker.
+            warnings.Add(alarmReason);
         }
 
         return new DeployPlan
         {
-            IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
+            IsReadyToSubmit = blockingReasons.Count == 0 && alarmReason is null && !spec.RequiresApproval,
             RequiresApproval = spec.RequiresApproval,
             RequiresOutOfBandMigrations = spec.RequiresOutOfBandMigrations,
             BlockingReasons = blockingReasons,

@@ -273,6 +273,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
             };
         }
 
+        await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         var target = ResolveTarget(spec);
         var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
             ?? throw new InvalidOperationException("Stable ECS service is required.");

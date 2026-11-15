@@ -12,6 +12,37 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class DeployWorkflowServiceTests
 {
+    [UnitTest]
+    public async Task SubmitAsync_TransientPlanWarning_AllowsSubmissionAfterRecovery()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployPlan
+            {
+                IsReadyToSubmit = false,
+                Warnings = ["Deployment alarms are not OK."]
+            });
+        var service = CreateService(store, backend);
+
+        var operation = await service.CreateAsync("prod-api", "sha256:new", "sha256:old", "alice", "Deploy",
+            "alarm-plan", "corr", OperationPriority.Normal, submitImmediately: true, parameterOverrides: null);
+
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().BeEmpty();
+        await backend.DidNotReceive().StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Submitted });
+
+        var submitted = await service.SubmitAsync(operation.OperationId, "alice", "alarms recovered");
+
+        submitted!.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTheory]
     [InlineData("create")]
     [InlineData("submit")]
