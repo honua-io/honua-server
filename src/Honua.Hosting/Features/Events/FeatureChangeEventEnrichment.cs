@@ -36,6 +36,10 @@ internal static class FeatureChangeEventEnrichment
         return new FeatureChangeEventEnrichmentResult(envelope, propertiesJson, geometryJson, geometrySrid);
     }
 
+    // A geometry read back from the change log as EWKB, which carries its SRID.
+    public static (double[]? Envelope, string? GeometryJson, int? Srid) FromWkb(byte[]? wkb)
+        => ExtractGeometry(wkb, fallbackSrid: null);
+
     private static (double[]? Envelope, string? GeometryJson, int? Srid) ExtractGeometry(byte[]? wkb, int? fallbackSrid)
     {
         if (wkb is null || wkb.Length == 0)
