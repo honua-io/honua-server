@@ -450,8 +450,8 @@ The `[ScaleTest]` tier runs against a multi-node stack behind nginx.
    `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`.
 4. **For replica-state scale tests** (create, extract, sync, unregister), also set
    `HONUA_SCALE_TEST_SERVICE_ID=<service-name>`.
-5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`,
-   `HONUA_SCALE_TEST_REDIS_PORT=6380` and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
+5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`
+   and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
 6. **Run only the scale tests**:
    `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`.
 
