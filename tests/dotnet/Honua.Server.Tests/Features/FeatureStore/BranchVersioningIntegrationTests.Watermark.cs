@@ -88,8 +88,8 @@ public sealed partial class BranchVersioningIntegrationTests
     private async Task AssertAllocationAssignsTransactionIdBeforeNextvalAsync(string functionName)
     {
         // The assignment has to precede nextval inside the trigger. Observing the transaction id
-        // after the statement returns is true of the previous body as well, because the change-row
-        // insert assigns one. The definition order is the regression for that window.
+        // after the statement returns cannot establish allocation ordering because the change-row
+        // insert also assigns one. The definition order covers that window.
         const string sql = """
             SELECT strpos(definition, 'pg_current_xact_id()') AS assigned,
                    strpos(definition, 'pg_advisory_xact_lock(144047712, 0)') AS locked,
