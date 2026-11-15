@@ -1019,6 +1019,15 @@ Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
 OpenAPI Contract Governance retain their generator/contract input filters.
 
+On pull requests, operation-capability completeness tests and the strict authored
+join drift check run in Derived Artifact Normalization after the canonical
+catalog has been generated and replayed. Endpoint PRs therefore validate against
+their own source without committing trunk-owned catalog projections. The same
+six join tests and `--check` still run on matrix schedules and manual dispatches.
+OpenAPI documents, the drift input declaration, join generators and GIS data
+trigger normalization; it reuses the existing build and adds no runner. The
+bounded publication envelope still contains only its three existing projections.
+
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
 shared helpers GeoArrow names, GeoParquet's format dispatch, PAR1 detection,

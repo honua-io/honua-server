@@ -20,6 +20,10 @@ on:
       - 'scripts/ci/generate-geoservices-parity.sh'
       - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/generate-operation-capability.py'
+      - 'scripts/ci/generate-operation-capability.test.py'
+      - 'scripts/ci/openapi-drift-check.py'
+      - 'docs/developer/api-specs/**'
       - 'scripts/ci/normalization-envelope.py'
       - 'docs/cite-status.md'
       - 'docs/gis/data/**'
@@ -176,6 +180,14 @@ jobs:
             echo "normalization projections exceed the bounded aggregate" >&2
             exit 1
           fi
+
+      # The authored join stays strict, but its catalog input is trunk-owned.
+      # Validate against the replayed canonical catalog, never a stale PR blob.
+      - name: Validate operation-capability join against canonical projections
+        if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        run: |
+          python3 scripts/ci/generate-operation-capability.test.py
+          python3 scripts/ci/generate-operation-capability.py --check
 
       - name: Upload bounded projection data
         if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
