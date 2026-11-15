@@ -799,7 +799,9 @@ Job-level concurrency filters cancelled and fork completions before admission, s
 issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
 Each sweep discovers all retained evidence artifacts, including reruns of old source runs,
 using at most eight concurrent read requests and reporting page progress. All pages
-must succeed before publication begins; inventory errors leave the checkpoint unchanged. It
+must succeed before publication begins; inventory errors leave the checkpoint unchanged.
+Discovery fails closed when page totals change or the unique entry count disagrees with
+the reported total. It
 selects each shard's highest attempt, and processes at most 25 completed source runs.
 Remaining artifacts stay discoverable for the next event or scheduled sweep.
 

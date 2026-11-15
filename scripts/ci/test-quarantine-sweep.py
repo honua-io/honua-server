@@ -237,6 +237,41 @@ class CheckpointTests(unittest.TestCase):
             self.assertFalse(checkpoint.exists())
             publish.assert_not_called()
 
+    def test_inventory_upload_during_out_of_order_reads_leaves_checkpoint_unwritten(self):
+        page_three_read = threading.Event()
+        old = list(range(301, 0, -1))
+        new = [302] + old
+
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            if number == 1:
+                snapshot = old
+            elif number == 3:
+                snapshot = old
+                page_three_read.set()
+            else:
+                self.assertTrue(page_three_read.wait(2))
+                snapshot = new
+            start = (number - 1) * 100
+            return dict(total_count=len(snapshot), artifacts=[dict(id=i) for i in snapshot[start:start + 100]])
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'api', side_effect=page), \
+                    patch.object(sweep, 'publish_run') as publish, \
+                    self.assertRaisesRegex(ValueError, 'changed during discovery'):
+                sweep.sweep(checkpoint)
+            self.assertFalse(checkpoint.exists())
+            publish.assert_not_called()
+
+    def test_inventory_duplicate_across_pages_cannot_hide_a_missing_entry(self):
+        with patch.object(sweep, 'api', side_effect=[
+            dict(total_count=101, artifacts=[artifact(i) for i in range(100)]),
+            dict(total_count=101, artifacts=[artifact(99)]),
+        ]), self.assertRaisesRegex(ValueError, 'incomplete'):
+            sweep.inventory('actions/artifacts', 'artifacts')
+
     def test_inventory_full_last_page_requires_empty_terminal_page(self):
         def page(path):
             number = int(path.rsplit('=', 1)[1])

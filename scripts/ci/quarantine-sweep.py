@@ -38,7 +38,7 @@ def api(path):
 def inventory(path, key):
     found = {}
     page = 1
-    total = 0
+    total = None
 
     def read(number):
         response = api(f'{path}{"&" if "?" in path else "?"}per_page={PAGE_SIZE}&page={number}')
@@ -48,14 +48,19 @@ def inventory(path, key):
 
     with ThreadPoolExecutor(max_workers=INVENTORY_WORKERS) as executor:
         while page <= MAX_PAGES:
-            remaining = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE - page + 1)
+            remaining = max(1, ((total or 0) + PAGE_SIZE - 1) // PAGE_SIZE - page + 1)
             stop = min(page + INVENTORY_WORKERS, page + remaining, MAX_PAGES + 1)
             responses = list(executor.map(read, range(page, stop)))
             for response in responses:
-                total = max(total, response['total_count'])
+                if total is None:
+                    total = response['total_count']
+                elif total != response['total_count']:
+                    raise ValueError('Artifact inventory changed during discovery; checkpoint unchanged')
                 batch = response[key]
                 found.update((item['id'], item) for item in batch)
                 if len(batch) < PAGE_SIZE:
+                    if len(found) != total:
+                        raise ValueError('Artifact inventory is incomplete; checkpoint unchanged')
                     print(f'Inventoried {path}: {len(found)} unique entries through page {page}', flush=True)
                     return list(found.values())
                 page += 1
