@@ -1,49 +1,63 @@
+# Console is a static browser bundle (console/ in this package). The console service is
+# an HTTPS edge that serves it at /console/ and forwards every other path to the serving
+# API, so browser sign-in, CSRF and the OIDC callback share one origin.
 services:
   honua:
     environment:
       Studio__EndUserAuthorization__Enabled: "true"
+      # Trust the scheme and host only from the Console edge's fixed address.
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__ForwardLimit: "1"
+      ForwardedHeaders__KnownProxies__0: ${HONUA_CONSOLE_EDGE_ADDRESS:-172.31.250.242}
+      # Used when OIDC is enabled; register this exact URI with the identity provider.
+      Oidc__AdminAuthCallbackUri: "https://localhost:${HONUA_CONSOLE_PORT:-18083}/admin/auth/callback"
+    networks:
+      default: {}
+      # Both members have fixed addresses, so the server can never take the edge's.
+      console-edge:
+        ipv4_address: ${HONUA_CONSOLE_EDGE_SERVER_ADDRESS:-172.31.250.243}
   console:
-    image: ${HONUA_CONSOLE_IMAGE:?The package image lock must include an immutable Console image}
+    image: ${HONUA_CONSOLE_WEB_IMAGE:?The package image lock must include an immutable Console web image}
     profiles: [console]
-    # Install secrets are group-owned by the servers; Console's app user has a different primary group.
+    # Secret files are group-owned by gid 1001 (keyring-init); the web server runs as uid 101.
     group_add: ["1001"]
     ports:
-      - "127.0.0.1:${HONUA_CONSOLE_PORT:-18083}:8080"
-    entrypoint:
-      - bash
-      - +x
-      - -euc
-      - |
-        # Inherited shell tracing would expose the private credential during export.
-        { set +x; } 2>/dev/null
-        admin_password=$$(< "$$HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY")
-        [ -n "$$admin_password" ] || { echo "empty Console admin password file" >&2; exit 1; }
-        export HONUA_ADMIN_API_KEY="$$admin_password" Honua__Server__AdminApiKey="$$admin_password"
-        unset admin_password HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY
-        exec "$$@"
-      - console-secrets
-      - dotnet
-      - Honua.Console.Web.dll
+      - "127.0.0.1:${HONUA_CONSOLE_PORT:-18083}:8443"
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: http://+:8080
-      HONUA_SERVER_BASE_URL: http://honua:8080
-      Honua__Server__BaseUrl: http://honua:8080
-      HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY: /run/secrets/honua_admin_password
-      Studio__EmbedJsStudio: "true"
+      NGINX_ENTRYPOINT_QUIET_LOGS: "1"
+    volumes:
+      - ./console:/srv/console:ro
+      - ./console.config.json:/etc/honua-console/config.json:ro
+      - ./console.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    secrets: [console_tls_certificate, console_tls_key]
+    networks:
+      console-edge:
+        ipv4_address: ${HONUA_CONSOLE_EDGE_ADDRESS:-172.31.250.242}
     depends_on:
       honua:
         condition: service_healthy
-    secrets: [honua_admin_password]
     healthcheck:
-      test: ["CMD-SHELL", "test -s /app/version.json || test -s /app/wwwroot/version.json"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 10s
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=20m
+
+networks:
+  # Only the Console edge and the serving API join this network.
+  console-edge:
+    ipam:
+      config:
+        - subnet: ${HONUA_CONSOLE_EDGE_SUBNET:-172.31.250.240/29}
+
+secrets:
+  console_tls_certificate:
+    file: ./secrets/console_tls_certificate
+  console_tls_key:
+    file: ./secrets/console_tls_key
