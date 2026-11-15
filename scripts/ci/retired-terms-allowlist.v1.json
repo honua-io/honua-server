@@ -2086,7 +2086,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "dataset-reference",
-      "line": "        init => _styleResourceIds = _styleResourceIds.WithLegacy(value, _readingJson);",
+      "line": "        set => _styleResourceIds = _styleResourceIds.WithLegacy(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2098,7 +2098,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "dataset-reference",
-      "line": "        init => _styleResourceIds = _styleResourceIds.WithCanonical(value, _readingJson);",
+      "line": "        set => _styleResourceIds = _styleResourceIds.WithCanonical(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2128,7 +2128,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "dataset-reference",
-      "line": "        init => _resourceId = _resourceId.WithLegacy(value, _readingJson);",
+      "line": "        set => _resourceId = _resourceId.WithLegacy(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2140,7 +2140,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "dataset-reference",
-      "line": "        init => _resourceId = _resourceId.WithCanonical(value, _readingJson);",
+      "line": "        set => _resourceId = _resourceId.WithCanonical(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2170,7 +2170,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "layer-membership",
-      "line": "        init => _publicationIds = _publicationIds.WithLegacy(value, _readingJson);",
+      "line": "        set => _publicationIds = _publicationIds.WithLegacy(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2182,7 +2182,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "layer-membership",
-      "line": "        init => _publicationIds = _publicationIds.WithCanonical(value, _readingJson);",
+      "line": "        set => _publicationIds = _publicationIds.WithCanonical(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2212,7 +2212,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "layer-type",
-      "line": "        init => _publicationType = _publicationType.WithLegacy(value, _readingJson);",
+      "line": "        set => _publicationType = _publicationType.WithLegacy(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2224,7 +2224,7 @@
     {
       "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
       "rule": "layer-type",
-      "line": "        init => _publicationType = _publicationType.WithCanonical(value, _readingJson);",
+      "line": "        set => _publicationType = _publicationType.WithCanonical(value, _readingJson);",
       "reason": "rc.2 graph readers and writers still require this legacy member; canonical aliases share its value with explicit legacy-presence precedence."
     },
     {
@@ -2370,6 +2370,36 @@
       "rule": "graph-layer-index",
       "line": "        INSERT INTO \"{schema}\".metadata_v2_publications_idx",
       "reason": "Regression fixture deliberately exercises rc.2 legacy names alongside canonical aliases and verifies both versions share values."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2VocabularyJsonTests.cs",
+      "rule": "dataset-reference",
+      "line": "              \"styleResourceIds\":[\"style\"],\"relationships\":[{\"relatedResourceId\":\"related\"}]}],",
+      "reason": "Literal legacy wire fields exercise rc.2 input compatibility and precedence against canonical aliases."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2VocabularyJsonTests.cs",
+      "rule": "layer-type",
+      "line": "             \"publications\":[{\"resourceId\":\"current\",\"publicationType\":\"future-layer\"}],",
+      "reason": "Literal legacy wire fields exercise rc.2 input compatibility and precedence against canonical aliases."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2VocabularyJsonTests.cs",
+      "rule": "dataset-reference",
+      "line": "             \"publications\":[{\"resourceId\":\"current\",\"publicationType\":\"future-layer\"}],",
+      "reason": "Literal legacy wire fields exercise rc.2 input compatibility and precedence against canonical aliases."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2VocabularyJsonTests.cs",
+      "rule": "dataset-reference",
+      "line": "             \"storageBindings\":[{\"resourceId\":\"current\"}],",
+      "reason": "Literal legacy wire fields exercise rc.2 input compatibility and precedence against canonical aliases."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2VocabularyJsonTests.cs",
+      "rule": "layer-membership",
+      "line": "             \"services\":[{\"publicationIds\":[\"layer\"]}]}",
+      "reason": "Literal legacy wire fields exercise rc.2 input compatibility and precedence against canonical aliases."
     }
   ]
 }
