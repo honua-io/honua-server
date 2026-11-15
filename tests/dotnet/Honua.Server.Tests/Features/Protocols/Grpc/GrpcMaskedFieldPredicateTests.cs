@@ -41,7 +41,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 /// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
-public sealed class GrpcMaskedFieldPredicateTests
+public sealed partial class GrpcMaskedFieldPredicateTests
 {
     private const string MaskedField = "secret";
 
@@ -241,7 +241,7 @@ public sealed class GrpcMaskedFieldPredicateTests
         yield return Feature.Create(1, null);
     }
 
-    private TestServerCallContext CreateCallContext()
+    private TestServerCallContext CreateCallContext(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
@@ -249,6 +249,9 @@ public sealed class GrpcMaskedFieldPredicateTests
         services.AddSingleton(_fieldMaskSource);
         services.AddSingleton<IFilterExpressionService>(
             new FilterExpressionService(new FilterExpressionTranslator(_sqlFilterTranslator)));
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
+
+        configure?.Invoke(services);
 
         var httpContext = new DefaultHttpContext
         {

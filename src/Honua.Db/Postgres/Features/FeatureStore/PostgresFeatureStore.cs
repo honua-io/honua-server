@@ -42,7 +42,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
+internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
