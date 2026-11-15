@@ -3,7 +3,6 @@
 import argparse
 import importlib.util
 from pathlib import Path
-import re
 import subprocess
 
 HERE = Path(__file__).resolve().parent
@@ -12,22 +11,9 @@ proof = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proof)
 
 
-def owned_paths(base):
-    source = proof.git('show', f'{base}:scripts/ci/generated-files.sh').decode()
-    lines = [line.strip() for line in source.splitlines()
-             if line.strip() and not line.lstrip().startswith('#')]
-    if lines[0] != 'GENERATED_FILES=(' or lines[-1] != ')':
-        raise ValueError('generated-file policy must be a literal array')
-    paths = lines[1:-1]
-    if not paths or any(not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+', p)
-                        or any(part in ('.', '..') for part in p.split('/')) for p in paths):
-        raise ValueError('invalid generated-file policy path')
-    return paths
-
-
 def check(base, head):
     ancestor = proof.git('merge-base', base, head).decode().strip()
-    paths = owned_paths(base)
+    paths = proof.policy_paths(base)
     changed = proof.git('diff', '--no-renames', '--name-only', '-z', ancestor, head).decode().split('\0')[:-1]
     protected = [p for p in changed if any(p == item or p.startswith(item + '/') for item in paths)]
     if not protected:

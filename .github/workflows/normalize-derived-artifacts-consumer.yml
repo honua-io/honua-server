@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
-# Founder 14 Nov: feature PRs must not commit repository-state projections.
+# Feature PRs must not commit repository-state projections.
 # Keep envelope validation and drift reporting, with publication owned by the
 # existing generated-files-on-trunk producer.
 env:
