@@ -669,22 +669,6 @@
       "capability": "raster.multidim-coverage"
     },
     {
-      "id": "delete-api-v1-agent-workspaces-workspaceid-processes-local-project-bindings-bindingid",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bindings/{bindingId}",
-      "method": "DELETE",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.RevokeBinding_Owner_RevokesOnlyTheirOwnWorkspaceBinding"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "delete-api-v1-console-access-workspaceid-roles-roleid",
       "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
       "method": "DELETE",
@@ -787,6 +771,20 @@
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
       "capability": "admin.control-plane"
+    },
+    {
+      "id": "delete-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "DELETE",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "delete-healthz-live",
@@ -5014,150 +5012,6 @@
       "capability": "raster.multidim-coverage"
     },
     {
-      "id": "get-api-v1-agent-workspaces-workspaceid",
-      "route": "/api/v1/agent/workspaces/{workspaceId}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.BearerWithoutRecognizedScope_IsDeniedBeforeTheStore",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.Workspace_PersistsServerIdentity_AndRejectsOtherOwnersTenantsAndTargets"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-commands-commandid",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/commands/{commandId}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-project",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-project-identity",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/identity",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_Owner_UsesStoredIdentityWithoutForwardingBearer",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-runs",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-runs-runid",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-runs-runid-artifacts-path",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/artifacts/{**path}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-snapshots-snapshotid",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots/{snapshotId}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-snapshots-snapshotid-sources-path",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots/{snapshotId}/sources/{**path}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-sources-path",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-analysis-artifacts-artifactid",
       "route": "/api/v1/analysis/artifacts/{artifactId}",
       "method": "GET",
@@ -6965,6 +6819,27 @@
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
       "capability": "serve.elevation"
+    },
+    {
+      "id": "get-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "GET",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_CatalogFails_ReturnsSanitizedUnavailable",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_CatalogNotRegistered_ReportsUnavailableWithoutBreakingLiveness",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DatabaseFailsAfterSuccess_ReportsFailureWithoutCachedSuccess",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DatabaseStalls_CancelsDependencyAndReturnsUnavailable",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "get-healthz-live",
@@ -16200,6 +16075,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "patch-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "PATCH",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "patch-healthz-live",
       "route": "/healthz/live",
       "method": "PATCH",
@@ -19675,86 +19564,6 @@
       "capability": "raster.multidim-coverage"
     },
     {
-      "id": "post-api-v1-agent-workspaces",
-      "route": "/api/v1/agent/workspaces",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.BearerWithoutRecognizedScope_IsDeniedBeforeTheStore",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.CreateWorkspace_Anonymous_IsUnauthorized",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.CreateWorkspace_BrowserCookieWithoutCsrf_IsRejected",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.CreateWorkspace_MachineCredential_IsForbidden",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.Workspace_PersistsServerIdentity_AndRejectsOtherOwnersTenantsAndTargets"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-project-bind",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bind",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-runs",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.RunWithoutCustomCodeScope_IsForbidden"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-runs-runid-cancel",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/cancel",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-snapshots",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "post-api-v1-analysis-content-items",
       "route": "/api/v1/analysis/content/items",
       "method": "POST",
@@ -20894,6 +20703,20 @@
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
       "capability": "analytics.viewshed"
+    },
+    {
+      "id": "post-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "POST",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "post-healthz-live",
@@ -26412,7 +26235,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.Settings_RestoreWatchdogFails_ReturnsUnavailableAndRetainsStop",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.Settings_StopWatchdogFails_ReturnsUnavailableAndRetainsStop"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -26717,21 +26542,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-agent-workspaces-workspaceid-processes-local-sources-path",
-      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}",
-      "method": "PUT",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
-        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
-      ],
-      "proof_ledger_surface": "native-local-process-workspaces",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "put-api-v1-console-access-workspaceid-roles-roleid",
       "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
       "method": "PUT",
@@ -26852,6 +26662,20 @@
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
       "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "PUT",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "put-healthz-live",

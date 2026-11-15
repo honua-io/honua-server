@@ -518,6 +518,11 @@ internal sealed partial class DeployWorkflowService
                         }
                     };
                 }
+                catch (DeployAdmissionBlockedException ex)
+                {
+                    operation = AdmissionRefused(
+                        operation with { Status = DeterminePersistedStatus(planningResult.Plan) }, ex);
+                }
                 catch (OperationCanceledException)
                 {
                     throw;
@@ -689,6 +694,12 @@ internal sealed partial class DeployWorkflowService
             await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
             return updated;
         }
+        catch (DeployAdmissionBlockedException ex)
+        {
+            var refused = AdmissionRefused(preliminary with { Status = operation.Status }, ex);
+            await _workflowStore.SetAsync(refused, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return refused;
+        }
         catch (OperationCanceledException)
         {
             throw;
@@ -712,6 +723,16 @@ internal sealed partial class DeployWorkflowService
             return failed;
         }
     }
+
+    private static WorkflowOperationRecord AdmissionRefused(
+        WorkflowOperationRecord operation, DeployAdmissionBlockedException refusal)
+        => operation with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = null,
+            CurrentPhase = "Deployment admission refused; submit again after the deployment alarms recover.",
+            ErrorMessage = refusal.Message
+        };
 
     internal enum DeployPromotionOutcome
     {
@@ -813,6 +834,10 @@ internal sealed partial class DeployWorkflowService
         try
         {
             observation = await backend.PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DeployAdmissionBlockedException ex)
+        {
+            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, ex.Message);
         }
         catch (OperationCanceledException)
         {

@@ -158,7 +158,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             if (_datumTransformationCatalog.HasAreaOfUse(sourceSrid, targetSrid))
             {
-                // The envelope is in no catalog area, or it meets more than one.
+                // No region contains the envelope, or matching regions have equal priority.
                 // Do not fall back to the CONUS NAD27 grid.
                 return null;
             }
@@ -235,6 +235,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var mode = progress == null ? "sync" : "background";
         var jobId = Guid.NewGuid().ToString("N")[..8];
         string[] warnings = [];
+        if (request.EffectiveLoadMode == ImportLoadMode.CreateOnly && format != SupportedFileFormat.GeoJson)
+        {
+            // Refuse before any staging table exists: only GeoJSON has complete create-only validation.
+            return ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson,
+                "Create-only imports require GeoJSON with complete input validation.", stopwatch.Elapsed, warnings);
+        }
 
         // Handle cloud storage file download if needed
         Stream fileStream;
