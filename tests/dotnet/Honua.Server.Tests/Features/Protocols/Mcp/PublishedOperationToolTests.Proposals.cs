@@ -26,8 +26,9 @@ public sealed partial class PublishedOperationToolTests
         var descriptor = AdminAccessOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System), [executor],
+            catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-v6662", NullLogger.Instance);
         tool.Describe().Description.Should().Contain("proposal only").And.Contain("separately authenticated");

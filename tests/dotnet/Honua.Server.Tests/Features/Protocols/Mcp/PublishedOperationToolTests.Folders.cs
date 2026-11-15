@@ -49,8 +49,9 @@ public sealed partial class PublishedOperationToolTests
         var operation = AdminApiOperationCatalog.Descriptors.Single(descriptor => descriptor.OperationId == operationId);
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System), [executor],
+            catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(operation, "catalog", NullLogger.Instance);
         var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin"]);
