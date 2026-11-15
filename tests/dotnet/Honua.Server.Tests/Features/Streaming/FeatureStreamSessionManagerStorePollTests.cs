@@ -61,6 +61,7 @@ public sealed class FeatureStreamSessionManagerStorePollTests : IDisposable
     {
         using var session = _manager.CreateSession("SSE", null);
         Attach(position: 50);
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().Be(50);
         _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 51)));
         _manager.MarkRelayed(51);
 
@@ -81,10 +82,76 @@ public sealed class FeatureStreamSessionManagerStorePollTests : IDisposable
     }
 
     [UnitTest]
+    public void LaterLiveChange_DoesNotCoverRelayStartupGap()
+    {
+        using var session = _manager.CreateSession("SSE", null);
+        Attach(position: 80);
+        _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 81)));
+        _manager.MarkRelayed(81);
+        session.Reader.TryRead(out _).Should().BeTrue();
+
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().BeNull(
+            "the live event cannot cover changes 51 to 80 skipped at relay startup");
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 81).Should().Be(81);
+    }
+
+    [UnitTest]
+    public void LaterLiveChange_DoesNotCoverLateJoiningGap()
+    {
+        Attach(position: 50);
+        _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 51)));
+        _manager.MarkRelayed(51);
+        using var late = _manager.CreateSession("SSE", null);
+        _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 52)));
+        _manager.MarkRelayed(52);
+        late.Reader.TryRead(out _).Should().BeTrue();
+
+        _manager.StorePollSkipCursor(late.SessionId, replayCursor: 50).Should().BeNull(
+            "the late session missed change 51 even though change 52 reached it live");
+        _manager.StorePollSkipCursor(late.SessionId, replayCursor: 52).Should().Be(52);
+    }
+
+    [UnitTest]
+    public void JoiningBeforeRelayAcknowledgesBroadcast_StillRequiresDurableCoverage()
+    {
+        Attach(position: 50);
+        _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 51)));
+        using var late = _manager.CreateSession("SSE", null);
+
+        _manager.StorePollSkipCursor(late.SessionId, replayCursor: 50).Should().BeNull(
+            "the session missed the broadcast even before MarkRelayed acknowledges it");
+        _manager.MarkRelayed(51);
+        _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 52)));
+        _manager.MarkRelayed(52);
+        late.Reader.TryRead(out _).Should().BeTrue();
+
+        _manager.StorePollSkipCursor(late.SessionId, replayCursor: 50).Should().BeNull();
+        _manager.StorePollSkipCursor(late.SessionId, replayCursor: 51).Should().Be(52);
+    }
+
+    [UnitTest]
+    public void LaterLiveChange_DoesNotCoverReattachmentGap()
+    {
+        using var session = _manager.CreateSession("SSE", null);
+        Attach(position: 50);
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().Be(50);
+        _manager.DetachRelay();
+        Attach(position: 80);
+        _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 81)));
+        _manager.MarkRelayed(81);
+        session.Reader.TryRead(out _).Should().BeTrue();
+
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().BeNull(
+            "the replacement attachment needs its own durable coverage");
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 81).Should().Be(81);
+    }
+
+    [UnitTest]
     public void UnrelayedChange_RequiresStoreRead_UntilTheSessionReadsPastIt()
     {
         using var session = _manager.CreateSession("SSE", null);
         Attach(position: 50);
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().Be(50);
         _manager.MarkUnrelayed(51);
         _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 52)));
         _manager.MarkRelayed(52);
@@ -187,6 +254,7 @@ public sealed class FeatureStreamSessionManagerStorePollTests : IDisposable
     {
         using var session = _manager.CreateSession("SSE", null);
         Attach(position: 50);
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().Be(50);
         _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 51)));
         _manager.MarkRelayed(51);
 
@@ -201,6 +269,7 @@ public sealed class FeatureStreamSessionManagerStorePollTests : IDisposable
     {
         using var session = _manager.CreateSession("SSE", null);
         Attach(position: 50);
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().Be(50);
         // Before drain starts a full channel drops silently and the session stays open.
         for (var cursor = 51; cursor <= 51 + Buffer; cursor++)
         {

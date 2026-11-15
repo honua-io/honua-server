@@ -354,11 +354,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     // still read the store on every interval.
     private RelayAttachment? _relayAttachment;
     private long _relayedThrough;
+    private long _broadcastStartedThrough;
 
     private sealed class RelayAttachment(Func<long> position)
     {
         public Func<long> Position { get; } = position;
-        public long Start;
     }
 
     internal void AttachRelay(Func<long> position)
@@ -393,11 +393,15 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return null;
         }
 
-        // The first positioned reading marks where the relay began; a session that started
-        // before it reads the store once to cover what came before. Relayed is read before
-        // considered: a change is marked considered before it is marked relayed.
-        Interlocked.CompareExchange(ref relay.Start, position, 0);
-        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), Interlocked.Read(ref relay.Start));
+        // Each session must durably cover its first positioned reading of this attachment.
+        // A later offered change cannot prove coverage of an earlier startup or joining gap.
+        // Relayed is read before considered: a change is considered before it is relayed.
+        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), position);
+        var attachmentFloor = Math.Max(relayed, Interlocked.Read(ref _broadcastStartedThrough));
+        if (replayCursor < entry.GetRelayReadFloor(relay, attachmentFloor))
+        {
+            return null;
+        }
         var considered = entry.ConsideredThrough;
         if (Math.Max(considered, replayCursor) < relayed)
         {
@@ -433,6 +437,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     private int BroadcastLocally(FeatureStreamMessage message)
     {
+        if (!message.IsHeartbeat)
+        {
+            // A joining session can miss an enumeration before MarkRelayed completes.
+            InterlockedMax(ref _broadcastStartedThrough, message.Envelope.Cursor);
+        }
+
         var delivered = 0;
         IReadOnlyDictionary<string, JsonElement>? parsedProperties = null;
         bool propertiesParsed = false;
@@ -846,6 +856,23 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public long ConsideredThrough => Interlocked.Read(ref _consideredThrough);
 
         public void MarkConsidered(long cursor) => InterlockedMax(ref _consideredThrough, cursor);
+
+        private RelayAttachment? _pollRelay;
+        private long _relayReadFloor;
+
+        public long GetRelayReadFloor(RelayAttachment relay, long position)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!ReferenceEquals(_pollRelay, relay))
+                {
+                    _pollRelay = relay;
+                    _relayReadFloor = position;
+                }
+
+                return _relayReadFloor;
+            }
+        }
 
         private long _storeReadRequiredThrough;
 
