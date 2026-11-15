@@ -27,6 +27,7 @@ public sealed record OpsIncidentObservationQuery(
     int Limit = 100)
 {
     public string? FindingId { get; init; }
+    public DateTimeOffset? Until { get; init; }
 }
 
 public sealed record OpsIncidentObservationPage(IReadOnlyList<OpsIncidentObservation> Observations)

@@ -55,11 +55,13 @@ internal sealed class PostgresOpsIncidentObservationStore : IOpsIncidentObservat
             SELECT {Columns}, COUNT(*) OVER () FROM {_table}
             WHERE authority_scope = @authority AND observed_at >= @since
                 AND (@finding IS NULL OR finding_id = @finding)
+                AND (@until IS NULL OR observed_at <= @until)
             ORDER BY observed_at DESC, source_id, observation_id LIMIT @limit;
             """, connection);
         command.Parameters.AddWithValue("authority", NpgsqlDbType.Text, query.AuthorityScope);
         command.Parameters.AddWithValue("since", NpgsqlDbType.TimestampTz, query.Since.ToUniversalTime());
         command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit);
+        command.Parameters.AddWithValue("until", NpgsqlDbType.TimestampTz, (object?)query.Until?.ToUniversalTime() ?? DBNull.Value);
         command.Parameters.AddWithValue("finding", NpgsqlDbType.Text, (object?)query.FindingId ?? DBNull.Value);
         var observations = new List<OpsIncidentObservation>();
         long totalCount = 0;
@@ -94,6 +96,10 @@ internal sealed class PostgresOpsIncidentObservationStore : IOpsIncidentObservat
         if (query.FindingId is not null)
         {
             ValidateIdentity(query.FindingId);
+        }
+        if (query.Until < query.Since)
+        {
+            throw new ArgumentException("Observation upper timestamp bound must not precede its lower bound.", nameof(query));
         }
         if (query.Limit is < 1 or > 1000)
         {

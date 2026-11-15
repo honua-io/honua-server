@@ -109,6 +109,33 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
     }
 
     [IntegrationTest]
+    public async Task ReadAsync_ClosedIncidentWindow_ExcludesRecurrenceFromEvidenceAndCount()
+    {
+        await WithStoreAsync(async store =>
+        {
+            var original = Observation("authority-a", "active");
+            var recoveredAt = original.ObservedAt.AddSeconds(1);
+            await store.AppendAsync(original);
+            await store.AppendAsync(original with
+            {
+                ObservationId = "recovered", ObservedAt = recoveredAt,
+                State = OpsIncidentObservationState.Recovered
+            });
+            await store.AppendAsync(original with { ObservationId = "recurrence", ObservedAt = recoveredAt.AddSeconds(1) });
+            var page = await store.ReadAsync(new("authority-a", original.ObservedAt, 1)
+            {
+                FindingId = original.FindingId, Until = recoveredAt
+            });
+            page.TotalCount.Should().Be(2);
+            page.Truncated.Should().BeTrue();
+            page.Observations.Should().ContainSingle().Which.ObservationId.Should().Be("recovered");
+            var boundary = await store.ReadAsync(new("authority-a", recoveredAt) { Until = recoveredAt });
+            boundary.TotalCount.Should().Be(1);
+            boundary.Observations.Should().ContainSingle().Which.ObservationId.Should().Be("recovered");
+        });
+    }
+
+    [IntegrationTest]
     public async Task AppendAsync_RecoveryAndUnknown_AreRetainedAsSeparateObservations()
     {
         await WithStoreAsync(async store =>
@@ -133,7 +160,8 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
                 new("", DateTimeOffset.UnixEpoch), new(new string('a', 257), DateTimeOffset.UnixEpoch), new(" ", DateTimeOffset.UnixEpoch),
                 new("authority-a", DateTimeOffset.UnixEpoch, 0), new("authority-a", DateTimeOffset.UnixEpoch, 1001),
                 new("authority-a", DateTimeOffset.UnixEpoch) { FindingId = " " },
-                new("authority-a", DateTimeOffset.UnixEpoch) { FindingId = new string('é', 129) }
+                new("authority-a", DateTimeOffset.UnixEpoch) { FindingId = new string('é', 129) },
+                new("authority-a", DateTimeOffset.UnixEpoch) { Until = DateTimeOffset.UnixEpoch.AddTicks(-1) }
             })
             {
                 Func<Task> read = () => store.ReadAsync(query);
