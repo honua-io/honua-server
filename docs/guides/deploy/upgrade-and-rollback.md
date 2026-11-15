@@ -669,3 +669,7 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 - [Back up and restore](backup-and-restore.md)
 - [Monitor Honua Server](monitoring.md)
 - [Deploy on AWS and Azure](cloud-deployments.md)
+
+### Investigation incident references
+
+`193_AllowIncidentInvestigationReferences.sql` widens the existing investigation link and pin checks to retain incident references. It preserves existing rows and identifiers. The constraint replacement remains a reviewed contract migration under the migration safety classifier. On an existing database, run migrate-only, review the pending scripts, then rerun with the reported one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce before deploying the incident-writing API. Fresh installs need no nonce. Keep the pre-migration backup: once incident references have been written, restore that backup before rolling back to a server that cannot read those kinds. Do not disable migration safety enforcement.

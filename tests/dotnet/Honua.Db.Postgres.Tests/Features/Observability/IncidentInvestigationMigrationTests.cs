@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -47,12 +48,11 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
         });
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(0, 1)]
     [InlineData(6, 1)]
     [InlineData(1, 0)]
     [InlineData(1, 9)]
-    [Trait("Category", "Integration")]
     public async Task Migration_RejectsUndefinedReferenceKinds(int linkKind, int pinKind)
     {
         await WithSchemaAsync(async schema =>
@@ -96,7 +96,22 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task Migration_HasExplicitCompatibilityReviewForTheProductionSafetyGate()
+    {
+        var sql = await ReadMigrationAsync(Migration);
+        var classification = MigrationSafetyClassifier.Classify(Migration, sql);
+
+        classification.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
+        classification.BreakingRules.Should().Contain("drop-other-object");
+    }
+
     private async Task ApplyMigrationAsync(string schema, string migration)
+    {
+        await ExecuteAsync(schema, await ReadMigrationAsync(migration));
+    }
+
+    private static async Task<string> ReadMigrationAsync(string migration)
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
@@ -105,8 +120,7 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
         }
 
         var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration);
-        var sql = (await File.ReadAllTextAsync(path)).Replace("honua.", "$HonuaSchema$.", StringComparison.Ordinal);
-        await ExecuteAsync(schema, sql);
+        return (await File.ReadAllTextAsync(path)).Replace("honua.", "$HonuaSchema$.", StringComparison.Ordinal);
     }
 
     private async Task ExecuteAsync(string schema, string sql)
