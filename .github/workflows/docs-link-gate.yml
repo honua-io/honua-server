@@ -92,9 +92,18 @@ jobs:
       - name: Install the safe OKF YAML reader
         run: python3 -m pip install -r scripts/ci/okf-requirements.txt
 
+      # The workflow runs from the merge ref but checks out the PR head, so a
+      # head cut before the inventory generator existed lacks it. That
+      # head's committed inventory is then the one it ships and is validated as
+      # it is, instead of failing on a missing script the PR never touched.
       - name: Regenerate trunk-owned documentation for validation
         run: |
-          python3 scripts/ci/generate-workflow-inventory.py
+          inventory=scripts/ci/generate-workflow-inventory.py
+          if [[ -f "${inventory}" ]]; then
+            python3 "${inventory}"
+          else
+            echo "::notice::${inventory} is not on this PR head; validating its committed inventory."
+          fi
           python3 scripts/ci/generate-capability-concepts.py
 
       # The checker's own tests run first and are self-contained (synthetic docs
