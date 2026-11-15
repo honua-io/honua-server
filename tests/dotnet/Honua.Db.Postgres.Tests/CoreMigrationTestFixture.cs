@@ -11,7 +11,16 @@ namespace Honua.Db.Postgres.Tests;
 /// </summary>
 internal static class CoreMigrationTestFixture
 {
-    public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema, bool includeVocabulary = true)
+    public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema)
+    {
+        await ApplyPreVocabularyMetadataV2Async(fixture, schema);
+        await ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "186_ExpandMetadataV2Vocabulary.sql");
+    }
+
+    public static async Task ApplyPreVocabularyMetadataV2Async(PostgresFixture fixture, string schema)
     {
         await ApplyAsync(
             fixture,
@@ -21,13 +30,6 @@ internal static class CoreMigrationTestFixture
             fixture,
             schema,
             "src", "Honua.Server", "Migrations", "155_CreateMetadataFieldHistory.sql");
-        if (includeVocabulary)
-        {
-            await ApplyAsync(
-                fixture,
-                schema,
-                "src", "Honua.Server", "Migrations", "186_ExpandMetadataV2Vocabulary.sql");
-        }
     }
 
     public static Task ApplyRasterLayerStatisticsAsync(PostgresFixture fixture, string schema) =>

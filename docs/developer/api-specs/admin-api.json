@@ -27497,7 +27497,7 @@
             "$ref": "#/components/schemas/RasterMosaicResponse"
           },
           "editing": {
-            "$ref": "#/components/schemas/MetadataV2ObjectEditing"
+            "$ref": "#/components/schemas/MetadataV2ResourceEditing"
           }
         }
       },
@@ -50107,13 +50107,47 @@
         }
       },
       "MetadataV2ResourceEditing": {
-        "deprecated": true,
-        "description": "Compatibility schema for rc.2 generated clients; use MetadataV2ObjectEditing.",
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/MetadataV2ObjectEditing"
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "description": "UUID field used as an edit-stable identifier."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creating user."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creation timestamp."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last editing user."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last update timestamp."
+          },
+          "canModify": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false
+          },
+          "supportsRelatedRecords": {
+            "type": "boolean",
+            "default": true
           }
-        ]
+        }
       },
       "MetadataV2ObjectEditing": {
         "type": "object",

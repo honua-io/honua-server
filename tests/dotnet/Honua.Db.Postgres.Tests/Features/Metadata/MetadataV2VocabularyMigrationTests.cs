@@ -124,7 +124,7 @@ public sealed class MetadataV2VocabularyMigrationTests(PostgresFixture fixture)
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(MetadataV2VocabularyMigrationTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema, includeVocabulary: false);
+            await CoreMigrationTestFixture.ApplyPreVocabularyMetadataV2Async(fixture, schema);
             await action(schema);
         }
         finally
