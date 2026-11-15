@@ -25,7 +25,7 @@ internal sealed class StagedImportPreviewExecutor(IServiceProvider services) : I
         var principal = await StagedImportOperation.AuthorizedPrincipalAsync(services, cancellationToken).ConfigureAwait(false);
         var preview = await ServerJobArtifactImporter.PreviewAsync(command,
             StagedImportOperation.ImportContext(services, principal), cancellationToken).ConfigureAwait(false);
-        var binding = await StagedImportPreviewBinding.CreateAsync(services, context, preview, cancellationToken).ConfigureAwait(false);
+        var binding = await new StagedImportPreviewBindings(services).CreateAsync(context, preview, cancellationToken).ConfigureAwait(false);
         return StagedImportHandles.Completed(services, context, new StagedImportResult(OperationId, "Previewed staged dataset import.",
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -69,7 +69,7 @@ internal sealed class StagedImportExecutor(IServiceProvider services) : IOperati
 
         var principal = await StagedImportOperation.AuthorizedPrincipalAsync(services, cancellationToken).ConfigureAwait(false);
         var identity = StagedImportOperation.Required(request, StagedImportOperation.PreviewFingerprintParameter);
-        var pin = await StagedImportPreviewBinding.ReadAsync(services, context, identity, cancellationToken).ConfigureAwait(false);
+        var pin = await new StagedImportPreviewBindings(services).ReadAsync(context, identity, cancellationToken).ConfigureAwait(false);
         var preview = await ServerJobArtifactImporter.PreviewAsync(command,
             StagedImportOperation.ImportContext(services, principal), cancellationToken).ConfigureAwait(false);
         if (!string.Equals(ServerJobArtifactImporter.PreviewBindingFingerprint(pin.Preview),
