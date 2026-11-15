@@ -126,11 +126,9 @@ internal sealed class McpErrorData
     [JsonPropertyName("capability")]
     public string? Capability { get; set; }
 
-    /// <summary>
-    /// Identifier of the entitlement whose absence composed the capability out. Present instead
-    /// of <see cref="MissingDependency"/> when the dependency is deployed but not licensed, so an
-    /// agent reports the right fix.
-    /// </summary>
+    // The entitlement whose absence composed the capability out. Present instead of
+    // MissingDependency when the dependency is deployed but not licensed, so an agent reports
+    // the right fix.
     [JsonPropertyName("missingEntitlement")]
     public string? MissingEntitlement { get; set; }
 

@@ -21,7 +21,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -454,7 +453,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/analysis/jobs/{jobId}/logs")]
     public async Task JobLogs_WhenLogStoreUnavailable_ReturnsServiceUnavailable()
     {
-        // The job resolves, but the Redis-backed log store is down. The documented contract is a
+        // The job resolves, but the log store is down. The documented contract is a
         // retryable 503 for an unavailable log store, not a generic 500.
         _logs.FailWithStoreOutage = true;
 
@@ -689,7 +688,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
 
         public int TailReadCount { get; private set; }
 
-        // When set, TailAsync simulates a Redis-backed log store outage.
+        // When set, TailAsync simulates a log store outage.
         public bool FailWithStoreOutage { get; set; }
 
         public void SeedFailureLogs()
@@ -753,7 +752,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             TailReadCount++;
             if (FailWithStoreOutage)
             {
-                throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable");
+                throw new Npgsql.NpgsqlException("database unavailable");
             }
 
             var entries = _entries.TryGetValue(operationId, out var found) ? found : [];

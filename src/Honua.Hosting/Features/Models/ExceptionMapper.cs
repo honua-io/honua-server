@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Infrastructure.Redis;
 using Polly.CircuitBreaker;
 
 namespace Honua.Infrastructure.Models;
@@ -141,16 +140,6 @@ internal static class ExceptionMapper
             // Shared progress state is transiently unreachable (the type's contract): the
             // caller must retry, so answer 503 rather than a server-bug 500 (honua-server#6753).
             Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException => (
-                StatusCodes.Status503ServiceUnavailable,
-                "Service Unavailable",
-                "The service is temporarily unavailable. Please try again later.",
-                null
-            ),
-
-            // A Redis pipe completed under an in-flight command, bare or wrapped by a store's
-            // own exception. Map that one fault to 503; every other InvalidOperationException
-            // stays 500 (honua-server#6753).
-            InvalidOperationException invalidOperationEx when RedisClientFault.ContainsCompletedReader(invalidOperationEx) => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Service Unavailable",
                 "The service is temporarily unavailable. Please try again later.",

@@ -30,7 +30,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -287,14 +286,14 @@ public sealed class AnalysisContentServiceTests
     [Operation(Operations.JobStatus)]
     public async Task GetJobLogsAsync_WhenLogStoreUnavailable_ThrowsStoreUnavailable()
     {
-        // A Redis-backed log store outage must surface as the documented retryable 503
+        // A log store outage must surface as the documented retryable 503
         // (AnalysisContentStoreUnavailableException), not a generic 500.
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-logs", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(CreateFailedJob("job-logs", "validation failed"));
         var logStore = Substitute.For<IExecutionLogStore>();
         logStore.TailAsync("job-logs", Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+            .Throws(new Npgsql.NpgsqlException("database unavailable"));
         var sut = CreateService(jobService: jobService, logStores: [logStore]);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -325,7 +324,7 @@ public sealed class AnalysisContentServiceTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+            .Throws(new Npgsql.NpgsqlException("database unavailable"));
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(

@@ -8,7 +8,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -16,13 +15,13 @@ public sealed partial class ExecutionJobReconcilerTests
 {
     public enum LeaseRenewalFailure
     {
-        RedisUnavailable,
+        StoreUnavailable,
         TimedOut,
         OwnershipLost
     }
 
     [UnitTheory]
-    [InlineData(LeaseRenewalFailure.RedisUnavailable)]
+    [InlineData(LeaseRenewalFailure.StoreUnavailable)]
     [InlineData(LeaseRenewalFailure.TimedOut)]
     [InlineData(LeaseRenewalFailure.OwnershipLost)]
     [Operation(Operations.TestInfrastructure)]
@@ -32,7 +31,7 @@ public sealed partial class ExecutionJobReconcilerTests
         var store = LeaseStore(job);
         var renewal = failure switch
         {
-            LeaseRenewalFailure.RedisUnavailable => Task.FromException<bool>(LeaseUnavailable()),
+            LeaseRenewalFailure.StoreUnavailable => Task.FromException<bool>(LeaseUnavailable()),
             LeaseRenewalFailure.TimedOut => Task.FromException<bool>(new TimeoutException("Lease renewal timed out")),
             _ => Task.FromResult(false)
         };
@@ -146,7 +145,7 @@ public sealed partial class ExecutionJobReconcilerTests
         var reconciliation = LeaseReconciler(store, backend).ReconcileExecutionJobAsync(job.OperationId);
         try
         {
-            var exception = await Assert.ThrowsAsync<RedisConnectionException>(
+            var exception = await Assert.ThrowsAsync<Npgsql.NpgsqlException>(
                 () => reconciliation.WaitAsync(TimeSpan.FromSeconds(22)));
             Assert.Equal("Lease store unavailable", exception.Message);
             await store.Received(1).ReleaseLeaseAsync(job.OperationId, Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -171,6 +170,6 @@ public sealed partial class ExecutionJobReconcilerTests
     private static ExecutionJobReconciler LeaseReconciler(IExecutionJobStore store, params IBatchComputeBackend[] backends)
         => new(store, backends, new InMemoryProgressStore(), NullLogger<ExecutionJobReconciler>.Instance);
 
-    private static RedisConnectionException LeaseUnavailable()
-        => new(ConnectionFailureType.UnableToConnect, "Lease store unavailable");
+    private static Npgsql.NpgsqlException LeaseUnavailable()
+        => new("Lease store unavailable");
 }

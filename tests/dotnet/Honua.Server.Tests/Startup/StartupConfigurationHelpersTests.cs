@@ -9,10 +9,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Coverage for startup secret-reference resolution: resolved values must survive the
-/// security-configuration source reordering that runs before the host is built.
-/// </summary>
+// Resolved secret references must survive the security-configuration source reordering that runs
+// before the host is built.
 public sealed class StartupConfigurationHelpersTests
 {
     [Fact]

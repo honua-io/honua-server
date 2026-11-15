@@ -407,11 +407,8 @@ public sealed record OgcProcessError
     [JsonPropertyName("missingDependency")]
     public string? MissingDependency { get; init; }
 
-    /// <summary>
-    /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
-    /// extension member). Present instead of <c>missingDependency</c> when the dependency is
-    /// deployed but not licensed.
-    /// </summary>
+    // The entitlement whose absence composed the capability out (RFC 7807 extension member).
+    // Present instead of missingDependency when the dependency is deployed but not licensed.
     [JsonPropertyName("missingEntitlement")]
     public string? MissingEntitlement { get; init; }
 

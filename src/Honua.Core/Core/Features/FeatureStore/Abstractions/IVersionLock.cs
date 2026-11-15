@@ -3,19 +3,13 @@
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-/// <summary>
-/// Durable mutual-exclusion lock keyed by (service, version) that serializes branch-version
-/// reconcile/post and conflicting conflict-resolution work (#1553). Only one reconcile, post, or
-/// conflicting resolve may hold the lock for a given version at a time; a competing acquisition fails
-/// fast so the caller can return a clear in-progress (409) response or queue an async job.
-/// </summary>
-/// <remarks>
-/// The production implementation is Redis-backed (reusing the existing StackExchange.Redis lock
-/// primitive) so the lock is honored across every server replica. When Redis is not configured the
-/// in-process implementation degrades to a single-node mutex, which is correct for single-node and
-/// development/test deployments. The lock is advisory over the version-maintenance workflow only; it is
-/// never taken on the DEFAULT read/edit path, so DEFAULT behavior stays byte-identical.
-/// </remarks>
+// Durable mutual-exclusion lock keyed by (service, version) that serializes branch-version
+// reconcile/post and conflicting conflict-resolution work. Only one reconcile, post, or conflicting
+// resolve may hold the lock for a given version at a time; a competing acquisition fails fast so the
+// caller can return a clear in-progress (409) response or queue an async job. The production
+// implementation holds a PostgreSQL lease so the lock is honored across every server replica; without
+// a system database the in-process implementation is a single-node mutex. The lock is advisory over
+// the version-maintenance workflow only and is never taken on the DEFAULT read/edit path.
 public interface IVersionLock
 {
     /// <summary>

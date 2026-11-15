@@ -56,7 +56,6 @@ internal sealed class StartupConnectivityTestService
             // Test external service URLs
             await TestExternalServicesAsync(result, cancellationToken);
 
-            // Test cache connectivity
             await TestCacheConnectivityAsync(result, cancellationToken);
 
             // Test cloud storage connectivity

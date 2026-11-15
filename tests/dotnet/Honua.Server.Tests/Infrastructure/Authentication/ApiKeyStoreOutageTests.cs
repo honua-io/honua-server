@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.Redis;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,10 +11,8 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// A Redis timeout talking to the API-key store must not throw and must not lock out
-/// the bootstrap admin password.
-/// </summary>
+// A timeout or database outage in the API-key store must not throw and must not lock out the
+// bootstrap admin password.
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -71,8 +68,8 @@ public sealed class ApiKeyStoreOutageTests
     [UnitTest]
     public async Task DatabaseOutage_BreakGlassPasswordStillAuthenticates_OnHeaderAndPortalPaths()
     {
-        // The PostgreSQL registry used on multi-instance Redis-off hosts (#6487) fails with a
-        // DbException, which must degrade exactly like a Redis outage.
+        // The PostgreSQL registry fails with a DbException, which must degrade exactly like a
+        // store timeout.
         var store = UnavailableStore(new Npgsql.NpgsqlException("database unavailable"));
 
         var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
@@ -89,51 +86,7 @@ public sealed class ApiKeyStoreOutageTests
     }
 
     [UnitTest]
-    public async Task CompletedReaderOnce_ManagedKeyAuthenticates_OnHeaderAndPortalPaths()
-    {
-        var store = new ScriptedStore();
-        var record = ManagedKey();
-        store.Enqueue(new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
-        store.Enqueue(record);
-        store.Enqueue(new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
-        store.Enqueue(record);
-
-        var validation = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            new ApiKeyPresentation("managed-key", "ApiKey", null),
-            Dependencies(store), NullLogger.Instance, CancellationToken.None);
-        var verifier = new AdminPortalCredentialVerifier(
-            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
-            adminApiKeyStore: store,
-            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
-        var principal = await verifier.VerifyAsync("journey", "managed-key", CancellationToken.None);
-
-        Assert.Equal(ApiKeyRejection.None, validation.Rejection);
-        Assert.NotNull(validation.Success);
-        Assert.True(validation.Success!.Succeeded);
-        Assert.NotNull(principal);
-        Assert.Equal(4, store.Calls);
-    }
-
-    [UnitTest]
-    public async Task CompletedReaderPersists_UnknownKeyFailsClosed_BreakGlassStillAuthenticates()
-    {
-        var fault = new InvalidOperationException(RedisClientFault.CompletedReaderMessage);
-        var store = UnavailableStore(fault);
-
-        var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
-            Dependencies(store), NullLogger.Instance, CancellationToken.None);
-        var unknown = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            new ApiKeyPresentation("not-the-admin-password", "ApiKey", null),
-            Dependencies(store), NullLogger.Instance, CancellationToken.None);
-
-        Assert.Equal(ApiKeyRejection.None, bootstrap.Rejection);
-        Assert.Equal(ApiKeyRejection.CredentialStoreUnavailable, unknown.Rejection);
-        Assert.Null(unknown.Success);
-    }
-
-    [UnitTest]
-    public async Task OtherInvalidOperation_IsNotTreatedAsRedis()
+    public async Task InvalidOperation_IsNotTreatedAsStoreOutage()
     {
         var store = UnavailableStore(new InvalidOperationException("changed on every attempt"));
 
@@ -146,87 +99,20 @@ public sealed class ApiKeyStoreOutageTests
     }
 
     [UnitTest]
-    public void CompletedReader_MapsToServiceUnavailable_OtherInvalidOperationStays500()
+    public void InvalidOperation_MapsTo500_IdentityModelConfigurationTo401()
     {
-        var completed = ExceptionMapper.Map(
-            new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
         var other = ExceptionMapper.Map(new InvalidOperationException("changed on every attempt"));
         var identityModel = ExceptionMapper.Map(new InvalidOperationException("IDX20803: unable to obtain configuration"));
 
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, completed.StatusCode);
         Assert.Equal(StatusCodes.Status500InternalServerError, other.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, identityModel.StatusCode);
-    }
-
-    private static AdminApiKeyValidationResult ManagedKey()
-    {
-        var now = DateTimeOffset.UtcNow;
-        return new AdminApiKeyValidationResult(new AdminApiKeyRecord(
-            Guid.NewGuid(),
-            "journey",
-            "hnua_testkey",
-            new byte[32],
-            ["admin:*"],
-            now,
-            now,
-            ExpiresAt: null,
-            LastUsedAt: null,
-            RotatedAt: null,
-            RevokedAt: null,
-            CreatedBy: "test"));
-    }
-
-    /// <summary>
-    /// Returns the scripted result for each <see cref="IAdminApiKeyStore.ValidateAsync"/> call.
-    /// An exception factory faults that call. Other store methods are unused.
-    /// </summary>
-    private sealed class ScriptedStore : IAdminApiKeyStore
-    {
-        private readonly Queue<Func<AdminApiKeyValidationResult?>> _results = new();
-
-        public int Calls { get; private set; }
-
-        public void Enqueue(Exception failure)
-            => _results.Enqueue(() => throw failure);
-
-        public void Enqueue(AdminApiKeyValidationResult? result)
-            => _results.Enqueue(() => result);
-
-        public Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
-        {
-            Calls++;
-            return Task.FromResult(_results.Dequeue()());
-        }
-
-        public Task<IReadOnlyList<AdminApiKeyRecord>> ListAsync(CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<AdminApiKeyCreateResult> CreateAsync(
-            string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<AdminApiKeyCreateResult> CreateAsync(
-            string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, AdminApiKeyRestrictions? restrictions, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(Guid id, AdminApiKeyRestrictions restrictions, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
     }
 
     private static IAdminApiKeyStore UnavailableStore(Exception? failure = null)
     {
         var store = Substitute.For<IAdminApiKeyStore>();
         store.ValidateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(failure ?? new TimeoutException("redis timeout"));
+            .ThrowsAsync(failure ?? new TimeoutException("store timeout"));
         return store;
     }
 
