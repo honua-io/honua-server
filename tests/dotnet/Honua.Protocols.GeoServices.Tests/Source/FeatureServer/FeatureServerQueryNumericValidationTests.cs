@@ -66,7 +66,9 @@ public sealed class FeatureServerQueryNumericValidationTests : IClassFixture<Web
         using var document = JsonDocument.Parse(content);
         var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400);
-        error.GetProperty("message").GetString().Should().Contain(parameter);
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain($"{parameter} must be a finite number");
         document.RootElement.TryGetProperty("features", out _).Should().BeFalse();
     }
 
