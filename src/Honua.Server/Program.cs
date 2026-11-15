@@ -724,6 +724,12 @@ Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(bu
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
+if (builder.Configuration.GetValue<bool>("ExternalEdits:Enabled")
+    && Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Caching.ExternalLayerChangeWorker>();
+}
+
 
 if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
 {
