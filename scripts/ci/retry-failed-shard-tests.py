@@ -23,11 +23,16 @@ def terminate_test(child, signum):
     # Descendants can leave the timeout group. Snapshot them before TERM
     # so reparented grandchildren remain in the cleanup set.
     descendants = descendant_pids(child.pid)
+    with suppress(ProcessLookupError):
+        os.killpg(child.pid, signum)
     for pid in descendants:
         with suppress(ProcessLookupError):
             os.kill(pid, signum)
     with suppress(subprocess.TimeoutExpired):
         child.wait(timeout=0.5)
+    # A test can fork after the snapshot, while TERM escalation is pending.
+    with suppress(ProcessLookupError):
+        os.killpg(child.pid, signal.SIGKILL)
     for pid in descendants:
         with suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
@@ -49,8 +54,8 @@ def call_test(command):
 
     previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
-        # Keep the inherited group and capture cancellation even while Popen is starting.
-        with subprocess.Popen(command) as child:
+        # Own the test group so escalation also reaches children forked during cleanup.
+        with subprocess.Popen(command, start_new_session=os.name == 'posix') as child:
             if cancellation_signal is not None:
                 forward(cancellation_signal, None)
             code = child.wait()
