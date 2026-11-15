@@ -264,5 +264,5 @@ internal sealed class SourceBackedRelationshipStore(
         return value is not null;
     }
 
-    private sealed record BoundResource(MetadataV2Resource Resource, MetadataV2StorageBinding Binding, FeatureStorageMapping Mapping);
+    private sealed record BoundResource(MetadataV2Object Resource, MetadataV2StorageBinding Binding, FeatureStorageMapping Mapping);
 }

@@ -333,9 +333,9 @@ public sealed partial class OutputCacheInvalidationServiceTests
             .AddResource(
                 "res-parcels",
                 "Named Parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -358,7 +358,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
                 layerIndex: null,
                 storageBindingId: "binding-parcels",
                 serviceLocalId: "parcels",
-                publicationType: MetadataV2PublicationType.OgcCollection);
+                publicationType: MetadataV2LayerType.OgcCollection);
         return builder.Build();
     }
 
@@ -413,9 +413,9 @@ public sealed partial class OutputCacheInvalidationServiceTests
                 .AddResource(
                     resourceId,
                     layerId == 42 ? "Named Layer" : $"Layer {layerId}",
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
-                    spatial: new MetadataV2ResourceSpatial
+                    spatial: new MetadataV2ObjectSpatial
                     {
                         SpatialReference = MetadataV2SpatialReference.Wgs84,
                         GeometryType = MetadataV2GeometryType.Point,
@@ -445,7 +445,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
                     resourceId: $"res-layer-{layerId}",
                     layerIndex: layerId,
                     serviceLocalId: layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
             }
         }
 
