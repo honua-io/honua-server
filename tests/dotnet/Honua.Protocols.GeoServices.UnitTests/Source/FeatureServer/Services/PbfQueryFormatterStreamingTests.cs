@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
