@@ -146,7 +146,7 @@ public sealed class WorkflowEventTriggerBackgroundServiceTests
 
         // The cursor must not have advanced; the claim is released so the next tick retries.
         var cursor = await harness.Definitions.GetTriggerCursorAsync(
-            definition.WorkflowId, RedisWorkflowDefinitionStore.ChangeFeedCursorKind);
+            definition.WorkflowId, WorkflowTriggerCursors.ChangeFeedCursorKind);
         Assert.Null(cursor);
 
         await harness.Service.TickAsync(CancellationToken.None);

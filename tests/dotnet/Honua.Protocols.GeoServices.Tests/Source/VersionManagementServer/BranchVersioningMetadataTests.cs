@@ -170,7 +170,7 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
             {
                 Metadata = publication.Metadata with { Id = publication.Metadata.Id + "-map-only" },
                 ServiceId = mapServiceId,
-                PublicationType = MetadataV2PublicationType.EsriMapLayer,
+                PublicationType = MetadataV2LayerType.EsriMapLayer,
             })
             .ToArray();
         var mapService = featureService with

@@ -1,10 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Microsoft.Extensions.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.Caching;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -34,9 +35,11 @@ internal static class SharedCacheExtensions
         where TBuilder : IEndpointConventionBuilder
     {
         builder.WithMetadata(new SharedCacheClassMetadata(cacheClass));
+        builder.WithETag();
         builder.AddEndpointFilter(static async (invocation, next) =>
         {
             var result = await next(invocation).ConfigureAwait(false);
+            result = await SharedResponseETag.ApplyAsync(invocation.HttpContext, result).ConfigureAwait(false);
             SharedCacheResponse.Apply(invocation.HttpContext);
             return result;
         });

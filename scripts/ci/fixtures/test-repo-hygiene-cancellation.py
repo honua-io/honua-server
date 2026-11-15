@@ -21,23 +21,36 @@ class HygieneCancellationTests(unittest.TestCase):
         expression = self.job['if'].removeprefix('${{').removesuffix('}}').strip()
         expression = expression.replace('!cancelled()', 'not workflow_cancelled').replace(
             "!contains(needs.*.result, 'cancelled')", "'cancelled' not in results").replace('&&', 'and')
-        for results in itertools.product(['success', 'failure', 'skipped', 'cancelled'], repeat=2):
+        for results in itertools.product(['success', 'failure', 'skipped', 'cancelled'], repeat=len(self.job['needs'])):
             for workflow_cancelled in [False, True]:
                 with self.subTest(results=results, workflow_cancelled=workflow_cancelled):
                     admitted = eval(expression, {'__builtins__': {}}, dict(
                         results=results, workflow_cancelled=workflow_cancelled))
                     self.assertEqual(admitted, not workflow_cancelled and 'cancelled' not in results)
 
-    def test_active_verdict_requires_both_successes(self):
-        for evidence, shared in itertools.product(['success', 'failure', 'skipped', ''], repeat=2):
-            with self.subTest(evidence=evidence, shared=shared):
+    def test_active_verdict_requires_all_successes(self):
+        variables = list(self.job['steps'][0]['env'])
+        for values in itertools.product(['success', 'failure', 'skipped', ''], repeat=len(variables)):
+            with self.subTest(results=values):
                 result = subprocess.run(['bash', '-e', '-c', self.job['steps'][0]['run']],
-                    env=dict(os.environ, EVIDENCE_RESULT=evidence, SHARED_RESULT=shared))
-                self.assertEqual(result.returncode == 0, evidence == shared == 'success')
+                    env=dict(os.environ, **dict(zip(variables, values))))
+                self.assertEqual(result.returncode == 0, all(v == 'success' for v in values))
 
     def test_required_contract_stays_intact(self):
         self.assertEqual(self.job['name'], 'repo-hygiene / Repository hygiene')
-        self.assertEqual(self.job['needs'], ['evidence-paths', 'shared-hygiene'])
+        self.assertIn('evidence-paths', self.job['needs'])
+        self.assertIn('retired-cache-mentions', self.job['needs'])
+        self.assertIn('generated-file-ownership', self.job['needs'])
+        self.assertIn('shard-identities', self.job['needs'])
+        self.assertIn('shared-hygiene', self.job['needs'])
+        self.assertEqual(len(self.job['steps'][0]['env']), len(self.job['needs']))
+
+    def test_shard_validation_uses_merge_tree_and_production_checker(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/repo-hygiene.yml').read_text())
+        job = workflow['jobs']['shard-identities']
+        self.assertNotIn('ref', job['steps'][0].get('with', {}))
+        self.assertIn('python3 scripts/ci/check-shard-identities.py', job['steps'][1]['run'])
+        self.assertLessEqual(job['timeout-minutes'], 5)
 
 
 if __name__ == '__main__':

@@ -79,6 +79,9 @@ internal sealed class TimeInfoResponse
 /// </summary>
 internal sealed class UpdateAccessPolicyRequest
 {
+    // Optional exact metadata ETag returned by settings inspection. A stale value rejects the update.
+    public string? ExpectedMetadataEtag { get; init; }
+
     /// <summary>Whether anonymous access is allowed.</summary>
     public bool? AllowAnonymous { get; init; }
 
@@ -113,7 +116,7 @@ internal sealed class UpdateTimeInfoRequest
 internal sealed class LayerMetadataResponse
 {
     /// <summary>Persisted editing and attachment bindings for the canonical resource.</summary>
-    public MetadataV2ResourceEditing? Editing { get; init; }
+    public MetadataV2ObjectEditing? Editing { get; init; }
 
     public required int ServiceLayerIndex { get; init; }
 

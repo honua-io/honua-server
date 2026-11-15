@@ -9,6 +9,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -52,6 +53,13 @@ internal sealed partial class TileOperationExecutionCore
         _checkpointStore = checkpointStore;
     }
 
+    internal Func<TileOperationProgress, CancellationToken, Task>? ProgressWriter { private get; init; }
+
+    private Task WriteProgressAsync(TileOperationProgress progress, CancellationToken cancellationToken)
+        => ProgressWriter != null
+            ? ProgressWriter(progress, cancellationToken)
+            : _progressStore.SetProgressAsync(progress.JobId, progress, ProgressRetention, cancellationToken);
+
     public async Task<TileOperationProgress> ExecuteAsync(
         TileOperationProgress started,
         TileOperationStartRequest request,
@@ -63,7 +71,7 @@ internal sealed partial class TileOperationExecutionCore
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
         var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        var tileSources = request.Operation is "seed" or "warm" or "archive" or "publish"
+        var tileSources = request.Operation is "seed" or "warm" or "archive" or "publish" or TileCacheExecutionSpecBuilder.PairedPublishOperation
             ? await ResolveTileSourcesAsync(request, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false)
             : new Dictionary<int, TileSource>();
 
@@ -75,6 +83,7 @@ internal sealed partial class TileOperationExecutionCore
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "archive" => await ExecuteArchiveAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             "publish" => await ExecutePublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
+            TileCacheExecutionSpecBuilder.PairedPublishOperation => await ExecutePairedPublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             _ => started with
             {
                 Status = OperationStatus.Failed,
@@ -196,7 +205,7 @@ internal sealed partial class TileOperationExecutionCore
             SuccessfulTiles = successful,
             CurrentPhase = phase
         };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
         if (checkpoint is not null)
         {
@@ -257,7 +266,7 @@ internal sealed partial class TileOperationExecutionCore
                         Warnings = warningList.ToArray(),
                         CurrentPhase = $"{phase} ({processed}/{total})"
                     };
-                    await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                    await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -422,7 +431,7 @@ internal sealed partial class TileOperationExecutionCore
 
         var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var build = await BuildPMTilesArchiveAsync(
-            "archive", progress, request, layerId, tileSources, graphProvider, cancellationToken).ConfigureAwait(false);
+            "archive", progress, request, layerId, tileSources, graphProvider, inputs: null, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
         {
             return build.Progress;
@@ -431,7 +440,7 @@ internal sealed partial class TileOperationExecutionCore
         await using var archiveStream = build.ArchiveStream!;
 
         var current = build.Progress with { CurrentPhase = "Uploading archive" };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
         var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
@@ -548,7 +557,7 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var build = await BuildPMTilesArchiveAsync(
-            "publish", progress, request, layerId, tileSources, graphProvider, cancellationToken).ConfigureAwait(false);
+            "publish", progress, request, layerId, tileSources, graphProvider, inputs: null, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
         {
             return build.Progress;
@@ -601,7 +610,7 @@ internal sealed partial class TileOperationExecutionCore
             request.TileMatrixSetId);
 
         var current = build.Progress with { CurrentPhase = "Uploading durable PMTiles artifact" };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
         TileOperationLog.PublishUploadStart(_logger, current.JobId, objectKey);
 
         var keyAlreadyExisted = await cloudStorage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false);
@@ -734,6 +743,7 @@ internal sealed partial class TileOperationExecutionCore
         int layerId,
         IReadOnlyDictionary<int, TileSource> tileSources,
         IMetadataV2GraphProvider graphProvider,
+        PMTilesBuildInputs? inputs,
         CancellationToken cancellationToken)
     {
         var selection = BuildTileCoordinates(request);
@@ -763,7 +773,12 @@ internal sealed partial class TileOperationExecutionCore
             TileCompression = TileArchiveCompression.ToWireValue(tileCompression),
             CurrentPhase = $"Generating tiles for {operationName}"
         };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
+
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resource = ResolveArchiveResource(snapshot, request, layerId);
+        var tileQuery = inputs is null ? HiddenFieldMask(resource) : new FeatureQuery { EnforcedMaskedFields = inputs.MaskedFields };
+        var tileLimits = inputs?.Limits ?? _tileLimits;
 
         var writer = new PMTilesWriter(tileCompression: tileCompression);
         foreach (var coordinate in tileCoordinates)
@@ -776,9 +791,9 @@ internal sealed partial class TileOperationExecutionCore
                     coordinate.X,
                     coordinate.Y,
                     coordinate.Z,
-                    query: null,
+                    tileQuery,
                     _tileOptions,
-                    _tileLimits,
+                    tileLimits,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 if (tileData is { Length: > 0 })
@@ -809,7 +824,7 @@ internal sealed partial class TileOperationExecutionCore
                     Warnings = warningList.ToArray(),
                     CurrentPhase = $"Generating tiles ({processed}/{total})"
                 };
-                await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -840,10 +855,8 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         current = current with { CurrentPhase = "Writing PMTiles archive" };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resource = ResolveArchiveResource(snapshot, request, layerId);
         var coverage = BuildTileCoverage(writtenCoordinates);
         var layerName = resource?.Metadata.Title ?? resource?.Metadata.Name ?? $"Layer {layerId}";
         var vectorFields = BuildVectorFields(resource);
@@ -870,7 +883,8 @@ internal sealed partial class TileOperationExecutionCore
                     MaxZoom = coverage.MaxZoom,
                     Fields = vectorFields
                 }
-            ]
+            ],
+            Extensions = inputs?.Extensions ?? new Dictionary<string, string>()
         };
 
         // Spill the archive to a self-deleting temp file rather than a MemoryStream: archive size
@@ -902,6 +916,7 @@ internal sealed partial class TileOperationExecutionCore
                 ArchiveStream = archiveStream,
                 ArchiveSize = archiveSize,
                 Failed = failed,
+                WasTruncated = selection.WasTruncated,
                 MinZoom = coverage.MinZoom,
                 MaxZoom = coverage.MaxZoom,
                 MinLon = coverage.MinLon,
@@ -1085,7 +1100,7 @@ internal sealed partial class TileOperationExecutionCore
         return new TileCoordinateSelection(result, WasTruncated: false, maxTiles);
     }
 
-    private static MetadataV2Resource? ResolveArchiveResource(
+    private static MetadataV2Object? ResolveArchiveResource(
         MetadataV2GraphSnapshot snapshot,
         TileOperationStartRequest request,
         int layerId)
@@ -1115,7 +1130,14 @@ internal sealed partial class TileOperationExecutionCore
         return null;
     }
 
-    private static Dictionary<string, string> BuildVectorFields(MetadataV2Resource? resource)
+    // Hidden fields are withheld from every archive, as from every other read surface.
+    private static FeatureQuery? HiddenFieldMask(MetadataV2Object? resource)
+    {
+        var hidden = resource?.HiddenSchemaFieldNames();
+        return hidden is { Count: > 0 } ? new FeatureQuery { EnforcedMaskedFields = [.. hidden] } : null;
+    }
+
+    private static Dictionary<string, string> BuildVectorFields(MetadataV2Object? resource)
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (resource is null)
@@ -1126,8 +1148,8 @@ internal sealed partial class TileOperationExecutionCore
         var geometryField = resource.FindPrimaryGeometryField();
         foreach (var field in resource.SchemaFields)
         {
-            if (geometryField is not null &&
-                string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase))
+            if (field.Hidden || (geometryField is not null &&
+                string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -1210,12 +1232,19 @@ internal sealed partial class TileOperationExecutionCore
         double MaxLon,
         double MaxLat);
 
+    // Overrides for a build whose archive must match a captured feature set exactly.
+    private sealed record PMTilesBuildInputs(
+        IReadOnlyDictionary<string, string> Extensions,
+        ImmutableArray<string> MaskedFields,
+        TileLimits Limits);
+
     private sealed record PMTilesBuildResult
     {
         public required TileOperationProgress Progress { get; init; }
         public Stream? ArchiveStream { get; init; }
         public long ArchiveSize { get; init; }
         public long Failed { get; init; }
+        public bool WasTruncated { get; init; }
         public int MinZoom { get; init; }
         public int MaxZoom { get; init; }
         public double MinLon { get; init; }

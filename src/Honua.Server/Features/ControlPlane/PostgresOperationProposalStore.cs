@@ -15,12 +15,14 @@ namespace Honua.ControlPlane;
 internal sealed partial class PostgresOperationProposalStore(
     ControlPlaneStorage storage,
     IOptions<ControlPlaneRetentionOptions> retention,
-    ILogger<PostgresOperationProposalStore> logger) : IOperationProposalStore, IExpiredRowSweep
+    ILogger<PostgresOperationProposalStore> logger) : IOperationProposalStore, IOperationProposalBatchStore, IExpiredRowSweep
 {
     private readonly JobStoreDatabase _database = storage.Database;
     private const string SelectColumns = "version, updated_at, record";
 
     private readonly string _proposals = storage.Database.Table("operation_proposals");
+    private readonly string _batches = storage.Database.Table("operation_proposal_batches");
+    private readonly string _notificationSchedules = storage.Database.Table("ops_notification_schedules");
     private readonly OperationLeases _operationLeases = new(storage.Leases, "operation-proposal:");
 
     public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
@@ -39,7 +41,11 @@ internal sealed partial class PostgresOperationProposalStore(
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
-        var created = proposal with { Version = 0 };
+        var created = proposal with
+        {
+            Version = 0,
+            ApprovalExpiresAt = proposal.ApprovalExpiresAt ?? OperationProposalApprovalWindow.GetDeadline(proposal)
+        };
         var inserted = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
@@ -105,15 +111,46 @@ internal sealed partial class PostgresOperationProposalStore(
             {
                 await using var command = new NpgsqlCommand(
                     $"""
-                    UPDATE {_proposals}
-                    SET version = @version, kind = @kind, active = @active, updated_at = now(),
-                        expires_at = now() + @retention, record = @record
-                    WHERE proposal_id = @proposal_id AND version = @expected_version
+                    WITH updated AS (
+                        UPDATE {_proposals}
+                        SET version = @version, kind = @kind, active = @active, updated_at = now(),
+                            expires_at = now() + @retention,
+                            record = jsonb_set(@record::jsonb, ARRAY['approvalExpiresAt'],
+                                to_jsonb(COALESCE((record->>'approvalExpiresAt')::timestamptz,
+                                    (record->>'createdAt')::timestamptz +
+                                    CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
+                                    OR (record->'autonomyMetadata'->>'severity' IS NULL
+                                        AND record->'plan'->>'riskLevel' = '2')
+                                        THEN interval '72 hours' ELSE interval '24 hours' END)))::json
+                        WHERE proposal_id = @proposal_id AND version = @expected_version
+                            AND (record->>'status' <> '10' OR @next_status = 10)
+                            AND (@executing = FALSE OR record->>'status' = '8' OR now() < COALESCE(
+                                (record->>'approvalExpiresAt')::timestamptz,
+                                (record->>'createdAt')::timestamptz +
+                                CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
+                                    OR (record->'autonomyMetadata'->>'severity' IS NULL
+                                        AND record->'plan'->>'riskLevel' = '2')
+                                    THEN interval '72 hours' ELSE interval '24 hours' END))
+                        RETURNING proposal_id
+                    ), completed AS (
+                        UPDATE {_batches} SET completed = TRUE
+                        WHERE @succeeded AND proposal_id IN (SELECT proposal_id FROM updated)
+                    )
+                    SELECT EXISTS (SELECT 1 FROM updated)
                     """,
                     connection);
                 AddRecordParameters(command, next, ttl);
+                command.Parameters.Add(new NpgsqlParameter("next_status", NpgsqlDbType.Integer) { Value = (int)next.Status });
+                command.Parameters.Add(new NpgsqlParameter("executing", NpgsqlDbType.Boolean)
+                {
+                    Value = next.Status == OperationProposalStatus.Executing
+                });
                 command.Parameters.Add(new NpgsqlParameter("expected_version", NpgsqlDbType.Bigint) { Value = expectedVersion });
-                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                command.Parameters.Add(new NpgsqlParameter("succeeded", NpgsqlDbType.Boolean)
+                {
+                    Value = proposal.Status == OperationProposalStatus.Succeeded
+                });
+                return (bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
             StatementRepeat.NotAfterSend,
             cancellationToken).ConfigureAwait(false);
@@ -168,6 +205,9 @@ internal sealed partial class PostgresOperationProposalStore(
                     WITH expired AS (
                         SELECT proposal_id FROM {_proposals}
                         WHERE NOT active AND expires_at <= now()
+                            AND NOT EXISTS (SELECT 1 FROM {_notificationSchedules} AS notice
+                                WHERE notice.source = 'proposal' AND notice.subject_id = {_proposals}.proposal_id
+                                    AND notice.closed_at IS NULL)
                         ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED)
                     DELETE FROM {_proposals} AS proposal USING expired
                     WHERE proposal.proposal_id = expired.proposal_id
@@ -211,7 +251,8 @@ internal sealed partial class PostgresOperationProposalStore(
             or OperationProposalStatus.Failed
             or OperationProposalStatus.Rejected
             or OperationProposalStatus.RolledBack
-            or OperationProposalStatus.Cancelled;
+            or OperationProposalStatus.Cancelled
+            or OperationProposalStatus.Expired;
 
     private static partial class Log
     {

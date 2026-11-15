@@ -1,7 +1,9 @@
 import os
+import json
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import unittest
 import yaml
 
@@ -52,6 +54,55 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn(':latest-jit', text)
         self.assertNotIn('${channel}-aot', text)
 
+    def test_release_inventory_registers_resolved_platform_manifest(self):
+        jobs = workflow('release-security-assets.yml')['jobs']
+        assets = jobs['assets']
+        manifest = next(step for step in assets['steps']
+                        if step.get('name') == 'Resolve the attestation-free platform manifest')
+        self.assertIn('platform_ref=$platform_ref', manifest['run'])
+        self.assertIn('>> "$GITHUB_OUTPUT"', manifest['run'])
+        self.assertEqual(assets['outputs']['platform_ref'],
+                         '${{ steps.' + manifest['id'] + '.outputs.platform_ref }}')
+        register = jobs['register']
+        self.assertEqual(register['env']['IMAGE'], '${{ needs.assets.outputs.platform_ref }}')
+        command = next(step['run'] for step in register['steps']
+                       if step.get('name') == 'Add the digest to the supported inventory')
+        self.assertIn('--image "$IMAGE"', command)
+        self.assertIn("--image '$IMAGE'", command)
+
+    def test_release_manifest_step_exports_platform_digest_for_index_and_direct_inputs(self):
+        steps = workflow('release-security-assets.yml')['jobs']['assets']['steps']
+        script = next(step['run'] for step in steps
+                      if step.get('name') == 'Resolve the attestation-free platform manifest')
+        script = script.replace('${{ steps.names.outputs.asset_name }}', 'release-test')
+        manifest_type = 'application/vnd.oci.image.manifest.v1+json'
+        manifest = {'mediaType': manifest_type, 'layers': []}
+        repository = 'ghcr.io/honua-io/honua-server@'
+        platform_digest = 'sha256:' + 'a' * 64
+        index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [
+            {'mediaType': manifest_type, 'digest': platform_digest,
+             'platform': {'os': 'linux', 'architecture': 'amd64'}}]}
+        docker = '''docker() {
+  if [[ "$5" == "$SCAN_IMAGE" ]]; then
+    printf '%s' "$SOURCE_MANIFEST"
+  else
+    printf '%s' "$PLATFORM_MANIFEST"
+  fi
+}
+'''
+        for source, digest in ((index, 'sha256:' + 'b' * 64), (manifest, platform_digest)):
+            with self.subTest(index=source is index), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                (work / 'scripts').symlink_to(ROOT / 'scripts', target_is_directory=True)
+                output = work / 'output'
+                environment = dict(os.environ, SCAN_IMAGE=repository + digest, SCAN_PLATFORM='linux/amd64',
+                                   SOURCE_MANIFEST=json.dumps(source), PLATFORM_MANIFEST=json.dumps(manifest),
+                                   GITHUB_ENV=str(work / 'env'), GITHUB_OUTPUT=str(output))
+                subprocess.run(['bash', '-c', docker + script], cwd=work, env=environment, check=True)
+                self.assertEqual(output.read_text().strip(), 'platform_ref=' + repository + platform_digest)
+                self.assertEqual((work / 'release-test.attestation-free-ref.txt').read_text().strip(),
+                                 repository + platform_digest)
+
     def test_shell_free_consumers_use_native_probe_and_external_http(self):
         jobs = workflow('security-nightly.yml')['jobs']
         steps = next(job['steps'] for job in jobs.values()
@@ -85,6 +136,71 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('RunConfiguration.TreatNoTestsAsError=true', verify['run'])
         self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
         self.assertNotIn('if', verify)
+
+    def test_store_measurement_uses_heavy_runner_and_separate_profile_caches(self):
+        jobs = workflow('store-image-size.yml')['jobs']
+        job = jobs['measure']
+        selector = jobs['runner-select']
+        self.assertEqual(selector['uses'], './.github/workflows/advisory-runner-select.yml')
+        self.assertEqual(selector['with']['hosted-runner'], 'ubuntu-24.04')
+        self.assertEqual(job['needs'], 'runner-select')
+        self.assertEqual(job['runs-on'], "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '\"ubuntu-24.04\"') || 'ubuntu-latest' }}")
+        self.assertIn('always() && !cancelled()', job['if'])
+        admission = workflow('advisory-runner-select.yml')['jobs']['select']
+        self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
+        self.assertIn('fromJSON(vars.HONUA_LIGHT_RUNNER)', admission['runs-on'])
+        self.assertLessEqual(int(job['timeout-minutes']), 30)
+        build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
+        self.assertIn('matrix.profile', build['with']['cache-to'])
+        self.assertIn('matrix.compilation', build['with']['cache-to'])
+        self.assertIn('mode=max', build['with']['cache-to'])
+
+    def test_store_matrix_jobs_use_isolated_local_images(self):
+        job = workflow('store-image-size.yml')['jobs']['measure']
+        reference = job.get('env', {}).get('IMAGE', '')
+        for dimension in ('github.run_id', 'github.run_attempt', 'matrix.profile', 'matrix.compilation'):
+            self.assertIn(dimension, reference)
+        build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
+        self.assertEqual(build['with']['tags'], '${{ env.IMAGE }}')
+        text = (ROOT / '.github/workflows/store-image-size.yml').read_text()
+        self.assertNotIn('honua-store-measure:current', text)
+        for step in job['steps']:
+            script = step.get('run', '')
+            if any(command in script for command in ('docker image inspect', 'docker create',
+                                                     'docker run --rm --env', 'smoke-serving-formats.sh',
+                                                     'scripts/ci/measure-serving-image.py ', 'for version in before after')):
+                self.assertIn('"$IMAGE"', script)
+
+    def test_store_build_context_does_not_change_when_evidence_is_exported(self):
+        job = workflow('store-image-size.yml')['jobs']['measure']
+        prepare = next(step for step in job['steps'] if step.get('name') == 'Freeze serving build context')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            source.mkdir()
+            subprocess.run(['git', 'init', '-q', str(source)], check=True)
+            (source / 'Dockerfile').write_text('FROM scratch\n')
+            subprocess.run(['git', 'add', 'Dockerfile'], cwd=source, check=True)
+            subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                            'commit', '-qm', 'fixture'], cwd=source, check=True)
+            temporary = root / 'runner'
+            temporary.mkdir()
+            environment = {**os.environ, 'RUNNER_TEMP': str(temporary)}
+            subprocess.run(['bash', '-euo', 'pipefail', '-c', prepare['run']],
+                           cwd=source, env=environment, check=True)
+            context = temporary / 'store-image-context'
+            self.assertEqual((context / 'Dockerfile').read_text(), 'FROM scratch\n')
+            (source / 'artifacts').mkdir()
+            (source / 'artifacts/image.oci.tar').write_bytes(b'exported image')
+            self.assertFalse((context / 'artifacts').exists())
+        builds = [step for step in job['steps'] if step.get('uses', '').startswith('docker/build-push-action@')]
+        self.assertEqual(len(builds), 3)
+        for build in builds:
+            self.assertEqual(build['with']['context'], '${{ runner.temp }}/store-image-context')
+            self.assertIn('runner.temp', build['with']['file'])
+        concurrency = workflow('store-image-size.yml')['concurrency']
+        self.assertIn('github.event.pull_request.number', concurrency['group'])
+        self.assertEqual(concurrency['cancel-in-progress'], 'true')
 
     def test_full_ci_can_measure_images_without_opening_a_pr(self):
         ci = workflow('ci.yml')

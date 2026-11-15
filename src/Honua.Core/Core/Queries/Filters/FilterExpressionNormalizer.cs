@@ -13,7 +13,7 @@ public static class FilterExpressionNormalizer
 {
     public const int MaxExpressionDepth = 50;
 
-    public static FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+    public static FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
     {
         EnsureWithinMaxDepth(expression);
         return NormalizeCore(expression, FilterFieldSchema.From(resource));
@@ -199,6 +199,9 @@ public static class FilterExpressionNormalizer
             MetadataV2FieldType.String => CoerceStringLiteral(literal),
             MetadataV2FieldType.Uuid => CoerceUuidLiteral(property.PropertyName, literal),
             MetadataV2FieldType.DateTime => CoerceDateTimeLiteral(property.PropertyName, literal),
+            MetadataV2FieldType.TimestampOffset => literal.Type == LiteralType.Null
+                ? literal : CoerceDateTimeLiteral(property.PropertyName, literal),
+            MetadataV2FieldType.Decimal => CoerceDecimalLiteral(property.PropertyName, literal),
             MetadataV2FieldType.Date => CoerceDateLiteral(property.PropertyName, literal),
             MetadataV2FieldType.Time => CoerceTimeLiteral(property.PropertyName, literal),
             MetadataV2FieldType.Boolean => CoerceBooleanLiteral(property.PropertyName, literal),
@@ -328,6 +331,27 @@ public static class FilterExpressionNormalizer
         }
 
         throw new ArgumentException($"Field '{propertyName}' expects a boolean value.");
+    }
+
+    private static Literal CoerceDecimalLiteral(string propertyName, Literal literal)
+    {
+        if (literal.Type == LiteralType.Null || literal.Type == LiteralType.Number && literal.Value is int or long or decimal)
+        {
+            return literal;
+        }
+        // Quote exact decimal literals: untyped parsers can already have rounded a floating point number.
+        if (literal.Type == LiteralType.Text && literal.Value is string text)
+        {
+            try
+            {
+                return new Literal(ExactAttributeValues.ParseDecimal(text), LiteralType.Number);
+            }
+            catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+            {
+                // Reject malformed or rounded values using the field-specific diagnostic below.
+            }
+        }
+        throw new ArgumentException($"Field '{propertyName}' expects an exact decimal value; use a quoted decimal literal.");
     }
 
     private static Literal CoerceNumericLiteral(string propertyName, Literal literal)

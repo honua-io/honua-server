@@ -70,6 +70,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="../../skills/**/*" LogicalName="Honua.Ai.Skills/%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- AiBuilder fixture JSON catalog. Logical names preserved so
          AiBuilderFixtureCatalog.GetManifestResourceStream lookups keep
          resolving with the original Honua.Ai.AiBuilder.Fixtures.*

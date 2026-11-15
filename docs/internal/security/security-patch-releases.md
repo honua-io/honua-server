@@ -23,7 +23,10 @@ The release rescan never writes advisory ids, package names or digests into a pu
   (a fine-grained token with Issues: read and write on the private security tracker only)
   and the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of that tracker). The
   report job then opens one issue per release, platform and advisory with the package, fixed
-  version and due date, and skips findings that already have an open issue.
+  version and due date, and skips findings that already have an open issue. Before reading
+  findings, it checks the destination repository's visibility through the API. A public
+  destination or failed visibility lookup fails the job before any issue is read or written;
+  correct the destination or token access, then rerun the report.
 - **Fallback.** Without both values the job opens a single public issue, *Security maintenance:
   a supported release image needs a patch release*, with counts only. A maintainer files the
   detail in the private tracker by hand from the run's `release-image-security-*` artifacts.
@@ -90,7 +93,8 @@ After a release image is published (release candidate or GA), for each published
    artifact to the release in `honua-io/honua-release`, next to the SBOM and provenance:
    `gh release upload <tag> -R honua-io/honua-release honua-server-<release>-<arch>.{openvex,spdx}.json`.
 3. Register the digests in one pull request: run the `inventory-add` command from each run's
-   summary, one per platform (the command is idempotent and the entries apply in sequence),
+   summary, one per platform. The command registers the resolved platform manifest digest,
+   including when the input image is a multi-platform index. The command is idempotent and the entries apply in sequence;
    then commit `eng/security/supported-images.json`. The run's
    `supported-images-honua-server-<release>-<arch>` artifact holds that run's patch for
    reference only: each patch is made against trunk, so do not apply both. Workflows in this repository hold no

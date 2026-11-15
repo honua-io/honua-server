@@ -36,6 +36,9 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         "OGC API Features URL resolves to a disallowed network address.",
         "Unable to establish a connection to the OGC API Features host.");
 
+    private const int MaxConnectionsPerOgcHost = 16;
+
+    private static readonly MigrationPinnedDnsClient PinnedDnsClient = new(ServiceUrlPolicy, UnsafeLocalUrlsAllowed, MaxConnectionsPerOgcHost);
 
     private readonly HttpClient _httpClient;
     private readonly IOgcApiFeaturesCollectionSink _sink;
@@ -51,22 +54,12 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+        _hostAddressResolver = hostAddressResolver ?? MigrationPinnedDns.SystemHostAddressResolver;
     }
 
     public static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
-    {
-        var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
-
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            MaxConnectionsPerServer = 16,
-            ConnectCallback = (context, cancellationToken) =>
-                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
-        };
-    }
+        => MigrationPinnedDns.CreateHandler(PinnedDnsClient, hostAddressResolver);
 
     public async Task<OgcApiFeaturesImportResult> ImportCollectionAsync(
         OgcApiFeaturesImportRequest request,

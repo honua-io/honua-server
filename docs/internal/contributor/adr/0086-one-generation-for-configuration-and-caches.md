@@ -59,9 +59,11 @@ invalidators, timed reloads. That is what let them disagree.
     output-cache entry is keyed by it and stored only after an anonymous access grant; in-process
     lifetimes are capped at the CDN lifetime; the snapshot is reloaded only when the revision changes;
     the three in-memory settings refuse changes on multi-task deployments; `Cache-Status` and purge
-    records ship; connection pools are sized from the task count and database class.
+    records ship; connection pools are sized from the task count and database class. Cached-response
+    ETags carry the request generation, including metadata, query, tile and Scene representations.
+    Content hashes and entity tags used for edit preconditions retain their existing semantics.
   - 2026.1-rc.3 and 2027.1, honua-server#7393 and #7394: security settings move into PostgreSQL under
-    the same generation, the generation reaches ETags and the per-task metric, and purges become
+    the same generation, the generation reaches the per-task metric, and purges become
     coalesced and scoped through a lease row.
 - Data edits are not configuration changes and do not bump the generation; until a per-layer data
   version is part of the key, edits are bounded by the capped lifetime and the edit purge.
