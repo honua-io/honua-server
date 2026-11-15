@@ -21,6 +21,7 @@ public sealed class PostgresOperationEvidenceProtocolTests(PostgresFixture fixtu
                 objectid bigint PRIMARY KEY, layer_id integer NOT NULL,
                 branch text NOT NULL, value integer NOT NULL);
             CREATE TABLE "{{_schema}}".changes (generation bigint PRIMARY KEY);
+            CREATE TABLE "{{_schema}}".receipts (operation_id text PRIMARY KEY, evidence jsonb NOT NULL);
             CREATE FUNCTION "{{_schema}}".record_evidence() RETURNS trigger LANGUAGE plpgsql AS $body$
             DECLARE
                 changed record;
@@ -141,6 +142,53 @@ public sealed class PostgresOperationEvidenceProtocolTests(PostgresFixture fixtu
         (await ScalarAsync(connection, $"SELECT COUNT(*) FROM \"{_schema}\".changes"))
             .Should().Be(1L);
     }
+
+    [IntegrationTest]
+    public async Task OperationEvidence_ReceiptCommittedWithMutation_ReplaysFromAnotherConnection()
+    {
+        await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+        {
+            await using var transaction = await connection.BeginTransactionAsync();
+            await ResetAsync(connection);
+            await ExecuteAsync(connection, $"INSERT INTO \"{_schema}\".features VALUES (1, 7, 'branch-a', 1)");
+            await StoreReceiptAsync(connection);
+            await transaction.CommitAsync();
+            (await GenerationsAsync(connection)).Should().BeEmpty();
+        }
+
+        await using var replay = await fixture.DataSource.OpenConnectionAsync();
+        (await ScalarAsync(replay, $$"""
+            SELECT evidence @> '[{"generation":1,"objectid":1,"layer":7,"branch":"branch-a","operation":"INSERT"}]'::jsonb
+            FROM "{{_schema}}".receipts WHERE operation_id = 'upload-1:operation-0'
+            """)).Should().Be(true);
+        (await ScalarAsync(replay, $"SELECT COUNT(*) FROM \"{_schema}\".changes"))
+            .Should().Be(1L);
+    }
+
+    [IntegrationTest]
+    public async Task OperationEvidence_ReceiptRolledBackWithMutation_CannotReplayDiscardedEvidence()
+    {
+        await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+        {
+            await using var transaction = await connection.BeginTransactionAsync();
+            await ResetAsync(connection);
+            await ExecuteAsync(connection, $"INSERT INTO \"{_schema}\".features VALUES (1, 7, 'branch-a', 1)");
+            await StoreReceiptAsync(connection);
+            await transaction.RollbackAsync();
+        }
+
+        await using var replay = await fixture.DataSource.OpenConnectionAsync();
+        (await ScalarAsync(replay, $"SELECT COUNT(*) FROM \"{_schema}\".receipts"))
+            .Should().Be(0L);
+        (await ScalarAsync(replay, $"SELECT COUNT(*) FROM \"{_schema}\".changes"))
+            .Should().Be(0L);
+    }
+
+    private Task StoreReceiptAsync(NpgsqlConnection connection) =>
+        ExecuteAsync(connection, $$"""
+            INSERT INTO "{{_schema}}".receipts
+            SELECT 'upload-1:operation-0', current_setting('honua.operation_evidence')::jsonb
+            """);
 
     private static Task ResetAsync(NpgsqlConnection connection) =>
         ExecuteAsync(connection, "SELECT set_config('honua.operation_evidence', '[]', true)");
