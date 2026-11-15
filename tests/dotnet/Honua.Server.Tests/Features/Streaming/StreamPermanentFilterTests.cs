@@ -110,6 +110,53 @@ public sealed class StreamPermanentFilterTests
         predicates.Should().BeEmpty();
     }
 
+    [UnitTheory]
+    [InlineData("classification LIKE 'secret%'")]
+    [InlineData("classification NOT LIKE 'secret%'")]
+    [InlineData("NOT (classification LIKE 'secret%')")]
+    public void AppendPermanentFilterPredicate_PatternComparison_Throws(string expression)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource(expression), Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("classification <> 'AABBCCDD-1122-3344-5566-778899AABBCC'")]
+    [InlineData("classification IS NULL")]
+    public void AppendPermanentFilterPredicate_UuidField_Throws(string expression)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource(expression, fieldType: MetadataV2FieldType.Uuid), Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("OBJECTID")]
+    [InlineData("object_id")]
+    [InlineData("id")]
+    [InlineData("LAYERID")]
+    [InlineData("layer_id")]
+    [InlineData("geom")]
+    [InlineData("GEOMETRY")]
+    [InlineData("shape")]
+    public void AppendPermanentFilterPredicate_SystemField_Throws(string fieldName)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource($"{fieldName} IS NULL", fieldType: MetadataV2FieldType.Integer, fieldName: fieldName),
+            Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
     [UnitTest]
     public void AppendPermanentFilterPredicate_UnknownField_Throws()
     {
@@ -127,13 +174,14 @@ public sealed class StreamPermanentFilterTests
     private static MetadataV2Object Resource(
         string? expression,
         string? language = null,
-        MetadataV2FieldType fieldType = MetadataV2FieldType.String)
+        MetadataV2FieldType fieldType = MetadataV2FieldType.String,
+        string fieldName = "classification")
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "roads", Name = "roads" },
             SchemaFields =
             [
-                new MetadataV2Field { Name = "classification", Type = fieldType }
+                new MetadataV2Field { Name = fieldName, Type = fieldType }
             ],
             PermanentFilter = expression is null
                 ? null

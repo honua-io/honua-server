@@ -60,6 +60,8 @@ internal static partial class FeatureStreamEndpoints
         => expression switch
         {
             PropertyReference property => ResolvePermanentFilterProperty(property, resource),
+            BinaryExpression { Operator: BinaryOperator.Like or BinaryOperator.NotLike } =>
+                throw new InvalidOperationException("Saved permanent filter pattern cannot be evaluated consistently."),
             BinaryExpression binary => binary with
             {
                 Left = CanonicalizePermanentFilter(binary.Left, resource),
@@ -81,10 +83,16 @@ internal static partial class FeatureStreamEndpoints
     {
         var fields = resource.SchemaFields.Where(field =>
             string.Equals(field.Name, property.PropertyName, StringComparison.OrdinalIgnoreCase)).ToArray();
-        // Temporal attributes may be numeric epochs; the evaluator does not apply SQL's temporal casts.
+        // System fields map to physical SQL columns rather than event attributes.
+        // Temporal/UUID attributes also need SQL type conversions the evaluator does not apply.
+        if (property.PropertyName.ToUpperInvariant() is
+            "ID" or "OBJECTID" or "OBJECT_ID" or "LAYERID" or "LAYER_ID" or "GEOM" or "GEOMETRY" or "SHAPE")
+        {
+            throw new InvalidOperationException("Saved permanent filter field cannot be evaluated consistently.");
+        }
         if (fields.Length != 1 || fields[0].Type is not
             (MetadataV2FieldType.String or MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger or
-             MetadataV2FieldType.Double or MetadataV2FieldType.Float or MetadataV2FieldType.Boolean or MetadataV2FieldType.Uuid))
+             MetadataV2FieldType.Double or MetadataV2FieldType.Float or MetadataV2FieldType.Boolean))
         {
             throw new InvalidOperationException("Saved permanent filter field cannot be evaluated consistently.");
         }
