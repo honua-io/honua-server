@@ -2,7 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
@@ -15,6 +19,25 @@ namespace Honua.Server.Tests.Startup;
 public sealed class PostgresSharedStateRegistrationTests
 {
     [UnitTest]
+    public async Task AddPostgresSharedState_WithASystemDatabase_ResolvesThePostgresStores()
+    {
+        await using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua;Password=honua");
+        await using var provider = BuildProvider(dataSource);
+
+        provider.GetRequiredService<IVersionJobStore>().Should().BeOfType<PostgresVersionJobStore>();
+        provider.GetRequiredService<ITileCacheGenerationCheckpointStore>().Should().BeOfType<PostgresTileCacheGenerationCheckpointStore>();
+    }
+
+    [UnitTest]
+    public async Task AddPostgresSharedState_WithoutASystemDatabase_ResolvesProcessLocalStores()
+    {
+        await using var provider = BuildProvider(dataSource: null);
+
+        provider.GetRequiredService<IVersionJobStore>().Should().BeOfType<InMemoryVersionJobStore>();
+        provider.GetRequiredService<ITileCacheGenerationCheckpointStore>().Should().BeOfType<InMemoryTileCacheGenerationCheckpointStore>();
+    }
+
+    [UnitTest]
     public void AddPostgresSharedState_WithoutSystemDataSource_RegistersNoLeaseStore()
     {
         using var provider = BuildProvider(dataSource: null);
@@ -26,7 +49,6 @@ public sealed class PostgresSharedStateRegistrationTests
     public void AddPostgresSharedState_WithSystemDataSource_RegistersPostgresLeaseStore()
     {
         using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua");
-
         using var provider = BuildProvider(dataSource);
 
         provider.GetService<ILeaseStore>().Should().BeOfType<PostgresLeaseStore>();

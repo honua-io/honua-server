@@ -448,7 +448,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(workflow["env"]["AFFECTED_SHARDS_CAP"], "6")
         required = workflow["jobs"]["required"]
         self.assertIn("affected-shards", required["needs"])
-        step = required["steps"][0]
+        step = next(step for step in required["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")
         self.assertIn("needs.affected-shards.result", step["env"]["AFFECTED_SHARDS_RESULT"])
         self.assertIn('"${AFFECTED_SHARDS_RESULT}" != success', step["run"])
         self.assertIn('"${GITHUB_EVENT_NAME}" == pull_request', step["run"])
@@ -533,7 +533,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         import yaml
 
         workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
-        command = workflow["jobs"]["required"]["steps"][0]["run"]
+        command = next(step for step in workflow["jobs"]["required"]["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")["run"]
         for result in ("success", "failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
