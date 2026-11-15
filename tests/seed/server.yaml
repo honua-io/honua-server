@@ -1861,6 +1861,23 @@ sql:
       CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_changes_event_id
           ON honua.feature_changes(event_id)
           WHERE event_id IS NOT NULL;
+  # One notification per inserting statement wakes every task's realtime tailer, from
+  # migration 157_FeatureChangeRealtimeStream.sql. Without it cross-task tests see only polls.
+  - |
+      CREATE OR REPLACE FUNCTION honua.notify_feature_changes()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+          PERFORM pg_notify('honua_rt_features', '');
+          RETURN NULL;
+      END;
+      $$;
+  - "DROP TRIGGER IF EXISTS trigger_notify_feature_changes ON honua.feature_changes;"
+  - |
+      CREATE TRIGGER trigger_notify_feature_changes
+          AFTER INSERT ON honua.feature_changes
+          FOR EACH STATEMENT EXECUTE FUNCTION honua.notify_feature_changes();
   - |
       CREATE TABLE IF NOT EXISTS honua.replica_conflicts (
           conflict_id TEXT PRIMARY KEY,
