@@ -13953,7 +13953,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Protocols.Scene.ComponentTests.SceneComponentTests.ProtectedAsset_DeniesAnonymous_AndUnrelatedRoutesAreAbsent",
-        "Honua.Protocols.Scene.ComponentTests.SceneGenerationETagTests.GetAsset_GenerationChangesWithIdenticalContent_ReturnsNewValidator",
         "Honua.Server.Tests.Features.Admin.ConsoleBrowserRouteAccessTests.ConsoleRoute_CrossOriginOperatorBearer_MatchesSameOriginSession",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetTileset_MainScene_ReturnsExtrasWithCameraAndProjectMetadata",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetTileset_ObsScene_RegisteredViaSharedAssetRoot_ReturnsObsTilesetNotMain",
@@ -13989,7 +13988,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Protocols.Scene.ComponentTests.SceneComponentTests.PublicAsset_ConditionalAndRangeRequests_PreserveWireContract",
-        "Honua.Protocols.Scene.ComponentTests.SceneGenerationETagTests.GetAsset_GenerationChangesWithIdenticalContent_ReturnsNewValidator",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetSceneAsset_ObservationsSidecar_ReturnsJsonWithStableSceneId",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetSceneAsset_StructureTile_ReturnsB3dmBinary",
         "Honua.Server.Tests.Features.Protocols.Scene.PublicSceneDiscoveryEndpointTests.GetSceneAsset_ForDowntownHonoluluFixture_ReturnsSceneMetadataJson",
