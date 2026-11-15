@@ -8,6 +8,7 @@ using Honua.Infrastructure.SharedCaching;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -206,6 +207,47 @@ public sealed class ConfigurationETagTests
         return request;
     }
 
+    [Theory]
+    [InlineData("identity", "gzip")]
+    [InlineData("gzip", "identity")]
+    public async Task ConditionalRead_WarmedOutputCache_SeparatesContentCodings(string firstCoding, string secondCoding)
+    {
+        await using var server = await TestServer.StartAsync(GenerationRegistration.Enabled, OutputCacheRegistration.Enabled);
+        using var warmRequest = new HttpRequestMessage(HttpMethod.Get, "/json");
+        warmRequest.Headers.AcceptEncoding.ParseAdd(firstCoding);
+        using var warm = await server.Client.SendAsync(warmRequest);
+        warm.EnsureSuccessStatusCode();
+        var originalTag = warm.Headers.ETag!;
+
+        using var crossRequest = new HttpRequestMessage(HttpMethod.Get, "/json");
+        crossRequest.Headers.AcceptEncoding.ParseAdd(secondCoding);
+        crossRequest.Headers.IfNoneMatch.Add(originalTag);
+        using var cross = await server.Client.SendAsync(crossRequest);
+        cross.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        cross.Headers.ETag.Should().NotBe(originalTag);
+        cross.Headers.ETag!.IsWeak.Should().Be(secondCoding == "gzip");
+
+        using var hitRequest = new HttpRequestMessage(HttpMethod.Get, "/json");
+        hitRequest.Headers.AcceptEncoding.ParseAdd(secondCoding);
+        using var hit = await server.Client.SendAsync(hitRequest);
+        hit.Headers.GetValues(OutputCacheStatus.HeaderName).Single().Should().Contain("hit;");
+        hit.Headers.ETag.Should().Be(cross.Headers.ETag);
+        hit.Content.Headers.ContentEncoding.Contains("gzip").Should().Be(secondCoding == "gzip");
+
+        using var conditionalRequest = new HttpRequestMessage(HttpMethod.Get, "/json");
+        conditionalRequest.Headers.AcceptEncoding.ParseAdd(secondCoding);
+        conditionalRequest.Headers.IfNoneMatch.Add(cross.Headers.ETag);
+        using var conditional = await server.Client.SendAsync(conditionalRequest);
+        conditional.StatusCode.Should().Be(System.Net.HttpStatusCode.NotModified);
+        conditional.Headers.ETag.Should().Be(cross.Headers.ETag);
+    }
+
+    private enum OutputCacheRegistration
+    {
+        Disabled,
+        Enabled
+    }
+
     public enum GenerationRegistration
     {
         Enabled,
@@ -217,19 +259,45 @@ public sealed class ConfigurationETagTests
         internal long Generation { get; set; } = 7;
         internal HttpClient Client { get; } = app.GetTestClient();
 
-        internal static async Task<TestServer> StartAsync(GenerationRegistration generation = GenerationRegistration.Enabled)
+        internal static async Task<TestServer> StartAsync(
+            GenerationRegistration generation = GenerationRegistration.Enabled,
+            OutputCacheRegistration outputCache = OutputCacheRegistration.Disabled)
         {
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Services.AddETags();
             builder.Services.AddResponseCompression(options => options.Providers.Add<GzipCompressionProvider>());
+            var source = ConfigureServices(builder, generation, outputCache);
+            var app = builder.Build();
+            app.UseResponseCompression();
+            if (outputCache == OutputCacheRegistration.Enabled)
+            {
+                app.UseOutputCache();
+            }
+            MapRoutes(app, outputCache);
+            await app.StartAsync();
+            var server = new TestServer(app);
+            source.GetGenerationAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(server.Generation));
+            return server;
+        }
+
+        private static IConfigurationGenerationSource ConfigureServices(
+            WebApplicationBuilder builder, GenerationRegistration generation, OutputCacheRegistration outputCache)
+        {
             var source = Substitute.For<IConfigurationGenerationSource>();
             if (generation == GenerationRegistration.Enabled)
             {
                 builder.Services.AddSingleton(source);
             }
-            var app = builder.Build();
-            app.UseResponseCompression();
+            if (outputCache == OutputCacheRegistration.Enabled)
+            {
+                OutputCachingRegistration.ConfigureOutputCaching(builder.Services, builder.Configuration);
+            }
+            return source;
+        }
+
+        private static void MapRoutes(WebApplication app, OutputCacheRegistration outputCache)
+        {
             app.MapGet("/tile", () => Results.Bytes(new byte[] { 1, 2, 3 },
                 "application/vnd.mapbox-vector-tile", enableRangeProcessing: true))
                 .WithSharedCacheClass(ResponseCacheClass.Tile);
@@ -237,17 +305,17 @@ public sealed class ConfigurationETagTests
                 "text/plain", enableRangeProcessing: true))
                 .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
             app.MapGet("/metadata", () => Results.Ok("unchanged")).WithETag();
-            app.MapGet("/json", () => Results.Json("unchanged"))
+            var json = app.MapGet("/json", () => Results.Json("unchanged"))
                 .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
+            if (outputCache == OutputCacheRegistration.Enabled)
+            {
+                json.CacheOutput("OgcLandingPage");
+            }
             app.MapGet("/text", () => Results.Text("unchanged"))
                 .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
             app.MapGet("/query", (HttpContext context, IETagService tags) =>
                 ResponseCacheUtilities.CreateResultFromCachedResponse(context,
                     ResponseCacheUtilities.CreateCachedResponse(new byte[] { 1, 2, 3 }, "application/json", tags), tags));
-            await app.StartAsync();
-            var server = new TestServer(app);
-            source.GetGenerationAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(server.Generation));
-            return server;
         }
 
         public async ValueTask DisposeAsync()
