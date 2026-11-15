@@ -43,14 +43,16 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
     }
 
-    private static IJobOutcomeRecoveryExecutor ConfigureOutcomeRecovery(IJobExecutor executor, JobExecutionResult? result)
+    private static IJobOutcomeRecoveryExecutor ConfigureOutcomeRecovery(
+        IJobExecutor executor, JobExecutionResult? result, bool skipFirstLookup = false)
     {
         var recovery = (IJobOutcomeRecoveryExecutor)executor;
+        var lookups = 0;
         recovery.RecoverOutcomeAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 Assert.False(call.Arg<CancellationToken>().IsCancellationRequested);
-                if (result is null)
+                if (result is null || (skipFirstLookup && lookups++ == 0))
                 {
                     return null;
                 }
