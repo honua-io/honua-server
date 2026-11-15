@@ -59,7 +59,7 @@ internal sealed partial class JobExecutionService
                 return false;
             }
 
-            await FinalizeOutcomeRecoveryAsync(job, result, recoveryCancellation.Token, recoveryOnly).ConfigureAwait(false);
+            await FinalizeOutcomeRecoveryAsync(job, result, recoveryOnly, recoveryCancellation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
         {
@@ -78,7 +78,7 @@ internal sealed partial class JobExecutionService
     }
 
     private async Task FinalizeOutcomeRecoveryAsync(
-        ExecutionJobRecord job, JobExecutionResult result, CancellationToken cancellationToken, bool recoveryOnly)
+        ExecutionJobRecord job, JobExecutionResult result, bool recoveryOnly, CancellationToken cancellationToken)
     {
         var workerId = job.ClaimedBy!;
         if (!await FinalizeJobAsync(job.OperationId, workerId, result, null, null, cancellationToken).ConfigureAwait(false))
