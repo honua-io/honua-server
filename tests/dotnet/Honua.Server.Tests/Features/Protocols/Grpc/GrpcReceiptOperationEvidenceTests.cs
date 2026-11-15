@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -96,6 +98,76 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
         (await ScalarAsync($"SELECT operation_evidence->>'version' FROM {Table}")).Should().Be("1");
     }
 
+    [IntegrationTest]
+    public async Task TryReadAsync_SidecarPresentOrAbsent_PreservesLegacyPayload()
+    {
+        await SeedEvidenceAsync();
+        var receipts = new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema);
+
+        var expanded = await receipts.TryReadAsync("retry");
+        expanded!.Value.ToArray().Should().Equal(1, 2);
+        await ExecuteAsync($"DROP TRIGGER invalidate_grpc_receipt_operation_evidence ON {Table}; ALTER TABLE {Table} DROP COLUMN operation_evidence");
+        var legacy = await receipts.TryReadAsync("retry");
+        legacy!.Value.ToArray().Should().Equal(1, 2);
+    }
+
+    [IntegrationTest]
+    public async Task TryReadWithEvidenceAsync_CommittedSidecar_PreservesUnavailableAndConfirmedEmpty()
+    {
+        await SeedEvidenceAsync();
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(new byte[] { 1, 2 }));
+        await ExecuteAsync($"UPDATE {Table} SET operation_evidence = '{{\"version\":1,\"payloadSha256\":\"{hash}\",\"creates\":[null,[]],\"updates\":[],\"deletes\":[]}}'::jsonb");
+        IFeatureEditIdempotencyReceipts receipts = new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema);
+
+        var replay = await receipts.TryReadWithEvidenceAsync("retry");
+
+        replay.Should().NotBeNull();
+        replay!.Value.Payload.ToArray().Should().Equal(1, 2);
+        replay.Value.Evidence.Should().NotBeNull();
+        replay.Value.Evidence!.Creates.Should().HaveCount(2);
+        replay.Value.Evidence.Creates[0].IsDefault.Should().BeTrue();
+        replay.Value.Evidence.Creates[1].IsDefault.Should().BeFalse();
+        replay.Value.Evidence.Creates[1].Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("null")]
+    [InlineData("{\"version\":1}")]
+    [InlineData("{\"version\":2,\"payloadSha256\":\"$hash\",\"creates\":[],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"wrong\",\"creates\":[],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[{}],\"updates\":[],\"deletes\":[]}")]
+    public async Task TryReadWithEvidenceAsync_UnusableSidecar_PreservesPayloadWithUnavailableEvidence(string json)
+    {
+        await SeedEvidenceAsync();
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(new byte[] { 1, 2 }));
+        json = json.Replace("$hash", hash, StringComparison.Ordinal);
+        await using var command = database.DataSource.CreateCommand($"UPDATE {Table} SET operation_evidence = $1::jsonb");
+        command.Parameters.AddWithValue(json);
+        await command.ExecuteNonQueryAsync();
+        IFeatureEditIdempotencyReceipts receipts = new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema);
+
+        var replay = await receipts.TryReadWithEvidenceAsync("retry");
+
+        replay.Should().NotBeNull();
+        replay!.Value.Payload.ToArray().Should().Equal(1, 2);
+        replay.Value.Evidence.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task TryReadWithEvidenceAsync_LegacySchema_PreservesPayloadWithUnavailableEvidence()
+    {
+        await SeedEvidenceAsync();
+        await ExecuteAsync($"DROP TRIGGER invalidate_grpc_receipt_operation_evidence ON {Table}; ALTER TABLE {Table} DROP COLUMN operation_evidence");
+        IFeatureEditIdempotencyReceipts receipts = new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema);
+
+        var replay = await receipts.TryReadWithEvidenceAsync("retry");
+
+        replay.Should().NotBeNull();
+        replay!.Value.Payload.ToArray().Should().Equal(1, 2);
+        replay.Value.Evidence.Should().BeNull();
+        (await receipts.TryReadWithEvidenceAsync("missing")).Should().BeNull();
+    }
+
     private async Task SeedEvidenceAsync()
     {
         await ExecuteAsync($"INSERT INTO {Table} (scope_key, receipt, expires_at) VALUES ('retry', '\\x0102', now() + interval '1 hour')");
@@ -108,11 +180,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     private async Task ApplyMigrationAsync(string suffix)
     {
         var assembly = typeof(Program).Assembly;
-        var name = assembly.GetManifestResourceNames().SingleOrDefault(resource => resource.EndsWith(suffix, StringComparison.Ordinal));
-        if (name is null)
-        {
-            return; // The RED baseline has no sidecar migration yet.
-        }
+        var name = assembly.GetManifestResourceNames().Single(resource => resource.EndsWith(suffix, StringComparison.Ordinal));
         await using var stream = assembly.GetManifestResourceStream(name)!;
         using var reader = new StreamReader(stream);
         var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", _schema, StringComparison.Ordinal);
