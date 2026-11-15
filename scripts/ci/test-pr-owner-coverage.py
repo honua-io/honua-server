@@ -43,5 +43,9 @@ config = json.loads((ROOT / '.github/ci-shards.json').read_text())
 debt = json.loads((ROOT / 'scripts/ci/fixtures/pr-owner-coverage-debt.json').read_text())['paths']
 assert len(set(debt)) == len(debt), 'Duplicate coverage debt path'
 uncovered = verify(config, debt)
+assert uncovered == set(debt), (
+    'Debt list is stale: '
+    f'extra={sorted(set(debt) - uncovered)} '
+    f'missing={sorted(uncovered - set(debt))}')
 reject_loss(config, debt)
 print(f'pr-owner-coverage=ok existing-uncovered-paths={len(uncovered)} regressions=0')
