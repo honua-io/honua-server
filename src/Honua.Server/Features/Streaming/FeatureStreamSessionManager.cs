@@ -474,7 +474,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public bool Parsed;
     }
 
-    private int OfferChange(string sessionId, SessionEntry entry, FeatureStreamMessage message, BroadcastParse parse)
+    private int OfferChange(Guid sessionId, SessionEntry entry, FeatureStreamMessage message, BroadcastParse parse)
     {
         var parsedProperties = parse.Properties;
         var propertiesParsed = parse.Parsed;
