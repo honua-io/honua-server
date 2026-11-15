@@ -10,6 +10,13 @@ import { describe, expect, it } from 'vitest';
 import { config } from '../shared/client';
 
 const pointWkbBase64 = 'AQEAAAAAAAAAAAAAAAAAAAAAAAAA';
+// The durable queue may claim or finish a job before submitJob returns.
+const acceptedJobStatuses = [
+  'esriJobSubmitted',
+  'esriJobWaiting',
+  'esriJobExecuting',
+  'esriJobSucceeded',
+];
 
 describe('GPServer Smoke', () => {
   it('should expose the catalog-backed service root', async () => {
@@ -117,14 +124,7 @@ describe('GPServer Smoke', () => {
     // body error member instead of the HTTP status.
     if (response.status === 200 && !data.error) {
       expect(data.jobId).toBeTruthy();
-      // The durable PostgreSQL queue (#7245) may claim the job before submitJob
-      // returns. Assert acceptance without depending on worker scheduling.
-      expect([
-        'esriJobSubmitted',
-        'esriJobWaiting',
-        'esriJobExecuting',
-        'esriJobSucceeded',
-      ]).toContain(data.jobStatus);
+      expect(acceptedJobStatuses).toContain(data.jobStatus);
       return;
     }
 
