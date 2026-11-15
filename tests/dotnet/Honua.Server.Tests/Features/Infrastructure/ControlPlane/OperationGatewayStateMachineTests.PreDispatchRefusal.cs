@@ -170,9 +170,75 @@ public sealed partial class OperationGatewayStateMachineTests
         });
 
         Assert.Equal(OperationGatewayOutcome.ProposalCreated, result.Outcome);
+        var actor = identitySource == "http" ? "test:subject:-:canonical-agent" : "canonical-agent";
         Assert.Contains(audit.Events, item => item.Action == "operation.proposed"
-            && item.Actor == "canonical-agent" && item.ActorType == AuditActorType.UserId
-            && item.ActorAgent == "canonical-agent");
+            && item.Actor == actor && item.ActorType == AuditActorType.UserId
+            && item.ActorAgent == actor);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AgentApiKeyProposal_UnstampedIdentity_PreservesReplayAuthority(bool revoked)
+    {
+        var keyId = Guid.NewGuid();
+        var actor = $"apikey:api-key:{keyId:D}";
+        using var requestServices = new ServiceCollection().BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([
+                new Claim("api_key_id", keyId.ToString("D")),
+                new Claim(ClaimTypes.Role, "agent")], "apikey")),
+            RequestServices = requestServices
+        };
+        var keys = Substitute.For<IAdminApiKeyStore>();
+        var now = DateTimeOffset.UtcNow;
+        var key = new AdminApiKeyRecord(keyId, "proposer", "test-prefix", [], ["admin:*"],
+            now, now, null, null, null, null, "test");
+        keys.GetAsync(keyId, Arg.Any<CancellationToken>()).Returns(Task.FromResult<AdminApiKeyRecord?>(key));
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var proposals = new InMemoryProposalStore();
+        var audit = new RecordingAuditLog();
+        var executor = new PendingApprovalExecutor();
+        executor.Completion.SetResult("execution-id");
+        var gateway = BuildGateway(proposals, executor, ladder, configure: services => services
+            .AddSingleton<IAuditLog>(audit)
+            .AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = context })
+            .AddSingleton(new OperationProposerApiKeyAuthority(TimeProvider.System, keys)));
+
+        var result = await gateway.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "untrusted-display-name"
+        });
+        Assert.Equal(OperationGatewayOutcome.ProposalCreated, result.Outcome);
+        var proposal = await proposals.GetAsync(result.ProposalId!);
+        Assert.Equal(actor, proposal!.RequestedBy);
+        Assert.Equal(actor, proposal.RequestedByAgent);
+        Assert.Contains(audit.Events, item => item.Action == "operation.proposed" && item.Actor == actor
+            && item.ActorAgent == actor);
+        Assert.All(audit.Events.Where(item => item.ResourceType == "operation_instance"),
+            item => Assert.Equal(actor, item.Actor));
+
+        keys.GetAsync(keyId, Arg.Any<CancellationToken>()).Returns(Task.FromResult<AdminApiKeyRecord?>(
+            revoked ? key with { RevokedAt = DateTimeOffset.UtcNow } : key));
+        if (revoked)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("human-approver")));
+            Assert.False(executor.Entered.Task.IsCompleted);
+            Assert.DoesNotContain(audit.Events, item => item.Action == "operation.submitted");
+        }
+        else
+        {
+            await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("human-approver"));
+            Assert.True(executor.Entered.Task.IsCompleted);
+            Assert.Contains(audit.Events, item => item.Action == "operation.submitted"
+                && item.Actor == actor && item.ActorAgent == actor);
+        }
     }
 
     [UnitTheory]

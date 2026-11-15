@@ -1187,7 +1187,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         var resolved = request with { TenantId = ResolveTenantId(request.TenantId) };
         if (context?.User.Identity?.IsAuthenticated != true || !Honua.Infrastructure.Authentication.AgentPrincipal.IsAgentRequest(context))
             return resolved;
-        var actor = AuditContextResolver.ResolveActor(context, out _);
+        var actor = AuditContextResolver.ResolveCanonicalActor(context).Actor;
         return resolved with { RequestedBy = actor, RequestedByAgent = actor };
     }
 

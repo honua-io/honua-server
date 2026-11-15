@@ -94,8 +94,9 @@ public sealed class OperationGatewayAutonomyTests
             "operation.auto_applied");
         auditLog.Events.Should().OnlyContain(item =>
             item.Actor == "ops-findings-autonomy"
-            && item.ActorType == AuditActorType.System
             && item.ActorAgent == "ops-findings-autonomy");
+        auditLog.Events.Where(item => item.Action.StartsWith("operation.auto_", StringComparison.Ordinal))
+            .Should().OnlyContain(item => item.ActorType == AuditActorType.System);
         outbox.Events.Should().ContainSingle();
         outbox.Events[0].Source.Should().Be(AlertEventSources.Ops);
         outbox.Events[0].ServiceId.Should().Be("ops-autonomy");
@@ -748,10 +749,47 @@ public sealed class OperationGatewayAutonomyTests
             => throw new InvalidOperationException("The wrong-kind executor must never be invoked.");
     }
 
-    private sealed class MultiProposalStore : IOperationProposalStore
+    private sealed class MultiProposalStore : IOperationProposalStore, IOperationProposalBatchStore
     {
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
         private readonly Lock _lock = new();
+        private readonly Dictionary<string, OperationProposalBatchCandidate> _batches = new(StringComparer.Ordinal);
+
+        public Task<string> ReserveBatchAsync(OperationProposalBatchCandidate candidate, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                if (!_batches.TryGetValue(candidate.BatchKey, out var current))
+                {
+                    _batches[candidate.BatchKey] = current = candidate;
+                }
+                return Task.FromResult(current.IdempotencyKey);
+            }
+        }
+
+        public Task RetargetOpenBatchAsync(string previousProposalId, string renewedProposalId, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                foreach (var batch in _batches.Values.Where(batch => batch.ProposalId == previousProposalId).ToArray())
+                {
+                    _batches[batch.BatchKey] = batch with { ProposalId = renewedProposalId };
+                }
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task CompleteOpenBatchAsync(string proposalId, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                foreach (var batch in _batches.Values.Where(batch => batch.ProposalId == proposalId).ToArray())
+                {
+                    _batches.Remove(batch.BatchKey);
+                }
+                return Task.CompletedTask;
+            }
+        }
 
         public int Count
         {
