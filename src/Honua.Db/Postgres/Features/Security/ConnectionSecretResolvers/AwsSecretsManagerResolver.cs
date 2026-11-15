@@ -105,14 +105,21 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
 
-        if (!secretKey.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException($"Invalid AWS secret reference. Expected '{SecretsManagerPrefix}<secret-id>'.", nameof(secretKey));
-        }
-
         if (TryGetCached(secretKey, out var cachedValue))
         {
             return cachedValue;
+        }
+
+        return await ResolveSecretFreshAsync(secretKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
+
+        if (!secretKey.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"Invalid AWS secret reference. Expected '{SecretsManagerPrefix}<secret-id>'.", nameof(secretKey));
         }
 
         var secretIdWithOptions = secretKey[SecretsManagerPrefix.Length..];

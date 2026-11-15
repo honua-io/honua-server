@@ -50,12 +50,7 @@ internal static class FeatureChangeEventsEndpoints
                 "Query parameter 'from' must be earlier than or equal to 'to'.");
         }
 
-        var items = await store.QueryAsync(
-            cursor,
-            from,
-            to,
-            limit + 1,
-            cancellationToken).ConfigureAwait(false);
+        var items = await store.QueryAsync(new(cursor, from, to, limit + 1), cancellationToken).ConfigureAwait(false);
 
         var hasMore = items.Count > limit;
         var page = hasMore ? items.Take(limit).ToArray() : items.ToArray();
@@ -83,6 +78,8 @@ internal sealed record FeatureEventReplayResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(FeatureEventReplayResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(FeatureChangeEvent))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(FeatureChangeEvent[]))]
+// Changed attributes read from the PostgreSQL change log are JSON values.
+[System.Text.Json.Serialization.JsonSerializable(typeof(System.Text.Json.JsonElement))]
 internal sealed partial class FeatureEventReplayJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

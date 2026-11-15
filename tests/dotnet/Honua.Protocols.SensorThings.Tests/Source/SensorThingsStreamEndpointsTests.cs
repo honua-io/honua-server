@@ -66,13 +66,16 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.CacheControl.NoTransform.Should().BeTrue();
+        response.Headers.GetValues("X-Accel-Buffering").Should().ContainSingle().Which.Should().Be("no");
 
         await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
         // The handshake emits a "connected" status frame before any observation.
         var handshake = await ReadUntilAsync(reader, "event: status", cts.Token);
-        handshake.Should().Contain("connected").And.Contain("\"semantics\":\"ephemeral\"");
+        handshake.Should().Contain("connected").And.Contain("\"semantics\":\"resumable\"");
 
         // Ingest an observation on datastream 1; the stream must push it.
         using var adminClient = _fixture.CreateAdminClient();
@@ -82,7 +85,7 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
             cts.Token);
         ingest.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var pushed = await ReadUntilAsync(reader, "event: observation", cts.Token);
+        var pushed = await ReadUntilAsync(reader, "event: observations", cts.Token);
         pushed.Should().Contain("\"result\":99");
         pushed.Should().Contain("\"datastreamId\":1");
     }
@@ -142,13 +145,13 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
                 new { result = 81.25, phenomenonTime = "2026-09-05T04:05:06Z" }, cts.Token);
             second.StatusCode.Should().Be(HttpStatusCode.Created);
 
-            var pushed = await ReadUntilAsync(reader, "event: observation", cts.Token);
+            var pushed = await ReadUntilAsync(reader, "event: observations", cts.Token);
             using var frame = JsonDocument.Parse(pushed[(pushed.IndexOf("data: ", StringComparison.Ordinal) + 6)..]);
-            frame.RootElement.GetProperty("result").GetDouble().Should().Be(81.25);
+            frame.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(81.25);
             frame.RootElement.GetProperty("datastreamId").GetInt64().Should().Be(1);
-            frame.RootElement.GetProperty("phenomenonTime").GetString().Should().Be("2026-09-05T04:05:06.000Z");
+            frame.RootElement.GetProperty("observations")[0].GetProperty("phenomenonTime").GetDateTimeOffset().Should().Be(DateTimeOffset.Parse("2026-09-05T04:05:06Z", System.Globalization.CultureInfo.InvariantCulture));
             using var persisted = JsonDocument.Parse(await second.Content.ReadAsStringAsync(cts.Token));
-            frame.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(persisted.RootElement.GetProperty("@iot.id").GetInt64());
+            frame.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(persisted.RootElement.GetProperty("@iot.id").GetInt64());
         }
         finally
         {
@@ -183,11 +186,11 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
             new { result = 81.25, phenomenonTime = "2026-09-05T04:05:06Z" }, cts.Token);
         second.StatusCode.Should().Be(HttpStatusCode.Created);
         using var frame = await ReadSocketFrameAsync(socket, cts.Token);
-        frame.RootElement.GetProperty("result").GetDouble().Should().Be(81.25);
+        frame.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(81.25);
         frame.RootElement.GetProperty("datastreamId").GetInt64().Should().Be(1);
-        frame.RootElement.GetProperty("phenomenonTime").GetString().Should().Be("2026-09-05T04:05:06.000Z");
+        frame.RootElement.GetProperty("observations")[0].GetProperty("phenomenonTime").GetDateTimeOffset().Should().Be(DateTimeOffset.Parse("2026-09-05T04:05:06Z", System.Globalization.CultureInfo.InvariantCulture));
         using var persisted = JsonDocument.Parse(await second.Content.ReadAsStringAsync(cts.Token));
-        frame.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(persisted.RootElement.GetProperty("@iot.id").GetInt64());
+        frame.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(persisted.RootElement.GetProperty("@iot.id").GetInt64());
     }
 
     private static async Task<JsonDocument> ReadSocketFrameAsync(WebSocket socket, CancellationToken ct)
@@ -211,6 +214,7 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
     /// </summary>
     private static async Task<string> ReadUntilAsync(StreamReader reader, string marker, CancellationToken cancellationToken)
     {
+        string? cursor = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken);
@@ -219,10 +223,12 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
                 throw new InvalidOperationException($"Stream closed before '{marker}' was observed.");
             }
 
+            if (line.StartsWith("id: ", StringComparison.Ordinal)) cursor = line;
+            if (line.Length == 0) cursor = null;
             if (line.Contains(marker, StringComparison.Ordinal))
             {
                 var dataLine = await reader.ReadLineAsync(cancellationToken) ?? string.Empty;
-                return string.Concat(line, "\n", dataLine);
+                return string.Concat(cursor is null ? "" : cursor + "\n", line, "\n", dataLine);
             }
         }
 
