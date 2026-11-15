@@ -152,7 +152,7 @@ and the published layer's primary identifier can be different fields.
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | WKT | `.wkt` | No embedded CRS; provide `sourceSrid` if not WGS 84. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
+| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. The delimiter (comma, semicolon, tab or pipe) is detected; in a file that is not comma-separated, decimal-comma coordinates such as `11,575490` are read as decimals. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
 | GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0 with one WKB geometry column and planar edges. Null-geometry rows retain their attributes. See the [input contract](#geoparquet-input-contract). |
