@@ -60,21 +60,63 @@ internal static partial class FeatureStreamEndpoints
         => expression switch
         {
             PropertyReference property => ResolvePermanentFilterProperty(property, resource),
-            BinaryExpression { Operator: BinaryOperator.Like or BinaryOperator.NotLike } =>
-                throw new InvalidOperationException("Saved permanent filter pattern cannot be evaluated consistently."),
-            BinaryExpression binary => binary with
-            {
-                Left = CanonicalizePermanentFilter(binary.Left, resource),
-                Right = CanonicalizePermanentFilter(binary.Right, resource)
-            },
+            BinaryExpression binary => CanonicalizePermanentFilterBinary(binary, resource),
             UnaryExpression unary => unary with
             {
                 Operand = CanonicalizePermanentFilter(unary.Operand, resource)
             },
             ValueList values => new ValueList(values.Values
                 .Select(value => CanonicalizePermanentFilter(value, resource)).ToArray()),
-            Literal literal => literal,
+            Literal { Type: LiteralType.Number, Value: not (byte or sbyte or short or ushort or int or uint or long) } =>
+                throw new InvalidOperationException("Saved permanent filter numeric literal cannot be evaluated consistently."),
+            Literal { Type: LiteralType.Text, Value: not (string or null) } =>
+                throw new InvalidOperationException("Saved permanent filter text literal cannot be evaluated consistently."),
+            Literal literal when literal.Type is LiteralType.Text or LiteralType.Number or LiteralType.Boolean or LiteralType.Null => literal,
             _ => throw new InvalidOperationException("Saved permanent filter cannot be evaluated consistently.")
+        };
+
+    private static BinaryExpression CanonicalizePermanentFilterBinary(
+        BinaryExpression binary,
+        MetadataV2Object resource)
+    {
+        if (binary.Operator is not (BinaryOperator.And or BinaryOperator.Or or
+            BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.In or BinaryOperator.NotIn))
+        {
+            throw new InvalidOperationException("Saved permanent filter operator cannot be evaluated consistently.");
+        }
+
+        var left = CanonicalizePermanentFilter(binary.Left, resource);
+        var right = CanonicalizePermanentFilter(binary.Right, resource);
+        if (binary.Operator is BinaryOperator.And or BinaryOperator.Or)
+        {
+            return binary with { Left = left, Right = right };
+        }
+
+        var leftKind = PermanentFilterOperandKind(left, resource);
+        var operands = right is ValueList list ? list.Values : [right];
+        foreach (var operand in operands)
+        {
+            var rightKind = PermanentFilterOperandKind(operand, resource);
+            if (leftKind != LiteralType.Null && rightKind != LiteralType.Null && leftKind != rightKind)
+            {
+                throw new InvalidOperationException("Saved permanent filter operand types cannot be evaluated consistently.");
+            }
+        }
+
+        return binary with { Left = left, Right = right };
+    }
+
+    private static LiteralType PermanentFilterOperandKind(FilterExpression expression, MetadataV2Object resource)
+        => expression switch
+        {
+            Literal literal => literal.Type,
+            PropertyReference property => resource.SchemaFields.Single(field => field.Name == property.PropertyName).Type switch
+            {
+                MetadataV2FieldType.String => LiteralType.Text,
+                MetadataV2FieldType.Boolean => LiteralType.Boolean,
+                _ => LiteralType.Number
+            },
+            _ => throw new InvalidOperationException("Saved permanent filter operand cannot be evaluated consistently.")
         };
 
     private static PropertyReference ResolvePermanentFilterProperty(

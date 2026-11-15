@@ -96,6 +96,25 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTheory]
+    [InlineData(MetadataV2FieldType.BigInteger, "classification IN (1, 9007199254740993)", "9007199254740993", true)]
+    [InlineData(MetadataV2FieldType.BigInteger, "classification NOT IN (1, 9007199254740993)", "9007199254740993", false)]
+    [InlineData(MetadataV2FieldType.Boolean, "classification = TRUE", "true", true)]
+    [InlineData(MetadataV2FieldType.Boolean, "classification = TRUE", "false", false)]
+    public void AppendPermanentFilterPredicate_ComparableScalar_EvaluatesConsistently(
+        MetadataV2FieldType fieldType, string expression, string jsonValue, bool expected)
+    {
+        var predicates = new List<FilterExpression>();
+        FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource(expression, fieldType: fieldType), Filters(), predicates);
+        var attributes = new Dictionary<string, System.Text.Json.JsonElement>(StringComparer.Ordinal)
+        {
+            ["classification"] = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(jsonValue)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(predicates.Should().ContainSingle().Subject, attributes).Should().Be(expected);
+    }
+
+    [UnitTheory]
     [InlineData(MetadataV2FieldType.DateTime)]
     [InlineData(MetadataV2FieldType.Date)]
     [InlineData(MetadataV2FieldType.Time)]
@@ -105,6 +124,48 @@ public sealed class StreamPermanentFilterTests
         var predicates = new List<FilterExpression>();
 
         var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(resource, Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("classification NOT IN (9007199254740992, 0.5)")]
+    [InlineData("classification <> 0.5")]
+    public void AppendPermanentFilterPredicate_FloatingLiteral_Throws(string expression)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource(expression, fieldType: MetadataV2FieldType.BigInteger), Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("classification < 'Ａ'")]
+    [InlineData("classification <= 'a'")]
+    [InlineData("classification > 'a'")]
+    [InlineData("classification >= 'a'")]
+    public void AppendPermanentFilterPredicate_OrderingComparison_Throws(string expression)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource(expression), Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("classification = 1")]
+    [InlineData("classification NOT IN ('a', 1)")]
+    [InlineData("classification <> TRUE")]
+    public void AppendPermanentFilterPredicate_MixedOperandTypes_Throws(string expression)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource(expression), Filters(), predicates);
 
         act.Should().Throw<InvalidOperationException>();
         predicates.Should().BeEmpty();
