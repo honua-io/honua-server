@@ -26,6 +26,7 @@ public sealed class PortalAccessProjection
 
     public bool IsEnabled => _enabled;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Injected through DI; callers use the instance API.")]
     public PortalAccessLevel ProjectAccessLevel(AccessPolicy? layerPolicy, AccessPolicy? servicePolicy)
     {
         var layer = ProjectSingle(layerPolicy);
@@ -47,6 +48,7 @@ public sealed class PortalAccessProjection
         return layer < service ? layer : service;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Injected through DI; callers use the instance API.")]
     public PortalItemVisibility ProjectVisibility(PermissionDecision? grantDecision, AccessDecision coarseDecision)
     {
         // An explicit per-operation grant authorizes discovery/open directly.
