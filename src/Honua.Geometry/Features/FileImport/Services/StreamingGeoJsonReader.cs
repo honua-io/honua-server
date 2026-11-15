@@ -324,12 +324,40 @@ internal sealed partial class StreamingGeoJsonReader
 
     private sealed class ValidationState
     {
+        private int _errorCount;
+        private int _warningCount;
+
         public List<ImportValidationIssue> Issues { get; } = [];
         public int FeatureCount { get; set; }
         public bool IsFeatureCollection { get; set; }
         public bool HasFeaturesArray { get; set; }
         public bool InFeaturesArray { get; set; }
         public string? RootProperty { get; set; }
+
+        // Errors and warnings have separate budgets, so advisory warnings (such as many unlocated
+        // features) can never use up the room a later error needs to fail the file (#7732).
+        public void AddIssues(IEnumerable<ImportValidationIssue> issues)
+        {
+            foreach (var issue in issues)
+            {
+                var isError = issue.Severity == ImportValidationSeverity.Error;
+                var count = isError ? _errorCount : _warningCount;
+                if (count >= MaxValidationIssues)
+                {
+                    continue;
+                }
+
+                Issues.Add(issue);
+                if (isError)
+                {
+                    _errorCount++;
+                }
+                else
+                {
+                    _warningCount++;
+                }
+            }
+        }
     }
 
     private int ValidateChunk(ReadOnlySpan<byte> data, bool finalBlock,
@@ -352,11 +380,7 @@ internal sealed partial class StreamingGeoJsonReader
                     if (_limits.MaxFeaturesPerFile <= 0 || validation.FeatureCount < _limits.MaxFeaturesPerFile)
                     {
                         validation.FeatureCount++;
-                        if (validation.Issues.Count < MaxValidationIssues)
-                        {
-                            validation.Issues.AddRange(ValidateFeature(feature.RootElement, validation.FeatureCount)
-                                .Take(MaxValidationIssues - validation.Issues.Count));
-                        }
+                        validation.AddIssues(ValidateFeature(feature.RootElement, validation.FeatureCount));
                     }
                 }
             }
@@ -549,14 +573,25 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!root.TryGetProperty("geometry", out var geometryElement) ||
-            geometryElement.ValueKind == JsonValueKind.Null)
+        if (!root.TryGetProperty("geometry", out var geometryElement))
         {
             issues.Add(ImportValidationIssue.Create(
                 ImportValidationErrorCodes.GeometryMissing,
                 "GeoJSON feature is missing geometry.",
                 featureIndex,
                 "geometry"));
+            return issues;
+        }
+
+        if (geometryElement.ValueKind == JsonValueKind.Null)
+        {
+            // RFC 7946 section 3.2 allows an unlocated feature; it is imported without geometry (#7732).
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature has null geometry; it is imported without geometry.",
+                featureIndex,
+                "geometry",
+                ImportValidationSeverity.Warning));
             return issues;
         }
 
