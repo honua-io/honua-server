@@ -54,8 +54,11 @@ def call_test(command):
 
     previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
-        # Own the test group so escalation also reaches children forked during cleanup.
-        with subprocess.Popen(command, start_new_session=os.name == 'posix') as child:
+        # Grouped shards already have an outer process-group deadline. Inherit
+        # that group so its final KILL still reaches tests if discovery fails.
+        # Standalone shards own a group for bounded signal escalation here.
+        grouped = os.environ.get('HONUA_SERVER_TEST_TIMEOUT_FOREGROUND') == 'true'
+        with subprocess.Popen(command, start_new_session=os.name == 'posix' and not grouped) as child:
             if cancellation_signal is not None:
                 forward(cancellation_signal, None)
             code = child.wait()
