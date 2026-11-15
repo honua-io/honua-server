@@ -76,7 +76,8 @@ internal static class AdminRealtimeHubExtensions
         => endpoints.MapHub<AdminHub>(AdminRealtimeContract.HubPath)
             .WithDisplayName("Admin realtime hub")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 }
 
 internal static class AdminRealtimeContract
