@@ -134,7 +134,7 @@ public sealed partial class BranchVersioningIntegrationTests
         await store.CreateAsync(PointsLayerId, BuildFeature("later", 2, 2), CancellationToken.None);
         await using var replayConnection = await OpenSchemaConnectionAsync();
         await using var replay = new NpgsqlCommand(
-            "SELECT receipt FROM grpc_apply_edits_receipt WHERE scope_key = @scope", replayConnection);
+            "SELECT receipt FROM honua.grpc_apply_edits_receipt WHERE scope_key = @scope", replayConnection);
         replay.Parameters.AddWithValue("scope", scope);
         using var document = JsonDocument.Parse((byte[])(await replay.ExecuteScalarAsync())!);
         JsonElement.DeepEquals(document.RootElement, original).Should().BeTrue();
@@ -147,7 +147,7 @@ public sealed partial class BranchVersioningIntegrationTests
     private static async Task InsertEvidenceReceiptAsync(NpgsqlConnection connection, string scope, JsonElement evidence)
     {
         await using var command = new NpgsqlCommand("""
-            INSERT INTO grpc_apply_edits_receipt (scope_key, receipt, expires_at)
+            INSERT INTO honua.grpc_apply_edits_receipt (scope_key, receipt, expires_at)
             VALUES (@scope, @receipt, now() + interval '1 hour')
             """, connection);
         command.Parameters.AddWithValue("scope", scope);
