@@ -37,6 +37,31 @@ public sealed class CsvFormatReaderTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_SemicolonDecimalComma_ImportsLonLatPoints()
+    {
+        // #7730: European spreadsheet exports use ';' and a decimal comma. Those
+        // coordinates must become points, not null geometry with a WKT warning.
+        var csv = """
+            id;name;lon;lat
+            1;München Marienplatz;11,575490;48,137393
+            2;Köln Dom;6,958281;50,941278
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        diagnostics.UnparseableGeometryRows.Should().Be(0);
+        features.Should().HaveCount(2);
+        var first = features[0].Geometry.Should().BeOfType<Point>().Subject;
+        first.X.Should().BeApproximately(11.575490, 1e-6);
+        first.Y.Should().BeApproximately(48.137393, 1e-6);
+        features[0].Attributes["name"].Should().Be("München Marienplatz");
+        var second = features[1].Geometry.Should().BeOfType<Point>().Subject;
+        second.X.Should().BeApproximately(6.958281, 1e-6);
+        second.Y.Should().BeApproximately(50.941278, 1e-6);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_EwktProjectedSrid_KeepsEmbeddedSrid()
     {
         // #6171: the per-value SRID is part of the geometry. Callers must not replace it
