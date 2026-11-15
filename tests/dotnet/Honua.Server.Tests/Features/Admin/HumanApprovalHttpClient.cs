@@ -5,7 +5,6 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using System.Net.Http.Json;
@@ -111,15 +110,19 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         }
     }
 
-    public static async Task<HumanApprovalHttpClient> AuthenticateWithPasswordAsync(
+    public static Task<HumanApprovalHttpClient> AuthenticateWithPasswordAsync(
         WebAppFixture fixture, string password)
+        => AuthenticateWithPasswordAsync(() => CreateHttpsClient(fixture), password);
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateWithPasswordAsync(
+        Func<HttpClient> createClient, string password)
     {
-        var client = CreateHttpsClient(fixture);
+        var client = createClient();
+        if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
+            client.BaseAddress = new Uri("https://localhost");
         try
         {
-            client.BaseAddress = client.BaseAddress?.Scheme == Uri.UriSchemeHttps
-                ? client.BaseAddress : new Uri("https://localhost");
-            await RefreshCsrfAsync(client);
+            await BrowserCsrf.SetHeaderAsync(client);
             using var response = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password });
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             return await ReadAuthenticatedSessionAsync(client);
@@ -141,17 +144,8 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
             claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
         var actor = CanonicalSecurityActor.Resolve(principal);
         actor.Should().NotBeNull();
-        await RefreshCsrfAsync(client);
+        await BrowserCsrf.SetHeaderAsync(client);
         return new HumanApprovalHttpClient(client, actor!.ActorId);
-    }
-
-    private static async Task RefreshCsrfAsync(HttpClient client)
-    {
-        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
-        response.EnsureSuccessStatusCode();
-        using var csrf = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
-        client.DefaultRequestHeaders.Add("X-Honua-CSRF", csrf.RootElement.GetProperty("requestToken").GetString());
     }
 
     public async Task<OperationHumanApprovalReview> OpenReviewAsync(string proposalId)
