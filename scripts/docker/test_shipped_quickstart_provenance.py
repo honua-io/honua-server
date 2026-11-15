@@ -85,6 +85,7 @@ class PrepareTests(unittest.TestCase):
                         patch.object(prepare, "select_candidate", return_value=(official_run(), "artifact")), \
                         patch.object(prepare, "github", side_effect=github), \
                         patch.object(prepare, "unpack", return_value={}), \
+                        patch.object(prepare, "unpack_image_source", return_value={}), \
                         patch.object(prepare.subprocess, "check_output", return_value="c" * 40):
                     if prospective:
                         with self.assertRaisesRegex(ValueError, "checked-out commit"):

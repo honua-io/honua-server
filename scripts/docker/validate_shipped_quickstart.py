@@ -23,7 +23,7 @@ REQUIRED = {"compose.yaml", "compose.executor.yaml", "compose.console.yaml", "qu
 IMAGE = re.compile(r"ghcr\.io/honua-io/[a-z0-9.-]+@sha256:[a-f0-9]{64}\Z")
 
 
-def unpack(archive: Path, destination: Path, *, require_console: bool = True) -> dict:
+def unpack_image_source(archive: Path, destination: Path) -> dict:
     checksum = archive.with_name(archive.name + ".sha256").read_text().split()
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if checksum != [digest, archive.name]:
@@ -47,8 +47,11 @@ def unpack(archive: Path, destination: Path, *, require_console: bool = True) ->
     lock = json.loads((destination / "images.json").read_text())
     if any(not IMAGE.fullmatch(lock.get(name, "")) for name in ("server", "executor", "worker")):
         raise ValueError("Quickstart archive lacks immutable release image pins, including Console")
-    if not require_console:
-        return lock
+    return lock
+
+
+def unpack(archive: Path, destination: Path) -> dict:
+    lock = unpack_image_source(archive, destination)
     bundle = lock.get("consoleBundle", {})
     if not isinstance(bundle, dict):
         raise ValueError("Quickstart archive has invalid static Console metadata")
@@ -199,6 +202,27 @@ def proof_inputs(path: Path, archive: Path) -> dict:
                                           "publishedArchiveSha256", "publishedRunId", "packageKind")}
 
 
+def prove_installation(archive: Path, blocks: dict[str, str], number: int, receipt: dict) -> dict[str, str]:
+    with tempfile.TemporaryDirectory(prefix="honua-package-") as work:
+        directory = Path(work)
+        lock = unpack(archive, directory)
+        installation = Installation(directory)
+        try:
+            resources = ("image", "container", "volume") if number == 1 else ("container", "volume")
+            check_empty(installation, resources)
+            result = exercise(installation, blocks)
+            revision = installation.run(["docker", "image", "inspect", lock["server"], "--format",
+                                         '{{index .Config.Labels "org.opencontainers.image.revision"}}']).strip()
+            if revision != receipt["serverSourceSha"]:
+                raise ValueError("Installed serving image does not match the selected candidate source")
+            credentials = installation.credentials()
+            receipt["installations"].append(result)
+            receipt["version"] = lock["version"]
+            return credentials
+        finally:
+            installation.down()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)
@@ -219,29 +243,11 @@ def main() -> int:
         previous = None
         for number in (1, 2):
             stage = f"installation-{number}"
-            with tempfile.TemporaryDirectory(prefix="honua-package-") as work:
-                directory = Path(work)
-                lock = unpack(args.archive, directory)
-                installation = Installation(directory)
-                try:
-                    if number == 1:
-                        check_empty(installation, ("image", "container", "volume"))
-                    else:
-                        check_empty(installation, ("container", "volume"))
-                    result = exercise(installation, blocks)
-                    revision = installation.run(["docker", "image", "inspect", lock["server"], "--format",
-                                                 '{{index .Config.Labels "org.opencontainers.image.revision"}}']).strip()
-                    if revision != receipt["serverSourceSha"]:
-                        raise ValueError("Installed serving image does not match the selected candidate source")
-                    current = installation.credentials()
-                    if previous is not None:
-                        check_fresh_credentials(previous, current)
-                        receipt["freshSecondInstallCredentials"] = True
-                    previous = current
-                    receipt["installations"].append(result)
-                    receipt["version"] = lock["version"]
-                finally:
-                    installation.down()
+            current = prove_installation(args.archive, blocks, number, receipt)
+            if previous is not None:
+                check_fresh_credentials(previous, current)
+                receipt["freshSecondInstallCredentials"] = True
+            previous = current
         receipt.update(passed=True, cleanup=True, customerJourneyComplete=True, authenticatedConsoleStudio=True)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         receipt.update(failedStage=stage, errorType=type(error).__name__)

@@ -9,7 +9,7 @@ import re
 import subprocess
 
 from package_quickstart import ROOT
-from validate_shipped_quickstart import unpack
+from validate_shipped_quickstart import unpack, unpack_image_source
 
 REPOSITORY = "honua-io/honua-server"
 
@@ -41,6 +41,24 @@ def select_candidate() -> tuple[dict, str]:
     raise ValueError("No successful official candidate run has an available quickstart archive")
 
 
+def build_prospective(args: argparse.Namespace, lock: dict) -> Path:
+    actual_source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    if actual_source != args.prospective_source_sha:
+        raise ValueError("Prospective package source must match the checked-out commit")
+    command = ["python3", str(ROOT / "scripts/docker/package_quickstart.py")]
+    for component in ("server", "executor", "worker"):
+        command.extend([f"--{component}-image", lock[component]])
+    console = args.prospective_console_bundle
+    command.extend(["--console-bundle", str(console), "--console-bundle-sha256",
+                    console.with_suffix('.sha256').read_text().strip()])
+    command.extend(["--version", lock["version"], "--output", str(args.output / "honua-compose-quickstart")])
+    subprocess.run(command, stdin=subprocess.DEVNULL, check=True, timeout=60)
+    archive = args.output / "honua-compose-quickstart.tar.gz"
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive.with_name(archive.name + ".sha256").write_text(f"{digest}  {archive.name}\n")
+    return archive
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -59,27 +77,15 @@ def main() -> None:
     download = args.output / "published"
     github("run", "download", str(run["id"]), "--repo", REPOSITORY, "--name", name, "--dir", str(download))
     archive = download / "honua-compose-quickstart.tar.gz"
-    lock = unpack(archive, download / "contents", require_console=not bool(args.prospective_source_sha))
+    extract = unpack_image_source if args.prospective_source_sha else unpack
+    lock = extract(archive, download / "contents")
     published_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     kind = "candidate"
     source = run["head_sha"]
     if args.prospective_source_sha:
-        actual_source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-        if actual_source != args.prospective_source_sha:
-            raise ValueError("Prospective package source must match the checked-out commit")
         kind = "prospective-pr"
         source = args.prospective_source_sha
-        command = ["python3", str(ROOT / "scripts/docker/package_quickstart.py")]
-        for component in ("server", "executor", "worker"):
-            command.extend([f"--{component}-image", lock[component]])
-        console = args.prospective_console_bundle
-        command.extend(["--console-bundle", str(console), "--console-bundle-sha256",
-                        console.with_suffix('.sha256').read_text().strip()])
-        command.extend(["--version", lock["version"], "--output", str(args.output / "honua-compose-quickstart")])
-        subprocess.run(command, stdin=subprocess.DEVNULL, check=True, timeout=60)
-        archive = args.output / "honua-compose-quickstart.tar.gz"
-        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        archive.with_name(archive.name + ".sha256").write_text(f"{digest}  {archive.name}\n")
+        archive = build_prospective(args, lock)
         document = (ROOT / "docs/get-started/quickstart.md").read_bytes()
     else:
         for path in (archive, archive.with_name(archive.name + ".sha256")):
