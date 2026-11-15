@@ -15,13 +15,13 @@ internal sealed class CreateAppPackageTool : IMcpTool
     public const string ToolName = "honua_create_app_package";
 
     private readonly IGeoprocessingJobService _jobService;
-    private readonly IAppPackageDraftFactory _drafts;
+    private readonly AppPackageDraftFactory _drafts;
     private readonly IPackageDraftStore _draftStore;
     private readonly ILogger<CreateAppPackageTool> _logger;
 
     public CreateAppPackageTool(
         IGeoprocessingJobService jobService,
-        IAppPackageDraftFactory drafts,
+        AppPackageDraftFactory drafts,
         IPackageDraftStore draftStore,
         ILogger<CreateAppPackageTool> logger)
     {

@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Realtime;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Realtime;
@@ -46,20 +47,27 @@ public sealed class RealtimeStreamLifecycleTests
     [UnitTest]
     public async Task DrainAsync_CloseCallbackWaitsForAbort_EnforcesDeadline()
     {
-        using var entered = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var aborted = new ManualResetEventSlim();
-        var lifecycle = CreateLifecycle();
+        var clock = new TransitionClock();
+        var lifecycle = new RealtimeStreamLifecycle(clock, Options.Create(new RealtimeOptions
+        {
+            ShutdownDrain = TimeSpan.FromMilliseconds(100)
+        }));
         using var session = lifecycle.TryOpen(new(RealtimeFamily.Mcp, "sse", aborted.Set));
         using var callback = session!.DrainingToken.Register(() =>
         {
-            entered.Set();
+            entered.SetResult();
             aborted.Wait();
         });
 
         var drain = lifecycle.DrainAsync(CancellationToken.None);
         try
         {
-            (await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(5)))).Should().BeTrue();
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            drain.IsCompleted.Should().BeFalse("the close callback is still waiting for transport abort");
+            // The deadline timer exists before signalling; expire it only after callback entry, independent of thread-pool scheduling.
+            clock.Advance(TimeSpan.FromMilliseconds(100));
             await drain.WaitAsync(TimeSpan.FromSeconds(5));
             aborted.IsSet.Should().BeTrue("the transport must abort before waiting for close callbacks");
         }

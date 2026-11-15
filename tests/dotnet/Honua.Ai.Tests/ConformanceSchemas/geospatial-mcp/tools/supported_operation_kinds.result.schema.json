@@ -4,6 +4,7 @@
   "title": "supported_operation_kinds result payload",
   "description": "Read-only projection of operation classes backed by executors registered in the live operation gateway. An empty array truthfully represents a gateway with no routable executors. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
+  "x-honua-extension": true,
   "type": "object",
   "additionalProperties": false,
   "required": ["supportedKinds"],
@@ -12,7 +13,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+        "enum": ["AdminConfigChange", "Deploy", "Geoprocess", "MetadataRelease", "Seed"]
       },
       "uniqueItems": true
     }

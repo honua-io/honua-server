@@ -96,6 +96,9 @@ public sealed record WorkflowSchemaDefinition
 
     public string? Format { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? Minimum { get; init; }
+
     public string? Unit { get; init; }
 
     public string? Crs { get; init; }

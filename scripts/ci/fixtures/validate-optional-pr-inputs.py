@@ -2,8 +2,13 @@
 """Check optional PR admission boundaries and retained trunk link coverage."""
 from functools import lru_cache
 import json
+import os
 import re
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 import yaml
@@ -14,6 +19,56 @@ ROOT = Path(__file__).resolve().parents[3]
 @lru_cache(maxsize=None)
 def workflow(name):
     return yaml.load((ROOT / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader)
+
+
+GRAPH_GENERATOR = """from pathlib import Path
+import sys
+root = Path(__file__).resolve().parents[2]
+Path(sys.argv[2]).write_text((root / "docs/a").read_text() + "+" + (root / "docs/b").read_text())
+"""
+
+
+def fixture_environment(**extra):
+    """Keep git on the fixture repository only, whatever git state the caller exports."""
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    # The step under test calls a bare python3; resolve it to this interpreter.
+    path = os.pathsep.join([os.path.dirname(sys.executable), environment.get("PATH", "")])
+    return {**environment, "PATH": path, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **extra}
+
+
+def git(work, *arguments):
+    return subprocess.run(
+        ["git", "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+         "-c", "commit.gpgsign=false", *arguments],
+        cwd=work, check=True, capture_output=True, text=True, env=fixture_environment()).stdout.strip()
+
+
+def commit(work, message, **files):
+    for name, content in files.items():
+        target = work / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "--no-verify", "-m", message)
+    return git(work, "rev-parse", "HEAD")
+
+
+def merged_pull_request(work):
+    """Check out a pull request merge whose head and trunk each changed one document."""
+    git(work, "init", "-q", "-b", "trunk")
+    commit(work, "fork point", **{"docs/a": "base", "docs/b": "base",
+                                  "scripts/ci/generate-okf-graph.py": GRAPH_GENERATOR})
+    git(work, "checkout", "-q", "-b", "head")
+    head = commit(work, "head", **{"docs/a": "head"})
+    git(work, "checkout", "-q", "trunk")
+    commit(work, "trunk moved", **{"docs/b": "trunk"})
+    git(work, "merge", "-q", "--no-ff", "--no-verify", "-m", "merge", "head")
+    return head
+
+
+def step(name):
+    steps = workflow("docs-link-gate.yml")["jobs"]["check"]["steps"]
+    return next(candidate for candidate in steps if candidate.get("name") == name)
 
 
 def admitted(name, path):
@@ -57,6 +112,42 @@ class OptionalInputTests(unittest.TestCase):
         self.assertTrue(path_matches("Directory.Build.props", "**/*.props"))
         self.assertTrue(path_matches("src/Build.props", "**/*.props"))
         self.assertFalse(path_matches("src/Nested.sln", "*.sln"))
+
+    def test_docs_gate_validates_the_merge_result_with_its_own_checkers(self):
+        steps = workflow("docs-link-gate.yml")["jobs"]["check"]["steps"]
+        checkout = next(candidate for candidate in steps
+                        if candidate.get("uses", "").startswith("actions/checkout@"))
+        # No ref: a pull request run checks out its merge into trunk, so a head cut
+        # before a checker existed is still judged by the checkers this workflow calls.
+        self.assertEqual(checkout["with"], {"fetch-depth": "0"})
+        self.assertEqual(step("Regenerate trunk-owned documentation for validation")["run"].split(),
+                         ["python3", "scripts/ci/generate-workflow-inventory.py",
+                          "python3", "scripts/ci/generate-capability-concepts.py"])
+        self.assertIn("""--base "${{ github.event_name == 'pull_request' && 'HEAD^1' || 'origin/trunk' }}\"""",
+                      step("Reject raw curl additions in documentation")["run"])
+
+    def test_docs_gate_publishes_the_graph_of_the_exact_head(self):
+        generate = step("Generate exact-head OKF agent graph")
+        upload = step("Upload exact-head OKF agent graph")
+        self.assertEqual(generate["env"], {"HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}"})
+        self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/exact-head/domain-graph.v1.json")
+        self.assertEqual(upload["with"]["name"],
+                         "okf-agent-graph-${{ github.event.pull_request.head.sha || github.sha }}")
+        with tempfile.TemporaryDirectory() as directory:
+            work, temp = Path(directory) / "repo", Path(directory) / "temp"
+            work.mkdir()
+            temp.mkdir()
+            head = merged_pull_request(work)
+            self.assertEqual((work / "docs/a").read_text() + "+" + (work / "docs/b").read_text(), "head+trunk")
+            for _ in range(2):
+                # The second pass is a reused workspace whose earlier tree is gone.
+                completed = subprocess.run(
+                    ["bash", "-e", "-c", generate["run"]], cwd=work, capture_output=True, text=True,
+                    check=False, env=fixture_environment(HEAD_SHA=head, RUNNER_TEMP=str(temp)))
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual((temp / "exact-head/domain-graph.v1.json").read_text(), "head+base")
+                shutil.rmtree(temp)
+                temp.mkdir()
 
     def test_runtime_links_still_gate_affected_and_full_trunk_runs(self):
         name = "docs-link-gate.yml"

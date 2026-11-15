@@ -9,6 +9,24 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> StudioEndpoints =>
     [
+        new("POST", "/api/v1/agent/workspaces"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/identity"),
+        new("POST", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bind"),
+        new("DELETE", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bindings/{bindingId}"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}"),
+        new("PUT", "/api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}"),
+        new("POST", "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots/{snapshotId}"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots/{snapshotId}/sources/{**path}"),
+        new("POST", "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}"),
+        new("POST", "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/cancel"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/commands/{commandId}"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/artifacts/{**path}"),
+
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
         new("GET", "/api/v1/studio/session"),

@@ -1,0 +1,27 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Ai.StudioAiProxy.Domain;
+
+namespace Honua.Ai.StudioAiProxy.Abstractions;
+
+public sealed class StudioAiProxyCallSummary
+{
+    public string Provider { get; set; } = string.Empty;
+
+    public string Kind { get; set; } = string.Empty;
+
+    public string Model { get; set; } = string.Empty;
+
+    public int? PromptTokens { get; set; }
+
+    public int? CompletionTokens { get; set; }
+
+    public long LatencyMs { get; set; }
+
+    public StudioAiStopReason? StopReason { get; set; }
+
+    public bool Succeeded { get; set; }
+
+    public string? ErrorMessage { get; set; }
+}

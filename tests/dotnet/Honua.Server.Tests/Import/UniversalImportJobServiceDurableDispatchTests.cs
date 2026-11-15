@@ -56,6 +56,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
         TableName = "large_import",
         TargetSchema = "honua_data",
         SourceSrid = 4326,
+        SourceLayer = "layer_b",
         TargetSrid = 3857,
         OverwriteExisting = true,
         CorrelationId = "corr-1",

@@ -13,6 +13,15 @@ internal static class CoreMigrationTestFixture
 {
     public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema)
     {
+        await ApplyPreVocabularyMetadataV2Async(fixture, schema);
+        await ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "186_ExpandMetadataV2Vocabulary.sql");
+    }
+
+    public static async Task ApplyPreVocabularyMetadataV2Async(PostgresFixture fixture, string schema)
+    {
         await ApplyAsync(
             fixture,
             schema,

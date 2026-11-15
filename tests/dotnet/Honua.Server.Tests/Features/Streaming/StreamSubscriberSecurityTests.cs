@@ -159,6 +159,50 @@ public sealed class StreamSubscriberSecurityTests
         projected.ChangedAttributes.Should().BeNull();
     }
 
+    [UnitTheory]
+    [InlineData(BinaryOperator.Like)]
+    [InlineData(BinaryOperator.NotLike)]
+    public void Broadcast_UnevaluableRowPredicate_OnlyDeniesThatSubscriber(BinaryOperator operation)
+    {
+        var predicate = new BinaryExpression(new PropertyReference("region"), operation,
+            new Literal(new string('%', 33), LiteralType.Text));
+
+        AssertOnlyRestrictedSubscriberDenied(predicate);
+    }
+
+    [UnitTheory]
+    [InlineData(BinaryOperator.Like)]
+    [InlineData(BinaryOperator.NotLike)]
+    public void Broadcast_NegatedUnevaluableRowPredicate_OnlyDeniesThatSubscriber(BinaryOperator operation)
+    {
+        var predicate = new BinaryExpression(new PropertyReference("region"), operation,
+            new Literal(new string('%', 33), LiteralType.Text));
+        var negated = new UnaryExpression(UnaryOperator.Not,
+            new BinaryExpression(predicate, BinaryOperator.Or, new Literal(false, LiteralType.Boolean)));
+
+        AssertOnlyRestrictedSubscriberDenied(negated);
+    }
+
+    private static void AssertOnlyRestrictedSubscriberDenied(FilterExpression predicate)
+    {
+        var policy = new StreamLayerReadPolicy([predicate], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var security = new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        using var manager = CreateManager();
+        using var denied = manager.CreateSession("SSE", null, new StreamSubscriptionFilter(subscriberSecurity: security));
+        using var open = manager.CreateSession("SSE", null);
+
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("west")));
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("west") with { Cursor = 2 }));
+
+        denied.Reader.TryRead(out _).Should().BeFalse();
+        open.Reader.TryRead(out _).Should().BeTrue();
+        open.Reader.TryRead(out var second).Should().BeTrue();
+        second.Envelope.Cursor.Should().Be(2);
+    }
+
     private static FeatureStreamSessionManager CreateManager()
         => new(
             Options.Create(new FeatureStreamOptions()),
