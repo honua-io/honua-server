@@ -619,7 +619,7 @@ public sealed record MetadataV2Layer : ExtensibleJsonRecord, IJsonOnDeserializin
 
     private MetadataV2JsonAlias<string> _resourceId;
     private MetadataV2JsonAlias<PreservedEnumValue<MetadataV2LayerType>> _publicationType =
-        new(MetadataV2LayerType.OgcCollection, false);
+        new(MetadataV2LayerType.OgcCollection);
     private int? _layerIndex;
     private string? _path;
     private string? _serviceLocalId;
