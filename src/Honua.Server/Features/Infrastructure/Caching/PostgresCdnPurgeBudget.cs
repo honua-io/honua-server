@@ -3,13 +3,18 @@
 
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.SharedCaching;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
 
 // Edit-purge submissions for the UTC month, incremented by one statement so two tasks cannot both pass the cap.
-internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, ILogger<PostgresCdnPurgeBudget> logger)
+internal sealed partial class PostgresCdnPurgeBudget(
+    JobStoreDatabase database,
+    ILogger<PostgresCdnPurgeBudget> logger,
+    IOptionsMonitor<SharedCacheOptions> options)
     : ICdnPurgeBudget
 {
     private readonly string _table = database.Table("cdn_purge_budget");
@@ -106,7 +111,7 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
     {
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT submitted_count, estimated_spend, exceeded_at IS NOT NULL
+            SELECT submitted_count, estimated_spend, @limit > 0 AND submitted_count >= @limit
             FROM {_table}
             WHERE month_utc = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM')
             """,
@@ -114,6 +119,7 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
         {
             CommandTimeout = 5,
         };
+        command.Parameters.AddWithValue("limit", options.CurrentValue.PurgeBudget.MonthlyEditSubmissions);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {

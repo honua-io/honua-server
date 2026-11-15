@@ -31,6 +31,22 @@ public sealed class CdnPurgeBudgetTests
     }
 
     [UnitTest]
+    public async Task SplitEditPurge_WithOneSubmissionLeft_SendsOnlyOneBatch()
+    {
+        var budget = new SharedBudget(limit: 1);
+        var cdn = new CloudFrontLimits();
+        var service = Service(cdn, budget, monthlyLimit: 1);
+        var tags = Enumerable.Range(0, CdnInvalidationService.MaxTagsPerInvalidation + 1)
+            .Select(index => $"#honua-scope:tiles/{index}").ToArray();
+
+        await service.InvalidateAfterEditAsync(tags, CancellationToken.None);
+
+        cdn.Accepted.Should().ContainSingle();
+        cdn.Accepted.Single().Should().HaveCount(CdnInvalidationService.MaxTagsPerInvalidation);
+        budget.ReadCount.Should().Be(1);
+    }
+
+    [UnitTest]
     public async Task SpentBudget_StillPurgesAnAdminRequest()
     {
         var budget = new SharedBudget(limit: 1);

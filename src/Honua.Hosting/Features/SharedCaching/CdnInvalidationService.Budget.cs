@@ -10,7 +10,7 @@ internal sealed partial class CdnInvalidationService
 {
     // Null means the purge goes ahead: no counter, the cap is off, or the counter could not be read.
     private async Task<CdnInvalidationResult?> RefuseWhenEditBudgetSpentAsync(
-        string[] paths,
+        IReadOnlyCollection<string> paths,
         CdnPurgeCause cause,
         CancellationToken cancellationToken)
     {

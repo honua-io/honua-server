@@ -167,11 +167,6 @@ internal sealed partial class CdnInvalidationService(
                 return null;
             }
 
-            if (await RefuseWhenEditBudgetSpentAsync(claimed, cause, cancellationToken).ConfigureAwait(false) is { } refused)
-            {
-                return refused;
-            }
-
             var batches = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
             result = batches.Result;
 
@@ -300,6 +295,11 @@ internal sealed partial class CdnInvalidationService(
 
         async Task<CdnInvalidationResult> SendBatchAsync(IReadOnlyCollection<string> batch)
         {
+            if (await RefuseWhenEditBudgetSpentAsync(batch, cause, cancellationToken).ConfigureAwait(false) is { } refused)
+            {
+                return refused;
+            }
+
             var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
             if (result.Outcome is CdnInvalidationOutcome.Busy)
             {
