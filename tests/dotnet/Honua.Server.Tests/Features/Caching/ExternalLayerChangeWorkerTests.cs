@@ -12,6 +12,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,6 +22,8 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Caching;
 
 [Collection("Database")]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.Cache)]
 public sealed class ExternalLayerChangeWorkerTests(DatabaseFixtureAdapter fixture)
 {
     [IntegrationTest]
