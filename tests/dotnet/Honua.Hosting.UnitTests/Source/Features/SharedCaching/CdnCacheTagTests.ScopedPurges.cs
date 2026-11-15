@@ -198,16 +198,16 @@ public sealed partial class CdnCacheTagTests
     private static MetadataV2Graph PublishedStorageLayers()
     {
         var builder = new TestMetadataV2GraphBuilder()
-            .AddResource("edited", "Edited dataset", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("edited", "Edited dataset", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding("edited-binding", "edited", "features:741", storageLayerId: 741)
-            .AddResource("unrelated", "Unrelated dataset", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("unrelated", "Unrelated dataset", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding("unrelated-binding", "unrelated", "features:742", storageLayerId: 742);
         foreach (var (name, index, resource) in new[] { ("parcels", 3, "edited"), ("zoning", 9, "edited"), ("roads", 4, "unrelated") })
         {
             builder.AddService($"svc-{name}", name, protocols: [ServiceProtocols.FeatureServer])
                 .AddPublication($"pub-{name}", $"svc-{name}", resource,
                     layerIndex: index, serviceLocalId: index.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         var graph = builder.Build();

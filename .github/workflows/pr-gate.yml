@@ -31,7 +31,7 @@ permissions:
   statuses: read
 
 concurrency:
-  group: pr-gate-${{ github.event.pull_request.number || github.ref }}
+  group: pr-gate-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.draft && 'draft' || 'ready' }}
   cancel-in-progress: true
 
 env:
@@ -63,7 +63,7 @@ jobs:
   runner-select:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Runner select
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -167,7 +167,7 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
@@ -430,6 +430,8 @@ jobs:
           python3 -m unittest \
             scripts.certification.test_build_client_protocol_requirements \
             scripts.certification.test_verify_client_certification_receipts \
+            scripts.certification.test_roster_contract_readiness \
+            scripts.certification.test_record_roster_verdicts \
             scripts.certification.test_verify_mcp_live_certification
 
       - name: Verify certification producer context and harness controls
