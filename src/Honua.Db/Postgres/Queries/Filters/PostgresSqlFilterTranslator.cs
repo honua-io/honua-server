@@ -1307,6 +1307,8 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             // at that same precision rather than widening an already-rounded real value.
             MetadataV2FieldType.Float => "double precision",
             MetadataV2FieldType.Double => "double precision",
+            MetadataV2FieldType.Decimal => "numeric",
+            MetadataV2FieldType.TimestampOffset => "timestamptz",
             MetadataV2FieldType.Boolean => "boolean",
             MetadataV2FieldType.DateTime => "timestamptz",
             MetadataV2FieldType.Date => "date",

@@ -20,6 +20,18 @@ public class PostgresSqlFilterTranslatorTests
         _resource = CreateResource();
     }
 
+    [Theory]
+    [InlineData(MetadataV2FieldType.Decimal, "::numeric")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "::timestamptz")]
+    public void Translate_ExactAttribute_UsesDeclaredComparisonType(MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with { SchemaFields = [Field("exact_value", type)] };
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true)
+            .Translate(new PropertyReference("exact_value"), resource);
+        result.Sql.Should().Contain(cast);
+        result.Sql.Should().NotContain("::double precision");
+    }
+
     [Fact]
     public void SRV_DB_017_TimePropertyUsesDirectTimeCast()
     {
