@@ -10,6 +10,7 @@ using Honua.Server.Features.Admin.Routing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
@@ -20,7 +21,7 @@ namespace Honua.Server.Tests.Features.Admin.Routing;
 /// precondition rejections, idempotent replay, a concurrency race proving only one
 /// candidate wins, and rollback to a retired generation.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
 public class NetworkTopologyPromotionAdminEndpointsTests
@@ -34,21 +35,18 @@ public class NetworkTopologyPromotionAdminEndpointsTests
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly RedisFixture _redis;
-    private readonly SharedApplication _application;
-    private WebAppFixture _fixture = null!;
+    private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public NetworkTopologyPromotionAdminEndpointsTests(RedisFixture redis, SharedApplication application)
+    public NetworkTopologyPromotionAdminEndpointsTests(SharedApplication application)
     {
-        _redis = redis;
-        _application = application;
+        _fixture = application.Fixture;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        _fixture = await _application.GetAsync(_redis);
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
     public Task DisposeAsync()
@@ -57,7 +55,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests
         return Task.CompletedTask;
     }
 
-    public sealed class SharedApplication() : RedisBackedNetworkApplication(AdminPassword);
+    public sealed class SharedApplication() : NetworkJobApplication(AdminPassword);
 
     private static string NewId(string suffix) =>
         $"ntp-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
@@ -110,7 +108,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests
     /// <summary>
     /// Drives a dataset's first draft generation through allocate -&gt; add one edge -&gt;
     /// submit rebuild -&gt; execute the registered executor directly (bypassing the
-    /// Redis-gated worker loop) so it reaches <c>ready</c>, ready for promotion.
+    /// hosted worker loop) so it reaches <c>ready</c>, ready for promotion.
     /// </summary>
     private async Task<long> BuildReadyGenerationAsync(string datasetId)
     {

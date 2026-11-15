@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Routing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
@@ -19,11 +20,11 @@ namespace Honua.Server.Tests.Features.Admin.Routing;
 /// Integration tests for the durable shadow-topology rebuild admin endpoints (#2718) and
 /// the fencing/reconciler behavior (#2720). Covers submission fencing (dirty-only,
 /// stale-row-version rejection), end-to-end shadow-topology build (driving the registered
-/// <see cref="IJobExecutor"/> directly, bypassing the Redis-gated worker loop for a fast,
+/// <see cref="IJobExecutor"/> directly, bypassing the hosted worker loop for a fast,
 /// deterministic test), fencing-token rejection of a stale writer, and reconciler
 /// adoption of an expired lease.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
 public class NetworkTopologyRebuildAdminEndpointsTests
@@ -37,21 +38,18 @@ public class NetworkTopologyRebuildAdminEndpointsTests
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly RedisFixture _redis;
-    private readonly SharedApplication _application;
-    private WebAppFixture _fixture = null!;
+    private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public NetworkTopologyRebuildAdminEndpointsTests(RedisFixture redis, SharedApplication application)
+    public NetworkTopologyRebuildAdminEndpointsTests(SharedApplication application)
     {
-        _redis = redis;
-        _application = application;
+        _fixture = application.Fixture;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        _fixture = await _application.GetAsync(_redis);
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
     public Task DisposeAsync()
@@ -60,7 +58,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests
         return Task.CompletedTask;
     }
 
-    public sealed class SharedApplication() : RedisBackedNetworkApplication(AdminPassword);
+    public sealed class SharedApplication() : NetworkJobApplication(AdminPassword);
 
     private static string NewId(string suffix) =>
         $"ntr-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
@@ -244,7 +242,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests
         var submission = await submitResponse.Content.ReadFromJsonAsync<NetworkTopologyRebuildSubmissionDto>(_jsonOptions);
         Assert.NotNull(submission);
 
-        // Drive the registered executor directly rather than depending on the Redis-gated
+        // Drive the registered executor directly rather than depending on the hosted
         // background worker loop, for a fast and deterministic test (mirrors how
         // ConsoleJobEndpointsTests exercises services directly).
         var jobStore = _fixture.Services.GetRequiredService<IExecutionJobStore>();
