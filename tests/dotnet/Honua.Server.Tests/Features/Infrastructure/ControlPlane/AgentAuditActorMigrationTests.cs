@@ -14,17 +14,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
-    [UnitTest]
-    public async Task AgentMigration_AddsAgentPrincipalWithoutChangingActorType()
-    {
-        var sql = await ReadMigrationAsync("168_AddAgentAuditActor.sql");
-        sql.Should().Contain("ADD COLUMN IF NOT EXISTS actor_agent").And.NotContain("DROP CONSTRAINT");
-        MigrationSafetyClassifier.Classify("168_AddAgentAuditActor.sql", sql).Classification
-            .Should().Be(MigrationSafetyClassification.Expand);
-        MigrationReaderCompatibility.Declare("168_AddAgentAuditActor.sql", sql).Classification
-            .Should().Be(MigrationReaderCompatibilityClassification.Expand);
-    }
-
     [IntegrationTest]
     public async Task AgentMigration_Replayed_PreservesLegacyActorsAndAppendOnlyRules()
     {
@@ -141,5 +130,25 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
         await using var stream = assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
         return await reader.ReadToEndAsync();
+    }
+}
+
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
+public sealed class AgentAuditActorMigrationContractTests
+{
+    [UnitTest]
+    public async Task AgentMigration_AddsAgentPrincipalWithoutChangingActorType()
+    {
+        var assembly = typeof(Program).Assembly;
+        var resource = assembly.GetManifestResourceNames().Single(name => name.EndsWith("168_AddAgentAuditActor.sql", StringComparison.Ordinal));
+        await using var stream = assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var sql = await reader.ReadToEndAsync();
+        sql.Should().Contain("ADD COLUMN IF NOT EXISTS actor_agent").And.NotContain("DROP CONSTRAINT");
+        MigrationSafetyClassifier.Classify("168_AddAgentAuditActor.sql", sql).Classification
+            .Should().Be(MigrationSafetyClassification.Expand);
+        MigrationReaderCompatibility.Declare("168_AddAgentAuditActor.sql", sql).Classification
+            .Should().Be(MigrationReaderCompatibilityClassification.Expand);
     }
 }
