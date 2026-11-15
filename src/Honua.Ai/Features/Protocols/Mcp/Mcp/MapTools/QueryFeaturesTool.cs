@@ -321,7 +321,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return offset;
     }
 
-    private static ImmutableArray<string> ResolveOutFields(IReadOnlyList<string>? outFields, MetadataV2Resource resource)
+    private static ImmutableArray<string> ResolveOutFields(IReadOnlyList<string>? outFields, MetadataV2Object resource)
     {
         var visibleAttributes = resource.VisibleSchemaFields()
             .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))

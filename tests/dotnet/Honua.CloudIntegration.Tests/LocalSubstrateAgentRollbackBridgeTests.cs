@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -32,16 +31,14 @@ using Yarp.ReverseProxy.Configuration;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Local-substrate bridge coverage for the full server host: MCP proposal, admin approval,
-/// durable Redis workflow storage, the deploy reconciler, release timeline events, and the
-/// YARP/docker self-hosted rolling backend all participate in one rollback cell (#2569).
-/// </summary>
+// Local-substrate bridge coverage for the full server host: MCP proposal, admin approval,
+// durable PostgreSQL workflow storage, the deploy reconciler, release timeline events, and the
+// YARP/docker self-hosted rolling backend all participate in one rollback cell.
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
-public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<LocalSubstrateDockerFixture>
+public sealed class LocalSubstrateAgentRollbackBridgeTests
+    : IClassFixture<LocalSubstrateDockerFixture>, IClassFixture<LocalSubstratePostgresFixture>
 {
     private const string AdminPassword = "local-substrate-rollback-admin-key";
-    private const string RedisConnectionStringEnvVar = "HONUA_TEST_REDIS_URL";
     private const string McpSessionHeaderName = "Mcp-Session-Id";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -51,10 +48,12 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
     };
 
     private readonly LocalSubstrateDockerFixture _docker;
+    private readonly LocalSubstratePostgresFixture _postgres;
 
-    public LocalSubstrateAgentRollbackBridgeTests(LocalSubstrateDockerFixture docker)
+    public LocalSubstrateAgentRollbackBridgeTests(LocalSubstrateDockerFixture docker, LocalSubstratePostgresFixture postgres)
     {
         _docker = docker;
+        _postgres = postgres;
     }
 
     [SkippableFact]
@@ -62,12 +61,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
     {
         Skip.IfNot(_docker.Available, "Docker is not available for the local-substrate serving lane.");
 
-        var redisConnectionString = await ResolveReachableRedisConnectionStringAsync();
-        Skip.If(
-            string.IsNullOrWhiteSpace(redisConnectionString),
-            $"Set {RedisConnectionStringEnvVar}=host:port to run the Redis-backed local-substrate server bridge cell.");
+        Skip.IfNot(_postgres.Available, "PostgreSQL is not available for the durable workflow store.");
+        var systemConnectionString = await _postgres.CreateMigratedServerDatabaseAsync();
 
-        await using var env = await ServerHostBridgeEnvironment.StartAsync(_docker, redisConnectionString!);
+        await using var env = await ServerHostBridgeEnvironment.StartAsync(_docker, systemConnectionString);
         using var verificationClient = new HttpClient { BaseAddress = new Uri(env.ProxyBaseUrl) };
         using var trafficClient = new HttpClient { BaseAddress = new Uri(env.ProxyBaseUrl) };
         using var adminClient = env.Factory.CreateClient();
@@ -150,13 +147,11 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
     {
         Skip.IfNot(_docker.Available, "Docker is not available for the local-substrate serving lane.");
 
-        var redisConnectionString = await ResolveReachableRedisConnectionStringAsync();
-        Skip.If(
-            string.IsNullOrWhiteSpace(redisConnectionString),
-            $"Set {RedisConnectionStringEnvVar}=host:port to run the Redis-backed local-substrate server bridge cell.");
+        Skip.IfNot(_postgres.Available, "PostgreSQL is not available for the durable workflow store.");
+        var systemConnectionString = await _postgres.CreateMigratedServerDatabaseAsync();
 
         await using var env = await ServerHostBridgeEnvironment.StartAsync(
-            _docker, redisConnectionString!, compatibilityKnown: false);
+            _docker, systemConnectionString, compatibilityKnown: false);
         using var adminClient = env.Factory.CreateClient();
         adminClient.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
 
@@ -186,73 +181,6 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             .Where(e => e.AuditEvent.ResourceType == "operation_proposal" && e.AuditEvent.ResourceId == proposalId)
             .Select(e => e.AuditEvent.Action)
             .Should().Contain("operation.apply_failed").And.NotContain("operation.applied");
-    }
-
-    private static async Task<string?> ResolveReachableRedisConnectionStringAsync()
-    {
-        var connectionString = Environment.GetEnvironmentVariable(RedisConnectionStringEnvVar);
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return null;
-        }
-
-        return await CanOpenTcpConnectionAsync(connectionString).ConfigureAwait(false)
-            ? connectionString
-            : null;
-    }
-
-    private static async Task<bool> CanOpenTcpConnectionAsync(string connectionString)
-    {
-        if (!TryParseRedisEndpoint(connectionString, out var host, out var port))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var client = new TcpClient();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            await client.ConnectAsync(host, port, timeout.Token).ConfigureAwait(false);
-            return true;
-        }
-        catch (Exception ex) when (ex is SocketException or OperationCanceledException)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryParseRedisEndpoint(string connectionString, out string host, out int port)
-    {
-        host = string.Empty;
-        port = 6379;
-
-        var endpoint = connectionString.Split(',', 2, StringSplitOptions.TrimEntries)[0];
-        if (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) &&
-            !string.IsNullOrWhiteSpace(uri.Host))
-        {
-            host = uri.Host;
-            port = uri.Port > 0 ? uri.Port : 6379;
-            return true;
-        }
-
-        var separator = endpoint.LastIndexOf(':');
-        if (separator > 0 && separator < endpoint.Length - 1)
-        {
-            host = endpoint[..separator];
-            return int.TryParse(
-                endpoint[(separator + 1)..],
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture,
-                out port);
-        }
-
-        if (string.IsNullOrWhiteSpace(endpoint))
-        {
-            return false;
-        }
-
-        host = endpoint;
-        return true;
     }
 
     private static async Task<string> CreateAgentApiKeyAsync(HttpClient adminClient, string name)
@@ -499,6 +427,9 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
         public WebApplicationFactory<Program> Factory { get; }
 
+        // The factory Factory derives from; disposing it also disposes every derived factory.
+        public TestWebApplicationFactory? BaseFactory { get; init; }
+
         public RecordingAuditLog AuditLog { get; }
 
         public string Suffix { get; }
@@ -543,7 +474,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
         public static async Task<ServerHostBridgeEnvironment> StartAsync(
             LocalSubstrateDockerFixture docker,
-            string redisConnectionString,
+            string systemConnectionString,
             bool compatibilityKnown = true)
         {
             var suffix = Guid.NewGuid().ToString("N")[..8];
@@ -602,8 +533,9 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
             WebApplication? proxy = null;
             EnvironmentVariableScope? environmentScope = null;
+            TestWebApplicationFactory? baseFactory = null;
             var settings = BuildHostSettings(
-                redisConnectionString,
+                systemConnectionString,
                 targetId,
                 containerPrefix,
                 docker.RuntimeExecutable,
@@ -631,7 +563,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
                 environmentScope = EnvironmentVariableScope.Apply(settings);
                 var auditLog = new RecordingAuditLog();
-                var factory = new TestWebApplicationFactory()
+                // WithWebHostBuilder returns a derived factory; disposing the base factory also
+                // disposes every factory derived from it, so the environment owns the base.
+                baseFactory = new TestWebApplicationFactory();
+                var factory = baseFactory
                     .WithWebHostBuilder(builder =>
                     {
                         builder.UseEnvironment("Test");
@@ -652,10 +587,9 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                             services.RemoveAll<IRevisionSchemaCatalog>();
                             services.AddSingleton<IRevisionSchemaCatalog>(new TestRevisionSchemaCatalog(docker.V1Image));
 
-                            // TestWebApplicationFactory runs without a migrated database, so the host
-                            // would fall back to NullAuditLog. Since #3411 a proposal fails closed
-                            // without a durable audit identity, so this cell supplies an identity-
-                            // assigning sink and asserts the trail it records.
+                            // The Test-environment factory substitutes NullAuditLog, and a proposal
+                            // fails closed without a durable audit identity, so this cell supplies an
+                            // identity-assigning sink and asserts the trail it records.
                             services.RemoveAll<IAuditLog>();
                             services.AddSingleton<IAuditLog>(auditLog);
                         });
@@ -671,10 +605,14 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                     targetId,
                     proxyBaseUrl,
                     activePort,
-                    standbyPort);
+                    standbyPort)
+                {
+                    BaseFactory = baseFactory,
+                };
             }
             catch
             {
+                baseFactory?.Dispose();
                 environmentScope?.Dispose();
                 if (proxy != null)
                 {
@@ -777,6 +715,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         public async ValueTask DisposeAsync()
         {
             Factory.Dispose();
+            BaseFactory?.Dispose();
             _environmentScope.Dispose();
             try
             {
@@ -792,7 +731,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         }
 
         private static Dictionary<string, string?> BuildHostSettings(
-            string redisConnectionString,
+            string systemConnectionString,
             string targetId,
             string containerPrefix,
             string containerRuntime,
@@ -813,8 +752,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                 ["Oidc:Generic:DisplayName"] = "Emulated approval fixture",
                 ["Public:BaseUrl"] = "http://localhost",
                 ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
-                ["ConnectionStrings:redis"] = redisConnectionString,
-                ["Cache:KeyPrefix"] = $"honua:{targetId}:",
+                // The deploy workflow store is PostgreSQL-backed and composed only on a host that
+                // registers its own system database, so this host uses a freshly migrated one.
+                ["HONUA_REGISTER_TEST_INFRASTRUCTURE"] = "true",
+                ["ConnectionStrings:DefaultConnection"] = systemConnectionString,
                 ["Licensing:DevGrantEdition"] = "Pro",
                 ["Guardrails:Overrides:Deploy"] = "RequiresApproval",
                 ["ControlPlane:SelfHosted:Enabled"] = "false",

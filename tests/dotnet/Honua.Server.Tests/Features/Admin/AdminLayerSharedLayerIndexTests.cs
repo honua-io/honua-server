@@ -60,7 +60,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
         AssertStoredConfiguration(after.Index.ResourcesById[targetResourceId], configuration);
     }
 
-    private static void AssertStoredConfiguration(MetadataV2Resource resource, string configuration)
+    private static void AssertStoredConfiguration(MetadataV2Object resource, string configuration)
     {
         switch (configuration)
         {
@@ -293,7 +293,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
             ServiceId = TwinServiceId,
             ResourceId = TwinResourceId,
             LayerIndex = ServiceLayerIndex,
-            Identifier = new MetadataV2PublicationIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true },
             StorageBindingId = publication.StorageBindingId is null ? null : TwinBindingId,
         };
 
@@ -307,7 +307,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
                 StorageBindings = [.. snapshot.Graph.StorageBindings, twinBinding],
                 Services = [.. snapshot.Graph.Services, twinService],
                 Publications = [.. snapshot.Graph.Publications.Select(candidate => candidate.ResourceId == resource.Metadata.Id
-                    ? candidate with { LayerIndex = ServiceLayerIndex, Identifier = new MetadataV2PublicationIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true } }
+                    ? candidate with { LayerIndex = ServiceLayerIndex, Identifier = new MetadataV2LayerIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true } }
                     : candidate), twinPublication],
             },
             schema: _fixture.MetadataGraphSchema);

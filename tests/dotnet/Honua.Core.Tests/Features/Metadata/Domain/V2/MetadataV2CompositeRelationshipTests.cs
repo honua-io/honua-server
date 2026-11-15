@@ -49,7 +49,7 @@ public sealed class MetadataV2CompositeRelationshipTests
         {
             Relationships = [CreateGraph().Resources[0].Relationships[0] with { Composite = false }]
         };
-        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Object);
         json.Should().NotContain("\"composite\"");
         MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource).Should().BeFalse();
     }
@@ -61,7 +61,7 @@ public sealed class MetadataV2CompositeRelationshipTests
         {
             var graph = CreateGraph();
             var resources = graph.Resources.ToArray();
-            resources[side] = resources[side] with { Editing = new MetadataV2ResourceEditing { CanModify = true } };
+            resources[side] = resources[side] with { Editing = new MetadataV2ObjectEditing { CanModify = true } };
             var result = MetadataV2GraphValidator.Validate(graph with { Resources = resources });
             result.IsValid.Should().BeFalse();
             result.Errors.Should().Contain(error => error.Contains("cannot enable editing", StringComparison.Ordinal));
@@ -81,11 +81,11 @@ public sealed class MetadataV2CompositeRelationshipTests
 
     private static MetadataV2Graph CreateGraph()
     {
-        var parent = new MetadataV2Resource
+        var parent = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.parent", Name = "Parent" },
             SchemaFields = [new MetadataV2Field { Name = "Join_ID", Type = MetadataV2FieldType.Integer }],
-            Editing = new MetadataV2ResourceEditing { CanModify = false },
+            Editing = new MetadataV2ObjectEditing { CanModify = false },
             Relationships =
             [
                 new MetadataV2Relationship

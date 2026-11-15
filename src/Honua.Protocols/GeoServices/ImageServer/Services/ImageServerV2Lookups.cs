@@ -12,8 +12,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 internal static class ImageServerV2Lookups
 {
     internal readonly record struct ResolvedImageLayer(
-        MetadataV2Publication Publication,
-        MetadataV2Resource? Resource,
+        MetadataV2Layer Publication,
+        MetadataV2Object? Resource,
         string DisplayName,
         string? Description);
 
@@ -135,14 +135,14 @@ internal static class ImageServerV2Lookups
 
     private static bool IsVisibleForRequest(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         HttpContext? context)
         => snapshot.IsRoutable(publication)
             && (context is null || TenantScopeHelpers.IsPublicationVisible(
                 context, publication, snapshot.ResolveResource(publication),
                 snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId)));
 
-    private static ResolvedImageLayer Project(MetadataV2Publication publication, MetadataV2Resource? resource)
+    private static ResolvedImageLayer Project(MetadataV2Layer publication, MetadataV2Object? resource)
     {
         var displayName = publication.TitleOverride
             ?? publication.Metadata.Title
@@ -157,7 +157,7 @@ internal static class ImageServerV2Lookups
     }
 
     public static (string? StartTimeField, string? EndTimeField, string? TrackIdField) ReadTimeFieldHints(
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         var t = resource?.Temporal;
         if (t is null)
@@ -167,6 +167,6 @@ internal static class ImageServerV2Lookups
         return (t.StartTimeField, t.EndTimeField, t.TrackIdField);
     }
 
-    public static RasterMergeStrategy ResolveMergeStrategy(MetadataV2Resource? resource, string? mosaicRule)
+    public static RasterMergeStrategy ResolveMergeStrategy(MetadataV2Object? resource, string? mosaicRule)
         => RasterMosaicUtilities.ResolveMergeStrategy(resource, mosaicRule);
 }

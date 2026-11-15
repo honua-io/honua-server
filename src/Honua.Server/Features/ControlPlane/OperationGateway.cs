@@ -252,6 +252,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
+        if (OperationProposalApprovalWindow.IsElapsed(proposal, DateTimeOffset.UtcNow))
+        {
+            throw new InvalidOperationException("The proposal approval window has expired. Create a new proposal.");
+        }
+
         await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         try
@@ -593,17 +598,17 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private static OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
-        OperationProposalPlan plan, GuardrailDecision decision)
-        => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
-            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan)
-            ? new OperationGatewayResult
-            {
-                Outcome = OperationGatewayOutcome.Blocked,
-                Decision = decision,
-                Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
-            }
-            : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
+    private static bool RequiresNewFolderIdempotencyKey(OperationProposal existing, FolderProposalReuseContext candidate)
+        => FolderOperationCredential.IsFolderMutation(candidate.Request.OperationId ?? string.Empty) &&
+            !FolderApprovalAuthorization.MatchesExisting(existing, candidate);
+
+    private static OperationGatewayResult NewIdempotencyKeyRequiredResult(GuardrailDecision decision)
+        => new()
+        {
+            Outcome = OperationGatewayOutcome.Blocked,
+            Decision = decision,
+            Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
+        };
 
     private async Task<OperationGatewayResult> CreateProposalAsync(
         OperationGatewayRequest request,
@@ -614,9 +619,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
+        var clock = TimeProvider.System;
         if (FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty))
         {
             await using var authorizationScope = _scopeFactory.CreateAsyncScope();
+            clock = authorizationScope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
@@ -644,7 +651,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return FolderProposalResult(existing, request, plan, decision);
+                return RequiresNewFolderIdempotencyKey(existing, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
             }
         }
 
@@ -738,22 +747,34 @@ internal sealed partial class OperationGateway : IOperationGateway
             Initiation = await CreateInitiationEvidenceAsync(proposal, cancellationToken).ConfigureAwait(false),
         };
 
-        var created = await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        if (!created)
+        for (var renewal = 0; ; renewal++)
         {
-            // Lost a race (or an idempotent replay landed) under the same id: fetch and
-            // return the winning proposal instead of failing the caller.
-            if (hasIdempotencyKey)
+            if (await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
-                var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
-                if (winner != null)
-                {
-                    return FolderProposalResult(winner, request, plan, decision);
-                }
+                break;
             }
 
-            throw new InvalidOperationException("Failed to durably persist the operation proposal.");
+            // Lost a race (or an idempotent replay landed) under the same id: return the winner,
+            // unless its approval window expired, in which case the next id asks for a fresh approval.
+            var winner = hasIdempotencyKey
+                ? await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false)
+                : null;
+            if (winner is null)
+            {
+                throw new InvalidOperationException("Failed to durably persist the operation proposal.");
+            }
+
+            if (winner.Status != OperationProposalStatus.Expired)
+            {
+                return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
+            }
+
+            // Renewal ordinals live outside the caller-key hash namespace. A literal
+            // caller key ending in "#1" must never alias another key's renewal.
+            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            proposal = proposal with { ProposalId = renewedId, Audit = proposal.Audit with { ProposalId = renewedId } };
         }
 
         string? auditId = null;
@@ -925,8 +946,8 @@ internal sealed partial class OperationGateway : IOperationGateway
     }
 
     // Derive a stable proposal id from (kind, descriptor, idempotency key) so a repeated proposal
-    // maps to the same durable record. This makes TryCreate collide on a duplicate,
-    // giving the gateway a race-safe fetch-and-return instead of a second proposal.
+    // maps to the same durable record, or to the same next link once that record expired. This
+    // makes TryCreate collide on a duplicate, giving the gateway a race-safe fetch-and-return.
     private static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey, string? tenantId)
     {
         var key = $"{kind}:{operationId}:{idempotencyKey}";
@@ -1118,6 +1139,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 FindingId = proposal.AutonomyMetadata.FindingId,
                 Rule = proposal.AutonomyMetadata.Rule,
+                Severity = proposal.AutonomyMetadata.Severity,
                 ActionDiscriminator = proposal.AutonomyMetadata.ActionDiscriminator,
                 ActionMarkedAutoSafe = proposal.AutonomyMetadata.ActionMarkedAutoSafe,
                 BlastRadius = proposal.AutonomyMetadata.BlastRadius,
@@ -1661,6 +1683,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             FindingId = context.FindingId,
             Rule = context.Rule,
+            Severity = context.Severity,
             ActionDiscriminator = IsBoundedIdentifier(actionDiscriminator ?? context.ActionDiscriminator, 128)
                 ? actionDiscriminator ?? context.ActionDiscriminator
                 : null,

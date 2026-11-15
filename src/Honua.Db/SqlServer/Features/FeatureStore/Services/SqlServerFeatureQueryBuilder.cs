@@ -616,32 +616,17 @@ internal static partial class SqlServerFeatureQueryBuilder
         IReadOnlyList<string> attributeColumns,
         List<object> parameters)
     {
-        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
-        if (expressions.Count == 0)
+        var rendered = new List<string>();
+        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Warehouse))
         {
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        var rendered = new List<string>(expressions.Count);
-        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
-        // throw, mutate the shared `parameters` accumulator, and `continue` early per
-        // branch -- not a pure map of one iteration variable to another.
-        foreach (var trimmed in (expressions).Select(raw => raw.Trim()))
-        {
-            if (trimmed.Length == 0)
-            {
-                throw new ArgumentException("WHERE clause format not supported.");
-            }
-
-            if (trimmed.Equals("1=1", StringComparison.Ordinal) ||
-                trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            if (expression.Kind == LegacyWhereExpressionKind.True)
             {
                 rendered.Add("1=1");
                 continue;
             }
 
-            var nullMatch = NullCheckRegex().Match(trimmed);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
@@ -652,30 +637,30 @@ internal static partial class SqlServerFeatureQueryBuilder
                 continue;
             }
 
-            var inMatch = InExpressionRegex().Match(trimmed);
-            if (inMatch.Success)
+            var inMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = inMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var placeholders = new List<string>();
-                foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
+                foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
                 {
                     placeholders.Add("@p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
-                    parameters.Add(ParseValueToken(valueMatch.Value));
+                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value));
                 }
                 rendered.Add($"{SqlServerIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
-            var compMatch = ComparisonRegex().Match(trimmed);
-            if (compMatch.Success)
+            var compMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var op = NormalizeOperator(compMatch.Groups["op"].Value);
-                var value = ParseValueToken(compMatch.Groups["value"].Value);
+                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
+                var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value);
 
                 var paramName = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(value);
@@ -714,50 +699,5 @@ internal static partial class SqlServerFeatureQueryBuilder
         return declared ?? throw new ArgumentException(
             $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
     }
-
-
-    private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
-    {
-        "NOT LIKE" => "NOT LIKE",
-        "LIKE" => "LIKE",
-        ">=" => ">=",
-        "<=" => "<=",
-        "!=" or "<>" => "<>",
-        "=" => "=",
-        ">" => ">",
-        "<" => "<",
-        _ => throw new ArgumentException($"Unsupported operator: {op}")
-    };
-
-    private static object ParseValueToken(string valueToken)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return valueToken[1..^1].Replace("''", "'", StringComparison.Ordinal);
-        }
-
-        if (decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
-        {
-            return num;
-        }
-
-        return valueToken;
-    }
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex InExpressionRegex();
-
-    [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
-    private static partial Regex InValueRegex();
 
 }

@@ -773,6 +773,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "delete-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "DELETE",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "delete-healthz-live",
       "route": "/healthz/live",
       "method": "DELETE",
@@ -895,6 +909,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.DeleteFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Delete_WhileAnotherEditorHoldsTheLease_Returns423AndTheFeatureSurvives",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_CreateUpdateDelete_PublishesCommittedChanges",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_OfflineClientUsesStaleVersion_PreservesOnlineEdit",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WhenEventPublishFails_ReturnsNoContent",
@@ -4620,7 +4636,6 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadQueuedJobIdsAsync_InvalidProgressAndRequest_QuarantinesOnlyInvalidJob",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_AsyncProgressPersistenceFails_DoesNotQueueHeadlessBackgroundJob",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_AsyncSubmission_CapturesResolvedTenantAndProjection",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_CsvFormat_ReturnsValidCsvWithWktGeometry",
@@ -6514,6 +6529,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_ReportsHistoryAndServesAsOfReads",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_ForNonTemporalLayer_ReturnsConflict",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_ForTemporalLayer_ReturnsCollapsedChanges",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_WhenUnchanged_ReturnsEmptyDeterministically",
@@ -6532,6 +6548,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_ReportsHistoryAndServesAsOfReads",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.TemporalEndpoint_AfterGaPromotion_IsNotExperimentalGated",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForNonTemporalLayer_ReportsHistoryUnsupported",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForTemporalLayer_ReportsHistorySupported",
@@ -6802,6 +6819,27 @@
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
       "capability": "serve.elevation"
+    },
+    {
+      "id": "get-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "GET",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_CatalogFails_ReturnsSanitizedUnavailable",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_CatalogNotRegistered_ReportsUnavailableWithoutBreakingLiveness",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DatabaseFailsAfterSuccess_ReportsFailureWithoutCachedSuccess",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DatabaseStalls_CancelsDependencyAndReturnsUnavailable",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "get-healthz-live",
@@ -7897,6 +7935,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSingleItem_WithInvalidFeatureIdFormat_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSingleItem_WithInvalidFeatureId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSingleItem_WithValidIds_ReturnsGeoJsonFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_OfflineClientUsesStaleVersion_PreservesOnlineEdit",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHiddenFieldTests.Output_OmitsHiddenFields",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHiddenIdentifierTests.HiddenCustomIdentifier_CollectionIdsAndSingleLookupAgree",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHiddenIdentifierTests.HiddenCustomIdentifier_PreservesPublicIdentity",
@@ -11404,6 +11443,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialLimitsTests.Query_WithBoundingBoxWithinConfiguredAreaLimit_ReturnsSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialLimitsTests.Query_WithDatelineCrossingEnvelope_ReturnsSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialLimitsTests.Query_WithProjectedFeetInputSridWithoutUnitMetadata_ReturnsExplicitBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_ExplicitRealizationOnProjectedLayer_MatchesIndependentReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_InvalidCoordinateEpoch_ReturnsClientError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithDatumTransformationNotApplicableToReprojection_ReturnsExplicitError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithGeoJsonFormat_LargeResultSet_UsesStreamingAndReturnsWgs84",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithGeoJsonFormat_OnProjectedLayer_ReturnsWgs84Coordinates",
@@ -15501,6 +15542,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20AdvertisedFeatureTypeTests.Wfs_DescribeFeatureType_WithoutTypeNames_DescribesEachStorageLayerOnce",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20AdvertisedFeatureTypeTests.Wfs_GetCapabilities_StorageLayerInTwoWfsServices_IsAdvertisedOnceInStorageLayerOrder",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20AdvertisedFeatureTypeTests.Wfs_GetFeature_ResourceIdOfUnadvertisedDuplicateWithoutTypeNames_ReturnsFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20AdvertisedFeatureTypeTests.Wfs_GetFeature_UnadvertisedDuplicatePublication_RemainsResolvable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_UnsupportedOutputFormat_ReturnsExceptionReport",
@@ -16030,6 +16075,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "patch-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "PATCH",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "patch-healthz-live",
       "route": "/healthz/live",
       "method": "PATCH",
@@ -16143,6 +16202,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Patch_WhileAnotherEditorHoldsTheLease_Returns423AndLeavesTheStoredRowUnchanged",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_CreateUpdateDelete_PublishesCommittedChanges",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_OfflineClientUsesStaleVersion_PreservesOnlineEdit",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PatchItem_WithMismatchedPublicIdProperty_ReturnsBadRequest",
@@ -16205,7 +16266,8 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.ConcurrentObservationResultAndDatastreamTypePatches_SerializeValidationWithoutDeadlock",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.EveryEntity_SupportsCreatePatchReadAndDelete",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.ObservationReparentAndDatastreamTypePatch_RejectIncompatibleExistingResultsAtomically",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.Patch_MergesComplexMembersAddsBindingsIgnoresId_AndLocationDeleteCascadesHistory"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.Patch_MergesComplexMembersAddsBindingsIgnoresId_AndLocationDeleteCascadesHistory",
+        "Honua.Server.Tests.Realtime.ObservationStoreEventAttributionTests.PatchEntity_InlineObservationsRejectsWithoutPublishingEvents"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
@@ -16972,6 +17034,8 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_AdvertisesTableAndQueriesRowsWithoutSpatialMetadata",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_WithSourceMetadata_PreservesDimensionsDomainsSubtypesAndRules",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_RejectsUnpublishedOrNonTemporalColumn",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_ReportsHistoryAndServesAsOfReads",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshLayerExtents_WithEnabledEmptyLayer_NullsLayerExtentAndKeepsServiceExtentFromNonEmptyLayer",
@@ -18005,8 +18069,11 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeaturesForSourceTable_WithoutSchema_RebuildsPublishedSnapshot",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.FileUpload_MaliciousFile_ShouldBeRejected",
         "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_CsvMappedCoordinates_ValidatesSelectedGeometryBeforeCreatingTable",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_ExistingTarget_UsesStoredCrsUnlessExplicitlyOverridden",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_InheritedUnsupportedProjection_RefusesBeforeLoadingAnyRows",
         "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_MalformedSrid_ReturnsBadRequest",
         "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_MixedSourceDeclarations_RejectsBeforeCreatingDestination",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_NewAppendTargetWithoutOverride_PreservesSourceCrs",
         "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_NonSeekableLateGeoJsonCrs_KeepsSource",
         "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_SourceOverride_PreservesDetectionAndStoresOverride",
         "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_TargetChoice_StoresRequestedCoordinateSystem",
@@ -18264,6 +18331,7 @@
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.ControlActions_CancelAndRetry_UpdateDurableJob",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.Retry_RemoteBackendWithoutRetrySupport_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.Retry_RemoteBackend_UsesReconcilerRetryMarkerWithoutLocalQueue",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.Retry_TileJob_AccountsForQueueAdmission",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.Retry_WhenQueueWriteFails_RestoresTerminalJob",
         "Honua.Server.Tests.Features.Admin.Share.ShareAdminEndpointsTests.RetryCancelledShareExportJob_IsRejectedAsNotRetryable"
       ],
@@ -18849,11 +18917,17 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_AlreadyCancelled_ReturnsIdempotent200",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_CompletedOperation_Returns409Conflict",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_DeploymentType_PersistsCancelledStateWithNormalizedRollout",
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_LocalRetryAfterDurableCancel_DoesNotCancelSuccessor",
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_QueuedExportRetryWithCompletedProgress_CancelsDurableJob",
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_RemoteTileRace_ReleasesAdmissionOnce",
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_RetryAfterCancelledProjection_DoesNotCancelSuccessor",
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_UnclaimedTileJob_ReleasesAdmissionOnce",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenBackedByExecutionJob_CancelsJobStoreAndRemovesFromQueue",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenCancellable_ReturnsCancelledResponse",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenDurableCancelCannotBeConfirmed_Returns409AndPreservesProgress",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenDurableJobAlreadyCancelled_CleansUpQueueAndReturns200",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenDurableJobAlreadySucceeded_Returns409",
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenLocalWorkerAcceptsSignal_PersistsRequestBeforeSignalling",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenProgressAlreadyCancelledAndDurableJobClaimed_PersistsSignalWithoutRemovingClaim",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenProgressAlreadyCancelledAndDurableJobNonterminal_BridgesProgressToNonterminal",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenProgressCancelledAndRemoteBackendMissing_Returns409",
@@ -20631,6 +20705,20 @@
       "capability": "analytics.viewshed"
     },
     {
+      "id": "post-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "POST",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "post-healthz-live",
       "route": "/healthz/live",
       "method": "POST",
@@ -20805,6 +20893,8 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNoScope_IsFailClosed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.IdNoInstanceHolds_Returns404_SoTheClientReinitializes",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.SessionInitializedOnA_ServesTheSameNegotiatedViewOnB",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpSkillsEndpointIntegrationTests.DiscoveryAndManifest_ReadEveryFileWithMatchingBytesAndFrontmatter",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpSkillsEndpointIntegrationTests.Get_UnknownOrNoncanonicalUri_ReturnsInvalidParams",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.SessionInitializedOnA_ServesTheNegotiatedViewOnB_WithoutASharedStore",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.TamperedSessionId_Returns404_OnEveryInstance",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithIssuedSessionId_WhenFallbackEnabled_IsAccepted",
@@ -21016,6 +21106,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.CreateFeature_WithApiKey_ReturnsCreated",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.CreateFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.CreateFeature_WithContentCrsAlias_ReturnsCreated",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_CreateUpdateDelete_PublishesCommittedChanges",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.CreateFeature_PointIntoPolygonCollection_ReturnsBadRequest",
@@ -21611,6 +21702,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_BatchGeometries_ReturnsAll",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_CircularCurve_PreservesZAndM",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_DefaultNad27Nad83_PreservesOrdinatesAndMatchesIndependentReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ExplicitRealization_MatchesIndependentReference",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_InvalidSrid_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithLatestWkid_ParsesCorrectly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithName_ParsesCorrectly",
@@ -21618,6 +21710,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ProjectedSourceTransformation_ResolvesAgainstGeodeticBase",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ReverseTransformationDirection_MatchesPyprojIdentity",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_SameSrid_ReturnsUnchanged",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_TimedOperationWithEpoch_MatchesIndependentReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_TimedOperationWithoutFiniteEpoch_ReturnsClientError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_Wgs84ToWebMercator_ReturnsCorrectCoordinates",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithDatumTransformationWkid_AppliesSelectedPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithEsriTransformationParameter_AppliesSelectedPipeline",
@@ -25204,7 +25298,8 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReviewRegressionTests.Observation_TimeAndInvalidResultPatch_RollsBack_AndValidTimePatchSucceeds",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReviewRegressionTests.Observations_DuplicateId_PatchAndDeleteConflictWithoutChangingRows",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_AnonymousWhenAnonymousWritesDisabled_ReturnsUnauthorizedBeforeBodyValidation",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation",
+        "Honua.Server.Tests.Realtime.ObservationStoreEventAttributionTests.CreateEntity_PreservesRequestTenantAndSchemaInCommittedEvents"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
@@ -25477,6 +25572,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsAuthorizationProofTests.Transaction_InsertOnlyGrant_IsRefusedOverHttpAndMatchingGrantPersists",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsAuthorizationProofTests.Transaction_UpdateOnlyGrant_CannotInsert",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_AdvertisedGeometry_PersistsInsertUpdateReplaceAndNil",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_CreateUpdateDelete_PublishesCommittedChanges",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_Fallback_DoesNotShadowAttributesOrCreateNonspatialGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_InsertPointIntoPolygonFeatureType_IsRejectedWithoutChangingSql",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_UnknownProperty_IsRejectedWithoutChangingSql",
@@ -26139,7 +26235,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.Settings_RestoreWatchdogFails_ReturnsUnavailableAndRetainsStop",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.Settings_StopWatchdogFails_ReturnsUnavailableAndRetainsStop"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -26566,6 +26664,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "put-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "PUT",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "put-healthz-live",
       "route": "/healthz/live",
       "method": "PUT",
@@ -26668,6 +26780,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Replace_ByTheLeaseHolder_Succeeds",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Replace_WhileAnotherEditorHoldsTheLease_Returns423AndLeavesTheStoredRowUnchanged",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFieldClientConcurrencyTests.MutateFeature_OfflineClientUsesStaleVersion_PreservesOnlineEdit",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip",

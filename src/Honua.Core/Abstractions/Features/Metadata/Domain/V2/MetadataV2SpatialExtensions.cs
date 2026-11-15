@@ -5,32 +5,32 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 
 public static class MetadataV2SpatialExtensions
 {
-    public static int? ReadSrid(this MetadataV2Resource resource)
+    public static int? ReadSrid(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.Spatial?.SpatialReference?.ResolveSrid();
     }
 
-    public static MetadataV2Bbox? ReadBbox(this MetadataV2Resource resource)
+    public static MetadataV2Bbox? ReadBbox(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.Spatial?.Bbox;
     }
 
-    public static MetadataV2GeometryType ReadGeometryType(this MetadataV2Resource resource)
+    public static MetadataV2GeometryType ReadGeometryType(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
     }
 
-    public static bool HasGeometry(this MetadataV2Resource resource)
+    public static bool HasGeometry(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.ReadGeometryType() != MetadataV2GeometryType.None
             || resource.FindPrimaryGeometryField() is not null;
     }
 
-    public static MetadataV2Field? FindPrimaryGeometryField(this MetadataV2Resource resource)
+    public static MetadataV2Field? FindPrimaryGeometryField(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -62,7 +62,7 @@ public static class MetadataV2SpatialExtensions
         return null;
     }
 
-    public static MetadataV2TemporalFields ReadTemporalFields(this MetadataV2Resource resource)
+    public static MetadataV2TemporalFields ReadTemporalFields(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var t = resource.Temporal;
@@ -73,7 +73,7 @@ public static class MetadataV2SpatialExtensions
         return new MetadataV2TemporalFields(t.StartTimeField, t.EndTimeField, t.TrackIdField);
     }
 
-    public static MetadataV2Field? FindPrimaryIdField(this MetadataV2Resource resource)
+    public static MetadataV2Field? FindPrimaryIdField(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         foreach (var field in resource.SchemaFields)

@@ -19,6 +19,7 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/geoservices-rest-parity.json` | `scripts/ci/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
 | `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
+| `docs/internal/ci/workflow-inventory.md` | `scripts/ci/generate-workflow-inventory.py` (workflow YAML plus authored `scripts/ci/workflow-inventory.template.md`) | Nightly / on demand |
 | `src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
 | `tests/fixtures/curated-edge-corpus/v1/sea-surface-temperature.zarr/temperature/0.0.0` | `scripts/test-data/generate-curated-corpus-zarr.py` | Explicit refresh of fixed sample values |
 | `tests/fixtures/external-format-corpus/v1/*` binary fixtures | `scripts/test-data/generate-external-format-corpus.sh` | Explicit GDAL/OGR fixture refresh from authored GeoJSON inputs |
@@ -70,10 +71,20 @@ proof-ledger, schema, route coverage, judgment and OpenAPI checks stay hard.
 The trailing Server foundation family also refreshes before its validators,
 so it cannot race the post-merge writer against stale committed projections.
 The separate capability aggregation check now also reports drift with a notice.
-The normalization producer/consumer runs in enforce mode (#3219): on a
-same-repository PR branch it commits the validated catalog/parity/matrix blobs
-and re-requests exact-head review; forks and protected branches stay read-only.
-This writer still owns the trunk copy.
+Feature PRs must not commit paths on `scripts/ci/generated-files.sh`. Repository
+hygiene reads trusted trunk policy and rejects additions, modifications, renames
+and deletions of those projections. Edit authored inputs and generators, preview
+locally, then restore generated outputs before committing. CI regenerates the
+projection before validating the resulting docs and contracts. The workflow
+inventory's authored narrative and per-workflow notes live in its template;
+workflow YAML supplies names and triggers, and new workflows get rows automatically.
+
+The normalization consumer remains in observe mode: it validates envelopes and
+reports drift without committing projections to feature branches. The existing
+nightly/on-demand producer owns publication through its automation PR. Only that
+producer's exact commit/tree artifact proof exempts an output-only PR from the
+ownership check; branch names, authors and labels grant no exemption. Authored
+contracts, evidence and external fixture refreshes remain outside this policy.
 
 Generation and validation check out the triggering `github.sha`, including
 on reruns, with read-only contents/packages permissions and no persisted Git
@@ -147,7 +158,7 @@ needed for that case, unlike the direct-push design it replaces.
 
 ## Local proof
 
-Run from an isolated worktree (the generators overwrite the seven projections):
+Run from an isolated worktree (the generators overwrite the allowlisted projections):
 
 ```bash
 python3 -m pip install -r scripts/ci/okf-requirements.txt
