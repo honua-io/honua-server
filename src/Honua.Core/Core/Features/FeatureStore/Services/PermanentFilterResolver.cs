@@ -56,27 +56,13 @@ internal static class PermanentFilterResolver
             return null;
         }
 
-        var v2Filter = resource.PermanentFilter;
-        if (v2Filter == null || string.IsNullOrWhiteSpace(v2Filter.Expression))
+        var expression = ParseSavedExpression(resource, filterExpressionService);
+        if (expression is null)
         {
             return null;
         }
-        if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");
-        }
-        var v2ParseAndNormalize = filterExpressionService.ParseAndNormalize(v2Language, v2Filter.Expression, resource);
-        if (!v2ParseAndNormalize.IsSuccess)
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {v2ParseAndNormalize.ErrorMessage ?? "Invalid filter."}");
-        }
-        if (v2ParseAndNormalize.Expression == null)
-        {
-            return null;
-        }
-        var v2Translation = filterExpressionService.Translate(v2ParseAndNormalize.Expression, resource);
+
+        var v2Translation = filterExpressionService.Translate(expression, resource);
         if (!v2Translation.IsSuccess)
         {
             throw new InvalidOperationException(

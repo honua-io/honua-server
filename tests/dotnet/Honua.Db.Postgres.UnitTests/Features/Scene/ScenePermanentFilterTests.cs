@@ -15,7 +15,7 @@ namespace Honua.Db.Postgres.Tests.Features.Scene;
 public sealed class ScenePermanentFilterTests
 {
     [Fact]
-    public void Resolve_FailsClosedWhenTheFilterCannotBeTranslated()
+    public void ResolveScenePermanentFilter_UntranslatableFilter_Throws()
     {
         var source = new PostgresSceneFeatureSource(
             new UnusedConnectionProvider(),
@@ -31,7 +31,7 @@ public sealed class ScenePermanentFilterTests
     }
 
     [Fact]
-    public void Resolve_OmitsSavedFilterTextFromTheFailure()
+    public void ResolveScenePermanentFilter_ParseFailure_OmitsSavedFilterText()
     {
         const string marker = "saved-filter-marker-9f3c";
         var source = new PostgresSceneFeatureSource(
@@ -92,7 +92,7 @@ public sealed class ScenePermanentFilterTests
     }
 
     [Fact]
-    public void Resolve_SkipsLayersWithoutAPermanentFilter()
+    public void ResolveScenePermanentFilter_NoSavedFilter_ReturnsNull()
     {
         var source = new PostgresSceneFeatureSource(
             new UnusedConnectionProvider(),

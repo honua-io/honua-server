@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 public sealed class StreamPermanentFilterTests
 {
     [UnitTest]
-    public void Append_AddsComparablePermanentFilter()
+    public void AppendPermanentFilterPredicate_ComparableFilter_AddsPredicate()
     {
         var predicates = new List<FilterExpression>();
 
@@ -38,7 +38,7 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTest]
-    public void Append_RejectsUnsupportedLanguage()
+    public void AppendPermanentFilterPredicate_UnsupportedLanguage_Throws()
     {
         var predicates = new List<FilterExpression>();
 
@@ -52,7 +52,7 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTest]
-    public void Append_RejectsAFilterDeeperThanTheStreamingLimit()
+    public void AppendPermanentFilterPredicate_ExcessiveDepth_Throws()
     {
         var predicates = new List<FilterExpression>();
         var expression = string.Join(
@@ -69,7 +69,7 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTest]
-    public void Append_LeavesPredicatesUntouchedWhenTheLayerHasNoPermanentFilter()
+    public void AppendPermanentFilterPredicate_NoSavedFilter_LeavesPredicatesUntouched()
     {
         var predicates = new List<FilterExpression>();
 
@@ -82,16 +82,58 @@ public sealed class StreamPermanentFilterTests
         predicates.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public void AppendPermanentFilterPredicate_DifferentFieldCasing_UsesCanonicalName()
+    {
+        var predicates = new List<FilterExpression>();
+        FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource("CLASSIFICATION IS NULL"), Filters(), predicates);
+
+        var predicate = predicates.Should().ContainSingle().Subject;
+        var expression = predicate.Should().BeOfType<UnaryExpression>().Subject;
+        expression.Operand.Should().Be(new PropertyReference("classification"));
+        InMemoryFilterEvaluator.Evaluate(predicate, Envelope("secret").Attributes!).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.DateTime)]
+    [InlineData(MetadataV2FieldType.Date)]
+    [InlineData(MetadataV2FieldType.Time)]
+    public void AppendPermanentFilterPredicate_TemporalField_Throws(MetadataV2FieldType fieldType)
+    {
+        var resource = Resource("classification IS NULL", fieldType: fieldType);
+        var predicates = new List<FilterExpression>();
+
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(resource, Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void AppendPermanentFilterPredicate_UnknownField_Throws()
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource("missing_field IS NULL"), Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
     private static FilterExpressionService Filters()
         => new FilterExpressionService(new FilterExpressionTranslator(Substitute.For<ISqlFilterTranslator>()));
 
-    private static MetadataV2Object Resource(string? expression, string? language = null)
+    private static MetadataV2Object Resource(
+        string? expression,
+        string? language = null,
+        MetadataV2FieldType fieldType = MetadataV2FieldType.String)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "roads", Name = "roads" },
             SchemaFields =
             [
-                new MetadataV2Field { Name = "classification", Type = MetadataV2FieldType.String }
+                new MetadataV2Field { Name = "classification", Type = fieldType }
             ],
             PermanentFilter = expression is null
                 ? null
