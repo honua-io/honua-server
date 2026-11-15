@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -74,4 +75,18 @@ public sealed class OgcFeaturesProjectedIdentifierTests : IClassFixture<OgcFeatu
         var names = feature.GetProperty("properties").EnumerateObject().Select(property => property.Name);
         names.Should().BeEquivalentTo(includeIdentifier ? new[] { "name", "public_id" } : new[] { "name" });
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_GmlProjectedProperties_DoesNotAddIdentifierProperty()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/features/collections/0/items?ids=public-1&properties=name&f=gml");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var document = XDocument.Parse(body);
+        document.Descendants().Where(element => element.Name.LocalName == "name").Should().ContainSingle();
+        document.Descendants().Where(element => element.Name.LocalName == "public_id").Should().BeEmpty();
+    }
+
 }

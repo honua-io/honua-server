@@ -207,7 +207,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         .ToImmutableArray()
                 };
             }
-            if (query.OutFields is { } storageFields && resource.FindPrimaryIdField() is { } identifier &&
+            if (!string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
+                query.OutFields is { } storageFields && resource.FindPrimaryIdField() is { } identifier &&
                 !storageFields.Contains(identifier.Name, StringComparer.OrdinalIgnoreCase))
             {
                 // Fetch identity for the top-level ID without expanding the requested response properties.
