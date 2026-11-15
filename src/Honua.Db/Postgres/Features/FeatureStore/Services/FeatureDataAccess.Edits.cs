@@ -1465,15 +1465,21 @@ internal sealed partial class FeatureDataAccess
                     throw new InvalidOperationException("The idempotency receipt must use the edit transaction.");
                 }
 
-                return PostgresGrpcApplyEditsReceipt.TryWriteAsync(
-                    connection,
-                    transaction,
-                    _grpcEditReceiptTable,
-                    scope,
-                    payload,
-                    expiresAt,
-                    _queryTimeoutSeconds,
-                    token);
+                return PostgresGrpcApplyEditsReceipt.TryWriteWithEvidenceAsync(
+                    new PostgresGrpcApplyEditsReceipt.EvidenceContext
+                    {
+                        Connection = connection,
+                        Transaction = transaction,
+                        Table = _grpcEditReceiptTable,
+                        TimeoutSeconds = _queryTimeoutSeconds
+                    },
+                    new PostgresGrpcApplyEditsReceipt.EvidencePublication
+                    {
+                        Scope = scope,
+                        Payload = payload,
+                        Result = result,
+                        ExpiresAt = expiresAt
+                    }, token);
             },
             cancellationToken).ConfigureAwait(false);
 

@@ -23,6 +23,21 @@ internal static partial class PostgresGrpcApplyEditsReceipt
         internal required string Scope { get; init; }
         internal required ReadOnlyMemory<byte> Payload { get; init; }
         internal required FeatureEditResult Result { get; init; }
+        internal required DateTimeOffset ExpiresAt { get; init; }
+    }
+
+    internal static async Task<bool> TryWriteWithEvidenceAsync(
+        EvidenceContext context, EvidencePublication publication, CancellationToken cancellationToken)
+    {
+        var transaction = context.Transaction ?? throw new InvalidOperationException(
+            "The edit receipt evidence requires the edit transaction.");
+        if (!await TryWriteAsync(context.Connection, transaction, context.Table, publication.Scope,
+            publication.Payload, publication.ExpiresAt, context.TimeoutSeconds, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+        await WriteEvidenceAsync(context, publication, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     internal static async Task<FeatureEditReceiptReplay?> TryReadWithEvidenceAsync(

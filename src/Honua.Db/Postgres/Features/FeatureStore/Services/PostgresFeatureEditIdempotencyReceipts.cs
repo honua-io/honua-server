@@ -14,6 +14,19 @@ internal sealed class PostgresFeatureEditIdempotencyReceipts(
 {
     private readonly string _table = SchemaSearchPath.QualifyTable("grpc_apply_edits_receipt", schemaName);
 
+    public async ValueTask<FeatureEditReceiptReplay?> TryReadWithEvidenceAsync(
+        string scope, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await PostgresGrpcApplyEditsReceipt.TryReadWithEvidenceAsync(
+            new PostgresGrpcApplyEditsReceipt.EvidenceContext
+            {
+                Connection = connection,
+                Table = _table,
+                TimeoutSeconds = 30
+            }, scope, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <inheritdoc />
     public async ValueTask<ReadOnlyMemory<byte>?> TryReadAsync(string scope, CancellationToken cancellationToken = default)
     {
