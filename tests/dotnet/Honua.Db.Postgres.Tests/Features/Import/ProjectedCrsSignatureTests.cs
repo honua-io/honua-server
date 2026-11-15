@@ -2,11 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Db.Postgres.Features.FileImport;
-using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-[UnitTest]
+[Trait("Category", "Unit")]
+[Trait("Tier", "Fast")]
 public sealed class ProjectedCrsSignatureTests
 {
     // EPSG:2263 as PostGIS spatial_ref_sys stores it (OGC names, parallels in the other order, authority nodes).

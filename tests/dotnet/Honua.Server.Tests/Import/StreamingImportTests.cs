@@ -927,15 +927,17 @@ public class StreamingImportTests : IAsyncLifetime
           {"type":"Feature","geometry":{"type":"Point","coordinates":[-155,20]},"properties":{"name":"d"}}]}
         """;
         using var content = new MultipartFormDataContent();
-        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        using var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
             Name = "File",
             FileName = "null-geometry.geojson"
         };
+        using var tableName = new StringContent("null_geometry_table");
+        using var overwrite = new StringContent("true");
         content.Add(fileContent);
-        content.Add(new StringContent("null_geometry_table"), "TableName");
-        content.Add(new StringContent("true"), "OverwriteExisting");
+        content.Add(tableName, "TableName");
+        content.Add(overwrite, "OverwriteExisting");
 
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 

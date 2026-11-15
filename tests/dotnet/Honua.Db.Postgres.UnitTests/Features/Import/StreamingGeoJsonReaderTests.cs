@@ -83,7 +83,8 @@ public sealed class StreamingGeoJsonReaderTests
     public async Task ValidateAsync_ManyNullGeometryWarnings_DoNotHideALaterError()
     {
         var unlocated = string.Join(',', Enumerable.Repeat("""{"type":"Feature","geometry":null,"properties":{}}""", 150));
-        var json = $$"""{"type":"FeatureCollection","features":[{{unlocated}},{"type":"Feature","geometry":{"type":"Nope","coordinates":[]},"properties":{}}]}""";
+        var json = """{"type":"FeatureCollection","features":[""" + unlocated +
+            """,{"type":"Feature","geometry":{"type":"Nope","coordinates":[]},"properties":{}}]}""";
         await using var stream = new FragmentedStream(Encoding.UTF8.GetBytes(json), 64);
 
         var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
