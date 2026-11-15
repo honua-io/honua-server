@@ -196,6 +196,10 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
+                if (diagnostics is not null)
+                {
+                    diagnostics.Headers = headers;
+                }
                 mapping = BuildMapping(headers, options);
                 return null;
             }
@@ -906,6 +910,8 @@ internal sealed class CsvGeometryDiagnostics
     private const int MaxRecordedGeocodeFailures = 100;
 
     private List<CsvGeocodeFailure>? _geocodeFailures;
+
+    public IReadOnlyList<string> Headers { get; internal set; } = [];
 
     /// <summary>
     /// Number of rows whose mapped geometry column held a value that could not be parsed as

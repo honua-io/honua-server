@@ -16,6 +16,7 @@ on:
       - 'scripts/ci/*measure-serving-image.py'
       - 'scripts/ci/test-health-probe.py'
       - 'scripts/ci/test-runtime-native.py'
+      - 'scripts/ci/Dockerfile.native-runtime-test*'
       - 'scripts/ci/test-runtime-packages.py'
       - 'scripts/ci/smoke-serving-formats.sh'
       - 'scripts/ci/verify-serving-formats.py'
@@ -34,10 +35,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  runner-select:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    uses: ./.github/workflows/advisory-runner-select.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      hosted-runner: ubuntu-24.04
+    secrets:
+      wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
+
   measure:
+    needs: runner-select
     name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-24.04' }}
+    if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-24.04"') || 'ubuntu-latest' }}
     timeout-minutes: 30
     env:
       IMAGE: honua-store-measure:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.profile }}-${{ matrix.compilation }}
@@ -77,7 +90,11 @@ jobs:
         run: |
           python3 scripts/ci/test-measure-serving-image.py
           python3 scripts/ci/test-health-probe.py
-          sudo python3 scripts/ci/test-runtime-native.py
+          if [[ "${{ runner.environment }}" == "github-hosted" ]]; then
+            sudo python3 scripts/ci/test-runtime-native.py
+          else
+            docker build --file scripts/ci/Dockerfile.native-runtime-test .
+          fi
           python3 scripts/ci/test-runtime-packages.py
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Build serving image
@@ -161,15 +178,17 @@ jobs:
             grep -F -- '-full' "artifacts/startup-$provider.log"
           done
       - name: Smoke import format support and rendering
-        run: bash scripts/ci/smoke-serving-formats.sh "$IMAGE" artifacts/formats
+        run: bash scripts/ci/smoke-serving-formats.sh "$IMAGE" artifacts/formats 0 0
       - name: Compare vulnerability findings
         env:
           BASELINE: ${{ matrix.baseline }}
         run: |
+          docker_socket="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+          docker_socket="${docker_socket#unix://}"
           for version in before after; do
             image="$BASELINE"
             if [ "$version" = after ]; then image="$IMAGE"; fi
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            docker run --rm -v "$docker_socket:/var/run/docker.sock" \
               -v "$PWD/.trivyignore:/config/ignore:ro" aquasec/trivy:0.68.1 \
               image --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /config/ignore \
               --format json "$image" > "artifacts/trivy-$version.json"

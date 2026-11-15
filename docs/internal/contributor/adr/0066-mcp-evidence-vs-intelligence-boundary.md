@@ -68,7 +68,7 @@ so we do not choose a second name that ages as badly as the first.
 | **What** | Studio/data-access tools + 8 bounded read-only ops-evidence tools | Diagnose, tune, upgrade planning with rollback gates, GitOps rollout, remediation planning, requirements analysis |
 | **Transport** | HTTP `POST /mcp` (Streamable HTTP), authenticated per ADR-0026 | MCP stdio (`--mcp`), ~35 operator tools |
 | **Posture** | Read state; at most *propose* an action that a human approves through Console (ADR-0062) | Reasons over evidence and drives the day-2 loop; consumes our evidence tools via `honua_observe_diagnose_propose` |
-| **Licensing** | Open-core (ELv2), included in Community (ADR-0024) | Private enterprise tooling on top of the public control-plane API |
+| **Licensing** | Fair Source (FCL-1.0-ALv2), included in Community ([ADR-0080](0080-fair-core-license.md)) | Private enterprise tooling on top of the public control-plane API |
 
 The 8 ops-evidence tools are **correctly public**, not a leak across the line.
 They expose bounded, read-only operational *facts* and human-gated *proposals*;

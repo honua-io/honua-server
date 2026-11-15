@@ -3382,6 +3382,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      id-token: write
   # Pull requests run these two interop proofs only for Parquet/Arrow-named
   # inputs; the full run covers every shared build, model and host change.
   geoparquet-interop:
