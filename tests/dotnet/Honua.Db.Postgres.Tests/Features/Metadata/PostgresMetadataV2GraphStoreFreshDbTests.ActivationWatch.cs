@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
@@ -32,6 +33,21 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var pending = (await second.ReadPendingAsync()).Should().ContainSingle().Which;
         pending.RollbackRevision.Should().Be(restored.Revision);
         pending.ChangeId.Should().Be($"catalog-watch-{watch.Id}");
+    });
+
+    [IntegrationTest]
+    public Task ActivationWatch_ActivationChangingAccess_IsNeverRolledBackAutomatically() => WithWatchSchemaAsync(async schema =>
+    {
+        var store = WatchStore(schema);
+        var open = await store.SaveAsync(WatchGraph("layer", allowAnonymous: true), null);
+        var restricted = await store.SaveAsync(WatchGraph("layer", allowAnonymous: false), open.Etag);
+        var watch = (await store.ReadPendingAsync()).Single();
+
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeFalse();
+
+        (await store.GetCurrentAsync()).Etag.Should().Be(restricted.Etag);
+        (await store.ReadPendingAsync()).Should().BeEmpty("the watch ends instead of being retried");
+        (await store.ReadRecentRollbacksAsync()).Should().BeEmpty();
     });
 
     [IntegrationTest]
@@ -131,11 +147,16 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         new TestConnectionProvider(fixture.DataSource, schema), "Test",
         FixtureBypassDatabaseSchemaGuard.Instance, schema);
 
-    private static MetadataV2Graph WatchGraph(string name) => new()
+    private static MetadataV2Graph WatchGraph(string name, bool? allowAnonymous = null) => new()
     {
         Environment = "Test",
         GeneratedAt = DateTimeOffset.UtcNow,
-        Resources = [new() { Metadata = new() { Id = "resource", Name = name }, Type = MetadataV2ResourceType.FeatureDataset }],
+        Resources = [new()
+        {
+            Metadata = new() { Id = "resource", Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            AccessPolicy = allowAnonymous is { } anonymous ? new AccessPolicy { AllowAnonymous = anonymous } : null,
+        }],
     };
 
     private async Task WithWatchSchemaAsync(Func<string, Task> test)

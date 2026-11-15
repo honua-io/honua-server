@@ -59,11 +59,23 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-        var priorDocument = await ReadRollbackDocumentAsync(transaction, request.ActivationId, cancellationToken).ConfigureAwait(false);
-        if (priorDocument is null)
+        var documents = await ReadRollbackDocumentsAsync(transaction, request.ActivationId, cancellationToken).ConfigureAwait(false);
+        if (documents is null)
         {
             return false;
         }
+
+        var (priorDocument, currentDocument) = documents.Value;
+
+        if (!CatalogAccessSettings.Match(priorDocument, currentDocument))
+        {
+            // Restoring the earlier document would change who may access a resource; that is never
+            // decided from serving telemetry. The watch ends and the activation stays as published.
+            await ExpireWatchAsync(transaction, request.ActivationId, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
         var graph = JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
             ?? throw new InvalidDataException("The prior catalog document is missing.");
         var restored = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
@@ -97,12 +109,13 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string?> ReadRollbackDocumentAsync(
+    private async Task<(string Prior, string Current)?> ReadRollbackDocumentsAsync(
         NpgsqlTransaction transaction, long activationId, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand($"""
-            SELECT watch.previous_document::text FROM {ActivationWatchesTable} watch
+            SELECT watch.previous_document::text, snapshot.document::text FROM {ActivationWatchesTable} watch
               JOIN {_currentTable} current ON current.environment = watch.environment
+              JOIN {_snapshotsTable} snapshot ON snapshot.environment = current.environment AND snapshot.revision = current.revision
              WHERE watch.id = @id AND watch.environment = @environment AND watch.state = 'watching'
                AND current.revision = watch.revision AND current.etag = watch.expected_etag
                AND watch.activated_at >= clock_timestamp() - @bake_seconds * interval '1 second'
@@ -111,7 +124,20 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         command.Parameters.AddWithValue("id", activationId);
         command.Parameters.AddWithValue("environment", _environment);
         command.Parameters.AddWithValue("bake_seconds", CatalogActivationErrorWatch.BakePeriod.TotalSeconds);
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? (reader.GetString(0), reader.GetString(1))
+            : null;
+    }
+
+    private async Task ExpireWatchAsync(NpgsqlTransaction transaction, long activationId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"UPDATE {ActivationWatchesTable} SET state = 'expired' WHERE id = @id AND environment = @environment AND state = 'watching'",
+            transaction.Connection, transaction);
+        command.Parameters.AddWithValue("id", activationId);
+        command.Parameters.AddWithValue("environment", _environment);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RecordRollbackAsync(
