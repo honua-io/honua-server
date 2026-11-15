@@ -139,6 +139,55 @@
         "allowedWriteRoles",
         "serviceName"
       ]
+    },
+    {
+      "toolName": "honua_admin_import_formats",
+      "operationId": "admin.import.formats",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_import_limits",
+      "operationId": "admin.import.limits",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_import_preview",
+      "operationId": "admin.import.preview",
+      "mode": "read",
+      "inputFields": [
+        "dryRun",
+        "file",
+        "fileName"
+      ]
+    },
+    {
+      "toolName": "honua_admin_import_preview_url",
+      "operationId": "admin.import.preview-url",
+      "mode": "read",
+      "inputFields": [
+        "dryRun",
+        "fileName",
+        "sourceUrl"
+      ]
+    },
+    {
+      "toolName": "honua_admin_connections_tables_validate",
+      "operationId": "admin.connections.tables.validate",
+      "mode": "read",
+      "inputFields": [
+        "dryRun",
+        "fields",
+        "geometryColumn",
+        "id",
+        "layerName",
+        "primaryKey",
+        "schema",
+        "serviceName",
+        "table",
+        "targetSrid"
+      ]
     }
   ]
 }
