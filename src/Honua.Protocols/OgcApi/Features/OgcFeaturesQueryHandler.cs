@@ -207,6 +207,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         .ToImmutableArray()
                 };
             }
+            if (query.OutFields is { } storageFields && resource.FindPrimaryIdField() is { } identifier &&
+                !storageFields.Contains(identifier.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                // Fetch identity for the top-level ID without expanding the requested response properties.
+                query = query with { OutFields = storageFields.Add(identifier.Name) };
+            }
             var outputAxisOrder = unifiedQuery.OutputCrs?.AxisOrder ?? AxisOrder.EastNorth;
             var outputCrsUri = unifiedQuery.OutputCrs?.Uri ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
