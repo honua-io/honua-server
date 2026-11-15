@@ -40,7 +40,7 @@ public sealed partial class DirectImportCrsContractTests
         string? targetSrid, int storedSrid)
     {
         using var result = await PostProjectedShapefileAsync(
-            "upload", StatePlanePrj, NewImportFields()["TableName"], targetSrid);
+            "upload", StatePlanePrj, new ProjectedUploadOptions(NewImportFields()["TableName"], targetSrid));
         var imported = result.RootElement;
         imported.GetProperty("success").GetBoolean().Should().BeTrue(imported.GetRawText());
         var schema = imported.GetProperty("schema").GetString()!;
@@ -64,7 +64,8 @@ public sealed partial class DirectImportCrsContractTests
     public async Task ImportFile_UnrecognizedProjectedShapefile_ExplainsSourceOverride()
     {
         var unrecognized = StatePlanePrj.Replace("D_North_American_1983", "D_Unknown", StringComparison.Ordinal);
-        using var result = await PostProjectedShapefileAsync("upload", unrecognized, NewImportFields()["TableName"]);
+        using var result = await PostProjectedShapefileAsync(
+            "upload", unrecognized, new ProjectedUploadOptions(NewImportFields()["TableName"]));
 
         result.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
         result.RootElement.GetProperty("errorCode").GetString().Should().Be("import.source_srid_required");
@@ -74,14 +75,14 @@ public sealed partial class DirectImportCrsContractTests
     }
 
     private async Task<JsonDocument> PostProjectedShapefileAsync(
-        string operation, string prj, string? tableName = null, string? targetSrid = null)
+        string operation, string prj, ProjectedUploadOptions? upload = null)
     {
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent(CreateProjectedShapefileZip(prj));
         content.Add(fileContent, "File", "projected.zip");
-        using var tableContent = tableName is null ? null : new StringContent(tableName);
-        using var overwriteContent = tableName is null ? null : new StringContent("true");
-        using var targetContent = targetSrid is null ? null : new StringContent(targetSrid);
+        using var tableContent = upload is null ? null : new StringContent(upload.TableName);
+        using var overwriteContent = upload is null ? null : new StringContent("true");
+        using var targetContent = upload?.TargetSrid is null ? null : new StringContent(upload.TargetSrid);
         if (tableContent is not null) content.Add(tableContent, "TableName");
         if (overwriteContent is not null) content.Add(overwriteContent, "OverwriteExisting");
         if (targetContent is not null) content.Add(targetContent, "TargetSrid");
@@ -90,6 +91,8 @@ public sealed partial class DirectImportCrsContractTests
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
         return JsonDocument.Parse(text);
     }
+
+    private sealed record ProjectedUploadOptions(string TableName, string? TargetSrid = null);
 
     private static byte[] CreateProjectedShapefileZip(string prj)
     {
