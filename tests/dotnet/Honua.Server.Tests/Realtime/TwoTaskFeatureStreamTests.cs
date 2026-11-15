@@ -127,7 +127,7 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
         var cursor = after;
         while (true)
         {
-            var page = await store.QueryAsync(cursor, null, null, 50);
+            var page = await store.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, 50));
             replayed.AddRange(page.Where(change => change.LayerId == layerId).Select(change => change.Cursor));
             if (page.Count < 50)
             {
