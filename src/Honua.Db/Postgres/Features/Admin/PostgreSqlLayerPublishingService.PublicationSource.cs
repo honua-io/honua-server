@@ -223,16 +223,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // may be of any type, unselected or absent.
         if (!isManagedStore || request.CreateEditableCopy)
         {
-            var primaryKeyType = MapPostgresType(primaryKeyColumn!.DataType);
-            if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
-            {
-                throw new LayerPublishingException(
-                    LayerPublishingErrorKind.Validation,
-                    "Primary key must be an integer column.");
-            }
+            ValidatePublicationPrimaryKeyType(primaryKeyColumn!);
         }
 
         return primaryKeyColumn;
+    }
+
+    private static void ValidatePublicationPrimaryKeyType(ColumnInfo column)
+    {
+        var primaryKeyType = MapPostgresType(column.DataType);
+        if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "Primary key must be an integer column.");
+        }
     }
 
     private sealed record PublicationSourceCompletion(PublicationSourceRequest Source, PreparedPublicationSource Prepared);
