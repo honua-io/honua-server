@@ -547,9 +547,9 @@ to any updated node with that cursor and the same scope to replay retained
 batches. A subscription without a cursor starts live. A `reset` frame means the
 client must refresh observations through OData before subscribing again.
 
-When upgrading from the Redis implementation, update every observation-stream
-node before enabling the new endpoints: Redis nodes cannot deliver or replay
-PostgreSQL event-log batches.
+When upgrading, update every observation-stream node before enabling the new
+endpoints. All serving nodes must support delivery and replay of PostgreSQL
+event-log batches.
 
 ## Verify
 
