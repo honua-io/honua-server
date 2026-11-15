@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.PairedPublications;
 
 namespace Honua.Server.Features.Admin.TileOperations;
