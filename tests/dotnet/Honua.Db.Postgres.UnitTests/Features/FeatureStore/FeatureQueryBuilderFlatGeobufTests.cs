@@ -96,7 +96,7 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
     [Fact]
     public void WriteFlatGeobuf_NativeStorage_PreservesSemanticStringId()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -118,12 +118,12 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
         encoded.Attributes["public_id"].Should().Be("public-1");
     }
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] additionalFields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] additionalFields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test-layer", Name = "Test Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

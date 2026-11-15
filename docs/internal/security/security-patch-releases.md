@@ -90,7 +90,8 @@ After a release image is published (release candidate or GA), for each published
    artifact to the release in `honua-io/honua-release`, next to the SBOM and provenance:
    `gh release upload <tag> -R honua-io/honua-release honua-server-<release>-<arch>.{openvex,spdx}.json`.
 3. Register the digests in one pull request: run the `inventory-add` command from each run's
-   summary, one per platform (the command is idempotent and the entries apply in sequence),
+   summary, one per platform. The command registers the resolved platform manifest digest,
+   including when the input image is a multi-platform index. The command is idempotent and the entries apply in sequence;
    then commit `eng/security/supported-images.json`. The run's
    `supported-images-honua-server-<release>-<arch>` artifact holds that run's patch for
    reference only: each patch is made against trunk, so do not apply both. Workflows in this repository hold no

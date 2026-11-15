@@ -95,7 +95,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
                     {
                         SemanticId = "res.parcels",
                         ArtifactKind = MetadataSemanticArtifactKind.Resource,
-                        ResourceType = MetadataV2ResourceType.FeatureDataset,
+                        ResourceType = MetadataV2ObjectType.FeatureDataset,
                         DesiredMetadataRevision = 41,
                         DesiredContentVersionId = "content-v1",
                         TargetStates =
@@ -112,7 +112,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
                     {
                         SemanticId = "field.parcels.apn",
                         ArtifactKind = MetadataSemanticArtifactKind.Field,
-                        ResourceType = MetadataV2ResourceType.FeatureDataset,
+                        ResourceType = MetadataV2ObjectType.FeatureDataset,
                         SourceField = new MetadataBoundFieldSummary
                         {
                             SemanticId = "field.parcels.apn",
@@ -340,10 +340,10 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res.parcels", Name = "parcels" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                 },
             ],
         };
@@ -371,7 +371,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
                 {
                     SemanticId = "res.parcels",
                     ArtifactKind = MetadataSemanticArtifactKind.Resource,
-                    ResourceType = MetadataV2ResourceType.FeatureDataset,
+                    ResourceType = MetadataV2ObjectType.FeatureDataset,
                     DesiredMetadataRevision = 41,
                     DesiredContentVersionId = "content-v1",
                     TargetStates =

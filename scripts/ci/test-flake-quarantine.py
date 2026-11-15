@@ -370,6 +370,14 @@ class PublisherTests(unittest.TestCase):
         api = self.publish([{**entry(), **candidate}], [issue])
         api.assert_not_called()
 
+    def test_replayed_publication_does_not_reopen_closed_or_expired_issue(self):
+        candidate = dict(project=PROJECT, test='Honua.Tests.Case.Flaky')
+        issue = dict(title=publisher.title(candidate), number=123, user=dict(login='github-actions[bot]'),
+                     body=publisher.issue_body(candidate, 'https://example.com/run'))
+        self.publish([], [issue]).assert_not_called()
+        issue['body'] = publisher.issue_body(candidate, 'https://example.com/new-run')
+        self.assertEqual(1, self.publish([], [issue]).call_count)
+
 
 class GitHubApiTests(unittest.TestCase):
     ENDPOINT = 'repos/example/repo/issues?labels=ci-flake-quarantine'

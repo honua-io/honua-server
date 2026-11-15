@@ -13,6 +13,7 @@ using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Tests.MetadataRelease;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -76,7 +77,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
         inventory.Entries.Should().ContainSingle(entry =>
             entry.SemanticId == "res.parcels" &&
             entry.ArtifactKind == MetadataSemanticArtifactKind.Resource &&
-            entry.ResourceType == MetadataV2ResourceType.Map);
+            entry.ResourceType == MetadataV2ObjectType.Map);
     }
 
     [IntegrationTest]
@@ -867,7 +868,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -879,7 +880,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                             ["honua.io/content-version-id"] = "content-v1",
                         },
                     },
-                    Type = MetadataV2ResourceType.Map,
+                    Type = MetadataV2ObjectType.Map,
                     StorageBindingIds = ["storage.parcels"],
                     PrimaryStorageBindingId = "storage.parcels",
                     SchemaFields = BuildSchemaFields(includeSchemaField),
@@ -899,40 +900,9 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                     },
                 },
             ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "storage.parcels", Name = "storage.parcels" },
-                    ResourceId = "res.parcels",
-                    ConnectionId = "conn.parcels",
-                    StorageType = MetadataV2StorageType.RelationalTable,
-                    Locator = $"{environment}_schema.parcels",
-                },
-            ],
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc.features", Name = "features" },
-                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
-                    Route = $"/{environment}/ogc/features",
-                    PublicationIds = ["pub.parcels"],
-                },
-            ],
-            Publications =
-            [
-                new MetadataV2Publication
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
-                    ResourceId = "res.parcels",
-                    ServiceId = "svc.features",
-                    StorageBindingId = "storage.parcels",
-                    PublicationType = MetadataV2PublicationType.OgcCollection,
-                    Path = "parcels",
-                    ServiceLocalId = "parcels",
-                },
-            ],
+            StorageBindings = [MetadataReleaseParcelsGraph.StorageBinding(environment)],
+            Services = [MetadataReleaseParcelsGraph.FeaturesService(environment)],
+            Publications = [MetadataReleaseParcelsGraph.Publication()],
         };
     }
 
@@ -968,7 +938,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 {
                     SemanticId = "res.parcels",
                     ArtifactKind = MetadataSemanticArtifactKind.Resource,
-                    ResourceType = MetadataV2ResourceType.Map,
+                    ResourceType = MetadataV2ObjectType.Map,
                     DesiredMetadataRevision = 41,
                 },
             ],

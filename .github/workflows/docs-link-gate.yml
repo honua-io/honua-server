@@ -56,6 +56,8 @@ on:
       - 'scripts/ci/generate-okf-graph.test.py'
       - 'scripts/ci/okf-requirements.txt'
       - 'scripts/ci/okf-bundle.v1.json'
+      - 'scripts/ci/generate-workflow-inventory.py'
+      - 'scripts/ci/workflow-inventory.template.md'
       - 'scripts/ci/generate-capability-concepts.py'
       - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
@@ -89,6 +91,11 @@ jobs:
 
       - name: Install the safe OKF YAML reader
         run: python3 -m pip install -r scripts/ci/okf-requirements.txt
+
+      - name: Regenerate trunk-owned documentation for validation
+        run: |
+          python3 scripts/ci/generate-workflow-inventory.py
+          python3 scripts/ci/generate-capability-concepts.py
 
       # The checker's own tests run first and are self-contained (synthetic docs
       # trees in temp directories). A checker that wrongly reports clean is the

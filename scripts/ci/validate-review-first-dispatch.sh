@@ -8,6 +8,9 @@ cd "${repo_root}"
 . "${repo_root}/scripts/ci/lib/python-resolve.sh"
 python_bin="$(honua_resolve_python)"
 
+# Validate the workflow inventory projected from this checkout.
+"${python_bin}" scripts/ci/generate-workflow-inventory.py
+
 # Prove the decode diagnostic fails, not just that it passes (#3321).
 "${python_bin}" scripts/ci/fixtures/validate-review-first-utf8.py
 "${python_bin}" scripts/ci/fixtures/validate-review-first-dispatch.py
