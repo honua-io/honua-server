@@ -49,7 +49,7 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
                 }
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
     }
 
     public override void Dispose()
