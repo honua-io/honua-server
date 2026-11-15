@@ -1544,6 +1544,7 @@ host with another lane job, so part of the difference may be load; the per-case
 fixture time removed (about 5 seconds per default-host case) accounts for most of
 it. Full CI job savings are unmeasured.
 All cases remain in the SensorThings shard on selected PR runs and twice-daily
+
 ### GeoServices MapServer collection host lifetime
 
 The `Database.GeoServicesMapServer` collection holds a collection-scoped default
@@ -1565,6 +1566,7 @@ the expected CI saving for those shards. Full CI job savings are unmeasured.
 All cases remain in their existing shards on selected PR runs and twice-daily
 full trunk runs. This changes no runner count, required check name, required
 aggregate dependency, workflow or shard definition.
+
 ### Catalog endpoint SOAP raster host lifetime
 
 `GeoservicesCatalogEndpointTests` lazily starts one SOAP raster application per
