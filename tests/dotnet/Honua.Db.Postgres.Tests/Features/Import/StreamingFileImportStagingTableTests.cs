@@ -26,7 +26,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// surfaces its server message instead of the generic "Import failed.".
 /// </summary>
 [Collection("Database")]
-public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture)
+public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture fixture)
 {
     private const string CreateImportFunctionsSql = """
         CREATE OR REPLACE FUNCTION honua.create_import_table(schema_name text, table_name text, target_srid integer DEFAULT 4326)
@@ -1081,13 +1081,13 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         return (long)relationId!;
     }
 
-    private async Task<List<(int Id, string Name, int Code, string Wkt)>> ReadOverwriteGuardRowsAsync(string schema)
+    private async Task<List<(int Id, string Name, int Code, string Wkt)>> ReadOverwriteGuardRowsAsync(string schema, string table = OverwriteGuardPhysicalTable)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT id, properties->>'name', (properties->>'code')::int, ST_AsText(ST_GeometryN(geometry, 1))
-            FROM "{schema}"."{OverwriteGuardPhysicalTable}"
+            FROM "{schema}"."{table}"
             ORDER BY id
             """;
         await using var reader = await command.ExecuteReaderAsync();

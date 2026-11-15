@@ -80,7 +80,7 @@ internal sealed partial class StreamingFileImportService
             var loadTableName = target.LoadTableName;
             var hadExistingTarget = target.HadExistingTarget;
             appendUsesStaging = target.AppendUsesStaging;
-            var directGuard = loadMode == ImportLoadMode.Replace || appendUsesStaging
+            var directGuard = loadMode is ImportLoadMode.Replace or ImportLoadMode.CreateOnly || appendUsesStaging
                 ? null
                 : new DirectImportGuard(target.LiveIdentity!.Value, coordinateEpoch);
             var directBatchAttempted = false;
@@ -128,24 +128,14 @@ internal sealed partial class StreamingFileImportService
                 // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
                 var wktGeometryDiagnostics = format == SupportedFileFormat.Wkt ? new WktGeometryDiagnostics() : null;
 
-                var featureStream = format switch
+                var featureStream = ReadImportFeatures(new FeatureReadContext(fileStream, format, loadMode)
                 {
-                    SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.GeoServicesJson => GeoServicesJsonFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, wktGeometryDiagnostics, cancellationToken),
-                    SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, delimiterOverride: null, csvGeometryDiagnostics, request.CsvOptions, cancellationToken),
-                    SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                    SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
-                    SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, request.SourceLayer, cancellationToken),
-                    SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
-                    SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
-                    _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
-                };
-
+                    Request = request,
+                    CsvDiagnostics = csvGeometryDiagnostics,
+                    WktDiagnostics = wktGeometryDiagnostics,
+                    ShapefilePath = shapefileScratch?.ShpPath,
+                    FileGdbPath = fileGdbScratch?.GdbPath,
+                }, cancellationToken);
                 await foreach (var feature in featureStream.WithCancellation(cancellationToken))
                 {
                     // FileGDB included: the resolved/explicit source SRID must win over whatever the
@@ -259,6 +249,11 @@ internal sealed partial class StreamingFileImportService
                 // the staging dataset is complete enough to replace an existing target.
                 totalFailed += wktGeometryDiagnostics?.UnparseableRecords ?? 0;
 
+                if (loadMode == ImportLoadMode.CreateOnly && (totalFailed > 0 || totalImported == 0))
+                {
+                    throw new InvalidDataException("Create-only import requires a nonempty dataset with every source feature imported.");
+                }
+
                 // For a replace, the load streamed into the staging sibling. Promote it over the
                 // live target unless doing so would destroy a prior COMPLETE dataset: when a target
                 // already existed and this load dropped rows (skip/continue), promoting the
@@ -269,18 +264,18 @@ internal sealed partial class StreamingFileImportService
                 // Append into an owned target uses the same sibling and merges only after the
                 // whole file has loaded, so a failure before that merge leaves the live table as it was.
                 var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
-                var stagesIntoSibling = loadMode == ImportLoadMode.Replace || appendUsesStaging;
+                var stagesIntoSibling = loadMode is ImportLoadMode.Replace or ImportLoadMode.CreateOnly || appendUsesStaging;
                 IReadOnlyList<ImportTypedColumn> typedColumns = [];
                 if (stagesIntoSibling)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                 }
 
-                if (loadMode == ImportLoadMode.Replace)
+                if (loadMode is ImportLoadMode.Replace or ImportLoadMode.CreateOnly)
                 {
                     if (replacementBlocked || totalImported == 0)
                     {
-                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                        await DropLoadStagingAsync(connection, (loadMode, targetSchema, allowedTableName, loadTableName), CancellationToken.None);
                     }
                     else
                     {
@@ -292,13 +287,15 @@ internal sealed partial class StreamingFileImportService
                         cancellationToken.ThrowIfCancellationRequested();
                         await SwapStagingTableAsync(
                             connection,
-                            targetSchema,
-                            allowedTableName,
-                            totalImported,
-                            request.CommitParticipant,
-                            request.TargetSrid!.Value,
-                            coordinateEpoch,
-                            target.LiveIdentity,
+                            new StagingPromotion(targetSchema, allowedTableName, loadTableName)
+                            {
+                                LoadMode = loadMode,
+                                FeatureCount = totalImported,
+                                CommitParticipant = request.CommitParticipant,
+                                StorageSrid = request.TargetSrid!.Value,
+                                CoordinateEpoch = coordinateEpoch,
+                                ExpectedIdentity = target.LiveIdentity,
+                            },
                             CancellationToken.None);
                         dataCommitted = true;
                     }
@@ -307,7 +304,7 @@ internal sealed partial class StreamingFileImportService
                 {
                     if (totalImported == 0)
                     {
-                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                        await DropLoadStagingAsync(connection, (loadMode, targetSchema, allowedTableName, loadTableName), CancellationToken.None);
                     }
                     else
                     {
@@ -400,7 +397,7 @@ internal sealed partial class StreamingFileImportService
 
                 if (dataCommitted)
                 {
-                    if (loadMode != ImportLoadMode.Replace)
+                    if (loadMode is not (ImportLoadMode.Replace or ImportLoadMode.CreateOnly))
                     {
                         // Append and upsert write to the live table. Refresh their projections
                         // before reporting completion, even if cancellation arrived after commit.
@@ -434,8 +431,9 @@ internal sealed partial class StreamingFileImportService
 
                 string[] completionWarnings = [.. completionWarningsBuilder];
 
-                // Report completion
-                progress?.Report(new ImportProgress
+                // A committed create-only publication remains successful if its notification sink fails;
+                // other modes keep their existing progress semantics.
+                var completion = new ImportProgress
                 {
                     JobId = jobId,
                     Status = ImportStatus.Completed,
@@ -456,7 +454,15 @@ internal sealed partial class StreamingFileImportService
                     TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
                     Warnings = completionWarnings,
                     CurrentPhase = "Import completed"
-                });
+                };
+                if (dataCommitted && loadMode == ImportLoadMode.CreateOnly)
+                {
+                    ReportCommittedCompletion(progress, completion);
+                }
+                else
+                {
+                    progress?.Report(completion);
+                }
 
                 return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns, request.TargetSrid!.Value);
             }
@@ -481,11 +487,11 @@ internal sealed partial class StreamingFileImportService
 
                 throw;
             }
-            catch when ((loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
+            catch when ((loadMode is ImportLoadMode.Replace or ImportLoadMode.CreateOnly || appendUsesStaging) && !dataCommitted)
             {
                 try
                 {
-                    await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                    await DropLoadStagingAsync(connection, (loadMode, targetSchema, allowedTableName, loadTableName), CancellationToken.None);
                 }
                 // codeql[cs/catch-of-all-exceptions]: cleanup failure must not mask the original replace error, which is rethrown below
                 catch (Exception cleanupEx)

@@ -629,7 +629,7 @@ internal sealed partial class StreamingGeoJsonReader
             return issues;
         }
 
-        var geometry = ParseGeometry(geometryElement);
+        var geometry = HasCompleteGeometryComponents(geometryElement) ? ParseGeometry(geometryElement) : null;
         if (geometry is null)
         {
             issues.Add(ImportValidationIssue.Create(
