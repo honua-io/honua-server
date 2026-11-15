@@ -2,6 +2,8 @@
 
 A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
 
+Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
@@ -786,13 +788,20 @@ execution failures remain blocking. Each test command runs in a dedicated proces
 Cancellation signals that group and its snapshotted descendants, including those that leave
 the group. Signal handlers record cancellation; cleanup runs outside the active child wait
 so it cannot reenter the subprocess wait lock. The supervisor checks cancellation at most
-every 0.1 seconds. Process discovery has a 0.2-second deadline, with group cleanup preserved
-on discovery failure, followed by at most half a second before SIGKILL. Group escalation also reaches
-children forked after the snapshot. Required check names and minimum-execution checks remain
+every 0.1 seconds. The snapshot before TERM has a 0.2-second discovery deadline, with group
+cleanup preserved on discovery failure, followed by half a second for TERM. Group escalation
+also reaches children forked after the snapshot. The SIGKILL step first stops the tree
+(SIGSTOP) until a fresh listing finds no new descendant, each listing bounded to one second
+because it runs inside the kill-after grace, then kills it deepest first and sweeps the group,
+so a late child that left the group is killed instead of orphaned. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
+Before execution, the shared filter runner logs `HONUA_QUARANTINE_FILTER` with the effective
+filter and the current project's excluded methods, owning issues and expiry times. Shard
+test-result logs retain this record so live verification can distinguish the applied filter
+from the supervisor's base filter; the record does not replace execution or retry evidence.
 
 The publisher has issue-write permission only on trusted default-branch code, reached by
 a twice-hourly schedule or default-branch manual dispatch. Completion events do not
@@ -801,7 +810,11 @@ sweeps consume 318 history requests per hour before bounded artifact inspections
 checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
 evidence and hashes, and never executes downloaded data or checks out the triggering branch.
 Job-level concurrency serializes issue writes and replaces pending sweeps. Source
-provenance and completion filters remain enforced during discovery.
+provenance and completion filters remain enforced during discovery. Each Actions listing
+reads at most eight pages concurrently and reports page progress. A listing whose total
+changes mid-scan (a new run) restarts, at most three attempts in all; it fails closed
+(checkpoint unchanged) when the total keeps changing or the unique entry count disagrees
+with the total.
 Each sweep lists the bounded histories of CI and PR Gate, selects completed trusted runs
 updated since the checkpoint, and reads artifacts per source run. It never lists the
 repository-wide artifact collection. Full creation-ordered histories preserve discovery
