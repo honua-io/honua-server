@@ -283,11 +283,6 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS checkpoint is incomplete.");
         }
 
-        if (spec.Protection is { } protection && DateTimeOffset.UtcNow > protection.ObservationDeadline.AddMinutes(30))
-        {
-            return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "Stable ECS service handoff exceeded its time limit." };
-        }
-
         var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
@@ -323,6 +318,11 @@ internal sealed partial class AwsEcsAlbDeployBackend
         var health = await AlbClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!convergence.IsConverged || stable.DesiredCount <= 0 || health.HealthyCount < stable.DesiredCount)
         {
+            if (primary?.CreatedAt is { } handoffStartedAt && DateTimeOffset.UtcNow > handoffStartedAt.AddMinutes(30))
+            {
+                return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "Stable ECS service handoff exceeded its time limit." };
+            }
+
             return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Waiting for the stable service to become healthy." };
         }
 

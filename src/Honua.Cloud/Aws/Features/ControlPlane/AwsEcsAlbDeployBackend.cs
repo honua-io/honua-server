@@ -81,6 +81,8 @@ internal sealed record AwsEcsServiceState
 // Aggregate running counts can look healthy while an old ACTIVE deployment is still serving the previous task definition.
 internal sealed record AwsEcsDeploymentState
 {
+    public DateTimeOffset? CreatedAt { get; init; }
+
     public string? DeploymentId { get; init; }
 
     public string? Status { get; init; }
@@ -419,6 +421,7 @@ internal sealed partial class AwsSdkEcsClient : IAwsEcsClient, IDisposable
                 deployments.Add(new AwsEcsDeploymentState
                 {
                     DeploymentId = deployment.Id,
+                    CreatedAt = deployment.CreatedAt,
                     Status = deployment.Status,
                     TaskDefinitionArn = deployment.TaskDefinition,
                     RolloutState = deployment.RolloutState?.Value,
