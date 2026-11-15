@@ -74,12 +74,14 @@ public sealed class McpPlatformOpsToolTests
         var result = await tool.InvokeAsync(context, Json("{}"), CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("supportedKinds")
+        result.StructuredContent.Should().NotBeNull();
+        var payload = result.StructuredContent!.Value;
+        payload.GetProperty("supportedKinds")
             .EnumerateArray()
             .Select(element => element.GetString())
             .Should()
             .Equal("AdminConfigChange", "Deploy", "Geoprocess", "MetadataRelease");
-        var structured = JToken.Parse(result.StructuredContent.Value.GetRawText());
+        var structured = JToken.Parse(payload.GetRawText());
         var text = JToken.Parse(result.Content.Single().Text!);
         JToken.DeepEquals(text, structured).Should().BeTrue();
         var schema = JSchema.Parse(tool.Describe().OutputSchema!.Value.GetRawText());
@@ -113,9 +115,8 @@ public sealed class McpPlatformOpsToolTests
         var reference = JSchema.Parse(await File.ReadAllTextAsync(
             Path.Join(root, "geospatial-mcp", "tools", $"{toolName}.result.schema.json")));
         var channels = new[] { result.StructuredContent!.Value.GetRawText(), result.Content.Single().Text! };
-        foreach (var channel in channels)
+        foreach (var actual in channels.Select(JToken.Parse))
         {
-            var actual = JToken.Parse(channel);
             JToken.DeepEquals(actual, expected).Should().BeTrue();
             actual.IsValid(live, out IList<string> liveErrors).Should().BeTrue(string.Join("; ", liveErrors));
             actual.IsValid(reference, out IList<string> referenceErrors).Should().BeTrue(string.Join("; ", referenceErrors));
