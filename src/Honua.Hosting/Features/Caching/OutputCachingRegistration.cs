@@ -9,6 +9,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Caching;
@@ -76,8 +77,7 @@ internal static class OutputCachingRegistration
                 // download the entire object per read. Range requests skip lookup and storage.
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
-                policy.VaryByValue(static context => new KeyValuePair<string, string>(
-                    "content-coding", context.Request.Headers.AcceptEncoding.ToString()));
+                policy.VaryByValue(static context => ResolveContentCodingOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and
                 // entitlements, but the cache key otherwise only varies by route + tenant +
@@ -585,6 +585,14 @@ internal static class OutputCachingRegistration
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
+
+    // Keys on the negotiated coding, not the raw header, so equivalent Accept-Encoding strings share an entry
+    // and arbitrary client values cannot multiply entries. Mirrors the coding ConfigurationResponseETag uses.
+    internal static KeyValuePair<string, string> ResolveContentCodingOutputCacheKey(HttpContext context)
+        => new("content-coding", context.Request.Headers.AcceptEncoding.Count == 0
+            ? "identity"
+            : context.RequestServices.GetService<IResponseCompressionProvider>()?.GetCompressionProvider(context)?.EncodingName
+              ?? "identity");
 
     // The license fingerprint is part of the cache key so edition-filtered metadata is not shared across editions.
     internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)

@@ -260,6 +260,24 @@ public sealed class ConfigurationETagTests
         conditional.Headers.ETag.Should().Be(cross.Headers.ETag);
     }
 
+    [Theory]
+    [InlineData("gzip, deflate, br", "br, gzip")]
+    [InlineData("identity", "x-unsupported-coding")]
+    public async Task WarmedOutputCache_EquivalentAcceptEncoding_SharesEntry(string firstCoding, string secondCoding)
+    {
+        await using var server = await TestServer.StartAsync(GenerationRegistration.Enabled, OutputCacheRegistration.Enabled);
+        using var warmRequest = new HttpRequestMessage(HttpMethod.Get, "/json");
+        warmRequest.Headers.TryAddWithoutValidation("Accept-Encoding", firstCoding).Should().BeTrue();
+        using var warm = await server.Client.SendAsync(warmRequest);
+        warm.EnsureSuccessStatusCode();
+
+        using var hitRequest = new HttpRequestMessage(HttpMethod.Get, "/json");
+        hitRequest.Headers.TryAddWithoutValidation("Accept-Encoding", secondCoding).Should().BeTrue();
+        using var hit = await server.Client.SendAsync(hitRequest);
+        hit.Headers.GetValues(OutputCacheStatus.HeaderName).Single().Should().Contain("hit;");
+        hit.Headers.ETag.Should().Be(warm.Headers.ETag);
+    }
+
     private enum OutputCacheRegistration
     {
         Disabled,
