@@ -254,22 +254,7 @@ internal sealed partial class PostgresAttachmentStore
         {
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(CancellationToken.None).ConfigureAwait(false);
             var tables = await ResolveTablesAsync(connection, null, true, CancellationToken.None).ConfigureAwait(false);
-            var pending = new List<(string Path, long FeatureId)>();
-            await using (var command = new NpgsqlCommand($"""
-                SELECT c.storage_path, c.feature_id FROM {tables.Cleanup} c
-                LEFT JOIN {CleanupRetriesTable} r ON r.cleanup_authority = $2 AND r.storage_path = c.storage_path
-                WHERE c.layer_id = $1 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= clock_timestamp())
-                ORDER BY r.next_attempt_at NULLS FIRST, c.storage_path LIMIT 100
-                """, connection))
-            {
-                command.Parameters.AddWithValue(layerId);
-                command.Parameters.AddWithValue(tables.Cleanup);
-                await using var reader = await command.ExecuteReaderAsync(CancellationToken.None).ConfigureAwait(false);
-                while (await reader.ReadAsync(CancellationToken.None).ConfigureAwait(false))
-                {
-                    pending.Add((reader.GetString(0), reader.GetInt64(1)));
-                }
-            }
+            var pending = await ReadPendingCleanupAsync(connection, tables.Cleanup, layerId).ConfigureAwait(false);
 
             foreach (var item in pending)
             {

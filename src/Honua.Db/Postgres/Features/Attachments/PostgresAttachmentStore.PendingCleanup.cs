@@ -11,6 +11,28 @@ internal sealed partial class PostgresAttachmentStore
 {
     private string CleanupRetriesTable => SchemaSearchPath.QualifyTable("attachment_cleanup_retries", _canonicalSchema);
 
+    private async Task<List<(string Path, long FeatureId)>> ReadPendingCleanupAsync(
+        NpgsqlConnection connection, string cleanupTable, int layerId)
+    {
+        var pending = new List<(string Path, long FeatureId)>();
+        await using (var command = new NpgsqlCommand($"""
+            SELECT c.storage_path, c.feature_id FROM {cleanupTable} c
+            LEFT JOIN {CleanupRetriesTable} r ON r.cleanup_authority = $2 AND r.storage_path = c.storage_path
+            WHERE c.layer_id = $1 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= clock_timestamp())
+            ORDER BY r.next_attempt_at NULLS FIRST, c.storage_path LIMIT 100
+            """, connection))
+        {
+            command.Parameters.AddWithValue(layerId);
+            command.Parameters.AddWithValue(cleanupTable);
+            await using var reader = await command.ExecuteReaderAsync(CancellationToken.None).ConfigureAwait(false);
+            while (await reader.ReadAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                pending.Add((reader.GetString(0), reader.GetInt64(1)));
+            }
+        }
+        return pending;
+    }
+
     private async Task ScheduleCleanupRetryAsync(NpgsqlConnection connection, string authority, string path)
     {
         await using var command = new NpgsqlCommand($"""
