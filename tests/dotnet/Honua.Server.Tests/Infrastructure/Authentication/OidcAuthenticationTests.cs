@@ -196,7 +196,7 @@ public class OidcAuthenticationTests
                         SemanticRoles = ["geometry.primary"],
                     },
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -211,7 +211,7 @@ public class OidcAuthenticationTests
                 layerIndex: 0,
                 storageBindingId: "binding-layer-0",
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
 
         services.RemoveAll<IMetadataV2GraphProvider>();

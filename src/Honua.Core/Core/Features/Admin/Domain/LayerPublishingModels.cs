@@ -14,6 +14,12 @@ public sealed class LayerPublishRequest
     public string? PublicName { get; init; }
 
     [JsonIgnore]
+    public long? ExpectedMetadataRevision { get; init; }
+
+    [JsonIgnore]
+    public string? ExpectedMetadataEtag { get; init; }
+
+    [JsonIgnore]
     public Honua.Core.Features.Migration.Domain.GeoservicesImportTarget? ImportTarget { get; init; }
 
     public bool CreateEditableCopy { get; init; }
@@ -43,6 +49,9 @@ public sealed class LayerPublishRequest
     public string? PrimaryKey { get; init; }
 
     public string? GlobalIdField { get; init; }
+
+    // A published date or date-time column; when set, the layer reports temporal history.
+    public string? TemporalColumn { get; init; }
 
     public bool SupportsAttachments { get; init; }
 

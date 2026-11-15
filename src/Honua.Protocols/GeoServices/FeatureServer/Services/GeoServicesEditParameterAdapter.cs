@@ -35,7 +35,7 @@ internal sealed class GeoServicesEditParameterAdapter(
 
     public Task<EditAdapterResult> ConvertAsync(
         GeoServicesEditRequest protocolRequest,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);

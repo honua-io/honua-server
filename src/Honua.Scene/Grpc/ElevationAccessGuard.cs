@@ -45,7 +45,7 @@ internal static class ElevationAccessGuard
     /// dataset's configured default mosaic merge strategy through the shared
     /// <c>RasterMosaicUtilities</c> exactly as the HTTP elevation path does.
     /// </returns>
-    public static async Task<MetadataV2Resource> EnforceReadAccessAsync(
+    public static async Task<MetadataV2Object> EnforceReadAccessAsync(
         ServerCallContext context,
         int layerId,
         CancellationToken cancellationToken)

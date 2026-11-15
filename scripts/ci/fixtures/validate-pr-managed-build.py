@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 import re
 import subprocess
-import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -23,7 +22,7 @@ class PrManagedBuildTests(unittest.TestCase):
         import yaml
         required = yaml.safe_load(TEXT)['jobs']['required']
         self.assertIn('server-test-producer', required['needs'])
-        guard = required['steps'][0]
+        guard = next(step for step in required['steps'] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")
         for event in ['pull_request', 'workflow_dispatch']:
             for result in ['success', 'failure', 'cancelled', 'skipped', '']:
                 environment = dict(os.environ, GITHUB_EVENT_NAME=event,
@@ -74,8 +73,10 @@ class PrManagedBuildTests(unittest.TestCase):
         required = job('required')
         self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]', required)
         self.assertIn('if: always()', required)
-        script = re.search(r'        run: \|\n(.*?)(?=\n      #|\n      -|\Z)', required, re.S).group(1)
-        script = textwrap.dedent(script)
+        import yaml
+        verdict = next(step for step in yaml.safe_load(TEXT)['jobs']['required']['steps']
+                       if step.get('name') == 'Require build, tests, format, CI router validation, and affected shards')
+        script = verdict['run']
         keys = ['BUILD_AND_TEST_RESULT', 'SERVER_PRODUCER_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
                 'AFFECTED_SHARDS_RESULT']
         dependencies = ['pr-gate', 'server-test-producer', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards']
@@ -152,8 +153,8 @@ class PrManagedBuildTests(unittest.TestCase):
                        REQUIRE_FORMAT='true', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT=result)
             run = subprocess.run(['bash', '-e', '-c', script], env=env, capture_output=True)
             self.assertEqual(run.returncode == 0, result == 'success', result)
-        self.assertIn("cron: '23 9 * * *'", CI)
-        self.assertIn("cron: '23 21 * * *'", CI)
+        self.assertIn("cron: '23 7 * * *'", CI)
+        self.assertIn("cron: '23 13 * * *'", CI)
         self.assertNotIn('Build selected protocol profiles', job('pr-gate'))
         self.assertIn('Build selected protocol profiles', job('build', CI))
 

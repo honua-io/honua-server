@@ -830,7 +830,7 @@ public sealed class SpecGroundingServiceTests
         ]);
     }
 
-    private static SpecGroundingHarness CreateHarness(params MetadataV2Resource[] layers)
+    private static SpecGroundingHarness CreateHarness(params MetadataV2Object[] layers)
         => new(layers);
 
     private static ClarificationResponse CreateClarificationResponse(
