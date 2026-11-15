@@ -15,20 +15,7 @@ using Honua.Db.Databricks.Queries.Filters;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
-internal interface IDatabricksFeatureQueryBuilder
-{
-    DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query);
-
-    DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query);
-
-    DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query);
-
-    DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query);
-
-    DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query);
-}
-
-internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBuilder
+internal sealed class DatabricksFeatureQueryBuilder
 {
     private const string GeometryHexAlias = "__honua_geom_hex";
     private const string IdAlias = "__honua_id";
