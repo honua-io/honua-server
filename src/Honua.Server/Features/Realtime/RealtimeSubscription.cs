@@ -124,6 +124,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
 
             if (!_request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, head)))
             {
+                RecordDropped(1);
                 CloseLocked(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
                 return;
             }
@@ -314,8 +315,22 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
 
         if (matches && !_request.Writer.TryWrite(new RealtimeDelivery.Event(realtimeEvent)))
         {
+            RecordDropped(1);
             _request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer, head));
             CloseLocked(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
+        }
+    }
+
+    private bool MatchesOrFalse(RealtimeEvent realtimeEvent)
+    {
+        try
+        {
+            return Matches(realtimeEvent);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Only counting a drop; the filter's failure is reported where delivery evaluates it.
+            return false;
         }
     }
 
@@ -348,8 +363,29 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         }
 
         _closed = true;
+        if (error is RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer })
+        {
+            RealtimeMetrics.SlowConsumerClosed.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
+        }
+
+        // On a failure, held events this session would have received are lost with its replay; a
+        // clean close (disconnect, drain) loses nothing the client still wanted.
+        if (error is not null)
+        {
+            // Held events at or below the position were already written by the replay pages.
+            RecordDropped(_handoff.Count(held => held.Sequence > _position && MatchesOrFalse(held)));
+        }
+
         _handoff.Clear();
         _dispatcher.Remove(this);
         _request.Writer.TryComplete(error);
+    }
+
+    private void RecordDropped(int frames)
+    {
+        if (frames > 0)
+        {
+            RealtimeMetrics.FramesDropped.Add(frames, new KeyValuePair<string, object?>("family", Family.Name));
+        }
     }
 }

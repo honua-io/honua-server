@@ -41,6 +41,8 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
+        // One wake signal per store kind, shared by the store that rings it and the loops that wait on it.
+        services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<PostgresLeaseStore>();
         // A host with no system database runs one node and has no lease store (deliberately null),
@@ -53,6 +55,7 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<ILeaseStore>()));
         services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
+        services.TryAddSingleton<PostgresOpsNotificationStore>();
         services.TryAddSingleton<PostgresWorkflowOperationStore>();
         services.TryAddSingleton<PostgresOperationInstanceStore>();
         services.TryAddSingleton(provider => new PostgresOperationSecretStore(

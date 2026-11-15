@@ -14,8 +14,8 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<IFeatureReader> ResolveFeatureReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         int storageLayerId,
         IFeatureReader fallbackReader,
         CancellationToken cancellationToken)
@@ -32,8 +32,8 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<TileFeatureReaderResolution> ResolveFeatureReaderWithStorageAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         int storageLayerId,
         IFeatureReader fallbackReader,
         int? fallbackStorageSrid,
@@ -66,8 +66,8 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<TileProviderResolution> ResolveTileProviderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         int storageLayerId,
         ITileProvider fallbackProvider,
         CancellationToken cancellationToken)
@@ -105,8 +105,8 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<bool> SupportsVectorTilesAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -127,7 +127,7 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
         return binding.Provider is IBindableTileProvider;
     }
 
-    public static bool RequiresRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
+    public static bool RequiresRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);

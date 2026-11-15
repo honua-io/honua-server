@@ -70,11 +70,14 @@ internal sealed partial class PostgresVersionManager : IVersionManager
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // The merge base is the current DEFAULT generation; reconcile pulls DEFAULT changes since this
-        // cursor into the branch. last_value mirrors PostgresChangeTracker.GetCurrentGenerationAsync.
+        // Sequence allocations include uncommitted writes; the merge base must only include committed changes.
         const string sql = """
+            WITH committed_generation AS (
+                SELECT COALESCE(MAX(generation), 0) AS generation FROM honua.feature_changes
+            )
             INSERT INTO honua.gdb_versions (version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description)
-            VALUES (@name, @owner, @parent, @access, 0, (SELECT last_value FROM honua.sync_generation), (SELECT last_value FROM honua.sync_generation), @description)
+            SELECT @name, @owner, @parent, @access, 0, generation, generation, @description
+            FROM committed_generation
             RETURNING version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
             """;
 

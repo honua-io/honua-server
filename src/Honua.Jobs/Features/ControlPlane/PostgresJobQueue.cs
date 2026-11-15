@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -21,12 +22,22 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
     private readonly string _claimForSeveralProfiles;
     private readonly string _findClaimWithLostReply;
     private readonly HashSet<string> _workersWithAnUnconfirmedClaim = new(StringComparer.Ordinal);
+    private readonly PollWakeSignal<IJobQueue>? _enqueued;
+    private readonly PollWakeSignal<IExecutionJobStore>? _jobChanged;
 
-    public PostgresJobQueue(JobStoreDatabase database, ILogger<PostgresJobQueue> logger)
+    // The signals wake this process's claim loop on an enqueue, and its job reconciler on a claim
+    // (a claimed job becomes a reconciliation candidate without passing through the job store).
+    public PostgresJobQueue(
+        JobStoreDatabase database,
+        ILogger<PostgresJobQueue> logger,
+        PollWakeSignal<IJobQueue>? enqueued = null,
+        PollWakeSignal<IExecutionJobStore>? jobChanged = null)
     {
         ArgumentNullException.ThrowIfNull(database);
         _database = database;
         _logger = logger;
+        _enqueued = enqueued;
+        _jobChanged = jobChanged;
         _jobs = database.Table(ExecutionJobRow.TableName);
 
         _claimForOneProfile = ClaimStatement("runtime_profile = @runtime_profile");
@@ -86,6 +97,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             cancellationToken).ConfigureAwait(false);
 
         Log.JobEnqueued(_logger, operationId, priority.ToString());
+        _enqueued?.Wake();
     }
 
     public async Task<string?> TryClaimAsync(
@@ -142,6 +154,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
 
         ControlPlaneTelemetry.RecordExecutionTransition(claimed with { Status = ExecutionJobStatus.Queued }, claimed);
         Log.JobClaimed(_logger, claimed.OperationId, workerId);
+        _jobChanged?.Wake();
         return claimed.OperationId;
     }
 
@@ -151,6 +164,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         TimeSpan? visibleAfter = null,
         CancellationToken cancellationToken = default)
     {
+        var delay = visibleAfter is { } requested && requested > TimeSpan.Zero ? requested : TimeSpan.Zero;
         await ExecuteQueueStatementAsync(
             $"""
             UPDATE {_jobs} SET queue_visible_at = now() + @visible_after, queue_priority = @queue_priority
@@ -158,10 +172,14 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
               AND status NOT IN ({ExecutionJobRow.TerminalStatusList})
             """,
             operationId,
-            new QueuePlacement(priority, visibleAfter is { } delay && delay > TimeSpan.Zero ? delay : TimeSpan.Zero),
+            new QueuePlacement(priority, delay),
             cancellationToken).ConfigureAwait(false);
 
         Log.JobRequeued(_logger, operationId);
+        if (delay == TimeSpan.Zero)
+        {
+            _enqueued?.Wake();
+        }
     }
 
     public async Task RemoveAsync(

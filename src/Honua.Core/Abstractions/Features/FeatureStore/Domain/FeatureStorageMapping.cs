@@ -59,7 +59,7 @@ public sealed record FeatureStorageMapping(
     }
 
     public static FeatureStorageMapping FromMetadata(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2StorageBinding storageBinding)
     {
         ArgumentNullException.ThrowIfNull(resource);

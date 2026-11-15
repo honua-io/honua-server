@@ -81,6 +81,11 @@ public sealed partial class LayerPublishingIntegrationTests
         upload.Add(new StringContent(source), "File", scenario == "PointCsv" ? "points.csv" : "features.geojson");
         upload.Add(new StringContent($"geometry_{Guid.NewGuid():N}"), "TableName");
         upload.Add(new StringContent(targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)), "TargetSrid");
+        using var sourceSrid = new StringContent("4326");
+        if (scenario == "PointCsv")
+        {
+            upload.Add(sourceSrid, "SourceSrid");
+        }
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);

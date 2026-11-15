@@ -29,4 +29,10 @@
   <ItemGroup>
     <None Include="../Shared/RunnerConfig/unit.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Shared/ProviderUnitSupport/ParcelsLayerFixture.cs" Link="Shared/ParcelsLayerFixture.cs" />
+    <Compile Include="../Shared/ProviderUnitSupport/StubV2Provider.cs" Link="Shared/StubV2Provider.cs" />
+    <Compile Include="../Shared/ProviderUnitSupport/ReadPolicySourceStubs.cs" Link="Shared/ReadPolicySourceStubs.cs" />
+  </ItemGroup>
 </Project>

@@ -7,7 +7,7 @@ namespace Honua.Core.Features.Query;
 
 public interface IQueryParameterAdapter<in TProtocolParams>
 {
-    Task<QueryAdapterResult> ConvertAsync(TProtocolParams parameters, MetadataV2Resource resource, CancellationToken cancellationToken = default);
+    Task<QueryAdapterResult> ConvertAsync(TProtocolParams parameters, MetadataV2Object resource, CancellationToken cancellationToken = default);
 
     string ProtocolName { get; }
 

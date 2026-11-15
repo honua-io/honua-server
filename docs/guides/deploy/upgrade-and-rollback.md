@@ -60,7 +60,7 @@ expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
-contracting fails CI unless its exact name and hash match the release boundary.
+contract by the reader fails CI unless its exact name and hash match the release boundary.
 Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
 by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
 Redesign incompatible changes as additive migrations with compatible application
@@ -72,6 +72,16 @@ truncation. Historical scripts that acquire a contract classification under thes
 broader checks use their exact frozen name and hash as the review record; their SQL
 is never rewritten to add annotations. They still require contract-apply approval
 when pending against a nonempty migration journal. Fresh installs remain unaffected.
+
+Reader compatibility and contract-apply approval are separate checks. The reader
+recognizes one reviewed removal of eight optional feature indexes, pinned by its
+normalized SQL hash and the numbered `RemoveUnusedFeatureIndexes.sql` basename.
+Its canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
+does not run as a migration. The removal remains contract-classified for upgrade
+approval, while a reader containing this review can verify its forward declaration.
+Other names or changed SQL remain refused. Deploy the prepared reader before
+introducing the separate removal migration, then prove rollback with that reader's
+published image. Readers predating this review still refuse the removal.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and
@@ -639,6 +649,10 @@ The functional query is not inferred. Configure it on the deploy operation's par
 An expectation the correct answer cannot meet, such as the same text as both expected and forbidden, makes every rollback fail. The rollback window is `deployment.rollback.observation_timeout_seconds` (default 300, at most 1800). If proof does not arrive in time, the operation does not report a restore. It becomes `Failed` with `rollback.functional_query_failed` when the functional query got a wrong answer, an error envelope or no answer from the restored target. It becomes `ManualInterventionRequired` with `rollback.functional_query_unproven` when no functional query was configured or attempted, or with `rollback.readiness_unproven` when no restored endpoint was healthy. A serving revision that is not the prior one is `ManualInterventionRequired` with `rollback.identity_mismatch` at once.
 
 Restore the database only when a destructive migration already ran or data was corrupted: roll the app back first to stop writes, restore the last known-good snapshot, validate schema/version alignment, then readmit traffic — see [Back up and restore](backup-and-restore.md).
+
+### Catalog activations
+
+Each task watches a catalog change for 30 minutes after it is activated and compares serving errors per task before and after it. When errors regress, the server logs an error naming the activation and ends the watch; it does not change the catalog. Setting `ControlPlane:AutomaticCatalogRollback` (`ControlPlane__AutomaticCatalogRollback=true`) lets it restore the previous catalog document as a new revision instead, and then purge the CDN. Even then, a restore that would change access, lifecycle, editing, protocol, storage-binding or connection settings is refused and logged, because serving telemetry is not evidence for an access decision; review and revert such a change yourself.
 
 ## Verify
 
