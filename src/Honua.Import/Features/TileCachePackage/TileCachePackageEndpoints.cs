@@ -79,7 +79,7 @@ internal static class TileCachePackageEndpoints
         // data provider supplies it) so declaring it as a parameter would make the minimal
         // API request-delegate factory infer it as a JSON body parameter on hosts where it
         // is absent, which fails app startup when the source-generated JSON resolver cannot
-        // produce metadata for the service interface.
+        // produce metadata for the service type.
         var importService = context.RequestServices.GetRequiredService<TileCachePackageImportService>();
 
         if (string.IsNullOrWhiteSpace(tilesetId))
