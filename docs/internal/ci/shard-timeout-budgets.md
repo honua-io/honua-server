@@ -575,7 +575,9 @@ superseded by the table in this section.
 | Server Features Data Enrichment and Sharing | `DataEnrichment.*`, `Orchestration.*`, `Sharing.*`, `Grounding.*`, `Capabilities.*` | 23.6 / 25.3 | 38 / 48 | 67% |
 
 Both children are at or below the 70% target, and both job caps clear their
-inner cap by the required 10 minutes.
+inner cap by the required 10 minutes. The cursor-durability class in that
+historical surface was later deleted. The current Snapshot and Conformance
+filter, its parent and the miscellaneous residuals no longer name it.
 
 Two children rather than three: each shard pays a full restore+build of
 `Honua.Server.Tests`, and the next batch tail after this split is
