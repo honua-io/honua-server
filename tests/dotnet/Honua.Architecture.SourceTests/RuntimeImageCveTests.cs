@@ -31,6 +31,33 @@ public sealed class RuntimeImageCveTests
     }
 
     [ArchitectureTest]
+    public void DefaultAotImage_IsInvariantOnThePlainChiseledBaseWithTimeZoneData()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.aot")).ReplaceLineEndings("\n");
+        var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
+        var staging = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/stage-runtime.sh"));
+        var project = File.ReadAllText(Path.Join(repositoryRoot, "src/Honua.Server/Honua.Server.csproj"));
+
+        dockerfile.Should().Contain(
+            "ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled@sha256:",
+            "the postgis image carries no ICU");
+        dockerfile.Should().Contain(
+            "ARG DOTNET_RUNTIME_DEPS_FULL_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:",
+            "SQL Server and Oracle need ICU, so the full profile keeps it");
+        dockerfile.Should().Contain("FROM chiseled-base-${HONUA_STORE_PROFILE} AS chiseled-base");
+        dockerfile.Should().Contain(
+            "if [ \"${HONUA_STORE_PROFILE:-postgis}\" = postgis ]; then set -- \"$@\" \"-p:InvariantGlobalization=true\"; fi");
+        runtimeStage.Should().NotContain("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT",
+            "the compiled setting decides; an environment override would contradict the postgis binary");
+        dockerfile.Should().Contain("fonts-dejavu-core tzdata");
+        staging.Should().Contain("cp -a /usr/share/zoneinfo \"$additions/usr/share/\"");
+        staging.Should().Contain("printf '%s\\n' tzdata >> \"$packages\"");
+        project.Should().Contain("<InvariantGlobalization>false</InvariantGlobalization>",
+            "JIT and full images keep ICU; only the postgis AOT publish switches it on");
+    }
+
+    [ArchitectureTest]
     public void LambdaJitImage_DropsTheEmulatorFromThePublishedStageOnly()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

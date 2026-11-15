@@ -14,11 +14,18 @@
 # libatomic loaded the library but segfaulted the server on the first request. These are the
 # same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:661d3e8cfdab9503453095a5b53b17f63402400266c0e0f6f2d1b1192e6da5c9
+# The default (postgis) image is published with invariant globalization, so it uses the plain
+# chiseled base without ICU (about 41 MB less); stage-runtime.sh adds tzdata because IANA time
+# zone IDs still need it. ICU is only needed by SQL Server and Oracle, which only the full
+# profile can contain, so the full profile keeps chiseled-extra.
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled@sha256:24534e1f18024d3f8026061537fa21ba424f46cc0cdab4297c5528937b1ae960
+ARG DOTNET_RUNTIME_DEPS_FULL_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:661d3e8cfdab9503453095a5b53b17f63402400266c0e0f6f2d1b1192e6da5c9
 
 ARG HONUA_STORE_PROFILE=postgis
 
-FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base
+FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base-postgis
+FROM ${DOTNET_RUNTIME_DEPS_FULL_IMAGE} AS chiseled-base-full
+FROM chiseled-base-${HONUA_STORE_PROFILE} AS chiseled-base
 
 # Extract restore inputs with their directory structure. Ordinary source edits,
 # including JSON content, rerun this inexpensive extraction but leave the
@@ -134,6 +141,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     set -- "-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}" "-p:HonuaUbuntuRuntimePublish=true" "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    if [ "${HONUA_STORE_PROFILE:-postgis}" = postgis ]; then set -- "$@" "-p:InvariantGlobalization=true"; fi && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -190,7 +198,7 @@ COPY --from=chiseled-base / /runtime-root/
 # hadolint ignore=DL3008
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
-    apt-get install -y --no-install-recommends gcc libc6-dev libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
+    apt-get install -y --no-install-recommends gcc libc6-dev libatomic1 libgssapi-krb5-2 fonts-dejavu-core tzdata && \
     sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions aot && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /app /runtime-root/app
@@ -249,7 +257,6 @@ ENV HOME=/tmp/honua \
     Kestrel__Endpoints__Grpc__Url=http://+:8081 \
     Kestrel__Endpoints__Grpc__Protocols=Http2 \
     DOTNET_RUNNING_IN_CONTAINER=true \
-    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0 \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 

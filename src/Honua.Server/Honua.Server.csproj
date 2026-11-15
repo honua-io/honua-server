@@ -7,7 +7,9 @@
     <!-- Globalization must NOT be invariant: Microsoft.Data.SqlClient and Oracle.ManagedDataAccess throw
          "Globalization Invariant Mode is not supported" at connect time, which breaks the provider-aware
          admin connection test for SQL Server and Oracle. The published/AOT image must therefore include ICU
-         (e.g. libicu in the runtime base image). See honua-server#1369. -->
+         (e.g. libicu in the runtime base image). See honua-server#1369. The postgis native-AOT image
+         (docker/Dockerfile.aot), which cannot contain either provider, publishes with
+         -p:InvariantGlobalization=true on a base without ICU. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <OptimizationPreference>Speed</OptimizationPreference>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
