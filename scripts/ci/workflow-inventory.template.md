@@ -1121,3 +1121,20 @@ The selected PR shard and twice-daily full trunk runs retain all cases and their
 existing budgets.
 No workflow, shard selection, runner count, required check or aggregate dependency
 changes are made.
+
+### ImageServer mosaic default host lifetime
+
+`ImageServerMosaicIntegrationTests` retains the default web host through a
+class-scoped `WebAppFixture`. Each case still creates and disposes its own fixture
+and schema, and holds the schema-mutation lock through its raster seed and
+requests. Explicit license configurations retain private hosts. The warm raster
+query performance assertion and all response assertions remain unchanged.
+All cases remain in selected PR raster rendering shards and twice-daily full
+trunk runs, with no workflow, shard, runner count, required check or aggregate
+dependency changes.
+
+Paired build-host runs passed the same 20 cases with no failures or skips.
+VSTest execution fell from 115 to 46 seconds (69 seconds, or 1.15 execution
+runner-minutes saved). The fixture-inclusive TRX interval fell from 133.049096
+to 73.394077 seconds (59.655019 seconds saved). Both runs used one test
+process; complete CI shard/job savings remain unmeasured.

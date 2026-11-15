@@ -1186,16 +1186,22 @@ required aggregate dependency, workflow or shard definition.
 
 ### ImageServer mosaic integration database lifetime
 
-`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
-which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
-infrastructure from the first case to the last instead of letting it be torn
-down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
-host with its own isolated application schema, raster seed and license
-entitlement configuration.
-All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+`ImageServerMosaicIntegrationTests` retains the default web host and PostgreSQL
+infrastructure through a class-scoped `WebAppFixture`. Each case still creates
+and disposes its own fixture and isolated application schema, and seeds its
+raster under the schema-mutation lock. Cases that configure license entitlements
+continue to build private hosts. The existing warm raster query performance
+assertion and all response assertions remain unchanged.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering 2
 shard on selected PR runs and twice-daily full trunk runs. This changes no
 runner count, required check name, required aggregate dependency, workflow, or
 shard definition.
+
+Paired build-host runs passed the same 20 cases with no failures or skips.
+VSTest execution fell from 115 to 46 seconds (69 seconds, or 1.15 execution
+runner-minutes saved). The fixture-inclusive TRX interval fell from 133.049096
+to 73.394077 seconds (59.655019 seconds saved). Both runs used one test
+process; complete CI shard/job savings remain unmeasured.
 
 ### GPServer endpoint application lifetime
 
