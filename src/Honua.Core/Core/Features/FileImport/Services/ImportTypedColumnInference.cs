@@ -32,6 +32,11 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
     private readonly HashSet<string> _exactNames = new(StringComparer.Ordinal);
 
     public void Observe(string name, object? value)
+        => ObserveKind(name, Classify(value, preserveStringScalars, inferTemporalStrings));
+
+    public void ObserveText(string name) => ObserveKind(name, Kind.Text);
+
+    private void ObserveKind(string name, Kind observed)
     {
         if (!IsPromotableName(name))
         {
@@ -52,7 +57,6 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
 
         _exactNames.Add(name);
 
-        var observed = Classify(value, preserveStringScalars, inferTemporalStrings);
         _columns[name] = current == Kind.None ? observed : Merge(current, observed);
     }
 

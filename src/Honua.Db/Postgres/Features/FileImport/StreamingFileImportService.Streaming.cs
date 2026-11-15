@@ -335,12 +335,6 @@ internal sealed partial class StreamingFileImportService
 
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
-                if (csvSourceIdAlias is not null)
-                {
-                    completionWarningsBuilder.Add(
-                        $"The CSV 'id' column is available as '{csvSourceIdAlias}'; 'id' is the generated feature key.");
-                }
-
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {
                     completionWarningsBuilder.Add(string.Format(
@@ -424,6 +418,11 @@ internal sealed partial class StreamingFileImportService
                         completionWarningsBuilder.Add(
                             "Table statistics could not be refreshed after the import was committed; the imported rows were kept.");
                     }
+                }
+
+                if (dataCommitted && csvSourceIdAlias is not null)
+                {
+                    completionWarningsBuilder.Add(BuildCsvSourceIdWarning(csvSourceIdAlias, typedColumns));
                 }
 
                 if (dataCommitted && cancellationToken.IsCancellationRequested)
