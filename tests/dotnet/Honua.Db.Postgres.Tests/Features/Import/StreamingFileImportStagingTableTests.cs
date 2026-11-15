@@ -1608,6 +1608,49 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task ImportFileAsync_MultiLayerGeoPackageWithSourceLayer_ImportsTheChosenLayer()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        // Fixed literal + GUID token; never rooted, so Path.Join cannot drop the temp-path segment.
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            GeoPackageTestFiles.Create(filePath, includeSecondLayer: true);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
+
+            await using var stream = File.OpenRead(filePath);
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "two_layers.gpkg",
+                TableName = "chosen_layer",
+                TargetSchema = schema,
+                SourceLayer = "SECOND_LAYER",
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(1);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT properties->>'name' FROM \"{schema}\".imported_chosen_layer;";
+            (await command.ExecuteScalarAsync()).Should().Be("Second Feature");
+        }
+        finally
+        {
+            await GeoPackageTestFiles.DeleteAsync(filePath);
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ImportFileAsync_WhenImportFunctionMissing_ReturnsSanitizedActionableError()
     {
         // No EnsureImportFunctionsAsync() call: honua.create_import_table is absent, so the

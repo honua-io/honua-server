@@ -186,7 +186,37 @@ public sealed class GeoPackagePreviewTests
             });
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Be("Invalid GeoPackage import request.");
+            result.ErrorMessage.Should().Be(
+                "This GeoPackage has 2 feature layers (sample_layer, second_layer); choose one with sourceLayer.");
+        }
+        finally
+        {
+            await DeleteGeoPackageAsync(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_GeoPackageWithUnknownSourceLayer_NamesTheAvailableLayers()
+    {
+        // Fixed literal + GUID token; never rooted, so Path.Join cannot drop the temp-path segment.
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            CreateGeoPackage(filePath, includeSecondLayer: true);
+            await using var stream = File.OpenRead(filePath);
+
+            var result = await CreateService().ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "sample.gpkg",
+                TableName = "unknown_layer_gpkg",
+                TargetSrid = 4326,
+                SourceLayer = "missing_layer",
+            });
+
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().Be(
+                "GeoPackage has no feature layer named 'missing_layer'. Its layers are: sample_layer, second_layer. Choose one with sourceLayer.");
         }
         finally
         {

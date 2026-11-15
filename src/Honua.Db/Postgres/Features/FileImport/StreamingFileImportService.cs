@@ -328,11 +328,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 GeoPackageLayerInfo layer;
                 try
                 {
-                    layer = ResolveSingleGeoPackageImportLayer(layers);
+                    layer = ResolveGeoPackageImportLayer(layers, request.SourceLayer);
                 }
-                catch (InvalidDataException)
+                catch (InvalidDataException ex)
                 {
-                    errorMessage = "Invalid GeoPackage import request.";
+                    errorMessage = ex.Message;
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,
