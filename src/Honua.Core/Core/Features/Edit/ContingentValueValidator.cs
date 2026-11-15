@@ -21,7 +21,7 @@ public static class ContingentValueValidator
 {
     // A partial update must already be merged with the stored row so the full combination is checked.
     public static ContingentValueValidationResult Validate(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes)
     {
         ArgumentNullException.ThrowIfNull(resource);

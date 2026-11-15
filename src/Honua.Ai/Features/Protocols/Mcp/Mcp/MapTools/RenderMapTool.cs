@@ -370,7 +370,7 @@ internal sealed class RenderMapTool : IMcpTool
     }
 
     private static (string StyleRendering, IReadOnlyList<string>? Unsupported) ClassifyStyleRendering(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         StyleCatalogRecord? appliedStyle)
     {
         if (appliedStyle is null)
@@ -394,7 +394,7 @@ internal sealed class RenderMapTool : IMcpTool
 
     // Mirrors the vector-aware renderer's geometry test: a resource without a geometry
     // type or geometry field renders from raster coverage pixels.
-    private static bool IsRasterCoverage(MetadataV2Resource resource)
+    private static bool IsRasterCoverage(MetadataV2Object resource)
         => resource.ReadGeometryType() == MetadataV2GeometryType.None && resource.FindPrimaryGeometryField() is null;
 
     private static List<McpRenderLayerRef> DistinctRenderLayers(IReadOnlyList<McpRenderLayerRef> requested)

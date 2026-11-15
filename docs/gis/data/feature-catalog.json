@@ -773,6 +773,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "delete-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "DELETE",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "delete-healthz-live",
       "route": "/healthz/live",
       "method": "DELETE",
@@ -6805,6 +6819,27 @@
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
       "capability": "serve.elevation"
+    },
+    {
+      "id": "get-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "GET",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_CatalogFails_ReturnsSanitizedUnavailable",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_CatalogNotRegistered_ReportsUnavailableWithoutBreakingLiveness",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DatabaseFailsAfterSuccess_ReportsFailureWithoutCachedSuccess",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DatabaseStalls_CancelsDependencyAndReturnsUnavailable",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "get-healthz-live",
@@ -16040,6 +16075,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "patch-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "PATCH",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
+    },
+    {
       "id": "patch-healthz-live",
       "route": "/healthz/live",
       "method": "PATCH",
@@ -20654,6 +20703,20 @@
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
       "capability": "analytics.viewshed"
+    },
+    {
+      "id": "post-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "POST",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "post-healthz-live",
@@ -26173,7 +26236,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.Settings_RestoreWatchdogFails_ReturnsUnavailableAndRetainsStop",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.Settings_StopWatchdogFails_ReturnsUnavailableAndRetainsStop"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -26598,6 +26663,20 @@
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
       "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-healthz-deep",
+      "route": "/healthz/deep",
+      "method": "PUT",
+      "family": "HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed"
+      ],
+      "proof_ledger_surface": "platform-http",
+      "maturity": "implemented",
+      "capability": "ops.health"
     },
     {
       "id": "put-healthz-live",

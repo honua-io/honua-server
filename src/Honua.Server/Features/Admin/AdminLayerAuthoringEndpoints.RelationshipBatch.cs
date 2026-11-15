@@ -54,7 +54,7 @@ internal static partial class AdminLayerAuthoringEndpoints
             // Resolve every resource and field again after an ETag conflict. Relationships
             // built from an older snapshot must never be applied to a new graph blindly.
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var replacements = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
+            var replacements = new Dictionary<string, MetadataV2Object>(StringComparer.Ordinal);
             foreach (var item in request.Layers)
             {
                 var (resource, resolutionError) = ResolveRelationshipResource(item.StorageLayerId, snapshot);
@@ -112,11 +112,11 @@ internal static partial class AdminLayerAuthoringEndpoints
             "Metadata changed during relationship authoring. Retry against the current catalog."));
     }
 
-    private static (MetadataV2Resource? Resource, string? Error) ResolveRelationshipResource(
+    private static (MetadataV2Object? Resource, string? Error) ResolveRelationshipResource(
         int storageLayerId, MetadataV2GraphSnapshot snapshot)
     {
         var target = snapshot.ResolveStorageResource(storageLayerId);
-        return target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table
+        return target.Resource?.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table
             ? (target.Resource, null)
             : (null, $"Layer {storageLayerId} must resolve to exactly one routable storage-backed resource.");
     }

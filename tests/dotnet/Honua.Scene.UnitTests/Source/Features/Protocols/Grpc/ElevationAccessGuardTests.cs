@@ -49,7 +49,7 @@ public sealed class ElevationAccessGuardTests
             .AddResource(
                 "dem",
                 "dem",
-                MetadataV2ResourceType.RasterDataset,
+                MetadataV2ObjectType.RasterDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddStorageBinding("dem-binding", "dem", "dem", storageLayerId: 1)
             .AddService("imagery", "imagery", protocols: [protocol])

@@ -121,7 +121,7 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "expectedActiveRowVersion is required and must be positive.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.AdminName);
         try
         {
             var record = await operation(
@@ -216,9 +216,6 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
         EvidenceDigest = record.EvidenceDigest,
         PromotedAt = record.PromotedAt,
     };
-
-    private static string ResolveActor(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
     internal sealed class NetworkTopologyPromotionAdminLogCategory;
 
