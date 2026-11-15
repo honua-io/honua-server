@@ -60,7 +60,7 @@ Alert evidence uses `backlogObservedAt`, the successful collection time of the r
 ## Managed Compose stack
 
 On an installed Compose target, `honua_ops_health.managedTargets` reports the serving
-Honua readiness probe, a PostGIS query against the managed database, and configured Redis `PING`.
+Honua readiness probe and a PostGIS query against the managed database.
 The existing `health` section continues to describe the manager process. A stopped
 or unready managed service makes `overallStatus` unhealthy even while the manager is
 healthy. An unreachable executor reports unknown health and unavailable evidence.

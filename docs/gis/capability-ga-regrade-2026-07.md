@@ -155,7 +155,7 @@ interface is a larger call than this ticket's scope).
 ## Redis durable-job loss contract
 
 See
-[Redis durable-job loss contract](../guides/deploy/backup-and-restore.md#redis-durable-job-loss-contract)
+[Durable-job loss contract](../guides/deploy/backup-and-restore.md#durable-job-loss-contract)
 in the backup-and-restore guide for the stated contract, and
 `RedisJobExecutionResilienceTests` in
 `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/` for the new

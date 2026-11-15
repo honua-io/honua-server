@@ -128,15 +128,8 @@ created; to change them, create a replacement key and revoke the old one.
 
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
-Redis retains this metadata for 3,650 days after expiry, or after the latest
-registry write when there is no future expiry. Internal approval replay
+The system database keeps this metadata after expiry. Internal approval replay
 credentials remain short-lived and are removed at their credential expiry.
-
-After upgrading an existing Redis registry, older records retain their original
-Redis expiry until they are rewritten by successful authentication, rotation, or
-revocation. Rotate or revoke these keys before their original expiry to retain
-their metadata. Records already removed by Redis cannot be recovered by this
-change; create a replacement key if access is still needed.
 
 An empty permissions array is normalized to `admin:*` for legacy compatibility and
 therefore grants full admin access; do not use it for CI. Grant only the operations
@@ -440,7 +433,7 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
-Redis shares replay registrations across nodes. When a configured Redis connection is disconnected or faults, the default fallback is per-node memory; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses that fallback. Without a Redis connection, memory tracks registrations on the current node. Independent replicas need the same shared replay store for cross-node isolation.
+The system database shares replay registrations across nodes. When it is unreachable or a registration fails, the default admits the token without recording it; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses the token instead. Without a system database, memory tracks registrations on the current node. Independent replicas need the same system database for cross-node isolation.
 
 #### Human operation approval
 
