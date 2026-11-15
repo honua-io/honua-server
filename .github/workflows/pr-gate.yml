@@ -31,7 +31,7 @@ permissions:
   statuses: read
 
 concurrency:
-  group: pr-gate-${{ github.event.pull_request.number || github.ref }}
+  group: pr-gate-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.draft && 'draft' || 'ready' }}
   cancel-in-progress: true
 
 env:
@@ -899,13 +899,14 @@ jobs:
 
       # The timing artifact run-server-test-shard.sh writes is what the
       # aggregate context reads; a shard that never produced one is reported as
-      # infrastructure, not as a shard red.
+      # infrastructure, not as a shard red. The attempt suffix keeps a rerun's
+      # receipt apart from the earlier attempt's artifact of the same shard.
       - name: Upload affected shard results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
-          name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}
+          name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}-attempt-${{ github.run_attempt }}
           path: artifacts/test-results/
           retention-days: 7
 
@@ -939,7 +940,6 @@ jobs:
         with:
           pattern: pr-gate-affected-shard-*
           path: artifacts/pr-gate/shard-results
-          merge-multiple: true
 
       - name: Report affected-shard verdict
         if: always()

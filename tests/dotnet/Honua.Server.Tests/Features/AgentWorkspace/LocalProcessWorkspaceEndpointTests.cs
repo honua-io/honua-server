@@ -247,7 +247,8 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
 
         foreach (var (method, path) in MutatingLocalRoutes)
         {
-            using var response = await reader.SendAsync(LocalRequest(method, prefix + string.Format(System.Globalization.CultureInfo.InvariantCulture, path, workspace.WorkspaceId)));
+            using var request = LocalRequest(method, prefix + string.Format(System.Globalization.CultureInfo.InvariantCulture, path, workspace.WorkspaceId));
+            using var response = await reader.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "{0} {1} must enforce the token scope ceiling", method, path);
         }
         _sandbox.Calls.Should().Be(1);
@@ -276,7 +277,8 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
         var scopes = string.Join(' ', OperatorScopeCatalog.Read, OperatorScopeCatalog.Create, OperatorScopeCatalog.Update,
             OperatorScopeCatalog.Delete, OperatorScopeCatalog.Execute, OperatorScopeCatalog.ExecuteMutating);
         using var editor = Client("alice", "tenant-a", scope: scopes);
-        using var response = await editor.SendAsync(LocalRequest("POST", $"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/runs"));
+        using var request = LocalRequest("POST", $"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/runs");
+        using var response = await editor.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         _sandbox.Calls.Should().Be(0);
     }

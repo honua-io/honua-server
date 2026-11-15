@@ -152,8 +152,8 @@ class PrManagedBuildTests(unittest.TestCase):
                        REQUIRE_FORMAT='true', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT=result)
             run = subprocess.run(['bash', '-e', '-c', script], env=env, capture_output=True)
             self.assertEqual(run.returncode == 0, result == 'success', result)
-        self.assertIn("cron: '23 9 * * *'", CI)
-        self.assertIn("cron: '23 21 * * *'", CI)
+        self.assertIn("cron: '23 7 * * *'", CI)
+        self.assertIn("cron: '23 13 * * *'", CI)
         self.assertNotIn('Build selected protocol profiles', job('pr-gate'))
         self.assertIn('Build selected protocol profiles', job('build', CI))
 

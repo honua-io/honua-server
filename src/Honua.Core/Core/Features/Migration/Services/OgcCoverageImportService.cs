@@ -16,6 +16,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.Migration.Services;
 
@@ -425,16 +426,13 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
                 $"GetCoverage response for {sourceCoverageId} declares {declaredLength} bytes, exceeding the {MaxCoverageDownloadBytes}-byte import limit.");
         }
 
-        // Both Path.Combine arguments below are safe: "honua-ogc-coverage-import" is a fixed
-        // relative literal, and the filename is a server-generated GUID ("N" format, hex only)
-        // plus a fixed extension - neither can become a rooted path that discards tempDir.
-        var tempDir = Path.Join(Path.GetTempPath(), "honua-ogc-coverage-import");
-        Directory.CreateDirectory(tempDir);
-        var path = Path.Join(tempDir, $"{Guid.NewGuid():N}.tif");
+        // A GUID name directly under the temp path (no shared fixed directory another local
+        // user could pre-create), created exclusively and owner-only.
+        var path = PrivateTempFile.NewPath("honua-ogc-coverage-import-", ".tif");
         try
         {
             await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using var destination = File.Create(path);
+            await using var destination = PrivateTempFile.Create(path, FileOptions.Asynchronous);
 
             // Copy with an explicit byte ceiling: the response stream is source-controlled
             // (chunked responses carry no Content-Length), so an unbounded CopyToAsync could
