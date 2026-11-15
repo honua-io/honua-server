@@ -103,6 +103,26 @@ class PullRequestLoadTests(unittest.TestCase):
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
 
+    def test_non_generating_normalization_events_cannot_cancel_producer(self):
+        producer = workflow("normalize-derived-artifacts.yml")
+        group = producer["concurrency"]["group"]
+
+        def admission(action, *, draft=False, base_from=None, number=7639):
+            event = {"event_name": "pull_request", "event": {
+                "action": action, "pull_request": {"number": number, "draft": draft},
+                "changes": {"base": {"ref": {"from": base_from}}},
+            }}
+            return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
+
+        ready = admission("ready_for_review")
+        for action in ("opened", "synchronize", "converted_to_draft", "edited"):
+            self.assertNotEqual(admission(action, draft=True), ready, action)
+        # A title/body edit during generation supplies no replacement envelope.
+        self.assertNotEqual(admission("edited"), ready)
+        self.assertEqual(admission("edited", base_from="old-base"), ready)
+        self.assertEqual(admission("synchronize"), ready)
+        self.assertNotEqual(admission("synchronize", number=7640), ready)
+
     def test_stale_draft_events_cannot_cancel_ready_gate(self):
         gate = workflow("pr-gate.yml")
         group = gate["concurrency"]["group"]

@@ -39,9 +39,10 @@ permissions:
 
 # A newer push is the only subject that can publish. Cancel the superseded
 # run instead of holding a hosted runner until it finishes and the next one
-# sheds. The live superseded check below still covers a run that started first.
+# sheds. Draft and metadata-only events use separate groups because they cannot
+# generate a replacement. The live check still sheds superseded subjects.
 concurrency:
-  group: normalization-producer-${{ github.event.pull_request.number }}
+  group: normalization-producer-${{ github.event.pull_request.number }}-${{ github.event.pull_request.draft && 'draft' || (github.event.action == 'edited' && github.event.changes.base.ref.from == null) && 'metadata' || 'generation' }}
   cancel-in-progress: true
 
 env:

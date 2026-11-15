@@ -177,8 +177,9 @@ Existing release cancellation policy is retained.
 
 Derived Artifact Normalization (`Generate bounded normalization projections`,
 `Produce data-only normalization envelope`) cancels a superseded pull-request
-run in that PR's group. The consumer still accepts only a successful envelope
-for its head SHA. A run that started before the newer push skips production
+run in that PR's generation group. Draft and title/body-edit events use separate
+groups because they cannot generate a replacement envelope. The consumer still
+accepts only a successful envelope for its head SHA. A run that started before the newer push skips production
 when it observes the subject is no longer current. Auto-merge keeps
 `cancel-in-progress: false` and `queue: max` so live eligibility is applied in
 event order. Review helpers instead cancel superseded events; their replacement

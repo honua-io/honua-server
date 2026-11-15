@@ -144,7 +144,8 @@ admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
 review/admission state before acting. New PR events cancel superseded normalization
-producers; consumers of already completed producers require a successful current-head
+producers. Draft and title/body-edit events use separate groups because they cannot
+generate a replacement envelope. Consumers of already completed producers require a successful current-head
 envelope and exit neutrally before mutating a stale branch. Auto-merge eligibility
 events retain FIFO serialization because each event can change merge eligibility.
 
