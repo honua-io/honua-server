@@ -5,6 +5,9 @@ from pathlib import Path
 import subprocess
 
 
+CONTRACT_APPROVAL_REQUIRED = 5
+MAX_NONCE_LENGTH = 256
+
 REVIEWED_CONTRACTS = {
     'Honua.Server.Migrations.183_RemoveUnusedFeatureIndexes.sql':
         '8fa24e8ba3c540117e5ce6061374ac6df6525cf91f195bddbcede38f65fbb9dd',
@@ -44,7 +47,7 @@ def reviewed_nonce(summary):
     approval = summary.get('contractApproval')
     assert isinstance(approval, dict), 'migration plan has no approval challenge'
     nonce = approval.get('nonce')
-    assert isinstance(nonce, str) and nonce.strip() and len(nonce) <= 256, 'invalid approval challenge'
+    assert isinstance(nonce, str) and nonce.strip() and len(nonce) <= MAX_NONCE_LENGTH, 'invalid approval challenge'
     return nonce
 
 
@@ -54,7 +57,7 @@ def migrate_reviewed_contracts(compose, env):
     result = subprocess.run(command + ['-e', 'HONUA_APPROVE_CONTRACT_MIGRATIONS=', 'honua'], env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
     summary = migration_summary(result)
-    if result.returncode == 5:
+    if result.returncode == CONTRACT_APPROVAL_REQUIRED:
         nonce = reviewed_nonce(summary)
         result = subprocess.run(command + ['-e', f'HONUA_APPROVE_CONTRACT_MIGRATIONS={nonce}', 'honua'],
                                 env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
