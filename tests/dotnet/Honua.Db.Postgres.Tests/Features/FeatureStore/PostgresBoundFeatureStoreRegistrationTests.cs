@@ -78,13 +78,13 @@ public sealed class PostgresBoundFeatureStoreRegistrationTests(PostgresFixture f
 
         // GeoBench publishes a discovered table through a managed connection;
         // this is the resulting runtime binding passed to the registered store.
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "registered-source", Name = "registered-source" },
             SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
         };
         var binding = new FeatureProviderBinding(
-            new MetadataV2Service(), resource, new MetadataV2Publication(),
+            new MetadataV2Service(), resource, new MetadataV2Layer(),
             new MetadataV2StorageBinding { ConnectionId = "registered-source", ResourceId = resource.Metadata.Id },
             new FeatureStorageMapping("registration_pool_probe", SchemaName: "public", PrimaryKeyColumn: "id", GeometryColumn: null),
             1, featureStore,

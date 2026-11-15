@@ -48,6 +48,11 @@ internal static class DatumTransformSql
         DatumTransformationSelection? selection,
         int? fromSrid = null)
     {
+        if (selection is { RequiresCoordinateEpoch: true, CoordinateEpoch: null })
+        {
+            throw new ArgumentException("This datum transformation requires coordinateEpoch in decimal years.", nameof(selection));
+        }
+
         if (selection?.ProjPipeline is { Length: > 0 } pipeline)
         {
             // The catalog pair is geographic. Projected endpoints keep that pipeline

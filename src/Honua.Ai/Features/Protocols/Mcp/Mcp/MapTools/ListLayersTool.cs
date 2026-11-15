@@ -172,8 +172,8 @@ internal sealed class ListLayersTool : IMcpTool
 
     private static McpLayerSummary ToSummary(
         MetadataV2Service service,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         int layerIndex)
     {
         var spatial = resource.Spatial;
