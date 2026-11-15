@@ -36,46 +36,112 @@ namespace Honua.Server.Tests.Features.Admin.Jobs;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
+public sealed partial class ConsoleJobEndpointsTests
+    : IClassFixture<ConsoleJobEndpointsTests.SharedApplication>, IAsyncLifetime
 {
-    private readonly RetentionTestClock _retentionClock = new();
-    private readonly InMemoryJobStore _jobStore = new();
-    private readonly InMemoryLogStore _logStore = new();
-    private readonly RecordingJobQueue _jobQueue = new();
-    private readonly RecordingBatchBackend _remoteBackend = new("remote", supportsRetry: true);
-    private readonly RecordingBatchBackend _remoteNoRetryBackend = new("remote-no-retry", supportsRetry: false);
-    private readonly StubArtifactStore _artifactStore = new();
+    private readonly RetentionTestClock _retentionClock;
+    private readonly InMemoryJobStore _jobStore;
+    private readonly InMemoryLogStore _logStore;
+    private readonly RecordingJobQueue _jobQueue;
+    private readonly RecordingBatchBackend _remoteBackend;
+    private readonly RecordingBatchBackend _remoteNoRetryBackend;
+    private readonly StubArtifactStore _artifactStore;
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public ConsoleJobEndpointsTests()
+    public ConsoleJobEndpointsTests(SharedApplication application)
     {
-        _fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<TimeProvider>();
-                services.AddSingleton<TimeProvider>(_retentionClock);
-                services.RemoveAll<IExecutionJobStore>();
-                services.RemoveAll<IExecutionLogStore>();
-                services.RemoveAll<IJobQueue>();
-                services.RemoveAll<IArtifactStore>();
-                services.AddSingleton<IExecutionJobStore>(_jobStore);
-                services.AddSingleton<IExecutionLogStore>(_logStore);
-                services.AddSingleton<IJobQueue>(_jobQueue);
-                services.AddSingleton<IBatchComputeBackend>(_remoteBackend);
-                services.AddSingleton<IBatchComputeBackend>(_remoteNoRetryBackend);
-                services.AddSingleton<IArtifactStore>(_artifactStore);
-            });
+        _retentionClock = application.RetentionClock;
+        _jobStore = application.JobStore;
+        _logStore = application.LogStore;
+        _jobQueue = application.JobQueue;
+        _remoteBackend = application.RemoteBackend;
+        _remoteNoRetryBackend = application.RemoteNoRetryBackend;
+        _artifactStore = application.ArtifactStore;
+        _fixture = application.Fixture;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
+        _retentionClock.Reset();
+        _jobStore.Clear();
+        _logStore.Reset();
+        _jobQueue.Reset();
+        _remoteBackend.Reset();
+        _remoteNoRetryBackend.Reset();
+        _artifactStore.Reset();
         SeedJobs();
-        await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// One application per class: every case resets the in-memory doubles and reseeds the
+    /// same jobs, so building a host and database schema per case bought no isolation.
+    /// Cases that need other configuration still build and dispose their own application.
+    /// The timer-driven job sweepers are removed from this long-lived host so they cannot
+    /// rewrite a case's seeded jobs mid-request; their logic has dedicated tests.
+    /// </summary>
+    public sealed class SharedApplication : IAsyncLifetime
+    {
+        private static readonly HashSet<string> _jobStorePollers = new(StringComparer.Ordinal)
+        {
+            "ExecutionJobBackstopSweepService",
+            "ExecutionJobReconcilerBackgroundService",
+            "ExecutionQueueDepthCollectorBackgroundService",
+            "JobStoreRetentionSweepService",
+            "GeoprocessingOutputArtifactSweeper",
+        };
+
+        internal RetentionTestClock RetentionClock { get; } = new();
+        internal InMemoryJobStore JobStore { get; } = new();
+        internal InMemoryLogStore LogStore { get; } = new();
+        internal RecordingJobQueue JobQueue { get; } = new();
+        internal RecordingBatchBackend RemoteBackend { get; } = new("remote", supportsRetry: true);
+        internal RecordingBatchBackend RemoteNoRetryBackend { get; } = new("remote-no-retry", supportsRetry: false);
+        internal StubArtifactStore ArtifactStore { get; } = new();
+        internal WebAppFixture Fixture { get; }
+
+        public SharedApplication()
+        {
+            Fixture = new WebAppFixture()
+                .ConfigureServices(services =>
+                {
+                    foreach (var poller in services
+                        .Where(descriptor =>
+                            descriptor.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) &&
+                            descriptor.ImplementationType is { } implementation &&
+                            _jobStorePollers.Contains(implementation.Name))
+                        .ToList())
+                    {
+                        services.Remove(poller);
+                    }
+
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton<TimeProvider>(RetentionClock);
+                    services.RemoveAll<IExecutionJobStore>();
+                    services.RemoveAll<IExecutionLogStore>();
+                    services.RemoveAll<IJobQueue>();
+                    services.RemoveAll<IArtifactStore>();
+                    services.AddSingleton<IExecutionJobStore>(JobStore);
+                    services.AddSingleton<IExecutionLogStore>(LogStore);
+                    services.AddSingleton<IJobQueue>(JobQueue);
+                    services.AddSingleton<IBatchComputeBackend>(RemoteBackend);
+                    services.AddSingleton<IBatchComputeBackend>(RemoteNoRetryBackend);
+                    services.AddSingleton<IArtifactStore>(ArtifactStore);
+                });
+        }
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs")]
@@ -1498,9 +1564,11 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-    private sealed class InMemoryJobStore : IExecutionJobStore
+    internal sealed class InMemoryJobStore : IExecutionJobStore
     {
         private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public void Clear() => _jobs.Clear();
 
         public void Set(params ExecutionJobRecord[] jobs)
         {
@@ -1578,13 +1646,20 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
                string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed class InMemoryLogStore : IExecutionLogStore
+    internal sealed class InMemoryLogStore : IExecutionLogStore
     {
         public int FullReads { get; private set; }
 
         private readonly Dictionary<string, ExecutionLogEntry[]> _logs = new(StringComparer.Ordinal);
 
         public void SetLogs(string operationId, params ExecutionLogEntry[] entries) => _logs[operationId] = entries;
+
+        public void Reset()
+        {
+            _logs.Clear();
+            _appendedOnce.Clear();
+            FullReads = 0;
+        }
 
         private readonly Dictionary<string, HashSet<string>> _appendedOnce = new(StringComparer.Ordinal);
 
@@ -1643,12 +1718,20 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
             => Task.CompletedTask;
     }
 
-    private sealed class RecordingJobQueue : IJobQueue
+    internal sealed class RecordingJobQueue : IJobQueue
     {
         public List<string> Removed { get; } = [];
         public List<string> Requeued { get; } = [];
         public bool ThrowOnRemove { get; set; }
         public bool ThrowOnRequeue { get; set; }
+
+        public void Reset()
+        {
+            Removed.Clear();
+            Requeued.Clear();
+            ThrowOnRemove = false;
+            ThrowOnRequeue = false;
+        }
 
         public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
@@ -1682,13 +1765,15 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
             => Task.FromResult(0L);
     }
 
-    private sealed class RecordingBatchBackend(string backendName, bool supportsRetry) : IBatchComputeBackend
+    internal sealed class RecordingBatchBackend(string backendName, bool supportsRetry) : IBatchComputeBackend
     {
         public string BackendName => backendName;
 
         public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.KubernetesJob;
 
         public int CapabilityRequests { get; private set; }
+
+        public void Reset() => CapabilityRequests = 0;
 
         public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         {
@@ -1732,9 +1817,11 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
             });
     }
 
-    private sealed class StubArtifactStore : IArtifactStore
+    internal sealed class StubArtifactStore : IArtifactStore
     {
         public Action? OnLookup { get; set; }
+
+        public void Reset() => OnLookup = null;
 
         public Task<Artifact> CreateAsync(Artifact artifact, CancellationToken cancellationToken = default)
             => Task.FromResult(artifact);
