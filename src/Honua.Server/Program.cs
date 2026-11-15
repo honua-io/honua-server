@@ -721,6 +721,14 @@ builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
     builder.Services, builder.Configuration);
 builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
+Honua.Cloud.Aws.Features.Monitoring.AwsOpsWatchdogServiceCollectionExtensions.AddAwsOpsWatchdogKillSwitch(
+    builder.Services, builder.Configuration);
+if (systemDatabaseConfigured && builder.Services.Any(service =>
+    service.ServiceType == typeof(Honua.Core.Features.Observability.Abstractions.IOpsWatchdogKillSwitch)))
+{
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsAutonomySettingsWriter>();
+    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
+}
 #endif
 
 // Configure file upload security limits
@@ -1681,6 +1689,9 @@ app.UseWhen(
             .UseMcpBearerAuthenticationRejection(invalidBearer);
     });
 #endif
+
+// Runs after every credential type is hydrated and before tenant and schema resolution.
+app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
