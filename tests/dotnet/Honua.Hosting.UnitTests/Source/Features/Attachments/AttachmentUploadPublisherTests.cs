@@ -90,6 +90,39 @@ public sealed class AttachmentUploadPublisherTests
         await cloud.DidNotReceiveWithAnyArgs().UploadIfMatchAsync(default!, default);
     }
 
+    [UnitTest]
+    public async Task PublishAsync_ConcurrentCommitDuringVerification_ReturnsReceiptWithoutUploading()
+    {
+        var (publisher, session, cloud, store) = Create("field note"u8.ToArray());
+        var receipt = Attachment.CreateForUpload(1, 2, 1, "note.txt", "text/plain", 10, "stored");
+        store.CopyContentAsync(default, default!, default).ReturnsForAnyArgs(_ =>
+            Task.FromException(new AttachmentUploadException(AttachmentUploadFailure.InvalidState, "Already committed.")));
+        store.GetAsync(default, default).ReturnsForAnyArgs(session with { State = AttachmentUploadState.Committed });
+        store.CommitAsync(default, default(Func<AttachmentUploadSession, CancellationToken, Task<string>>)!, default)
+            .ReturnsForAnyArgs(Task.FromResult(receipt));
+
+        var attachment = await publisher.PublishAsync(session);
+
+        attachment.Should().Be(receipt);
+        await cloud.DidNotReceiveWithAnyArgs().UploadIfMatchAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task PublishAsync_IncompleteUpload_PropagatesInvalidStateWithoutCommitting()
+    {
+        var (publisher, session, cloud, store) = Create("field note"u8.ToArray());
+        store.CopyContentAsync(default, default!, default).ReturnsForAnyArgs(_ =>
+            Task.FromException(new AttachmentUploadException(AttachmentUploadFailure.InvalidState, "Incomplete.")));
+        store.GetAsync(default, default).ReturnsForAnyArgs(session);
+
+        var action = () => publisher.PublishAsync(session);
+
+        (await action.Should().ThrowAsync<AttachmentUploadException>())
+            .Which.Failure.Should().Be(AttachmentUploadFailure.InvalidState);
+        await store.DidNotReceiveWithAnyArgs().CommitAsync(default, default(Func<AttachmentUploadSession, CancellationToken, Task<string>>)!);
+        await cloud.DidNotReceiveWithAnyArgs().UploadIfMatchAsync(default!, default);
+    }
+
     private static (AttachmentUploadPublisher Publisher, AttachmentUploadSession Session, ICloudFileStorage Cloud, IAttachmentUploadSessionStore Sessions) Create(byte[] bytes)
     {
         var store = Substitute.For<IAttachmentUploadSessionStore>();

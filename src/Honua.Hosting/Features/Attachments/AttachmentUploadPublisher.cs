@@ -21,9 +21,21 @@ internal sealed class AttachmentUploadPublisher(
         {
             return await sessions.CommitAsync(key, (_, _) => throw new InvalidOperationException("The committed receipt is unavailable."), cancellationToken).ConfigureAwait(false);
         }
-        await using var content = await verifier.VerifyAsync(session, cancellationToken).ConfigureAwait(false);
-        return await sessions.CommitAsync(key, (lockedSession, token) =>
-            PublishContentAsync(lockedSession, content, token), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var content = await verifier.VerifyAsync(session, cancellationToken).ConfigureAwait(false);
+            return await sessions.CommitAsync(key, (lockedSession, token) =>
+                PublishContentAsync(lockedSession, content, token), cancellationToken).ConfigureAwait(false);
+        }
+        catch (AttachmentUploadException exception) when (exception.Failure == AttachmentUploadFailure.InvalidState)
+        {
+            var current = await sessions.GetAsync(key, cancellationToken).ConfigureAwait(false);
+            if (current.State != AttachmentUploadState.Committed)
+            {
+                throw;
+            }
+            return await sessions.CommitAsync(key, (_, _) => throw new InvalidOperationException("The committed receipt is unavailable."), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<string> PublishContentAsync(AttachmentUploadSession session, FileStream content, CancellationToken cancellationToken)

@@ -61,6 +61,7 @@ public sealed class AttachmentUploadContentVerifierTests
     {
         var bytes = Encoding.UTF8.GetBytes(new string(' ', 10000) + "<script>alert(1)</script>");
         var (verifier, session) = Create(bytes);
+        session = session with { Request = session.Request with { Filename = "note.html", ContentType = "text/html" } };
 
         var action = () => verifier.VerifyAsync(session);
 
