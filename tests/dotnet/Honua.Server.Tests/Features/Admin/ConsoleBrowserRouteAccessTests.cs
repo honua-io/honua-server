@@ -201,10 +201,7 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     {
         var client = _fixture.CreateClient();
         client.BaseAddress = new Uri("https://localhost");
-        using var csrf = await client.GetAsync("/api/v1/admin/auth/csrf");
-        csrf.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await csrf.Content.ReadAsStringAsync());
-        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
+        await BrowserCsrf.SetHeaderAsync(client);
         using var signIn = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = AdminPassword });
         signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
         return client;

@@ -18,12 +18,14 @@ public sealed class OperationApprovalDenialRecorderTests
     private const string Canary = "FAKE_AUDIT_SINK_SECRET_CANARY";
 
     [UnitTheory]
-    [InlineData(0, "human_session_required")]
-    [InlineData(1, "evidence_invalid")]
-    [InlineData(2, "current_authority")]
+    [InlineData(0, 0, "human_session_required/approve")]
+    [InlineData(1, 0, "evidence_invalid/approve")]
+    [InlineData(2, 0, "current_authority/approve")]
+    [InlineData(0, 1, "human_session_required/reject")]
     public async Task RecordAsync_PersistedDecision_JoinsOnlyAllowlistedDetails(
-        int reason, string code)
+        int reason, int decision, string expectedCodes)
     {
+        var (code, decisionCode) = (expectedCodes.Split('/')[0], expectedCodes.Split('/')[1]);
         var sinks = new List<TestAudit>();
         await using var services = new ServiceCollection().AddScoped<IAuditLog>(_ =>
         {
@@ -33,8 +35,15 @@ public sealed class OperationApprovalDenialRecorderTests
         }).BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var proposal = Proposal() with { Plan = new() { ExecutionPayload = Canary } };
         var factory = services.GetRequiredService<IServiceScopeFactory>();
-        await OperationApprovalDenialRecorder.RecordAsync(factory, proposal, "decider", (OperationApprovalDenialReason)reason, default);
-        await OperationApprovalDenialRecorder.RecordAsync(factory, proposal, "decider", (OperationApprovalDenialReason)reason, default);
+        var denial = new OperationApprovalDenial
+        {
+            Proposal = proposal,
+            Actor = "decider",
+            Reason = (OperationApprovalDenialReason)reason,
+            Decision = (OperationApprovalDecision)decision,
+        };
+        await OperationApprovalDenialRecorder.RecordAsync(factory, denial, default);
+        await OperationApprovalDenialRecorder.RecordAsync(factory, denial, default);
         sinks.Should().HaveCount(2);
         sinks.Should().OnlyContain(sink => sink.Disposed);
         var audit = sinks[0].Event!;
@@ -46,8 +55,9 @@ public sealed class OperationApprovalDenialRecorderTests
         JsonSerializer.Serialize(audit).Should().NotContain(Canary);
         using var details = JsonDocument.Parse(audit.Details!);
         details.RootElement.EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("kind", "reason");
+            .Should().BeEquivalentTo("kind", "reason", "decision");
         details.RootElement.GetProperty("reason").GetString().Should().Be(code);
+        details.RootElement.GetProperty("decision").GetString().Should().Be(decisionCode);
     }
 
     [UnitTheory]
@@ -63,8 +73,7 @@ public sealed class OperationApprovalDenialRecorderTests
         if (mode != "missing") services.AddScoped<IAuditLog>(_ => new TestAudit(mode));
         await using var provider = services.BuildServiceProvider();
         var act = () => OperationApprovalDenialRecorder.RecordAsync(
-            provider.GetRequiredService<IServiceScopeFactory>(), Proposal(), "decider",
-            OperationApprovalDenialReason.HumanSessionRequired, default);
+            provider.GetRequiredService<IServiceScopeFactory>(), Denial(Proposal()), default);
         var error = (await act.Should().ThrowAsync<ServiceUnavailableException>()).Which;
         error.Message.Should().Be(OperationApprovalDenialRecorder.UnavailableMessage);
         error.InnerException.Should().BeNull();
@@ -84,8 +93,7 @@ public sealed class OperationApprovalDenialRecorderTests
                 if (!returnsReceipt) token.ThrowIfCancellationRequested();
             })).BuildServiceProvider();
         var act = () => OperationApprovalDenialRecorder.RecordAsync(
-            provider.GetRequiredService<IServiceScopeFactory>(), Proposal(), "decider",
-            OperationApprovalDenialReason.HumanSessionRequired, cancellation.Token);
+            provider.GetRequiredService<IServiceScopeFactory>(), Denial(Proposal()), cancellation.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -95,10 +103,17 @@ public sealed class OperationApprovalDenialRecorderTests
         var sink = new TestAudit();
         await using var provider = new ServiceCollection().AddScoped<IAuditLog>(_ => sink).BuildServiceProvider();
         await OperationApprovalDenialRecorder.RecordAsync(
-            provider.GetRequiredService<IServiceScopeFactory>(), Proposal() with { Audit = new() }, "decider",
-            OperationApprovalDenialReason.HumanSessionRequired, default);
+            provider.GetRequiredService<IServiceScopeFactory>(), Denial(Proposal() with { Audit = new() }), default);
         sink.Event!.CorrelationId.Should().Be("proposal");
     }
+
+    private static OperationApprovalDenial Denial(OperationProposal proposal) => new()
+    {
+        Proposal = proposal,
+        Actor = "decider",
+        Reason = OperationApprovalDenialReason.HumanSessionRequired,
+        Decision = OperationApprovalDecision.Approve,
+    };
 
     private static OperationProposal Proposal() => new()
     {
