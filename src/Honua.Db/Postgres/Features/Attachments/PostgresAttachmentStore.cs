@@ -183,17 +183,22 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            WITH updated AS (
-                UPDATE {tables.Attachments}
+            WITH previous AS (
+                SELECT id, keywords FROM {tables.Attachments}
+                WHERE layer_id = $1 AND feature_id = $2 AND id = $3 FOR UPDATE
+            ), updated AS (
+                UPDATE {tables.Attachments} a
                 SET filename = $4, content_type = $5, size = $6, storage_path = $7, keywords = $8
-                WHERE layer_id = $1 AND feature_id = $2 AND id = $3
-                RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords
+                FROM previous p WHERE a.id = p.id AND a.layer_id = $1 AND a.feature_id = $2
+                RETURNING a.id, a.feature_id, a.layer_id, a.filename, a.content_type, a.size,
+                    a.created_at, a.storage_path, a.keywords, p.keywords AS previous_keywords
             ), synced AS (
                 UPDATE {NativeMetadataTable} m
                 SET keywords = COALESCE(string_to_array(u.keywords, ','), ARRAY[]::text[])
                 FROM updated u
                 WHERE m.attachment_authority = $9 AND m.attachment_id = u.id
                     AND m.layer_id = u.layer_id AND m.feature_id = u.feature_id AND m.storage_path = u.storage_path
+                    AND u.keywords IS DISTINCT FROM u.previous_keywords
             )
             SELECT * FROM updated";
 

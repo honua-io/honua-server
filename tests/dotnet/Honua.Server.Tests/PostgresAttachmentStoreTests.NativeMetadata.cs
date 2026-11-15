@@ -28,6 +28,22 @@ public partial class PostgresAttachmentStoreTests
         await AssertNativeKeywordsAsync(attachment.Id, keywords);
     }
 
+    [IntegrationTest]
+    public async Task NativeMetadata_FilenameEdit_PreservesExactKeywordBoundaries()
+    {
+        var sessions = await CreateUploadSessionStoreAsync();
+        var key = await PrepareCommitSessionAsync(sessions, CreateSessionRequest() with { Keywords = ["a,b", "λ"] });
+        var attachment = await sessions.CommitAsync(key, AttachmentUploadObjectKey.ForSession(key.SessionId));
+        var updated = await _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, attachment with { Filename = "renamed.txt" });
+        Assert.Equal("renamed.txt", updated.Filename);
+        var metadata = Assert.Single(await _attachmentStore.GetNativeMetadataAsync(
+            new AttachmentNativeMetadataQuery(TestLayerId, TestFeatureId, [attachment.Id]))).Value;
+        Assert.Equal(["a,b", "λ"], metadata.Keywords);
+        var query = new AttachmentPageQuery { LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 10, Keywords = ["a,b"] };
+        Assert.Equal(attachment.Id, Assert.Single(await _attachmentStore.QueryPageAsync(query)).Attachment.Id);
+        Assert.Empty(await _attachmentStore.QueryPageAsync(query with { Keywords = ["a"] }));
+    }
+
     private async Task<Attachment> CreateAttachmentWithNativeKeywordsAsync()
     {
         var sessions = await CreateUploadSessionStoreAsync();

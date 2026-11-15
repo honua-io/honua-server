@@ -82,6 +82,33 @@ public partial class PostgresAttachmentStoreTests
         Assert.Equal(100L, reader.GetInt64(1));
     }
 
+    [IntegrationTest]
+    public async Task AttachmentMaintenance_FalseDeletion_RetainsRetryUntilAbsenceConfirmed()
+    {
+        await CreateUploadSessionStoreAsync();
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO "{_schemaName}".import_attachment_cleanup (storage_path, layer_id, feature_id)
+            VALUES ('still-present', {TestLayerId}, {TestFeatureId}), ('already-absent', {TestLayerId}, {TestFeatureId});
+            """);
+        var storage = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        storage.ExistsAsync("still-present", Arg.Any<CancellationToken>()).Returns(true);
+        var provider = new TestDatabaseConnectionProvider(_fixture.DataSource);
+        var attachments = new PostgresAttachmentStore(provider, storage,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresAttachmentStore>.Instance, _schemaName,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+        await new PostgresAttachmentMaintenance(provider, _schemaName, attachments).RunOnceAsync();
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = new Npgsql.NpgsqlCommand($"""
+            SELECT c.storage_path FROM "{_schemaName}".import_attachment_cleanup c
+            JOIN "{_schemaName}".attachment_cleanup_retries r ON r.storage_path = c.storage_path
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("still-present", reader.GetString(0));
+        Assert.False(await reader.ReadAsync());
+    }
+
     private async Task<string> UploadMaintenanceReplacementAsync(Guid sessionId)
     {
         await using var content = new MemoryStream("abcdef"u8.ToArray());
