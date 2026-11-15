@@ -169,7 +169,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                 .AddResource(
                     "competing-resource",
                     "Competing image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: restricted)
                 .AddStorageBinding(
                     "competing-binding",
@@ -187,12 +187,12 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     "competing-resource",
                     layerIndex: 7,
                     storageBindingId: "competing-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer,
+                    publicationType: MetadataV2LayerType.EsriImageLayer,
                     isPrimary: true)
                 .AddResource(
                     "target-resource",
                     "Target image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: anonymous)
                 .AddStorageBinding(
                     "target-binding",
@@ -210,11 +210,11 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     "target-resource",
                     layerIndex: 41,
                     storageBindingId: "target-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .AddResource(
                     "other-resource",
                     "Other image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: anonymous)
                 .AddStorageBinding(
                     "other-binding",
@@ -232,7 +232,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     "other-resource",
                     layerIndex: 42,
                     storageBindingId: "other-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .Build();
         var graphProvider = new TestMetadataV2GraphProvider(graph);
         var resolver = Substitute.For<IImageServerLayerResolver>();

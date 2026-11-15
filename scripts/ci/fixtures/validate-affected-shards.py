@@ -118,7 +118,7 @@ def candidates(result: dict[str, Any]) -> set[str]:
 
 
 def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | None:
-    """A source/test directory prefix that ONLY this shard's `paths` claim.
+    """A source/test prefix claimed only by this shard.
 
     Shared prefixes (the Core validation pipeline, the TestKit harness) are
     deliberately mapped to several shards, so they prove nothing about a single
@@ -141,6 +141,20 @@ def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | 
     return None
 
 
+def family_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | None:
+    """A source/test prefix claimed only by this shard's capacity family."""
+    siblings = {
+        other["name"] for other in config["shards"]
+        if other["name"].rsplit(" ", 1)[-1].isdecimal()
+        and shard["name"].rsplit(" ", 1)[-1].isdecimal()
+        and other["name"].rsplit(" ", 1)[0] == shard["name"].rsplit(" ", 1)[0]
+        and other.get("paths") == shard.get("paths")
+    } - {shard["name"]}
+    family_config = dict(config, shards=[other for other in config["shards"]
+                                         if other["name"] not in siblings])
+    return unique_owned_prefix(family_config, shard)
+
+
 def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     """`{class fqn: the methods a shard would actually run}` for the inventory.
 
@@ -157,24 +171,6 @@ def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[
     return _RUNNABLE_METHODS
 
 
-def independent_namespace_owners(config: dict[str, Any]) -> dict[str, set[str]]:
-    # Capacity siblings deliberately share paths. Cover each namespace once,
-    # and require all its owners rather than discarding split families.
-    namespaces: dict[str, set[str]] = {}
-    for shard in config["shards"]:
-        for prefix in shard.get("paths", ()):
-            if prefix.endswith("/") and prefix.startswith(("src/", "tests/")):
-                namespaces.setdefault(prefix, set()).add(shard["name"])
-    return {
-        prefix: owners
-        for prefix, owners in namespaces.items()
-        if not any(
-            prefix != other and (prefix.startswith(other) or other.startswith(prefix))
-            for other in namespaces
-        )
-    }
-
-
 def check_feature_namespace_selects_its_shard(
     config: dict[str, Any], *, config_path: Path = CONFIG_PATH
 ) -> int:
@@ -184,9 +180,11 @@ def check_feature_namespace_selects_its_shard(
     `src/Honua.Protocols/OgcClassic/Wfs20/` stops selecting `WFS`, PR Gate
     silently stops predicting the trailing matrix for that family.
     """
-    namespaces = independent_namespace_owners(config)
     covered = 0
-    for prefix, owners in namespaces.items():
+    for shard in config["shards"]:
+        prefix = family_owned_prefix(config, shard)
+        if prefix is None:
+            continue
         covered += 1
         probe = f"{prefix}AffectedShardsFixtureProbe.cs"
         result = select_offline(
@@ -196,15 +194,14 @@ def check_feature_namespace_selects_its_shard(
             projects=None,
             cap=6,
         )
-        missing = owners - candidates(result)
-        if missing:
+        if shard["name"] not in candidates(result):
             raise FixtureError(
-                f"a change under {prefix!r} did not select owners {sorted(missing)!r} "
+                f"a change under {prefix!r} did not select shard {shard['name']!r} "
                 f"(reason={result['reason']}, candidates={sorted(candidates(result))[:8]})"
             )
     if covered < 10:
         raise FixtureError(
-            f"only {covered} independent source namespaces are covered; the "
+            f"only {covered} shards declare a uniquely owned source prefix; the "
             "namespace fixture has stopped covering the routing map"
         )
     return covered
@@ -230,12 +227,10 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         deferred = {entry["name"] for entry in result["deferred_to_trunk"]}
         if result["candidate_count"] <= len(result["shards"]):
             raise FixtureError("temporal probe must leave some candidates unselected")
-        # The budget can defer a capacity sibling; the temporal family must
-        # still execute, with every sibling retained in the accounting.
-        if not set(owners) & set(result["shards"]):
+        # The cap takes one child per family before later siblings. Every
+        # temporal child remains a candidate; at least one must execute.
+        if not set(owners) <= candidates(uncapped) or not set(owners) & set(result["shards"]):
             raise FixtureError(f"changed temporal source lost an executing owner: {result['shards']}")
-        if not set(owners) <= candidates(result) | deferred:
-            raise FixtureError("changed temporal source lost a capacity sibling")
         if catch_all & (candidates(result) | deferred):
             raise FixtureError(f"{catch_all!r} competes with {owners!r} for temporal source")
 
@@ -906,7 +901,7 @@ def main() -> int:
     subprocess.run([sys.executable, str(REPO_ROOT / "scripts/ci/fixtures/validate-shard-time-budget.py")],
                    check=True, cwd=REPO_ROOT)
     print(
-        f"affected-shards=ok (routing proven for {covered} namespaces and changed-test "
+        f"affected-shards=ok (namespace routing proven for {covered} and changed-test "
         f"ownership for {owned} of {len(config['shards'])} shard families; "
         f"tier exclusion proven on {tiered} non-runnable classes; "
         f"unrouted-test ownership via {unrouted}; "

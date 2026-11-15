@@ -595,6 +595,11 @@ if (hostHasSystemDatabase)
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
 
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsNotificationReminderRunner>();
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler>(
+        static provider => provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+
     if (!isTestEnvironment)
     {
         // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
@@ -625,6 +630,11 @@ if (hostHasSystemDatabase)
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
+            {
+                builder.Services.AddHostedService(static provider =>
+                    provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+            }
         }
     }
 
@@ -721,6 +731,14 @@ builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
     builder.Services, builder.Configuration);
 builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
+Honua.Cloud.Aws.Features.Monitoring.AwsOpsWatchdogServiceCollectionExtensions.AddAwsOpsWatchdogKillSwitch(
+    builder.Services, builder.Configuration);
+if (systemDatabaseConfigured && builder.Services.Any(service =>
+    service.ServiceType == typeof(Honua.Core.Features.Observability.Abstractions.IOpsWatchdogKillSwitch)))
+{
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsAutonomySettingsWriter>();
+    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
+}
 #endif
 
 // Configure file upload security limits
@@ -1681,6 +1699,9 @@ app.UseWhen(
             .UseMcpBearerAuthenticationRejection(invalidBearer);
     });
 #endif
+
+// Runs after every credential type is hydrated and before tenant and schema resolution.
+app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal

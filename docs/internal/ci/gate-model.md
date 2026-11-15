@@ -1,23 +1,6 @@
 # CI Gate Model
 
-Fifteen additional over-budget parents now partition into 43 children to restore
-PR ownership of source paths. The cuts use the passing TRX of full run
-`43580101834`: whole-class intervals, with whole-method intervals where a class
-alone exceeds the available budget. Each estimate adds the observed parent job
-overhead (job duration minus TRX duration), rounds up to a tenth of a minute,
-and sums overlapping intervals conservatively. Initial estimates are at most
-9.5 minutes; they are not measured child runtimes. The next passing full run
-must refresh their ranks before claiming a measured improvement.
-
-Each child inherits the parent's source paths, project and execution limits.
-Explicit selections and a residual complement preserve current and future tests;
-`test-full-run-capacity-partitions.py` checks conservation and mutation rejection.
-The existing affected-shard count and aggregate time budgets still apply.
-`test-pr-owner-coverage.py` rejects any newly uncovered shard source path.
-There are still 65 older paths with no owner fitting the PR shard budget, listed
-in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; this guard records that debt
-explicitly and does not claim complete PR coverage. The fifteen-parent split
-restores budgeted ownership of 63 previously uncovered paths.
+A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
 
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
@@ -522,12 +505,15 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. The selector itself, Format/analyzers and all four Fast/architecture
-groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
-`ubuntu-latest` fallback, independently of gate admission or heavy settings.
-These nine jobs never inherit the producer label. The selector can start on the
-light pool without waiting for hosted capacity; forks and an unset light-runner
-variable retain the hosted fallback. With the repository variable
+`server-test-producer` run. The selector itself and the four Format/analyzer matrix jobs use the
+fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
+The four Fast/architecture matrix jobs always use `ubuntu-latest`, splitting
+these eight jobs evenly across the two pools when light routing is enabled.
+All eight remain independent of producer admission and heavy settings and keep
+their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
+availability switch: keep it unset while the light pool is unhealthy; new jobs
+then fall back to hosted runners. Forks always use hosted runners. Routing does
+not move an already queued job when pool health changes. With the repository variable
 `HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
 build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
@@ -780,12 +766,31 @@ unchanged. Bot-authored issues provide a validated, project-scoped exclusion lis
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
 
-The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
-same-repository provenance, checks out default-branch code, validates raw case evidence and
-hashes, and never executes downloaded data or checks out the triggering branch.
-Publication uses GitHub's FIFO concurrency queue (`queue: max`, up to 100 pending
-runs), keeping issue mutations serial without replacing a pending completion event.
-If that service limit is reached, rerun canceled publishers to recover their evidence.
+The publisher has issue-write permission only on trusted default-branch code, reached by
+same-repository successful/failed `workflow_run` completions, a twice-hourly recovery
+schedule, or default-branch manual dispatch. Checkout is pinned to the default branch;
+checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
+evidence and hashes, and never executes downloaded data or checks out the triggering branch.
+Job-level concurrency filters cancelled and fork completions before admission, serializes
+issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
+Each sweep discovers all retained evidence artifacts, including reruns of old source runs,
+selects each shard's highest attempt, and processes at most 25 completed source runs.
+Remaining artifacts stay discoverable for the next event or scheduled sweep.
+
+Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
+upload replays from the previous successful checkpoint. Successful skipped jobs are ignored
+when finding that checkpoint. Artifact IDs prevent repeat downloads, and source-attempt
+links use the artifact's producing attempt, preventing a partial rerun from changing
+unchanged evidence identity. Previously quarantined evidence timestamps also prevent
+legacy backfill from reopening expired/closed issues. Missing new
+checkpoints, unsafe archives, excessive inventory and untrusted sources fail closed.
+Migration reconciles every retained artifact rather than treating one successful legacy
+event as a global watermark; first installation
+backfills 14 days. The checkpoint retains processed IDs while artifacts remain available,
+and expires after 90 days. Recovery therefore requires source evidence still retained by
+GitHub. The existing 25-method cap, 14-day expiry, proof validation and required gates remain
+unchanged. This adds no PR-time jobs or runners; recovery uses one publisher job per sweep.
+
 
 ### Grouped unit and component shards
 

@@ -37,7 +37,7 @@ internal sealed class LayerStyleService : ILayerStyleService
     }
 
     public async Task<LayerStyleSnapshot?> GetStyleAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         CancellationToken cancellationToken = default)
     {
@@ -81,7 +81,7 @@ internal sealed class LayerStyleService : ILayerStyleService
     }
 
     public async Task<JsonElement?> GetDrawingInfoAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         CancellationToken cancellationToken = default)
     {
@@ -90,7 +90,7 @@ internal sealed class LayerStyleService : ILayerStyleService
     }
 
     public async Task<LayerStyleUpdateResult> UpdateStyleAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,
@@ -179,7 +179,7 @@ internal sealed class LayerStyleService : ILayerStyleService
 
     private async Task SyncIndependentStyleCatalogAsync(
         int storageLayerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string mapLibreStyleJson,
         string? drawingInfoJson,
         string? revisedBy,
@@ -234,7 +234,7 @@ internal sealed class LayerStyleService : ILayerStyleService
     }
 
     private async ValueTask<StyleLayerDescriptor> ResolveStyleLayerAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         CancellationToken cancellationToken)
     {

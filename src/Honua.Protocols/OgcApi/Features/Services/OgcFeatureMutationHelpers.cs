@@ -27,7 +27,7 @@ internal static class OgcFeatureMutationHelpers
     /// </summary>
     public static async Task<FeatureBuildResult> TryBuildFeatureAsync(
         HttpRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeoJsonFeature requestFeature,
         ICrsRegistry crsRegistry,
         OgcFeaturesGeometryServices geometryServices,
@@ -66,7 +66,7 @@ internal static class OgcFeatureMutationHelpers
     /// resource schema and CRS metadata.
     /// </summary>
     public static async Task<FeatureBuildResult> TryBuildFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeoJsonFeature requestFeature,
         CrsDefinition inputCrs,
         OgcFeaturesGeometryServices geometryServices,
@@ -138,7 +138,7 @@ internal static class OgcFeatureMutationHelpers
     }
 
     private static Dictionary<string, object?> BuildEffectiveProperties(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeoJsonFeature requestFeature,
         out string? error)
     {

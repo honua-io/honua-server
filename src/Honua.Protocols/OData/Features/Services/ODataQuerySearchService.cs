@@ -26,7 +26,7 @@ internal sealed class ODataQuerySearchService
         string? orderby,
         int? resultRecordCount,
         int? resultOffset,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? select = null,
         string? expand = null,
         bool? count = null,
@@ -66,7 +66,7 @@ internal sealed class ODataQuerySearchService
 
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int sourceStorageLayerId,
         long[] objectIds,
         HttpContext? context,

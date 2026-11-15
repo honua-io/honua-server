@@ -2,11 +2,10 @@
 """Prove the measured Catalog capacity cut keeps every runnable original method exactly once."""
 
 import copy
+from shard_capacity_partition import capacity_split_names
 import importlib.util
 import json
 from pathlib import Path
-
-from shard_capacity_partition import capacity_split_names
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('coverage', ROOT / 'scripts/ci/check-server-test-shard-coverage.py')
@@ -39,10 +38,10 @@ counts = check(CHILDREN)
 for mutation in ('lost', 'duplicated', 'foreign'):
     changed = copy.deepcopy(CHILDREN)
     if mutation == 'lost':
-        method = min(m for m in METHODS if MODULE._eval(MODULE._FilterParser(changed[0]['filter']).parse(), m))
+        method = min(m for m in EXPECTED if MODULE._eval(MODULE._FilterParser(changed[0]['filter']).parse(), m))
         changed[0]['filter'] = '(' + changed[0]['filter'] + ')&FullyQualifiedName!=' + method
     elif mutation == 'duplicated':
-        method = min(m for m in METHODS if MODULE._eval(MODULE._FilterParser(changed[1]['filter']).parse(), m))
+        method = min(m for m in EXPECTED if MODULE._eval(MODULE._FilterParser(changed[1]['filter']).parse(), m))
         changed[0]['filter'] += '|FullyQualifiedName=' + method
     else:
         changed[1]['filter'] += '|FullyQualifiedName~ImageServerEndpointsTests'

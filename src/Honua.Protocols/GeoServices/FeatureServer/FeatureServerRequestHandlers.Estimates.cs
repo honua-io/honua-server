@@ -226,8 +226,8 @@ internal static partial class FeatureServerEndpoints
 
     internal static (int PublicLayerId, int StorageLayerId)? ResolveServiceEstimateLayerIds(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource)
+        MetadataV2Layer publication,
+        MetadataV2Object resource)
     {
         if (snapshot.ResolveStorageLayerId(publication, resource) is not int storageLayerId)
         {

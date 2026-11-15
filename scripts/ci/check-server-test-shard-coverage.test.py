@@ -13,7 +13,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import expected_rank, capacity_split_names
+from shard_capacity_partition import expected_rank
 
 
 SCRIPT = Path(__file__).with_name("check-server-test-shard-coverage.py")
@@ -243,6 +243,24 @@ def test_assert_owner_passes_for_a_claimed_runnable_class() -> None:
     result = assert_owner("Ns.Raster.ZarrTests", KNOWN, "Raster", classes)
     assert result.code == 0, result.message
     assert result.message.startswith("Owner assertion passed")
+
+
+def test_assert_owner_uses_every_runnable_method() -> None:
+    classes = inventory(("Ns.Raster.ZarrTests", KNOWN, ("First", "Second")))
+    original = ASSERT_SHARDS[0]["filter"]
+    try:
+        # A method boundary selects the class's tests without selecting names
+        # such as ZarrTestsExtra. A class-only equality selects no runnable test.
+        for expression, expected in (
+            ("FullyQualifiedName~Ns.Raster.ZarrTests.", 0),
+            ("FullyQualifiedName=Ns.Raster.ZarrTests", 1),
+            ("FullyQualifiedName=Ns.Raster.ZarrTests.First", 1),
+        ):
+            ASSERT_SHARDS[0]["filter"] = expression
+            result = assert_owner("Ns.Raster.ZarrTests", KNOWN, "Raster", classes)
+            assert result.code == expected, (expression, result)
+    finally:
+        ASSERT_SHARDS[0]["filter"] = original
 
 
 def test_assert_owner_rejects_a_class_that_does_not_exist() -> None:
@@ -516,12 +534,16 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
         ))
     ]
     assert len(raster) >= 7, raster
-    for fqn in raster:
-        for method in classes[fqn]["methods"] | {"FutureRegressionTest"}:
-            subject = classes[fqn]["fqn"] + "." + method
-            owners = [name for name, node in parsed.items()
-                      if classes[fqn]["csproj"] in csprojs[name] and MODULE._eval(node, subject)]
-            assert len(owners) == 1 and owners[0] in capacity_split_names(config, "Raster Serving Scene Geometry and Terrain"), (subject, owners)
+    for key in raster:
+        entry = classes[key]
+        for method in entry["methods"]:
+            fqn = f"{entry['fqn']}.{method}"
+            owners = [
+                name for name, node in parsed.items()
+                if entry["csproj"] in csprojs[name] and MODULE._eval(node, fqn)
+            ]
+            assert len(owners) == 1, (fqn, owners)
+            assert owners[0].startswith("Raster Serving Scene Geometry and Terrain "), (fqn, owners)
 
 
 def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> None:
@@ -561,19 +583,24 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
         # 24.6m FeatureServerEndpointTests alone on the parent.
         ("AdvancedSpatialQueryTests", "Core Spatial Query and Streaming"),
         ("StreamingFeatureServerEndpointTests", "Core Spatial Query and Streaming"),
-        ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance"),
-        ("Comprehensive.TestQualityValidationTests", "STAC and API Governance"),
+        ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance 2"),
+        ("Comprehensive.TestQualityValidationTests", "STAC and API Governance 1"),
         ("PatchConcurrencyTests", "Core Mutation Concurrency"),
     ):
         fqn = f"Honua.Server.Tests.{name}"
         assert classes[f"{KNOWN}::{fqn}"]["csproj"] == KNOWN
         assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
-        for method in classes[f"{KNOWN}::{fqn}"]["methods"] | {"FutureRegressionTest"}:
-            subject = fqn + "." + method
-            owners = [shard["name"] for shard in config["shards"]
-                      if KNOWN in MODULE.shard_projects(shard)
-                      and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), subject)]
-            assert len(owners) == 1 and owners[0] in capacity_split_names(config, owner), (subject, owners)
+        owners = set()
+        for method in classes[f"{KNOWN}::{fqn}"]["methods"]:
+            selected = [
+                shard["name"] for shard in config["shards"]
+                if KNOWN in MODULE.shard_projects(shard)
+                and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), f"{fqn}.{method}")
+            ]
+            assert len(selected) == 1, (fqn, method, selected)
+            owners.update(selected)
+        expected = {owner} if isinstance(owner, str) else set(owner)
+        assert owners == expected, (fqn, owners)
 
 
 test_core_capacity_moves_have_exactly_one_server_assembly_owner()
@@ -591,6 +618,7 @@ test_exact_class_name_is_not_treated_as_a_runnable_test()
 test_test_attribute_inventory_covers_testkit_fact_subtypes()
 test_repository_shard_filters_all_select_at_least_one_test()
 test_assert_owner_passes_for_a_claimed_runnable_class()
+test_assert_owner_uses_every_runnable_method()
 test_assert_owner_rejects_a_class_that_does_not_exist()
 test_assert_owner_rejects_a_class_declaring_no_recognised_test_method()
 test_assert_owner_rejects_a_class_in_another_assembly()
