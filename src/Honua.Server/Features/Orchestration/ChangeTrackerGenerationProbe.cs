@@ -45,19 +45,7 @@ internal sealed class ChangeTrackerGenerationProbe(IServiceScopeFactory scopeFac
                 excludeOriginReplicaId: null, cancellationToken)
             .ConfigureAwait(false);
 
-        if (changes.Count == 0)
-        {
-            return null;
-        }
-
-        var maxGeneration = sinceGeneration;
-        // Not a simple .Where(): this is a running-max fold (each iteration may update
-        // maxGeneration using the previous iteration's value), not a filter/projection.
-        foreach (var change in (changes).Where(change => change.Generation > maxGeneration))
-        {
-            maxGeneration = change.Generation;
-        }
-
+        var maxGeneration = changes.Select(change => change.Generation).DefaultIfEmpty(sinceGeneration).Max();
         return maxGeneration > sinceGeneration ? maxGeneration : null;
     }
 }
