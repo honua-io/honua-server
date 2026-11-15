@@ -24,7 +24,10 @@ public sealed class GrpcMetadataProjectorTests
     {
         var definition = new MetadataV2Field
         {
-            Name = "value", Type = type, Editable = true, DefaultValue = Json(JsonSerializer.Serialize(text)),
+            Name = "value",
+            Type = type,
+            Editable = true,
+            DefaultValue = Json(JsonSerializer.Serialize(text)),
             Domain = new() { Type = "codedValue", CodedValues = [new() { Code = Json(JsonSerializer.Serialize(text)), Name = "Exact" }] }
         };
 
@@ -49,7 +52,8 @@ public sealed class GrpcMetadataProjectorTests
             ? MetadataV2FieldType.Decimal : MetadataV2FieldType.TimestampOffset;
         var definition = GrpcMetadataProjector.Subtypes(new()
         {
-            SubtypeField = "KIND", DefaultSubtypeCode = Json(json),
+            SubtypeField = "KIND",
+            DefaultSubtypeCode = Json(json),
             Subtypes = [new() { Code = Json(json), Name = "Primary" }]
         }, [new() { Name = "kind", Type = type }]);
 
@@ -71,7 +75,8 @@ public sealed class GrpcMetadataProjectorTests
         ];
         var definition = GrpcMetadataProjector.Subtypes(new()
         {
-            SubtypeField = "kind", Subtypes = [new()
+            SubtypeField = "kind",
+            Subtypes = [new()
             {
                 Code = Json("1"), Name = "Primary", FieldOverrides = new Dictionary<string, MetadataV2SubtypeFieldOverride>
                 {
@@ -117,7 +122,8 @@ public sealed class GrpcMetadataProjectorTests
     {
         var domain = GrpcMetadataProjector.Domain(new()
         {
-            Type = "range", Range = [Json("-0.1000"), Json("12345678901234567890.1000")]
+            Type = "range",
+            Range = [Json("-0.1000"), Json("12345678901234567890.1000")]
         }, MetadataV2FieldType.Decimal);
 
         domain.Range.Minimum.DecimalValue.Should().Be("-0.1000");
