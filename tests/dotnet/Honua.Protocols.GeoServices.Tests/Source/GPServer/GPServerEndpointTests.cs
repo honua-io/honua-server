@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -2698,7 +2699,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
 
     private sealed class InMemoryExecutionJobStore : IExecutionJobStore
     {
-        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+        // Host background services list jobs while cases write them; the host outlives each case.
+        private readonly ConcurrentDictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
 
         public void Clear() => _jobs.Clear();
 
@@ -2726,15 +2728,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             ExecutionJobRecord job,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
-        {
-            if (_jobs.ContainsKey(job.OperationId))
-            {
-                return Task.FromResult(false);
-            }
-
-            _jobs[job.OperationId] = job;
-            return Task.FromResult(true);
-        }
+            => Task.FromResult(_jobs.TryAdd(job.OperationId, job));
 
         public Task<ExecutionJobRecord?> GetAsync(
             string operationId,

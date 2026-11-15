@@ -1205,12 +1205,10 @@ process; complete CI shard/job savings remain unmeasured.
 
 ### GPServer endpoint application lifetime
 
-`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
-reference-counted PostgreSQL infrastructure starts once and stays alive until
-the last case in the class has run. The default `WebAppFixture` application
-starts only in cases that use the shared client, fixture or job store, and is
-disposed only if it was started. Every case still builds its own hosts, isolated
-schemas, in-memory job store and service replacements.
+`GPServerEndpointTests` shares one default application, isolated schema and
+in-memory execution-job store across its default-host cases through a class
+fixture; see the GPServer default application lifetime section below. Cases
+that replace services or configuration still build their own hosts.
 All cases and assertions remain in the GeoServices GPServer Endpoints shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
@@ -1359,10 +1357,11 @@ or shard definition.
 
 ### Secure connection default application lifetime
 
-`SecureConnectionEndpointsTests` starts its default application lazily: only
-cases that call `InitializeDefaultApplicationAsync()` start it, and only those
-cases dispose it. Cases that build a custom host no longer pay for an unused
-default application.
+`SecureConnectionEndpointsTests` starts its default application lazily, once per
+class, on the first case that uses it, and disposes it once after the class.
+Each case creates and disposes its own client. Cases that build a custom host
+never start the default application; see the secure connection endpoint test
+host reuse section below.
 All cases and assertions remain in the Server Features Admin Platform and
 Connections shard on selected PR runs and twice-daily full trunk runs. This
 changes no runner count, required check name, required aggregate dependency,
@@ -1548,6 +1547,7 @@ Advisory heavy selection preserves runner-group restrictions in object selectors
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
 ### GPServer default application lifetime
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
@@ -1563,6 +1563,7 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
 ### Admin authentication default application lifetime
 
 `AdminAuthEndpointsTests` starts its per-case default application on the first
@@ -1599,6 +1600,7 @@ The selected PR shard and twice-daily full trunk runs retain all cases and their
 existing budgets.
 No workflow, shard selection, runner count, required check or aggregate dependency
 changes are made.
+
 ### Secure connection endpoint test host reuse
 
 `SecureConnectionEndpointsTests` lazily starts one class-owned application for

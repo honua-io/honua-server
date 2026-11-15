@@ -1068,6 +1068,7 @@ Advisory heavy selection preserves runner-group restrictions in object selectors
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
 ### GPServer default application lifetime
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
@@ -1083,6 +1084,7 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
 ### Admin authentication default application lifetime
 
 `AdminAuthEndpointsTests` initializes its default `WebAppFixture` only when a
@@ -1138,6 +1140,7 @@ VSTest execution fell from 115 to 46 seconds (69 seconds, or 1.15 execution
 runner-minutes saved). The fixture-inclusive TRX interval fell from 133.049096
 to 73.394077 seconds (59.655019 seconds saved). Both runs used one test
 process; complete CI shard/job savings remain unmeasured.
+
 ### Secure connection endpoint test host reuse
 
 `SecureConnectionEndpointsTests` lazily starts one class-owned application for
@@ -1164,6 +1167,7 @@ Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
 376.298 seconds. The other three classes are unchanged. This overlaps the
 class measurement and is not added to it. Complete CI-job setup and build
 duration remain unmeasured.
+
 ### PrintingTools endpoint application lifetime
 
 `PrintingToolsEndpointTests` keeps one default application for the class. Each case creates its own admin client, as the per-case application did. Jobs are addressed by generated id, and every assertion stays. The class remains in Server Features Spec Printing and Static Maps 3. No runner count, required check name, required aggregate dependency, workflow, or shard definition changes.
