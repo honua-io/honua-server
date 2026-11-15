@@ -57,7 +57,7 @@ The published MCP tool `honua_admin_api_key_revoke` submits a proposal through t
 
 One authorized human resolves the sealed proposal through the [interactive Console approval flow](../secure/authentication.md#human-operation-approval). The requester may be that human; an API key or MCP bearer cannot approve. Replay checks current original-requester authority and uses that original principal, with a single execution claim. A client tool-consent callback does not constitute server approval.
 
-API-key creation and rotation are excluded from the MCP catalog because they produce one-time secret material. Create or rotate keys through the protected interactive Console/admin flow. Keep the one-time key in its protected secret channel and out of model context and transcripts; do not ask an agent to call an API-key creation or rotation tool.
+API-key creation and rotation are excluded from the MCP catalog because they produce one-time secret material. Create or rotate keys through the authenticated administrative API, outside any agent session. Keep the one-time key in its protected secret channel and out of model context and transcripts; do not ask an agent to call an API-key creation or rotation tool.
 
 Clients may send one printable `Idempotency-Key` header of up to 128 characters on proposal calls. The runtime binds it to the authenticated principal, tenant, proposal mode and request fingerprint. An identical retry returns the existing proposal; changed input cannot reuse that key. Proposal calls bypass the published response cache. Missing durable proposal, audit or secret-aware runtime support fails closed. This source behavior does not establish installed qualification.
 
@@ -349,7 +349,7 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 |---|---|
 | `configure` | The closed admin roster (server status, API-key reads, connection/table/service/folder discovery, connection create and test, import from URL, and layer publish and access policy, which file a proposal for human approval), job status and results, inline ingest, service publish, layer reads, style and render. Studio authoring and publication use `setup`. |
 | `folders` | Folder and Service discovery, Folder create, rename and delete, and Service moves through canonical operations. Select `configure` for publishing and access policy. |
-| `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
+| `operate` | Health, findings, events, alerts, platform-release status, deploy operations, `honua_propose_finding`, and the upgrade and rollback proposals `honua_propose_platform_release_convergence` and `honua_propose_rollback`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
 | `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Anonymous listing returns an empty tools array. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |
 | `setup` | The bounded terminal path (`setup.v7`): readiness, read-only connection and table discovery, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), map and app package composition (`honua_create_map_package`, `honua_create_app_package`; anonymous calls are still refused), and publication submit. `honua_studio_propose_publication` stays in the publication stage. The setup-and-publish prompt uses `configure` for the admin roster and switches here for Studio authoring. |
@@ -358,6 +358,11 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 Required-input descriptions identify caller-supplied values or their producer tools. Input-validation refusals include source guidance in both JSON channels; missing fields and invalid types also carry field paths.
 
 The `configure` inspection stage exposes import formats and limits, file and URL previews, and connection-table validation through the canonical admin operations. These tools require admin authorization and do not import or edit feature data. For `honua_admin_import_preview`, supply base64-encoded `file` content and `fileName` with its format extension. URL preview requires `sourceUrl`. Table validation requires a connection `id` from `honua_admin_connections_list` and `schema` / `table` from `honua_admin_connection_tables_list`.
+
+The configure view includes `honua_admin_connections_test` for a registered
+Connection, `honua_admin_api_key_effective_permissions` to inspect effective
+API-key access, and `honua_admin_import_upload_url` to import from a URL. Discover
+the installed schemas before calling them; workflow metadata grants no authority.
 
 Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `serviceLayerIndex` from `honua_list_layers`, paired with that row's `serviceId`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
 
