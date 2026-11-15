@@ -153,6 +153,34 @@ public static class FeatureQuerySecurity
         }
     }
 
+    // Every field a parsed filter reads, whichever operator, negation or function consumes it.
+    public static IReadOnlyList<string> CollectFieldReferences(FilterExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        // Iterative: parsed trees are bounded by FilterParserGuard, but callers may also pass
+        // server-built trees, so the walk must not depend on recursion depth.
+        var fields = new List<string>();
+        var pending = new Stack<FilterExpression>();
+        pending.Push(expression);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (current is PropertyReference property)
+            {
+                fields.Add(property.PropertyName);
+                continue;
+            }
+
+            foreach (var child in EnumerateChildren(current))
+            {
+                pending.Push(child);
+            }
+        }
+
+        return fields;
+    }
+
     public static void ValidateH3(FeatureQuery query, H3AggregationQuery h3Query)
     {
         Validate(query);
@@ -367,23 +395,9 @@ public static class FeatureQuerySecurity
         FilterExpression expression,
         string surface)
     {
-        // Iterative: parsed trees are bounded by FilterParserGuard, but callers may also pass
-        // server-built trees, so the walk must not depend on recursion depth.
-        var pending = new Stack<FilterExpression>();
-        pending.Push(expression);
-        while (pending.Count > 0)
+        foreach (var field in CollectFieldReferences(expression))
         {
-            var current = pending.Pop();
-            if (current is PropertyReference property)
-            {
-                ThrowIfMasked(masked, property.PropertyName, surface);
-                continue;
-            }
-
-            foreach (var child in EnumerateChildren(current))
-            {
-                pending.Push(child);
-            }
+            ThrowIfMasked(masked, field, surface);
         }
     }
 

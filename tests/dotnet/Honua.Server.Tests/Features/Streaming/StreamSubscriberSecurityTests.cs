@@ -183,6 +183,136 @@ public sealed class StreamSubscriberSecurityTests
         AssertOnlyRestrictedSubscriberDenied(negated);
     }
 
+    [UnitTheory]
+    [InlineData("secret")]
+    [InlineData("SECRET")]
+    public void Matches_AttributeFilterOverMaskedField_DeliversNothing(string field)
+    {
+        var filter = new StreamSubscriptionFilter(
+            attributeFilter: IsNotNull(field),
+            subscriberSecurity: CreateSecurity());
+        var storedUnderFilterName = $$"""{"region":"west","{{field}}":"private"}""";
+
+        filter.FindMaskedFilterField().Should().Be(field);
+        filter.Matches(CreateEnvelope("west"), null, storedUnderFilterName).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Matches_NegatedAttributeFilterOverMaskedField_DeliversNothing()
+    {
+        var isNull = new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("SECRET"));
+        var filter = new StreamSubscriptionFilter(
+            attributeFilter: new UnaryExpression(UnaryOperator.Not, isNull),
+            subscriberSecurity: CreateSecurity());
+
+        filter.FindMaskedFilterField().Should().Be("SECRET");
+        filter.Matches(CreateEnvelope("west"), null, PropertiesJson).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("PUBLIC-NAME")]
+    [InlineData("")]
+    public void Matches_AttributeFilterOverMaskedField_OnNamedAndServiceLessRoutes_DeliversNothing(string serviceId)
+    {
+        var filter = new StreamSubscriptionFilter(
+            attributeFilter: IsNotNull("SECRET"),
+            subscriberSecurity: CreateSecurity());
+        var readable = new StreamSubscriptionFilter(
+            attributeFilter: IsNotNull("region"),
+            subscriberSecurity: CreateSecurity());
+        var envelope = CreateEnvelope("west") with { ServiceId = serviceId };
+
+        filter.Matches(envelope, null, PropertiesJson).Should().BeFalse();
+        readable.Matches(envelope, null, PropertiesJson).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("SECRET", null)]
+    [InlineData("observed", "SECRET")]
+    public void Matches_TemporalFilterOverMaskedField_DeliversNothing(string startField, string? endField)
+    {
+        var filter = new StreamSubscriptionFilter(
+            temporalFilter: new StreamTemporalFilter(startField, endField, TemporalWindowStart, TemporalWindowEnd),
+            subscriberSecurity: CreateSecurity());
+
+        filter.FindMaskedFilterField().Should().Be("SECRET");
+        filter.Matches(CreateEnvelope("west"), null, TemporalPropertiesJson).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Matches_TemporalFilterOverReadableField_StillDelivers()
+    {
+        var filter = new StreamSubscriptionFilter(
+            temporalFilter: new StreamTemporalFilter("observed", null, TemporalWindowStart, TemporalWindowEnd),
+            subscriberSecurity: CreateSecurity());
+
+        filter.FindMaskedFilterField().Should().BeNull();
+        filter.Matches(CreateEnvelope("west"), null, TemporalPropertiesJson).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MasksAny_RouteWithoutCurrentPolicy_CountsAsMasked()
+    {
+        var security = CreateUnrestrictedSecurity();
+
+        security.MasksAny(CreateEnvelope("west") with { LayerId = 99 }, ["region"]).Should().BeTrue();
+        security.MasksAny(CreateEnvelope("west"), ["region"]).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Matches_AttributeFilterOverReadableField_StillDelivers()
+    {
+        var filter = new StreamSubscriptionFilter(
+            attributeFilter: IsNotNull("region"),
+            subscriberSecurity: CreateSecurity());
+
+        filter.FindMaskedFilterField().Should().BeNull();
+        filter.Matches(CreateEnvelope("west"), null, PropertiesJson).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Matches_AttributeFilterWithoutFieldMask_StillDelivers()
+    {
+        var filter = new StreamSubscriptionFilter(
+            attributeFilter: IsNotNull("SECRET"),
+            subscriberSecurity: CreateUnrestrictedSecurity());
+
+        filter.FindMaskedFilterField().Should().BeNull();
+        filter.Matches(CreateEnvelope("west"), null, PropertiesJson).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Matches_DeleteWithAttributeFilterOverMaskedField_KeepsRowAuthorizationOnly()
+    {
+        var filter = new StreamSubscriptionFilter(
+            attributeFilter: IsNotNull("SECRET"),
+            subscriberSecurity: CreateSecurity());
+
+        filter.Matches(CreateEnvelope("west") with { Operation = "delete" }, null, PropertiesJson).Should().BeTrue();
+        filter.Matches(CreateEnvelope("east") with { Operation = "delete" }, null, PropertiesJson).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Refresh_AddedFieldMask_StopsDeliveryForFilterOverThatField()
+    {
+        using var manager = CreateManager();
+        var current = CreateUnrestrictedSecurity();
+        var security = CreateUnrestrictedSecurity();
+        security.EnableRefresh(_ => Task.FromResult(current));
+        var filter = new StreamSubscriptionFilter(attributeFilter: IsNotNull("SECRET"), subscriberSecurity: security);
+        using var session = manager.CreateSession("SSE", null, filter);
+
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("west"), propertiesJson: PropertiesJson));
+        session.Reader.TryRead(out _).Should().BeTrue("no mask applies before the refresh");
+
+        current = CreateSecurity();
+        await manager.RefreshSubscriberSecurityAsync();
+
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("west"), propertiesJson: PropertiesJson));
+        session.Reader.TryRead(out _).Should().BeFalse("the filter reads a field the refreshed policy masks");
+        filter.FindMaskedFilterField().Should().Be("SECRET");
+    }
+
     private static void AssertOnlyRestrictedSubscriberDenied(FilterExpression predicate)
     {
         var policy = new StreamLayerReadPolicy([predicate], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
@@ -202,6 +332,18 @@ public sealed class StreamSubscriberSecurityTests
         open.Reader.TryRead(out var second).Should().BeTrue();
         second.Envelope.Cursor.Should().Be(2);
     }
+
+    private const string PropertiesJson = """{"region":"west","SECRET":"private"}""";
+
+    private const string TemporalPropertiesJson =
+        """{"region":"west","observed":"2023-01-15T00:00:00Z","SECRET":"2023-01-16T00:00:00Z"}""";
+
+    private static readonly DateTimeOffset TemporalWindowStart = new(2023, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset TemporalWindowEnd = new(2023, 2, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static UnaryExpression IsNotNull(string field)
+        => new(UnaryOperator.IsNotNull, new PropertyReference(field));
 
     private static FeatureStreamSessionManager CreateManager()
         => new(

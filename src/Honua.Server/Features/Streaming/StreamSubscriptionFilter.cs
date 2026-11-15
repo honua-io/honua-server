@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
@@ -21,6 +22,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     private readonly double[]? _bbox;
     private readonly FilterExpression? _attributeFilter;
     private readonly StreamTemporalFilter? _temporalFilter;
+    private readonly string[] _valueFilterFields;
     private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
 
     public StreamSubscriptionFilter(
@@ -46,6 +48,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         _bbox = bbox;
         _attributeFilter = attributeFilter;
         _temporalFilter = temporalFilter;
+        _valueFilterFields = CollectValueFilterFields(attributeFilter, temporalFilter);
         _routabilityGuard = routabilityGuard;
     }
 
@@ -58,6 +61,9 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     public int[]? LayerIds => _layerIds;
 
     internal StreamSubscriberSecurity? SubscriberSecurity => _subscriberSecurity;
+
+    internal string? FindMaskedFilterField()
+        => _valueFilterFields.Length == 0 ? null : _subscriberSecurity?.FindMaskedField(_valueFilterFields);
 
     // A value filter is not convergent across baseline and deltas, because the leaving update is judged on the image after the edit and is not delivered.
     public bool HasValueDependentPredicate =>
@@ -224,6 +230,11 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         // 4. Attribute/temporal filters — parse propertiesJson once and evaluate AST/window.
         if (_attributeFilter is not null || _temporalFilter is not null)
         {
+            if (ReadsMaskedField(envelope))
+            {
+                return false;
+            }
+
             if (!propertiesParsed)
             {
                 propertiesParsed = true;
@@ -275,6 +286,11 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         return true;
     }
 
+    // Field masks can change while the subscription is open, so the fields a client predicate
+    // reads are checked against the event's current policy, not only at subscribe.
+    private bool ReadsMaskedField(FeatureStreamEnvelope envelope)
+        => _valueFilterFields.Length > 0 && _subscriberSecurity?.MasksAny(envelope, _valueFilterFields) == true;
+
     private bool AllowsSubscriber(FeatureStreamEnvelope envelope)
     {
         try
@@ -297,6 +313,26 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         {
             return false;
         }
+    }
+
+    private static string[] CollectValueFilterFields(FilterExpression? attributeFilter, StreamTemporalFilter? temporalFilter)
+    {
+        var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (attributeFilter is not null)
+        {
+            fields.UnionWith(FeatureQuerySecurity.CollectFieldReferences(attributeFilter));
+        }
+
+        if (temporalFilter is not null)
+        {
+            fields.Add(temporalFilter.StartField);
+            if (!string.IsNullOrWhiteSpace(temporalFilter.EndField))
+            {
+                fields.Add(temporalFilter.EndField);
+            }
+        }
+
+        return [.. fields];
     }
 
     private static bool IsUnevaluableLike(Exception exception)

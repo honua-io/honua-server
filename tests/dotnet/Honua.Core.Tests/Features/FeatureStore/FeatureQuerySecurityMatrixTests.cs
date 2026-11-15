@@ -167,6 +167,24 @@ public sealed class FeatureQuerySecurityMatrixTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void CollectFieldReferencesReturnsEveryFieldWhateverConsumesIt()
+    {
+        var negatedLike = new UnaryExpression(
+            UnaryOperator.Not,
+            new BinaryExpression(new PropertyReference("pattern"), BinaryOperator.Like, new Literal("x%", LiteralType.Text)));
+        var membership = new BinaryExpression(
+            new PropertyReference("member"),
+            BinaryOperator.In,
+            new ValueList([new FunctionCall("upper", [new PropertyReference("argument")])]));
+
+        var fields = FeatureQuerySecurity.CollectFieldReferences(
+            new BinaryExpression(negatedLike, BinaryOperator.And, membership));
+
+        fields.Should().BeEquivalentTo("pattern", "member", "argument");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void JsonAccessorMatrixMatchesTheCompleteAttributeKey()
     {
         var masked = new FeatureQuery

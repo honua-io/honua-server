@@ -1364,7 +1364,7 @@ internal static partial class FeatureStreamEndpoints
 
         var subscriberSecurity = await ResolveSubscriberSecurityAsync(
             context, snapshot, service, layerIds, cancellationToken).ConfigureAwait(false);
-        return (new StreamSubscriptionFilter(
+        var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
             serviceIdIsExact: serviceIdIsExact,
             resolvedServiceId: service?.Metadata.Id,
@@ -1374,7 +1374,10 @@ internal static partial class FeatureStreamEndpoints
             attributeFilter: attributeFilter,
             temporalFilter: temporalFilter,
             routabilityGuard: deps.RoutabilityGuard,
-            subscriberSecurity: subscriberSecurity), null);
+            subscriberSecurity: subscriberSecurity);
+        return DescribeMaskedFilterField(filter) is { } maskedFieldError
+            ? (null, maskedFieldError)
+            : (filter, null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)
