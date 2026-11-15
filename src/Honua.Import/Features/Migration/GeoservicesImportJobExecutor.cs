@@ -100,14 +100,19 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobC
         // failed job instead of handing it to the retry policy; the job document is already terminal.
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, ImportFailedMessage,
-                "Import failed with exception"), CancellationToken.None).ConfigureAwait(false);
-            Log.JobException(_logger, run.JobId, ex);
-            return NotRetryable(ImportFailedMessage);
+            return await FailImportAsync(run, ex).ConfigureAwait(false);
         }
 
         // A committed import remains recoverable when execution-store bookkeeping fails.
         return await CompleteAsync(run, result).ConfigureAwait(false);
+    }
+
+    private async Task<JobExecutionResult> FailImportAsync(ImportRun run, Exception exception)
+    {
+        await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, ImportFailedMessage,
+            "Import failed with exception"), CancellationToken.None).ConfigureAwait(false);
+        Log.JobException(_logger, run.JobId, exception);
+        return NotRetryable(ImportFailedMessage);
     }
 
     private async Task<JobExecutionResult?> ValidateSourceAsync(ImportRun run)

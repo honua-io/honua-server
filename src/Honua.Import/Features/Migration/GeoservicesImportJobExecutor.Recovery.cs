@@ -27,10 +27,23 @@ internal sealed partial class GeoservicesImportJobExecutor
             ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(job.OperationId, request with { JobId = job.OperationId }, progress,
             context, Stopwatch.StartNew(), licenseCancellation, recoveryCancellation.Token);
-        return await RecoverAsync(run, replayCancellation: false).ConfigureAwait(false);
+        return await RecoverReceiptAsync(run).ConfigureAwait(false);
     }
 
-    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run, bool replayCancellation = true)
+    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run)
+    {
+        var recovered = await RecoverReceiptAsync(run).ConfigureAwait(false);
+        if (recovered is not null)
+        {
+            return recovered;
+        }
+
+        var stored = run.Progress.CurrentProgress;
+        return stored is not null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status)
+            ? ReplayTerminal(stored) : null;
+    }
+
+    private async Task<JobExecutionResult?> RecoverReceiptAsync(ImportRun run)
     {
         var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, run.Token).ConfigureAwait(false);
         run.Progress.Seed(stored);
@@ -49,9 +62,7 @@ internal sealed partial class GeoservicesImportJobExecutor
         GeoservicesImportPlanning.RestoreTenant(scope.ServiceProvider, run.Request.Target);
         if (scope.ServiceProvider.GetRequiredService<IGeoservicesImportService>() is not IGeoservicesImportCommitRecovery recovery)
         {
-            return stored is not null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status)
-                && (replayCancellation || stored.Status != GeoservicesImportStatus.Cancelled)
-                ? ReplayTerminal(stored) : null;
+            return null;
         }
 
         // Source validation and credentials cannot determine whether an earlier attempt committed.
@@ -59,9 +70,7 @@ internal sealed partial class GeoservicesImportJobExecutor
         var result = await recovery.RecoverCommittedImportAsync(run.Request, run.Token).ConfigureAwait(false);
         if (result is null)
         {
-            return stored is not null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status)
-                && (replayCancellation || stored.Status != GeoservicesImportStatus.Cancelled)
-                ? ReplayTerminal(stored) : null;
+            return null;
         }
 
         run.Stopwatch.Stop();

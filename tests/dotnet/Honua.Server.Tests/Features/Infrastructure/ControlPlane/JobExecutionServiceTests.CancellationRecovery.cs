@@ -14,9 +14,9 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed partial class JobExecutionServiceTests
 {
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ProcessJob_CancelledBeforeDispatch_RecoversReceiptWithoutExecuting(bool committed)
+    [InlineData(ExecutionJobStatus.Succeeded)]
+    [InlineData(ExecutionJobStatus.Cancelled)]
+    public async Task ProcessJob_CancelledBeforeDispatch_RecoversReceiptWithoutExecuting(ExecutionJobStatus expectedStatus)
     {
         var durable = CreateProvisioningJob() with { CancellationRequestedAt = DateTimeOffset.UtcNow };
         var store = Substitute.For<IExecutionJobStore>();
@@ -25,14 +25,15 @@ public sealed partial class JobExecutionServiceTests
             .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
         var executor = Substitute.For<IJobExecutor, IJobCancellationRecoveryExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
-        var recovery = ConfigureCancellationRecovery(executor, committed);
+        var recovery = ConfigureCancellationRecovery(executor, expectedStatus == ExecutionJobStatus.Succeeded
+            ? JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true } : null);
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
 
-        Assert.Equal(committed ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Cancelled, durable.Status);
-        if (committed)
+        Assert.Equal(expectedStatus, durable.Status);
+        if (expectedStatus == ExecutionJobStatus.Succeeded)
         {
             Assert.Contains("committed-import-receipt", durable.ArtifactReferences);
         }
@@ -42,20 +43,20 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
     }
 
-    private static IJobCancellationRecoveryExecutor ConfigureCancellationRecovery(IJobExecutor executor, bool committed)
+    private static IJobCancellationRecoveryExecutor ConfigureCancellationRecovery(IJobExecutor executor, JobExecutionResult? result)
     {
         var recovery = (IJobCancellationRecoveryExecutor)executor;
         recovery.RecoverCancellationAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 Assert.False(call.Arg<CancellationToken>().IsCancellationRequested);
-                if (!committed)
+                if (result is null)
                 {
                     return null;
                 }
 
                 await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync("committed-import-receipt");
-                return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
+                return result;
             });
         return recovery;
     }
