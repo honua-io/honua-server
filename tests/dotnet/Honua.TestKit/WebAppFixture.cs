@@ -302,8 +302,8 @@ public sealed class WebAppFixture : IAsyncLifetime
     public void UpdateV2ResourceMetadata(
         int layerIndex,
         AccessPolicy? accessPolicy = null,
-        MetadataV2ResourceTemporal? temporal = null,
-        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2ObjectTemporal? temporal = null,
+        MetadataV2ObjectSpatial? spatial = null,
         MetadataV2PermanentFilter? permanentFilter = null,
         MetadataV2ExtrusionInfo? extrusion = null,
         JsonElement? stacExtension = null,
@@ -359,7 +359,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// Sets (or clears with <c>null</c>) editor-tracking and GlobalID bindings on the
     /// resource published at <paramref name="layerIndex"/>.
     /// </summary>
-    public void UpdateV2ResourceEditing(int layerIndex, MetadataV2ResourceEditing? editing)
+    public void UpdateV2ResourceEditing(int layerIndex, MetadataV2ObjectEditing? editing)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceEditing(this, layerIndex, editing);
 
     /// <summary>
@@ -372,7 +372,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     // Replaces the resource published at layerIndex. Delegates to
     // Mixins.WebAppFixtureMetadataV2GraphMutationMixin.
-    public Task UpdateV2ResourceAsync(int layerIndex, Func<MetadataV2Resource, MetadataV2Resource> mutate)
+    public Task UpdateV2ResourceAsync(int layerIndex, Func<MetadataV2Object, MetadataV2Object> mutate)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAsync(this, layerIndex, mutate);
 
     /// <summary>

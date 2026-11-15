@@ -18,27 +18,6 @@ namespace Honua.Geocoding.Features.Geocoding.Integration;
 public static class ProviderIntegrationExtensions
 {
     /// <summary>
-    /// Add the mock geocoding provider for testing
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Provider configuration (optional)</param>
-    /// <returns>Service collection for chaining</returns>
-    public static IServiceCollection AddMockGeocodeProvider(
-        this IServiceCollection services,
-        MockGeocodeProviderConfiguration? configuration = null)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-
-        configuration ??= new MockGeocodeProviderConfiguration();
-
-        services.AddGeocodeProvider(
-            MockGeocodeProvider.ProviderName,
-            _ => new MockGeocodeProvider(configuration));
-
-        return services;
-    }
-
-    /// <summary>
     /// Add Nominatim geocoding provider
     /// </summary>
     /// <param name="services">Service collection</param>
@@ -182,59 +161,4 @@ public static class ProviderIntegrationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Add all available geocoding providers based on configuration
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Configuration</param>
-    /// <returns>Service collection for chaining</returns>
-    public static IServiceCollection AddAllGeocodeProviders(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(configuration);
-
-        var geocodingConfig = configuration.GetSection(GeocodingConfiguration.SectionName);
-
-        // Add providers based on enabled status in configuration
-        if (geocodingConfig.GetValue<bool>("Providers:Nominatim:Enabled"))
-        {
-            services.AddNominatimGeocodeProvider(configuration);
-        }
-
-        if (geocodingConfig.GetValue<bool>("Providers:AmazonLocation:Enabled"))
-        {
-            services.AddAmazonLocationGeocodeProvider(configuration);
-        }
-
-        if (geocodingConfig.GetValue<bool>("Providers:AzureMaps:Enabled"))
-        {
-            services.AddAzureMapsGeocodeProvider(configuration);
-        }
-
-        if (geocodingConfig.GetValue<bool>("Providers:Local:Enabled"))
-        {
-            services.AddLocalGeocodeProvider(configuration);
-        }
-
-        // Always add mock provider for testing/fallback if enabled
-        var mockEnabled = geocodingConfig.GetValue<bool>("Providers:Mock:Enabled");
-        if (mockEnabled)
-        {
-            var mockConfig = new MockGeocodeProviderConfiguration
-            {
-                Enabled = true,
-                Priority = geocodingConfig.GetValue<int>("Providers:Mock:Priority", 0),
-                TimeoutSeconds = geocodingConfig.GetValue<int>("Providers:Mock:TimeoutSeconds", 30),
-                MaxResults = geocodingConfig.GetValue<int>("Providers:Mock:MaxResults", 10),
-                EnableSuggest = geocodingConfig.GetValue<bool>("Providers:Mock:EnableSuggest", true),
-                EnableBatch = geocodingConfig.GetValue<bool>("Providers:Mock:EnableBatch", true)
-            };
-
-            services.AddMockGeocodeProvider(mockConfig);
-        }
-
-        return services;
-    }
 }

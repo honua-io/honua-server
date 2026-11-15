@@ -73,7 +73,7 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         }
 
         var query = BuildQuery(request);
-        MetadataV2Resource? resource = null;
+        MetadataV2Object? resource = null;
         if (_metadata is not null)
         {
             var snapshot = await _metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -129,7 +129,7 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
     /// </summary>
     private async Task<FeatureQuery> ApplyCanonicalSelectionAsync(
         DagSourceRequest request,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         FeatureQuery query,
         CancellationToken cancellationToken)
     {

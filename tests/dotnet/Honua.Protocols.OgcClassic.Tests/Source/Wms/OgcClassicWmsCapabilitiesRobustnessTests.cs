@@ -83,7 +83,7 @@ public sealed class OgcClassicWmsCapabilitiesRobustnessTests : IAsyncLifetime
         // field resolves to a real Date/DateTime attribute.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" });
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "timestamp" });
         return Task.CompletedTask;
     }
 

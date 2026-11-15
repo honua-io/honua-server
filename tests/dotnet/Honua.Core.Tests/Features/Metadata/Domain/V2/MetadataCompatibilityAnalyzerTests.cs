@@ -608,7 +608,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                         SemanticId = "res.parcels",
                         SemanticKind = MetadataSemanticArtifactKind.Resource,
                         Exists = true,
-                        ResourceType = includeRequiredDetails ? MetadataV2ResourceType.FeatureDataset : null,
+                        ResourceType = includeRequiredDetails ? MetadataV2ObjectType.FeatureDataset : null,
                     },
                     new MetadataScriptResourceContract
                     {
@@ -625,7 +625,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                         Exists = true,
                         ResourceId = includeRequiredDetails ? "res.parcels" : null,
                         ServiceId = includeRequiredDetails ? "svc.features" : null,
-                        PublicationType = includeRequiredDetails ? MetadataV2PublicationType.OgcCollection : null,
+                        PublicationType = includeRequiredDetails ? MetadataV2LayerType.OgcCollection : null,
                         Path = includeRequiredDetails ? "parcels" : null,
                         ServiceLocalId = includeRequiredDetails ? "parcels" : null,
                     },
@@ -754,16 +754,16 @@ public sealed class MetadataCompatibilityAnalyzerTests
         string publicationServiceId = "svc.features",
         IReadOnlyList<MetadataV2StorageBindingCapability>? storageCapabilities = null)
     {
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = new MetadataV2SpatialReference { Srid = srid },
             GeometryType = MetadataV2GeometryType.Point,
         };
 
-        var resources = new List<MetadataV2Resource>();
+        var resources = new List<MetadataV2Object>();
         if (includeResource)
         {
-            resources.Add(new MetadataV2Resource
+            resources.Add(new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -771,7 +771,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                     Name = "parcels",
                     Title = "Parcels",
                 },
-                Type = MetadataV2ResourceType.FeatureDataset,
+                Type = MetadataV2ObjectType.FeatureDataset,
                 StorageBindingIds = ["storage.parcels"],
                 PrimaryStorageBindingId = "storage.parcels",
                 SchemaFields = includeField ? [BuildField(identifierRole)] : Array.Empty<MetadataV2Field>(),
@@ -781,7 +781,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
 
         if (includeRelationshipDependent)
         {
-            resources.Add(new MetadataV2Resource
+            resources.Add(new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -789,7 +789,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                     Name = "parcel-dashboard",
                     Title = "Parcel Dashboard",
                 },
-                Type = MetadataV2ResourceType.Dashboard,
+                Type = MetadataV2ObjectType.Dashboard,
                 Relationships =
                 [
                     new MetadataV2Relationship
@@ -836,18 +836,18 @@ public sealed class MetadataCompatibilityAnalyzerTests
             Publications = includePublication
                 ?
                 [
-                    new MetadataV2Publication
+                    new MetadataV2Layer
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
                         ResourceId = publicationResourceId,
                         ServiceId = publicationServiceId,
                         StorageBindingId = "storage.parcels",
-                        PublicationType = MetadataV2PublicationType.OgcCollection,
+                        PublicationType = MetadataV2LayerType.OgcCollection,
                         Path = "parcels",
                         ServiceLocalId = "parcels",
                     },
                 ]
-                : Array.Empty<MetadataV2Publication>(),
+                : Array.Empty<MetadataV2Layer>(),
             ProjectionProfiles = includeProjectionProfile
                 ?
                 [
