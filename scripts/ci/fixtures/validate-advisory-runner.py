@@ -117,6 +117,10 @@ esac
             self.assertLess(steps.index(limits), steps.index(step))
             self.assertEqual(step['with']['ram'], '${{ env.CODEQL_RAM }}')
             self.assertEqual(step['with']['threads'], '${{ env.CODEQL_THREADS }}')
+        # Analysis inherits the budget from initialization; an input here would override it.
+        analysis = [step for step in steps if step.get('uses', '').startswith('github/codeql-action/analyze@')]
+        self.assertEqual(len(analysis), 1)
+        self.assertFalse({'ram', 'threads'} & set(analysis[0].get('with', {})))
 
     def test_store_native_checks_support_unprivileged_heavy_runners(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/store-image-size.yml').read_text())

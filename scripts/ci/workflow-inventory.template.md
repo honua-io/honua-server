@@ -1047,16 +1047,22 @@ Quality uses a managed workflow and is outside these runner-routing changes.
 Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.
 
 CodeQL self-hosted execution explicitly budgets 8,192 MB and four extraction
-threads, with `DOTNET_PROCESSOR_COUNT=4` also bounding nested restore/build
+threads, with `DOTNET_PROCESSOR_COUNT=4` also bounding MSBuild and extractor
 parallelism. Both initialization lanes receive these inputs; analysis inherits
 them from initialization. Hosted execution keeps the action defaults. The heavy
 runner's existing 16 GiB user slice includes the runner and its child processes:
 the remaining half is headroom, not additional provisioned capacity. The pinned
 action reads root cgroup limits and misses this nested slice. In run
 43722168928/job132839988502 it advertised 240,353 MB and 64 threads before the
-kernel killed `Semmle.Autobuil` at the 16 GiB slice limit. This is a resource
-repair, with no query, source, build-mode, timeout or gate reduction. A subsequent
-live CodeQL pass and peak-memory measurement are still needed to verify it.
+kernel killed `Semmle.Autobuil` at the 16 GiB slice limit. On pull requests the
+no-build extractor cannot authenticate to the GitHub Packages feed, so the
+solution restore fails and it restores each project separately, one per
+extraction thread: unbounded on the heavy host, four with this budget, as on
+the four-CPU hosted runner where run 43742167308 passed in 19 minutes.
+Authenticating that feed for the pull request lane is a separate follow-up.
+This is a resource repair, with no query, source, build-mode, timeout or gate
+reduction. A subsequent live CodeQL pass and peak-memory measurement are still
+needed to verify it.
 
 ### Evaluated test analyzer build roots
 
