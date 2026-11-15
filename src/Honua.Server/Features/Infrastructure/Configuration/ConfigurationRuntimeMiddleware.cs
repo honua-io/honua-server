@@ -19,7 +19,9 @@ internal static partial class ConfigurationRuntimeMiddleware
         return app.Use(async (context, next) =>
         {
             if (context.Request.Path.Equals("/healthz/live", StringComparison.OrdinalIgnoreCase) ||
-                context.Request.Path.Equals("/healthz/deep", StringComparison.OrdinalIgnoreCase))
+                context.Request.Path.Equals("/healthz/live/", StringComparison.OrdinalIgnoreCase) ||
+                context.Request.Path.Equals("/healthz/deep", StringComparison.OrdinalIgnoreCase) ||
+                context.Request.Path.Equals("/healthz/deep/", StringComparison.OrdinalIgnoreCase))
             {
                 await next(context).ConfigureAwait(false);
                 return;
