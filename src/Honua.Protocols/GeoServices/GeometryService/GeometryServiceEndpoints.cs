@@ -21,6 +21,9 @@ internal static class GeometryServiceEndpoints
         var geometryGroup = endpoints.MapGroup(string.Empty)
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
+        // One admission bound for the whole group, so a route added here is covered too.
+        geometryGroup.AddEndpointFilter(GeometryServiceAdmission.FilterAsync);
+
         // Esri REST clients probe the GeometryServer root for the service description
         // and capabilities before invoking operations.
         geometryGroup.MapGet(GeometryRoutePrefix, HandleServiceInfo)

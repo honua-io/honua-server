@@ -229,6 +229,38 @@ internal static class RequestTelemetryClassifier
         return null;
     }
 
+    // Every GeometryServer operation route is named here, so that none is classified with the
+    // service description. A test keeps this list equal to the mapped routes.
+    private static readonly string[] _geometryServiceOperations =
+    [
+        "areasAndLengths", "autoComplete", "buffer", "clip", "convexHull", "cut", "densify",
+        "difference", "distance", "findTransformations", "fromGeoCoordinateString", "generalize",
+        "intersect", "labelPoints", "lengths", "offset", "project", "relation", "reshape",
+        "simplify", "toGeoCoordinateString", "trimExtend", "union",
+    ];
+
+    internal static bool IsGeometryServiceOperation(HttpContext context)
+    {
+        var path = context.Request.Path.Value ?? string.Empty;
+        return path.Contains("/GeometryServer", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(ResolveGeometryServiceOperation(path), "metadata", StringComparison.Ordinal);
+    }
+
+    private static string ResolveGeometryServiceOperation(string path)
+    {
+        var segment = path.AsSpan().TrimEnd('/');
+        segment = segment[(segment.LastIndexOf('/') + 1)..];
+        foreach (var operation in _geometryServiceOperations)
+        {
+            if (segment.Equals(operation, StringComparison.OrdinalIgnoreCase))
+            {
+                return operation;
+            }
+        }
+
+        return "metadata";
+    }
+
     internal static string? ResolveOperation(HttpContext context)
     {
         if (context.Items.TryGetValue(OperationItemKey, out var operation) &&
@@ -555,52 +587,7 @@ internal static class RequestTelemetryClassifier
 
         if (path.Contains("/GeometryServer", StringComparison.OrdinalIgnoreCase))
         {
-            if (path.Contains("/areasAndLengths", StringComparison.OrdinalIgnoreCase))
-            {
-                return "areasAndLengths";
-            }
-
-            if (path.Contains("/lengths", StringComparison.OrdinalIgnoreCase))
-            {
-                return "lengths";
-            }
-
-            if (path.Contains("/buffer", StringComparison.OrdinalIgnoreCase))
-            {
-                return "buffer";
-            }
-
-            if (path.Contains("/simplify", StringComparison.OrdinalIgnoreCase))
-            {
-                return "simplify";
-            }
-
-            if (path.Contains("/project", StringComparison.OrdinalIgnoreCase))
-            {
-                return "project";
-            }
-
-            if (path.Contains("/intersect", StringComparison.OrdinalIgnoreCase))
-            {
-                return "intersect";
-            }
-
-            if (path.Contains("/union", StringComparison.OrdinalIgnoreCase))
-            {
-                return "union";
-            }
-
-            if (path.Contains("/clip", StringComparison.OrdinalIgnoreCase))
-            {
-                return "clip";
-            }
-
-            if (path.Contains("/difference", StringComparison.OrdinalIgnoreCase))
-            {
-                return "difference";
-            }
-
-            return "metadata";
+            return ResolveGeometryServiceOperation(path);
         }
 
         if (StartsWithPathSegment(path, "/tiles"))

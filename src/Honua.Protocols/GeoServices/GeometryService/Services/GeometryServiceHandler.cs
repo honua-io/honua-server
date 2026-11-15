@@ -34,13 +34,6 @@ internal sealed class GeometryServiceHandler(
 
     private const double PreserveShapeSegmentMeters = 10_000d;
 
-    // Densify generates ceil(segmentLength / maxSegmentLength) interpolated vertices per
-    // segment into an in-memory CoordinateList. A tiny maxSegmentLength over a large extent
-    // (e.g. a 2,000,000-unit polyline at maxSegmentLength=0.001 → 2e9 coordinates) would OOM
-    // the host before any response is written (#2064). Cap the total interpolated output so
-    // the unauthenticated /densify endpoint cannot be turned into an OOM DoS. ~16M vertices
-    // is far beyond any legitimate densify request yet bounded to a few hundred MB worst case.
-    private const double MaxDensifiedVerticesPerGeometry = 16_000_000d;
     private const string InvalidGeometryInputMessage = "Invalid geometry input.";
     private const string InvalidSpatialReferenceMessage =
         "must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.";
@@ -180,7 +173,8 @@ internal sealed class GeometryServiceHandler(
                 Unit = unit,
                 DistanceUnitToMetersFactor = distanceUnitToMetersFactor,
                 UnionResults = unionResults,
-                Geodesic = geodesic
+                Geodesic = geodesic,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             // Geodesic buffers always execute in geographic space (effectively EPSG:4326);
@@ -210,7 +204,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -274,7 +268,8 @@ internal sealed class GeometryServiceHandler(
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "simplify", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -289,7 +284,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "simplify", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -454,7 +449,8 @@ internal sealed class GeometryServiceHandler(
                     inputSrid,
                     outputSrid,
                     transformationInSr,
-                    transformationOutSr)
+                    transformationOutSr),
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -469,7 +465,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "project", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -531,7 +527,8 @@ internal sealed class GeometryServiceHandler(
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "union", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -545,7 +542,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "union", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -656,7 +653,8 @@ internal sealed class GeometryServiceHandler(
                 SR = sr!.Value,
                 AreaUnit = GeometryServiceRequestParser.GetValue(values, "areaUnit"),
                 LengthUnit = GeometryServiceRequestParser.GetValue(values, "lengthUnit"),
-                CalculationType = calculationType
+                CalculationType = calculationType,
+                VertexBudget = GeometryServiceVertexBudget.Create(context)
             };
 
             var spatialContext = await ResolveMeasurementSpatialContextAsync(
@@ -674,7 +672,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "area", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -751,7 +749,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 SR = sr!.Value,
                 LengthUnit = GeometryServiceRequestParser.GetValue(values, "lengthUnit"),
-                CalculationType = calculationType
+                CalculationType = calculationType,
+                VertexBudget = GeometryServiceVertexBudget.Create(context)
             };
 
             var spatialContext = await ResolveMeasurementSpatialContextAsync(
@@ -769,7 +768,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "length", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -856,7 +855,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "distance", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -980,7 +979,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "relation", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1068,7 +1067,9 @@ internal sealed class GeometryServiceHandler(
                 GeometryType = geomType,
                 SR = sr!.Value,
                 MaxSegmentLength = maxSegmentLengthNative,
-                Geodesic = geodesicDensify
+                Geodesic = geodesicDensify,
+                VertexBudget = GeometryServiceVertexBudget.Create(context),
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             var spatialContext = await ResolveMeasurementSpatialContextAsync(
@@ -1087,7 +1088,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "densify", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1149,7 +1150,8 @@ internal sealed class GeometryServiceHandler(
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "convexHull", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1163,7 +1165,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "convexHull", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1246,7 +1248,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                MaxDeviation = maxDeviationInSpatialReferenceUnits
+                MaxDeviation = maxDeviationInSpatialReferenceUnits,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "generalize", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1260,7 +1263,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1328,7 +1331,8 @@ internal sealed class GeometryServiceHandler(
             var parameters = new LabelPointsParameters
             {
                 GeometryJsonStrings = geomStrings,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "labelPoints", parameters.GeometryJsonStrings.Length, "esriGeometryPolygon");
@@ -1342,7 +1346,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1415,7 +1419,8 @@ internal sealed class GeometryServiceHandler(
                 TargetJsonStrings = geomStrings,
                 GeometryType = geomType,
                 CutterJson = cutter,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [cutter])
             };
 
             GeometryServiceLog.RequestParsed(_logger, "cut", parameters.TargetJsonStrings.Length, parameters.GeometryType);
@@ -1429,7 +1434,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "cut", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1502,7 +1507,8 @@ internal sealed class GeometryServiceHandler(
                 PolylineJsonStrings = geomStrings,
                 TrimExtendToJson = trimExtendTo,
                 SR = sr!.Value,
-                ExtendHow = GeometryServiceRequestParser.GetValue(values, "extendHow")
+                ExtendHow = GeometryServiceRequestParser.GetValue(values, "extendHow"),
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [trimExtendTo])
             };
 
             GeometryServiceLog.RequestParsed(_logger, "trimExtend", parameters.PolylineJsonStrings.Length, "esriGeometryPolyline");
@@ -1516,7 +1522,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1616,7 +1622,8 @@ internal sealed class GeometryServiceHandler(
                 OffsetDistance = offsetDistanceNative,
                 OffsetUnit = offsetUnit,
                 OffsetHow = GeometryServiceRequestParser.GetValue(values, "offsetHow"),
-                BevelRatio = bevelRatio
+                BevelRatio = bevelRatio,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "offset", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1630,7 +1637,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "offset", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1705,7 +1712,8 @@ internal sealed class GeometryServiceHandler(
             {
                 PolygonJsonStrings = polygonStrings,
                 PolylineJsonStrings = polylineStrings,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, polygonStrings, polylineStrings)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "autoComplete", parameters.PolylineJsonStrings.Length, "esriGeometryPolygon");
@@ -1719,7 +1727,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1785,7 +1793,8 @@ internal sealed class GeometryServiceHandler(
             {
                 TargetJson = target,
                 ReshaperJson = reshaper,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, [target], [reshaper])
             };
 
             GeometryServiceLog.RequestParsed(_logger, "reshape", 1, null);
@@ -1799,7 +1808,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "reshape", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1883,7 +1892,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "findTransformations", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -1989,7 +1998,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -2374,7 +2383,7 @@ internal sealed class GeometryServiceHandler(
             var target = ReadGeometry(parameters.TargetJsonStrings[i]);
             foreach (var piece in CutGeometry(target, cutter))
             {
-                resultWkbs.Add(writer.Write(piece));
+                resultWkbs.Add(parameters.ResultBudget.Add(writer.Write(piece)));
                 cutIndexes.Add(i);
             }
         }
@@ -2449,7 +2458,7 @@ internal sealed class GeometryServiceHandler(
         var writer = new WKBWriter();
 
         var results = parameters.PolylineJsonStrings
-            .Select(polylineJson => writer.Write(TrimOrExtend(ReadGeometry(polylineJson), trimLine)))
+            .Select(polylineJson => parameters.ResultBudget.Add(writer.Write(TrimOrExtend(ReadGeometry(polylineJson), trimLine))))
             .ToList();
 
         var response = ConvertToResponse(results, parameters.SR, "esriGeometryPolyline");
@@ -2697,7 +2706,7 @@ internal sealed class GeometryServiceHandler(
                         joinStyle,
                         Math.Max(parameters.BevelRatio, NetTopologySuite.Operation.Buffer.BufferParameters.DefaultMitreLimit));
 
-                return writer.Write(offset);
+                return parameters.ResultBudget.Add(writer.Write(offset));
             })
             .ToList();
 
@@ -2750,7 +2759,7 @@ internal sealed class GeometryServiceHandler(
                 continue;
             }
 
-            results.Add(writer.Write(polygon));
+            results.Add(parameters.ResultBudget.Add(writer.Write(polygon)));
         }
 
         var response = ConvertToResponse(results, parameters.SR, "esriGeometryPolygon");
@@ -2765,7 +2774,7 @@ internal sealed class GeometryServiceHandler(
         var reshaper = ReadGeometry(parameters.ReshaperJson);
         var reshaped = ReshapeGeometry(target, reshaper);
 
-        var reshapedWkb = new WKBWriter().Write(reshaped);
+        var reshapedWkb = parameters.ResultBudget.Add(new WKBWriter().Write(reshaped));
         var geometryElement = _geometryConverter.ConvertWkbToGeoServicesGeometry(reshapedWkb, parameters.SR);
         var response = new GeometryServiceGeometryResponse { Geometry = geometryElement };
         GeometryServiceLog.BinaryOperationCompleted(_logger, "reshape", 1);
@@ -3341,27 +3350,21 @@ internal sealed class GeometryServiceHandler(
     {
         var writer = new WKBWriter();
         var densified = new List<byte[]>(parameters.GeometryJsonStrings.Length);
-        var estimatedRequestVertices = 0d;
         for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
         {
             ct.ThrowIfCancellationRequested();
             var geometry = ReadGeometry(parameters.GeometryJsonStrings[i]);
-            // Bound the interpolated output BEFORE densifying. NTS and geography segmentize
-            // add roughly (totalLength / maxSegmentLength) coordinates; reject when that would
-            // exceed the per-geometry vertex cap so a tiny maxSegmentLength over a large extent
-            // cannot OOM the host (#2064). maxSegmentLength is already validated > 0 / finite.
-            var lengthInSegmentUnits = parameters.Geodesic
-                ? geometry.Length * spatialContext.MetersPerNativeUnit
-                : geometry.Length;
-            var estimatedVertices = lengthInSegmentUnits / parameters.MaxSegmentLength;
-            estimatedRequestVertices += estimatedVertices;
-            if (double.IsNaN(estimatedVertices)
-                || estimatedVertices > MaxDensifiedVerticesPerGeometry
-                || !double.IsFinite(estimatedRequestVertices)
-                || estimatedRequestVertices > MaxDensifiedVerticesPerGeometry)
+            // NTS and geography segmentize add about one vertex per maxSegmentLength of line,
+            // so the output size follows length and spacing, not request size. The whole
+            // request is checked against the budget before any geometry is densified.
+            // maxSegmentLength is already validated > 0 / finite.
+            if (!parameters.VertexBudget.TryReserve(EstimateDensifiedVertices(
+                    geometry.Length,
+                    parameters.MaxSegmentLength,
+                    parameters.Geodesic ? spatialContext.MetersPerNativeUnit : 1d)))
             {
-                throw new ArgumentException(
-                    "densify would generate too many vertices; maxSegmentLength is too small for the request geometry extent.");
+                throw new GeometryServiceLimitException(
+                    "maxSegmentLength is too small for these geometries: the result would pass the vertex limit. Use a larger maxSegmentLength or send fewer geometries.");
             }
         }
 
@@ -3378,12 +3381,12 @@ internal sealed class GeometryServiceHandler(
                     parameters.SR,
                     parameters.MaxSegmentLength,
                     ct).ConfigureAwait(false);
-                densified.Add(geodesic);
+                densified.Add(parameters.ResultBudget.Add(geodesic));
                 continue;
             }
 
             var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
-            densified.Add(writer.Write(result));
+            densified.Add(parameters.ResultBudget.Add(writer.Write(result)));
         }
 
         var response = ConvertToResponse(densified, parameters.SR, parameters.GeometryType);
@@ -3406,7 +3409,7 @@ internal sealed class GeometryServiceHandler(
             ? geometries[0]
             : factory.CreateGeometryCollection(geometries);
         var hull = combined.ConvexHull();
-        var hullWkb = new WKBWriter().Write(hull);
+        var hullWkb = parameters.ResultBudget.Add(new WKBWriter().Write(hull));
         var hullElement = _geometryConverter.ConvertWkbToGeoServicesGeometry(hullWkb, parameters.SR);
 
         var response = new GeometryServiceGeometryResponse { Geometry = hullElement };
@@ -3419,8 +3422,8 @@ internal sealed class GeometryServiceHandler(
     {
         var writer = new WKBWriter();
         var generalized = parameters.GeometryJsonStrings
-            .Select(geomJson => writer.Write(
-                NetTopologySuite.Simplify.DouglasPeuckerSimplifier.Simplify(ReadGeometry(geomJson), parameters.MaxDeviation)))
+            .Select(geomJson => parameters.ResultBudget.Add(writer.Write(
+                NetTopologySuite.Simplify.DouglasPeuckerSimplifier.Simplify(ReadGeometry(geomJson), parameters.MaxDeviation))))
             .ToList();
 
         var response = ConvertToResponse(generalized, parameters.SR, parameters.GeometryType);
@@ -3435,7 +3438,7 @@ internal sealed class GeometryServiceHandler(
         // InteriorPoint is guaranteed to lie inside the polygon, matching the
         // semantics ArcGIS uses for label placement points.
         var points = parameters.GeometryJsonStrings
-            .Select(geomJson => writer.Write(ReadGeometry(geomJson).InteriorPoint))
+            .Select(geomJson => parameters.ResultBudget.Add(writer.Write(ReadGeometry(geomJson).InteriorPoint)))
             .ToList();
 
         // The Esri /labelPoints operation returns the result points under a
@@ -3525,15 +3528,24 @@ internal sealed class GeometryServiceHandler(
         var bufferSrid = parameters.BufferSR ?? parameters.OutSR ?? parameters.InSR;
         var outputSrid = parameters.OutSR ?? parameters.InSR;
         var bufferedGeometries = new List<byte[]>();
+        var inputWkbs = parameters.GeometryJsonStrings.Select(_geometryConverter.ConvertGeoServicesJsonToWkb).ToArray();
+
+        // Each distance buffers every geometry again. The inputs times the distances estimates
+        // what the request builds; refuse before any buffer when that estimate is past the budget.
+        // Each result is counted as it is built as well.
+        if (!parameters.ResultBudget.Fits(inputWkbs.Sum(static wkb => (long)wkb.Length) * parameters.Distances.Length))
+        {
+            throw new GeometryServiceLimitException(GeometryServiceResultBudget.RefusalMessage);
+        }
 
         foreach (var requestedDistance in parameters.Distances)
         {
             var distance = requestedDistance * parameters.DistanceUnitToMetersFactor;
-            var bufferedAtDistance = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+            var bufferedAtDistance = new List<byte[]>(inputWkbs.Length);
 
-            foreach (var geometryJson in parameters.GeometryJsonStrings)
+            foreach (var inputWkb in inputWkbs)
             {
-                var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geometryJson);
+                var wkb = inputWkb;
 
                 if (parameters.Geodesic && parameters.InSR != 4326)
                 {
@@ -3558,17 +3570,17 @@ internal sealed class GeometryServiceHandler(
                     result = await _operationService.ProjectAsync(result, resultSrid, outputSrid, ct).ConfigureAwait(false);
                 }
 
-                bufferedAtDistance.Add(result);
+                bufferedAtDistance.Add(parameters.ResultBudget.Add(result));
             }
 
             if (parameters.UnionResults)
             {
                 var unionResult = bufferedAtDistance.Count == 1
                     ? bufferedAtDistance[0]
-                    : await _operationService.UnionAsync(
+                    : parameters.ResultBudget.Add(await _operationService.UnionAsync(
                         bufferedAtDistance.ToArray(),
                         outputSrid,
-                        ct).ConfigureAwait(false);
+                        ct).ConfigureAwait(false));
                 bufferedGeometries.Add(unionResult);
                 continue;
             }
@@ -3591,7 +3603,7 @@ internal sealed class GeometryServiceHandler(
         {
             var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geomJson);
             var result = await _operationService.MakeValidAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
-            simplifiedGeometries.Add(result);
+            simplifiedGeometries.Add(parameters.ResultBudget.Add(result));
         }
 
         var response = ConvertToResponse(simplifiedGeometries, parameters.SR, parameters.GeometryType);
@@ -3613,7 +3625,7 @@ internal sealed class GeometryServiceHandler(
                 parameters.OutSR,
                 parameters.DatumTransformation,
                 ct).ConfigureAwait(false);
-            projectedGeometries.Add(result);
+            projectedGeometries.Add(parameters.ResultBudget.Add(result));
         }
 
         var response = ConvertToResponse(projectedGeometries, parameters.OutSR, parameters.GeometryType);
@@ -3630,7 +3642,8 @@ internal sealed class GeometryServiceHandler(
             wkbs[i] = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.GeometryJsonStrings[i]);
         }
 
-        var unionResult = await _operationService.UnionAsync(wkbs, parameters.SR, ct).ConfigureAwait(false);
+        var unionResult = parameters.ResultBudget.Add(
+            await _operationService.UnionAsync(wkbs, parameters.SR, ct).ConfigureAwait(false));
         // The Esri /union operation returns a single `geometry`, not a `geometries`
         // array (union produces one merged geometry). The array shape broke the
         // ArcGIS Maps SDK for JavaScript, which reads result.geometry (singular).
@@ -3706,7 +3719,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 OperatorGeometryJson = operatorGeometry,
-                SR = sr!.Value
+                SR = sr!.Value,
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [operatorGeometry])
             };
 
             GeometryServiceLog.RequestParsed(_logger, operationName, parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -3720,7 +3734,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, operationName, ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, ClientMessage(ex));
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -3747,7 +3761,7 @@ internal sealed class GeometryServiceHandler(
         {
             var targetWkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geomJson);
             var result = await operation(targetWkb, operatorWkb, parameters.SR, ct).ConfigureAwait(false);
-            results.Add(result);
+            results.Add(parameters.ResultBudget.Add(result));
         }
 
         var response = ConvertToResponse(results, parameters.SR, parameters.GeometryType);
@@ -3786,7 +3800,7 @@ internal sealed class GeometryServiceHandler(
             // preserveShape samples the request-CRS shape. geodesic and ground measure
             // the input vertices on the existing spheroidal length and area path.
             var measureWkb = parameters.CalculationType == MeasurementCalculationType.PreserveShape
-                ? DensifyInRequestCrs(new WKBReader().Read(wkb), spatialContext)
+                ? DensifyInRequestCrs(new WKBReader().Read(wkb), spatialContext, parameters.VertexBudget)
                 : wkb;
             var measurementGeometry = await ProjectForGeodeticMeasurementAsync(measureWkb, parameters.SR, ct).ConfigureAwait(false);
             var measurementBoundary = new WKBWriter().Write(new WKBReader().Read(measurementGeometry).Boundary);
@@ -3830,7 +3844,7 @@ internal sealed class GeometryServiceHandler(
             var measureWkb = wkb;
             if (parameters.CalculationType == MeasurementCalculationType.PreserveShape)
             {
-                measureWkb = DensifyInRequestCrs(new WKBReader().Read(wkb), spatialContext);
+                measureWkb = DensifyInRequestCrs(new WKBReader().Read(wkb), spatialContext, parameters.VertexBudget);
             }
 
             var measurementGeometry = await ProjectForGeodeticMeasurementAsync(measureWkb, parameters.SR, ct).ConfigureAwait(false);
@@ -4108,7 +4122,14 @@ internal sealed class GeometryServiceHandler(
             .Select(key => GeometryServiceRequestParser.GetValue(values, key))
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
-    private static byte[] DensifyInRequestCrs(Geometry geometry, MeasurementSpatialContext spatialContext)
+    // Vertices a densify adds: about one for every maxSegmentLength of line.
+    internal static double EstimateDensifiedVertices(double length, double maxSegmentLength, double lengthUnitsPerNativeUnit)
+        => length * lengthUnitsPerNativeUnit / maxSegmentLength;
+
+    private static byte[] DensifyInRequestCrs(
+        Geometry geometry,
+        MeasurementSpatialContext spatialContext,
+        GeometryServiceVertexBudget vertexBudget)
     {
         var spacingNative = ResolvePreserveShapeSpacingNative(geometry, spatialContext);
         if (!double.IsFinite(spacingNative) || spacingNative <= 0)
@@ -4116,11 +4137,13 @@ internal sealed class GeometryServiceHandler(
             return new WKBWriter().Write(geometry);
         }
 
-        var estimatedVertices = geometry.Length / spacingNative;
-        if (double.IsNaN(estimatedVertices) || estimatedVertices > MaxDensifiedVerticesPerGeometry)
+        // Sampling inserts vertices from a length and a spacing, as densify does. Each geometry
+        // is measured and dropped before the next is sampled, so only the per-geometry limit
+        // applies, checked before this geometry is sampled.
+        if (!vertexBudget.FitsOneGeometry(EstimateDensifiedVertices(geometry.Length, spacingNative, 1d)))
         {
-            throw new ArgumentException(
-                "preserveShape would generate too many vertices; the geometry extent is too large for the sample spacing.");
+            throw new GeometryServiceLimitException(
+                "A geometry is too long for calculationType=preserveShape: its samples would pass the vertex limit. Use calculationType=geodesic or split the geometry.");
         }
 
         var densified = NetTopologySuite.Densify.Densifier.Densify(geometry, spacingNative);
@@ -4301,6 +4324,10 @@ internal sealed class GeometryServiceHandler(
         return total / 2d;
     }
 
+    // A limit refusal says what to change; other invalid input stays generic.
+    private static string ClientMessage(ArgumentException exception)
+        => exception is GeometryServiceLimitException ? exception.Message : InvalidGeometryInputMessage;
+
     private static IResult CreateError(HttpContext context, int code, string message)
     {
         var errorResponse = code switch
@@ -4312,6 +4339,10 @@ internal sealed class GeometryServiceHandler(
                 "Unsupported Media Type",
                 message),
             StatusCodes.Status409Conflict => StandardErrorResponse.Conflict(message),
+            StatusCodes.Status413PayloadTooLarge => new StandardErrorResponse(
+                StatusCodes.Status413PayloadTooLarge,
+                "Request payload exceeds maximum allowed size",
+                message),
             StatusCodes.Status503ServiceUnavailable => StandardErrorResponse.ServiceUnavailable(message),
             _ => StandardErrorResponse.InternalServerError(message)
         };
@@ -4327,6 +4358,11 @@ internal sealed class GeometryServiceHandler(
                 context,
                 StatusCodes.Status415UnsupportedMediaType,
                 $"Unsupported Content-Type '{receivedContentType ?? "(missing)"}'. Use application/json or application/x-www-form-urlencoded.");
+        }
+
+        if (string.Equals(parseError, GeometryServiceRequestParser.PayloadTooLargeError, StringComparison.Ordinal))
+        {
+            return CreateError(context, StatusCodes.Status413PayloadTooLarge, GeometryServiceRequestParser.PayloadTooLargeError);
         }
 
         return CreateError(context, StatusCodes.Status400BadRequest, parseError ?? "Request parameters are required.");

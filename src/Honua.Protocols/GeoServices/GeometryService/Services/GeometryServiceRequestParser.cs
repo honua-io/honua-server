@@ -12,6 +12,9 @@ internal static class GeometryServiceRequestParser
 {
     private const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
 
+    // The body passed the request body limit while it was read.
+    public const string PayloadTooLargeError = "The request body is larger than this operation accepts.";
+
     private static readonly FrozenDictionary<string, double> _unitMultipliers = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
     {
         // String name forms
@@ -72,9 +75,7 @@ internal static class GeometryServiceRequestParser
         // POST: form-data
         if (request.HasFormContentType)
         {
-            var form = await request.ReadFormAsync(cancellationToken);
-            var values = form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-            return (values, null);
+            return await TryReadFormValuesAsync(request, cancellationToken);
         }
 
         // POST: JSON body
@@ -114,6 +115,25 @@ internal static class GeometryServiceRequestParser
         catch (JsonException)
         {
             return (null, "Invalid JSON payload.");
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return (null, PayloadTooLargeError);
+        }
+    }
+
+    private static async Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> TryReadFormValuesAsync(
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var form = await request.ReadFormAsync(cancellationToken);
+            return (form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase), null);
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return (null, PayloadTooLargeError);
         }
     }
 

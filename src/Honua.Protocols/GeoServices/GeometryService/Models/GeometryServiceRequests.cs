@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Protocols.GeoServices.GeometryService.Services;
+
 namespace Honua.Protocols.GeoServices.GeometryService.Models;
 
 internal sealed class BufferParameters
@@ -15,6 +17,7 @@ internal sealed class BufferParameters
     public double DistanceUnitToMetersFactor { get; init; } = 1.0;
     public bool UnionResults { get; init; }
     public bool Geodesic { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class SimplifyParameters
@@ -22,6 +25,7 @@ internal sealed class SimplifyParameters
     public required string[] GeometryJsonStrings { get; init; }
     public string? GeometryType { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class ProjectParameters
@@ -32,6 +36,7 @@ internal sealed class ProjectParameters
     public int OutSR { get; init; }
 
     public Core.Features.Infrastructure.Crs.DatumTransformationSelection? DatumTransformation { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class BinaryGeometryOperationParameters
@@ -40,6 +45,7 @@ internal sealed class BinaryGeometryOperationParameters
     public string? GeometryType { get; init; }
     public required string OperatorGeometryJson { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class UnionParameters
@@ -47,6 +53,7 @@ internal sealed class UnionParameters
     public required string[] GeometryJsonStrings { get; init; }
     public string? GeometryType { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class DistanceParameters
@@ -76,6 +83,9 @@ internal sealed class DensifyParameters
     public double MaxSegmentLength { get; init; }
 
     public bool Geodesic { get; init; }
+
+    public required GeometryServiceVertexBudget VertexBudget { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class ConvexHullParameters
@@ -83,6 +93,7 @@ internal sealed class ConvexHullParameters
     public required string[] GeometryJsonStrings { get; init; }
     public string? GeometryType { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class GeneralizeParameters
@@ -91,12 +102,14 @@ internal sealed class GeneralizeParameters
     public string? GeometryType { get; init; }
     public int SR { get; init; }
     public double MaxDeviation { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class LabelPointsParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class CutParameters
@@ -105,6 +118,7 @@ internal sealed class CutParameters
     public string? GeometryType { get; init; }
     public required string CutterJson { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class TrimExtendParameters
@@ -114,6 +128,7 @@ internal sealed class TrimExtendParameters
     public int SR { get; init; }
 
     public string? ExtendHow { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class OffsetParameters
@@ -125,6 +140,7 @@ internal sealed class OffsetParameters
     public string? OffsetUnit { get; init; }
     public string? OffsetHow { get; init; }
     public double BevelRatio { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class AutoCompleteParameters
@@ -132,6 +148,7 @@ internal sealed class AutoCompleteParameters
     public required string[] PolygonJsonStrings { get; init; }
     public required string[] PolylineJsonStrings { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class ReshapeParameters
@@ -139,6 +156,7 @@ internal sealed class ReshapeParameters
     public required string TargetJson { get; init; }
     public required string ReshaperJson { get; init; }
     public int SR { get; init; }
+    public required GeometryServiceResultBudget ResultBudget { get; init; }
 }
 
 internal sealed class FindTransformationsParameters
@@ -188,4 +206,5 @@ internal sealed class MeasurementParameters
     public string? AreaUnit { get; init; }
     public string? LengthUnit { get; init; }
     public MeasurementCalculationType CalculationType { get; init; }
+    public required GeometryServiceVertexBudget VertexBudget { get; init; }
 }

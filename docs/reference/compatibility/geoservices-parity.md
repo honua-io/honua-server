@@ -407,6 +407,34 @@ measurement path. The live surface was verified end-to-end through a Python GIS 
 | Root `GeometryServer` metadata | Implemented | Descriptor with `serviceDescription`, `maxBufferCount`, and `maxSimplifyCount`; it intentionally omits `currentVersion`. |
 | buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString | Implemented | Full GeoServices REST operation set: geodesic buffer/area/length/distance, datum transforms (e.g. 4326 → 4267), DE-9IM relations, MGRS/USNG round-trips, the `bufferSR` cascade. No operation-level gaps. |
 
+Geometry Service request budgets:
+
+- `densify` inserts vertices from a length and a spacing. One geometry may gain at most
+  `Limits:Geometry:MaxVerticesPerGeometry` vertices (default 50,000). One request may
+  gain that many in total when the caller is not signed in, and four times that when the
+  caller is signed in. The whole request is checked before any geometry is densified; a
+  request over either budget returns a 400 error that names `maxSegmentLength`.
+- Shape-preserving measurement (`calculationType=preserveShape` on `lengths` and
+  `areasAndLengths`) samples each geometry. Each geometry is checked against the same
+  per-geometry vertex limit before it is sampled; a geometry over it returns a 400 error.
+- Every operation that returns geometries counts the result geometries it builds. One
+  request may build twice the geometry text it sent, or an allowance if that is larger:
+  `Limits:Edits:MaxPayloadSize` for a signed-in caller and a quarter of it for a caller
+  that is not signed in. `buffer` checks the input geometries times the number of
+  distances before buffering. A request over the budget returns a 400 error.
+- Each server process runs a bounded number of Geometry Service operations at once
+  (twice its processor count, between 8 and 32) and bounds the request bytes they hold
+  together to one and a quarter times `Limits:Edits:MaxPayloadSize`; a signed-in request
+  up to the payload limit always runs when no other is in progress. Callers that are not
+  signed in share half of each bound: their request body is limited to half of the byte
+  bound (larger bodies return 413), and each of their requests may hold its place,
+  response included, for twice `Limits:Connections:RequestTimeout` before the
+  connection is closed. A request that does not fit waits up to 250 ms for a place, then
+  gets the standard retry response with `Retry-After: 1`. The service description is not
+  counted.
+- Under database pressure, every Geometry Service operation from a caller that is not
+  signed in is shed with the same retry response. The service description stays available.
+
 Known parameter-level caveats:
 
 - `areasAndLengths` and `lengths`: `calculationType=planar` selects the compatibility result (geographic axes use equatorial radius 6,371,000 m and do not apply cos(latitude); projected linear units are unchanged). `calculationType=ground` selects the ground result on the WGS 84 spheroid. `calculationType=geodesic` is the unchanged vertex-geodesic measure. `calculationType=preserveShape` returns ground metres of the shape sampled in the request CRS.

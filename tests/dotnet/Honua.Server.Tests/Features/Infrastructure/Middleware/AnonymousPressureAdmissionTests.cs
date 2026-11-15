@@ -45,6 +45,11 @@ public sealed class AnonymousPressureAdmissionTests
     [InlineData("GET", "/sta/v1.1/Observations?$expand=Datastream")]
     [InlineData("GET", "/sta/v1.1/Datastreams(1)/Observations")]
     [InlineData("POST", "/sta/v1.1/Observations")]
+    [InlineData("POST", "/rest/services/Utilities/Geometry/GeometryServer/densify")]
+    [InlineData("GET", "/rest/services/Utilities/Geometry/GeometryServer/convexHull")]
+    [InlineData("POST", "/rest/services/Utilities/Geometry/GeometryServer/relation")]
+    [InlineData("POST", "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString")]
+    [InlineData("POST", "/rest/services/Utilities/Geometry/GeometryServer/buffer")]
     [Operation(Operations.Infrastructure)]
     public async Task InvokeAsync_AnonymousWorkUnderPressure_ReturnsRetryWithoutReachingDatabase(string method, string path)
     {
@@ -71,6 +76,7 @@ public sealed class AnonymousPressureAdmissionTests
     [InlineData("/sta/v1.1")]
     [InlineData("/rest/services/test/FeatureServer/0/1/attachments")]
     [InlineData("/rest/services/test/FeatureServer")]
+    [InlineData("/rest/services/Utilities/Geometry/GeometryServer")]
     [InlineData("/api/v1/admin/auth/providers/entra/authorize-url")]
     [Operation(Operations.Infrastructure)]
     public async Task InvokeAsync_InexpensiveRouteUnderPressure_RemainsAvailable(string path)
