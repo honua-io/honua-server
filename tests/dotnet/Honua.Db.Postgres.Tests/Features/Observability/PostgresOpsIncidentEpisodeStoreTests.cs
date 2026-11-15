@@ -172,7 +172,7 @@ public sealed class PostgresOpsIncidentEpisodeStoreTests(PostgresFixture fixture
 
     private async Task ApplyMigrationAsync(string schema)
     {
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "172_CreateOpsIncidentEpisodes.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "172_CreateOpsIncidentEpisodes.sql"));
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
