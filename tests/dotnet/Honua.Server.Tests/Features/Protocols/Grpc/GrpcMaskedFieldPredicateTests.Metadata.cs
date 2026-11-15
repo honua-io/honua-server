@@ -105,7 +105,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
     public async Task DescribeLayer_MaskedPrimaryKeyDoesNotLeakThroughFieldReferences()
     {
-        _fieldMaskSource.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _fieldMaskSource.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("OBJECTID", MaskedField));
         using var context = CreateCallContext();
         var response = await _sut.DescribeLayer(new Proto.DescribeLayerRequest

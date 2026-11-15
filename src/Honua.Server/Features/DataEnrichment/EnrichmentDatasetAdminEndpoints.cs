@@ -209,7 +209,7 @@ internal static partial class EnrichmentDatasetAdminEndpoints
             return false;
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.AdminName);
         var now = DateTimeOffset.UtcNow;
         record = new EnrichmentDatasetRecord(
             Id: request.Id!.Trim(),
@@ -287,7 +287,7 @@ internal static partial class EnrichmentDatasetAdminEndpoints
             Attribution = request.Attribution is null ? existing.Attribution : NormalizeOptional(request.Attribution),
             License = request.License is null ? existing.License : NormalizeOptional(request.License),
             MinimumEdition = edition,
-            UpdatedBy = ResolveActor(context),
+            UpdatedBy = ActorResolver.Resolve(context, ActorResolution.AdminName),
         };
         error = string.Empty;
         return true;
@@ -320,9 +320,6 @@ internal static partial class EnrichmentDatasetAdminEndpoints
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static string ResolveActor(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
     internal sealed class EnrichmentDatasetAdminLogCategory;
 

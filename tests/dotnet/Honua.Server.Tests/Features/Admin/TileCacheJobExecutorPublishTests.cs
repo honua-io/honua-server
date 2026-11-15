@@ -573,7 +573,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
     public async Task ScheduledSeed_ReadsTheLayerAsTheInProcessPathDid()
     {
         var policies = await SeedPoliciesAsync();
-        var parcels = new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" } };
+        var parcels = new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" } };
         var filters = SeedFilters();
         RowLevelSecurityFilterSource? rowFilters = null;
         var predicatesPerTile = new ConcurrentQueue<int>();
@@ -642,9 +642,9 @@ public sealed partial class TileCacheJobExecutorPublishTests
     private static IFilterExpressionService SeedFilters()
     {
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(call => call.ArgAt<FilterExpression>(0));
-        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(call => FilterTranslationResult.Success(call.ArgAt<FilterExpression>(0), new SqlFragment("FALSE", [])));
         return filters;
     }

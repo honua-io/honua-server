@@ -182,10 +182,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     {
         Environment = "Test",
         GeneratedAt = DateTimeOffset.UtcNow,
-        Resources = [new MetadataV2Resource
+        Resources = [new MetadataV2Object
         {
             Metadata = new() { Id = "survey", Name = "survey", Title = title, Keywords = keywords ?? [] },
-            Type = MetadataV2ResourceType.FeatureDataset
+            Type = MetadataV2ObjectType.FeatureDataset
         }]
     };
 

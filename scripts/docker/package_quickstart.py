@@ -13,6 +13,42 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
+README = (
+    '# Honua local Compose quickstart\n\n'
+    'Run `python3 quickstart.py` with Docker Compose and OpenSSL installed. '
+    'The default database image builds from docker/proj-grids, downloading canonical PROJ grids '
+    'during the first build. PostgreSQL uses the baked grids with PROJ network access disabled. '
+    'The build needs access to the image registry, Debian repositories and cdn.proj.org. '
+    'Preserve the database volume when rebuilding this PostgreSQL 17 image.\n\n'
+    'Each secret is created locally in its own file under `secrets/`, beside `secrets/keyring.pfx`; '
+    'preserve that directory. `.env` holds only non-secret settings, so `docker compose config` '
+    'never prints a secret. An install whose secrets are still in `.env` (an earlier package) '
+    'migrates on the next `python3 quickstart.py` run, after this package\'s files replace its own.\n\n'
+    'Serving API: http://localhost:18080. Management API and MCP: http://localhost:18082. '
+    'Use the management admin password in `secrets/honua_manager_admin_password` to create '
+    'proposer API keys on the management API. A person reviews and approves each proposal '
+    'in Console with a live interactive OIDC session; the human requester may approve their own proposal. '
+    'API keys and agent tokens cannot approve. Configure the identity provider before operating approval gates. '
+    'Only approved proposals execute.\n\n'
+    'The executor runs as uid 1002, targets only this project and serving service, and is '
+    'the only process with Docker socket access. Docker socket access grants host control; '
+    'use a dedicated local Docker host. No Docker socket is mounted in either HTTP server. '
+    'Retain backups, manager database, and Redis volumes for recovery and audit.\n\n'
+    'Images in images.json are immutable digests from one candidate build. '
+    'For an upgrade, set HONUA_RELEASE_IMAGE, HONUA_RELEASE_WORKER_IMAGE and HONUA_RELEASE_VERSION '
+    'in .env from the new release lock. Pull the new serving image before approving. '
+    'For older images without a schema label, configure HONUA_PRIOR_MAX_SCHEMA from that exact image. '
+    'Never guess its schema.\n\n'
+    'AI coding agents working in this directory: read `AGENTS.md` first. It covers secrets, '
+    'approvals, upgrades and verifying work before reporting it done. '
+    'Task-specific skills are in skills/. To install for Claude Code, run '
+    '`mkdir -p .claude/skills && cp -R skills/. .claude/skills/`; for Codex, run '
+    '`mkdir -p .agents/skills && cp -R skills/. .agents/skills/`. '
+    'Review existing honua-* directories before replacing matching files; repeat after upgrades. '
+    'Both hosts receive the same source bytes. Verify agent files with '
+    '`sha256sum -c agent-files.sha256` after verifying the release archive checksum.\n'
+)
+
 # Serves the static Console bundle and terminates its local HTTPS origin (compose.console.yaml).
 CONSOLE_WEB_IMAGE = ('docker.io/nginxinc/nginx-unprivileged:1.29-alpine@sha256:'
                      '0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6')
@@ -37,6 +73,7 @@ def package(destination, images, version):
     for name in ('compose.executor.yaml', 'compose.console.yaml', 'console.nginx.conf'):
         shutil.copyfile(ROOT / 'docs/get-started' / name, destination / name)
     shutil.copyfile(Path(__file__).with_name('compose_quickstart.py'), destination / 'quickstart.py')
+    package_proj_grids(destination)
     # The agent guide is published once, in the docs; the package carries that exact text.
     guide = (ROOT / 'docs/guides/connect/working-with-ai-agents.md').read_text()
     guide = re.search(r'<!-- agent-guide:begin -->\n(.*?)<!-- agent-guide:end -->', guide, re.S).group(1)
@@ -45,36 +82,14 @@ def package(destination, images, version):
     max_schema = max(int(path.name.split('_', 1)[0]) for path in
                      (ROOT / 'src/Honua.Server/Migrations').glob('[0-9]*_*.sql'))
     (destination / 'images.json').write_text(json.dumps(dict(images, version=version, maxSchema=max_schema), indent=2) + '\n')
-    (destination / 'README.md').write_text(
-        '# Honua local Compose quickstart\n\n'
-        'Run `python3 quickstart.py` with Docker Compose and OpenSSL installed. '
-        'Each secret is created locally in its own file under `secrets/`, beside `secrets/keyring.pfx`; '
-        'preserve that directory. `.env` holds only non-secret settings, so `docker compose config` '
-        'never prints a secret. An install whose secrets are still in `.env` (an earlier package) '
-        'migrates on the next `python3 quickstart.py` run, after this package\'s files replace its own.\n\n'
-        'Serving API: http://localhost:18080. Management API and MCP: http://localhost:18082. '
-        'Use the management admin password in `secrets/honua_manager_admin_password` to create '
-        'proposer API keys on the management API. A person reviews and approves each proposal '
-        'in Console with a live interactive OIDC session; the human requester may approve their own proposal. '
-        'API keys and agent tokens cannot approve. Configure the identity provider before operating approval gates. '
-        'Only approved proposals execute.\n\n'
-        'The executor runs as uid 1002, targets only this project and serving service, and is '
-        'the only process with Docker socket access. Docker socket access grants host control; '
-        'use a dedicated local Docker host. No Docker socket is mounted in either HTTP server. '
-        'Retain backups, manager database, and Redis volumes for recovery and audit.\n\n'
-        'Images in images.json are immutable digests from one candidate build. '
-        'For an upgrade, set HONUA_RELEASE_IMAGE, HONUA_RELEASE_WORKER_IMAGE and HONUA_RELEASE_VERSION '
-        'in .env from the new release lock. Pull the new serving image before approving. '
-        'For older images without a schema label, configure HONUA_PRIOR_MAX_SCHEMA from that exact image. '
-        'Never guess its schema.\n\n'
-        'AI coding agents working in this directory: read `AGENTS.md` first. It covers secrets, '
-        'approvals, upgrades and verifying work before reporting it done. '
-        'Task-specific skills are in skills/. To install for Claude Code, run '
-        '`mkdir -p .claude/skills && cp -R skills/. .claude/skills/`; for Codex, run '
-        '`mkdir -p .agents/skills && cp -R skills/. .agents/skills/`. '
-        'Review existing honua-* directories before replacing matching files; repeat after upgrades. '
-        'Both hosts receive the same source bytes. Verify agent files with '
-        '`sha256sum -c agent-files.sha256` after verifying the release archive checksum.\n')
+    (destination / 'README.md').write_text(README)
+
+
+def package_proj_grids(destination):
+    grid_context = destination / 'docker/proj-grids'
+    grid_context.mkdir(parents=True)
+    for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
+        shutil.copyfile(ROOT / 'docker/proj-grids' / name, grid_context / name)
 
 
 def unsafe_entry(entry):

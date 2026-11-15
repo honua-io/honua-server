@@ -788,7 +788,7 @@ internal static partial class AttachmentEndpoints
         HttpContext context,
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         long publicObjectId,
         CancellationToken cancellationToken)
@@ -873,7 +873,7 @@ internal static partial class AttachmentEndpoints
 
     internal readonly record struct AttachmentAccessContext(
         MetadataV2Service Service,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int StorageLayerId,
         IFeatureReader Reader,
         int PublicLayerId);
@@ -881,7 +881,7 @@ internal static partial class AttachmentEndpoints
     private static async Task<bool> AuthorizeAttachmentOwnerEditAsync(
         HttpContext context,
         IFeatureReader featureReader,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         long featureId,
         AttributeRuleEditEvent editEvent,
@@ -936,8 +936,8 @@ internal static partial class AttachmentEndpoints
 
     internal static string? DescribeDeniedAttachmentAccess(
         MetadataV2Service service,
-        MetadataV2Publication? publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer? publication,
+        MetadataV2Object resource,
         AccessScope scope,
         AuthorizationOperation? writeOperation)
     {

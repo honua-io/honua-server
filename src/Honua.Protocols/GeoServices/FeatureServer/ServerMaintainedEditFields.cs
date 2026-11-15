@@ -11,7 +11,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 internal static class ServerMaintainedEditFields
 {
     internal static IReadOnlyDictionary<string, object?> OmitClientValues(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes,
         bool isUpdate,
         bool useGlobalIds)
@@ -77,7 +77,7 @@ internal static class ServerMaintainedEditFields
     }
 
     internal static void Stamp(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         bool isInsert,
         EditPrincipal principal,
@@ -112,7 +112,7 @@ internal static class ServerMaintainedEditFields
     }
 
     private static void StampInsertGlobalId(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         string? fieldName,
         bool useGlobalIds)
@@ -123,17 +123,12 @@ internal static class ServerMaintainedEditFields
         }
 
         var name = CanonicalName(resource, fieldName);
-        if (useGlobalIds && TryGet(attributes, name, out var supplied) && supplied is not null)
-        {
-            attributes[name] = NormalizeGuid(supplied);
-            return;
-        }
-
-        attributes[name] = Guid.NewGuid().ToString("D");
+        var supplied = useGlobalIds && TryGet(attributes, name, out var value) ? value : null;
+        attributes[name] = InsertGlobalIds.Resolve(supplied);
     }
 
     private static void SetUser(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         string? fieldName,
         string? principalName)
@@ -147,7 +142,7 @@ internal static class ServerMaintainedEditFields
     }
 
     private static void SetTime(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         string? fieldName,
         DateTimeOffset utcNow)
@@ -169,7 +164,7 @@ internal static class ServerMaintainedEditFields
     }
 
     private static void Restore(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         IReadOnlyDictionary<string, object?>? existingAttributes,
         string? fieldName)
@@ -189,15 +184,15 @@ internal static class ServerMaintainedEditFields
         attributes.Remove(name);
     }
 
-    private static bool IsPreservedGlobalId(MetadataV2ResourceEditing? editing, string fieldName, bool useGlobalIds)
+    private static bool IsPreservedGlobalId(MetadataV2ObjectEditing? editing, string fieldName, bool useGlobalIds)
         => useGlobalIds &&
            editing?.GlobalIdField is { } globalIdField &&
            fieldName.Equals(globalIdField, StringComparison.OrdinalIgnoreCase);
 
-    private static string CanonicalName(MetadataV2Resource resource, string fieldName)
+    private static string CanonicalName(MetadataV2Object resource, string fieldName)
         => FindField(resource, fieldName)?.Name ?? fieldName;
 
-    private static MetadataV2Field? FindField(MetadataV2Resource resource, string fieldName)
+    private static MetadataV2Field? FindField(MetadataV2Object resource, string fieldName)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -240,17 +235,6 @@ internal static class ServerMaintainedEditFields
 
         value = caseInsensitive;
         return foundCaseInsensitive;
-    }
-
-    private static string NormalizeGuid(object value)
-    {
-        if (value is Guid guid)
-        {
-            return guid.ToString("D");
-        }
-
-        var text = Convert.ToString(value, CultureInfo.InvariantCulture);
-        return Guid.TryParse(text, out var parsed) ? parsed.ToString("D") : text ?? Guid.NewGuid().ToString("D");
     }
 
     private static void Add(HashSet<string> names, string? fieldName)

@@ -129,7 +129,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var service = graph.Services.Single(candidate => candidate.Metadata.Name == _serviceName);
         var publications = graph.Publications.Where(candidate => candidate.ServiceId == service.Metadata.Id).ToArray();
         publications.Select(candidate => candidate.PublicationType).Should().BeEquivalentTo(
-            [MetadataV2PublicationType.EsriFeatureLayer, MetadataV2PublicationType.StacCollection]);
+            [MetadataV2LayerType.EsriFeatureLayer, MetadataV2LayerType.StacCollection]);
         var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publications[0].ResourceId);
         var binding = graph.StorageBindings.Single(candidate => candidate.Metadata.Id == publications[0].StorageBindingId);
         foreach (var metadata in publications.Select(candidate => candidate.Metadata)

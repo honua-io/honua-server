@@ -115,13 +115,23 @@ public static class OperationRegistry
         new(Mcp, "resources/read"),
         new(Mcp, "prompts/list"),
         new(Mcp, "prompts/get"),
+        new(Mcp, "skills/list"),
+        new(Mcp, "skills/get"),
 
         // gRPC FeatureService methods (geospatial.v1.FeatureService)
-        new(Grpc, "geospatial.v1.FeatureService/DescribeService"),
-        new(Grpc, "geospatial.v1.FeatureService/DescribeLayer"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream"),
         new(Grpc, "geospatial.v1.FeatureService/ApplyEdits"),
+        new(Grpc, "geospatial.v1.FeatureService/AbortAttachmentUpload"),
+        new(Grpc, "geospatial.v1.FeatureService/BeginAttachmentUpload"),
+        new(Grpc, "geospatial.v1.FeatureService/CommitAttachmentUpload"),
+        new(Grpc, "geospatial.v1.FeatureService/DeleteAttachment"),
+        new(Grpc, "geospatial.v1.FeatureService/DescribeLayer"),
+        new(Grpc, "geospatial.v1.FeatureService/DescribeService"),
+        new(Grpc, "geospatial.v1.FeatureService/GetAttachmentUrl"),
+        new(Grpc, "geospatial.v1.FeatureService/ListAttachments"),
+        new(Grpc, "geospatial.v1.FeatureService/UploadAttachment"),
+        new(Grpc, "geospatial.v1.FeatureService/UploadAttachmentChunk"),
 
         // gRPC ProcessService methods (geospatial.v1.ProcessService)
         new(Grpc, "geospatial.v1.ProcessService/ValidatePlan"),
