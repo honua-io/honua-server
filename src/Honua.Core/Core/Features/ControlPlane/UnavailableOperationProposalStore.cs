@@ -11,8 +11,8 @@ using Honua.Core.Features.Guardrails.Domain;
 namespace Honua.Core.Features.ControlPlane;
 
 /// <summary>
-/// Fail-closed proposal store composed when the host has no Redis-backed durable
-/// control plane (Redis absent or the <c>caching.redis</c> entitlement missing).
+/// Fail-closed proposal store composed when the host has no system database, so no
+/// durable control plane.
 /// </summary>
 /// <remarks>
 /// Its presence lets the governed admin operation catalogs register their executors on

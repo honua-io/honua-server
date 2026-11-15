@@ -71,7 +71,7 @@ public sealed class DisabledLicenseTests
         var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(configuration, NullLoggerFactory.Instance);
         Assert.Equal(HonuaEdition.Community, snapshot.Edition);
         Assert.Equal(LicenseMode.Enabled, snapshot.Mode);
-        Assert.False(snapshot.HasEntitlement("caching.redis"));
+        Assert.False(snapshot.HasEntitlement("caching.output-cache"));
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns(Environments.Production);
         var services = new ServiceCollection().AddLogging().AddHonuaLicensing(configuration, environment);

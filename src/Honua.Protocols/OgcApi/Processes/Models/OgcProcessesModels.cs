@@ -409,8 +409,8 @@ public sealed record OgcProcessError
 
     /// <summary>
     /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
-    /// extension member), for example <c>caching.redis</c>. Present instead of
-    /// <c>missingDependency</c> when the dependency is deployed but not licensed.
+    /// extension member). Present instead of <c>missingDependency</c> when the dependency is
+    /// deployed but not licensed.
     /// </summary>
     [JsonPropertyName("missingEntitlement")]
     public string? MissingEntitlement { get; init; }

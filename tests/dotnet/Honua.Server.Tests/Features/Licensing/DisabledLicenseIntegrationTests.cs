@@ -93,7 +93,7 @@ public sealed class DisabledLicenseIntegrationTests
                 var entitlements = data.GetProperty("entitlements").EnumerateArray().ToArray();
                 Assert.Equal(FeatureCatalog.All.Count, entitlements.Length);
                 Assert.All(entitlements, item => Assert.True(item.GetProperty("isActive").GetBoolean()));
-                foreach (var key in new[] { "editing.featureserver-edits", "caching.redis", "geocoding.batch", "identity.oidc" })
+                foreach (var key in new[] { "editing.featureserver-edits", "caching.output-cache", "geocoding.batch", "identity.oidc" })
                 {
                     Assert.Contains(entitlements, item => item.GetProperty("key").GetString() == key && item.GetProperty("isActive").GetBoolean());
                 }

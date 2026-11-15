@@ -91,16 +91,6 @@ public sealed class CapabilityKeyCatalogTests
             - CapabilityKeyCatalog.RoutedPreviewKeys.Count);
     }
 
-    private const string ResolvedByPostgresJobState =
-        "resolved when durable job and approval state moves to PostgreSQL (honua-server#6809)";
-
-    private static readonly IReadOnlyDictionary<(string Capability, string Required), string> AllowedHigherEditionRequirements =
-        new Dictionary<(string, string), string>
-        {
-            [("jobs.durable-runtime", FeatureCatalog.RedisCacheKey)] = ResolvedByPostgresJobState,
-            [("operations.proposals", FeatureCatalog.RedisCacheKey)] = ResolvedByPostgresJobState,
-        };
-
     [Trait("Tier", "Fast")]
     [Fact]
     public void Requires_OnlyNamesKnownCapabilityKeys()
@@ -112,7 +102,7 @@ public sealed class CapabilityKeyCatalogTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Requires_NamesAHigherEditionKeyOnlyForTheAllowedExceptions()
+    public void Requires_NeverNamesAHigherEditionKey()
     {
         var editionByKey = CapabilityKeyCatalog.All.ToDictionary(c => c.Key, c => c.Edition, StringComparer.Ordinal);
 
@@ -122,10 +112,8 @@ public sealed class CapabilityKeyCatalogTests
                 .Select(required => (capability.Key, required)))
             .ToArray();
 
-        higherEditionRequirements.Should().BeEquivalentTo(
-            AllowedHigherEditionRequirements.Keys,
-            "a capability that requires a key from a higher edition cannot work on its own edition, "
-            + "and an allowed exception that is no longer a violation must be removed from the list");
+        higherEditionRequirements.Should().BeEmpty(
+            "a capability that requires a key from a higher edition cannot work on its own edition");
     }
 
     [Trait("Tier", "Fast")]
@@ -135,8 +123,8 @@ public sealed class CapabilityKeyCatalogTests
         RequiredKeysOf("enrichment.datasets").Should().Equal("analytics.spatial-join");
         RequiredKeysOf(FeatureCatalog.OidcClaimsMappingKey).Should().Equal(FeatureCatalog.OidcAuthenticationKey);
         RequiredKeysOf(FeatureCatalog.OidcMultiProviderKey).Should().Equal(FeatureCatalog.OidcAuthenticationKey);
-        RequiredKeysOf("jobs.durable-runtime").Should().Equal(FeatureCatalog.RedisCacheKey);
-        RequiredKeysOf("operations.proposals").Should().Equal(FeatureCatalog.RedisCacheKey);
+        RequiredKeysOf("jobs.durable-runtime").Should().BeEmpty();
+        RequiredKeysOf("operations.proposals").Should().BeEmpty();
     }
 
     [Trait("Tier", "Fast")]

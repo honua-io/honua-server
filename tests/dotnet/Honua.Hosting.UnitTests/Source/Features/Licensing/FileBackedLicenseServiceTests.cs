@@ -410,12 +410,12 @@ public sealed class FileBackedLicenseServiceTests
     {
         // honua-server#1755: the bootstrap entitlement probe must honor a Secrets-Manager-only Pro
         // license (Licensing:LicenseContentSecretRef) just like the per-request service does, so a
-        // startup gate such as the Redis-cache probe sees its caching.redis entitlement.
+        // startup gate sees its Pro entitlements.
         const string secretRef = "aws:secretsmanager:honua/license-pro";
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
             expiresAt: DateTimeOffset.UtcNow.AddDays(365),
-            entitlements: ["caching.redis", "analytics.clustering"]);
+            entitlements: ["caching.output-cache", "analytics.clustering"]);
         var envelopeJson = Encoding.UTF8.GetString(license.LicenseData);
         var resolver = new FakeLicenseSecretResolver(envelopeJson);
 
@@ -434,8 +434,8 @@ public sealed class FileBackedLicenseServiceTests
 
         snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.IsValid.Should().BeTrue();
-        snapshot.HasEntitlement("caching.redis").Should().BeTrue(
-            "the SM-resolved Pro license carries caching.redis, so the bootstrap Redis-cache gate must see it");
+        snapshot.HasEntitlement("caching.output-cache").Should().BeTrue(
+            "the SM-resolved Pro license carries caching.output-cache, so the bootstrap snapshot must see it");
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         resolver.ResolveCallCount.Should().Be(1);
     }
@@ -475,8 +475,8 @@ public sealed class FileBackedLicenseServiceTests
 
         snapshot.Edition.Should().Be(HonuaEdition.Community);
         snapshot.IsValid.Should().BeTrue();
-        snapshot.HasEntitlement("caching.redis").Should().BeFalse(
-            "caching.redis is a Pro entitlement and must stay inactive for a Community license");
+        snapshot.HasEntitlement("caching.output-cache").Should().BeFalse(
+            "caching.output-cache is a Pro entitlement and must stay inactive for a Community license");
         resolver.ResolveCallCount.Should().Be(0);
     }
 

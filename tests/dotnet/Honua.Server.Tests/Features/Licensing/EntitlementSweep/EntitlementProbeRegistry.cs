@@ -288,11 +288,6 @@ internal static class EntitlementProbeRegistry
                 "registered, time-aware ImageServer mosaic layer absent from the default " +
                 "integration seed. NOT a known gap — a fixture-scope limitation, mirrors the " +
                 "raster.cloud-cog-serving entry above."),
-            new("caching.redis",
-                "Gated at process boot (StartupConfigurationHelpers.IsRedisCacheEntitledAsync " +
-                "decides whether the Redis-backed distributed cache is wired at all before the " +
-                "host starts accepting requests), not per-request — there is no single HTTP " +
-                "call whose response reflects this gate. Verified enforced in code; not a gap."),
             new("routing.solve",
                 "MCP-tool-only surface (RouteTool.cs EntitlementKey); denials surface as a " +
                 "JSON-RPC failed_precondition tool error, not an HTTP 402 problem response. " +

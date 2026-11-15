@@ -127,9 +127,9 @@ internal sealed class McpErrorData
     public string? Capability { get; set; }
 
     /// <summary>
-    /// Identifier of the entitlement whose absence composed the capability out (for example
-    /// <c>caching.redis</c>). Present instead of <see cref="MissingDependency"/> when the
-    /// dependency is deployed but not licensed, so an agent reports the right fix.
+    /// Identifier of the entitlement whose absence composed the capability out. Present instead
+    /// of <see cref="MissingDependency"/> when the dependency is deployed but not licensed, so an
+    /// agent reports the right fix.
     /// </summary>
     [JsonPropertyName("missingEntitlement")]
     public string? MissingEntitlement { get; set; }
