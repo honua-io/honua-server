@@ -529,12 +529,13 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. The selector itself, Format and source Analyzers use the
-fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
-Both test-analyzer rows and the four Fast/architecture matrix jobs always use
-`ubuntu-latest`. Test analyzers stay hosted even during light-pool qualification.
-All eight remain independent of producer admission and heavy settings and keep
-their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
+`server-test-producer` run, and which start jobs move to idle heavy runners. The
+selector itself, Format and source Analyzers use the fork-guarded
+`HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback. Both
+test-analyzer rows and the four Fast/architecture matrix jobs use `ubuntu-latest`
+unless the selector planned them onto the heavy pool (below); test analyzers never
+use the light pool, even during light-pool qualification. All eight keep their
+existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
 availability switch: keep it unset while the light pool is unhealthy; new jobs
 then fall back to hosted runners. Forks always use hosted runners. Routing does
 not move an already queued job when pool health changes. With the repository variable
@@ -550,7 +551,27 @@ host and read its heartbeat, nothing else) and runs
 - When the current instance's heartbeat is fresh and shows two idle gate runners,
   Build and tests and Server test producer use the selected gate label.
 - When the host is busy, or no heartbeat arrives within three minutes, the two
-  producers use `ubuntu-latest`. A stopped host is still woken for later runs.
+  producers use `ubuntu-latest`, unless idle heavy runners cover them (below). A
+  stopped host is still woken for later runs.
+- Heavy start plan (`start_heavy`): from the same proof, the selector never plans
+  three idle heavy runners (two for this gate's even affected shards, which have no
+  hosted fallback, and one for advisory and AOT jobs) and spends half of the idle
+  runners above that, at most two per gate, so a second gate reading the same
+  heartbeat still finds the reserve. The heartbeat records availability; it does
+  not reserve runners, so several gates starting together can still queue on the
+  pool, and a lost spot host leaves planned jobs queued as it does shards. A busy
+  gate pool moves both producers first, on the label that alone selects the heavy
+  pool (the group's own label, or a sole label that must be unique to the heavy
+  pool), because they gate the shards; without such a label, including a
+  group-only selector, nothing is planned and every start job stays hosted; the remaining budget goes to `analyzers-server`,
+  `architecture`, `server-fast` and `analyzers-other`, in that order (longest
+  median hosted run on 24 gates, 15 Nov 2026: 12.2, 12.0, 10.7 and 10.6 minutes
+  after 5 to 9 minutes of hosted queue). `server-governance` (starts PostGIS) and
+  `unit-fast` (shortest) stay hosted. A planned job runs on the fork-guarded
+  `HONUA_HEAVY_RUNNER` JSON selector; a stale or invalid proof, enforce mode,
+  drafts and forks keep it hosted. A failed-jobs rerun reuses the original plan.
+  Fast/architecture jobs pin temp to `RUNNER_TEMP` and skip the hosted-only
+  `sudo` disk cleanup on self-hosted runners.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
