@@ -74,6 +74,12 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
         int maxCount,
         CancellationToken cancellationToken = default)
     {
+        var throughGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
+        if (lastGeneration >= throughGeneration)
+        {
+            return [];
+        }
+
         // Metadata only. Geometry and attribute blobs are loaded later, one relevant
         // generation at a time. Versioned rows stay out of unversioned alert state.
         const string sql = """
@@ -82,6 +88,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
                    committed_attributes IS NOT NULL
             FROM honua.feature_changes
             WHERE generation > @last_generation
+              AND generation <= @through_generation
               AND version_id IS NULL
             ORDER BY generation
             LIMIT @max_count
@@ -90,6 +97,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("last_generation", NpgsqlDbType.Bigint, lastGeneration);
+        command.Parameters.AddWithValue("through_generation", NpgsqlDbType.Bigint, throughGeneration);
         command.Parameters.AddWithValue("max_count", NpgsqlDbType.Integer, maxCount);
 
         var changes = new List<AlertChange>(Math.Max(1, maxCount));
