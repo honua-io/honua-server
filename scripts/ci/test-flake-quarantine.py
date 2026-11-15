@@ -229,13 +229,30 @@ class RunnerTests(unittest.TestCase):
     def test_timeout_cleans_up_descendant_outside_inherited_group(self):
         self.assert_timeout_cleanup(foreground=False, descendant_setup='os.setsid()')
 
-    def assert_timeout_cleanup(self, foreground, descendant_setup='pass'):
+    def test_timeout_cleans_up_child_forked_after_process_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / 'snapshot'
+            fake_ps = root / 'ps'
+            real_ps = shutil.which('ps')
+            fake_ps.write_text('#!/usr/bin/env python3\n'
+                               'import pathlib, subprocess, sys\n'
+                               f'listing = subprocess.check_output([{real_ps!r}, *sys.argv[1:]])\n'
+                               f'pathlib.Path({str(marker)!r}).touch()\n'
+                               'sys.stdout.buffer.write(listing)\n')
+            fake_ps.chmod(0o755)
+            before_fork = f'while not pathlib.Path({str(marker)!r}).exists(): time.sleep(0.01)\n'
+            with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}'}):
+                self.assert_timeout_cleanup(foreground=False, before_fork=before_fork)
+
+    def assert_timeout_cleanup(self, foreground, descendant_setup='pass', before_fork=''):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake = root / 'dotnet'
             fake.write_text('#!/usr/bin/env python3\n'
                             'import os, pathlib, signal, time\n'
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                            + before_fork +
                             'is_child = os.fork() == 0\n'
                             f'if is_child: {descendant_setup}\n'
                             'suffix = ".descendant.pid" if is_child else ".pid"\n'
