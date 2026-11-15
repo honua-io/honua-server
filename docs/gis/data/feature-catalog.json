@@ -669,6 +669,22 @@
       "capability": "raster.multidim-coverage"
     },
     {
+      "id": "delete-api-v1-agent-workspaces-workspaceid-processes-local-project-bindings-bindingid",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bindings/{bindingId}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.RevokeBinding_Owner_RevokesOnlyTheirOwnWorkspaceBinding"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "delete-api-v1-console-access-workspaceid-roles-roleid",
       "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
       "method": "DELETE",
@@ -2117,7 +2133,8 @@
         "Honua.Server.Tests.Features.Admin.FeatureChangeEventsEndpointsTests.Replay_WithInvalidLimit_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.FeatureChangeEventsEndpointsTests.Replay_WithInvertedWindow_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.FeatureChangeEventsEndpointsTests.Replay_WithNoCursor_ReturnsFromBeginning",
-        "Honua.Server.Tests.Features.Admin.FeatureChangeEventsEndpointsTests.Replay_WithTimeWindow_FiltersEvents"
+        "Honua.Server.Tests.Features.Admin.FeatureChangeEventsEndpointsTests.Replay_WithTimeWindow_FiltersEvents",
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.GlobalAdministration_TenantAdministrator_IsForbidden"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3643,6 +3660,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.GlobalAdministration_TenantAdministrator_IsForbidden",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListAudit_MalformedCursor_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListAudit_ReturnsItemsAndPaginates",
         "Honua.Server.Tests.Features.OperationsToolset.AdminAccessProposalRestartTests.DestructiveAccessOperation_ProposalIdentitiesAndIdempotencySurviveHostRestart"
@@ -5028,6 +5046,150 @@
       "capability": "raster.multidim-coverage"
     },
     {
+      "id": "get-api-v1-agent-workspaces-workspaceid",
+      "route": "/api/v1/agent/workspaces/{workspaceId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.BearerWithoutRecognizedScope_IsDeniedBeforeTheStore",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.Workspace_PersistsServerIdentity_AndRejectsOtherOwnersTenantsAndTargets"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-commands-commandid",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/commands/{commandId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-project",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-project-identity",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/identity",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_Owner_UsesStoredIdentityWithoutForwardingBearer",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-runs",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-runs-runid",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-runs-runid-artifacts-path",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/artifacts/{**path}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-snapshots-snapshotid",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots/{snapshotId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-snapshots-snapshotid-sources-path",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots/{snapshotId}/sources/{**path}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-agent-workspaces-workspaceid-processes-local-sources-path",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-analysis-artifacts-artifactid",
       "route": "/api/v1/analysis/artifacts/{artifactId}",
       "method": "GET",
@@ -6253,19 +6415,24 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Reconnect_WithCursor_ReplaysMissedEvents",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Reconnect_WithLiveEventsPublishedDuringReplay_DeliversAll",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.SlowConsumer_BufferOverflow_DisconnectsSession",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_BareNumberCursor_SendsCursorEpochResetThenGoesLive",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_Connect_ReceivesStatusEvent",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_Connect_ReturnsEventStreamContentType",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_DefaultSubscription_DeliversLowerCursorArrivingAfterHigherCursorExactlyOnce",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_ExpiredDeltaCursor_SendsRetentionResetThenSnapshot",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_ExpiredUnsafeSnapshotScope_ResetsWithoutPublishingSnapshotCheckpoint",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_FreshConnect_DeliversFirstLiveEvent",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_OpenSubscription_FieldMaskAddedAfterConnect_AppliesToLaterEvents",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_OpenSubscription_LayerAccessRevoked_EndsStreamWithinRefreshInterval",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_ReplayEnvelope_IncludesFullSdkContractFields",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_RetentionAdvancesDuringNonemptyReplay_ResetsBeforeDeliveringPage",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_Live_FieldMaskOnly",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_Live_HidesRowsAndFields",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_Replay_FieldMaskOnly",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_Replay_HidesRowsAndFields",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_RowDependentSnapshot_IsRejectedBeforeDelivery",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_SnapshotHandoff_HidesFields",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_UnparseableCursor_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_UnsupportedOwner_RejectsSnapshotWithoutReading",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_WhenSessionLimitReached_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_CommunityEdition_ReturnsPaymentRequired",
@@ -6289,18 +6456,24 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithoutAuthAndEmptyLayersParam_DoesNotBypassUnfilteredGate",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithoutUpgradeOrSseHeader_Returns400",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_BareNumberCursor_SendsCursorEpochReset",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_ConnectWithoutCredential_IsRejectedBeforeAnyFrame",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_Connect_AcceptsAndReceivesMessages",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_ControlCursor_EnforcesFeatureEpoch",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_ControlSubscription_RecoversCrossNodeEventViaDurablePoll",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_DefaultSubscription_DeliversLowerCursorArrivingAfterHigherCursorExactlyOnce",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_DefaultSubscription_DoesNotDuplicateStaleQueuedFrameAfterReplay",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_DurablePoll_FiresUnderContinuousOutboundTraffic",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_EmittedResumeCursor_ReplaysInterveningEventWithoutEpochReset",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_ExpiredControlCursor_ResetsAndSnapshotsWithoutLosingSibling",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_ExpiredUnsafeSnapshotScope_ResetsWithoutPublishingSnapshotCheckpoint",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_LiveSendsToControlSubscription_AdvanceDurablePollWatermark",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OnKestrel_CredentialExpiresOrIsRevoked_ClosesAuthorizationEndedBeforeTransportEnds",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OpenSubscription_FieldMaskAddedAfterConnect_AppliesToLaterEvents",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OversizedControlFrame_ReturnsErrorAndCloses",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OversizedSubscriptionId_ReturnsErrorAndStaysOpen",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_QueuedFrames_AfterUnsubscribe_AreNotDelivered",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_RetentionAdvancesDuringReplayOrLiveSweep_SendsTypedReset",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_SubscribeThenUnsubscribe_ReturnsStatusFrames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_SubscribeWithReservedDefaultId_ReturnsErrorAndStaysOpen",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_SubscriberPolicies_Live_FieldMaskOnly",
@@ -6311,15 +6484,13 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_SubscriptionLimit_RejectsExcessSubscribesWithError",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_TwoSubscriptionsMatchingSameEvent_DeliversBothFrames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_UnfilteredSubscription_ExcludesRetiredRoutes",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_UnparseableCursor_IsRejectedBeforeUpgrade",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_UnsubscribeReservedDefaultId_ReturnsErrorAndPreservesPolling",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_UnsupportedOwner_RejectsSnapshotWithoutReading",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_DeltaModeDefault_EmitsNoSnapshotFrames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_DeltaMode_UnreadableLayer_IsUnaffectedByTheSnapshotPreflight",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_EmptyReplayBeforeDurableHead_EndsBeforeLiveHandoff",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_RealUpdateAndDelete_ReachTheSubscriberCorrelatedToTheEdit",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_ReplayBatchWithInteriorGap_EndsBeforeSendingAnyDelta",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_ReplayWindowTrimmedAfterBaseline_EndsBeforeSendingPostGapDelta",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_ReplayWindowTrimmedPastBaseline_MarksBaselineIncomplete",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotCapReachedOnPageBoundary_MarksBaselineIncomplete",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotModeScopedByLayerOnly_IsStillAccepted",
@@ -6339,10 +6510,9 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_WhenSessionLimitReached_DoesNotRunStorePreflight",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotThenDeltaMode_EveryCanSubscribeLayerInTheCapabilityDocument_ReturnsABaseline",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotThenDeltaMode_ExactByteBoundary_IncludesCursorPrefix",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_UnknownMode_Returns400ListingTheSupportedModes",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_UnknownMode_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_ReplayBatchWithInteriorGap_ClosesBeforeSendingAnyDelta",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_ShortReplayBeforeDurableHead_ClosesAfterContiguousPrefix",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_FullyExpiredHistory_EmitsCompleteReplacementSnapshot",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_SseResumeHeaders_DoNotSkipTheSnapshotStorePreflight",
@@ -7833,6 +8003,7 @@
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableOgcFeatures_BlocksOgcCollectionMetadata",
         "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.CatalogChangeOnTaskA_ReachesTaskBCachedCollection_OnItsNextRequest",
+        "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.ExternalEditOnTaskA_RetiresTaskBCachedCollectionAndTileBeforePurgeWorkerRuns",
         "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.LayerMadePrivateOnTaskA_TaskBStopsReplayingItsCachedCollectionAndTile",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesClientDiscoveryTests.Wgs84Collection_AdvertisesLongitudeFirstStorage_AndHonorsExplicitAxisOrder",
@@ -7916,6 +8087,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetItems_AtMaximumOffset_DoesNotAdvertiseUnreachableNextLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetItems_WithBboxOnNonSpatialCollection_MatchesAllFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetItems_WithDatetimeOnNonTemporalCollection_MatchesAllFeatures",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCsvHeaderTests.Csv_WithIdProperty_PreservesIdentifierAndProperty",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_FormatParameterOverridesAcceptHeader",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_ReturnsResponseWithPagingLinksAndTimeStamp",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_With3dBbox_AcceptsAndUsesHorizontalExtent",
@@ -7980,6 +8152,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesNumberMatchedPolicyTests.GetItems_WithOmittedNumberMatchedPolicy_DoesNotDuplicateTopLevelIdInProperties",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesNumberMatchedPolicyTests.GetItems_WithOmittedNumberMatchedPolicy_OmitsNumberMatchedForPagedResponses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesNumberMatchedPolicyTests.GetItems_WithRawPath_FiltersPropertiesToLayerSchema",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesProjectedIdentifierTests.GetItems_GmlProjectedProperties_DoesNotAddIdentifierProperty",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesProjectedIdentifierTests.GetItems_ProjectedProperties_PreservesIdentityWithoutAddingUnrequestedIdentifier",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithExplicitGeometryCrsAndFilterCrs_DoesNotSwapExplicitLiteralAxisOrder",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithNonAdvertisedBboxCrs_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithNonAdvertisedExplicitGeometryCrs_ReturnsBadRequest",
@@ -8025,6 +8199,7 @@
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetFeature_ShouldReturnSingleFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAdmissionErrorTests.FeatureRead_WhenAdmissionUnavailable_Preserves503AndRetryAfter",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesClientDiscoveryTests.Wgs84Collection_AdvertisesLongitudeFirstStorage_AndHonorsExplicitAxisOrder",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCsvHeaderTests.Csv_WithIdProperty_PreservesIdentifierAndProperty",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSingleItem_WithContentNegotiation_ReturnsCorrectFormat",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSingleItem_WithCrsParameter_SwapsAxisOrder",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSingleItem_WithCsvFormat_ReturnsCsvResponse",
@@ -8762,7 +8937,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_WithWmsEnabledAndMapServerDisabled_RendersStyledFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_DistinctIdentifiersShareResource_PreservesBothNames",
-        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_DistinctResourcesShareIdentifier_RejectsAmbiguousName",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_DistinctResourcesShareIdentifier_OmitsAmbiguousName",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_LegacyPublication_UsesServiceLocalIdentifier",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_ProtocolPublicationsShareResource_AdvertisesIdentifierOnce",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_StorageRebound_KeepsServiceLocalIdentifier",
@@ -8990,6 +9165,7 @@
         "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.CatalogChangeOnTaskA_ReachesTaskBCachedCollection_OnItsNextRequest",
+        "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.ExternalEditOnTaskA_RetiresTaskBCachedCollectionAndTileBeforePurgeWorkerRuns",
         "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.LayerMadePrivateOnTaskA_TaskBStopsReplayingItsCachedCollectionAndTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.DenseLowZoomMvtBudgetEndpointTests.GetTile_DenseZoom0_ReturnsDecodableTileWithinBudget",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt",
@@ -15382,6 +15558,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndMalformedFilter_ReturnsBadRequestBeforeProviderRouting",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndSortBy_AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndSupportedFilter_EvaluatesMatchingAndNonMatchingCandidates",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndUnevaluableLike_ReturnsSanitizedBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIds_RoutesCanonicalWhereWithoutSqlFilter",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithSortByAcrossCollections_MergesGlobalOrderWithoutIds",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithTwoBoundCollections_InterleavesGlobalSortAcrossPageBoundaries",
@@ -15781,7 +15958,7 @@
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.DescribeFeatureType_AdvertisedNamespace_DefinesPublicationInThatNamespace",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.DescribeFeatureType_MixedNamespaces_ImportsResolvablePublicationSchema",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsCapabilities_EscapedPublicationId_DoesNotCollideWithLiteralEscape",
-        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsCapabilities_StorageRebound_UsesDistinctEncodedPublicationIds",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsCapabilities_StorageRebound_KeepsCanonicalDiscoveryAndResolvesEveryPublication",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsGetFeature_AdvertisedNamespace_QualifiesFeatureAndProperties",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsGetFeature_MixedNamespaces_ProvidesResolvableSchemaForEachNamespace",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsGetFeature_SchemaLocation_ResolvesDescribedFeatureNamespace",
@@ -16976,7 +17153,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutCsrf_IsRejected",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CanAccessStudio",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_PasswordSession_IsRefusedLikeApproval"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -17230,6 +17408,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostPublishLayer_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AgentProposalReplayIntegrationTests.LayerPublish_AgentProposalApprovedByPerson_ReplaysThroughLoopback",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishLayer_AgentKey_IsNotExemptAsAdministrator",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishLayer_ApprovedOperationReplay_IsNotRefusedForApproval",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
@@ -18317,6 +18496,7 @@
         "Honua.Server.Tests.Import.StreamingImportTests.Import_EsriJsonFeatureSet_AutoDetectsAndImports",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_FlatGeobufFile_StreamsFeaturesAndDetectsFormat",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonMissingGeometry_ReturnsStructuredValidationAndDoesNotCreateTable",
+        "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonNullGeometryFeature_ImportsEveryFeatureAndWarnsWithItsIndex",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithDifferentSourceAndTargetSrid_TransformsAtImport",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithMultipleFeatureTypes_StreamsCorrectly",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithUnsupportedTargetSrid_ReturnsStructuredValidationAndDoesNotCreateTable",
@@ -19229,9 +19409,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AgentProposalReplayIntegrationTests.AccessPolicyChange_AgentProposalApprovedByPerson_ReplaysThroughLoopback",
+        "Honua.Server.Tests.Features.Admin.AgentProposalReplayIntegrationTests.LayerPublish_AgentProposalApprovedByPerson_ReplaysThroughLoopback",
         "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_LegacyRollback_RequiresRollbackScope",
-        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithPublishScope_RejectsButCannotApprove",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithPublishScope_CannotDecideWithoutHumanSession",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithoutRequiredScope_LeavesProposalUnchanged",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
@@ -19289,12 +19471,14 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_LegacyRollback_RequiresRollbackScope",
-        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithPublishScope_RejectsButCannotApprove",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithPublishScope_CannotDecideWithoutHumanSession",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithoutRequiredScope_LeavesProposalUnchanged",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.RejectProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadButRequiresHumanApprovalAndCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ReadOnlyScopedKey_ApproveNamesMissingGrant",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_AdminKey_RequiresHumanSessionAndRecordsDenial",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_EvidenceBoundToAnotherTenant_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_PasswordSession_IsRefusedLikeApproval",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithReason_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithoutReason_ReturnsBadRequest"
       ],
@@ -19344,6 +19528,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.CreateRowPolicy_AgentKey_IsRefusedAndStoresNothing",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicyEndpoints_RejectAnonymousCallers",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim",
@@ -19764,6 +19949,86 @@
       "capability": "raster.multidim-coverage"
     },
     {
+      "id": "post-api-v1-agent-workspaces",
+      "route": "/api/v1/agent/workspaces",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.BearerWithoutRecognizedScope_IsDeniedBeforeTheStore",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.CreateWorkspace_Anonymous_IsUnauthorized",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.CreateWorkspace_BrowserCookieWithoutCsrf_IsRejected",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.CreateWorkspace_MachineCredential_IsForbidden",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.Workspace_PersistsServerIdentity_AndRejectsOtherOwnersTenantsAndTargets"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-project-bind",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bind",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-runs",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.RunWithoutCustomCodeScope_IsForbidden"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-runs-runid-cancel",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/cancel",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-agent-workspaces-workspaceid-processes-local-snapshots",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-analysis-content-items",
       "route": "/api/v1/analysis/content/items",
       "method": "POST",
@@ -19771,6 +20036,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.GlobalAdministration_TenantAdministrator_IsForbidden",
         "Honua.Server.Tests.Features.AnalysisContent.AnalysisContentEndpointsTests.AnalysisPackage_SubmitAndRerun_StampsVersionAndProvenanceMetadata",
         "Honua.Server.Tests.Features.AnalysisContent.AnalysisContentEndpointsTests.CreateItem_MissingName_ReturnsFieldAddressableValidationProblem",
         "Honua.Server.Tests.Features.AnalysisContent.AnalysisContentEndpointsTests.CreateItem_NegativeSavedQueryLayerId_ReturnsPathScopedValidationError",
@@ -20299,6 +20565,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.McpPublishService_AgentRequestDoesNotPublish_HumanPublicationIsReadableByFreshClient",
+        "Honua.Server.Tests.Features.Admin.AgentProposalReplayIntegrationTests.AccessPolicyChange_AgentProposalApprovedByPerson_ReplaysThroughLoopback",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.SubmitAccessPolicyOperation_AgentKey_FilesProposalForHumanApproval",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.SubmitOtherGatedOperation_AgentKey_IsRefusedWithAgentPolicyRef",
         "Honua.Server.Tests.Features.OperationsToolset.AdminAccessInstallerCredentialTests.InstallerCredential_ListsAndResolvesItsEffectivePermissions_ThroughCanonicalOperations",
@@ -26574,6 +26841,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutServiceAccessPolicy_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AgentProposalReplayIntegrationTests.AccessPolicyChange_AgentProposalApprovedByPerson_ReplaysThroughLoopback",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateAccessPolicy_AgentKey_RequiresHumanApproval",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateAccessPolicy_HumanAdministratorKey_IsNotGated",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_ConcurrentSaveConflict_RejectsPinnedWrite",
@@ -26746,6 +27014,21 @@
         "Honua.Server.Tests.Features.Admin.UserManagementEndpointsTests.UpdateUserRoles_ValidRequest_ReturnsUpdatedUser"
       ],
       "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-api-v1-agent-workspaces-workspaceid-processes-local-sources-path",
+      "route": "/api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Studio.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.LocalProcess_AllOperations_RejectNonOwnerBeforeContactingSandbox",
+        "Honua.Server.Tests.Features.AgentWorkspace.LocalProcessWorkspaceEndpointTests.ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun"
+      ],
+      "proof_ledger_surface": "native-local-process-workspaces",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
