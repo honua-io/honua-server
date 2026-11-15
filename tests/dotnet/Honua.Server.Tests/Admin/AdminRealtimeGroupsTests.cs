@@ -38,7 +38,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
         var dispatcher = log.CreateDispatcher();
-        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcher) };
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(new RealtimeTransactionWriter(log.Log, dispatcher)) };
         using var host = CreateInProcessFactory(log, dispatcher, storage);
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
@@ -87,7 +87,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
         var dispatcher = log.CreateDispatcher();
-        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcher) };
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(new RealtimeTransactionWriter(log.Log, dispatcher)) };
         using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
         await tail.StartAsync(default);
         using var host = CreatePostgresFactory(log, dispatcher, storage);
@@ -152,7 +152,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
         var dispatcherA = log.CreateDispatcher();
-        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcherA) };
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(new RealtimeTransactionWriter(log.Log, dispatcherA)) };
         var dispatcherB = log.CreateDispatcher();
         using var tailA = log.CreateTail(dispatcherA, null, new RealtimeOptions());
         using var tailB = log.CreateTail(dispatcherB, null, new RealtimeOptions());

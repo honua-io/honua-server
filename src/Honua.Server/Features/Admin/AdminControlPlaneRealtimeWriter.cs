@@ -5,17 +5,16 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Realtime;
-using Npgsql;
 
 namespace Honua.Server.Features.Admin;
 
 // Append last, on the state writer's transaction, so a client never loses a committed change.
-internal sealed class AdminControlPlaneRealtimeWriter(PostgresRealtimeEventLog log, RealtimeDispatcher dispatcher) : IControlPlaneRealtimeWriter
+internal sealed class AdminControlPlaneRealtimeWriter(IRealtimeTransactionWriter log) : IControlPlaneRealtimeWriter
 {
-    public void NotifyCommitted() => dispatcher.Wake();
+    public void NotifyCommitted() => log.NotifyCommitted();
 
     public async Task AppendProposalAsync(OperationProposal proposal, ControlPlaneWriteContext context)
     {
@@ -28,21 +27,21 @@ internal sealed class AdminControlPlaneRealtimeWriter(PostgresRealtimeEventLog l
             ? AdminRealtimeContract.ProposalPendingEventName : AdminRealtimeContract.ProposalResolvedEventName;
         var payload = new ProposalRealtimeEvent(proposal.ProposalId, proposal.Kind.ToString(),
             proposal.Status.ToString(), proposal.RequestedBy, proposal.Plan.RiskLevel.ToString(), proposal.UpdatedAt);
-        await log.AppendAsync("admin", [new RealtimeLogRow(AdminRealtimeContract.ProposalsTopic, kind,
+        await log.AppendAsync(RealtimeFamily.Admin, [new RealtimeTransactionEntry(AdminRealtimeContract.ProposalsTopic, kind,
             JsonSerializer.SerializeToElement(payload, AdminRealtimeJsonContext.Default.ProposalRealtimeEvent))],
-            (NpgsqlTransaction)context.Transaction, context.CancellationToken).ConfigureAwait(false);
+            context.Transaction, context.CancellationToken).ConfigureAwait(false);
     }
 
     public async Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context)
     {
         var operateEvent = OperateEventResponseMapper.Map(ReleaseTimelineEventFactory.Create(transition));
-        await log.AppendAsync("admin",
+        await log.AppendAsync(RealtimeFamily.Admin,
         [
-            new RealtimeLogRow(AdminRealtimeContract.DeployOperationsTopic, AdminRealtimeContract.DeployOperationEventName,
+            new RealtimeTransactionEntry(AdminRealtimeContract.DeployOperationsTopic, AdminRealtimeContract.DeployOperationEventName,
                 JsonSerializer.SerializeToElement(MapDeployEvent(transition), AdminRealtimeGroupsJsonContext.Default.DeployOperationRealtimeEvent)),
-            new RealtimeLogRow(AdminRealtimeContract.OperateEventsTopic, AdminRealtimeContract.OperateEventEventName,
+            new RealtimeTransactionEntry(AdminRealtimeContract.OperateEventsTopic, AdminRealtimeContract.OperateEventEventName,
                 JsonSerializer.SerializeToElement(operateEvent, AdminRealtimeGroupsJsonContext.Default.OperateEventResponse))
-        ], (NpgsqlTransaction)context.Transaction, context.CancellationToken).ConfigureAwait(false);
+        ], context.Transaction, context.CancellationToken).ConfigureAwait(false);
     }
 
     private static DeployOperationRealtimeEvent MapDeployEvent(WorkflowOperationTransition transition)

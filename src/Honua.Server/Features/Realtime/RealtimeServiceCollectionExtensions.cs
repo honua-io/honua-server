@@ -52,6 +52,7 @@ internal static class RealtimeServiceCollectionExtensions
 
         services.AddRealtimeEventLog(configuration);
         services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton<IRealtimeTransactionWriter, RealtimeTransactionWriter>();
         services.TryAddSingleton<RealtimePresenceBatcher>();
 
         var crossNode = UsesPostgresProvider(configuration);
