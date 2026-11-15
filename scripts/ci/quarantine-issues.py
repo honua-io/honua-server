@@ -145,6 +145,13 @@ def issue_body(entry, run_url):
     return PREFIX + json.dumps(metadata, sort_keys=True) + '\n```\n'
 
 
+def repeats_evidence(issue, run_url):
+    body = issue.get('body') or ''
+    if not body.startswith(PREFIX) or not body.endswith('\n```\n'):
+        return False
+    return json.loads(body[len(PREFIX):-5]).get('evidence') == run_url
+
+
 def publish(directory):
     candidates = candidate_entries(directory)
     if not candidates:
@@ -157,14 +164,14 @@ def publish(directory):
     repository = os.environ['GITHUB_REPOSITORY']
     run_url = os.environ['QUARANTINE_EVIDENCE_URL']
     for key, entry in sorted(candidates.items()):
-        if key in active_keys:
+        existing = known.get(key)
+        if key in active_keys or (existing and repeats_evidence(existing, run_url)):
             continue
         labels = [LABEL]
         if len(active_keys) < MAX_QUARANTINED:
             labels.append(ACTIVE_LABEL)
             active_keys.add(key)
         payload = dict(title=key, body=issue_body(entry, run_url), labels=labels)
-        existing = known.get(key)
         endpoint = f'repos/{repository}/issues'
         if existing:
             endpoint += f'/{existing["number"]}'

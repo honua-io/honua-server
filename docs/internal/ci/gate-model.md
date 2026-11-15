@@ -759,12 +759,27 @@ unchanged. Bot-authored issues provide a validated, project-scoped exclusion lis
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
 
-The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
-same-repository provenance, checks out default-branch code, validates raw case evidence and
-hashes, and never executes downloaded data or checks out the triggering branch.
-Publication uses GitHub's FIFO concurrency queue (`queue: max`, up to 100 pending
-runs), keeping issue mutations serial without replacing a pending completion event.
-If that service limit is reached, rerun canceled publishers to recover their evidence.
+The publisher has issue-write permission only on trusted default-branch code, reached by
+same-repository successful/failed `workflow_run` completions, a twice-hourly recovery
+schedule, or manual dispatch. It validates source workflow/repository provenance, raw case
+evidence and hashes, and never executes downloaded data or checks out the triggering branch.
+Job-level concurrency filters cancelled and fork completions before admission, serializes
+issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
+Each sweep discovers all retained evidence artifacts, including reruns of old source runs,
+selects each shard's highest attempt, and processes at most 25 completed source runs.
+Remaining artifacts stay discoverable for the next event or scheduled sweep.
+
+Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
+upload replays from the previous successful checkpoint. Successful skipped jobs are ignored
+when finding that checkpoint. Artifact IDs prevent repeat downloads, and source-attempt
+links prevent replay from reopening the same expired/closed quarantine issue. Missing new
+checkpoints, unsafe archives, excessive inventory and untrusted sources fail closed.
+Migration starts at the last successful legacy publisher's event time; first installation
+backfills 14 days. The checkpoint retains processed IDs while artifacts remain available,
+and expires after 90 days. Recovery therefore requires source evidence still retained by
+GitHub. The existing 25-method cap, 14-day expiry, proof validation and required gates remain
+unchanged. This adds no PR-time jobs or runners; recovery uses one publisher job per sweep.
+
 
 ### Grouped unit and component shards
 
