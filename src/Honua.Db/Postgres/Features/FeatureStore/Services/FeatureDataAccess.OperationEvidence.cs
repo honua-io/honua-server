@@ -70,19 +70,6 @@ internal sealed partial class FeatureDataAccess
             return default;
         }
         using var document = JsonDocument.Parse(captured);
-        return document.RootElement.EnumerateArray().Select(ParseOperationEvidence).ToImmutableArray();
+        return document.RootElement.EnumerateArray().Select(FeatureOperationEvidenceJson.Read).ToImmutableArray();
     }
-
-    private static FeatureOperationEvidence ParseOperationEvidence(JsonElement item)
-        => new()
-        {
-            Generation = item.GetProperty("generation").GetInt64(),
-            LayerId = item.GetProperty("layer_id").GetInt32(),
-            ObjectId = item.GetProperty("objectid").GetInt64(),
-            PublicObjectId = item.GetProperty("public_objectid") is { ValueKind: JsonValueKind.Number } publicId
-                ? publicId.GetInt64() : null,
-            VersionId = item.GetProperty("version_id") is { ValueKind: JsonValueKind.String } versionId
-                ? versionId.GetGuid() : null,
-            Operation = (FeatureChangeOperation)item.GetProperty("operation").GetInt16()
-        };
 }

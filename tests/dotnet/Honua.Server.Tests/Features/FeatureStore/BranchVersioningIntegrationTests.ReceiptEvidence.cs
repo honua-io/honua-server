@@ -140,6 +140,41 @@ public sealed partial class BranchVersioningIntegrationTests
         (await receipts.TryReadAsync(receipt.Scope)).Should().BeNull();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEditsAsync_DurableOperationReceiptVersionedEdits_ReplaysLogicalIdentity()
+    {
+        var store = CreateFeatureStore();
+        var original = await store.CreateAsync(PointsLayerId, BuildFeature("base", 1, 1), CancellationToken.None);
+        var version = await CreateVersionManager().CreateAsync(
+            new CreateVersionRequest($"Receipt{Guid.NewGuid():N}", "sde", VersionAccess.Public), CancellationToken.None);
+        var receipt = BuildEvidenceReceipt("versioned-replay");
+        using var capture = FeatureOperationEvidenceScope.Begin();
+        var batch = FeatureEditBatch.Create(operations:
+        [
+            FeatureEditOperation.Create(BuildFeature("created", 2, 2)),
+            FeatureEditOperation.Update(BuildFeature("updated", 3, 3, original.Id)),
+            FeatureEditOperation.Delete(original.Id)
+        ], rollbackOnFailure: true, versionContext: VersionContext.ForVersion(version));
+
+        var application = await store.ApplyEditsAsync(PointsLayerId, batch, receipt, CancellationToken.None);
+        IFeatureEditIdempotencyReceipts receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _schema);
+        var replay = await receipts.TryReadWithEvidenceAsync(receipt.Scope);
+
+        application.ReceiptDurable.Should().BeTrue();
+        application.Result.IsSuccess.Should().BeTrue();
+        replay.Should().NotBeNull();
+        replay!.Value.Evidence.Should().NotBeNull();
+        var evidence = replay.Value.Evidence!;
+        evidence.Creates[0].Should().NotBeEmpty().And.Equal(application.Result.CreateResults[0].OperationEvidence);
+        evidence.Updates[0].Should().NotBeEmpty().And.Equal(application.Result.UpdateResults[0].OperationEvidence);
+        evidence.Deletes[0].Should().NotBeEmpty().And.Equal(application.Result.DeleteResults[0].OperationEvidence);
+        evidence.Creates[0].Concat(evidence.Updates[0]).Concat(evidence.Deletes[0])
+            .Should().OnlyContain(operation => operation.VersionId == version.VersionId);
+        evidence.Deletes[0].Should().Contain(operation => operation.ObjectId == original.Id &&
+            operation.Operation == FeatureChangeOperation.Delete);
+    }
+
     private static FeatureEditIdempotencyReceipt BuildEvidenceReceipt(string scope) => new()
     {
         Scope = scope,
