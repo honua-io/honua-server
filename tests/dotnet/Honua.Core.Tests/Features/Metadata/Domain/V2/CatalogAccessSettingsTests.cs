@@ -76,6 +76,14 @@ public sealed class CatalogAccessSettingsTests
     [InlineData("queryable")]
     [InlineData("deleted")]
     [InlineData("retired")]
+    [InlineData("storageBindings")]
+    [InlineData("connections")]
+    [InlineData("storageBindingIds")]
+    [InlineData("primaryStorageBindingId")]
+    [InlineData("connectionId")]
+    [InlineData("secretRef")]
+    [InlineData("endpoint")]
+    [InlineData("locator")]
     public void Match_ChangeToGuardedSetting_DoesNotMatch(string key)
     {
         foreach (var container in new[] { "resources", "services" })

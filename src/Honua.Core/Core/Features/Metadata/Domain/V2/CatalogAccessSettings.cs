@@ -98,7 +98,6 @@ public static class CatalogAccessSettings
 
     private static string Text(JsonElement item, string property)
         => item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : "";
-    }
 
     // Property order inside a setting is not meaningful, so objects are written with sorted keys.
     private static string Canonical(JsonElement element) => element.ValueKind switch
