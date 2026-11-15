@@ -182,15 +182,26 @@ internal static partial class ManagedImportConnection
         }
 
         var builder = Builder(connectionString);
-        if (builder is null || Rejects(builder))
+        if (builder is null)
         {
             return null;
         }
 
-        return new ImportDatabase(
-            builder.Host,
-            new DatabaseAddress(builder.Port, builder.Database, builder.Username),
-            MapSsl(builder.SslMode));
+        var host = builder.Host;
+        var database = builder.Database;
+        var username = builder.Username;
+        if (string.IsNullOrWhiteSpace(host) ||
+            host.Length > 255 ||
+            string.IsNullOrWhiteSpace(database) ||
+            database.Length > 64 ||
+            string.IsNullOrWhiteSpace(username) ||
+            username.Length > 64 ||
+            builder.Port is < 1 or > 65535)
+        {
+            return null;
+        }
+
+        return new ImportDatabase(host, new DatabaseAddress(builder.Port, database, username), MapSsl(builder.SslMode));
     }
 
     private static NpgsqlConnectionStringBuilder? Builder(string connectionString)
@@ -203,17 +214,6 @@ internal static partial class ManagedImportConnection
         {
             return null;
         }
-    }
-
-    private static bool Rejects(NpgsqlConnectionStringBuilder builder)
-    {
-        return string.IsNullOrWhiteSpace(builder.Host) ||
-            builder.Host.Length > 255 ||
-            string.IsNullOrWhiteSpace(builder.Database) ||
-            builder.Database.Length > 64 ||
-            string.IsNullOrWhiteSpace(builder.Username) ||
-            builder.Username.Length > 64 ||
-            builder.Port is < 1 or > 65535;
     }
 
     private static bool RequiresSsl(StoreSslMode mode) =>
