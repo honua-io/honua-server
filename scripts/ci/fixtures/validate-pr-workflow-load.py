@@ -70,7 +70,8 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name, job=key):
                 condition = job.get("if", "true")
                 self.assertIn(DRAFT_GUARD, condition)
-                if job.get("needs"):
+                # The shared publish authorization runs only for a publishing dispatch, never for a PR.
+                if job.get("needs") or job.get("uses") == "./.github/workflows/publish-authorization.yml":
                     continue
                 event = {"event_name": "pull_request", "event": {
                     "pull_request": {"draft": True, "user": {"login": "contributor"}},
