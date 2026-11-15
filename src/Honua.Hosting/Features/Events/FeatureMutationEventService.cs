@@ -44,7 +44,7 @@ internal sealed class FeatureMutationEventService(
         return _outputCacheInvalidationService.InvalidateEditedCollectionAsync(collectionId, cancellationToken);
     }
 
-    public async Task InvalidatePublishedLayerAsync(MetadataV2Publication publication, int storageLayerId)
+    public async Task InvalidatePublishedLayerAsync(MetadataV2Layer publication, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(publication);
         await InvalidateStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);

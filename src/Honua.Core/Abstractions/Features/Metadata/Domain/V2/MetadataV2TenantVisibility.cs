@@ -23,15 +23,15 @@ public static class MetadataV2TenantVisibility
         return string.Equals(entityTenant, requestTenant, StringComparison.Ordinal);
     }
 
-    public static bool IsVisibleToTenant(MetadataV2Resource? resource, string? requestTenant)
+    public static bool IsVisibleToTenant(MetadataV2Object? resource, string? requestTenant)
         => resource is null || IsVisibleToTenant(resource.Metadata.Tenant, requestTenant);
 
     public static bool IsVisibleToTenant(MetadataV2Service? service, string? requestTenant)
         => service is null || IsVisibleToTenant(service.Metadata.Tenant, requestTenant);
 
     public static bool IsVisibleToTenant(
-        MetadataV2Publication publication,
-        MetadataV2Resource? resource,
+        MetadataV2Layer publication,
+        MetadataV2Object? resource,
         MetadataV2Service? service,
         string? requestTenant)
     {

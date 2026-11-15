@@ -94,7 +94,7 @@ internal sealed partial class OgcFilterProcessor
     /// </summary>
     public async Task<FilterProcessingResult> ProcessFiltersAsync(
         HttpRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? filter,
         string? bbox,
         string? datetime,
@@ -275,7 +275,7 @@ internal sealed partial class OgcFilterProcessor
     private CqlFilterResult ProcessCql2JsonFilter(
         string? filter,
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         FilterExpression? jsonFilterExpression = null;
         var jsonParseResult = _filterExpressionService.Parse(FilterLanguage.Cql2Json, filter);
@@ -310,7 +310,7 @@ internal sealed partial class OgcFilterProcessor
     private CqlFilterResult ProcessCql2TextFilter(
         string? filter,
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var combinedResult = TryBuildCombinedFilter(filter, request, resource);
         if (!combinedResult.IsSuccess)
@@ -361,7 +361,7 @@ internal sealed partial class OgcFilterProcessor
     private static CombinedFilterResult TryBuildCombinedFilter(
         string? filter,
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var fragments = new List<string>();
 
@@ -444,7 +444,7 @@ internal sealed partial class OgcFilterProcessor
         }
     }
 
-    private static TemporalFilterResult ProcessTemporalFilter(string? datetime, MetadataV2Resource resource)
+    private static TemporalFilterResult ProcessTemporalFilter(string? datetime, MetadataV2Object resource)
     {
         if (!OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out var rangeError))
         {
@@ -468,7 +468,7 @@ internal sealed partial class OgcFilterProcessor
     private BboxFilterResult ProcessBboxFilter(
         string? bboxValue,
         CrsDefinition crsDefinition,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var bboxResult = TryParseBbox(bboxValue, crsDefinition);
         if (!bboxResult.IsSuccess)

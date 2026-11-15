@@ -671,10 +671,10 @@ public sealed class ContentPublicationServiceTests
             Revision = 1,
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources = resourceIds
-                .Select(id => new MetadataV2Resource
+                .Select(id => new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                 })
                 .ToArray(),
         };

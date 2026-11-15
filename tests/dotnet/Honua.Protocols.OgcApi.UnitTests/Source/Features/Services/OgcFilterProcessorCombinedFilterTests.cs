@@ -23,10 +23,10 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 /// </summary>
 public sealed class OgcFilterProcessorCombinedFilterTests
 {
-    private static readonly MetadataV2Resource Resource = new()
+    private static readonly MetadataV2Object Resource = new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "test-res", Name = "Test" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         SchemaFields =
         [
             new MetadataV2Field { Name = "country", Type = MetadataV2FieldType.String },
@@ -152,13 +152,13 @@ public sealed class OgcFilterProcessorCombinedFilterTests
             return FilterParseResult.Success(null);
         }
 
-        public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource)
+        public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Object resource)
             => Parse(language, filter);
 
-        public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
             => throw new NotSupportedException("Not exercised by these tests.");
 
-        public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource)
+        public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Object resource)
             => FilterTranslationResult.Success(null, null);
     }
 
