@@ -20,7 +20,7 @@ internal sealed class LayerValidationService(
     ITableDiscoveryService tableDiscoveryService,
     IAdoNetDatabaseConnectionProvider connectionProvider,
     IFilterExpressionService filterExpressionService,
-    IMetadataV2GraphProvider metadataV2GraphProvider) : ILayerValidationService
+    IMetadataV2GraphProvider metadataV2GraphProvider)
 {
     private const string SeverityPass = "pass";
     private const string SeverityWarning = "warning";

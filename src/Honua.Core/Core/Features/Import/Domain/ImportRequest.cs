@@ -69,6 +69,9 @@ public sealed record ImportRequest
 
     public int? SourceSrid { get; init; }
 
+    // Feature layer to import from a multi-layer source (GeoPackage table name).
+    public string? SourceLayer { get; init; }
+
     public int? DatumTransformationWkid { get; init; }
 
     public string? DatumTransformationName { get; init; }

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 HEAVY_JOBS = {
     "format", "dotnet-foundation-family-tests", "runtime-proofs",
     "mcp-certification", "mcp-llm-smoke", "postgres-compat",
-    "core-package-compatibility", "aot-build", "docker-build", "quickstart-console-smoke",
+    "core-package-compatibility", "docker-build", "quickstart-console-smoke",
 }
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
@@ -36,12 +36,14 @@ PINNED_JOBS = {
 
 # Even matrix indices of the server test shards; forks never reach self-hosted compute.
 EVEN_INDEX = " || ".join(f"endsWith(format('{{0}}', strategy.job-index), '{digit}')" for digit in "02468")
-HEAVY_SHARD_RUNNER = (
-    "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ")"
+FORK_GUARD = (
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
     " && fromJSON(vars.HONUA_HEAVY_RUNNER)"
 )
+HEAVY_SHARD_RUNNER = "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ")" + FORK_GUARD
+# Native AOT is not a matrix: every trusted run takes the heavy pool, forks stay hosted.
+AOT_RUNNER = "${{ vars.HONUA_HEAVY_RUNNER" + FORK_GUARD + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"
 SHARD_JOBS = {
     "ci.yml": ("server-tests", "${{ " + HEAVY_SHARD_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
     "pr-gate.yml": ("affected-shard", "${{ needs.pr-gate.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
@@ -131,6 +133,9 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertEqual(self.jobs[name]["runs-on"],
                                  "${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}")
 
+    def test_aot_build_uses_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
+        self.assertEqual(self.jobs["aot-build"]["runs-on"], AOT_RUNNER)
+
     def test_hosted_jobs_stay_on_ubuntu_latest(self):
         for name in HOSTED_JOBS:
             with self.subTest(job=name):
@@ -148,7 +153,7 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertNotIn("runs-on", self.jobs[name])
 
     def test_every_ci_job_has_a_runner_class(self):
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", SHARD_JOBS["ci.yml"][0]})
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", "aot-build", SHARD_JOBS["ci.yml"][0]})
 
 
 PR_GATE_SELECTED_JOBS = {"pr-gate", "server-test-producer"}

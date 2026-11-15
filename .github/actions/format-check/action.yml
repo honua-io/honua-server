@@ -154,6 +154,21 @@ runs:
           target="${source_filter}"
         fi
         [[ -n "${GATE_TEST_ROOT_FILTER}" ]] && target="${GATE_TEST_ROOT_FILTER}"
+        if [[ "${ANALYZER_PARTITION}" == "tests" ]]; then
+          # Evaluate after restore so SDK/NuGet imports determine test ownership.
+          # Source-only roots are checked by the independent source job; forward
+          # references still compile with the target frameworks chosen by tests.
+          test_filter="${RUNNER_TEMP}/test-only-analyzer-build.slnf"
+          args=(--kind tests --output "${test_filter}")
+          [[ "${target}" != "Honua.sln" ]] && args+=(--filter "${target}")
+          python3 scripts/ci/analyzer-source-filter.py "${args[@]}"
+          count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["solution"]["projects"]))' "${test_filter}")
+          if [[ "${count}" == "0" ]]; then
+            echo "No evaluated test roots selected; source diagnostics remain in the source job."
+            exit 0
+          fi
+          target="${test_filter}"
+        fi
         if [[ "${ANALYZER_PARTITION}" == "tests" && "${TEST_PARTITION}" != "all" ]]; then
           ANALYZER_PARTITION="${TEST_PARTITION}-tests"
         fi

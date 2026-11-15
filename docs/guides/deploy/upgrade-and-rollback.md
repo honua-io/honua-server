@@ -15,6 +15,16 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
 3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt. On an installed Compose project with the [Compose executor](../../get-started/quickstart.md#approved-operations-and-recovery) enabled, that restore is part of an approved rollback: the executor checks the backup, restores it, and only then starts the prior image.
 
+### Database migration deadlocks
+
+An upgrade can contend with writes from an older serving task. On PostgreSQL
+`40P01` (deadlock detected), the migration runner retries the upgrade up to three
+total attempts and waits 100 milliseconds between attempts. It holds the migration
+advisory lock across those attempts. Each failed attempt rolls back that attempt's
+schema changes and journal entries, then the next attempt runs the pending scripts
+again. An optional backup hook runs once, before the first attempt. Cancellation
+stops further attempts. Any other database error, or a third deadlock, fails the run.
+
 ### In-flight geoprocessing jobs
 
 During an ECS traffic shift, removing a task from the ALB does not cancel its GP
