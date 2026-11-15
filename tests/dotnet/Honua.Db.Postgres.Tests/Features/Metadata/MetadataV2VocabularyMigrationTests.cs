@@ -75,6 +75,29 @@ public sealed class MetadataV2VocabularyMigrationTests(PostgresFixture fixture)
         });
     }
 
+    [IntegrationTheory]
+    [InlineData("{\"resources\":[{\"metadata\":{\"id\":\"old\"}}]}", "resources:old")]
+    [InlineData("{\"objects\":[{\"metadata\":{\"id\":\"new\"}}]}", "resources:new")]
+    [InlineData("{\"layers\":[{\"metadata\":{\"id\":\"layer\"}}]}", "publications:layer")]
+    [InlineData("{\"objects\":[{\"metadata\":{\"id\":\"stale\"}}],\"resources\":[{\"metadata\":{\"id\":\"edited\"}}]}", "resources:edited")]
+    [InlineData("{\"resources\":[],\"objects\":[{\"metadata\":{\"id\":\"stale\"}}]}", "")]
+    [InlineData("{\"layers\":[{\"metadata\":{\"id\":\"stale\"}}],\"publications\":null}", "")]
+    public async Task Migration_HistoryAliases_UseOneLegacyIdentity(string document, string expected)
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            await ApplyMigrationAsync(schema);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand($"""
+                SELECT COALESCE(string_agg(item_kind || ':' || item_id, ',' ORDER BY item_kind, item_id), '')
+                FROM "{schema}".metadata_v2_history_items(@document::jsonb, 'Test')
+                WHERE item_kind <> 'graph'
+                """, connection);
+            command.Parameters.AddWithValue("document", document);
+            (await command.ExecuteScalarAsync()).Should().Be(expected);
+        });
+    }
+
     private const string SnapshotFingerprint = """
         SELECT string_agg(revision::text || ':' || etag || ':' || document::text, '|' ORDER BY revision)
         FROM "{schema}".metadata_v2_snapshots
@@ -101,7 +124,7 @@ public sealed class MetadataV2VocabularyMigrationTests(PostgresFixture fixture)
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(MetadataV2VocabularyMigrationTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema, includeVocabulary: false);
             await action(schema);
         }
         finally
