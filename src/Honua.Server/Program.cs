@@ -308,8 +308,8 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
                     "Redis durable coordination is required in this environment, but the Redis multiplexer did not establish an active startup connection.");
             }
 
-            var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-            ProgramLog.RedisStartupConnectionInactive(startupLogger);
+            using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
+            ProgramLog.RedisStartupConnectionInactive(startupLoggerFactory.CreateLogger<Program>());
         }
     }
     catch (Exception ex)
@@ -321,8 +321,8 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
                 ex);
         }
 
-        var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-        ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
+        using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
+        ProgramLog.RedisStartupConnectionFailed(startupLoggerFactory.CreateLogger<Program>(), ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
     }
 }
@@ -595,6 +595,11 @@ if (hostHasSystemDatabase)
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
 
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsNotificationReminderRunner>();
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler>(
+        static provider => provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+
     if (!isTestEnvironment)
     {
         // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
@@ -625,6 +630,11 @@ if (hostHasSystemDatabase)
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
+            {
+                builder.Services.AddHostedService(static provider =>
+                    provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+            }
         }
     }
 
