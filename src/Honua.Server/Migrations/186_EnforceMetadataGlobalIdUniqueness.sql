@@ -48,7 +48,7 @@ BEGIN
                 lower(btrim(COALESCE(options->>'sourcebacked', 'false'))) = 'true' AS source_backed
             FROM explicit_names
         ), resolved_bindings AS (
-            SELECT *, to_regclass(CASE WHEN schema_name IS NULL THEN format('%I', table_name)
+            SELECT *, to_regclass(CASE WHEN btrim(COALESCE(schema_name, '')) = '' THEN format('%I', table_name)
                 ELSE format('%I.%I', schema_name, table_name) END) AS feature_table
             FROM binding_names WHERE table_name = 'features'
         ), managed_bindings AS (

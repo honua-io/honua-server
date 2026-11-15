@@ -269,6 +269,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
+    [InlineData(3)]
     public async Task SaveAsync_GlobalIdLayer_WithSeparateFeatureSchema_EnforcesIdentity(int optionCase)
     {
         var metadataSchema = await fixture.CreateIsolatedSchemaAsync("global_id_metadata");
@@ -287,22 +288,27 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var graph = GlobalIdGraph(featureSchema);
             if (optionCase != 0)
             {
+                var options = new Dictionary<string, JsonElement>
+                {
+                    [optionCase == 2 ? "SchemaName" : "schemaName"] = JsonSerializer.SerializeToElement(
+                        optionCase switch { 1 => featureSchema, 3 => string.Empty, _ => "unrelated" }),
+                    [optionCase == 2 ? "TableName" : "tableName"] = JsonSerializer.SerializeToElement("features")
+                };
+                if (optionCase == 3)
+                {
+                    options["schema"] = JsonSerializer.SerializeToElement("unrelated");
+                }
                 graph = graph with
                 {
                     StorageBindings = [graph.StorageBindings[0] with
                     {
                         Locator = optionCase == 1 ? "unrelated.features" : $"{featureSchema}.features",
-                        Options = new Dictionary<string, JsonElement>
-                        {
-                            [optionCase == 1 ? "schemaName" : "SchemaName"] =
-                                JsonSerializer.SerializeToElement(optionCase == 1 ? featureSchema : "unrelated"),
-                            [optionCase == 1 ? "tableName" : "TableName"] = JsonSerializer.SerializeToElement("features")
-                        }
+                        Options = options
                     }]
                 };
             }
             var mapping = FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]);
-            mapping.SchemaName.Should().Be(featureSchema);
+            mapping.SchemaName.Should().Be(optionCase == 3 ? string.Empty : featureSchema);
             mapping.TableName.Should().Be("features");
             await store.SaveAsync(graph, expectedEtag: null);
 
