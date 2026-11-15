@@ -239,7 +239,7 @@ missing payload, review re-request, and credential probe). The workflow only
 decides and delegates; the validator rejects inline `createBlob`/`createTree`/
 `createCommit`/`updateRef` calls in YAML so this logic stays tested.
 
-The read-only consumer binds the producer's head repository and branch to the
+The read-only validation job binds the producer's head repository and branch to the
 current PR and requires its base to remain the repository default branch.
 Before minting, branch protection and ruleset reads must succeed. The default
 branch, release namespaces, merge-train namespaces, protected branches and
