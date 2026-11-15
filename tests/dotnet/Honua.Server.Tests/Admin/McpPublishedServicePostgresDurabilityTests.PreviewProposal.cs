@@ -23,10 +23,10 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         var revision = await ReadPersistedRevisionAsync();
 
         var changed = await ProposePreviewPublicationAsync(reference, ["id"]);
-        var rejected = changed.TryGetProperty("error", out _) ||
-            (changed.TryGetProperty("result", out var errorResult) &&
-             errorResult.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True);
-        rejected.Should().BeTrue(changed.GetRawText());
+        changed.TryGetProperty("error", out _).Should().BeFalse(changed.GetRawText());
+        var rejected = changed.GetProperty("result").GetProperty("structuredContent");
+        rejected.GetProperty("status").GetString().Should().Be("Failed", changed.GetRawText());
+        rejected.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
 
         var original = await ProposePreviewPublicationAsync(reference, ["id", "name"]);
         original.TryGetProperty("error", out _).Should().BeFalse(original.GetRawText());
