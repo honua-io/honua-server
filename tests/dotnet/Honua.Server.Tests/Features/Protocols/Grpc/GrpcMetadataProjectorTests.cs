@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Grpc.Core;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.TestKit.Attributes;
@@ -15,6 +16,120 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 [Operation(Operations.Query)]
 public sealed class GrpcMetadataProjectorTests
 {
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, "12345678901234567890.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-15T00:01:02.1234567+05:45", Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue)]
+    public void Field_ExactDefaultsAndDomains_PreserveDeclaredTypeAndText(MetadataV2FieldType type,
+        string text, Proto.AttributeValue.ValueOneofCase expected)
+    {
+        var definition = new MetadataV2Field
+        {
+            Name = "value",
+            Type = type,
+            Editable = true,
+            DefaultValue = Json(JsonSerializer.Serialize(text)),
+            Domain = new() { Type = "codedValue", CodedValues = [new() { Code = Json(JsonSerializer.Serialize(text)), Name = "Exact" }] }
+        };
+
+        var field = GrpcMetadataProjector.Field(definition);
+        var template = GrpcMetadataProjector.Template("Default", [definition]);
+
+        field.DefaultValue.ValueCase.Should().Be(expected);
+        field.DefaultValue.Should().Be(field.Domain.CodedValues.Values.Single().Code);
+        field.DefaultValue.Should().Be(template.DefaultAttributes["value"]);
+        (type == MetadataV2FieldType.Decimal ? field.DefaultValue.DecimalValue : field.DefaultValue.TimestampOffsetValue)
+            .Should().Be(text);
+    }
+
+    [UnitTheory]
+    [InlineData("12345678901234567890.1000", "12345678901234567890.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData("\"0.1000\"", "0.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData("\"2026-11-15T00:01:02.1234567+05:45\"", "2026-11-15T00:01:02.1234567+05:45", Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue)]
+    public void Subtypes_ExactDiscriminator_PreservesTypeAndTextInDefaultCodeAndTemplate(
+        string json, string text, Proto.AttributeValue.ValueOneofCase expected)
+    {
+        var type = expected == Proto.AttributeValue.ValueOneofCase.DecimalValue
+            ? MetadataV2FieldType.Decimal : MetadataV2FieldType.TimestampOffset;
+        var definition = GrpcMetadataProjector.Subtypes(new()
+        {
+            SubtypeField = "KIND",
+            DefaultSubtypeCode = Json(json),
+            Subtypes = [new() { Code = Json(json), Name = "Primary" }]
+        }, [new() { Name = "kind", Type = type }]);
+
+        var subtype = definition.Subtypes.Single();
+        subtype.Code.ValueCase.Should().Be(expected);
+        definition.DefaultCode.Should().Be(subtype.Code);
+        subtype.Templates.Single().DefaultAttributes["KIND"].Should().Be(subtype.Code);
+        (type == MetadataV2FieldType.Decimal ? subtype.Code.DecimalValue : subtype.Code.TimestampOffsetValue)
+            .Should().Be(text);
+    }
+
+    [UnitTest]
+    public void Subtypes_ExactOverrides_PreserveTypeInRangeAndTemplate()
+    {
+        MetadataV2Field[] fields =
+        [
+            new() { Name = "kind", Type = MetadataV2FieldType.Integer },
+            new() { Name = "amount", Type = MetadataV2FieldType.Decimal, Editable = true }
+        ];
+        var definition = GrpcMetadataProjector.Subtypes(new()
+        {
+            SubtypeField = "kind",
+            Subtypes = [new()
+            {
+                Code = Json("1"), Name = "Primary", FieldOverrides = new Dictionary<string, MetadataV2SubtypeFieldOverride>
+                {
+                    ["AMOUNT"] = new()
+                    {
+                        DefaultValue = Json("\"0.1000\""),
+                        Domain = new() { Type = "range", Range = [Json("\"0.0000\""), Json("\"99999999999999999999.1000\"")] }
+                    }
+                }
+            }]
+        }, fields).Subtypes.Single();
+
+        definition.FieldOverrides["amount"].DefaultValue.DecimalValue.Should().Be("0.1000");
+        definition.Templates.Single().DefaultAttributes["amount"].DecimalValue.Should().Be("0.1000");
+        definition.FieldOverrides["amount"].Domain.Range.Minimum.DecimalValue.Should().Be("0.0000");
+        definition.FieldOverrides["amount"].Domain.Range.Maximum.DecimalValue.Should().Be("99999999999999999999.1000");
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal)]
+    [InlineData(MetadataV2FieldType.TimestampOffset)]
+    public void Field_ExactNullDefault_RemainsExplicitNull(MetadataV2FieldType type)
+        => GrpcMetadataProjector.Field(new() { Name = "value", Type = type, DefaultValue = Json("null") })
+            .DefaultValue.ValueCase.Should().Be(Proto.AttributeValue.ValueOneofCase.NullValue);
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, "\"not-a-number\"")]
+    [InlineData(MetadataV2FieldType.Decimal, "\"79228162514264337593543950336\"")]
+    [InlineData(MetadataV2FieldType.Decimal, "true")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "123")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "\"2026-11-15T00:00:00\"")]
+    public void Field_InvalidExactDefault_FailsWithoutDisclosingValue(MetadataV2FieldType type, string json)
+    {
+        var act = () => GrpcMetadataProjector.Field(new() { Name = "value", Type = type, DefaultValue = Json(json) });
+
+        var exception = act.Should().Throw<RpcException>().Which;
+        exception.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        exception.Status.Detail.Should().Be("Exact metadata value does not match its declared type.");
+    }
+
+    [UnitTest]
+    public void Domain_NumericDecimalBounds_PreservesScaleWithoutDoubleConversion()
+    {
+        var domain = GrpcMetadataProjector.Domain(new()
+        {
+            Type = "range",
+            Range = [Json("-0.1000"), Json("12345678901234567890.1000")]
+        }, MetadataV2FieldType.Decimal);
+
+        domain.Range.Minimum.DecimalValue.Should().Be("-0.1000");
+        domain.Range.Maximum.DecimalValue.Should().Be("12345678901234567890.1000");
+    }
+
     [UnitTest]
     public void Field_TypedDefaultsAndDomain_PreservesIntegerPrecision()
     {

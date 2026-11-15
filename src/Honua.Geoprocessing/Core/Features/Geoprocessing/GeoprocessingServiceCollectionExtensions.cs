@@ -17,6 +17,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
+using Honua.Geoprocessing.Inference;
+
 namespace Honua.Geoprocessing;
 
 internal static class GeoprocessingServiceCollectionExtensions
@@ -191,7 +193,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         // lands the result as a GP artifact. DELIBERATELY DORMANT when
         // unconfigured — no startup validation, no eager probe; an unconfigured
         // deployment fails the job at execution with a clear message. Provider
-        // adapters sit behind IImageryInferenceClient; the generic 'http' REST
+        // adapters sit behind HttpImageryInferenceClient; the generic 'http' REST
         // adapter, which speaks Honua's own JSON inference contract (implemented
         // by a model server directly or by a thin gateway in front of one), is the
         // supported backend in this build.
@@ -215,8 +217,7 @@ internal static class GeoprocessingServiceCollectionExtensions
             // scheme check the adapter performs on the configured endpoint.
             .ConfigurePrimaryHttpMessageHandler(
                 () => new HttpClientHandler { AllowAutoRedirect = false });
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<Inference.IImageryInferenceClient, Inference.HttpImageryInferenceClient>());
+        services.TryAddSingleton<Inference.HttpImageryInferenceClient>();
         Register<ImageryInferenceJobExecutor>(services);
 
         // First-class remote DAG source connectors (source.honua-layer,

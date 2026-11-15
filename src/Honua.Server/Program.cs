@@ -518,8 +518,7 @@ builder.Services.Configure<Honua.Infrastructure.Caching.QueryResultCacheOptions>
     options.EnableDetailedMetrics = !builder.Environment.IsProduction();
 });
 
-builder.Services.AddSingleton<Honua.Infrastructure.Caching.IQueryResultCacheManager,
-    Honua.Infrastructure.Caching.QueryResultCacheManager>();
+builder.Services.AddSingleton<Honua.Infrastructure.Caching.QueryResultCacheManager>();
 
 if (useTestSchemaHeaders)
 {
@@ -921,11 +920,10 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
     Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
-// evaluation, rate accounting, and redacted analytics ingestion. In-memory
-// defaults; durable providers can replace these via TryAdd later.
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedKeyStore>(sp =>
+// evaluation, rate accounting, and redacted analytics ingestion. In-memory stores.
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedAnalyticsStore>(
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
@@ -1122,8 +1120,7 @@ if (offlineSyncEnabled)
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 #endif
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
-        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations

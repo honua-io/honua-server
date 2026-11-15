@@ -109,7 +109,7 @@ internal static partial class EnhancedPerformanceEndpoints
     {
         try
         {
-            var monitor = httpContext.RequestServices.GetService<IDatabaseQueryPerformanceMonitor>();
+            var monitor = httpContext.RequestServices.GetService<DatabaseQueryPerformanceMonitor>();
             if (monitor == null)
             {
                 return Results.Json(new QueryPerformanceStatistics(), MetricsJsonContext.Default.QueryPerformanceStatistics);
@@ -135,7 +135,7 @@ internal static partial class EnhancedPerformanceEndpoints
     {
         try
         {
-            var monitor = httpContext.RequestServices.GetService<IDatabaseQueryPerformanceMonitor>();
+            var monitor = httpContext.RequestServices.GetService<DatabaseQueryPerformanceMonitor>();
             if (monitor == null)
             {
                 return Results.Json(
@@ -257,7 +257,7 @@ internal static partial class EnhancedPerformanceEndpoints
     {
         try
         {
-            var telemetry = httpContext.RequestServices.GetService<IEnhancedExceptionTelemetry>();
+            var telemetry = httpContext.RequestServices.GetService<EnhancedExceptionTelemetry>();
             if (telemetry == null)
             {
                 return Results.Json(new ExceptionStatistics(), MetricsJsonContext.Default.ExceptionStatistics);
@@ -285,7 +285,7 @@ internal static partial class EnhancedPerformanceEndpoints
     {
         try
         {
-            var telemetry = httpContext.RequestServices.GetService<IEnhancedExceptionTelemetry>();
+            var telemetry = httpContext.RequestServices.GetService<EnhancedExceptionTelemetry>();
             if (telemetry == null)
             {
                 return Results.Json(
@@ -326,7 +326,7 @@ internal static partial class EnhancedPerformanceEndpoints
     {
         try
         {
-            var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
+            var cacheManager = httpContext.RequestServices.GetService<QueryResultCacheManager>();
             if (cacheManager == null)
             {
                 return Results.Json(new QueryCacheStatistics(), MetricsJsonContext.Default.QueryCacheStatistics);
@@ -352,7 +352,7 @@ internal static partial class EnhancedPerformanceEndpoints
     {
         try
         {
-            var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
+            var cacheManager = httpContext.RequestServices.GetService<QueryResultCacheManager>();
             if (cacheManager == null)
             {
                 return Results.Json(new CacheEffectivenessMetrics(), MetricsJsonContext.Default.CacheEffectivenessMetrics);
@@ -383,7 +383,7 @@ internal static partial class EnhancedPerformanceEndpoints
                 return Results.BadRequest("Pattern parameter is required for cache invalidation");
             }
 
-            var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
+            var cacheManager = httpContext.RequestServices.GetService<QueryResultCacheManager>();
             if (cacheManager == null)
             {
                 return Results.Json(
@@ -424,7 +424,7 @@ internal static partial class EnhancedPerformanceEndpoints
             };
 
             // Query performance
-            var queryMonitor = httpContext.RequestServices.GetService<IDatabaseQueryPerformanceMonitor>();
+            var queryMonitor = httpContext.RequestServices.GetService<DatabaseQueryPerformanceMonitor>();
             if (queryMonitor != null)
             {
                 summary.QueryPerformance = queryMonitor.GetStatistics();
@@ -438,14 +438,14 @@ internal static partial class EnhancedPerformanceEndpoints
             }
 
             // Exception telemetry
-            var exceptionTelemetry = httpContext.RequestServices.GetService<IEnhancedExceptionTelemetry>();
+            var exceptionTelemetry = httpContext.RequestServices.GetService<EnhancedExceptionTelemetry>();
             if (exceptionTelemetry != null)
             {
                 summary.ExceptionStatistics = exceptionTelemetry.GetStatistics();
             }
 
             // Cache performance
-            var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
+            var cacheManager = httpContext.RequestServices.GetService<QueryResultCacheManager>();
             if (cacheManager != null)
             {
                 summary.CacheStatistics = cacheManager.GetStatistics();

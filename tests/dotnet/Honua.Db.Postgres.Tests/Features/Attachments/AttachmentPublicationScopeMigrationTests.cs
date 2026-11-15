@@ -61,7 +61,7 @@ public sealed class AttachmentPublicationScopeMigrationTests(PostgresFixture fix
         }
     }
 
-    private async Task ApplyMigrationAsync(string schema, string filename = "196_AddAttachmentPublicationScope.sql")
+    private async Task ApplyMigrationAsync(string schema, string filename = "205_AddAttachmentPublicationScope.sql")
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
