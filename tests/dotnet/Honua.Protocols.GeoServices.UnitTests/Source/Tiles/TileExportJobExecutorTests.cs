@@ -84,17 +84,18 @@ public sealed class TileExportJobExecutorTests
     }
 
     private static void RecordScratchUploads(
-        ICloudFileStorage storage, TileExportJobPlan plan, List<string> scratchPaths, List<UnixFileMode> scratchModes)
+        ICloudFileStorage storage, TileExportJobPlan plan,
+        (List<string> Paths, List<UnixFileMode> Modes) observations)
     {
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 var request = call.Arg<FileUploadRequest>();
                 var scratch = request.Content.Should().BeOfType<FileStream>().Subject;
-                scratchPaths.Add(scratch.Name);
+                observations.Paths.Add(scratch.Name);
                 if (!OperatingSystem.IsWindows())
                 {
-                    scratchModes.Add(File.GetUnixFileMode(scratch.Name));
+                    observations.Modes.Add(File.GetUnixFileMode(scratch.Name));
                 }
                 return UploadResult.CreateSuccess(StoredFile(
                     request.ObjectKeyOverride!, plan, DateTimeOffset.UtcNow.AddHours(2)));
@@ -111,7 +112,7 @@ public sealed class TileExportJobExecutorTests
         var scratchModes = new List<UnixFileMode>();
         storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => StoredFile(call.Arg<string>(), plan, DateTimeOffset.UtcNow.AddHours(2)));
-        RecordScratchUploads(storage, plan, scratchPaths, scratchModes);
+        RecordScratchUploads(storage, plan, (scratchPaths, scratchModes));
         var producer = Substitute.For<ITileExportPackageProducer>();
         producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
         producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
