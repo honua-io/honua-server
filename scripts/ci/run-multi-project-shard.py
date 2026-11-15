@@ -47,9 +47,11 @@ def terminate_tree(process):
                        check=False, capture_output=True)
     else:
         # Stop and kill the whole tree first; the group sweep then catches members that left it.
-        kill_descendants(process.pid)
-        with suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
+        try:
+            kill_descendants(process.pid)
+        finally:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
     process.wait()
 
 

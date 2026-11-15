@@ -30,10 +30,12 @@ def terminate_test(child, signum):
             os.kill(pid, signum)
     with suppress(subprocess.TimeoutExpired):
         child.wait(timeout=0.5)
-    kill_descendants(*descendants)
-    # A test can fork after the snapshot, while TERM escalation is pending; sweep its group too.
-    with suppress(ProcessLookupError):
-        os.killpg(child.pid, signal.SIGKILL)
+    try:
+        kill_descendants(*descendants)
+    finally:
+        # A test can fork after the snapshot, while TERM escalation is pending; sweep its group too.
+        with suppress(ProcessLookupError):
+            os.killpg(child.pid, signal.SIGKILL)
 
 
 def call_test(command):

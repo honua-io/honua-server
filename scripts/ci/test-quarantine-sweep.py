@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Coalesced, failed and rerun completions must retain their publication evidence."""
+from contextlib import redirect_stdout
 import importlib.util
 import io
 import json
@@ -321,6 +322,24 @@ class CheckpointTests(unittest.TestCase):
                 sweep.sweep(checkpoint)
             self.assertFalse(checkpoint.exists())
             publish.assert_not_called()
+
+    def test_inventory_restarts_once_when_a_new_run_changes_the_total(self):
+        changed = threading.Event()
+
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            if number == 2 and not changed.is_set():
+                # A run created between the reads of pages 1 and 2.
+                changed.set()
+            total = 151 if changed.is_set() else 150
+            identities = list(range(total))[(number - 1) * 100:number * 100]
+            return dict(total_count=total, workflow_runs=[dict(id=i) for i in identities])
+
+        output = io.StringIO()
+        with patch.object(sweep, 'api', side_effect=page), redirect_stdout(output):
+            items = sweep.inventory('actions/workflows/ci.yml/runs', 'workflow_runs')
+        self.assertEqual(list(range(151)), [item['id'] for item in items])
+        self.assertIn('restarting (attempt 2 of 3)', output.getvalue())
 
     def test_inventory_duplicate_across_pages_cannot_hide_a_missing_entry(self):
         with patch.object(sweep, 'api', side_effect=[

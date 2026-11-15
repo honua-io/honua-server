@@ -44,10 +44,11 @@ def kill_descendants(*parents):
     roots, stopped = dict.fromkeys(parents, 0), {}
     try:
         while fresh := unstopped(descendant_depths({**roots, **stopped}, KILL_LISTING_DEADLINE), stopped):
-            for pid in fresh:
+            for pid, depth in fresh.items():
+                # Record first: an interrupt between the two must still reach the final kill.
+                stopped[pid] = depth
                 with suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGSTOP)
-            stopped.update(fresh)
     finally:
         # Never leave a stopped process behind, even if a listing failed part way.
         for pid in sorted(stopped, key=stopped.get, reverse=True):

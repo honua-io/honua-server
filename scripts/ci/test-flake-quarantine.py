@@ -404,6 +404,9 @@ class RunnerTests(unittest.TestCase):
             # A process killed before it recorded its pid never reached the fork; any escapee
             # would still hold the captured pipe and time the run out above.
             recorded = [path for path in map(fake.with_suffix, ('.pid', '.descendant.pid')) if path.exists()]
+            if not before_fork:
+                # These fakes record both pids at start-up, well before the deadline.
+                self.assertEqual(2, len(recorded), 'fake test never recorded its processes')
             for path in recorded:
                 # A SIGKILLed process can show as running briefly while a loaded kernel tears it down.
                 pid = int(path.read_text())

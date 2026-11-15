@@ -24,6 +24,8 @@ ARTIFACT = re.compile(r'^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-
 ATTEMPT = re.compile(r'^(.*?)(?:-attempt-([0-9]+))?$')
 MAX_PAGES = 1000
 INVENTORY_WORKERS = 8
+# New CI and PR Gate runs change a history's total mid-scan; restart a bounded number of times.
+INVENTORY_ATTEMPTS = 3
 PAGE_SIZE = 100
 MAX_BATCH_RUNS = 25
 MAX_ZIP_BYTES = 256 * 1024 * 1024
@@ -33,6 +35,10 @@ PROOF_SUFFIXES = ('.flake-candidates.json', '.first-attempt.xml', '.retry-attemp
 
 def api(path):
     return PUBLISHER.api(f'repos/{os.environ["GITHUB_REPOSITORY"]}/{path}')
+
+
+class InventoryChanged(ValueError):
+    pass
 
 
 class Inventory:
@@ -54,7 +60,7 @@ class Inventory:
         if self.total is None:
             self.total = response['total_count']
         elif self.total != response['total_count']:
-            raise ValueError('Actions inventory changed during discovery; checkpoint unchanged')
+            raise InventoryChanged('Actions inventory changed during discovery; checkpoint unchanged')
         batch = response[self.key]
         self.found.update((item['id'], item) for item in batch)
         return batch
@@ -92,8 +98,22 @@ def discover_inventory(executor, discovery):
     raise ValueError('Actions inventory exceeded bounded pagination; checkpoint unchanged')
 
 
+def attempt_inventory(executor, path, key, attempt):
+    try:
+        return discover_inventory(executor, Inventory(path, key))
+    except InventoryChanged:
+        print(f'Inventory of {path} changed during discovery; restarting (attempt {attempt + 1} of '
+              f'{INVENTORY_ATTEMPTS})', flush=True)
+        return None
+
+
 def inventory(path, key):
     with ThreadPoolExecutor(max_workers=INVENTORY_WORKERS) as executor:
+        for attempt in range(1, INVENTORY_ATTEMPTS):
+            found = attempt_inventory(executor, path, key, attempt)
+            if found is not None:
+                return found
+        # The last attempt fails closed: a persistently changing history leaves the checkpoint unchanged.
         return discover_inventory(executor, Inventory(path, key))
 
 
