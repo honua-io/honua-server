@@ -48,6 +48,7 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
                         "Response header the CDN reads cache tags from; when set, edits invalidate by tag instead of by path",
                         (string.Empty, current.CacheTagHeader ?? string.Empty)),
                     .. PurgeBudgetProperties(current.PurgeBudget),
+                    .. PurgeBackedProperties(current.PurgeBacked),
                 ],
             },
         ];
@@ -65,11 +66,29 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
             (0m, budget.EstimatedCostPerSubmission)),
     ];
 
+    private static ConfigurationProperty[] PurgeBackedProperties(SharedCachePurgeBacked purgeBacked) =>
+    [
+        Property(
+            "PurgeBacked:AllLayers",
+            "Every layer is written only through the service, so its public tiles and queries may use the purge-backed CDN lifetimes",
+            (false, purgeBacked.AllLayers)),
+        Property(
+            "PurgeBacked:Layers",
+            "Layers, named serviceId/layerId, written only through the service, whose public tiles and queries may use the purge-backed CDN lifetimes",
+            (string.Empty, string.Join(',', purgeBacked.Layers))),
+        .. Lifetime("PurgeBacked:Tile", "public tiles of purge-backed layers", (ProductDefaults.PurgeBacked.Tile, purgeBacked.Tile)),
+        .. Lifetime("PurgeBacked:FeatureQuery", "public feature queries of purge-backed layers", (ProductDefaults.PurgeBacked.FeatureQuery, purgeBacked.FeatureQuery)),
+    ];
+
     public IReadOnlyList<EnvironmentVariableInfo> GetEnvironmentVariables() =>
     [
         new() { Name = "SharedCache__Tile__SharedMaxAgeSeconds", ConfigPath = "SharedCache.Tile", Description = "Seconds the CDN keeps a public tile", Default = "300", Required = false, Example = "600" },
         new() { Name = "SharedCache__Layers__{serviceId}/{layerId}__SharedMaxAgeSeconds", ConfigPath = "SharedCache.Layers", Description = "Seconds the CDN keeps responses for one layer", Default = "", Required = false, Example = "15" },
         new() { Name = "SharedCache__Emergency__AllPublicLayers", ConfigPath = "SharedCache.Emergency", Description = "Force the emergency lifetime on every public layer", Default = "false", Required = false, Example = "true" },
+        new() { Name = "SharedCache__PurgeBacked__Layers__0", ConfigPath = "SharedCache.PurgeBacked.Layers", Description = "A layer written only through the service; its public tiles and queries may use the purge-backed CDN lifetimes while tag purges reach the CDN", Default = "", Required = false, Example = "parcels/3" },
+        new() { Name = "SharedCache__PurgeBacked__AllLayers", ConfigPath = "SharedCache.PurgeBacked.AllLayers", Description = "Treat every layer as written only through the service", Default = "false", Required = false, Example = "true" },
+        new() { Name = "SharedCache__PurgeBacked__Tile__SharedMaxAgeSeconds", ConfigPath = "SharedCache.PurgeBacked.Tile", Description = "Seconds the CDN keeps a public tile of a purge-backed layer", Default = "86400", Required = false, Example = "86400" },
+        new() { Name = "SharedCache__PurgeBacked__FeatureQuery__SharedMaxAgeSeconds", ConfigPath = "SharedCache.PurgeBacked.FeatureQuery", Description = "Seconds the CDN keeps a public feature query of a purge-backed layer", Default = "300", Required = false, Example = "300" },
         new() { Name = "SharedCache__CacheTagHeader", ConfigPath = "SharedCache.CacheTagHeader", Description = "Response header the CDN's cache-tag configuration reads; empty sends no tags", Default = "", Required = false, Example = "x-amz-meta-cache-tag" },
         new() { Name = "SharedCache__PurgeBudget__MonthlyEditSubmissions", ConfigPath = "SharedCache.PurgeBudget.MonthlyEditSubmissions", Description = "Edit purges admitted per UTC month before edit purges pause. Zero disables the cap", Default = "1000", Required = false, Example = "1000" },
         new() { Name = "SharedCache__PurgeBudget__EstimatedCostPerSubmission", ConfigPath = "SharedCache.PurgeBudget.EstimatedCostPerSubmission", Description = "Operator-supplied unit cost added to the monthly spend estimate. Zero records a count only", Default = "0", Required = false, Example = "0" },

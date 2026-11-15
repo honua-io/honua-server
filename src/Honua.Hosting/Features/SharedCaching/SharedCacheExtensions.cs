@@ -28,6 +28,7 @@ internal static class SharedCacheExtensions
             LeaseStore = provider.GetService<ILeaseStore>(),
             Budget = provider.GetService<ICdnPurgeBudget>(),
         });
+        services.TryAddSingleton<CdnPurgeReliability>();
         services.TryAddSingleton<CdnInvalidationService>();
         return services;
     }

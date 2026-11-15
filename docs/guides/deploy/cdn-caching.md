@@ -48,6 +48,31 @@ An admin request that told the CDN carries the response header `Honua-Cdn-Invali
 
 Every invalidation is logged once as a purge record (event 10311): the reason (`admin`, `edit`, `release` or `operation`), the change it belongs to, the task that sent it, the CloudFront outcome and invalidation id, and the paths. For an admin change, the change is the `X-Correlation-ID` returned to the admin request, so you can find the purge a given change caused.
 
+## Longer lifetimes for layers written only through Honua
+
+When every write to a layer goes through Honua, each edit reaches the CDN as a tag purge, so the CDN can keep that layer's public responses much longer. List those layers, and the CDN keeps their tiles for a day and their feature queries for 5 minutes; browser lifetimes do not change:
+
+```bash
+SharedCache__PurgeBacked__Layers__0=parcels/3
+SharedCache__PurgeBacked__Layers__1=roads/1
+# or, when no table behind any layer is written outside Honua:
+SharedCache__PurgeBacked__AllLayers=true
+```
+
+`SharedCache__PurgeBacked__Tile__SharedMaxAgeSeconds` (default 86400) and `SharedCache__PurgeBacked__FeatureQuery__SharedMaxAgeSeconds` (default 300) change the lengths. Do not list a layer whose table is also written by a desktop GIS, a load script or another application: nothing would purge its responses, and they would stay stale for the full lifetime.
+
+A response gets the longer lifetime only while an edit would reach the CDN:
+
+- a CloudFront distribution and `SharedCache__CacheTagHeader` are configured;
+- at least 10% of the monthly edit-purge budget is left, so the rest can still purge what was stored with a long lifetime (the counter is read at most once a minute; if it cannot be read, the ordinary lifetime applies);
+- no purge from this task failed in the last 15 minutes;
+- the layer has no emergency, per-layer or per-tileset lifetime, which win;
+- the response names one layer, and was rendered for this request rather than replayed from the task's memory.
+
+Otherwise the response gets the ordinary lifetime from the table above. Responses with a longer lifetime are not kept in the task's own cache: another task's edit cannot reach that copy, and replaying it after the purge would put the old response back in the CDN for the whole lifetime. The CDN absorbs the repeat requests instead.
+
+To refresh one layer at once, for example after a one-off bulk load outside Honua, invalidate it through the admin API: `POST /api/v1/admin/operations/cache/invalidate` with `{"serviceId": "parcels", "layerId": 3}`. The task that receives it drops the layer from its own cache and invalidates the CDN, as for any operator invalidation; a copy another task keeps in memory has the ordinary lifetime and expires within it.
+
 ## The server's own cache on several tasks
 
 Pro editions also keep cached metadata, tiles and styles in each task's memory. Each entry is keyed by the catalog revision, so after a change on any task every other task stops replaying its entries within the revision check interval (`Cache__MetadataGraphRevalidationSeconds`, default 2 s). An entry for a layer, service, collection or scene is stored only after its access check allowed an anonymous caller, and no entry lives longer than the CDN lifetime of its response, so a task never hands the CDN an older copy after a purge.

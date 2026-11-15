@@ -12,7 +12,8 @@ namespace Honua.Infrastructure.SharedCaching;
 internal sealed partial class CdnInvalidationService(
     ICdnInvalidator invalidator,
     ILogger<CdnInvalidationService> logger,
-    CdnPurgeCoordination? coordination = null)
+    CdnPurgeCoordination? coordination = null,
+    CdnPurgeReliability? reliability = null)
 {
     private readonly TimeProvider _timeProvider = coordination?.TimeProvider ?? TimeProvider.System;
     private readonly IHttpContextAccessor? _httpContextAccessor = coordination?.HttpContextAccessor;
@@ -324,6 +325,11 @@ internal sealed partial class CdnInvalidationService(
         if (result.Outcome is CdnInvalidationOutcome.NotConfigured)
         {
             return result;
+        }
+
+        if (result.Outcome is CdnInvalidationOutcome.Failed)
+        {
+            reliability?.RecordFailedPurge();
         }
 
         if (logger.IsEnabled(LogLevel.Information))
