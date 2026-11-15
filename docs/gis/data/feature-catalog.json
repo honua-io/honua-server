@@ -16215,7 +16215,8 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.ConcurrentObservationResultAndDatastreamTypePatches_SerializeValidationWithoutDeadlock",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.EveryEntity_SupportsCreatePatchReadAndDelete",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.ObservationReparentAndDatastreamTypePatch_RejectIncompatibleExistingResultsAtomically",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.Patch_MergesComplexMembersAddsBindingsIgnoresId_AndLocationDeleteCascadesHistory"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsCoreCrudTests.Patch_MergesComplexMembersAddsBindingsIgnoresId_AndLocationDeleteCascadesHistory",
+        "Honua.Server.Tests.Realtime.ObservationStoreEventAttributionTests.PatchEntity_InlineObservationsRejectsWithoutPublishingEvents"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
@@ -25227,7 +25228,8 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReviewRegressionTests.Observation_TimeAndInvalidResultPatch_RollsBack_AndValidTimePatchSucceeds",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReviewRegressionTests.Observations_DuplicateId_PatchAndDeleteConflictWithoutChangingRows",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_AnonymousWhenAnonymousWritesDisabled_ReturnsUnauthorizedBeforeBodyValidation",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation",
+        "Honua.Server.Tests.Realtime.ObservationStoreEventAttributionTests.CreateEntity_PreservesRequestTenantAndSchemaInCommittedEvents"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
