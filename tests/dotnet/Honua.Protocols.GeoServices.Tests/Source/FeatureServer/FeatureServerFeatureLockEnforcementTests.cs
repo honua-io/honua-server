@@ -47,7 +47,10 @@ public sealed class FeatureServerFeatureLockEnforcementTests : IAsyncLifetime
     private const int LayerId = 0;
     private const string Holder = "alice";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // Test hosts share one system schema, so leases in the shared store would block other classes' edits of the
+    // same object ids; these single-host cases keep leases in process.
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        .ReplaceService<IFeatureLockService>(new InMemoryFeatureLockService());
 
     public async Task InitializeAsync()
     {
