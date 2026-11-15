@@ -553,8 +553,9 @@ host and read its heartbeat, nothing else) and runs
   not reserve runners, so several gates starting together can still queue on the
   pool, and a lost spot host leaves planned jobs queued as it does shards. A busy
   gate pool moves both producers first, on the label that alone selects the heavy
-  pool (the group's own label or a sole label; otherwise they stay hosted),
-  because they gate the shards; the remaining budget goes to `analyzers-server`,
+  pool (the group's own label, or a sole label that must be unique to the heavy
+  pool), because they gate the shards; without such a label, including a
+  group-only selector, nothing is planned and every start job stays hosted; the remaining budget goes to `analyzers-server`,
   `architecture`, `server-fast` and `analyzers-other`, in that order (longest
   median hosted run on 24 gates, 15 Nov 2026: 12.2, 12.0, 10.7 and 10.6 minutes
   after 5 to 9 minutes of hosted queue). `server-governance` (starts PostGIS) and

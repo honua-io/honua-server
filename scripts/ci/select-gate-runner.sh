@@ -3,7 +3,7 @@
 # host reports enough idle runners, otherwise ubuntu-latest. It wakes a stopped
 # host for later runs but never waits longer than GATE_RUNNER_WAIT_SECONDS, and
 # every failure selects the hosted runner, so the gate cannot hang on the host.
-# Idle heavy runners beyond the shard reserve also take the jobs that would
+# Idle heavy runners beyond the heavy reserve also take the jobs that would
 # otherwise wait for a hosted runner (start_heavy), longest hosted job first.
 #
 # Inputs: HONUA_PR_GATE_RUNNER (label; empty disables), HONUA_HEAVY_RUNNER (the
