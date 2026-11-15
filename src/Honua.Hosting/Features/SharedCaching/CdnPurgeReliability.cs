@@ -41,6 +41,7 @@ internal sealed partial class CdnPurgeReliability(
     private DateTimeOffset _lastFailure = DateTimeOffset.MinValue;
     private bool _sharedSignalsAllow;
     private bool _failing;
+    private Task? _renewal;
     private long _version;
     private Task? _sharedRead;
 
@@ -76,9 +77,8 @@ internal sealed partial class CdnPurgeReliability(
         {
             _lastFailure = _clock.GetUtcNow();
             _failing = true;
+            _renewal ??= HoldFailureLeaseWhileFailingAsync();
         }
-
-        _ = HoldFailureLeaseAsync();
     }
 
     internal void RecordDeliveredPurge()
@@ -99,21 +99,13 @@ internal sealed partial class CdnPurgeReliability(
         }
     }
 
-    // A read that started before RecordBudgetSpent does not undo it. While this task is failing it also keeps the
-    // shared failure lease held, so the other tasks keep holding off for as long as it does.
+    // A read that started before RecordBudgetSpent does not undo it.
     internal async Task ReadSharedSignalsAsync(CdnPurgeBudgetOptions budget, CancellationToken cancellationToken)
     {
         long version;
-        bool failing;
         lock (_gate)
         {
             version = _version;
-            failing = FailingLocked(_clock.GetUtcNow());
-        }
-
-        if (failing)
-        {
-            await HoldFailureLeaseAsync().ConfigureAwait(false);
         }
 
         // Real time, not the injected clock: a hung read must end even where the clock is driven by hand.
@@ -207,6 +199,37 @@ internal sealed partial class CdnPurgeReliability(
     }
 
     private bool FailingLocked(DateTimeOffset now) => _failing || now - _lastFailure < FailureHoldOff;
+
+    // Keeps the shared failure lease held from the first failure until a purge is delivered, renewing it every read
+    // interval whatever the request traffic, so the other tasks hold off for exactly as long as this one does.
+    private async Task HoldFailureLeaseWhileFailingAsync()
+    {
+        await Task.Yield();
+        try
+        {
+            while (true)
+            {
+                await HoldFailureLeaseAsync().ConfigureAwait(false);
+                await Task.Delay(SharedReadInterval, _clock).ConfigureAwait(false);
+                lock (_gate)
+                {
+                    if (!_failing)
+                    {
+                        _renewal = null;
+                        return;
+                    }
+                }
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.SharedSignalsUnreadable(logger, exception);
+            lock (_gate)
+            {
+                _renewal = null;
+            }
+        }
+    }
 
     // Takes the failure lease, or extends it when this task already holds it. Refused while another task's failure
     // holds it (already shared) or while a probe does, in which case it tries once more after the probe.

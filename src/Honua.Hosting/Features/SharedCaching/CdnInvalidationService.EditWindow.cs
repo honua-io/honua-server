@@ -89,12 +89,21 @@ internal sealed partial class CdnInvalidationService
     {
         if (CdnConfigured)
         {
-            DeferToNextWindow(paths, CurrentCoalescingWindow());
+            string[] edited = [.. paths];
+            NoteEditQueued(edited);
+            DeferToNextWindow(edited, CurrentCoalescingWindow());
         }
     }
 
     private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay)
     {
+        if (_stopping)
+        {
+            string[] unsent = [.. paths];
+            Log.ShutdownPurgesNotSent(logger, unsent.Length, string.Join(' ', unsent));
+            return;
+        }
+
         var due = _timeProvider.GetUtcNow() + delay;
         lock (_gate)
         {

@@ -9,13 +9,18 @@ namespace Honua.Infrastructure.SharedCaching;
 // What purge-backed lifetimes add to purges, where a lost purge would leave a layer stale for the long lifetime rather
 // than minutes: a failed edit purge is retried with backoff; a sent purge is repeated once after a settle delay, for a
 // response rendered from pre-change state that reached the CDN after the first purge; and purges still waiting when the
-// task stops are sent then. None of it runs unless purge-backed lifetimes can actually be given.
+// task stops are sent then. The retries and settle repeats run only while purge-backed lifetimes can be given; the
+// shutdown flush runs for every deployment with a CDN, where it also saves the ordinary edit purges a scale-in loses.
 internal sealed partial class CdnInvalidationService
 {
     // A stopping task has little time left, and the host's own deadline may already be close.
     internal static readonly TimeSpan ShutdownFlushTimeout = TimeSpan.FromSeconds(10);
 
     private readonly PurgeBackedDelivery _delivery = new(coordination?.TimeProvider ?? TimeProvider.System);
+
+    // Set by the shutdown flush. A send still in flight then has no timer left to retry or settle on, so whatever it
+    // would schedule is logged as not sent instead.
+    private volatile bool _stopping;
 
     private SharedCachePurgeBacked? ActivePurgeBacked
         => _options?.CurrentValue is { CacheTagsEnabled: true, PurgeBacked: { Configured: true } purgeBacked } ? purgeBacked : null;
@@ -27,6 +32,7 @@ internal sealed partial class CdnInvalidationService
         string[] paths;
         lock (_gate)
         {
+            _stopping = true;
             paths = [.. _pendingEditPaths.Union(_delivery.TakeAll(), StringComparer.Ordinal)];
             _pendingEditPaths.Clear();
             _windowClosesAt = null;
@@ -97,6 +103,12 @@ internal sealed partial class CdnInvalidationService
     {
         if (cause.ChangeId == CdnPurgeCause.SettledEdits || ActivePurgeBacked is null)
         {
+            return;
+        }
+
+        if (_stopping)
+        {
+            Log.ShutdownPurgesNotSent(logger, sent.Count, string.Join(' ', sent));
             return;
         }
 
