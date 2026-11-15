@@ -28,6 +28,7 @@ public sealed class PublishInspectionMcpIntegrationTests(RedisFixture redis)
     public async Task InspectionTool_AdminRuns_AndReaderIsRefused(string tool)
     {
         var fixture = new WebAppFixture().WithProductionJobSubstrate()
+            .UseKestrel()
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
