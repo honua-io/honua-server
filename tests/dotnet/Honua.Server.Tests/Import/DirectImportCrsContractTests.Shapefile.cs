@@ -39,9 +39,8 @@ public sealed partial class DirectImportCrsContractTests
     public async Task ImportFile_ProjectedEsriShapefile_StoresCorrectCoordinates(
         string? targetSrid, int storedSrid)
     {
-        var fields = NewImportFields();
-        if (targetSrid is not null) fields["TargetSrid"] = targetSrid;
-        using var result = await PostProjectedShapefileAsync("upload", StatePlanePrj, fields);
+        using var result = await PostProjectedShapefileAsync(
+            "upload", StatePlanePrj, NewImportFields()["TableName"], targetSrid);
         var imported = result.RootElement;
         imported.GetProperty("success").GetBoolean().Should().BeTrue(imported.GetRawText());
         var schema = imported.GetProperty("schema").GetString()!;
@@ -65,7 +64,7 @@ public sealed partial class DirectImportCrsContractTests
     public async Task ImportFile_UnrecognizedProjectedShapefile_ExplainsSourceOverride()
     {
         var unrecognized = StatePlanePrj.Replace("D_North_American_1983", "D_Unknown", StringComparison.Ordinal);
-        using var result = await PostProjectedShapefileAsync("upload", unrecognized, NewImportFields());
+        using var result = await PostProjectedShapefileAsync("upload", unrecognized, NewImportFields()["TableName"]);
 
         result.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
         result.RootElement.GetProperty("errorCode").GetString().Should().Be("import.source_srid_required");
@@ -75,24 +74,17 @@ public sealed partial class DirectImportCrsContractTests
     }
 
     private async Task<JsonDocument> PostProjectedShapefileAsync(
-        string operation, string prj, Dictionary<string, string>? fields = null)
+        string operation, string prj, string? tableName = null, string? targetSrid = null)
     {
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent(CreateProjectedShapefileZip(prj));
         content.Add(fileContent, "File", "projected.zip");
-        foreach (var (name, value) in fields ?? [])
-        {
-            var fieldContent = new StringContent(value);
-            try
-            {
-                content.Add(fieldContent, name);
-            }
-            catch
-            {
-                fieldContent.Dispose();
-                throw;
-            }
-        }
+        using var tableContent = tableName is null ? null : new StringContent(tableName);
+        using var overwriteContent = tableName is null ? null : new StringContent("true");
+        using var targetContent = targetSrid is null ? null : new StringContent(targetSrid);
+        if (tableContent is not null) content.Add(tableContent, "TableName");
+        if (overwriteContent is not null) content.Add(overwriteContent, "OverwriteExisting");
+        if (targetContent is not null) content.Add(targetContent, "TargetSrid");
         using var response = await _fixture.Client.PostAsync($"/api/v1/admin/import/{operation}", content);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
