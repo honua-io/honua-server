@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// rule at a time against fake seams.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OpsFindingsServiceTests
+public sealed partial class OpsFindingsServiceTests
 {
     [UnitTheory]
     [InlineData(false)]
