@@ -2,6 +2,7 @@
 """Project workflow YAML into the authored inventory template without shared edits."""
 from pathlib import Path
 import argparse
+import sys
 import re
 import yaml
 
@@ -51,8 +52,16 @@ def main():
     path = ROOT / 'docs/internal/ci/workflow-inventory.md'
     output = render(ROOT)
     if args.check:
+        # Drift is advisory, same as scripts/ci/report-generated-file-drift.sh.
+        # Feature PRs cannot commit this projection; trunk automation publishes it.
+        # render() still fails closed on duplicate live rows before this compare.
+        if not path.is_file():
+            parser.exit(1, 'Workflow inventory page is missing.\n')
         if path.read_text() != output:
-            parser.exit(1, 'Workflow inventory is stale; regenerate locally, publish through trunk automation.\n')
+            print(
+                'Workflow inventory drift is advisory; trunk automation publishes this page. '
+                'Feature PRs edit the template and workflow YAML and must not commit the projection.',
+                file=sys.stderr)
     else:
         path.write_text(output)
 
