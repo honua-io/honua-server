@@ -404,4 +404,22 @@ public sealed class McpStreamingTests
         public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
             => ValueTask.FromResult(new RealtimeLogWindow(family, 0, 0));
     }
+
+    [UnitTest]
+    public void ResolveFanout_PrefersTheHostDatabaseGate_AndFallsBackToADirectProvider()
+    {
+        var direct = Substitute.For<IRealtimeFanoutProvider>();
+        var noDatabase = Substitute.For<IOptionalRealtimeFanout>();
+        noDatabase.Provider.Returns((IRealtimeFanoutProvider?)null);
+        using var gated = new ServiceCollection()
+            .AddSingleton<IRealtimeFanoutProvider>(_ => throw new InvalidOperationException("no database"))
+            .AddSingleton(noDatabase)
+            .BuildServiceProvider();
+        using var ungated = new ServiceCollection().AddSingleton(direct).BuildServiceProvider();
+        using var empty = new ServiceCollection().BuildServiceProvider();
+
+        McpRealtimeStream.ResolveFanout(gated).Should().BeNull("a host without a database must not build the provider");
+        McpRealtimeStream.ResolveFanout(ungated).Should().BeSameAs(direct);
+        McpRealtimeStream.ResolveFanout(empty).Should().BeNull();
+    }
 }
