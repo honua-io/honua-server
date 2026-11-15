@@ -113,9 +113,6 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         }
 
         var actorId = ActorIdFor(authorization, principal);
-        // Admin publication is decided here, before the proposal guardrail is applied; an agent never
-        // publishes directly. The approve route forbids this same principal from approving its own proposal.
-        var isAdmin = authorization.IsAdmin(principal) && !AgentPrincipal.IsAgent(principal);
 
         var intent = new StudioPublicationIntent
         {
@@ -143,50 +140,16 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
                 ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
                 RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                     .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
-                // A non-admin proposal must wait for a separate principal on every edition; without
-                // this floor a direct-execute edition published first and reported failure after
-                // the published pointer had already moved (#3429). An admin does not take the floor.
-                ActionDiscriminator = isAdmin ? null : BuiltInGuardrailActions.StudioPublicationProposal,
-                PublishImmediately = isAdmin,
+                // Every MCP caller is an agent, administrators included, so the publication
+                // always waits for a person. Without this floor a direct-execute edition published
+                // first and reported failure after the published pointer had already moved.
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
             },
             cancellationToken).ConfigureAwait(false);
-        var operation = receipt.Operation;
-        var output = isAdmin
-            ? PublishedOutput(operation, receipt.Value, idempotencyKey)
-            : ProposalOutput(operation, idempotencyKey);
 
-        return McpToolHelpers.SuccessResult(output, StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
-    }
-
-    private static McpStudioProposePublicationOutput PublishedOutput(
-        OperationHandle operation,
-        StudioPublicationRequest? publication,
-        string? idempotencyKey)
-    {
-        var route = publication?.Intent?.Route;
-        if (operation.Status != OperationHandleStatus.Completed
-            || string.IsNullOrWhiteSpace(operation.AuditId)
-            || publication is not { Status: StudioPublicationRequestStatus.Accepted }
-            || string.IsNullOrWhiteSpace(route))
-        {
-            throw new GeoprocessingPreconditionFailedException(
-                operation.Reason ?? "Studio publication did not complete for the admin caller.");
-        }
-
-        return new McpStudioProposePublicationOutput
-        {
-            Operation = operation,
-            OperationInstanceId = operation.OperationInstanceId,
-            AuditId = operation.AuditId!,
-            CorrelationId = operation.CorrelationId,
-            IdempotencyIdentity = idempotencyKey ?? operation.OperationInstanceId,
-            Status = "Published",
-            HumanConfirmationRequired = false,
-            ShareUrl = StudioPublishedRoutes.BuildActiveUrl(route!),
-            DeploymentId = publication.DeploymentId,
-            DeploymentResourceUri = publication.DeploymentResourceUri,
-            Message = "Saved Studio version was published.",
-        };
+        return McpToolHelpers.SuccessResult(
+            ProposalOutput(receipt.Operation, idempotencyKey),
+            StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
     }
 
     private static McpStudioProposePublicationOutput ProposalOutput(OperationHandle operation, string? idempotencyKey)
@@ -203,14 +166,14 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         {
             Operation = operation,
             OperationInstanceId = operation.OperationInstanceId,
-            ProposalId = operation.ProposalId,
+            ProposalId = operation.ProposalId!,
             ProposalUri = McpResourceUris.ProposalUri(operation.ProposalId!),
             AuditId = operation.AuditId!,
             CorrelationId = operation.CorrelationId,
             IdempotencyIdentity = idempotencyKey ?? operation.OperationInstanceId,
             Status = "AwaitingApproval",
             HumanConfirmationRequired = true,
-            Message = "Publication proposal is awaiting approval by a separate authorized principal.",
+            Message = "Publication proposal is awaiting approval by a person in Console.",
         };
     }
 }
