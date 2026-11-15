@@ -79,11 +79,11 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             "\"estimates\"",
             DateTimeOffset.UtcNow);
 
-    private static MetadataV2Resource FeatureResource(string id, string? storageBindingId)
+    private static MetadataV2Object FeatureResource(string id, string? storageBindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = storageBindingId is null ? [] : [storageBindingId],
             PrimaryStorageBindingId = storageBindingId,
@@ -99,7 +99,7 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             StorageLayerId = storageLayerId,
         };
 
-    private static MetadataV2Publication Publication(
+    private static MetadataV2Layer Publication(
         string id,
         string resourceId,
         string? storageBindingId,
@@ -111,7 +111,7 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             ResourceId = resourceId,
             ServiceId = "service.features",
             StorageBindingId = storageBindingId,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             IsPrimary = true,
             LayerIndex = layerIndex,
         };

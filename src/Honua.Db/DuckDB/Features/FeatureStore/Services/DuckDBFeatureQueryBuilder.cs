@@ -108,7 +108,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
     /// <inheritdoc />
     public ParameterizedQuery BuildSelectFlatGeobufQuery(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
@@ -118,7 +118,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
     /// <inheritdoc />
     public ParameterizedQuery BuildSelectGeobufQuery(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
