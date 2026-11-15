@@ -112,7 +112,7 @@ internal static partial class RealtimeNotificationEndpoints
             .ToDictionary(group => group.Key, group =>
                 JsonSerializer.Serialize(service, MetadataV2JsonContext.Default.MetadataV2Service) + "\n" +
                 string.Join("\n", group.OrderBy(item => item.Publication.Metadata.Id, StringComparer.Ordinal).Select(item =>
-                    JsonSerializer.Serialize(item.Publication, MetadataV2JsonContext.Default.MetadataV2Publication) + "\n" +
+                    JsonSerializer.Serialize(item.Publication, MetadataV2JsonContext.Default.MetadataV2Layer) + "\n" +
                     JsonSerializer.Serialize(snapshot.ResolveResource(item.Publication), MetadataV2JsonContext.Default.MetadataV2Object))));
     }
 
