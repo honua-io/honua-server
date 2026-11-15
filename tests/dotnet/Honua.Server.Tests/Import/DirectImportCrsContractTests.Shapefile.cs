@@ -78,8 +78,21 @@ public sealed partial class DirectImportCrsContractTests
         string operation, string prj, Dictionary<string, string>? fields = null)
     {
         using var content = new MultipartFormDataContent();
-        content.Add(new ByteArrayContent(CreateProjectedShapefileZip(prj)), "File", "projected.zip");
-        foreach (var (name, value) in fields ?? []) content.Add(new StringContent(value), name);
+        using var fileContent = new ByteArrayContent(CreateProjectedShapefileZip(prj));
+        content.Add(fileContent, "File", "projected.zip");
+        foreach (var (name, value) in fields ?? [])
+        {
+            var fieldContent = new StringContent(value);
+            try
+            {
+                content.Add(fieldContent, name);
+            }
+            catch
+            {
+                fieldContent.Dispose();
+                throw;
+            }
+        }
         using var response = await _fixture.Client.PostAsync($"/api/v1/admin/import/{operation}", content);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
