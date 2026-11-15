@@ -85,7 +85,7 @@ def main() -> None:
     if args.prospective_source_sha:
         kind = "prospective-pr"
         source = args.prospective_source_sha
-        archive = build_prospective(args, lock)
+        build_prospective(args, lock)
         document = (ROOT / "docs/get-started/quickstart.md").read_bytes()
     else:
         for path in (archive, archive.with_name(archive.name + ".sha256")):

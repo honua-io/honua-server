@@ -26,9 +26,9 @@ test('archived installation signs in to Console and embedded Studio', async ({ p
   await expect(page.locator('honua-studio-app')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('textbox', { name: 'New map package key', exact: true })).toBeVisible();
   const session = await page.evaluate(async () => {
-    const response = await fetch('/api/agent-workspace/session');
+    const response = await fetch('/api/v1/studio/session');
     const body = await response.json();
-    return { status: response.status, authenticated: body.authenticated };
+    return { status: response.status, authenticated: body.data?.authenticated };
   });
   expect(session).toEqual({ status: 200, authenticated: true });
   const leaked = await page.evaluate(secret => JSON.stringify({ ...localStorage, ...sessionStorage }).includes(secret), password);
