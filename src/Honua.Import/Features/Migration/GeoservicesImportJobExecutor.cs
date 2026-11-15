@@ -80,7 +80,8 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
 
             result = await RunAsync(run).ConfigureAwait(false);
         }
-        catch (Exception ex) when (run.LicenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
+        catch (Exception ex) when (run.LicenseCancellation.IsCancellationRequested &&
+            ex is not OutOfMemoryException and not GeoservicesImportCommitOutcomeUnknownException)
         {
             return await FailUncommittedExpiredLicenseAsync(run).ConfigureAwait(false);
         }
