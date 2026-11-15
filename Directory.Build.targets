@@ -30,6 +30,7 @@
   <Target Name="HonuaGetAnalyzerOwnership" Returns="@(_HonuaAnalyzerOwnership)">
     <ItemGroup>
       <_HonuaAnalyzerOwnership Include="$(MSBuildProjectFullPath)">
+        <TestRoot Condition="'$(IsTestProject)' == 'true' or '$(TargetFrameworks)' != ''">true</TestRoot>
         <TestOnly Condition="'$(IsTestProject)' == 'true' and '$(TargetFrameworks)' == ''">true</TestOnly>
       </_HonuaAnalyzerOwnership>
     </ItemGroup>

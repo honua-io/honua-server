@@ -262,7 +262,7 @@ needed prior revision and backend support. Outside an in-flight operation, the
 preferred model is forward deploy to a prior image or artifact revision. When a
 declared platform release is in use, update the declaration to the prior
 serving artifact and call `POST /api/v1/admin/platform-release/converge`; the
-converge API creates per-target Deploy operations for divergent serving targets
+converge API creates per-target Deploy operations for divergent server deployments
 and defers worker-image convergence to the next GP dispatch.
 
 Service/config rollback uses metadata release history. Metadata-release rollback

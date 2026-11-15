@@ -43,16 +43,14 @@ const ATTESTING_REVIEWERS = [
     // GraphQL spelling. Verified live: a review posted by the Claude GitHub App
     // comes back from GraphQL as `{login: "claude", __typename: "Bot"}`
     // (anthropics/claude-code-action#1650) while REST reports `claude[bot]`.
-    // Without this entry every review the Claude lane posts is invisible to the
+    // Without this entry every review the Claude App posts is invisible to the
     // gate, because review-gate.yml reads the GraphQL shape.
     botLogins: ['claude'],
     reviewMarker: /Claude Review|Reviewed commit/i,
     cleanMarker: /Claude Review:\s+No major issues found\./i,
-    // THE canonical body `.github/workflows/claude-review.yml` posts for a clean
-    // head, kept here so the lane cannot drift from the marker that grades it.
-    // `cleanCommentBody(head)` must satisfy `cleanMarker` and the reviewed-commit
-    // parser below; review-gate-evidence.test.js asserts exactly that by feeding
-    // the generated body back through `evaluateCodexEvidence`.
+    // The clean-comment template a Claude bot posts for a clean head, kept
+    // beside the marker that grades it; review-gate-evidence.test.js feeds it
+    // back through `evaluateCodexEvidence` so the two cannot drift.
     cleanCommentBody: head =>
       `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${head}\``,
   },
@@ -214,25 +212,16 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // attest. Tests asserting `freshCleanReaction === false` therefore pass against
   // any implementation -- do not count them as coverage.
   const freshCleanReaction = false;
-  // hasOpenObjection is exposed for the merge train's inverted admission rule
-  // (fix-forward): admission no longer requires positive exact-head evidence,
-  // but a standing identity-scoped objection must still block on its own.
+  // hasOpenObjection is exposed so review-gate.yml can block on a standing
+  // identity-scoped objection independently of positive exact-head evidence.
   return { exactReview, exactCleanComment, freshCleanReaction, hasOpenObjection };
 }
 
 // Every attesting login, flattened. This is THE source of truth for the reviewer
-// identity set, exported so no other component has to restate it. The merge
-// train's select.sh reads it via `--print-logins` rather than hardcoding logins
-// in its own jq -- it recomputes unresolvedCount and then WRITES the required
-// `Review Gate` status, so if its login set drifted from this one it could stamp
-// the gate green while a reviewer's threads sat unresolved.
-// Includes the suffix-less GraphQL spellings: select.sh counts unresolved
-// reviewer threads with jq over the GraphQL snapshot, so omitting `claude` there
-// would hide every unresolved Claude thread and let the train stamp the gate
-// green over open findings. jq cannot see `__typename`, so this set is the
-// permissive one; the direction is fail-safe (a stray bare-`claude` User thread
-// only makes the train MORE conservative), and positive evidence is still graded
-// by `reviewerFor`, which does enforce the Bot check.
+// identity set, exported (and printable via `--print-logins`) so no other
+// component has to restate it. It includes the suffix-less GraphQL spellings,
+// so it is the permissive set; positive evidence is still graded by
+// `reviewerFor`, which does enforce the Bot check.
 const ATTESTING_LOGINS = ATTESTING_REVIEWERS.flatMap(
   reviewer => [...reviewer.logins, ...(reviewer.botLogins || [])]);
 

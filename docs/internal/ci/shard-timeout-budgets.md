@@ -571,7 +571,7 @@ superseded by the table in this section.
 
 | Child | Test surface | p50 / p90 (min) | Inner / outer cap | p90 / cap |
 |---|---|---:|---:|---:|
-| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests`, `…CursorDurabilityTests` | 18.0 / 20.7 | 30 / 40 | 69% |
+| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests` (`…CursorDurabilityTests` removed by #7750; timings predate that) | 18.0 / 20.7 | 30 / 40 | 69% |
 | Server Features Data Enrichment and Sharing | `DataEnrichment.*`, `Orchestration.*`, `Sharing.*`, `Grounding.*`, `Capabilities.*` | 23.6 / 25.3 | 38 / 48 | 67% |
 
 Both children are at or below the 70% target, and both job caps clear their
