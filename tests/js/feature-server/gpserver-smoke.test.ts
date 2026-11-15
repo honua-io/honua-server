@@ -117,7 +117,14 @@ describe('GPServer Smoke', () => {
     // body error member instead of the HTTP status.
     if (response.status === 200 && !data.error) {
       expect(data.jobId).toBeTruthy();
-      expect(data.jobStatus).toBe('esriJobSubmitted');
+      // The durable PostgreSQL queue (#7245) may claim the job before submitJob
+      // returns. Assert acceptance without depending on worker scheduling.
+      expect([
+        'esriJobSubmitted',
+        'esriJobWaiting',
+        'esriJobExecuting',
+        'esriJobSucceeded',
+      ]).toContain(data.jobStatus);
       return;
     }
 
