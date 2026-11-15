@@ -15,9 +15,9 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed partial class JobExecutionServiceTests
 {
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ProcessJob_LicenseExpiresWithLostCommitReply_RecoversBeforeAnotherExecution(bool committed)
+    [InlineData(ExecutionJobStatus.Succeeded)]
+    [InlineData(ExecutionJobStatus.Failed)]
+    public async Task ProcessJob_LicenseExpiresWithLostCommitReply_RecoversBeforeAnotherExecution(ExecutionJobStatus expectedStatus)
     {
         var durable = CreateProvisioningJob() with { AttemptCount = 1, RetryPolicy = new JobRetryPolicy { MaxAttempts = 2 } };
         var workerId = durable.ClaimedBy!;
@@ -29,7 +29,7 @@ public sealed partial class JobExecutionServiceTests
         var policy = Substitute.For<ILicenseOperationPolicy>();
         policy.OperationCancellation.Returns(expiry.Token);
         var executor = CreateLicenseExpiryExecutor(expiry);
-        var recovery = ConfigureOutcomeRecovery(executor, committed
+        var recovery = ConfigureOutcomeRecovery(executor, expectedStatus == ExecutionJobStatus.Succeeded
             ? JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true } : null);
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance, policy);
@@ -45,8 +45,8 @@ public sealed partial class JobExecutionServiceTests
         durable = durable with { Status = ExecutionJobStatus.Provisioning, ClaimedBy = workerId, AttemptCount = 3, CurrentPhase = "Claimed" };
         await InvokeProcessJobAsync(service, durable.OperationId, workerId);
 
-        Assert.Equal(committed ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed, durable.Status);
-        Assert.Equal(committed, durable.CommittedEffectReferences.Contains("committed-import-receipt"));
+        Assert.Equal(expectedStatus, durable.Status);
+        Assert.Equal(expectedStatus == ExecutionJobStatus.Succeeded, durable.CommittedEffectReferences.Contains("committed-import-receipt"));
         await recovery.Received(1).RecoverOutcomeAsync(Arg.Any<ExecutionJobRecord>(),
             Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
         await executor.Received(1).ExecuteAsync(Arg.Any<ExecutionJobRecord>(),

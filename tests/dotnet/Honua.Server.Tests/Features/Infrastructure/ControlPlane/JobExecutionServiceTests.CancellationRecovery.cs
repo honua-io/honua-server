@@ -44,7 +44,7 @@ public sealed partial class JobExecutionServiceTests
     }
 
     private static IJobOutcomeRecoveryExecutor ConfigureOutcomeRecovery(
-        IJobExecutor executor, JobExecutionResult? result, bool skipFirstLookup = false)
+        IJobExecutor executor, JobExecutionResult? result, int skippedLookups = 0)
     {
         var recovery = (IJobOutcomeRecoveryExecutor)executor;
         var lookups = 0;
@@ -52,7 +52,7 @@ public sealed partial class JobExecutionServiceTests
             .Returns(async call =>
             {
                 Assert.False(call.Arg<CancellationToken>().IsCancellationRequested);
-                if (result is null || (skipFirstLookup && lookups++ == 0))
+                if (result is null || lookups++ < skippedLookups)
                 {
                     return null;
                 }

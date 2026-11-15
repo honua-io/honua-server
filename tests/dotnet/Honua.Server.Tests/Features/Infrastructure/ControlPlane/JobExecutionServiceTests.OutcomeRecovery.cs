@@ -58,7 +58,7 @@ public sealed partial class JobExecutionServiceTests
         var executor = Substitute.For<IJobExecutor, IJobOutcomeRecoveryExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
         var recovery = ConfigureOutcomeRecovery(executor,
-            JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true }, skipFirstLookup: true);
+            JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true }, skippedLookups: 1);
         executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<JobExecutionResult>(new IOException("Connection lost")));
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],

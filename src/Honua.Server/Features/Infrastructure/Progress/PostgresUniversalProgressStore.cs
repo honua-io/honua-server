@@ -180,20 +180,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             {
                 await using var transaction = write.ExecutionFence is not null
                     ? await connection.BeginTransactionAsync(token).ConfigureAwait(false) : null;
-                if (write.ExecutionFence is { } fence)
-                {
-                    // Lock the job before writing progress, serializing against requeue and reclaim.
-                    await using var lease = new NpgsqlCommand(
-                        $"SELECT operation_id FROM {database.Table("execution_jobs")} WHERE operation_id = @id AND claimed_by = @worker AND attempt_count = @attempt AND status IN ('Running', 'Provisioning') FOR UPDATE",
-                        connection, transaction);
-                    lease.Parameters.AddWithValue("id", write.OperationId);
-                    lease.Parameters.AddWithValue("worker", fence.WorkerId);
-                    lease.Parameters.AddWithValue("attempt", fence.AttemptCount);
-                    if (await lease.ExecuteScalarAsync(token).ConfigureAwait(false) is null)
-                    {
-                        throw new OperationCanceledException("The execution attempt no longer owns this import's progress.");
-                    }
-                }
+                await LockExecutionFenceAsync(new(connection, transaction), write, token).ConfigureAwait(false);
 
                 await using var command = new NpgsqlCommand(statement, connection, transaction);
                 var parameters = command.Parameters;
@@ -217,6 +204,29 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             },
             write.Repeat,
             cancellationToken);
+
+    private async Task LockExecutionFenceAsync(
+        SnapshotTransaction snapshot, SnapshotWrite write, CancellationToken cancellationToken)
+    {
+        if (write.ExecutionFence is not { } fence)
+        {
+            return;
+        }
+
+        // Lock before publishing progress, serializing against requeue and reclaim.
+        await using var lease = new NpgsqlCommand(
+            $"SELECT operation_id FROM {database.Table("execution_jobs")} WHERE operation_id = @id AND claimed_by = @worker AND attempt_count = @attempt AND status IN ('Running', 'Provisioning') FOR UPDATE",
+            snapshot.Connection, snapshot.Transaction);
+        lease.Parameters.AddWithValue("id", write.OperationId);
+        lease.Parameters.AddWithValue("worker", fence.WorkerId);
+        lease.Parameters.AddWithValue("attempt", fence.AttemptCount);
+        if (await lease.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new OperationCanceledException("The execution attempt no longer owns this import's progress.");
+        }
+    }
+
+    private sealed record SnapshotTransaction(NpgsqlConnection Connection, NpgsqlTransaction? Transaction);
 
     private async Task<ProgressCompareAndSetResult> DescribeRefusalAsync(string operationId, CancellationToken cancellationToken)
     {

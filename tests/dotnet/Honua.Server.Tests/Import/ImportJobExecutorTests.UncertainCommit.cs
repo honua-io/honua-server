@@ -15,18 +15,24 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
+    public enum LicenseRecoveryState
+    {
+        Valid,
+        Expired
+    }
+
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(LicenseRecoveryState.Valid)]
+    [InlineData(LicenseRecoveryState.Expired)]
     [Trait("Category", "Unit")]
-    public async Task ExecuteAsync_CommitAcknowledgementLost_RecoversReceiptOnNextAttempt(bool licenseExpires)
+    public async Task ExecuteAsync_CommitAcknowledgementLost_RecoversReceiptOnNextAttempt(LicenseRecoveryState licenseState)
     {
         var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));
         var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
         using var license = new CancellationTokenSource();
         var policy = Substitute.For<ILicenseOperationPolicy>();
         policy.OperationCancellation.Returns(license.Token);
-        LoseCommitAcknowledgement(importer, () => { if (licenseExpires) { license.Cancel(); } });
+        LoseCommitAcknowledgement(importer, () => { if (licenseState == LicenseRecoveryState.Expired) { license.Cancel(); } });
         using var provider = CreateGeoservicesProvider(importer);
         var (jobs, manager, executor) = CreateGeoservicesExecutor(provider, policy);
         await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(

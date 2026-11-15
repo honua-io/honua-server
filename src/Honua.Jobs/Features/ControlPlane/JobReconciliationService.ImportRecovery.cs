@@ -8,9 +8,16 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class JobReconciliationService
 {
+    private Task<bool> RequeueExpiredImportRecoveryAsync(
+        ExecutionJobRecord current, DateTimeOffset now, CancellationToken cancellationToken)
+        // Expired executions may recover a receipt, but must never execute another import.
+        => RequeueImportRecoveryAsync(current with
+        {
+            RetryPolicy = (current.RetryPolicy ?? JobRetryPolicy.Default) with { MaxAttempts = current.AttemptCount }
+        }, now, cancellationToken);
+
     private async Task<bool> RequeueImportRecoveryAsync(
-        ExecutionJobRecord current, DateTimeOffset now, CancellationToken cancellationToken,
-        bool executionExpired = false)
+        ExecutionJobRecord current, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var delay = TimeSpan.FromSeconds(5);
         var queued = current with
@@ -22,10 +29,6 @@ internal sealed partial class JobReconciliationService
             UpdatedAt = now,
             CompletedAt = null,
             NextRetryAt = now.Add(delay),
-            // An expired execution may recover a receipt, but must never run the import again.
-            RetryPolicy = executionExpired
-                ? (current.RetryPolicy ?? JobRetryPolicy.Default) with { MaxAttempts = current.AttemptCount }
-                : current.RetryPolicy,
             CurrentPhase = "Recovering committed import outcome"
         };
         if (!await jobStore.TrySetAsync(queued, cancellationToken: cancellationToken).ConfigureAwait(false))

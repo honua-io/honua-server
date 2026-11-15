@@ -403,8 +403,7 @@ internal sealed partial class JobReconciliationService(
 
         if (ExecutionJobCancellationHelper.RequiresCommitRecovery(current!))
         {
-            return await RequeueImportRecoveryAsync(current!, freshNow, cancellationToken,
-                executionExpired: true).ConfigureAwait(false);
+            return await RequeueExpiredImportRecoveryAsync(current!, freshNow, cancellationToken).ConfigureAwait(false);
         }
 
         Log.TimeoutExpired(logger, current!.OperationId);

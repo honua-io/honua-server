@@ -13,14 +13,14 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed partial class JobReconciliationServiceTests
 {
     [UnitTheory]
-    [InlineData(ExecutionJobStatus.Running, false)]
-    [InlineData(ExecutionJobStatus.Running, true)]
-    [InlineData(ExecutionJobStatus.Cancelled, false)]
-    [InlineData(ExecutionJobStatus.Cancelled, true)]
-    public async Task Sweep_ImportExpiry_RequeuesForReceiptRecovery(ExecutionJobStatus cancellationStatus, bool executionExpired)
+    [InlineData(ExecutionJobStatus.Running, 3600)]
+    [InlineData(ExecutionJobStatus.Running, 1)]
+    [InlineData(ExecutionJobStatus.Cancelled, 3600)]
+    [InlineData(ExecutionJobStatus.Cancelled, 1)]
+    public async Task Sweep_ImportExpiry_RequeuesForReceiptRecovery(ExecutionJobStatus cancellationStatus, int maxDurationSeconds)
     {
         var durable = CreateRunningJob(attemptCount: 3, retryPolicy: new JobRetryPolicy { MaxAttempts = 5 },
-            timeoutPolicy: new JobTimeoutPolicy { MaxDuration = executionExpired ? TimeSpan.FromSeconds(1) : TimeSpan.FromHours(1) });
+            timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(maxDurationSeconds) });
         durable = durable with
         {
             Spec = durable.Spec with { Kind = ExecutionJobKind.GeoservicesImport },
@@ -42,7 +42,7 @@ public sealed partial class JobReconciliationServiceTests
         Assert.Null(durable.ClaimedBy);
         Assert.Null(durable.CompletedAt);
         Assert.Equal(3, durable.AttemptCount);
-        Assert.Equal(executionExpired ? 3 : 5, durable.RetryPolicy!.MaxAttempts);
+        Assert.Equal(maxDurationSeconds == 1 ? 3 : 5, durable.RetryPolicy!.MaxAttempts);
         await queue.Received(1).RequeueAsync(durable.OperationId, durable.Priority,
             TimeSpan.FromSeconds(5), Arg.Any<CancellationToken>());
         await queue.DidNotReceive().RemoveAsync(durable.OperationId, Arg.Any<CancellationToken>());

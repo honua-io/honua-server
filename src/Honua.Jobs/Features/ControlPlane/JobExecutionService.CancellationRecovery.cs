@@ -27,68 +27,87 @@ internal sealed partial class JobExecutionService
 
         if (job.AttemptCount > (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts)
         {
-            await TerminateJobAsync(job.OperationId, workerId, ExecutionJobStatus.Failed,
-                "Execution retry budget exhausted; no committed import outcome was found.", cancellationToken, recoverOutcome: false).ConfigureAwait(false);
+            await TerminateUncommittedJobAsync(new(job.OperationId, workerId, ExecutionJobStatus.Failed,
+                "Execution retry budget exhausted; no committed import outcome was found."), cancellationToken).ConfigureAwait(false);
             return true;
         }
 
         return false;
     }
 
-    private async Task<bool> TryRecoverOutcomeAsync(
-        ExecutionJobRecord job, string workerId, CancellationToken cancellationToken, bool recoveryOnly = false)
+    private Task<bool> TryRecoverOutcomeAsync(
+        ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
+        => TryRecoverAttemptOutcomeAsync(new(job, workerId, OutcomeRecoveryMode.Execution), cancellationToken);
+
+    private Task<bool> TryRecoverTerminalOutcomeAsync(
+        ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
+        => TryRecoverAttemptOutcomeAsync(new(job, workerId, OutcomeRecoveryMode.ReceiptOnly), cancellationToken);
+
+    private async Task<bool> TryRecoverAttemptOutcomeAsync(OutcomeRecoveryAttempt attempt, CancellationToken cancellationToken)
     {
-        if (ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile) is not IJobOutcomeRecoveryExecutor recovery)
+        if (ResolveExecutor(attempt.Job.Spec.Kind, attempt.Job.Spec.RuntimeProfile) is not IJobOutcomeRecoveryExecutor recovery)
         {
             return false;
         }
 
         var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
-        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            budget.Token, cancellationToken, licenseCancellation);
-        using var context = new JobExecutionContext(job.OperationId, workerId, jobStore, logStore,
-            job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, null, logger, job.AttemptCount, licenseCancellation);
         try
         {
-            licenseCancellation.ThrowIfCancellationRequested();
-            var result = await recovery.RecoverOutcomeAsync(job, context, recoveryCancellation.Token).ConfigureAwait(false);
-            licenseCancellation.ThrowIfCancellationRequested();
-            if (result is null)
-            {
-                return false;
-            }
-
-            await FinalizeOutcomeRecoveryAsync(job, result, recoveryOnly, recoveryCancellation.Token).ConfigureAwait(false);
+            return await RecoverCommittedOutcomeAsync(attempt, recovery, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
         {
-            // License expiry stops execution and publication, but cannot establish whether COMMIT landed.
-            // Keep the receipt lookup pending until a valid license permits recovery.
-            await RequeueOutcomeRecoveryAsync(job, workerId, recoveryOnly).ConfigureAwait(false);
+            // License expiry cannot establish whether COMMIT landed; retain the receipt lookup.
+            await RequeueOutcomeRecoveryAsync(attempt).ConfigureAwait(false);
         }
-        // An unavailable receipt is an unknown outcome, never evidence that no rows committed.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Log.JobExecutionFailed(logger, job.OperationId, ex);
-            await RequeueOutcomeRecoveryAsync(job, workerId, recoveryOnly).ConfigureAwait(false);
+            // An unavailable receipt is an unknown outcome, never proof that no rows committed.
+            Log.JobExecutionFailed(logger, attempt.Job.OperationId, ex);
+            await RequeueOutcomeRecoveryAsync(attempt).ConfigureAwait(false);
         }
 
         return true;
     }
 
-    private async Task FinalizeOutcomeRecoveryAsync(
-        ExecutionJobRecord job, JobExecutionResult result, bool recoveryOnly, CancellationToken cancellationToken)
+    private async Task<bool> RecoverCommittedOutcomeAsync(
+        OutcomeRecoveryAttempt attempt, IJobOutcomeRecoveryExecutor recovery, CancellationToken cancellationToken)
     {
-        var workerId = job.ClaimedBy!;
-        if (!await FinalizeJobAsync(job.OperationId, workerId, result, null, null, cancellationToken).ConfigureAwait(false))
+        var job = attempt.Job;
+        var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            budget.Token, cancellationToken, licenseCancellation);
+        using var context = new JobExecutionContext(job.OperationId, attempt.WorkerId, jobStore, logStore,
+            job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, null, logger, job.AttemptCount, licenseCancellation);
+        licenseCancellation.ThrowIfCancellationRequested();
+        var result = await recovery.RecoverOutcomeAsync(job, context, recoveryCancellation.Token).ConfigureAwait(false);
+        licenseCancellation.ThrowIfCancellationRequested();
+        if (result is null)
         {
-            await RequeueOutcomeRecoveryAsync(job, workerId, recoveryOnly).ConfigureAwait(false);
+            return false;
         }
+
+        if (!await FinalizeJobAsync(job.OperationId, job.ClaimedBy!, result, null, null, recoveryCancellation.Token).ConfigureAwait(false))
+        {
+            await RequeueOutcomeRecoveryAsync(attempt).ConfigureAwait(false);
+        }
+
+        return true;
     }
 
-    private async Task RequeueOutcomeRecoveryAsync(ExecutionJobRecord original, string workerId, bool recoveryOnly)
+    private sealed record OutcomeRecoveryAttempt(ExecutionJobRecord Job, string WorkerId, OutcomeRecoveryMode Mode);
+
+    private enum OutcomeRecoveryMode
     {
+        Execution,
+        ReceiptOnly
+    }
+
+    private async Task RequeueOutcomeRecoveryAsync(OutcomeRecoveryAttempt attempt)
+    {
+        var original = attempt.Job;
+        var workerId = attempt.WorkerId;
         using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var current = await jobStore.GetAsync(original.OperationId, cleanup.Token).ConfigureAwait(false);
         if (current is null || IsTerminalOrNotOwnedBy(current, workerId) || current.AttemptCount != original.AttemptCount)
@@ -107,7 +126,7 @@ internal sealed partial class JobExecutionService
             UpdatedAt = now,
             CompletedAt = null,
             NextRetryAt = now.Add(delay),
-            RetryPolicy = recoveryOnly
+            RetryPolicy = attempt.Mode == OutcomeRecoveryMode.ReceiptOnly
                 ? (current.RetryPolicy ?? JobRetryPolicy.Default) with { MaxAttempts = current.AttemptCount }
                 : current.RetryPolicy,
             CurrentPhase = OutcomeRecoveryPhase
