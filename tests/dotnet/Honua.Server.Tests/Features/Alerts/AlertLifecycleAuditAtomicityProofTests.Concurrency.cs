@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -30,7 +31,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
         var pending = store.ApplyAsync(snooze with { IdempotencyKey = Guid.NewGuid().ToString("N") }, timeout.Token);
         await WaitForBlockedLifecycleAsync(connection.ProcessID, timeout.Token);
         await InsertConcurrentIntentAsync(transaction, timeout.Token);
-        await transaction.CommitAsync(timeout.Token);
+        await transaction.CommitSafelyAsync(timeout.Token);
         var result = await pending;
         result.Lifecycle!.Status.Should().Be(AlertLifecycleStatus.Suppressed);
         (await ReadOutboxAsync(includeCompleted: true)).Should().HaveCount(3);
