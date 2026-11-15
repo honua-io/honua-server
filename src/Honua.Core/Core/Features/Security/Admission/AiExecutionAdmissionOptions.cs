@@ -8,7 +8,4 @@ public sealed class AiExecutionAdmissionOptions
     public const string SectionName = "AiExecutionAdmission";
 
     public string DeploymentId { get; set; } = string.Empty;
-
-    // An admission-backend failure never falls back to the other backend.
-    public string Backend { get; set; } = "auto";
 }
