@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "8fcec9e91d9b9ff92f62a7d338d5af2566e396a2",
-  "generatedAt": "2026-11-15T02:39:07Z",
+  "serverSha": "2f4975f5144d43675af10c706a27dd16e466805a",
+  "generatedAt": "2026-11-14T22:41:17Z",
   "regenerate": "bash scripts/ci/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -268,8 +268,6 @@
       "honua_ops_health",
       "honua_platform_release_status",
       "honua_propose_finding",
-      "honua_propose_platform_release_convergence",
-      "honua_propose_rollback",
       "honua_supported_operation_kinds"
     ],
     "review": [
