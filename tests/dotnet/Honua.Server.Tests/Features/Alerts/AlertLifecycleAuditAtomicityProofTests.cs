@@ -42,7 +42,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// </summary>
 [Collection("Database")]
 [Trait("Category", "AlertAuditAtomicityProof")]
-public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
+public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
 {
     private readonly AuditFaultSwitch _fault = new();
     private readonly WebAppFixture _fixture;
@@ -306,7 +306,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand($"""
             INSERT INTO "{_schema}".alert_rules (service_id, layer_id, rule_name, trigger_type, severity)
-            VALUES ('audit-proof', 1, 'audit proof rule', 1, 'critical')
+            VALUES ('audit-proof', 1, 'audit proof rule', 1, 'warning')
             RETURNING rule_id
             """, connection);
         var ruleId = (long)(await command.ExecuteScalarAsync())!;
@@ -314,7 +314,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         await using var insert = new NpgsqlCommand($"""
             INSERT INTO "{_schema}".alert_events (
                 dedupe_key, rule_id, service_id, layer_id, objectid, trigger_type, generation, severity)
-            VALUES (@dedupe, @rule_id, 'audit-proof', 1, 42, 1, 1, 'critical')
+            VALUES (@dedupe, @rule_id, 'audit-proof', 1, 42, 1, 1, 'warning')
             RETURNING event_id
             """, connection);
         insert.Parameters.AddWithValue("dedupe", "audit-proof-" + Guid.NewGuid().ToString("N"));
