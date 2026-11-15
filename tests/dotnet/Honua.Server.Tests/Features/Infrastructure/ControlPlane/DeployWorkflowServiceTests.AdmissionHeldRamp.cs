@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.ControlPlane;
 using NSubstitute;
 using Honua.TestKit.Attributes;
 
