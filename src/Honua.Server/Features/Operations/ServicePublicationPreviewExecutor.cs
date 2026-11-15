@@ -51,7 +51,7 @@ internal sealed class ServicePublicationPreviewExecutor(IServiceProvider service
             throw new InvalidOperationException("Publication metadata changed while previewing. Create a new preview.");
         }
         var binding = await services.GetRequiredService<PublicationPreviewBindings>()
-            .CreateAsync(request, new PublicationPreviewIdentity(context, preview.MetadataBase), cancellationToken).ConfigureAwait(false);
+            .CreateAsync(request, new PublicationPreviewIdentity(context, preview.MetadataBase, preview.SourceFingerprint), cancellationToken).ConfigureAwait(false);
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         var details = BuildDetails(request, preview, binding);
         return new OperationHandle

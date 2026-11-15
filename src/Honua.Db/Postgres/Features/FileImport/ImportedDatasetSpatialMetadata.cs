@@ -94,14 +94,14 @@ internal static class ImportedDatasetSpatialMetadata
 
     internal static async Task<Facts?> ReadAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, string metadataSchema,
-        string schema, string table, string geometryColumn, Identity identity, CancellationToken cancellationToken)
+        string schema, string table, string geometryColumn, Identity identity, CancellationToken cancellationToken, bool forUpdate = true)
     {
         await using var command = new NpgsqlCommand($"""
             SELECT storage_srid, coordinate_epoch
             FROM {RegistryTable(metadataSchema)}
             WHERE schema_name = @schema AND table_name = @table AND geometry_column = @geometry
                 AND relation_oid = @relation_oid AND geometry_attnum = @attnum
-            FOR UPDATE
+            {(forUpdate ? "FOR UPDATE" : string.Empty)}
             """, connection, transaction);
         AddTarget(command, schema, table, geometryColumn);
         AddIdentity(command, identity);

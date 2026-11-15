@@ -85,6 +85,21 @@ public sealed class ServicePublishMetadataPinTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_DirectPreviewPublish_PreservesBothVerifiedPins()
+    {
+        var prepared = await _executor.PrepareAsync(
+            Request((PublicationPreviewBindings.ReferenceKey, "verified-preview")), Context(), CancellationToken.None);
+        prepared = prepared with { VerifiedPublicationSourceFingerprint = "source-1" };
+
+        await _executor.SubmitAsync(prepared, Context(), CancellationToken.None);
+
+        await _publishing.Received(1).PublishLayerAsync(Arg.Any<string>(),
+            Arg.Is<LayerPublishRequest>(request => request.ExpectedMetadataRevision == 7
+                && request.ExpectedMetadataEtag == "\"etag-7\""
+                && request.ExpectedSourceFingerprint == "source-1"), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_DirectPublish_KeepsUnpinnedRetrySemantics()
     {
         var prepared = await _executor.PrepareAsync(Request(), Context(), CancellationToken.None);
@@ -110,6 +125,7 @@ public sealed class ServicePublishMetadataPinTests
                 Table = "parcels",
                 LayerName = "Parcels",
             },
+            ExpectedSourceFingerprint = "source-1",
             ExpectedMetadataRevision = 7,
             ExpectedMetadataEtag = "\"etag-7\"",
         };
@@ -118,7 +134,8 @@ public sealed class ServicePublishMetadataPinTests
             new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = payload.ToJson() },
             out var parsed, out _).Should().BeTrue();
 
-        parsed!.ExpectedMetadataRevision.Should().Be(7);
+        parsed!.ExpectedSourceFingerprint.Should().Be("source-1");
+        parsed.ExpectedMetadataRevision.Should().Be(7);
         parsed.ExpectedMetadataEtag.Should().Be("\"etag-7\"");
     }
 

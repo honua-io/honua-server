@@ -13,6 +13,10 @@ public sealed record OperationRequest
 
     [JsonIgnore]
     public VerifiedCommittedSinkPublication? VerifiedCommittedSinkPublication { get; init; }
+
+    [JsonIgnore]
+    public string? VerifiedPublicationSourceFingerprint { get; init; }
+
     public required string OperationId { get; init; }
 
     public IReadOnlyDictionary<string, string?> Parameters { get; init; } =

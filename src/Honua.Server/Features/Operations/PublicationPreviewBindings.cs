@@ -11,7 +11,7 @@ using Honua.Core.Features.Operations.Domain;
 namespace Honua.Server.Features.Operations;
 
 // Durable, actor-bound references. Reading a reference never extends its original lifetime.
-internal sealed record PublicationPreviewIdentity(OperationPolicyContext Policy, LayerPublicationBase MetadataBase);
+internal sealed record PublicationPreviewIdentity(OperationPolicyContext Policy, LayerPublicationBase MetadataBase, string SourceFingerprint);
 
 internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, TimeProvider clock)
 {
@@ -46,6 +46,7 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
                 {
                     ["requesterId"] = identity.Policy.PrincipalId,
                     ["requestHash"] = ComputeRequestHash(request),
+                    ["sourceFingerprint"] = identity.SourceFingerprint,
                     ["metadataRevision"] = identity.MetadataBase.Revision.ToString(CultureInfo.InvariantCulture),
                     ["metadataEtag"] = identity.MetadataBase.Etag ?? string.Empty,
                     ["expiresAt"] = expires.ToString("O", CultureInfo.InvariantCulture)
@@ -78,6 +79,7 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
             !string.Equals(envelope.TenantId, identity.Policy.TenantId, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(identity.Policy.PrincipalId) ||
             !details.TryGetValue("requesterId", out var requester) || requester != identity.Policy.PrincipalId ||
+            !details.TryGetValue("sourceFingerprint", out var sourceFingerprint) || sourceFingerprint != identity.SourceFingerprint ||
             !details.TryGetValue("requestHash", out var hash) || hash != ComputeRequestHash(request) ||
             !details.TryGetValue("expiresAt", out var expiresText) ||
             !DateTimeOffset.TryParseExact(expiresText, "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var expires) ||

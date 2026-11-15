@@ -10,6 +10,7 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
     public IReadOnlyCollection<string> OperationIds { get; } =
         new HashSet<string>(StringComparer.Ordinal)
         {
+            "service.publication.preview",
             "admin.server.status",
             "admin.connections.list",
             "admin.connections.tables.discover",

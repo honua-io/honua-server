@@ -93,7 +93,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
-    private async Task<JsonElement> PreviewPublicationAsync()
+    private async Task<JsonElement> PreviewPublicationAsync(string[]? fields = null)
     {
         using var response = await _client.PostAsJsonAsync("/mcp", new
         {
@@ -114,7 +114,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
                     geometryType = "Point",
                     srid = 4326,
                     primaryKey = "id",
-                    fields = new[] { "id", "name" }
+                    fields = fields ?? ["id", "name"]
                 }
             }
         });

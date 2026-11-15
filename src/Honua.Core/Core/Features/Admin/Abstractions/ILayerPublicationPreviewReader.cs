@@ -9,6 +9,7 @@ namespace Honua.Core.Features.Admin.Abstractions;
 // A read-only plan. The layer ID is a placeholder, never an allocation or reservation.
 public sealed record LayerPublicationPreview
 {
+    public required string SourceFingerprint { get; init; }
     public required LayerPublicationBase MetadataBase { get; init; }
     public required MetadataV2Service Service { get; init; }
     public required MetadataV2Object Resource { get; init; }

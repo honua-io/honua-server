@@ -216,17 +216,27 @@ public sealed class LayerPublishJobTests
             ConnectionKey = "roads",
             RowCount = 5,
             Request = HttpRequest(),
+            ExpectedSourceFingerprint = "preview-source",
+            ExpectedMetadataRevision = 7,
+            ExpectedMetadataEtag = "etag-7",
         };
+        Assert.True(LayerPublishJobPayload.TryParse(
+            new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = payload.ToJson() },
+            out var restarted, out _));
 
         var result = await LayerPublishJobWork.ExecuteAsync(
             ScopeFactory(publisher, resolver),
             store,
             NullLogger<LayerPublishJobTests>.Instance,
-            payload,
+            restarted!,
             jobId,
             context: null,
             CancellationToken.None);
 
+        await publisher.Received(1).PublishLayerAsync(Arg.Any<string>(),
+            Arg.Is<LayerPublishRequest>(request => request.ExpectedSourceFingerprint == "preview-source"
+                && request.ExpectedMetadataRevision == 7 && request.ExpectedMetadataEtag == "etag-7"),
+            Arg.Any<CancellationToken>());
         Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
         Assert.True(result.CompletedWithCommittedEffects);
         var progress = await store.GetProgressAsync<LayerPublishJobProgress>(jobId, CancellationToken.None);

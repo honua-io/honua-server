@@ -12,7 +12,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<double?> ResolveImportedStorageEpochAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, LayerPublishRequest request,
         string schema, string table, string? geometryColumn, int sourceStorageSrid, int publishedStorageSrid,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool readOnly = false)
     {
         var hint = request.StorageCrsCoordinateEpoch;
         if (hint.HasValue && !double.IsFinite(hint.Value))
@@ -45,7 +45,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             connection, transaction, schema, table, geometryColumn, cancellationToken);
         var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
             connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, geometryColumn,
-            identity, cancellationToken);
+            identity, cancellationToken, forUpdate: !readOnly);
         if (facts is null)
         {
             if (hint.HasValue)

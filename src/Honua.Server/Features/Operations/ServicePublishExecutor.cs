@@ -231,8 +231,9 @@ internal sealed class ServicePublishExecutor
         var connectionString = context.ResolvedConnectionString
             ?? await ResolveConnectionStringAsync(request.ConnectionId, cancellationToken).ConfigureAwait(false);
         var publishRequest = CreatePublishRequest(request);
-        // Only an approved proposal enforces its pin; a direct publish keeps conflict retries.
-        if (context.ApprovedProposalId is not null && ServicePublishMetadataPin.TryRead(request) is { } pin)
+        // Both approved proposals and retained previews enforce the metadata base they presented.
+        if ((context.ApprovedProposalId is not null || request.Parameters.ContainsKey(PublicationPreviewBindings.ReferenceKey)) &&
+            ServicePublishMetadataPin.TryRead(request) is { } pin)
         {
             publishRequest.ExpectedMetadataRevision = pin.Revision;
             publishRequest.ExpectedMetadataEtag = pin.Etag;
@@ -666,6 +667,7 @@ internal sealed class ServicePublishExecutor
             ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null,
             ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };
+        publishRequest.ExpectedSourceFingerprint = request.VerifiedPublicationSourceFingerprint;
         publishRequest.CommittedSinkPublication = request.VerifiedCommittedSinkPublication;
         return publishRequest;
     }

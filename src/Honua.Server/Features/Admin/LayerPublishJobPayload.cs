@@ -36,6 +36,8 @@ internal sealed class LayerPublishJobPayload
 
     public string? ExpectedMetadataEtag { get; init; }
 
+    public string? ExpectedSourceFingerprint { get; init; }
+
     internal string ToJson()
         => JsonSerializer.Serialize(this, LayerPublishingJsonContext.Default.LayerPublishJobPayload);
 

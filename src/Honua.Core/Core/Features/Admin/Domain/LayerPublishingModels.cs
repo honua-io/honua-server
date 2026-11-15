@@ -17,6 +17,9 @@ public sealed class LayerPublishRequest
     public long? ExpectedMetadataRevision { get; set; }
 
     [JsonIgnore]
+    public string? ExpectedSourceFingerprint { get; set; }
+
+    [JsonIgnore]
     public string? ExpectedMetadataEtag { get; set; }
 
     [JsonIgnore]

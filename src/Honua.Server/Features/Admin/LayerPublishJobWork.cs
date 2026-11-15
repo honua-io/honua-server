@@ -92,6 +92,7 @@ internal static partial class LayerPublishJobWork
             publishRequest.ConnectionEndpointFingerprint = payload.ConnectionEndpointFingerprint;
             publishRequest.ExpectedMetadataRevision = payload.ExpectedMetadataRevision;
             publishRequest.ExpectedMetadataEtag = payload.ExpectedMetadataEtag;
+            publishRequest.ExpectedSourceFingerprint = payload.ExpectedSourceFingerprint;
             if (payload.ConnectionEndpointFingerprint is not null)
             {
                 var source = payload.CommittedSinkPublication

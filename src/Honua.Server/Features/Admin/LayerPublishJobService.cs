@@ -71,6 +71,7 @@ internal sealed class LayerPublishJobService(
             CommittedSinkPublication = request.CommittedSinkPublication,
             ExpectedMetadataRevision = request.ExpectedMetadataRevision,
             ExpectedMetadataEtag = request.ExpectedMetadataEtag,
+            ExpectedSourceFingerprint = request.ExpectedSourceFingerprint,
         };
         var queued = new LayerPublishJobProgress
         {

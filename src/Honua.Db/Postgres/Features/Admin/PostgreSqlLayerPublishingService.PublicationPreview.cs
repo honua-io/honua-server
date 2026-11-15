@@ -84,7 +84,9 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
         await ValidateLockedPreviewSourceAsync(session, cancellationToken).ConfigureAwait(false);
         var plan = await BuildPreviewPlanAsync(session, cancellationToken).ConfigureAwait(false);
         var planned = BuildPublishedLayerGraph(plan);
-        return SelectPublicationPreview(planned, plan, context.MetadataBase);
+        var fingerprint = await ReadPublicationSourceFingerprintAsync(connection, transaction, context.Request,
+            context.Source, cancellationToken).ConfigureAwait(false);
+        return SelectPublicationPreview(planned, plan, context.MetadataBase) with { SourceFingerprint = fingerprint };
     }
 
     private async Task ValidateLockedPreviewSourceAsync(PublicationPreviewSession session, CancellationToken cancellationToken)
@@ -129,7 +131,7 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
                 .Select(column => column.Name).ToArray());
         var epoch = await ResolveImportedStorageEpochAsync(session.Connection, session.Transaction, request,
             schema, table, source.GeometryColumn, source.StorageSrid, storage.StorageSrid,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, readOnly: true).ConfigureAwait(false);
         var extent = await ReadLayerExtentAsync(session.Connection, session.Transaction, schema, table, source.GeometryColumn,
             source.StorageSrid, managedLayerId: null, cancellationToken).ConfigureAwait(false);
         return CreatePreviewPlan(context, storage) with { StorageCoordinateEpoch = epoch, Extent = extent };
@@ -171,6 +173,7 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
         // Return only this plan's objects, never unrelated graph objects or connection secrets.
         return new LayerPublicationPreview
         {
+            SourceFingerprint = string.Empty,
             MetadataBase = metadataBase,
             Service = planned.Services.Single(candidate => candidate.Metadata.Id == publications[0].ServiceId),
             Resource = planned.Resources.Single(candidate => candidate.Metadata.Id == resourceId),

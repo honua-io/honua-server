@@ -31,17 +31,24 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
         var prepared = await executor!.PrepareAsync(request, context, cancellationToken).ConfigureAwait(false);
         if (prepared.Parameters.ContainsKey(PublicationPreviewBindings.ReferenceKey))
         {
-            if (services.GetRequiredService<ILayerPublishingService>() is not ILayerPublicationBaseReader baseReader)
+            if (services.GetRequiredService<ILayerPublishingService>() is not ILayerPublicationPreviewReader reader)
             {
                 throw new InvalidOperationException("Publication preview verification is unavailable.");
             }
-            var currentBase = await baseReader.ReadPublicationBaseAsync(cancellationToken).ConfigureAwait(false);
+            var resolver = services.GetRequiredService<ISecureConnectionResolver>();
+            var connection = Guid.TryParse(prepared.ConnectionId, out var id)
+                ? await resolver.ResolveConnectionStringAsync(id, cancellationToken).ConfigureAwait(false)
+                : await resolver.ResolveConnectionStringAsync(prepared.ConnectionId!, cancellationToken).ConfigureAwait(false);
+            var preview = await reader.PreviewPublicationAsync(connection,
+                ServicePublishExecutor.CreatePublishRequest(prepared), cancellationToken).ConfigureAwait(false);
+            var currentBase = preview.MetadataBase;
             if (ServicePublishMetadataPin.Require(prepared) != currentBase)
             {
                 throw new InvalidOperationException("The approved publication metadata base is no longer current.");
             }
             await services.GetRequiredService<PublicationPreviewBindings>()
-                .VerifyAsync(prepared, new PublicationPreviewIdentity(context, currentBase), cancellationToken).ConfigureAwait(false);
+                .VerifyAsync(prepared, new PublicationPreviewIdentity(context, currentBase, preview.SourceFingerprint), cancellationToken).ConfigureAwait(false);
+            prepared = prepared with { VerifiedPublicationSourceFingerprint = preview.SourceFingerprint };
         }
         return prepared;
     }
