@@ -292,11 +292,11 @@ public sealed partial class TemporalHistorySliceEndpointsTests : IAsyncLifetime
         public int ChangedCount { get; set; }
 
         public Task<IReadOnlyList<TemporalChangeRecord>> GetFeatureRevisionsAsync(
-            int storageLayerId, long objectId, long afterGeneration, int limit, CancellationToken cancellationToken = default)
+            TemporalFeatureRevisionQuery query, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TemporalChangeRecord>>(FeatureRevisions
-                .Where(row => row.Generation > afterGeneration)
+                .Where(row => row.Generation > query.AfterGeneration && row.Generation <= query.ThroughGeneration)
                 .OrderBy(row => row.Generation)
-                .Take(limit)
+                .Take(query.Limit)
                 .ToArray());
 
         public Task<IReadOnlyList<TemporalChangeRecord>> GetChangesInWindowAsync(
