@@ -15,10 +15,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Collection("Database")]
 public sealed class PostgresTemporalTimelineTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData(1)]
     [InlineData(10)]
-    [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     public async Task GetFeatureRevisionsAsync_CapturedBoundary_ExcludesLaterChanges(int limit)
     {
