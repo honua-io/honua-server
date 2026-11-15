@@ -466,10 +466,10 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return defaultLayerId;
     }
 
-    private static MetadataV2GeometryType ResolveDeclaredGeometryType(MetadataV2Resource resource)
+    private static MetadataV2GeometryType ResolveDeclaredGeometryType(MetadataV2Object resource)
         => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
 
-    private static string? ResolveObjectIdFieldName(string? wireField, MetadataV2Resource resource)
+    private static string? ResolveObjectIdFieldName(string? wireField, MetadataV2Object resource)
     {
         if (!string.IsNullOrWhiteSpace(wireField))
         {
@@ -481,7 +481,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         return primary?.Name;
     }
 
-    private static int ResolveSrid(GeoServicesRestSpatialReference? sr, MetadataV2Resource resource)
+    private static int ResolveSrid(GeoServicesRestSpatialReference? sr, MetadataV2Object resource)
     {
         if (sr is { Wkid: int wkid } && wkid > 0)
         {
@@ -607,5 +607,5 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
     private readonly record struct ResolvedBinding(
         GeoServicesRestServiceLocation ServiceLocation,
         int GeoServicesLayerId,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 }

@@ -33,10 +33,10 @@ namespace Honua.Server.Tests.Features.Admin;
 /// End-to-end coverage for the agentic ops loop that proposes and approves the deterministic
 /// alert-dispatch dead-letter redrive action (#2568).
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
-public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyncLifetime
+public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyncLifetime, IClassFixture<RedisFixture>
 {
     private const int SeededDeadLetters = 2;
     private const string FindingRule = "alert-dispatch-backlog";

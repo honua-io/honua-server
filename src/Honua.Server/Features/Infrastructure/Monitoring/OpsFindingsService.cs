@@ -121,6 +121,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         EvaluateLocalBackendSubstrate(now, findings);
         EvaluatePlatformReleaseSkew(now, findings);
         EvaluateDbBoundedAdmissionPressure(now, options, findings);
+        EvaluateAnonymousAdmissionPressure(now, findings);
         await EvaluatePendingContractMigrationsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateGpQueueDepthAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
@@ -181,6 +182,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 _jobStore is not null,
                 now),
             .. storeSources,
+            BuildAdmissionPressureSource(now),
             BuildServingLatencyRollupSource(now, options, rollupDegraded),
             BuildStoreSource(
                 EvidencePostureVocabulary.SourceIds.FindingsDatabasePressure,
@@ -406,6 +408,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
             {
                 FindingId = finding.Id,
                 Rule = finding.Rule,
+                Severity = finding.Severity,
                 ActionDiscriminator = action.ActionDiscriminator,
                 ActionMarkedAutoSafe = action.AutoSafe,
                 BlastRadius = Math.Max(1, action.BlastRadius),

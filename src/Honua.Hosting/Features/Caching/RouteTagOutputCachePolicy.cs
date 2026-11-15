@@ -19,6 +19,12 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
 
     public async ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
+        if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<SkipCatalogOutputCacheMetadata>() is not null)
+        {
+            DisableCaching(context);
+            return;
+        }
+
         AddRouteTags(context);
         if (!MayUseOutputCache(context.HttpContext))
         {
@@ -39,6 +45,12 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
             }
         }
 
+        await ApplyVaryByRulesAsync(context, snapshot, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask ApplyVaryByRulesAsync(
+        OutputCacheContext context, MetadataV2GraphSnapshot? snapshot, CancellationToken cancellationToken)
+    {
         if (context.HttpContext.RequestServices.GetService<IConfigurationGenerationSource>() is { } generations)
         {
             context.CacheVaryByRules.VaryByValues["honua-configuration-generation"] =

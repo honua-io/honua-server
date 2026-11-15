@@ -541,5 +541,834 @@
         "Server Features Packages and Temporal 2": 8.0
       }
     }
+  },
+  {
+    "originalShard": {
+      "name": "Core and Cloud Contracts",
+      "shard_name": "Core and Cloud Contracts",
+      "dispatch_rank": 15.4,
+      "artifact_suffix": "core-cloud-contracts",
+      "log_name": "server-tests-core-cloud-contracts",
+      "_comment": "September 2026 capacity rebalance (runs 34025905230 and 34028070097). #4354 added PatchConcurrencyTests to the serialized [Collection(\"Database\")], whose 40 cases run one at a time at ~16.3s each \u2014 about 10.9 minutes appended to whichever shard owns them \u2014 and the shard went from a passing 17.4m (run 34022872366) to exit 124 at the 26m cap with the class still running. PatchConcurrencyTests moves to Core Mutation Concurrency; CrsTransformationCorrectnessTests moves to Core Attachments and Records, AdvancedSpatialQueryTests to Core Endpoints, and ApiSurfaceComplianceTests plus TestQualityValidationTests to STAC and API Governance so the remainder keeps headroom under the runner contention seen in the failing runs. The catch-all and the 26-minute budget are unchanged; the Core partition guards lossless ownership.",
+      "timeout_minutes": 36,
+      "test_timeout_minutes": 26,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "(((((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~Honua.Server.Tests.AdvancedSpatialQueryTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.TestQualityValidationTests&FullyQualifiedName!~Honua.Server.Tests.PatchConcurrencyTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Metadata/",
+        "src/Honua.Core/Core/Features/Publishing/",
+        "src/Honua.Db/Postgres/Features/Metadata/",
+        "src/Honua.Db/Postgres/Features/Publishing/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Routing/Features/Routing/",
+        "src/Honua.Server/Hosting/",
+        "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
+        "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql",
+        "src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql",
+        "tests/dotnet/Honua.Server.Tests/ApiExplorerEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Cloud/",
+        "tests/dotnet/Honua.Server.Tests/Contract/",
+        "tests/dotnet/Honua.Server.Tests/DatabaseMigrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/HealthEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/HealthEndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Helpers/",
+        "tests/dotnet/Honua.Server.Tests/Hosting/",
+        "tests/dotnet/Honua.Server.Tests/Performance/",
+        "tests/dotnet/Honua.Server.Tests/PostgresConnectionTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresFeatureStoreGeographyTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresFeatureStoreTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresLayerCatalogTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Routing/",
+        "tests/dotnet/Honua.Server.Tests/Seed/",
+        "tests/dotnet/Honua.Server.Tests/SpatialCorrectnessTests.cs",
+        "tests/dotnet/Honua.Server.Tests/SpatialGeometryValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/TestData/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ]
+    },
+    "children": [
+      "Core and Cloud Contracts 1",
+      "Core and Cloud Contracts 2",
+      "Core and Cloud Contracts 3",
+      "Core and Cloud Contracts 4"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 15.38 job minutes, 19.50 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "Core and Cloud Contracts 1": 9.5,
+        "Core and Cloud Contracts 2": 9.5,
+        "Core and Cloud Contracts 3": 9.5,
+        "Core and Cloud Contracts 4": 7.1
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "Raster Serving Scene Geometry and Terrain",
+      "shard_name": "Raster Serving Scene Geometry and Terrain",
+      "dispatch_rank": 13.8,
+      "artifact_suffix": "raster-serving-scene-geometry-terrain",
+      "log_name": "server-tests-raster-serving-scene-geometry-terrain",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Cog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Zarr|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Server/Features/Protocols/Cog/",
+        "src/Honua.Server/Features/Protocols/Coverages/",
+        "src/Honua.Server/Features/Protocols/Elevation/",
+        "src/Honua.Server/Features/Protocols/Terrain/",
+        "src/Honua.Server/Features/Protocols/Tiles/",
+        "src/Honua.Server/Features/Protocols/Zarr/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Coverages/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Zarr/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "_comment": "Offline TRX rebalance (#3711): combines the 2.8m raster-serving and 1.7m geometry/terrain micro-shards with the 5.2m-p90 elevation/scene-analysis owner."
+    },
+    "children": [
+      "Raster Serving Scene Geometry and Terrain 1",
+      "Raster Serving Scene Geometry and Terrain 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 13.55 job minutes, 9.82 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "Raster Serving Scene Geometry and Terrain 1": 9.5,
+        "Raster Serving Scene Geometry and Terrain 2": 8.4
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "STAC and API Governance",
+      "shard_name": "STAC and API Governance",
+      "dispatch_rank": 13.4,
+      "artifact_suffix": "stac-api-governance",
+      "log_name": "server-tests-stac-api-governance",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
+      "_paths_comment": "#2693: the exact ImageServer endpoint-registry fragment is bounded protocol registration; pair its ImageServer owner with this API-governance projection without widening other EndpointRegistry fragments.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/Stac/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/API/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "_comment": "September 2026 capacity rebalance (run 34025905230): owns the whole ApiSurfaceComplianceTests and TestQualityValidationTests classes from Core and Cloud Contracts, alongside API governance; unchanged 20-minute budget."
+    },
+    "children": [
+      "STAC and API Governance 1",
+      "STAC and API Governance 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 13.37 job minutes, 9.87 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "STAC and API Governance 1": 9.2,
+        "STAC and API Governance 2": 8.7
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "OGC API Maps Rendering and Records",
+      "shard_name": "OGC API Maps Rendering and Records",
+      "dispatch_rank": 11.5,
+      "artifact_suffix": "ogc-api-maps-rendering-records",
+      "log_name": "server-tests-ogc-api-maps-rendering-records",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "_comment": "Capacity split #5006: Basic and Conformance took ~360s, the remaining Maps and Records ~407s in run 35164215061 attempt 2. Both retain the original 22m test / 32m job budgets. Maps paths select both children; the exact partition preserves all original classes, including future Maps/Records tests. See docs/internal/ci/shard-rebalance-5006.md.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/OgcApi/Maps/",
+        "src/Honua.Protocols/OgcApi/Records/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/",
+        "tests/dotnet/RedisCollection.cs"
+      ]
+    },
+    "children": [
+      "OGC API Maps Rendering and Records 1",
+      "OGC API Maps Rendering and Records 2",
+      "OGC API Maps Rendering and Records 3"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 12.38 job minutes, 11.14 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "OGC API Maps Rendering and Records 1": 9.1,
+        "OGC API Maps Rendering and Records 2": 9.2,
+        "OGC API Maps Rendering and Records 3": 5.0
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "OGC API Tiles Coverages and Processes",
+      "shard_name": "OGC API Tiles Coverages and Processes",
+      "dispatch_rank": 16.6,
+      "artifact_suffix": "ogc-api-tiles-coverages-processes",
+      "log_name": "server-tests-ogc-api-tiles-coverages-processes",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "_comment": "ADR-0037 finer-sharding: carved from OGC API Maps and Tiles. Selects the Tiles, Coverages, Processes and EDR namespaces.",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles&FullyQualifiedName!~OgcTilesEndpointTests&FullyQualifiedName!~OgcTilesCrsTests)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr)",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/OgcApi/Coverages/",
+        "src/Honua.Protocols/OgcApi/Edr/",
+        "src/Honua.Protocols/OgcApi/Processes/",
+        "src/Honua.Protocols/OgcApi/Styles/",
+        "src/Honua.Protocols/OgcApi/Tiles/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Styles/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs"
+      ]
+    },
+    "children": [
+      "OGC API Tiles Coverages and Processes 1",
+      "OGC API Tiles Coverages and Processes 2",
+      "OGC API Tiles Coverages and Processes 3",
+      "OGC API Tiles Coverages and Processes 4"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 17.85 job minutes, 18.11 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "OGC API Tiles Coverages and Processes 1": 9.5,
+        "OGC API Tiles Coverages and Processes 2": 9.5,
+        "OGC API Tiles Coverages and Processes 3": 9.5,
+        "OGC API Tiles Coverages and Processes 4": 5.8
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "GeoServices ImageServer",
+      "shard_name": "GeoServices ImageServer",
+      "dispatch_rank": 31.4,
+      "artifact_suffix": "geoservices-imageserver",
+      "log_name": "server-tests-geoservices-imageserver",
+      "timeout_minutes": 45,
+      "test_timeout_minutes": 35,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "ADR-0037 finer-sharding: narrowed to the ImageServer + Catalog namespaces; GPServer and NAServer were carved into the GeoServices GPServer and NAServer shard. ImageServer and GPServer/NAServer use disjoint namespaces, so the two shards partition the original suite with no gaps or overlaps. #3259: ImageServerRenderingRuleMappingTests declares the Honua.Protocols.GeoServices.Tests.Source.ImageServer namespace root (not the Honua.Server.Tests.Features.Protocols.GeoServices.* root the other clauses use), so it matched nothing; the Source.ImageServer clause claims it here.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up): src/Honua.Core/Core/Features/Raster/ is the shared raster/coverage pipeline (Zarr/COG sampling, mosaic, statistics) that ImageServer adapts; it is mapped here (and to the OGC API Tiles/Coverages and WFS=Wcs shards) so a raster change like #1939 targets the raster-rendering protocol shards instead of tripping the unmapped-source net. #2693 also assigns the shared Hosting/Tiles package writers and their GeoServices.Tiles tests to this shard; its GeoServices test project/filter explicitly discovers those tests. Raster unit tests live in Honua.Core.Tests (not in the shard matrix); the server-test coverage of Raster flows through these protocol shards.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Protocols/GeoServices/Catalog/",
+        "src/Honua.Protocols/GeoServices/ImageServer/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    "children": [
+      "GeoServices ImageServer 1",
+      "GeoServices ImageServer 2",
+      "GeoServices ImageServer 3",
+      "GeoServices ImageServer 4",
+      "GeoServices ImageServer 5",
+      "GeoServices ImageServer 6"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 31.08 job minutes, 28.13 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "GeoServices ImageServer 1": 9.5,
+        "GeoServices ImageServer 2": 9.5,
+        "GeoServices ImageServer 3": 9.5,
+        "GeoServices ImageServer 4": 9.5,
+        "GeoServices ImageServer 5": 9.5,
+        "GeoServices ImageServer 6": 4.9
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "GeoServices Geometry VectorTile and Versioning",
+      "shard_name": "GeoServices Geometry VectorTile and Versioning",
+      "dispatch_rank": 21.3,
+      "artifact_suffix": "geoservices-geometry-vectortile-versioning",
+      "log_name": "server-tests-geoservices-geometry-vectortile-versioning",
+      "timeout_minutes": 34,
+      "test_timeout_minutes": 24,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "GeoServices assembly catch-all with the existing FeatureServer/ImageServer/MapServer/GPServer/NAServer/Catalog and spatial-builder exclusions. Minor MapServer classes retain their existing path. Run 38013245849 exhausted the 24m cap while still producing output 9s earlier. Whole VersionManagementServer classes now run in the GeoServices Versioning sibling; the prior successful run 38009517832 predicts 9.53m retained union versus 10.26m sibling union. The original 330 cases partition into 272 and 58, with unchanged 24m test / 34m job caps and tier predicates. New classes outside the explicitly owned namespaces still land here.",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog&FullyQualifiedName!~GeoServicesSpatialFilterBuilderTests)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~MapServerEndpointTests&FullyQualifiedName!~MapServerExportEndpointTests&FullyQualifiedName!~MapServerIdentifyEndpointTests))&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/GeoServices/GeometryService/",
+        "src/Honua.Protocols/GeoServices/MapServer/",
+        "src/Honua.Protocols/GeoServices/VectorTileServer/",
+        "src/Honua.Protocols/GeoServices/VersionManagementServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataClientParameterTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataPostTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    "children": [
+      "GeoServices Geometry VectorTile and Versioning 1",
+      "GeoServices Geometry VectorTile and Versioning 2",
+      "GeoServices Geometry VectorTile and Versioning 3",
+      "GeoServices Geometry VectorTile and Versioning 4",
+      "GeoServices Geometry VectorTile and Versioning 5",
+      "GeoServices Geometry VectorTile and Versioning 6"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 21.32 job minutes, 31.11 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "GeoServices Geometry VectorTile and Versioning 1": 9.5,
+        "GeoServices Geometry VectorTile and Versioning 2": 9.5,
+        "GeoServices Geometry VectorTile and Versioning 3": 9.5,
+        "GeoServices Geometry VectorTile and Versioning 4": 9.5,
+        "GeoServices Geometry VectorTile and Versioning 5": 9.5,
+        "GeoServices Geometry VectorTile and Versioning 6": 7.8
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "GeoServices Versioning",
+      "shard_name": "GeoServices Versioning",
+      "dispatch_rank": 11.8,
+      "artifact_suffix": "geoservices-versioning",
+      "log_name": "server-tests-geoservices-versioning",
+      "timeout_minutes": 34,
+      "test_timeout_minutes": 24,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Whole-class VersionManagementServer split after run 38013245849 exhausted the 24m parent cap. All 58 versioning cases from prior successful run 38009517832 are retained, with measured interval union 10.26m (the parallel parent totaled 19.79m union / 21.5m span). The 272 retained cases have a 9.53m union. Routing paths, owning GeoServices.Tests project, 24m test / 34m job budgets and non-advisory membership are inherited unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/GeoServices/GeometryService/",
+        "src/Honua.Protocols/GeoServices/MapServer/",
+        "src/Honua.Protocols/GeoServices/VectorTileServer/",
+        "src/Honua.Protocols/GeoServices/VersionManagementServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataClientParameterTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataPostTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    "children": [
+      "GeoServices Versioning 1",
+      "GeoServices Versioning 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 10.78 job minutes, 8.02 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "GeoServices Versioning 1": 9.5,
+        "GeoServices Versioning 2": 6.6
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "Geocoding",
+      "shard_name": "Geocoding",
+      "dispatch_rank": 11.6,
+      "artifact_suffix": "geocoding",
+      "log_name": "server-tests-geocoding",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "ADR-0037: GeocodeServer feature tests (Honua.Server.Tests.Features.Geocoding) were claimed by NO shard filter, so they only ran under run_all (orphaned \u2014 same class as #1899). This shard claims those tests and the geocoding source dirs (including the standalone Honua.Geocoding project) so a geocoding-only change targets one shard instead of falling through the unmapped-source net to run_all.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Geocoding",
+      "paths": [
+        "src/Honua.Geocoding/",
+        "src/Honua.Server/Features/Geocoding/",
+        "tests/dotnet/Honua.Server.Tests/Features/Geocoding/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "csproj": ""
+    },
+    "children": [
+      "Geocoding 1",
+      "Geocoding 2",
+      "Geocoding 3"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 12.53 job minutes, 11.51 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "Geocoding 1": 9.4,
+        "Geocoding 2": 9.4,
+        "Geocoding 3": 4.8
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "Server Features Console Sessions and Access",
+      "shard_name": "Server Features Console Sessions and Access",
+      "dispatch_rank": 12.5,
+      "artifact_suffix": "server-features-console-sessions-access",
+      "log_name": "server-tests-server-features-console-sessions-access",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests&FullyQualifiedName!~Observability&FullyQualifiedName!~Operate&FullyQualifiedName!~Operations&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer&FullyQualifiedName!~MetadataRelease&FullyQualifiedName!~CoordinatedRelease&FullyQualifiedName!~DeployControl&FullyQualifiedName!~Platform&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.Tenant&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperationTenant&FullyQualifiedName!~UserManagement&FullyQualifiedName!~OAuth&FullyQualifiedName!~Oidc&FullyQualifiedName!~ApiKey&FullyQualifiedName!~ClientCertificate&FullyQualifiedName!~OperatorBearerToken&FullyQualifiedName!~RowLevelSecurity&FullyQualifiedName!~SecureConnection&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RateLimit&FullyQualifiedName!~Compliance&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuth&FullyQualifiedName!~Federation&FullyQualifiedName!~Investigation&FullyQualifiedName!~Proposal&FullyQualifiedName!~Admin.Share.&FullyQualifiedName!~License)&(FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.))&(FullyQualifiedName~Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests)",
+      "paths": [
+        "src/Honua.Core/Core/Features/Alerts/",
+        "src/Honua.Core/Core/Features/Console/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Alerts/",
+        "src/Honua.Db/Postgres/Features/Console/",
+        "src/Honua.Server/Features/Alerts/",
+        "src/Honua.Server/Features/Console/",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertChannelNamesTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Console/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+    },
+    "children": [
+      "Server Features Console Sessions and Access 1",
+      "Server Features Console Sessions and Access 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 10.08 job minutes, 6.51 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "Server Features Console Sessions and Access 1": 9.0,
+        "Server Features Console Sessions and Access 2": 5.6
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "Server Features Console and Alerts",
+      "shard_name": "Server Features Console and Alerts",
+      "dispatch_rank": 13.1,
+      "artifact_suffix": "server-features-console-alerts",
+      "log_name": "server-tests-server-features-console-alerts",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests&FullyQualifiedName!~Observability&FullyQualifiedName!~Operate&FullyQualifiedName!~Operations&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer&FullyQualifiedName!~MetadataRelease&FullyQualifiedName!~CoordinatedRelease&FullyQualifiedName!~DeployControl&FullyQualifiedName!~Platform&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.Tenant&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperationTenant&FullyQualifiedName!~UserManagement&FullyQualifiedName!~OAuth&FullyQualifiedName!~Oidc&FullyQualifiedName!~ApiKey&FullyQualifiedName!~ClientCertificate&FullyQualifiedName!~OperatorBearerToken&FullyQualifiedName!~RowLevelSecurity&FullyQualifiedName!~SecureConnection&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RateLimit&FullyQualifiedName!~Compliance&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuth&FullyQualifiedName!~Federation&FullyQualifiedName!~Investigation&FullyQualifiedName!~Proposal&FullyQualifiedName!~Admin.Share.&FullyQualifiedName!~License)&(FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.))&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Alerts/",
+        "src/Honua.Core/Core/Features/Console/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Alerts/",
+        "src/Honua.Db/Postgres/Features/Console/",
+        "src/Honua.Server/Features/Alerts/",
+        "src/Honua.Server/Features/Console/",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertChannelNamesTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Console/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+    },
+    "children": [
+      "Server Features Console and Alerts 1",
+      "Server Features Console and Alerts 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 13.13 job minutes, 9.65 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "Server Features Console and Alerts 1": 9.5,
+        "Server Features Console and Alerts 2": 8.3
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "GeoServices Catalog and ImageServer Support",
+      "shard_name": "GeoServices Catalog and ImageServer Support",
+      "dispatch_rank": 18.4,
+      "artifact_suffix": "geoservices-catalog-and-imageserver-support",
+      "log_name": "server-tests-geoservices-catalog-and-imageserver-support",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "PR5848 coverage-preserving capacity split: retain Catalog/Tiles here; move non-ImageServerEndpointsTests imagery classes to GeoServices ImageServer Rendering and Support. The prior run completed 307 passes and 9 failures before its 30-minute cap; failed and unexecuted outcomes remain unproven. No timeout budget increase.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog)",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Protocols/GeoServices/Catalog/",
+        "src/Honua.Protocols/GeoServices/ImageServer/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    "children": [
+      "GeoServices Catalog and ImageServer Support 1",
+      "GeoServices Catalog and ImageServer Support 2",
+      "GeoServices Catalog and ImageServer Support 3",
+      "GeoServices Catalog and ImageServer Support 4",
+      "GeoServices Catalog and ImageServer Support 5",
+      "GeoServices Catalog and ImageServer Support 6"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 19.68 job minutes, 30.97 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "GeoServices Catalog and ImageServer Support 1": 9.5,
+        "GeoServices Catalog and ImageServer Support 2": 9.5,
+        "GeoServices Catalog and ImageServer Support 3": 9.5,
+        "GeoServices Catalog and ImageServer Support 4": 9.5,
+        "GeoServices Catalog and ImageServer Support 5": 9.5,
+        "GeoServices Catalog and ImageServer Support 6": 7.6
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "GeoServices ImageServer Rendering and Support",
+      "shard_name": "GeoServices ImageServer Rendering and Support",
+      "dispatch_rank": 15.0,
+      "artifact_suffix": "geoservices-imageserver-rendering-and-support",
+      "log_name": "server-tests-geoservices-imageserver-rendering-and-support",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "#5901: retain all other ImageServer rendering/support classes after a 30-minute capacity timeout in run 38182837651. Raw pixel export, WMTS reprojection and mosaic integration move intact to GeoServices ImageServer Raster Rendering. Original partition and all assertions remain covered; no timeout increase.",
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests)",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Protocols/GeoServices/Catalog/",
+        "src/Honua.Protocols/GeoServices/ImageServer/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    "children": [
+      "GeoServices ImageServer Rendering and Support 1",
+      "GeoServices ImageServer Rendering and Support 2",
+      "GeoServices ImageServer Rendering and Support 3"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 14.00 job minutes, 11.72 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "GeoServices ImageServer Rendering and Support 1": 9.5,
+        "GeoServices ImageServer Rendering and Support 2": 9.5,
+        "GeoServices ImageServer Rendering and Support 3": 4.8
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "GeoServices ImageServer Raster Rendering",
+      "shard_name": "GeoServices ImageServer Raster Rendering",
+      "dispatch_rank": 12.4,
+      "artifact_suffix": "geoservices-imageserver-raster-rendering",
+      "log_name": "server-tests-geoservices-imageserver-raster-rendering",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "#5901: move three whole rendering classes whose measured serial union was 13.4 minutes in run 38151610217. Keep original 30-minute test / 40-minute job caps and all source triggers. Fresh hosted timing is required; this estimate is not a passing result.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Protocols/GeoServices/Catalog/",
+        "src/Honua.Protocols/GeoServices/ImageServer/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    "children": [
+      "GeoServices ImageServer Raster Rendering 1",
+      "GeoServices ImageServer Raster Rendering 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 12.38 job minutes, 9.79 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "GeoServices ImageServer Raster Rendering 1": 8.8,
+        "GeoServices ImageServer Raster Rendering 2": 9.1
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "OGC API Tiles Endpoints and CRS",
+      "shard_name": "OGC API Tiles Endpoints and CRS",
+      "dispatch_rank": 11.9,
+      "artifact_suffix": "ogc-api-tiles-endpoints-and-crs",
+      "log_name": "server-tests-ogc-api-tiles-endpoints-and-crs",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 17.1m of 22m (78%). This shard is the most parallel of the set (summed/whole = 1.95), so a Processes-vs-Tiles cut was measured and REJECTED - either direction leaves the Tiles side at a 17.0m union (77%). Taking the two heaviest Tiles classes instead (OgcTilesEndpointTests 7.7m, OgcTilesCrsTests 4.8m) is the balanced cut, and matches the #4455 pattern: new shard 13.4m of 22m (61%), residual 13.5m of 22m (62%).",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/OgcApi/Coverages/",
+        "src/Honua.Protocols/OgcApi/Edr/",
+        "src/Honua.Protocols/OgcApi/Processes/",
+        "src/Honua.Protocols/OgcApi/Tiles/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj"
+    },
+    "children": [
+      "OGC API Tiles Endpoints and CRS 1",
+      "OGC API Tiles Endpoints and CRS 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 11.97 job minutes, 8.19 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "OGC API Tiles Endpoints and CRS 1": 9.3,
+        "OGC API Tiles Endpoints and CRS 2": 7.0
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "Elevation and Terrain Analysis",
+      "shard_name": "Elevation and Terrain Analysis",
+      "dispatch_rank": 10.8,
+      "artifact_suffix": "elevation-and-terrain-analysis",
+      "log_name": "server-tests-elevation-and-terrain-analysis",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 15.4m of 20m (77%). Elevation plus Terrain is 9.4m of the parent's 15.3m union. New shard 9.4m of 15m (63%); residual COG/Zarr/Coverages/Tiles 5.8m of 20m (29%).",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Elevation|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Terrain",
+      "paths": [
+        "src/Honua.Core/Core/Features/Raster/",
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Server/Features/Protocols/Cog/",
+        "src/Honua.Server/Features/Protocols/Coverages/",
+        "src/Honua.Server/Features/Protocols/Elevation/",
+        "src/Honua.Server/Features/Protocols/Terrain/",
+        "src/Honua.Server/Features/Protocols/Tiles/",
+        "src/Honua.Server/Features/Protocols/Zarr/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Coverages/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Zarr/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "csproj": ""
+    },
+    "children": [
+      "Elevation and Terrain Analysis 1",
+      "Elevation and Terrain Analysis 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: TRX run 43580101834, 11.47 job minutes, 8.90 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "ranks": {
+        "Elevation and Terrain Analysis 1": 9.0,
+        "Elevation and Terrain Analysis 2": 8.0
+      }
+    }
+  },
+  {
+    "originalShard": {
+      "name": "OGC Classic WMTS",
+      "shard_name": "OGC Classic WMTS",
+      "dispatch_rank": 17.3,
+      "artifact_suffix": "ogc-classic-wmts",
+      "log_name": "server-tests-ogc-classic-wmts",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
+      ],
+      "_comment": "ADR-0037 finer-sharding: carved from OGC Classic Maps. Selects the Wmts namespace (OgcClassicWmtsTests is the heaviest class in the original Maps shard)."
+    },
+    "children": [
+      "OGC Classic WMTS 1",
+      "OGC Classic WMTS 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: 5.1 min per-job overhead (17.3 median job minutes less 12.2 minutes of serial class spans, TRX of run 43580101834) plus each child's class spans.",
+      "ranks": {
+        "OGC Classic WMTS 1": 12.8,
+        "OGC Classic WMTS 2": 9.6
+      }
+    }
   }
 ]

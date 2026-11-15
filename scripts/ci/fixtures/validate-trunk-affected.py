@@ -194,7 +194,7 @@ class CompletedBaseExecutionTests(unittest.TestCase):
 
     def test_both_daily_full_schedules_remain_enabled(self):
         self.assertEqual(workflow("ci.yml")["on"]["schedule"],
-                         [{"cron": "23 9 * * *"}, {"cron": "23 21 * * *"}])
+                         [{"cron": "23 7 * * *"}, {"cron": "23 13 * * *"}])
 
 
 class SuspectRangeTests(unittest.TestCase):
