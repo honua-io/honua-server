@@ -2936,13 +2936,7 @@
         "src/Honua.Protocols/OgcClassic/Wms/",
         "src/Honua.Server/Features/StaticMap/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/",
-        "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/",
-        "src/Honua.Core/Core/Features/Metadata/Services/",
-        "src/Honua.Protocols/OgcClassic/CatalogCapabilitiesXml.cs",
-        "src/Honua.Protocols/OgcClassic/Wcs20/",
-        "src/Honua.Protocols/OgcClassic/Wfs20/",
-        "src/Honua.Protocols/OgcClassic/Wmts/"
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
       ]
     },
     {
@@ -2962,25 +2956,6 @@
       "paths": [
         "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
         "src/Honua.Protocols/OgcClassic/Wms/",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs"
-      ]
-    },
-    {
-      "name": "OGC Classic Capabilities Metadata",
-      "shard_name": "OGC Classic Capabilities Metadata",
-      "dispatch_rank": 6.0,
-      "artifact_suffix": "ogc-classic-capabilities-metadata",
-      "log_name": "server-tests-ogc-classic-capabilities-metadata",
-      "timeout_minutes": 30,
-      "test_timeout_minutes": 20,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "Owns CapabilitiesMetadataXmlTests, which sits in the Ogc.Classic namespace and covers WMS, WFS and WMTS capabilities XML. It is outside the WMS and WMTS class partitions so those exact complements stay unchanged. Rank 6.0 is an unmeasured estimate.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
-      "paths": [
-        "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs"
       ]
     },
