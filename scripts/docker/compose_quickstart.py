@@ -273,7 +273,10 @@ def initialize(directory, profiles=()):
     """Creates or migrates the install. Returns only non-secret settings."""
     directory = Path(directory).resolve()
     lock = json.loads((directory / 'images.json').read_text())
-    if not all(IMMUTABLE.fullmatch(lock[name]) for name in ('server', 'executor', 'worker')):
+    if not isinstance(lock, dict):
+        raise ValueError('The image lock must be a JSON object')
+    if not all(isinstance(lock.get(name), str) and IMMUTABLE.fullmatch(lock[name])
+               for name in ('server', 'executor', 'worker')):
         raise ValueError('The image lock must contain immutable sha256 references')
     env_file = directory / '.env'
     existing = env_file.read_text() if env_file.exists() else ''
@@ -387,8 +390,9 @@ def main():
     except (OSError, ValueError, RuntimeError, KeyError) as error:
         print('Quickstart initialization failed; check the image lock, Docker socket, OpenSSL and private install directory.',
               file=sys.stderr)
-        # These messages name settings and tools only, never a secret value.
-        if isinstance(error, RuntimeError):
+        # Plain validation errors name settings, never their values. Decoding errors
+        # are ValueError subclasses whose messages can expose private file contents.
+        if type(error) is ValueError or isinstance(error, RuntimeError):
             print(str(error), file=sys.stderr)
         return 1
 

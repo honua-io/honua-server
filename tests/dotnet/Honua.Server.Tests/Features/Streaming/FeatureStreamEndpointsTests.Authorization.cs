@@ -10,6 +10,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Events;
+using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -252,7 +253,7 @@ public sealed partial class FeatureStreamEndpointsTests
         async Task<PortalTokenIssuance> IssueAsync(TimeSpan ttl, string? tenant = "tenant-a") => await issuer.IssueAsync(
             new PortalTokenIssueRequest("stream-proof", "Stream proof", tenant, ["reader"],
                 PortalTokenClientType.Referer, referer, DateTimeOffset.UtcNow + ttl), ct);
-        var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
+        var anchor = await fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test",
             LayerId = 0,
@@ -262,10 +263,9 @@ public sealed partial class FeatureStreamEndpointsTests
             RequestId = "auth-anchor"
         }, ct);
         var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(20) : TimeSpan.FromMinutes(1));
-        var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
         async Task PublishAsync(long id)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = "test",
                 LayerId = 1,
@@ -275,7 +275,7 @@ public sealed partial class FeatureStreamEndpointsTests
                 RequestId = $"tenant-b-{id}",
                 PropertiesJson = "{\"name\":\"tenant-b-secret\"}"
             }, ct);
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = "test",
                 LayerId = 0,
@@ -288,7 +288,7 @@ public sealed partial class FeatureStreamEndpointsTests
         }
 
         string Path(string token, long? cursor = null) =>
-            $"/api/v1/streaming/features?serviceId=test&layers=0&token={token}" + (cursor.HasValue ? $"&cursor={cursor}" : "");
+            $"/api/v1/streaming/features?serviceId=test&layers=0&token={token}" + (cursor.HasValue ? $"&cursor={FeatureStreamCursor.Format(cursor.Value)}" : "");
         async Task<WebSocket> ConnectAsync(string token, long? cursor = null)
         {
             var client = fixture.CreateWebSocketClient();

@@ -756,7 +756,7 @@ internal sealed class StudioDraftMutationRuntime(
             },
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload,
             StudioDraftOperationJsonContext.Default.StudioPublicationRequest,
-            PublicationStep(context),
+            GovernedStep(context, BuiltInGuardrailActions.StudioPublicationRequest),
             cancellationToken,
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -801,18 +801,6 @@ internal sealed class StudioDraftMutationRuntime(
         => string.IsNullOrWhiteSpace(context.ActionDiscriminator)
             ? context with { ActionDiscriminator = action }
             : context;
-
-    // An admin publication must not take the proposal floor. Replace any caller-supplied
-    // proposal action and mark the invocation so policy allows the publication actuator
-    // before that guardrail is resolved (honua-server#5207).
-    private static StudioDraftMutationContext PublicationStep(StudioDraftMutationContext context)
-        => context.PublishImmediately
-            ? context with
-            {
-                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationRequest,
-                AuthorizationOutcome = StudioDraftMutationContext.AdminDirectPublicationOutcome,
-            }
-            : GovernedStep(context, BuiltInGuardrailActions.StudioPublicationRequest);
 
     private async Task<StudioDraftMutationReceipt<TResult>> InvokeAsync<TPayload, TResult>(
         string operationId,
