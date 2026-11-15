@@ -18,7 +18,7 @@ public sealed class MetadataV2SpatialExtensionsTests
     [InlineData("{\"supportedCrs\":null}")]
     public void DeserializeSpatial_MissingOrNullSupportedCrs_UsesEmptyCollection(string json)
     {
-        var spatial = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2ResourceSpatial)!;
+        var spatial = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2ObjectSpatial)!;
         spatial.SupportedCrs.Should().NotBeNull().And.BeEmpty();
     }
 
@@ -27,7 +27,7 @@ public sealed class MetadataV2SpatialExtensionsTests
     public void DeserializeSpatial_ConfiguredSupportedCrs_PreservesCollection()
     {
         var spatial = JsonSerializer.Deserialize("{\"supportedCrs\":[{\"srid\":4326}]}",
-            MetadataV2JsonContext.Default.MetadataV2ResourceSpatial)!;
+            MetadataV2JsonContext.Default.MetadataV2ObjectSpatial)!;
         spatial.SupportedCrs.Should().ContainSingle().Which.Srid.Should().Be(4326);
     }
 
@@ -35,9 +35,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadSrid_NumericSrid_ReturnsValue()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference { Srid = 4326 }
             }
@@ -49,9 +49,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadSrid_EpsgCrs_ParsesValue()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference { Crs = "EPSG:3857" }
             }
@@ -63,7 +63,7 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadSrid_Missing_ReturnsNull()
     {
-        var resource = new MetadataV2Resource();
+        var resource = new MetadataV2Object();
         resource.ReadSrid().Should().BeNull();
     }
 
@@ -71,9 +71,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadBbox_AllFields_ReturnsBox()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 Bbox = new MetadataV2Bbox { West = -180, South = -90, East = 180, North = 90 }
             }
@@ -90,9 +90,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadBbox_Missing_ReturnsNull()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new MetadataV2ResourceSpatial()
+            Spatial = new MetadataV2ObjectSpatial()
         };
         resource.ReadBbox().Should().BeNull();
     }
@@ -101,9 +101,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadGeometryType_ReturnsEnum()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Polygon }
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Polygon }
         };
         resource.ReadGeometryType().Should().Be(MetadataV2GeometryType.Polygon);
     }
@@ -112,9 +112,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadTemporalFields_AllFields_ReturnsAll()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Temporal = new MetadataV2ResourceTemporal
+            Temporal = new MetadataV2ObjectTemporal
             {
                 StartTimeField = "ts_start",
                 EndTimeField = "ts_end",
@@ -131,7 +131,7 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void FindPrimaryGeometryField_BySemanticRole_PreferredOverType()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -146,9 +146,9 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void FindPrimaryGeometryField_ExplicitName_Wins()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new MetadataV2ResourceSpatial { PrimaryGeometryField = "shape" },
+            Spatial = new MetadataV2ObjectSpatial { PrimaryGeometryField = "shape" },
             SchemaFields =
             [
                 new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry },
@@ -162,7 +162,7 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void FindPrimaryIdField_ByObjectIdConvention_ReturnsField()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [

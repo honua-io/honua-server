@@ -326,14 +326,14 @@ public sealed partial class Wfs20EndpointsTests
             .AddResource(
                 ResourceId,
                 "Projected Metadata Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
                     new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
                     new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = spatialReference,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -361,7 +361,7 @@ public sealed partial class Wfs20EndpointsTests
                 layerIndex: ProjectedExtentLayerCatalog.LayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "projected_metadata_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -378,7 +378,7 @@ public sealed partial class Wfs20EndpointsTests
             .AddResource(
                 ResourceId,
                 "Prefixed Fields Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true },
                 fields:
                 [
@@ -386,7 +386,7 @@ public sealed partial class Wfs20EndpointsTests
                     new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double },
                     new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry }
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -415,14 +415,14 @@ public sealed partial class Wfs20EndpointsTests
                 layerIndex: WebAppFixture.TestLayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "prefixed_fields_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .AddPublication(
                 "pub-prefixed-fields-ogc-features",
                 OgcFeaturesServiceId,
                 ResourceId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "prefixed_fields_layer",
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -447,10 +447,10 @@ public sealed partial class Wfs20EndpointsTests
             .AddResource(
                 ResourceId,
                 "Field Types",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true },
                 fields: fields,
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point
@@ -468,7 +468,7 @@ public sealed partial class Wfs20EndpointsTests
                 layerIndex: 0,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "field_types",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -550,7 +550,7 @@ public sealed partial class Wfs20EndpointsTests
             .AddResource(
                 ResourceId,
                 "Geometry Only Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true },
                 fields:
                 [
@@ -559,7 +559,7 @@ public sealed partial class Wfs20EndpointsTests
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
                     new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -587,7 +587,7 @@ public sealed partial class Wfs20EndpointsTests
                 layerIndex: SeededPointStorageLayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: GeometryFromTypeTypeName,
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -1694,7 +1694,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         await using var fixture = await StartIsolatedApplicationAsync();
         // V2 cutover (#1035 72/N): per-resource access policy now lives on
-        // MetadataV2Resource.AccessPolicy. Seed it directly via the test fixture.
+        // MetadataV2Object.AccessPolicy. Seed it directly via the test fixture.
         fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
             accessPolicy: new AccessPolicy { AllowAnonymousWrite = true });
@@ -2859,7 +2859,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, spatial: new MetadataV2ResourceSpatial
+        fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.LineString,

@@ -295,7 +295,7 @@ public sealed partial class GrpcFeatureServiceTests
     {
         var resource = _testResource with
         {
-            Editing = new MetadataV2ResourceEditing { SupportsAttachments = true },
+            Editing = new MetadataV2ObjectEditing { SupportsAttachments = true },
             OwnerEditPolicy = owner is null ? null : new MetadataV2OwnerEditPolicy { Enabled = true, OwnerField = "owner" },
             SchemaFields = owner is null ? _testResource.SchemaFields :
                 [.. _testResource.SchemaFields, new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String }]

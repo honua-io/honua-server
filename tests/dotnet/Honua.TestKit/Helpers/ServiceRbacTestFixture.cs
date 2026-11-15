@@ -368,14 +368,14 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    publicationType: MetadataV2PublicationType.ODataEntitySet,
+                    publicationType: MetadataV2LayerType.ODataEntitySet,
                     isPrimary: isPrimary);
                 builder.AddPublication(
                     $"{serviceId}-feature-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer,
                     isPrimary: isPrimary);
             }
         }
@@ -390,7 +390,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
             .AddResource(
                 resourceId,
                 name,
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
@@ -402,7 +402,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                 // original v1 RbacTestLayerCatalog declared GeometryType.Point, so
                 // mirror that here or every WMS-protocol test against this fixture
                 // resolves zero layers.
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     GeometryType = MetadataV2GeometryType.Point,
                     SpatialReference = new MetadataV2SpatialReference

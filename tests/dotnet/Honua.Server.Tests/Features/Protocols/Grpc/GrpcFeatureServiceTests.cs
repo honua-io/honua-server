@@ -60,7 +60,7 @@ public sealed partial class GrpcFeatureServiceTests
     private readonly IOutboxCapabilityProvider _outboxCapabilityProvider = Substitute.For<IOutboxCapabilityProvider>();
     private readonly HonuaFeatureService _sut;
 
-    private static readonly MetadataV2Resource _testResource = CreateResource();
+    private static readonly MetadataV2Object _testResource = CreateResource();
     private static readonly MetadataV2Service _testService = CreateService("test");
     private static readonly MetadataV2ServiceLayerTriple _testTriple = CreateTriple(_testService, _testResource);
 
@@ -632,7 +632,7 @@ public sealed partial class GrpcFeatureServiceTests
     {
         var polygon = CreateResource() with
         {
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -2123,7 +2123,7 @@ public sealed partial class GrpcFeatureServiceTests
         ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
-    private static MetadataV2Service CreateService(
+    internal static MetadataV2Service CreateService(
         string name,
         AccessPolicy? accessPolicy = null,
         IReadOnlyList<string>? protocols = null,
@@ -2211,7 +2211,7 @@ public sealed partial class GrpcFeatureServiceTests
         return "update";
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name = "test",
         AccessPolicy? accessPolicy = null,
         string? tenant = null)
@@ -2224,7 +2224,7 @@ public sealed partial class GrpcFeatureServiceTests
                 Tenant = tenant
             },
             AccessPolicy = accessPolicy,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
@@ -2248,12 +2248,12 @@ public sealed partial class GrpcFeatureServiceTests
             ]
         };
 
-    private static MetadataV2ServiceLayerTriple CreateTriple(
+    internal static MetadataV2ServiceLayerTriple CreateTriple(
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => new(
             service,
-            new MetadataV2Publication
+            new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -2262,7 +2262,7 @@ public sealed partial class GrpcFeatureServiceTests
                 },
                 ServiceId = service.Metadata.Id,
                 ResourceId = resource.Metadata.Id,
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = "0",
                     IsNumeric = true
@@ -2277,7 +2277,7 @@ public sealed partial class GrpcFeatureServiceTests
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
         => CreateCallContext(user, resolverGrants: null);
 
-    private static TestServerCallContext CreateCallContext(
+    internal static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         params PermissionGrant[]? resolverGrants)
         => CreateCallContext(user, tenantId: null, resolverGrants);
@@ -2288,7 +2288,7 @@ public sealed partial class GrpcFeatureServiceTests
         params PermissionGrant[]? resolverGrants)
         => CreateCallContext(user, tenantId, resolverGrants);
 
-    private static TestServerCallContext CreateCallContext(
+    internal static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         string? tenantId,
         PermissionGrant[]? resolverGrants,
@@ -2308,7 +2308,7 @@ public sealed partial class GrpcFeatureServiceTests
         // the provider-specific SQL is not under test here.
         var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
         sqlFilterTranslator
-            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(new SqlFragment("TRUE", []));
         services.AddSingleton<IFilterExpressionService>(
             new FilterExpressionService(new FilterExpressionTranslator(sqlFilterTranslator)));
@@ -2337,7 +2337,7 @@ public sealed partial class GrpcFeatureServiceTests
         return ctx;
     }
 
-    private static ClaimsPrincipal CreateAuthenticatedUser(params string[] roles)
+    internal static ClaimsPrincipal CreateAuthenticatedUser(params string[] roles)
     {
         var claims = new List<Claim>
         {
@@ -2368,7 +2368,7 @@ public sealed partial class GrpcFeatureServiceTests
     /// <summary>
     /// Minimal ServerCallContext for unit testing gRPC services.
     /// </summary>
-    private sealed class TestServerCallContext : ServerCallContext, IDisposable
+    internal sealed class TestServerCallContext : ServerCallContext, IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
         public void Dispose() => _cts.Dispose();
@@ -2634,7 +2634,7 @@ public sealed partial class GrpcFeatureServiceTests
     /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
     /// storage handle therefore lands on the neighbouring resource.
     /// </summary>
-    private (MetadataV2Service Service, MetadataV2Publication Publication, MetadataV2Resource Resource) ArrangeAliasedLayer()
+    private (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Object Resource) ArrangeAliasedLayer()
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("resource.aliased", "aliased")

@@ -52,6 +52,122 @@ public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter d
     }
 
     [IntegrationTest]
+    public async Task TrySetAsync_ApprovalWindowElapsed_RefusesExecutionWithoutChangingProposal()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal() with
+        {
+            Status = OperationProposalStatus.AwaitingApproval,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-25)
+        };
+        (await store.TryCreateAsync(proposal)).Should().BeTrue();
+
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Executing }))
+            .Should().BeFalse();
+
+        var stored = await store.GetAsync(proposal.ProposalId);
+        stored!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        stored.Version.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task TrySetAsync_StoredDeadlineExpired_CallerCannotExtendIt()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal() with
+        {
+            Status = OperationProposalStatus.AwaitingApproval,
+            ApprovalExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        await store.TryCreateAsync(proposal);
+        (await store.TrySetAsync(proposal with
+        {
+            ApprovalExpiresAt = DateTimeOffset.UtcNow.AddDays(1)
+        })).Should().BeTrue();
+        var stored = (await store.GetAsync(proposal.ProposalId))!;
+        stored.ApprovalExpiresAt.Should().BeCloseTo(proposal.ApprovalExpiresAt!.Value, TimeSpan.FromMilliseconds(1));
+        (await store.TrySetAsync(stored with
+        {
+            Status = OperationProposalStatus.Executing,
+            ApprovalExpiresAt = DateTimeOffset.UtcNow.AddDays(1)
+        })).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    public async Task TrySetAsync_CriticalWindowStillOpen_AllowsExecution()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal() with
+        {
+            Status = OperationProposalStatus.AwaitingApproval,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-25),
+            Plan = new OperationProposalPlan { RiskLevel = ProposalRiskLevel.High }
+        };
+        await store.TryCreateAsync(proposal);
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Executing })).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task TryCreateAsync_FindingSeverityControlsApprovalWindow()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        foreach (var (severity, risk, hours) in new[]
+        {
+            (Honua.Core.Features.Observability.Domain.OpsFindingSeverity.Critical, ProposalRiskLevel.Low, 72),
+            (Honua.Core.Features.Observability.Domain.OpsFindingSeverity.Warning, ProposalRiskLevel.High, 24)
+        })
+        {
+            var proposal = Proposal() with
+            {
+                Plan = new OperationProposalPlan { RiskLevel = risk },
+                AutonomyMetadata = new OperationProposalAutonomyMetadata
+                {
+                    FindingId = "finding",
+                    Rule = "rule",
+                    Severity = severity
+                }
+            };
+            await store.TryCreateAsync(proposal);
+            var stored = (await store.GetAsync(proposal.ProposalId))!;
+            stored.ApprovalExpiresAt.Should().BeCloseTo(proposal.CreatedAt.AddHours(hours), TimeSpan.FromMilliseconds(1));
+        }
+    }
+
+    [IntegrationTest]
+    public async Task TrySetAsync_AlreadyExecutingAfterApprovalDeadline_AllowsProgress()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal() with
+        {
+            Status = OperationProposalStatus.Executing,
+            ApprovalExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        await store.TryCreateAsync(proposal);
+
+        (await store.TrySetAsync(proposal with { ResolvedBy = "original-approver" }))
+            .Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task TrySetAsync_ExpiredProposal_CannotBeRevived()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal() with { Status = OperationProposalStatus.Expired };
+        await store.TryCreateAsync(proposal);
+
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.AwaitingApproval }))
+            .Should().BeFalse();
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Executing }))
+            .Should().BeFalse();
+    }
+
+    [IntegrationTest]
     public async Task TrySetAsync_StampsUpdatedAtFromTheDatabaseClock()
     {
         await using var harness = await CreateHarnessAsync();

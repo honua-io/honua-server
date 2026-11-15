@@ -123,7 +123,7 @@ internal static class GrpcMetadataProjector
         return template;
     }
 
-    internal static Proto.LayerTimeInfo Time(MetadataV2ResourceTemporal time, ISet<string> visible)
+    internal static Proto.LayerTimeInfo Time(MetadataV2ObjectTemporal time, ISet<string> visible)
     {
         var result = new Proto.LayerTimeInfo
         {

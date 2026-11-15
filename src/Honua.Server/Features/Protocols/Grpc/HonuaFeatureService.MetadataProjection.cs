@@ -58,7 +58,7 @@ internal sealed partial class HonuaFeatureService
         }
     }
 
-    private static void AddEditingMetadata(Proto.LayerDescriptor descriptor, MetadataV2Resource resource,
+    private static void AddEditingMetadata(Proto.LayerDescriptor descriptor, MetadataV2Object resource,
         ISet<string> visible)
     {
         var editing = resource.Editing;
