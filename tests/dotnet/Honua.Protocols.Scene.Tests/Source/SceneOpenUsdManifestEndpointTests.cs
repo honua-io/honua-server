@@ -162,10 +162,19 @@ public sealed class SceneOpenUsdManifestEndpointTests
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /scenes/{sceneId}/exports/openusd/stage.usda")]
-    public async Task GetOpenUsdManifest_WithMatchingIfNoneMatch_ReturnsNotModified()
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [Endpoint("HEAD /scenes/{sceneId}/tileset.json")]
+    [InlineData("GET", "exports/openusd/stage.usda", "identity")]
+    [InlineData("GET", "exports/openusd/stage.usda", "gzip")]
+    [InlineData("GET", "tileset.json", "identity")]
+    [InlineData("GET", "tileset.json", "gzip")]
+    [InlineData("HEAD", "tileset.json", "identity")]
+    [InlineData("HEAD", "tileset.json", "gzip")]
+    public async Task ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified(
+        string method, string asset, string coding)
     {
         var fixtureRoot = NvidiaConstructionFixturePaths.ResolveFixtureRoot();
         var fixture = await CreateFixtureAsync(
@@ -175,17 +184,19 @@ public sealed class SceneOpenUsdManifestEndpointTests
 
         try
         {
-            var first = await fixture.Client.GetAsync(
-                $"/scenes/{NvidiaConstructionFixturePaths.MainSceneId}/exports/openusd/stage.usda").ConfigureAwait(false);
+            var path = $"/scenes/{NvidiaConstructionFixturePaths.MainSceneId}/{asset}";
+            using var initial = new HttpRequestMessage(new HttpMethod(method), path);
+            initial.Headers.AcceptEncoding.ParseAdd(coding);
+            using var first = await fixture.Client.SendAsync(initial).ConfigureAwait(false);
             first.StatusCode.Should().Be(HttpStatusCode.OK);
             first.Headers.ETag.Should().NotBeNull();
 
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                $"/scenes/{NvidiaConstructionFixturePaths.MainSceneId}/exports/openusd/stage.usda");
-            request.Headers.IfNoneMatch.Add(first.Headers.ETag!);
+            first.Headers.ETag!.IsWeak.Should().Be(coding == "gzip");
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            request.Headers.AcceptEncoding.ParseAdd(coding);
+            request.Headers.IfNoneMatch.Add(first.Headers.ETag);
 
-            var response = await fixture.Client.SendAsync(request).ConfigureAwait(false);
+            using var response = await fixture.Client.SendAsync(request).ConfigureAwait(false);
 
             response.StatusCode.Should().Be(HttpStatusCode.NotModified);
             response.Headers.ETag!.Tag.Should().Be(first.Headers.ETag!.Tag);

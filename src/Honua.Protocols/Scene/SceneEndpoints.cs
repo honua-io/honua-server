@@ -309,7 +309,7 @@ internal static partial class SceneEndpoints
                 scene.CachePolicy);
 
             var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
-            if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
+            if (!context.RequestServices.GetRequiredService<IETagService>().IsModified(ifNoneMatch, etag))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
@@ -478,7 +478,7 @@ internal static partial class SceneEndpoints
         SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, tokenTransport);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
-        if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
+        if (!context.RequestServices.GetRequiredService<IETagService>().IsModified(ifNoneMatch, etag))
         {
             return Results.StatusCode(StatusCodes.Status304NotModified);
         }
@@ -632,21 +632,6 @@ internal static partial class SceneEndpoints
         ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
         SharedCacheResponse.UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(maxAgeSeconds));
         SharedCacheResponse.Apply(context);
-    }
-
-    private static bool IfNoneMatchMatches(string headerValue, string currentETag)
-    {
-        var trimmed = headerValue.AsSpan().Trim();
-        if (trimmed.SequenceEqual("*"))
-        {
-            return true;
-        }
-
-        var candidates = headerValue
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(chunk => chunk.StartsWith("W/", StringComparison.OrdinalIgnoreCase) ? chunk[2..] : chunk);
-
-        return candidates.Any(candidate => string.Equals(candidate, currentETag, StringComparison.Ordinal));
     }
 
     private static async Task<OpenUsdSceneManifestReader.SceneDatasetRecordView?> ResolveSceneDatasetRecordViewAsync(
