@@ -15,7 +15,7 @@ namespace Honua.Protocols.OData.Services;
 internal sealed partial class ODataBatchHandler
 {
     private async Task<(FeatureEditBatch? Batch, string? ErrorMessage)> BuildValidatedEditBatchAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ODataEditRequest request,
         bool rollbackOnFailure,
         CancellationToken cancellationToken)

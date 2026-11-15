@@ -98,6 +98,19 @@ class ArtifactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             public.verify_features(features)
 
+    def test_public_replay_stages_the_documented_grid_build_context(self):
+        compose = public.public_blocks()["compose"]
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            public.stage_compose(work, compose)
+            self.assertEqual(compose, (work / "compose.yaml").read_text())
+            self.assertIn("context: ./docker/proj-grids", compose)
+            for name in ("Dockerfile", "grids.txt", "fetch-grids.sh"):
+                self.assertEqual(
+                    (artifacts.ROOT / "docker/proj-grids" / name).read_bytes(),
+                    (work / "docker/proj-grids" / name).read_bytes(),
+                )
+
 
 class RoutingTests(unittest.TestCase):
     def setUp(self):

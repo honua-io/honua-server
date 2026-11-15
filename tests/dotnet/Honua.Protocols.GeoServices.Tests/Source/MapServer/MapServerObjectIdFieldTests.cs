@@ -157,7 +157,7 @@ public sealed class MapServerObjectIdFieldTests
             .AddResource(
                 "res-string-id-layer",
                 "String ID Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddStorageBinding(
@@ -172,7 +172,7 @@ public sealed class MapServerObjectIdFieldTests
                 layerIndex: StringIdLayerId,
                 storageBindingId: "binding-string-id-layer",
                 serviceLocalId: StringIdLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .BuildProvider();
     }
 

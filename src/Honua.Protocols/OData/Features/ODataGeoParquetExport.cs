@@ -12,9 +12,9 @@ namespace Honua.Protocols.OData;
 
 internal static class ODataGeoParquetExport
 {
-    internal static (byte[] Payload, string ContentType) FormatPage(
+    internal static (ReadOnlyMemory<byte> Payload, string ContentType) FormatPage(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeometryLimits geometryLimits,
         string[]? outFields = null,
         ILogger? logger = null,

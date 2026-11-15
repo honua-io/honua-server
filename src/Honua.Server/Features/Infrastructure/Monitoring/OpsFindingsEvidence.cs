@@ -66,6 +66,8 @@ internal static class OpsFindingEvidenceMap
         OpsFindingsService.RuleDeployManualIntervention => WorkflowSources,
         OpsFindingsService.RuleLocalBackendSubstrate => BatchBackendSources,
         OpsFindingsService.RuleDbBoundedAdmissionPressure => DatabasePressureSources,
+        OpsFindingsService.RuleAnonymousPressureAdmission =>
+            [EvidencePostureVocabulary.SourceIds.FindingsAdmissionPressure],
         OpsFindingsService.RuleServingLatencySlo => ServingLatencySources,
         OpsFindingsService.RulePlatformReleaseRuntimeDivergence => ReleaseDivergenceSources,
         _ => [EvidencePostureVocabulary.SourceIds.Findings],

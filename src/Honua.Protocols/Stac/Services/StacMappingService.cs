@@ -30,8 +30,8 @@ internal sealed class StacMappingService
 
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
     public static async Task<StacCollection> MapResourceToCollectionAsync(
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         MetadataV2Service service,
         int layerIndex,
         int? storageLayerId,
@@ -207,8 +207,8 @@ internal sealed class StacMappingService
     }
 
     internal static string ResolveDisplayName(
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         int layerIndex)
     {
         return publication.TitleOverride
@@ -221,8 +221,8 @@ internal sealed class StacMappingService
 
     public static StacItem MapFeatureToItem(
         Feature feature,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         int layerIndex,
         string baseUrl,
         IReadOnlySet<string>? selectedProperties = null,
@@ -374,7 +374,7 @@ internal sealed class StacMappingService
 
     private static void PopulateTemporalPropertiesV2(
         IReadOnlyDictionary<string, object?> attributes,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         Dictionary<string, object?> properties)
     {
         var startField = StacFilterHelpers.ResolveTemporalField(resource, out var endField);
@@ -418,7 +418,7 @@ internal sealed class StacMappingService
             : "unknown";
     }
 
-    private static DateTimeOffset ResolveFallbackInstant(MetadataV2Resource resource)
+    private static DateTimeOffset ResolveFallbackInstant(MetadataV2Object resource)
     {
         var extent = resource.Temporal?.Extent;
         return extent?.Start
@@ -426,7 +426,7 @@ internal sealed class StacMappingService
             ?? DateTimeOffset.UnixEpoch;
     }
 
-    internal static string ResolveItemId(Feature feature, MetadataV2Resource? resource = null)
+    internal static string ResolveItemId(Feature feature, MetadataV2Object? resource = null)
     {
         var source = StacItemIdentity.Resolve(resource);
         if (source.IsDeclaredIdentity && source.Field is { } declared &&
@@ -503,7 +503,7 @@ internal sealed class StacMappingService
            attributeName.Equals("item_id", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<StacExtent> BuildStacExtentV2Async(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int? storageLayerId,
         IFeatureReader featureReader,
         ICoordinateTransformService? coordinateTransformService,
@@ -534,7 +534,7 @@ internal sealed class StacMappingService
         var temporalStartField = StacFilterHelpers.ResolveTemporalField(resource, out var temporalEndField);
         var temporalResource = temporalStartField is null ? resource : resource with
         {
-            Temporal = (resource.Temporal ?? new MetadataV2ResourceTemporal()) with
+            Temporal = (resource.Temporal ?? new MetadataV2ObjectTemporal()) with
             {
                 StartTimeField = temporalStartField,
                 EndTimeField = temporalEndField

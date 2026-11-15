@@ -69,11 +69,11 @@ public sealed class FieldMaskedEditRegressionTests
             {
                 Updates = ImmutableArray.Create(partials[0], partials[1])
             },
-            new MetadataV2Resource());
+            new MetadataV2Object());
 
         Assert.True(converted.IsSuccess);
         var batch = new EditProcessor(NullLogger<EditProcessor>.Instance)
-            .ToFeatureEditBatch(converted.EditRequest!.Value, new MetadataV2Resource());
+            .ToFeatureEditBatch(converted.EditRequest!.Value, new MetadataV2Object());
         Assert.Equal(2, batch.Updates.Length);
         Assert.Empty(batch.Preconditions);
         for (var i = 0; i < stored.Length; i++)
@@ -89,9 +89,9 @@ public sealed class FieldMaskedEditRegressionTests
             isPartialUpdate: false);
         var replaced = await adapter.ConvertAsync(
             new GeoServicesEditRequest { Updates = ImmutableArray.Create(replacement) },
-            new MetadataV2Resource());
+            new MetadataV2Object());
         var replacedBatch = new EditProcessor(NullLogger<EditProcessor>.Instance)
-            .ToFeatureEditBatch(replaced.EditRequest!.Value, new MetadataV2Resource());
+            .ToFeatureEditBatch(replaced.EditRequest!.Value, new MetadataV2Object());
         Assert.False(replacedBatch.Updates[0].PreserveOmittedMaskedAttributes);
         var replacedRow = FeatureDataAccess.PreserveOmittedAttributes(replacedBatch.Updates[0], stored[0]);
         Assert.False(replacedRow.Attributes.ContainsKey("secret"));
@@ -180,7 +180,7 @@ public sealed class FieldMaskedEditRegressionTests
         Assert.Equal(EditUpdateMode.Merge, operations[0].Feature!.Value.UpdateMode);
         Assert.Equal(EditUpdateMode.Replace, operations[1].Feature!.Value.UpdateMode);
         var processor = new EditProcessor(NullLogger<EditProcessor>.Instance);
-        var batch = processor.ToFeatureEditBatch(converted.EditRequest!.Value, new MetadataV2Resource());
+        var batch = processor.ToFeatureEditBatch(converted.EditRequest!.Value, new MetadataV2Object());
         Assert.True(batch.Operations[0].Feature!.Value.PreserveOmittedMaskedAttributes);
         Assert.False(batch.Operations[1].Feature!.Value.PreserveOmittedMaskedAttributes);
         Assert.Equal("update-snapshot-token", batch.Preconditions.Single(p => p.ObjectId == 42).ExpectedStateToken);

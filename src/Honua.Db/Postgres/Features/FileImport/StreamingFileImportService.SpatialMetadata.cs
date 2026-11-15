@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
@@ -23,6 +24,7 @@ internal sealed partial class StreamingFileImportService
         public required bool AppendUsesStaging { get; init; }
         public ImportedDatasetSpatialMetadata.Identity? LiveIdentity { get; init; }
         public required int StorageSrid { get; init; }
+        public DatumTransformationSelection? RequestedDatumSelection { get; init; }
     }
 
     private sealed record ImportTargetOptions
@@ -86,6 +88,7 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
+        var requestedDatumSelection = ResolveRequestedDatumSelection(options.Request, options.SourceSrid, storageSrid);
         var stagedAppend = mode == ImportLoadMode.Append &&
             await TargetIsImporterOwnedAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
         if (options.Request.CommitParticipant is not null && mode != ImportLoadMode.Replace && !stagedAppend)
@@ -104,7 +107,8 @@ internal sealed partial class StreamingFileImportService
             HadExistingTarget = existed,
             AppendUsesStaging = stagedAppend,
             LiveIdentity = identity,
-            StorageSrid = storageSrid
+            StorageSrid = storageSrid,
+            RequestedDatumSelection = requestedDatumSelection
         };
     }
 
