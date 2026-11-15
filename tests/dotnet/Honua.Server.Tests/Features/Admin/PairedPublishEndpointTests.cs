@@ -149,6 +149,36 @@ public sealed partial class PairedPublishEndpointTests(DatabaseFixtureAdapter da
         (await ReadJsonAsync<PublicationPointer>(store.PointerKey)).Version.Should().Be("v0");
     }
 
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [InlineData("schemaName", "unmanaged_paired_source")]
+    [InlineData("layerDiscriminatorColumn", "other_layer_id")]
+    [InlineData("primaryKeyColumn", "other_id")]
+    public async Task PairedPublish_NoncanonicalManagedBinding_IsRefusedBeforeCapture(string option, string value)
+    {
+        var first = await PublishAsync(IdentityField);
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var binding = snapshot.Graph.StorageBindings.Single(item => item.Metadata.Id == "binding-layer-0");
+        var options = binding.Options.ToDictionary(item => item.Key, item => item.Value);
+        options[option] = JsonSerializer.SerializeToElement(value);
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Revision + 1,
+            StorageBindings = snapshot.Graph.StorageBindings.Select(item => item == binding
+                ? item with { Options = options } : item).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+
+        var (status, json) = await RunAsync(IdentityField);
+
+        using (json)
+        {
+            status.Should().Be(OperationStatus.Failed);
+            Property(json!.RootElement, "errorMessage").GetString().Should().Contain("canonical managed relation");
+        }
+
+        (await ReadJsonAsync<PublicationPointer>(first.PointerKey)).Version.Should().Be(first.Version);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
     public async Task SwitchPointer_StaleOrMissingExpectation_IsRefused()
