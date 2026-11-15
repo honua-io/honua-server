@@ -48,8 +48,13 @@ class SweepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / 'cursor.json'
             with patch.object(sweep, 'load_cursor', return_value=previous or cursor()), \
-                    patch.object(sweep, 'inventory', return_value=artifacts), \
-                    patch.object(sweep, 'api', side_effect=lambda path: (runs or {})[int(path.rsplit('/', 1)[1])]), \
+                    patch.object(sweep, 'source_runs', return_value=[run for run in (runs or {}).values()
+                        if sweep.trusted(run, sweep.SOURCES) and run['status'] == 'completed'
+                        and run['conclusion'] in {'success', 'failure'}
+                        and sweep.timestamp(run['updated_at']) >= sweep.timestamp((previous or cursor())['since'])]), \
+                    patch.object(sweep, 'inventory', side_effect=lambda path, key:
+                        [item for item in artifacts if item['workflow_run']['id'] == int(path.split('/')[2])]), \
+                    patch.object(sweep, 'api', side_effect=lambda path: (runs or {})[int(path.split('/')[2])]), \
                     patch.object(sweep, 'publish_run') as publish:
                 sweep.sweep(checkpoint)
             return json.loads(checkpoint.read_text()), publish
@@ -69,6 +74,7 @@ class SweepTests(unittest.TestCase):
             checkpoint = Path(directory) / 'cursor.json'
             with patch.object(sweep, 'load_cursor', return_value=cursor()), \
                     patch.object(sweep, 'inventory', return_value=evidence), \
+                    patch.object(sweep, 'source_runs', return_value=[source()]), \
                     patch.object(sweep, 'api', return_value=source()), \
                     patch.object(sweep, 'publish_run', side_effect=RuntimeError('API unavailable')), \
                     self.assertRaises(RuntimeError):
@@ -86,6 +92,7 @@ class SweepTests(unittest.TestCase):
         self.assertEqual([], state['artifact_ids'])
         publish.assert_not_called()
         rerun = source(created_at='2020-01-01T00:00:00Z')
+        rerun['updated_at'] = state['since']
         state, publish = self.execute(evidence, {10: rerun}, previous=state)
         self.assertEqual([1], state['artifact_ids'])
         self.assertEqual(1, publish.call_count)
@@ -98,13 +105,60 @@ class SweepTests(unittest.TestCase):
         runs[13]['updated_at'] = '2026-11-13T23:59:59Z'
         state, publish = self.execute([artifact(i, i) for i in runs], runs)
         publish.assert_not_called()
-        self.assertEqual([10, 11, 12, 13], state['artifact_ids'])
+        self.assertEqual([], state['artifact_ids'])
 
     def test_batch_cap_preserves_backlog_and_missing_artifacts_are_pruned(self):
         with patch.object(sweep, 'MAX_BATCH_RUNS', 1):
-            state, publish = self.execute([artifact(1), artifact(2, 11)], {10: source()}, cursor([999]))
+            state, publish = self.execute([artifact(1), artifact(2, 11)], {10: source(), 11: source(11)}, cursor([999]))
         self.assertEqual([1], state['artifact_ids'])
         self.assertEqual(1, publish.call_count)
+
+    def test_empty_runs_count_toward_budget_and_resume_equal_timestamp_backlog(self):
+        runs = {i: source(i) for i in range(1, 1201)}
+        state, publish = self.execute([], runs)
+        self.assertEqual(25, len(state['run_versions']))
+        publish.assert_not_called()
+        state, _ = self.execute([], runs, state)
+        self.assertEqual(50, len(state['run_versions']))
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(source()['updated_at']))
+
+    def test_rerun_started_after_discovery_never_consumes_new_attempt(self):
+        listed = source()
+        pending = dict(listed, status='in_progress', run_attempt=3)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'source_runs', return_value=[listed]), \
+                    patch.object(sweep, 'inventory', return_value=[artifact(3, attempt=3)]), \
+                    patch.object(sweep, 'api', return_value=pending), \
+                    patch.object(sweep, 'publish_run') as publish:
+                sweep.sweep(checkpoint)
+            state = json.loads(checkpoint.read_text())
+        publish.assert_not_called()
+        self.assertEqual([], state['artifact_ids'])
+        self.assertEqual({}, state['run_versions'])
+        state, publish = self.execute([artifact(3, attempt=3)], {10: dict(pending, status='completed')}, state)
+        self.assertEqual([3], state['artifact_ids'])
+        self.assertEqual(1, publish.call_count)
+
+    def test_source_discovery_scans_old_creation_pages_and_only_source_workflows(self):
+        old = source(created_at='2020-01-01T00:00:00Z')
+        stale = source(11); stale['updated_at'] = '2020-01-01T00:00:00Z'
+        fork = source(12); fork['head_repository'] = dict(full_name='fork/repo')
+        with patch.object(sweep, 'inventory', return_value=[stale, fork, old]) as listing:
+            self.assertEqual([10], [run['id'] for run in sweep.source_runs(SINCE)])
+        self.assertEqual({('actions/workflows/ci.yml/runs', 'workflow_runs'),
+                          ('actions/workflows/pr-gate.yml/runs', 'workflow_runs')},
+                         {call.args for call in listing.call_args_list})
+
+    def test_batch_cursor_does_not_skip_deferred_equal_timestamp_runs(self):
+        evidence = [artifact(1), artifact(2, 11)]
+        runs = {10: source(), 11: source(11)}
+        with patch.object(sweep, 'MAX_BATCH_RUNS', 1):
+            state, _ = self.execute(evidence, runs)
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(runs[11]['updated_at']))
+        state, publish = self.execute(evidence, runs, state)
+        self.assertEqual([11], [call.args[0]['id'] for call in publish.call_args_list])
 
     def test_newest_attempt_wins_even_when_artifact_ids_rank_differently(self):
         items = [artifact(100, attempt=1), artifact(10, attempt=2), artifact(11, shard='unit')]

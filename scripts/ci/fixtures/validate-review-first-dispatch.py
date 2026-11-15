@@ -22,8 +22,6 @@ PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
-TRAIN_SELECT = ROOT / "scripts/ci/merge-train/select.sh"
-TRAIN_LAND = ROOT / "scripts/ci/merge-train/land.sh"
 
 
 def read_text(path: Path) -> str:
@@ -106,8 +104,6 @@ def main() -> None:
         PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
         PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
-    train_select = read_text(TRAIN_SELECT)
-    train_land = read_text(TRAIN_LAND)
 
     pr_mode = mode(pr_gate, PR_GATE)
     review_mode = mode(review_gate, REVIEW_GATE)
@@ -621,17 +617,6 @@ def main() -> None:
         review_bridge,
         "completion is only a latency hint",
         "PR-controlled bridge must not be described as an invalidation authority",
-    )
-
-    require(
-        train_select,
-        'train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}"',
-        "live train selection must independently refresh mutable review evidence",
-    )
-    require(
-        train_land,
-        'train_pr_admission "${admission_pr}" "${admission_sha}"',
-        "pre-land must independently re-attest mutable review evidence",
     )
 
     require(

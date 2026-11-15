@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { evaluateCodexEvidence } = require('./review-gate-evidence');
+const { ATTESTING_REVIEWERS, evaluateCodexEvidence } = require('./review-gate-evidence');
 const head = 'abc123';
 const review = (state, submittedAt = '2026-01-02T00:00:00Z', updatedAt = submittedAt) => ({ author: { login: 'chatgpt-codex-connector' }, body: '### Codex Review\nReviewed commit', submittedAt, updatedAt, commit: { oid: head }, state });
 const cleanComment = (commit = head, overrides = {}) => ({
@@ -466,15 +466,16 @@ test('a GraphQL-shaped Codex review attests', () => {
   }).exactReview, true);
 });
 
-// --- The body the Claude lane posts is generated, not transcribed.
+// --- The registered Claude clean-comment template attests for its own head.
 //
-// `claude-review-body.js` reads the template AND the grading marker from the
-// same registry entry that decides whether the text attests, so these tests
-// fail if either half drifts.
-const { buildCleanCommentBody } = require('./claude-review-body');
+// The template and the grading marker live in the same registry entry, so
+// these tests fail if either half drifts.
+const CLAUDE_REVIEWER = ATTESTING_REVIEWERS.find(reviewer => reviewer.id === 'claude');
+const buildCleanCommentBody = head => CLAUDE_REVIEWER.cleanCommentBody(head);
 
-test('the generated clean body attests in the GraphQL shape the gate reads', () => {
+test('the registered clean body attests in the GraphQL shape the gate reads', () => {
   const body = buildCleanCommentBody(claudeHead);
+  assert.match(body, CLAUDE_REVIEWER.cleanMarker);
   assert.equal(ev({
     cleanComments: [{
       author: { login: 'claude', __typename: 'Bot' },
@@ -484,7 +485,7 @@ test('the generated clean body attests in the GraphQL shape the gate reads', () 
     }],
   }).exactCleanComment, true);
 });
-test('the generated clean body cannot attest for a different head', () => {
+test('the registered clean body cannot attest for a different head', () => {
   const body = buildCleanCommentBody('d'.repeat(40));
   assert.equal(ev({
     cleanComments: [{
@@ -495,15 +496,11 @@ test('the generated clean body cannot attest for a different head', () => {
     }],
   }).exactCleanComment, false);
 });
-test('the body builder refuses anything that would not attest', () => {
-  assert.throws(() => buildCleanCommentBody('abc123'), /40-character/);
-  assert.throws(() => buildCleanCommentBody(claudeHead, 'codex'), /no clean-comment template/);
-});
 
 test('hasOpenObjection is exposed and identity-scoped for inverted admission', () => {
-  // The merge train's inverted admission rule (fix-forward) no longer demands
-  // positive exact-head evidence, so a standing objection must be visible on
-  // its own rather than only through exactReview/exactCleanComment being false.
+  // review-gate.yml blocks on a standing objection independently of positive
+  // exact-head evidence, so it must be visible on its own rather than only
+  // through exactReview/exactCleanComment being false.
   const objected = evaluateCodexEvidence({
     reviews: [review('CHANGES_REQUESTED')], cleanComments: [], unresolvedCount: 0, head,
   });

@@ -254,7 +254,6 @@ GATE_INPUTS = (
     ".github/actions/setup-dotnet-ci",
     ".github/ci-shards.json",
     "scripts/ci/lib",
-    "scripts/ci/merge-train",
     "scripts/ci/check-server-test-shard-coverage.py",
     "scripts/ci/compute-affected-projects.sh",
     "scripts/ci/compute-affected-shards.py",
