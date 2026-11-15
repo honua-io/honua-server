@@ -6,10 +6,12 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
@@ -30,13 +32,16 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresSceneFeatureSource> _logger;
+    private readonly IFilterExpressionService? _filterExpressionService;
 
     public PostgresSceneFeatureSource(
         IPrimaryDatabaseConnectionProvider connectionProvider,
-        ILogger<PostgresSceneFeatureSource> logger)
+        ILogger<PostgresSceneFeatureSource> logger,
+        IFilterExpressionService? filterExpressionService = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _filterExpressionService = filterExpressionService;
     }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
@@ -76,11 +81,13 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
                 .Append(" AS \"a_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('"');
         }
 
+        var permanentFilter = ResolveScenePermanentFilter(resource);
         var sql = $"""
             SELECT {selectColumns}
             FROM {qualifiedTable}
             WHERE {DatabaseSchema.LayerIdColumn} = @layer_id
               AND {DatabaseSchema.ObjectIdColumn} > @last_key
+              {(permanentFilter is null ? string.Empty : "AND (" + permanentFilter.Sql + ")")}
             ORDER BY {DatabaseSchema.ObjectIdColumn} ASC
             LIMIT {PageSize}
             """;
@@ -97,7 +104,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             // treat a partial feature list as complete.
             cancellationToken.ThrowIfCancellationRequested();
 
-            var batch = await ReadBatchAsync(sql, storageLayerId, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
+            var batch = await ReadBatchAsync(sql, storageLayerId, lastKey, attributeFields, permanentFilter, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {
                 break;
@@ -113,11 +120,26 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         }
     }
 
+    internal SqlFragment? ResolveScenePermanentFilter(MetadataV2Object resource)
+    {
+        if (string.IsNullOrWhiteSpace(resource.PermanentFilter?.Expression))
+        {
+            return null;
+        }
+
+        // Null here means the filter could not be translated. Publishing the
+        // unfiltered table would bake hidden rows into derived tiles.
+        return LayerReadSecurityResolver.ResolvePermanentFilter(resource, _filterExpressionService)
+            ?? throw new InvalidOperationException(
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' could not be applied to scene publishing.");
+    }
+
     private async Task<List<SceneFeature>> ReadBatchAsync(
         string sql,
         int layerId,
         long lastKey,
         List<MetadataV2Field> attributeFields,
+        SqlFragment? permanentFilter,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -125,6 +147,15 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         command.CommandText = sql;
         command.Parameters.Add(new NpgsqlParameter("@layer_id", layerId));
         command.Parameters.Add(new NpgsqlParameter("@last_key", lastKey));
+        if (permanentFilter is not null)
+        {
+            for (var i = 0; i < permanentFilter.Parameters.Count; i++)
+            {
+                command.Parameters.Add(new NpgsqlParameter(
+                    "@p" + i.ToString(CultureInfo.InvariantCulture),
+                    permanentFilter.Parameters[i] ?? DBNull.Value));
+            }
+        }
         // Pass attribute field names as JSON-path parameters so the SQL itself
         // never interpolates field names (defense in depth — fields come from
         // the trusted catalog, but parameter binding keeps the contract

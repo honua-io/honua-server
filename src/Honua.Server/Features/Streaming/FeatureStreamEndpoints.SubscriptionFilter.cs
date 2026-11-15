@@ -413,6 +413,7 @@ internal static partial class FeatureStreamEndpoints
     {
         var rowSource = policyServices.GetRequiredService<IRowLevelSecurityFilterSource>();
         var fieldSource = policyServices.GetRequiredService<IFieldMaskSource>();
+        var filterService = policyServices.GetRequiredService<IFilterExpressionService>();
         var exact = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var deniedNames = new HashSet<(string Service, int Layer)>();
@@ -451,7 +452,16 @@ internal static partial class FeatureStreamEndpoints
 
                 if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
                 {
-                    var predicates = await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+                    var predicates = (await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false)).ToList();
+                    if (!TryAppendPermanentFilterPredicate(layer.Resource, filterService, predicates, out _))
+                    {
+                        // A permanent filter that cannot be evaluated in memory must not
+                        // fall open. Deny this publication instead of streaming every row.
+                        deniedNames.Add(nameKey);
+                        deniedExact.Add((service.Metadata.Id, layer.LayerId));
+                        continue;
+                    }
+
                     var masked = await fieldSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
                     policy = new StreamLayerReadPolicy(predicates, new HashSet<string>(masked, StringComparer.OrdinalIgnoreCase));
                     policies.Add(layer.Resource.Metadata.Id, policy);
@@ -469,6 +479,33 @@ internal static partial class FeatureStreamEndpoints
 
         return new StreamSubscriberSecurity(
             snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named, deniedExact);
+    }
+
+    internal static bool TryAppendPermanentFilterPredicate(
+        MetadataV2Object resource,
+        IFilterExpressionService filterExpressionService,
+        List<FilterExpression> predicates,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(predicates);
+        if (!Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.TryResolvePermanentFilterExpression(
+                resource, filterExpressionService, out var expression, out error))
+        {
+            return false;
+        }
+
+        if (expression is null)
+        {
+            return true;
+        }
+
+        if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out error))
+        {
+            return false;
+        }
+
+        predicates.Add(expression);
+        return true;
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

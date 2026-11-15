@@ -86,6 +86,50 @@ internal static class PermanentFilterResolver
         return v2Translation.SqlFilter;
     }
 
+    /// <summary>
+    /// Parses a saved permanent filter for an in-memory consumer. A missing filter
+    /// returns success with a null expression. An unsupported or invalid filter
+    /// returns false so the caller can fail closed instead of serving every row.
+    /// </summary>
+    public static bool TryParseExpression(
+        MetadataV2Object resource,
+        IFilterExpressionService? filterExpressionService,
+        out FilterExpression? expression,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        expression = null;
+        error = null;
+
+        var v2Filter = resource.PermanentFilter;
+        if (v2Filter == null || string.IsNullOrWhiteSpace(v2Filter.Expression))
+        {
+            return true;
+        }
+
+        if (filterExpressionService == null)
+        {
+            error = $"Saved permanent filter for resource '{resource.Metadata.Id}' cannot be evaluated.";
+            return false;
+        }
+
+        if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
+        {
+            error = $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.";
+            return false;
+        }
+
+        var parsed = filterExpressionService.ParseAndNormalize(v2Language, v2Filter.Expression, resource);
+        if (!parsed.IsSuccess || parsed.Expression == null)
+        {
+            error = $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {parsed.ErrorMessage ?? "Invalid filter."}";
+            return false;
+        }
+
+        expression = parsed.Expression;
+        return true;
+    }
+
     private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
     {
         filterLanguage = FilterLanguage.GeoServicesSql;
