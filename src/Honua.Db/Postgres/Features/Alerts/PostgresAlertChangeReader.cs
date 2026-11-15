@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Data;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -51,6 +52,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICommittedSnapshotPolicy? _policy;
+    private readonly IChangeTracker _changeTracker;
 
     public PostgresAlertChangeReader(IAdoNetDatabaseConnectionProvider connectionProvider)
         : this(connectionProvider, policy: null)
@@ -59,10 +61,12 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
 
     internal PostgresAlertChangeReader(
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        ICommittedSnapshotPolicy? policy)
+        ICommittedSnapshotPolicy? policy,
+        IChangeTracker? changeTracker = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _policy = policy;
+        _changeTracker = changeTracker ?? new PostgresChangeTracker(connectionProvider);
     }
 
     public async Task<IReadOnlyList<AlertChange>> GetChangesAfterAsync(
