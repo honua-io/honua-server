@@ -57,7 +57,8 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
             self.assertEqual('true', services['honua']['environment']['Studio__EndUserAuthorization__Enabled'])
             files = self.compose_env(path)['COMPOSE_FILE']
-            self.assertEqual('compose.yaml:compose.executor.yaml:customer.yaml:compose.console.yaml:compose.executor.image.yaml', files)
+            # The overlay goes before customer files so their overrides win (#7735).
+            self.assertEqual('compose.yaml:compose.executor.yaml:compose.console.yaml:customer.yaml:compose.executor.image.yaml', files)
             self.assertEqual(files, services['compose-executor']['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
             self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in (path / '.env').read_text().splitlines()))
             self.assertNotIn(read_secret(path, 'HONUA_ADMIN_PASSWORD'), json.dumps(rendered))
