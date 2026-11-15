@@ -18,9 +18,9 @@ public static class ServerTestData
         "125_AddImportedAttachmentIdentity.sql",
         "181_CreateAttachmentUploadSessions.sql",
         "182_CreateAttachmentNativeMetadata.sql",
-        "195_CreateAttachmentUploadCleanupLedger.sql",
-        "196_AddAttachmentPublicationScope.sql",
-        "197_CreateAttachmentCleanupRetries.sql",
+        "204_CreateAttachmentUploadCleanupLedger.sql",
+        "205_AddAttachmentPublicationScope.sql",
+        "206_CreateAttachmentCleanupRetries.sql",
     ];
 
     private static readonly string[] _rasterSchemaMigrations =

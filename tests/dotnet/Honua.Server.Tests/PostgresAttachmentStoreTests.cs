@@ -84,7 +84,7 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
             new EmbeddedScriptProvider(assembly,
                 name => name == contract.CreateMigration || name == contract.ImportMigration ||
                     name.EndsWith("182_CreateAttachmentNativeMetadata.sql", StringComparison.Ordinal) ||
-                    name.EndsWith("197_CreateAttachmentCleanupRetries.sql", StringComparison.Ordinal)),
+                    name.EndsWith("206_CreateAttachmentCleanupRetries.sql", StringComparison.Ordinal)),
             _schemaName, assembly, contract);
         foreach (var script in scripts.GetScripts(null!))
         {

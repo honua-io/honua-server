@@ -153,7 +153,7 @@ public sealed partial class AttachmentUploadSessionStoreTests(PostgresFixture fi
             await using var command = new NpgsqlCommand(sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
             await command.ExecuteNonQueryAsync();
             var publicationSql = await File.ReadAllTextAsync(Path.Join(root.FullName,
-                "src", "Honua.Server", "Migrations", "196_AddAttachmentPublicationScope.sql"));
+                "src", "Honua.Server", "Migrations", "205_AddAttachmentPublicationScope.sql"));
             await using var publicationCommand = new NpgsqlCommand(publicationSql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
             await publicationCommand.ExecuteNonQueryAsync();
             await action(CreateStore(schema), schema);
