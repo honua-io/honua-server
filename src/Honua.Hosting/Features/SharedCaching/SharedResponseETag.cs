@@ -25,8 +25,10 @@ internal static class SharedResponseETag
 
         if (result is FileContentHttpResult file)
         {
-            var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-                file.EntityTag?.ToString() ?? tags.ComputeETag(file.FileContents.Span), file.ContentType ?? "application/octet-stream").ConfigureAwait(false);
+            var etag = await ConfigurationResponseETag.ForResponseAsync(
+                context,
+                file.EntityTag?.ToString() ?? tags.ComputeETag(file.FileContents.Span),
+                file.ContentType ?? "application/octet-stream").ConfigureAwait(false);
             return Results.Bytes(file.FileContents, file.ContentType, file.FileDownloadName,
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
