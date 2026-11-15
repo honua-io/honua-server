@@ -1769,6 +1769,28 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         reader.Schema.Metadata.Should().ContainKey("geo");
     }
 
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FormatAsGeoParquetStream_FileMetadata_IsWrittenForEmptyAndPopulatedResults(bool empty)
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var result = QueryResult<Feature>.Create(empty ? 0 : 1, empty ? [] : [feature]);
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, CreateLayer(), new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = "objectid",
+            ReturnGeometry = true,
+            OutputSrid = 4326,
+            FileMetadata = new Dictionary<string, string> { ["honua:captureId"] = "capture-1" }
+        });
+        using (payload)
+        using (var reader = new ParquetSharp.Arrow.FileReader(payload))
+        {
+            reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
+            reader.Schema.Metadata.Should().ContainKey("geo");
+        }
+    }
+
     [UnitTest]
     public void FormatAsGeoParquet_FileMetadataNamedGeo_IsRejected()
     {
