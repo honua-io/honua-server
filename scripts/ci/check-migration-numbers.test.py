@@ -79,6 +79,17 @@ class MigrationNumberTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("002.txt", self.git("diff", "--name-only", "--diff-filter=U"))
 
+    def test_reserved_migration_lands_on_its_own_claim(self):
+        marker = self.root / "eng/schema/migration-numbers" / SERVER / "003.txt"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"{SERVER}/003_Reserved.sql\n")
+        self.base = self.commit()
+        self.git("branch", "-f", "trunk", self.base)
+        self.add(SERVER, "003_Reserved.sql")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_reserved_number_without_sql_reports_the_claim_and_next_free_number(self):
         marker = self.root / "eng/schema/migration-numbers" / SERVER / "003.txt"
         marker.parent.mkdir(parents=True, exist_ok=True)

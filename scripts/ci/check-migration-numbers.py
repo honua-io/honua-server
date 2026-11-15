@@ -33,6 +33,14 @@ def changed_existing_pins(ancestor, head, trunk):
     return sorted(path for path in changed if path and path in inherited | candidate)
 
 
+def claim_names_these_paths(trunk, path, expected):
+    """A reservation names the migration that may land; any other path still collides."""
+    if PurePosixPath(path).suffix != ".txt":
+        return False
+    claimed = subprocess.run(["git", "show", f"{trunk}:{path}"], capture_output=True, text=True)
+    return claimed.returncode == 0 and claimed.stdout == expected
+
+
 def reserved_numbers(trunk):
     """Claim files reserve a number even when the SQL has not landed yet."""
     root = "eng/schema/migration-numbers"
@@ -69,7 +77,10 @@ def check(base, head, trunk):
         actual = subprocess.run(["git", "show", f"{head}:{claim}"], capture_output=True, text=True)
         if actual.returncode or actual.stdout != expected:
             failures.append(f"Add {claim} containing exactly the new migration path followed by a newline: {', '.join(paths)}")
-        collisions = existing.get((directory, number), [])
+        collisions = [
+            path for path in existing.get((directory, number), [])
+            if not claim_names_these_paths(trunk, path, expected)
+        ]
         if collisions or len(paths) > 1:
             next_number = max(value for folder, value in existing.keys() | additions.keys() if folder == directory) + 1
             failures.append(
