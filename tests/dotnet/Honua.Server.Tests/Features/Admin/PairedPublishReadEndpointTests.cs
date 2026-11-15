@@ -292,6 +292,28 @@ public sealed partial class PairedPublishEndpointTests
         }
     }
 
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task PublicationRead_GenericPMTilesProxy_RefusesPairedArchives(string method)
+    {
+        var published = await PublishAsync(IdentityField);
+        var key = ArtifactKey(published, $"{_publicationId}.pmtiles");
+        (await ReadBytesAsync(key)).Should().NotBeEmpty();
+        using var paired = await _client.GetAsync($"{PublicationRoute}/{published.Version}/{_publicationId}.pmtiles");
+        paired.StatusCode.Should().Be(HttpStatusCode.OK);
+        paired.Headers.CacheControl!.NoStore.Should().BeTrue();
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"/api/v1/tiles/pmtiles/{key}");
+        request.Headers.Range = new RangeHeaderValue(0, 15);
+        using var response = await _client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentRange.Should().BeNull();
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
     [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
