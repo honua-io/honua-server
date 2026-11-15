@@ -145,6 +145,8 @@ public sealed partial class AdminAuthEndpointsTests
     [Protocol(TestProtocols.Grpc)]
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
     public async Task GrpcWeb_ExplicitPortalBearerWithSessionCookie_ReachesServiceWithoutCsrf()
     {
         await SignInGrpcBrowserAsync();
@@ -168,8 +170,13 @@ public sealed partial class AdminAuthEndpointsTests
 
         using var response = await PostEmptyGrpcWebAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("3");
+        // The administrative Spec service requires an operator credential even for a valid portal token.
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var query = await PostEmptyGrpcWebAsync(_client,
+            "/geospatial.v1.FeatureService/QueryFeatures");
+        query.StatusCode.Should().Be(HttpStatusCode.OK);
+        query.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("3");
     }
 
     [IntegrationTheory]
@@ -202,10 +209,11 @@ public sealed partial class AdminAuthEndpointsTests
 
     private Task<HttpResponseMessage> PostEmptyGrpcWebAsync() => PostEmptyGrpcWebAsync(_client);
 
-    private static async Task<HttpResponseMessage> PostEmptyGrpcWebAsync(HttpClient browser)
+    private static async Task<HttpResponseMessage> PostEmptyGrpcWebAsync(
+        HttpClient browser, string path = "/geospatial.v1.SpecService/PlanSpec")
     {
         using var content = new ByteArrayContent([0, 0, 0, 0, 0]);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc-web+proto");
-        return await browser.PostAsync("/geospatial.v1.SpecService/PlanSpec", content);
+        return await browser.PostAsync(path, content);
     }
 }
