@@ -102,13 +102,15 @@ internal static class GrpcMetadataProjector
     internal static Proto.SubtypeDefinition Subtypes(MetadataV2Subtypes subtypes, IReadOnlyList<MetadataV2Field> fields)
     {
         var result = new Proto.SubtypeDefinition { Field = subtypes.SubtypeField };
+        var fieldType = fields.FirstOrDefault(field =>
+            field.Name.Equals(subtypes.SubtypeField, StringComparison.OrdinalIgnoreCase))?.Type;
         if (subtypes.DefaultSubtypeCode is { } defaultCode)
         {
-            result.DefaultCode = Value(defaultCode);
+            result.DefaultCode = Value(defaultCode, fieldType);
         }
         foreach (var subtype in subtypes.Subtypes)
         {
-            var projected = new Proto.LayerSubtype { Code = Value(subtype.Code), Name = subtype.Name };
+            var projected = new Proto.LayerSubtype { Code = Value(subtype.Code, fieldType), Name = subtype.Name };
             var template = Template(subtype.Name, fields);
             template.DefaultAttributes[subtypes.SubtypeField] = projected.Code.Clone();
             AddSubtypeOverrides(projected, template, new(subtype, fields));

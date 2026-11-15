@@ -38,6 +38,27 @@ public sealed class GrpcMetadataProjectorTests
             .Should().Be(text);
     }
 
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, "12345678901234567890.1000", "12345678901234567890.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData(MetadataV2FieldType.Decimal, "\"0.1000\"", "0.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "\"2026-11-15T00:01:02.1234567+05:45\"", "2026-11-15T00:01:02.1234567+05:45", Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue)]
+    public void Subtypes_ExactDiscriminator_PreservesTypeAndTextInDefaultCodeAndTemplate(
+        MetadataV2FieldType type, string json, string text, Proto.AttributeValue.ValueOneofCase expected)
+    {
+        var definition = GrpcMetadataProjector.Subtypes(new()
+        {
+            SubtypeField = "KIND", DefaultSubtypeCode = Json(json),
+            Subtypes = [new() { Code = Json(json), Name = "Primary" }]
+        }, [new() { Name = "kind", Type = type }]);
+
+        var subtype = definition.Subtypes.Single();
+        subtype.Code.ValueCase.Should().Be(expected);
+        definition.DefaultCode.Should().Be(subtype.Code);
+        subtype.Templates.Single().DefaultAttributes["KIND"].Should().Be(subtype.Code);
+        (type == MetadataV2FieldType.Decimal ? subtype.Code.DecimalValue : subtype.Code.TimestampOffsetValue)
+            .Should().Be(text);
+    }
+
     [UnitTest]
     public void Subtypes_ExactOverrides_PreserveTypeInRangeAndTemplate()
     {
