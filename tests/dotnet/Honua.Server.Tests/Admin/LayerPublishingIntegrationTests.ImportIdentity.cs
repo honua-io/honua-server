@@ -52,7 +52,66 @@ public sealed partial class LayerPublishingIntegrationTests
         attributes.GetProperty("name").GetString().Should().Be("Alpha");
     }
 
-    private async Task ImportAndPublishAttributesAsync(string source, string[] fields)
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.Import)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task PublishImportedCsv_DefaultFields_ExposesSourceIdWithoutInternalColumns()
+    {
+        const string source = "id,name,lon,lat\n100,a,-157,21\n200,b,-156,21";
+        await ImportAndPublishAttributesAsync(source, [], "attributes.csv");
+        using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("source_id=100", "id ASC"));
+        var attributes = rest.RootElement.GetProperty("features").EnumerateArray()
+            .Should().ContainSingle().Subject.GetProperty("attributes");
+        attributes.GetProperty("source_id").GetInt64().Should().Be(100);
+        attributes.GetProperty("name").GetString().Should().Be("a");
+        attributes.TryGetProperty("properties", out _).Should().BeFalse();
+        attributes.TryGetProperty("created_at", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task PublishOrdinaryTable_DefaultFields_PreservesUserPropertiesAndCreatedAt()
+    {
+        var tableName = $"user_attributes_{Guid.NewGuid():N}";
+        _legacyImportedTableName = tableName;
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync($$"""
+            CREATE TABLE public.{{tableName}} (
+                id integer PRIMARY KEY,
+                geometry geometry(Point,4326),
+                properties jsonb,
+                created_at timestamptz);
+            INSERT INTO public.{{tableName}} VALUES (
+                1, ST_SetSRID(ST_MakePoint(-157,21),4326),
+                '{"business":"value"}'::jsonb, '2026-01-01T00:00:00Z');
+            """);
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = "public",
+            Table = tableName,
+            LayerName = "User attributes",
+            PrimaryKey = "id",
+            Fields = [],
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        _layerId = published.StorageLayerId;
+        using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("id=1", "id ASC"));
+        var attributes = rest.RootElement.GetProperty("features").EnumerateArray()
+            .Should().ContainSingle().Subject.GetProperty("attributes");
+        attributes.GetProperty("properties").GetProperty("business").GetString().Should().Be("value");
+        attributes.TryGetProperty("created_at", out _).Should().BeTrue();
+    }
+
+    private async Task ImportAndPublishAttributesAsync(string source, string[] fields, string fileName = "attributes.geojson")
     {
         await InstallImportFunctionsAsync();
         await DeleteSecureConnectionAsync();
@@ -63,7 +122,7 @@ public sealed partial class LayerPublishingIntegrationTests
         };
         await CreateSecureConnectionAsync(connection.ConnectionString);
         using var upload = new MultipartFormDataContent();
-        upload.Add(new StringContent(source), "File", "attributes.geojson");
+        upload.Add(new StringContent(source), "File", fileName);
         upload.Add(new StringContent($"attributes_{Guid.NewGuid():N}"), "TableName");
         upload.Add(new StringContent("4326"), "TargetSrid");
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", upload);

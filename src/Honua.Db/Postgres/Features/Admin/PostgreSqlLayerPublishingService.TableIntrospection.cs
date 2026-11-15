@@ -190,7 +190,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 c.data_type,
                 c.is_nullable,
                 c.character_maximum_length,
-                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+                (c.column_name IN ('properties', 'created_at') AND
+                 obj_description(to_regclass(format('%I.%I', c.table_schema, c.table_name)), 'pg_class')
+                    = 'honua:import-owned:v1') IS TRUE AS is_internal_import_column
             FROM information_schema.columns c
             LEFT JOIN (
                 SELECT a.attname as column_name
@@ -223,7 +226,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 DataType = reader.GetString(1),
                 IsNullable = reader.GetString(2) == "YES",
                 MaxLength = reader.IsDBNull(3) ? null : reader.GetInt32(3),
-                IsPrimaryKey = reader.GetBoolean(4)
+                IsPrimaryKey = reader.GetBoolean(4),
+                IsInternalImportColumn = reader.GetBoolean(5)
             });
         }
 
@@ -236,7 +240,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         if (selected == null || selected.Count == 0)
         {
-            return columns;
+            return columns.Where(column => !column.IsInternalImportColumn).ToList();
         }
 
         var lookup = columns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);

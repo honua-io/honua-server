@@ -122,6 +122,7 @@ internal sealed partial class StreamingFileImportService
                 // Collects CSV rows whose mapped geometry column held a value that could not be parsed
                 // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
                 var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
+                string? csvSourceIdAlias = null;
 
                 // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
                 // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
@@ -160,6 +161,12 @@ internal sealed partial class StreamingFileImportService
                         ShouldApplyDetectedSourceSrid(format, request.SourceSrid, feature.Geometry.SRID))
                     {
                         feature.Geometry.SRID = sourceSrid;
+                    }
+
+                    if (format == SupportedFileFormat.Csv)
+                    {
+                        var alias = PreserveCsvSourceId(feature, typedColumnInference);
+                        csvSourceIdAlias ??= alias;
                     }
 
                     batch.Add(feature);
@@ -328,6 +335,11 @@ internal sealed partial class StreamingFileImportService
 
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
+                if (csvSourceIdAlias is not null)
+                {
+                    completionWarningsBuilder.Add(
+                        $"The CSV 'id' column is available as '{csvSourceIdAlias}'; 'id' is the generated feature key.");
+                }
 
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {

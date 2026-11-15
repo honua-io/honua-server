@@ -29,7 +29,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         if (selected == null || selected.Count == 0)
         {
-            return columns;
+            return columns.Where(column => !column.IsInternalImportColumn).ToList();
         }
 
         var lookup = columns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
