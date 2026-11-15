@@ -30,6 +30,10 @@ FIXTURE_MANIFEST_PATH = (
 SERVICE_ID = "test_service"
 COLLECTION_ID = "0"
 
+# Canonical feature publication from client-compat-auth-wave1.yaml and
+# honua.seed_metadata_v2_compat_snapshot; WFS names use publication IDs.
+AUTHENTICATED_WFS_TYPE_LOCAL_NAME = "pub-cert-auth-vector-feature-2011"
+
 # Row counts in the seeded `features` table for layer 0.
 TOTAL_FEATURES = 10
 FEATURES_WITH_GEOMETRY = 9
