@@ -219,7 +219,18 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             return esriEpsg;
         }
 
-        // 4. Try to match against PostGIS spatial_ref_sys by WKT comparison
+        // 4. ESRI projected WKT without an authority node (State Plane, national grids,
+        //    Albers/Lambert). Match projection parameters against spatial_ref_sys.
+        if (isProjected && EsriProjectedCrsMatcher.TryParse(cleanedContent, out var signature))
+        {
+            var byParameters = await FindSridByProjectionSignatureAsync(signature, cancellationToken);
+            if (byParameters is int matched)
+            {
+                return matched;
+            }
+        }
+
+        // 5. Try to match against PostGIS spatial_ref_sys by WKT comparison
         return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
     }
 
@@ -539,6 +550,50 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <summary>
+    /// Finds an EPSG SRID whose proj4 parameters match an ESRI projected WKT signature.
+    /// </summary>
+    private async Task<int?> FindSridByProjectionSignatureAsync(
+        EsriProjectedCrsMatcher.Signature signature,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            using var command = new NpgsqlCommand("""
+                SELECT srid, COALESCE(srtext, ''), COALESCE(proj4text, '')
+                FROM spatial_ref_sys
+                WHERE auth_name = 'EPSG'
+                  AND (
+                        (proj4text ~ @projection AND proj4text ~ @longitude)
+                        OR (proj4text ~ '\+proj=utm(\s|$)' AND proj4text ~ @zone)
+                      )
+                LIMIT 400
+                """, connection);
+            command.Parameters.AddWithValue("@projection", $@"\+proj={signature.Projection}(\s|$)");
+            command.Parameters.AddWithValue("@longitude", signature.LongitudePattern);
+            command.Parameters.AddWithValue("@zone", signature.UsesUtmShorthand ? signature.ZonePattern : "$^");
+
+            var rows = new List<EsriProjectedCrsMatcher.CatalogRow>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add(new EsriProjectedCrsMatcher.CatalogRow(reader.GetInt32(0), reader.GetString(1), reader.GetString(2)));
+            }
+
+            return EsriProjectedCrsMatcher.Select(signature, rows);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            CrsLog.SridDetectionByParametersFailed(_logger, ex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Attempt to find SRID by matching WKT against PostGIS spatial_ref_sys table.
     /// </summary>
     private async Task<int?> FindSridByWktMatchAsync(string wktContent, CancellationToken cancellationToken)
@@ -595,5 +650,11 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             Level = LogLevel.Debug,
             Message = "SRID detection by WKT match failed, returning null")]
         public static partial void SridDetectionByWktFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7432,
+            Level = LogLevel.Debug,
+            Message = "SRID detection by projection parameters failed, returning null")]
+        public static partial void SridDetectionByParametersFailed(ILogger logger, Exception exception);
     }
 }

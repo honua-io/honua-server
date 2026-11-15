@@ -297,6 +297,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         string? errorMessage = null;
         ImportResult result;
         ShapefileScratch? shapefileScratch = null;
+        string? unresolvedCrsName = null;
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
@@ -376,6 +377,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, request.FileName, cancellationToken);
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath, cancellationToken);
+                unresolvedCrsName = detectedSrid is null ? ReadShapefileCrsName(shapefileScratch.ShpPath) : null;
             }
             else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(request.FileName))
             {
@@ -420,6 +422,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
 
                 detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
+                unresolvedCrsName = detectedSrid is null && layers.Length > 0
+                    ? EsriProjectedCrsMatcher.ReadCrsName(layers[0].SpatialReferenceWkt)
+                    : null;
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -496,7 +501,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
-                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                errorMessage = SourceSridRequiredMessage(format.Value, unresolvedCrsName);
                 var validationErrors = SourceSridRequiredIssues(errorMessage);
                 result = ImportResult.CreateFailure(
                     request.TableName,

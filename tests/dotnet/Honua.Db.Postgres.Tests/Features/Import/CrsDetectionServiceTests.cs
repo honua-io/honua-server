@@ -484,4 +484,133 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         (await _service!.DetectFromShapefilePrjAsync("")).Should().BeNull();
         (await _service!.DetectFromShapefilePrjAsync("   ")).Should().BeNull();
     }
+
+    [IntegrationTheory]
+    [MemberData(nameof(EsriProjectedPrjs))]
+    public async Task DetectFromPrjAsync_WithEsriProjectedWkt_ReturnsEpsg(string prj, int epsg)
+    {
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().Be(epsg);
+    }
+
+    public static TheoryData<string, int> EsriProjectedPrjs { get; } = new()
+    {
+        {
+            """
+            PROJCS["NAD_1983_StatePlane_New_York_Long_Island_FIPS_3104_Feet",
+                GEOGCS["GCS_North_American_1983",
+                    DATUM["D_North_American_1983", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Lambert_Conformal_Conic"],
+                PARAMETER["False_Easting",984250.0], PARAMETER["False_Northing",0.0],
+                PARAMETER["Central_Meridian",-74.0],
+                PARAMETER["Standard_Parallel_1",40.66666666666666],
+                PARAMETER["Standard_Parallel_2",41.03333333333333],
+                PARAMETER["Latitude_Of_Origin",40.16666666666666],
+                UNIT["Foot_US",0.3048006096012192]]
+            """,
+            2263
+        },
+        {
+            """
+            PROJCS["NAD_1983_2011_StatePlane_New_York_Long_Island_FIPS_3104_Ft_US",
+                GEOGCS["GCS_NAD_1983_2011",
+                    DATUM["D_NAD_1983_2011", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Lambert_Conformal_Conic"],
+                PARAMETER["False_Easting",984250.0], PARAMETER["False_Northing",0.0],
+                PARAMETER["Central_Meridian",-74.0],
+                PARAMETER["Standard_Parallel_1",40.66666666666666],
+                PARAMETER["Standard_Parallel_2",41.03333333333333],
+                PARAMETER["Latitude_Of_Origin",40.16666666666666],
+                UNIT["Foot_US",0.3048006096012192]]
+            """,
+            6539
+        },
+        {
+            """
+            PROJCS["NAD_1983_StatePlane_California_V_FIPS_0405_Feet",
+                GEOGCS["GCS_North_American_1983",
+                    DATUM["D_North_American_1983", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Lambert_Conformal_Conic"],
+                PARAMETER["False_Easting",6561666.666666667], PARAMETER["False_Northing",1640416.666666667],
+                PARAMETER["Central_Meridian",-118.0],
+                PARAMETER["Standard_Parallel_1",34.03333333333333],
+                PARAMETER["Standard_Parallel_2",35.46666666666667],
+                PARAMETER["Latitude_Of_Origin",33.5],
+                UNIT["Foot_US",0.3048006096012192]]
+            """,
+            2229
+        },
+        {
+            """
+            PROJCS["RGF93_Lambert_93",
+                GEOGCS["GCS_RGF_1993",
+                    DATUM["D_RGF_1993", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Lambert_Conformal_Conic"],
+                PARAMETER["False_Easting",700000.0], PARAMETER["False_Northing",6600000.0],
+                PARAMETER["Central_Meridian",3.0],
+                PARAMETER["Standard_Parallel_1",49.0], PARAMETER["Standard_Parallel_2",44.0],
+                PARAMETER["Latitude_Of_Origin",46.5], UNIT["Meter",1.0]]
+            """,
+            2154
+        },
+        {
+            """
+            PROJCS["British_National_Grid",
+                GEOGCS["GCS_OSGB_1936",
+                    DATUM["D_OSGB_1936", SPHEROID["Airy_1830",6377563.396,299.3249646]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Transverse_Mercator"],
+                PARAMETER["False_Easting",400000.0], PARAMETER["False_Northing",-100000.0],
+                PARAMETER["Central_Meridian",-2.0], PARAMETER["Scale_Factor",0.9996012717],
+                PARAMETER["Latitude_Of_Origin",49.0], UNIT["Meter",1.0]]
+            """,
+            27700
+        },
+        {
+            """
+            PROJCS["NAD_1983_BC_Environment_Albers",
+                GEOGCS["GCS_North_American_1983",
+                    DATUM["D_North_American_1983", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Albers"],
+                PARAMETER["False_Easting",1000000.0], PARAMETER["False_Northing",0.0],
+                PARAMETER["Central_Meridian",-126.0],
+                PARAMETER["Standard_Parallel_1",50.0], PARAMETER["Standard_Parallel_2",58.5],
+                PARAMETER["Latitude_Of_Origin",45.0], UNIT["Meter",1.0]]
+            """,
+            3005
+        },
+        {
+            """
+            PROJCS["GDA_1994_MGA_Zone_55",
+                GEOGCS["GCS_GDA_1994",
+                    DATUM["D_GDA_1994", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Transverse_Mercator"],
+                PARAMETER["False_Easting",500000.0], PARAMETER["False_Northing",10000000.0],
+                PARAMETER["Central_Meridian",147.0], PARAMETER["Scale_Factor",0.9996],
+                PARAMETER["Latitude_Of_Origin",0.0], UNIT["Meter",1.0]]
+            """,
+            28355
+        },
+        {
+            """
+            PROJCS["GDA_1994_Australia_Albers",
+                GEOGCS["GCS_GDA_1994",
+                    DATUM["D_GDA_1994", SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0], UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Albers"],
+                PARAMETER["False_Easting",0.0], PARAMETER["False_Northing",0.0],
+                PARAMETER["Central_Meridian",132.0],
+                PARAMETER["Standard_Parallel_1",-18.0], PARAMETER["Standard_Parallel_2",-36.0],
+                PARAMETER["Latitude_Of_Origin",0.0], UNIT["Meter",1.0]]
+            """,
+            3577
+        },
+    };
 }

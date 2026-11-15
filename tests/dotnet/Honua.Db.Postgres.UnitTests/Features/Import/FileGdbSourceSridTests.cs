@@ -82,6 +82,8 @@ public sealed class FileGdbSourceSridTests
 
         result.Success.Should().BeFalse();
         result.ErrorCode.Should().Be(ImportValidationErrorCodes.SourceSridRequired, result.ErrorMessage);
+        result.ErrorMessage.Should().Contain(StatePlaneName);
+        result.ErrorMessage.Should().Contain("sourceSrid");
     }
 
     private static StreamingFileImportService CreateService(ICrsDetectionService crs)

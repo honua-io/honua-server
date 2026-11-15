@@ -80,6 +80,40 @@ internal sealed partial class StreamingFileImportService
             if (stream.CanSeek) stream.Position = 0;
         }
     }
+    private static string SourceSridRequiredMessage(SupportedFileFormat format, string? crsName)
+    {
+        var message = $"Source SRID is required for {format} imports when CRS cannot be detected.";
+        if (string.IsNullOrWhiteSpace(crsName))
+        {
+            return message;
+        }
+
+        return $"{message} The file names the coordinate system \"{crsName}\". Set sourceSrid to its EPSG code.";
+    }
+
+    private static string? ReadShapefileCrsName(string shpPath)
+    {
+        var prjPath = Path.ChangeExtension(shpPath, ".prj");
+        if (!File.Exists(prjPath))
+        {
+            prjPath = Path.ChangeExtension(shpPath, ".PRJ");
+        }
+
+        if (!File.Exists(prjPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return EsriProjectedCrsMatcher.ReadCrsName(File.ReadAllText(prjPath));
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
     private static ImportValidationIssue[] SourceSridRequiredIssues(string message) =>
         [ImportValidationIssue.Create(
             ImportValidationErrorCodes.SourceSridRequired,
