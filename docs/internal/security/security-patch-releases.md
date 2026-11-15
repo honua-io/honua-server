@@ -23,7 +23,10 @@ The release rescan never writes advisory ids, package names or digests into a pu
   (a fine-grained token with Issues: read and write on the private security tracker only)
   and the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of that tracker). The
   report job then opens one issue per release, platform and advisory with the package, fixed
-  version and due date, and skips findings that already have an open issue.
+  version and due date, and skips findings that already have an open issue. Before reading
+  findings, it checks the destination repository's visibility through the API. A public
+  destination or failed visibility lookup fails the job before any issue is read or written;
+  correct the destination or token access, then rerun the report.
 - **Fallback.** Without both values the job opens a single public issue, *Security maintenance:
   a supported release image needs a patch release*, with counts only. A maintainer files the
   detail in the private tracker by hand from the run's `release-image-security-*` artifacts.

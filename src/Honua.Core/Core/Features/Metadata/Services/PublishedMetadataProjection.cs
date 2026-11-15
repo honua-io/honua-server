@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Core.Features.Security.Abstractions;
@@ -87,6 +88,34 @@ public sealed class PublishedMetadataProjection(
         return publication.Path is { Length: > 0 } path && path.StartsWith('/') && !path.StartsWith("//", StringComparison.Ordinal)
             ? request.BaseUrl.TrimEnd('/') + path
             : null;
+    }
+
+    // The service's (or, for a global document, the environment's) metadata after crosswalk inheritance, in the
+    // shape the OGC capabilities writers read.
+    public static MetadataV2ObjectMetadata ForCapabilities(MetadataV2Graph graph, MetadataV2Service? service)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        var record = service is null
+            ? DescriptiveMetadataResolver.ForCatalog(graph)
+            : DescriptiveMetadataResolver.ForCapabilities(graph, service);
+        var contact = record.PointOfContact;
+        return (service?.Metadata ?? graph.Metadata) with
+        {
+            Title = record.Title,
+            Description = record.Description,
+            Keywords = record.Keywords,
+            Language = record.Language,
+            License = record.License,
+            Fees = record.Fees,
+            AccessConstraints = record.AccessConstraints,
+            Attribution = record.Attribution,
+            Publisher = record.Publisher ?? contact?.Organization,
+            ContactPoint = contact is null
+                ? null
+                : new MetadataV2ContactPoint { Name = contact.Name, Email = contact.Email, Url = contact.Url },
+            Contacts = record.Contacts,
+            Links = record.Links,
+        };
     }
 
     public static string ResolveOwner(MetadataV2ObjectMetadata metadata)

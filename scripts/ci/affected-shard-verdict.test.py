@@ -210,20 +210,27 @@ class AffectedShardVerdictTests(unittest.TestCase):
     def test_shard_artifacts_are_named_per_attempt_and_not_merged(self) -> None:
         import yaml
 
-        for filename, job_id, prefix in (
-            ("pr-gate.yml", "affected-shard", "pr-gate-affected-shard-"),
-            ("ci.yml", "server-tests", "server-test-results-"),
-        ):
-            with self.subTest(workflow=filename):
-                workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
-                upload = next(step for step in workflow["jobs"][job_id]["steps"]
-                              if step.get("with", {}).get("name", "").startswith(prefix))
-                self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
-                downloads = [step for job in workflow["jobs"].values() for step in job.get("steps", [])
-                             if step.get("with", {}).get("pattern") == f"{prefix}*"]
-                self.assertTrue(downloads)
-                for download in downloads:
-                    self.assertFalse(download["with"].get("merge-multiple", False))
+        gate = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        upload = next(step for step in gate["jobs"]["affected-shard"]["steps"]
+                      if str(step.get("with", {}).get("name", "")).startswith("pr-gate-affected-shard-"))
+        self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+        broad = [step for job in gate["jobs"].values() for step in job.get("steps", [])
+                 if step.get("with", {}).get("pattern") == "pr-gate-affected-shard-*"]
+        self.assertEqual(broad, [])
+        bounded = next(step for step in gate["jobs"]["affected-shards"]["steps"]
+                       if step.get("name") == "Download affected shard receipts")
+        self.assertIn("download-affected-receipts.py", bounded["run"])
+        self.assertIn("receipt_matrix", bounded["env"]["SELECT_MATRIX"])
+        self.assertNotIn("matrix_include", bounded["env"]["SELECT_MATRIX"])
+        full = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        full_upload = next(step for step in full["jobs"]["server-tests"]["steps"]
+                           if str(step.get("with", {}).get("name", "")).startswith("server-test-results-"))
+        self.assertTrue(full_upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+        downloads = [step for job in full["jobs"].values() for step in job.get("steps", [])
+                     if step.get("with", {}).get("pattern") == "server-test-results-*"]
+        self.assertTrue(downloads)
+        for download in downloads:
+            self.assertFalse(download["with"].get("merge-multiple", False))
 
     def test_every_shard_job_preserves_test_failure(self) -> None:
         import yaml
@@ -441,7 +448,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(workflow["env"]["AFFECTED_SHARDS_CAP"], "6")
         required = workflow["jobs"]["required"]
         self.assertIn("affected-shards", required["needs"])
-        step = required["steps"][0]
+        step = next(step for step in required["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")
         self.assertIn("needs.affected-shards.result", step["env"]["AFFECTED_SHARDS_RESULT"])
         self.assertIn('"${AFFECTED_SHARDS_RESULT}" != success', step["run"])
         self.assertIn('"${GITHUB_EVENT_NAME}" == pull_request', step["run"])
@@ -526,7 +533,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         import yaml
 
         workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
-        command = workflow["jobs"]["required"]["steps"][0]["run"]
+        command = next(step for step in workflow["jobs"]["required"]["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")["run"]
         for result in ("success", "failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
