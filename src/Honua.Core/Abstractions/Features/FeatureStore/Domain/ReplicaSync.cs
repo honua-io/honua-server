@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -56,7 +57,11 @@ public readonly record struct ReplicaLayerApplyResult(
     bool Failed,
     string? FailureMessage,
     ImmutableArray<int> CommittedEditIndexes = default,
-    ImmutableArray<int> IndeterminateEditIndexes = default);
+    ImmutableArray<int> IndeterminateEditIndexes = default)
+{
+    [JsonIgnore]
+    public ImmutableArray<ImmutableArray<FeatureOperationEvidence>> OperationEvidence { get; init; }
+}
 
 public readonly record struct ReplicaSyncUploadReport(
     bool Success,

@@ -2,6 +2,8 @@
 
 A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
 
+Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
@@ -144,8 +146,14 @@ See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
 for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
-errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Normalization cancels repeated eligible
+errors fail. Review helpers queue superseded events per PR (`queue: max`)
+instead of cancelling them, so a superseded resolver or bridge run ends green
+rather than as a cancelled red mark on the PR page. Each attestation re-reads
+live review/admission state before acting. An attestation whose live review
+or admission state changes between its first snapshot and final revalidation fails red;
+the queued event behind that change re-attests an open, ready head. Bursts
+are not collapsed: each event runs in turn, with up to 100 waiting per PR.
+Normalization cancels repeated eligible
 producers for the same PR head. Different heads use separate groups so a delayed
 old event cannot cancel current work and then shed without replacement. Draft
 and title/body-edit events use isolated groups because they cannot generate a
@@ -155,9 +163,9 @@ validation. Live-head checks and compare-and-swap remain required before branch
 mutation. Auto-merge eligibility events retain FIFO serialization because each
 event can change merge eligibility.
 
-Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
+Completions without a PR number use an isolated resolver group per run; once resolved, publication queues behind older work by PR number. An unresolvable completion cannot delay or cancel a resolver for another run.
 
-Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
+Review event ordering is not guaranteed. A late old-head event queues behind newer ones and reconciles the current live PR head. Draft conversion still reaches the shared attestation group, queues, and sheds the live draft before checkout or status publication. Other draft pull-request payloads skip resolution.
 
 ## Verification stages
 
@@ -240,7 +248,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `import-fidelity-scorecard-governance.yml` | Import-fidelity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
-| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
+| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Python with the pinned YAML reader from `scripts/ci/okf-requirements.txt`, ~15s. A pull request is validated as its merge into trunk, so a head cut before a checker existed is judged by the checkers the workflow calls. The uploaded OKF agent graph is the exception: it is generated from the exact head in a separate tree by that head's own generator, and fails the job when that generator cannot run. A documentation defect on trunk fails every pull request this gate runs on; a rerun reuses the same merge, so recovery after the trunk fix needs a new event on the pull request (a push, or close and reopen). | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
 
 ### Affected-scope gate build
 
@@ -521,12 +529,13 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. The selector itself, Format and source Analyzers use the
-fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
-Both test-analyzer rows and the four Fast/architecture matrix jobs always use
-`ubuntu-latest`. Test analyzers stay hosted even during light-pool qualification.
-All eight remain independent of producer admission and heavy settings and keep
-their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
+`server-test-producer` run, and which start jobs move to idle heavy runners. The
+selector itself, Format and source Analyzers use the fork-guarded
+`HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback. Both
+test-analyzer rows and the four Fast/architecture matrix jobs use `ubuntu-latest`
+unless the selector planned them onto the heavy pool (below); test analyzers never
+use the light pool, even during light-pool qualification. All eight keep their
+existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
 availability switch: keep it unset while the light pool is unhealthy; new jobs
 then fall back to hosted runners. Forks always use hosted runners. Routing does
 not move an already queued job when pool health changes. With the repository variable
@@ -542,7 +551,27 @@ host and read its heartbeat, nothing else) and runs
 - When the current instance's heartbeat is fresh and shows two idle gate runners,
   Build and tests and Server test producer use the selected gate label.
 - When the host is busy, or no heartbeat arrives within three minutes, the two
-  producers use `ubuntu-latest`. A stopped host is still woken for later runs.
+  producers use `ubuntu-latest`, unless idle heavy runners cover them (below). A
+  stopped host is still woken for later runs.
+- Heavy start plan (`start_heavy`): from the same proof, the selector never plans
+  three idle heavy runners (two for this gate's even affected shards, which have no
+  hosted fallback, and one for advisory and AOT jobs) and spends half of the idle
+  runners above that, at most two per gate, so a second gate reading the same
+  heartbeat still finds the reserve. The heartbeat records availability; it does
+  not reserve runners, so several gates starting together can still queue on the
+  pool, and a lost spot host leaves planned jobs queued as it does shards. A busy
+  gate pool moves both producers first, on the label that alone selects the heavy
+  pool (the group's own label, or a sole label that must be unique to the heavy
+  pool), because they gate the shards; without such a label, including a
+  group-only selector, nothing is planned and every start job stays hosted; the remaining budget goes to `analyzers-server`,
+  `architecture`, `server-fast` and `analyzers-other`, in that order (longest
+  median hosted run on 24 gates, 15 Nov 2026: 12.2, 12.0, 10.7 and 10.6 minutes
+  after 5 to 9 minutes of hosted queue). `server-governance` (starts PostGIS) and
+  `unit-fast` (shortest) stay hosted. A planned job runs on the fork-guarded
+  `HONUA_HEAVY_RUNNER` JSON selector; a stale or invalid proof, enforce mode,
+  drafts and forks keep it hosted. A failed-jobs rerun reuses the original plan.
+  Fast/architecture jobs pin temp to `RUNNER_TEMP` and skip the hosted-only
+  `sudo` disk cleanup on self-hosted runners.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
@@ -780,13 +809,20 @@ execution failures remain blocking. Each test command runs in a dedicated proces
 Cancellation signals that group and its snapshotted descendants, including those that leave
 the group. Signal handlers record cancellation; cleanup runs outside the active child wait
 so it cannot reenter the subprocess wait lock. The supervisor checks cancellation at most
-every 0.1 seconds. Process discovery has a 0.2-second deadline, with group cleanup preserved
-on discovery failure, followed by at most half a second before SIGKILL. Group escalation also reaches
-children forked after the snapshot. Required check names and minimum-execution checks remain
+every 0.1 seconds. The snapshot before TERM has a 0.2-second discovery deadline, with group
+cleanup preserved on discovery failure, followed by half a second for TERM. Group escalation
+also reaches children forked after the snapshot. The SIGKILL step first stops the tree
+(SIGSTOP) until a fresh listing finds no new descendant, each listing bounded to one second
+because it runs inside the kill-after grace, then kills it deepest first and sweeps the group,
+so a late child that left the group is killed instead of orphaned. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
+Before execution, the shared filter runner logs `HONUA_QUARANTINE_FILTER` with the effective
+filter and the current project's excluded methods, owning issues and expiry times. Shard
+test-result logs retain this record so live verification can distinguish the applied filter
+from the supervisor's base filter; the record does not replace execution or retry evidence.
 
 The publisher has issue-write permission only on trusted default-branch code, reached by
 a twice-hourly schedule or default-branch manual dispatch. Completion events do not
@@ -795,7 +831,11 @@ sweeps consume 318 history requests per hour before bounded artifact inspections
 checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
 evidence and hashes, and never executes downloaded data or checks out the triggering branch.
 Job-level concurrency serializes issue writes and replaces pending sweeps. Source
-provenance and completion filters remain enforced during discovery.
+provenance and completion filters remain enforced during discovery. Each Actions listing
+reads at most eight pages concurrently and reports page progress. A listing whose total
+changes mid-scan (a new run) restarts, at most three attempts in all; it fails closed
+(checkpoint unchanged) when the total keeps changing or the unique entry count disagrees
+with the total.
 Each sweep lists the bounded histories of CI and PR Gate, selects completed trusted runs
 updated since the checkpoint, and reads artifacts per source run. It never lists the
 repository-wide artifact collection. Full creation-ordered histories preserve discovery
@@ -1514,6 +1554,23 @@ on GitHub-hosted runners.
 
 Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.
 
+CodeQL self-hosted execution explicitly budgets 8,192 MB and four extraction
+threads, with `DOTNET_PROCESSOR_COUNT=4` also bounding MSBuild and extractor
+parallelism. Both initialization lanes receive these inputs; analysis inherits
+them from initialization. Hosted execution keeps the action defaults. The heavy
+runner's existing 16 GiB user slice includes the runner and its child processes:
+the remaining half is headroom, not additional provisioned capacity. The pinned
+action reads root cgroup limits and misses this nested slice. In run
+43722168928/job132839988502 it advertised 240,353 MB and 64 threads before the
+kernel killed `Semmle.Autobuil` at the 16 GiB slice limit. On pull requests the
+no-build extractor cannot authenticate to the GitHub Packages feed, so the
+solution restore fails and it restores each project separately, one per
+extraction thread: unbounded on the heavy host, four with this budget, as on
+the four-CPU hosted runner where run 43742167308 passed in 19 minutes.
+Authenticating that feed for the pull request lane is a separate follow-up.
+This is a resource repair, with no query, source, build-mode, timeout or gate
+reduction. A subsequent live CodeQL pass and peak-memory measurement are still
+needed to verify it.
 
 ### Evaluated test analyzer build roots
 
