@@ -5,8 +5,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -19,6 +21,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
     {
         var startedAt = DateTimeOffset.UtcNow;
         var revision = await ReadPersistedRevisionAsync();
+        var etag = await ReadPreviewMetadataEtagAsync();
         var sourceRows = await CountSourceRowsAsync(_firstTable);
         var sourceHash = await ReadPreviewSourceHashAsync();
         var result = await PreviewPublicationAsync();
@@ -36,14 +39,22 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         details.GetProperty("layerName").GetString().Should().Be("preview layer");
         details.GetProperty("metadataRevision").GetString().Should().Be(
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        details.GetProperty("metadataEtag").GetString().Should().NotBeNullOrWhiteSpace();
+        details.GetProperty("metadataEtag").GetString().Should().Be(etag);
         details.GetProperty("previewReference").GetString().Should().NotBeNullOrWhiteSpace();
         DateTimeOffset.Parse(details.GetProperty("expiresAt").GetString()!,
             System.Globalization.CultureInfo.InvariantCulture).Should().BeAfter(startedAt);
         (await PublishedLayerCountAsync(_firstTable)).Should().Be(0);
         (await ReadPersistedRevisionAsync()).Should().Be(revision);
+        (await ReadPreviewMetadataEtagAsync()).Should().Be(etag);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(sourceRows);
         (await ReadPreviewSourceHashAsync()).Should().Be(sourceHash);
+    }
+
+    private async Task<string> ReadPreviewMetadataEtagAsync()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        return (await store.GetCurrentAsync()).Etag;
     }
 
     private async Task<string> ReadPreviewSourceHashAsync()
