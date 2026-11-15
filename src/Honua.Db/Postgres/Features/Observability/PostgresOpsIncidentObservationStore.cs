@@ -61,7 +61,7 @@ internal sealed class PostgresOpsIncidentObservationStore : IOpsIncidentObservat
         command.Parameters.AddWithValue("authority", NpgsqlDbType.Text, query.AuthorityScope);
         command.Parameters.AddWithValue("since", NpgsqlDbType.TimestampTz, query.Since.ToUniversalTime());
         command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit);
-        command.Parameters.AddWithValue("until", NpgsqlDbType.TimestampTz, (object?)query.Until?.ToUniversalTime() ?? DBNull.Value);
+        command.Parameters.AddWithValue("until", NpgsqlDbType.TimestampTz, query.Until is { } until ? (object)until.ToUniversalTime() : DBNull.Value);
         command.Parameters.AddWithValue("finding", NpgsqlDbType.Text, (object?)query.FindingId ?? DBNull.Value);
         var observations = new List<OpsIncidentObservation>();
         long totalCount = 0;

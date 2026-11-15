@@ -19,7 +19,7 @@ namespace Honua.Db.Postgres.Tests.Features.Observability;
 /// migration 034 inside an isolated per-test schema.
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
+public sealed partial class PostgresInvestigationStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task CreateAndGet_RoundTripsRecord()
@@ -216,6 +216,15 @@ public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
                 created_by TEXT NOT NULL
             );
             """);
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        var migration = await File.ReadAllTextAsync(Path.Join(directory!.FullName,
+            "src/Honua.Server/Migrations/193_AllowIncidentInvestigationReferences.sql"));
+        await fixture.ExecuteAsync(migration.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal));
     }
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schema) : IAdoNetDatabaseConnectionProvider

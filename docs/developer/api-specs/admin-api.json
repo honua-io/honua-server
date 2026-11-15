@@ -35877,7 +35877,8 @@
               "release",
               "syncConflict",
               "temporalOp",
-              "log"
+              "log",
+              "incident"
             ],
             "description": "Event category."
           },
@@ -45712,7 +45713,8 @@
               "release",
               "syncConflict",
               "temporalOp",
-              "log"
+              "log",
+              "incident"
             ]
           },
           "occurredAt": {
@@ -45752,7 +45754,8 @@
               "alert",
               "job",
               "release",
-              "changeSet"
+              "changeSet",
+              "incident"
             ]
           },
           "resourceId": {
@@ -45970,7 +45973,8 @@
               "release",
               "syncConflict",
               "temporalOp",
-              "log"
+              "log",
+              "incident"
             ]
           },
           "occurredAt": {
@@ -46001,7 +46005,8 @@
               "alert",
               "job",
               "release",
-              "changeSet"
+              "changeSet",
+              "incident"
             ]
           },
           "resourceId": {

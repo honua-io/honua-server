@@ -27,6 +27,8 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
     private readonly string _investigationsTable;
     private readonly string _pinsTable;
     private readonly string _linksTable;
+    private readonly string _incidentPinsTable;
+    private readonly string _incidentLinksTable;
 
     public PostgresInvestigationStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
@@ -34,6 +36,8 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         _investigationsTable = SchemaSearchPath.QualifyTable("investigations", schemaName);
         _pinsTable = SchemaSearchPath.QualifyTable("investigation_pins", schemaName);
         _linksTable = SchemaSearchPath.QualifyTable("investigation_links", schemaName);
+        _incidentPinsTable = SchemaSearchPath.QualifyTable("investigation_incident_pins", schemaName);
+        _incidentLinksTable = SchemaSearchPath.QualifyTable("investigation_incident_links", schemaName);
     }
 
     public async Task<InvestigationRecord> CreateAsync(
@@ -96,8 +100,10 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
         var sql = new StringBuilder();
         sql.Append("SELECT i.investigation_id, i.title, i.status, i.created_at, i.created_by, i.updated_at, i.summary,");
-        sql.Append(" (SELECT COUNT(*) FROM ").Append(_pinsTable).Append(" p WHERE p.investigation_id = i.investigation_id) AS pin_count,");
-        sql.Append(" (SELECT COUNT(*) FROM ").Append(_linksTable).Append(" k WHERE k.investigation_id = i.investigation_id) AS link_count");
+        sql.Append(" ((SELECT COUNT(*) FROM ").Append(_pinsTable).Append(" p WHERE p.investigation_id = i.investigation_id) +");
+        sql.Append(" (SELECT COUNT(*) FROM ").Append(_incidentPinsTable).Append(" p WHERE p.investigation_id = i.investigation_id)) AS pin_count,");
+        sql.Append(" ((SELECT COUNT(*) FROM ").Append(_linksTable).Append(" k WHERE k.investigation_id = i.investigation_id) +");
+        sql.Append(" (SELECT COUNT(*) FROM ").Append(_incidentLinksTable).Append(" k WHERE k.investigation_id = i.investigation_id)) AS link_count");
         sql.Append(" FROM ").Append(_investigationsTable).Append(" i WHERE 1=1");
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -235,7 +241,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         }
 
         var insertSql = $"""
-            INSERT INTO {_pinsTable} (investigation_id, event_ref, event_kind, occurred_at, note, created_at, created_by)
+            INSERT INTO {(eventKind == OperateEventKind.Incident ? _incidentPinsTable : _pinsTable)} (investigation_id, event_ref, event_kind, occurred_at, note, created_at, created_by)
             VALUES (@investigation_id, @event_ref, @event_kind, @occurred_at, @note, @created_at, @created_by)
             """;
         await using (var insert = new NpgsqlCommand(insertSql, connection, transaction))
@@ -273,15 +279,21 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         }
 
         var deleteSql = $"""
-            DELETE FROM {_pinsTable}
-            WHERE investigation_id = @investigation_id AND pin_id = @pin_id
+            WITH legacy AS (
+                DELETE FROM {_pinsTable}
+                WHERE investigation_id = @investigation_id AND pin_id = @pin_id RETURNING 1
+            ), incident AS (
+                DELETE FROM {_incidentPinsTable}
+                WHERE investigation_id = @investigation_id AND pin_id = @pin_id RETURNING 1
+            )
+            SELECT (SELECT COUNT(*) FROM legacy) + (SELECT COUNT(*) FROM incident)
             """;
         int deleted;
         await using (var delete = new NpgsqlCommand(deleteSql, connection, transaction))
         {
             delete.Parameters.AddWithValue("investigation_id", NpgsqlDbType.Text, investigationId);
             delete.Parameters.AddWithValue("pin_id", NpgsqlDbType.Bigint, pinId);
-            deleted = await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            deleted = checked((int)(long)(await delete.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!);
         }
 
         if (deleted == 0)
@@ -318,7 +330,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         }
 
         var insertSql = $"""
-            INSERT INTO {_linksTable} (investigation_id, resource_kind, resource_id, note, created_at, created_by)
+            INSERT INTO {(resourceKind == InvestigationResourceKind.Incident ? _incidentLinksTable : _linksTable)} (investigation_id, resource_kind, resource_id, note, created_at, created_by)
             VALUES (@investigation_id, @resource_kind, @resource_id, @note, @created_at, @created_by)
             """;
         await using (var insert = new NpgsqlCommand(insertSql, connection, transaction))
@@ -355,15 +367,21 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         }
 
         var deleteSql = $"""
-            DELETE FROM {_linksTable}
-            WHERE investigation_id = @investigation_id AND link_id = @link_id
+            WITH legacy AS (
+                DELETE FROM {_linksTable}
+                WHERE investigation_id = @investigation_id AND link_id = @link_id RETURNING 1
+            ), incident AS (
+                DELETE FROM {_incidentLinksTable}
+                WHERE investigation_id = @investigation_id AND link_id = @link_id RETURNING 1
+            )
+            SELECT (SELECT COUNT(*) FROM legacy) + (SELECT COUNT(*) FROM incident)
             """;
         int deleted;
         await using (var delete = new NpgsqlCommand(deleteSql, connection, transaction))
         {
             delete.Parameters.AddWithValue("investigation_id", NpgsqlDbType.Text, investigationId);
             delete.Parameters.AddWithValue("link_id", NpgsqlDbType.Bigint, linkId);
-            deleted = await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            deleted = checked((int)(long)(await delete.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!);
         }
 
         if (deleted == 0)
@@ -453,6 +471,10 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
             SELECT pin_id, event_ref, event_kind, occurred_at, note, created_at, created_by
             FROM {_pinsTable}
             WHERE investigation_id = @investigation_id
+            UNION ALL
+            SELECT pin_id, event_ref, event_kind, occurred_at, note, created_at, created_by
+            FROM {_incidentPinsTable}
+            WHERE investigation_id = @investigation_id
             ORDER BY pin_id
             """;
 
@@ -487,6 +509,10 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         var sql = $"""
             SELECT link_id, resource_kind, resource_id, note, created_at, created_by
             FROM {_linksTable}
+            WHERE investigation_id = @investigation_id
+            UNION ALL
+            SELECT link_id, resource_kind, resource_id, note, created_at, created_by
+            FROM {_incidentLinksTable}
             WHERE investigation_id = @investigation_id
             ORDER BY link_id
             """;
