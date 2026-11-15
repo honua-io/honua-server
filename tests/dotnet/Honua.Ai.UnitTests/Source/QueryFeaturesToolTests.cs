@@ -41,6 +41,28 @@ public sealed class QueryFeaturesToolTests
 
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("svc-parcels", "\"retired-layer\"")]
+    [InlineData("__certification_missing_service__", "\"retired-layer\"")]
+    [InlineData("svc-parcels", "null")]
+    [InlineData("__certification_missing_service__", "null")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_RetiredSelector_ReturnsInvalidArgumentBeforeLookup(string serviceId, string layerId)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{serviceId}}","serviceLayerIndex":0,"layerId":{{layerId}}}""");
+
+        AssertInvalidArgument(response);
+        response.Result!.Value.GetProperty("structuredContent").GetProperty("message")
+            .GetString().Should().Contain("layerId");
+        reader.ReceivedCalls().Should().BeEmpty();
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
