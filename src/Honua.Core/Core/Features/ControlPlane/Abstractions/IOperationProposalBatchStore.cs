@@ -8,4 +8,8 @@ public readonly record struct OperationProposalBatchCandidate(string BatchKey, s
 public interface IOperationProposalBatchStore
 {
     Task<string> ReserveBatchAsync(OperationProposalBatchCandidate candidate, CancellationToken cancellationToken = default);
+
+    Task RetargetOpenBatchAsync(string previousProposalId, string renewedProposalId, CancellationToken cancellationToken = default);
+
+    Task CompleteOpenBatchAsync(string proposalId, CancellationToken cancellationToken = default);
 }

@@ -28,4 +28,40 @@ internal sealed partial class PostgresOperationProposalStore
                 command.Parameters.AddWithValue("proposal_id", NpgsqlDbType.Text, candidate.ProposalId);
                 return (string)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             }, StatementRepeat.NotAfterSend, cancellationToken);
+
+    public Task RetargetOpenBatchAsync(string previousProposalId, string renewedProposalId, CancellationToken cancellationToken = default)
+        => UpdateOpenBatchAsync(
+            $"""
+            UPDATE {_batches}
+            SET proposal_id = @renewed
+            WHERE proposal_id = @previous AND completed = FALSE
+            """,
+            previousProposalId,
+            renewedProposalId,
+            cancellationToken);
+
+    public Task CompleteOpenBatchAsync(string proposalId, CancellationToken cancellationToken = default)
+        => _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    UPDATE {_batches}
+                    SET completed = TRUE
+                    WHERE proposal_id = @previous AND completed = FALSE
+                    """, connection);
+                command.Parameters.AddWithValue("previous", NpgsqlDbType.Text, proposalId);
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            }, StatementRepeat.NotAfterSend, cancellationToken);
+
+    private Task<int> UpdateOpenBatchAsync(
+        string sql, string previousProposalId, string renewedProposalId, CancellationToken cancellationToken)
+        => _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(sql, connection);
+                command.Parameters.AddWithValue("previous", NpgsqlDbType.Text, previousProposalId);
+                command.Parameters.AddWithValue("renewed", NpgsqlDbType.Text, renewedProposalId);
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            }, StatementRepeat.NotAfterSend, cancellationToken);
 }

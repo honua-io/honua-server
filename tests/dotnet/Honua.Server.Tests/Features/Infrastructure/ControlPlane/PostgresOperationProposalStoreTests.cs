@@ -280,6 +280,24 @@ public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter d
     }
 
     [IntegrationTest]
+    public async Task ReserveBatchAsync_RenewedProposal_CompletesTheOriginalBatch()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var expired = Proposal();
+        await store.ReserveBatchAsync(new("finding", "first", expired.ProposalId));
+        await store.TryCreateAsync(expired);
+        (await store.TrySetAsync(expired with { Status = OperationProposalStatus.Expired })).Should().BeTrue();
+        var renewal = expired with { ProposalId = expired.ProposalId + "-renewal-1" };
+        await store.RetargetOpenBatchAsync(expired.ProposalId, renewal.ProposalId);
+        (await store.ReserveBatchAsync(new("finding", "during", "during-id"))).Should().Be("first");
+        await store.TryCreateAsync(renewal);
+        (await store.TrySetAsync(renewal with { Status = OperationProposalStatus.Succeeded })).Should().BeTrue();
+
+        (await harness.CreateProposalStore().ReserveBatchAsync(new("finding", "next", "next-id"))).Should().Be("next");
+    }
+
+    [IntegrationTest]
     public async Task ReserveBatchAsync_RejectedProposal_DoesNotOpenAnotherBatch()
     {
         await using var harness = await CreateHarnessAsync();

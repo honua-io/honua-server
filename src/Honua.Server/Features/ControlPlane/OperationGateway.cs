@@ -794,16 +794,16 @@ internal sealed partial class OperationGateway : IOperationGateway
                 throw new InvalidOperationException("Failed to durably persist the operation proposal.");
             }
 
-            if (winner.Status != OperationProposalStatus.Expired)
+            // Renewal ordinals live outside the caller-key hash namespace. A literal
+            // caller key ending in "#1" must never alias another key's renewal.
+            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            if (!await TryRetargetOpenBatchAsync(winner, renewedId, cancellationToken).ConfigureAwait(false))
             {
                 return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
                     ? NewIdempotencyKeyRequiredResult(decision)
                     : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
             }
 
-            // Renewal ordinals live outside the caller-key hash namespace. A literal
-            // caller key ending in "#1" must never alias another key's renewal.
-            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
             proposal = proposal with { ProposalId = renewedId, Audit = proposal.Audit with { ProposalId = renewedId } };
         }
 
@@ -893,6 +893,28 @@ internal sealed partial class OperationGateway : IOperationGateway
             PolicyDecision = PolicyDecisionKind.RequireApproval,
             UpdatedAt = DateTimeOffset.UtcNow,
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryRetargetOpenBatchAsync(
+        OperationProposal winner, string renewedId, CancellationToken cancellationToken)
+    {
+        if (_proposalStore is not IOperationProposalBatchStore batches)
+        {
+            return winner.Status == OperationProposalStatus.Expired;
+        }
+
+        if (winner.Status == OperationProposalStatus.Succeeded)
+        {
+            await batches.CompleteOpenBatchAsync(winner.ProposalId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (winner.Status != OperationProposalStatus.Expired)
+        {
+            return false;
+        }
+
+        await batches.RetargetOpenBatchAsync(winner.ProposalId, renewedId, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private async Task TryFailPlannedProposalAsync(
