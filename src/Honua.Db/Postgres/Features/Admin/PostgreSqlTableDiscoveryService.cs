@@ -405,7 +405,10 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     c.data_type,
                     c.is_nullable,
                     c.character_maximum_length,
-                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+                    (c.column_name IN ('properties', 'created_at') AND
+                     col_description(to_regclass(format('%I.%I', c.table_schema, c.table_name)), c.ordinal_position)
+                        = 'honua:import-bookkeeping:v1') IS TRUE AS is_internal_import_column
                 FROM information_schema.columns c
                 LEFT JOIN (
                     SELECT a.attname as column_name
@@ -438,7 +441,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     DataType = reader.GetString(1),
                     IsNullable = reader.GetString(2) == "YES",
                     IsPrimaryKey = reader.GetBoolean(4),
-                    MaxLength = reader.IsDBNull(3) ? null : reader.GetInt32(3)
+                    MaxLength = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                    IsInternalImportColumn = reader.GetBoolean(5)
                 };
 
                 columns.Add(columnInfo);

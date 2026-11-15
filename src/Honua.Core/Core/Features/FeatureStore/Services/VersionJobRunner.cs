@@ -26,6 +26,7 @@ namespace Honua.Core.Features.FeatureStore.Services;
 public sealed partial class VersionJobRunner : IVersionJobRunner
 {
     private static readonly ActivitySource ActivitySource = new("Honua", "1.0.0");
+    private static readonly TimeSpan TerminalSaveRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IVersionJobStore _jobStore;
@@ -154,11 +155,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             activity?.SetTag("honua.version.applied_changes", completed.AppliedChanges);
             activity?.SetTag("honua.version.outcome", "succeeded");
             activity?.SetStatus(ActivityStatusCode.Ok);
-            await store.SaveAsync(completed, CancellationToken.None).ConfigureAwait(false);
             if (completed.Status == VersionJobStatus.Succeeded)
             {
                 await InvalidateQueryResponsesBestEffortAsync(scope.ServiceProvider).ConfigureAwait(false);
             }
+            await SaveTerminalStateAsync(completed).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
         {
@@ -210,9 +211,6 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         }
     }
 
-    // Best-effort: the terminal transition is recorded through the singleton job store (the DI scope
-    // may already be gone when the failure was in the prologue), and a store outage while saving must
-    // not become a second unobserved exception on this detached task.
     private async Task InvalidateQueryResponsesBestEffortAsync(IServiceProvider services)
     {
         try
@@ -233,13 +231,28 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
 
     private async Task SaveTerminalStateAsync(VersionJob job)
     {
-        try
+        var shutdownToken = _lifetime?.ApplicationStopping ?? CancellationToken.None;
+        while (true)
         {
-            await _jobStore.SaveAsync(job, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
+            try
+            {
+                await _jobStore.SaveAsync(job, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
+            }
+
+            // Retain the operation's original outcome through an outage without replaying it.
+            try
+            {
+                await Task.Delay(TerminalSaveRetryDelay, shutdownToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
     }
 

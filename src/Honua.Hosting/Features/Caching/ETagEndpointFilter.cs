@@ -76,6 +76,8 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
                 return result; // Could not compute ETag, return original result
             }
 
+            etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag).ConfigureAwait(false);
+
             // Check conditional headers
             var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
             var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
@@ -107,13 +109,15 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         return result;
     }
 
-    private ValueTask<object> HandleObjectWithETag(HttpContext httpContext, object result, IETagService etagService)
+    private async ValueTask<object> HandleObjectWithETag(HttpContext httpContext, object result, IETagService etagService)
     {
         var etag = ComputeETagForValueResult(result, etagService, _serializerOptions);
         if (etag == null)
         {
-            return ValueTask.FromResult<object>(result);
+            return result;
         }
+
+        etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag).ConfigureAwait(false);
 
         var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
         var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
@@ -122,18 +126,18 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
         {
             Log.PreconditionFailed(_logger, requestPath, ifMatch, etag);
-            return ValueTask.FromResult<object>(Results.StatusCode((int)HttpStatusCode.PreconditionFailed));
+            return Results.StatusCode((int)HttpStatusCode.PreconditionFailed);
         }
 
         if (!etagService.IsModified(ifNoneMatch, etag))
         {
             Log.NotModified(_logger, requestPath, ifNoneMatch, etag);
-            return ValueTask.FromResult<object>(new NotModifiedWithETagResult(etag, etagService));
+            return new NotModifiedWithETagResult(etag, etagService);
         }
 
         etagService.SetCacheHeaders(httpContext.Response, etag);
         Log.ETagGenerated(_logger, requestPath, etag);
-        return ValueTask.FromResult<object>(result);
+        return result;
     }
 
     private string? ComputeETagForValueResult(

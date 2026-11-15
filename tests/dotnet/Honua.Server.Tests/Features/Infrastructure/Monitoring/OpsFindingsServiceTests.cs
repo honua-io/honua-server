@@ -32,8 +32,54 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// rule at a time against fake seams.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OpsFindingsServiceTests
+public sealed partial class OpsFindingsServiceTests
 {
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ScheduledSelfChecks_AppearOnSharedFindingsSurface()
+    {
+        var source = Substitute.For<IOpsSelfCheckSource>();
+        source.CertificateExpiresAt.Returns(DateTimeOffset.UtcNow.AddDays(10));
+        source.CurrentVersion.Returns("2026.1");
+        source.ReadIdentityProvidersAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsIdentityProviderHealth>());
+        source.ReadLatestReleaseAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<OpsPublishedRelease?>(null));
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new()),
+            new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            extendedSignals: new OpsFindingsExtendedSignals { SelfChecks = new(TimeProvider.System, source) });
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        var finding = Assert.Single(evaluation.Findings, finding => finding.Rule == OpsSelfChecks.CertificateRule);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_FailedSelfCheckCollection_PublishesIncompleteEvidence()
+    {
+        var source = Substitute.For<IOpsSelfCheckSource>();
+        source.CurrentVersion.Returns("2026.1");
+        source.ReadIdentityProvidersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<IReadOnlyList<OpsIdentityProviderHealth>>(new InvalidOperationException()));
+        source.ReadLatestReleaseAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<OpsPublishedRelease?>(null));
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new()),
+            new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            extendedSignals: new OpsFindingsExtendedSignals { SelfChecks = new(TimeProvider.System, source) });
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        Assert.Contains(evaluation.Findings, finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Contains(evaluation.Posture.Sources, item =>
+            item.BackendKind != EvidencePostureVocabulary.BackendKinds.Composite
+            && !EvidencePostureFactory.IsActionable(item)
+            && item.SourceId.Contains("self-check", StringComparison.Ordinal));
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -139,9 +185,11 @@ public sealed class OpsFindingsServiceTests
         Assert.False(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _));
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData(2, 2)]
+    [InlineData(600, 500)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction()
+    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction(int deadLetters, int expectedBound)
     {
         // #2556: the registered alerts.redrive_dead_letters actuator (#2579) means dead-letters now
         // carry a real recommended action instead of being purely informational.
@@ -149,7 +197,7 @@ public sealed class OpsFindingsServiceTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
-            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = deadLetters },
         };
         var service = CreateService(alertHealth: alertHealth);
 
@@ -161,6 +209,9 @@ public sealed class OpsFindingsServiceTests
         Assert.NotNull(finding.RecommendedAction);
         Assert.Equal(OperationClass.AdminConfigChange, finding.RecommendedAction!.Kind);
         Assert.Contains("\"action\":\"alerts.redrive_dead_letters\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Contains($"\"maxCount\":{expectedBound}", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Equal(expectedBound, finding.RecommendedAction.BlastRadius);
+        Assert.False(finding.RecommendedAction.AutoSafe);
     }
 
     [UnitTest]

@@ -3,6 +3,10 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Observability.Abstractions;
+#if !HONUA_EXCLUDE_AWS
+using Honua.Server.Features.Infrastructure.Caching;
+#endif
 using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.Options;
@@ -17,7 +21,11 @@ internal static class BatchAndDeployBackendsRegistration
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
+        services.AddOptions<AwsDeploymentAlarmOptions>().BindConfiguration(AwsDeploymentAlarmOptions.SectionName);
+        services.AddSingleton<IAwsDeploymentAlarmClient, AwsSdkDeploymentAlarmClient>();
+        services.AddSingleton<IAwsDeploymentAlarmAdmission, AwsDeploymentAlarmAdmission>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
+        services.AddScoped<IOpsExternalEventConsumer, DeploymentSettledCdnConsumer>();
         services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
         services.AddSingleton<ILambdaAliasRecycle, AwsSdkLambdaAliasRecycle>();
         services.AddSingleton<Honua.ControlPlane.Executors.IGovernedWorkloadExecutor, Honua.ControlPlane.Executors.AwsGovernedWorkloadExecutor>();
@@ -63,6 +71,9 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
+        services.AddSingleton(sp => new AwsEcsAlbDeployClients(
+            sp.GetRequiredService<IAwsAlbClient>(), sp.GetRequiredService<IAwsEcsClient>(),
+            sp.GetRequiredService<IRollbackDataPlaneProbe>()));
         services.AddSingleton<AwsEcsAlbDeployBackend>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
