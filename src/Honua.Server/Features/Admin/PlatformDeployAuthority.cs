@@ -16,7 +16,8 @@ internal static class PlatformDeployAuthority
     internal const string DenialMessage =
         "Platform administration requires a platform administrator when multi-tenancy is enabled.";
 
-    internal static RouteGroupBuilder RequirePlatformAdminAuthority(this RouteGroupBuilder builder)
+    internal static TBuilder RequirePlatformAdminAuthority<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
         => builder.AddEndpointFilter(async (invocation, next) =>
         {
             var denial = Deny(invocation.HttpContext);
