@@ -36,6 +36,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
         "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
         "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
+        "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
         "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql"
     ];
 
