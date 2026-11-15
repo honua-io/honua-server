@@ -59,6 +59,24 @@ class RetiredCacheTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.check().returncode, 0)
 
+    def test_unrelated_words_and_identifiers_pass(self):
+        self.write("src/locks.cs", "AcquireDistributedLockAsync();\n")
+        self.write("LICENSE.txt", "Redistribution and use are permitted.\nredistribution\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_retired_cache_identifier_tokens_fail(self):
+        references = ["RedisCache", "AddStackExchangeRedisCache", "redisClient",
+                      "REDIS_URL", "Redis7", "IRedisCache", "StackExchange.ReDiS"]
+        for index, reference in enumerate(references):
+            self.write(f"src/reference-{index}.txt", reference + "\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for index in range(len(references)):
+            self.assertIn(f"src/reference-{index}.txt:1:", result.stdout)
+
     def test_similar_names_are_not_exempt(self):
         self.write("src/ChangeLogRedis.cs", "Redis\n")
         self.write("docs/third-party-notices-guide.md", "Redis\n")

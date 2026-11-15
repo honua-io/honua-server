@@ -28,6 +28,18 @@ def git_diff(revisions, options):
     ])
 
 
+def mentions_retired_cache(line: str) -> bool:
+    for identifier in re.findall(r"[A-Za-z]+", line):
+        if identifier.casefold() == "redis":
+            return True
+        # Recognize PascalCase, camelCase and acronym boundaries in API names.
+        words = re.sub(r"([A-Z])([A-Z][a-z])", r"\1 \2", identifier)
+        words = re.sub(r"([a-z])([A-Z])", r"\1 \2", words)
+        if "redis" in (word.casefold() for word in words.split()):
+            return True
+    return False
+
+
 def violations(revisions, path):
     patch = git_diff(revisions, ["--text", "--unified=0", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"])
     line_number = 0
@@ -36,7 +48,7 @@ def violations(revisions, path):
         if hunk:
             line_number = int(hunk.group(1))
         elif line_number and line.startswith("+"):
-            if "redis" in line.casefold():
+            if mentions_retired_cache(line):
                 yield f"{path}:{line_number}: remove retired cache dependency or mention"
             line_number += 1
         elif line.startswith(" "):
