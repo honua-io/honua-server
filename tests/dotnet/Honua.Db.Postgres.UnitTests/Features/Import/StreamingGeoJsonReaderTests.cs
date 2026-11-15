@@ -186,11 +186,10 @@ public sealed class StreamingGeoJsonReaderTests
         tags[1].GetProperty("kind").GetString().Should().Be("commercial");
     }
 
-    [global::Xunit.Trait("Tier", "Fast")]
     [UnitTest]
     public async Task ValidateAsync_NullGeometry_ImportsTheFeatureWithAWarning()
     {
-        // RFC 7946 section 3.2 allows "geometry": null for an unlocated feature (#7732).
+        // RFC 7946 section 3.2 allows "geometry": null for an unlocated feature.
         var json = JsonSerializer.Serialize(new
         {
             type = "FeatureCollection",
@@ -246,6 +245,7 @@ public sealed class StreamingGeoJsonReaderTests
             && issue.FeatureIndex == 151);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ValidateAsync_WithSelfIntersectingPolygon_ReportsNonFatalRepairWarning()
     {

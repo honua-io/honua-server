@@ -36,7 +36,7 @@ class ConsoleLifecycleTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual(CONSOLE_WEB_IMAGE, json.loads(rendered.stdout)['services']['console']['image'])
 
     def test_console_profile_keeps_customer_override_order(self):
-        # Customer overrides listed after the Console overlay must keep winning on every run (#7735).
+        # Customer overrides listed after the Console overlay must keep winning on every run.
         customer = 'compose.yaml:compose.executor.yaml:compose.console.yaml:compose.customer.yaml:compose.executor.image.yaml'
         with patch.object(compose_quickstart, 'console_image_settings', return_value={}):
             unchanged = compose_quickstart.console_profile_settings(

@@ -335,7 +335,7 @@ internal sealed partial class StreamingGeoJsonReader
         public string? RootProperty { get; set; }
 
         // Errors and warnings have separate budgets, so advisory warnings (such as many unlocated
-        // features) can never use up the room a later error needs to fail the file (#7732).
+        // features) can never use up the room a later error needs to fail the file.
         public void AddIssues(IEnumerable<ImportValidationIssue> issues)
         {
             foreach (var issue in issues)
@@ -585,7 +585,7 @@ internal sealed partial class StreamingGeoJsonReader
 
         if (geometryElement.ValueKind == JsonValueKind.Null)
         {
-            // RFC 7946 section 3.2 allows an unlocated feature; it is imported without geometry (#7732).
+            // RFC 7946 section 3.2 allows an unlocated feature; it is imported without geometry.
             issues.Add(ImportValidationIssue.Create(
                 ImportValidationErrorCodes.GeometryMissing,
                 "GeoJSON feature has null geometry; it is imported without geometry.",
