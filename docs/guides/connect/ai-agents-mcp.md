@@ -53,9 +53,11 @@ Clients that declare neither mode, and legacy sessions, get the same results as 
 
 ## API-key proposals
 
-Published MCP tools `honua_admin_api_key_create` and `honua_admin_api_key_revoke` submit proposals through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; it does not create or revoke a key. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Folder mutations use the same proposal-only runtime. Operator-gated tools without a proposal adapter retain their approval-required refusal.
+The published MCP tool `honua_admin_api_key_revoke` submits a proposal through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; the key remains active until approved execution. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Folder mutations use the same proposal-only runtime. Operator-gated tools without a proposal adapter retain their approval-required refusal.
 
-One authorized human resolves the sealed proposal through the [interactive Console approval flow](../secure/authentication.md#human-operation-approval). The requester may be that human; an API key or MCP bearer cannot approve. Replay checks current original-requester authority and uses that original principal, with a single execution claim. Key creation returns an opaque secret reference; the one-time key stays in the protected secret channel and must not enter model context or transcripts. A client tool-consent callback does not constitute server approval.
+One authorized human resolves the sealed proposal through the [interactive Console approval flow](../secure/authentication.md#human-operation-approval). The requester may be that human; an API key or MCP bearer cannot approve. Replay checks current original-requester authority and uses that original principal, with a single execution claim. A client tool-consent callback does not constitute server approval.
+
+API-key creation and rotation are excluded from the MCP catalog because they produce one-time secret material. Create or rotate keys through the protected interactive Console/admin flow. Keep the one-time key in its protected secret channel and out of model context and transcripts; do not ask an agent to call an API-key creation or rotation tool.
 
 Clients may send one printable `Idempotency-Key` header of up to 128 characters on proposal calls. The runtime binds it to the authenticated principal, tenant, proposal mode and request fingerprint. An identical retry returns the existing proposal; changed input cannot reuse that key. Proposal calls bypass the published response cache. Missing durable proposal, audit or secret-aware runtime support fails closed. This source behavior does not establish installed qualification.
 
@@ -337,7 +339,21 @@ Required-input descriptions identify caller-supplied values or their producer to
 
 The `configure` inspection stage exposes import formats and limits, file and URL previews, and connection-table validation through the canonical admin operations. These tools require admin authorization and do not import or edit feature data. For `honua_admin_import_preview`, supply base64-encoded `file` content and `fileName` with its format extension. URL preview requires `sourceUrl`. Table validation requires a connection `id` from `honua_admin_connections_list` and `schema` / `table` from `honua_admin_connection_tables_list`.
 
-Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `serviceLayerIndex` from `honua_list_layers`, paired with that row's `serviceId`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+
+For `honua_render_map`, put the discovered pair inside `layers`. For example,
+if discovery selected `city-data` at index zero, these arguments render that
+layer over an illustrative extent in EPSG:4326:
+
+```json
+{
+  "layers": [{ "serviceId": "city-data", "serviceLayerIndex": 0 }],
+  "bbox": [-123, 37, -122, 38],
+  "bboxSrid": 4326
+}
+```
+
+Replace the example pair and extent with the selected layer and the requested area.
 
 Layer display and spatial configuration are available through the admin `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
