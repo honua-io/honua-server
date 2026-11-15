@@ -78,8 +78,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     // fails and every AutoPublish import reports "publishing did not complete". The
     // Postgres store implements this seam; a non-implementing test double falls back to
     // the legacy throw-on-missing GetCurrentAsync behavior below.
-    private readonly Features.Metadata.PostgresMetadataV2GraphStore? _metadataWriteBaseReader =
-        metadataGraphStore as Features.Metadata.PostgresMetadataV2GraphStore;
+    private readonly Features.Metadata.IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader =
+        metadataGraphStore as Features.Metadata.IMetadataV2GraphWriteBaseReader;
     private readonly ILogger<PostgreSqlLayerPublishingService> _logger = logger;
     private readonly int _materializationTimeoutSeconds =
         (publishingOptions ?? new LayerPublishingOptions()).GetValidatedMaterializationTimeoutSeconds();

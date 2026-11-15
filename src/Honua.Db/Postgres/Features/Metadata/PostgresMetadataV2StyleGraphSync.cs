@@ -23,7 +23,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
     // from the persisted snapshot only — never the V1-catalog compat synthesis that
     // GetCurrentAsync performs for serving paths (honua-server#1412). Building on a
     // synthesized-but-unpersisted base would fail SaveAsync's reconciliation.
-    private readonly PostgresMetadataV2GraphStore? _writeBaseReader;
+    private readonly IMetadataV2GraphWriteBaseReader? _writeBaseReader;
     private readonly IStyleCatalog _styleCatalog;
     private readonly ILogger<PostgresMetadataV2StyleGraphSync> _logger;
 
@@ -33,7 +33,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         ILogger<PostgresMetadataV2StyleGraphSync> logger)
     {
         _graphStore = graphStore ?? throw new ArgumentNullException(nameof(graphStore));
-        _writeBaseReader = graphStore as PostgresMetadataV2GraphStore;
+        _writeBaseReader = graphStore as IMetadataV2GraphWriteBaseReader;
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }

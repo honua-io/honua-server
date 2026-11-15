@@ -22,7 +22,7 @@ namespace Honua.Db.Postgres.Features.Metadata;
 /// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
 /// revision per environment.
 /// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphRevisionProbe
+internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader, IMetadataV2GraphRevisionProbe
 {
     // Shared with schema-coupled metadata publishers such as the demo STAC seed.
     // The environment hash is the second key so unrelated environments can publish concurrently.
@@ -118,7 +118,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     /// <inheritdoc />
     public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
         // Write/publish base load: only the genuinely-activated snapshot, never the V1
-        // compatibility synthesis.
+        // compat synthesis. See IMetadataV2GraphWriteBaseReader for why. (honua-server#1412.)
         => TryLoadCurrentAsync(cancellationToken);
 
     /// <summary>
@@ -276,36 +276,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             }
         }
 
-        // Revisions are a store-owned allocation, not a caller-owned identifier. The
-        // caller necessarily builds its document before this lock is acquired; another
-        // publisher may therefore have consumed the proposed revision, and an interrupted
-        // writer may have left a higher orphan snapshot. Allocate above every retained
-        // snapshot while holding the shared environment lock.
-        graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
-        var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-        graph = graph with { Revision = revision };
-        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        var etag = ComputeEtag(json);
-
-        // Bootstrap reconciliation (honua-server#1395): when no current snapshot is
-        // activated for this environment the caller (LoadCurrentOrEmptyGraphAsync) started
-        // from an empty graph and is forcing a first write at a low revision. A shared or
-        // partially-written database can still carry orphaned sidecar rows (e.g. a prior
-        // RefreshSidecarsAsync that committed before metadata_v2_current did). On databases
-        // created before migration 046 those rows also collided with the then-unique
-        // idx_metadata_v2_services_name and surfaced as a raw Postgres 23505. When
-        // bootstrapping, clear stale sidecar rows for the whole environment (all revisions)
-        // rather than only the target (environment, revision), so the first write reconciles
-        // cleanly instead of 500ing the layer-publish path and never leaves orphaned
-        // revisions behind.
-        var isBootstrap = current is null;
-
-        await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
-        await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
-        await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
-        await PruneSnapshotsAsync(connection, transaction, graph.Revision, cancellationToken).ConfigureAwait(false);
-
-        var snapshot = new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
+        var snapshot = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
         var commitWasReconciled = false;
         try
         {

@@ -79,6 +79,9 @@ internal sealed class TimeInfoResponse
 /// </summary>
 internal sealed class UpdateAccessPolicyRequest
 {
+    // Optional exact metadata ETag returned by settings inspection. A stale value rejects the update.
+    public string? ExpectedMetadataEtag { get; init; }
+
     /// <summary>Whether anonymous access is allowed.</summary>
     public bool? AllowAnonymous { get; init; }
 
