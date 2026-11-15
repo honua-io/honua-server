@@ -12,24 +12,24 @@ namespace Honua.Hosting.UnitTests.Features.Caching;
 public sealed class AuthenticationResponseCacheMiddlewareTests
 {
     [UnitTheory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void ApplyFinalPolicy_PreservesTransformationRefusalWhilePreventingStorage(bool authenticated, bool noTransform)
+    [InlineData("anonymous", "no-store")]
+    [InlineData("anonymous", "no-store, no-transform")]
+    [InlineData("authenticated", "no-store")]
+    [InlineData("authenticated", "no-store, no-transform")]
+    public void ApplyFinalPolicy_PreservesTransformationRefusalWhilePreventingStorage(string actor, string responsePolicy)
     {
         var context = new DefaultHttpContext();
-        if (authenticated)
+        if (actor == "authenticated")
         {
             context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "subscriber")], "Bearer"));
         }
 
-        context.Response.Headers.CacheControl = noTransform ? "no-store, no-transform" : "no-store";
+        context.Response.Headers.CacheControl = responsePolicy;
 
         AuthenticationResponseCacheMiddleware.ApplyFinalPolicy(context);
 
         var cacheControl = context.Response.GetTypedHeaders().CacheControl!;
-        cacheControl.NoTransform.Should().Be(noTransform);
+        cacheControl.NoTransform.Should().Be(responsePolicy.Contains("no-transform", StringComparison.Ordinal));
         cacheControl.NoStore.Should().BeTrue();
         cacheControl.Private.Should().BeTrue();
         cacheControl.Public.Should().BeFalse();
