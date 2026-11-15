@@ -1656,8 +1656,12 @@ internal sealed partial class Wfs20Handler
             MetadataV2FieldType.BigInteger => "xsd:long",
             MetadataV2FieldType.Double => "xsd:double",
             MetadataV2FieldType.Float => "xsd:float",
+            MetadataV2FieldType.Decimal => "xsd:decimal",
             MetadataV2FieldType.Boolean => "xsd:boolean",
             MetadataV2FieldType.DateTime => "xsd:dateTime",
+            // Offset timestamps stay dateTime so clients keep a temporal type. xsd:dateTime
+            // accepts a numeric zone; string would drop the offset from the schema.
+            MetadataV2FieldType.TimestampOffset => "xsd:dateTime",
             MetadataV2FieldType.Date => "xsd:date",
             MetadataV2FieldType.Time => "xsd:time",
             MetadataV2FieldType.Binary => "xsd:base64Binary",
