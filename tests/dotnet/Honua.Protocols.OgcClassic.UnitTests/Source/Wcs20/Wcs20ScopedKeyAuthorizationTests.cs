@@ -323,13 +323,13 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
             EnabledProtocols = ["FeatureServer"],
             AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
         };
-        var roads = new MetadataV2Resource
+        var roads = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "roads" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
         };
-        var featurePublication = new MetadataV2Publication
+        var featurePublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-roads", Name = "roads" },
             ServiceId = feature.Metadata.Id,
@@ -407,10 +407,10 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
     private static MetadataV2Graph Graph()
     {
         var policy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] };
-        var resources = ResourceNames.Select((name, index) => new MetadataV2Resource
+        var resources = ResourceNames.Select((name, index) => new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"resource-{index + 1}", Name = name },
-            Type = MetadataV2ResourceType.RasterDataset,
+            Type = MetadataV2ObjectType.RasterDataset,
             StorageBindingIds = [$"binding-{index + 1}"],
             PrimaryStorageBindingId = $"binding-{index + 1}",
             AccessPolicy = policy
@@ -430,14 +430,14 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
                 ResourceId = resource.Metadata.Id,
                 StorageLayerId = 101 + index
             }).ToArray(),
-            Publications = resources.Select((resource, index) => new MetadataV2Publication
+            Publications = resources.Select((resource, index) => new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = $"publication-{index + 1}", Name = resource.Metadata.Name },
                 ServiceId = "service-imagery",
                 ResourceId = resource.Metadata.Id,
                 StorageBindingId = $"binding-{index + 1}",
                 LayerIndex = index + 1,
-                Identifier = new MetadataV2PublicationIdentifier { Value = (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
+                Identifier = new MetadataV2LayerIdentifier { Value = (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
             }).ToArray()
         };
     }

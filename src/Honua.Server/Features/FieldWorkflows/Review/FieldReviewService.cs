@@ -1,13 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Security.Claims;
-using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FieldWorkflows.Review;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using System.Globalization;
+using System.Text.Json;
 
 namespace Honua.Server.Features.FieldWorkflows.Review;
 
@@ -98,7 +98,7 @@ internal sealed class FieldReviewService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must be a valid assignment request.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var state = await _store.AssignAsync(submissionId, request.AssignedTo, actor, context.RequestAborted).ConfigureAwait(false);
         if (state is null)
         {
@@ -129,7 +129,7 @@ internal sealed class FieldReviewService
         }
 
         var expectedETag = context.Request.Headers["If-Match"].FirstOrDefault();
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
 
         FieldReviewState? state;
         try
@@ -163,7 +163,7 @@ internal sealed class FieldReviewService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must include a non-empty comment 'body'.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var comment = await _store.AddCommentAsync(submissionId, request.Body, request.CorrectionRequest, actor, context.RequestAborted)
             .ConfigureAwait(false);
         if (comment is null)
@@ -245,11 +245,6 @@ internal sealed class FieldReviewService
         response.Headers.Pragma = "no-cache";
     }
 
-    private static string ResolveActor(HttpContext context)
-        => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-           ?? context.User.Identity?.Name
-           ?? AuditEvent.AnonymousActor;
-
     private static string JsonString(string? value)
         => value is null ? "null" : "\"" + JsonEncodedText.Encode(value) + "\"";
 
@@ -263,7 +258,7 @@ internal sealed class FieldReviewService
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.AdminAction,
-            Actor = ResolveActor(context),
+            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
             ActorType = context.User.Identity?.IsAuthenticated == true ? AuditActorType.UserId : AuditActorType.Anonymous,
             ResourceType = "field_submission",
             ResourceId = submissionId.ToString(),

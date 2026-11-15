@@ -35,6 +35,30 @@ public sealed class OutputCacheStatusTests
     }
 
     [Fact]
+    public async Task CachedRoute_GenerationChangesWithIdenticalContent_ReplacesValidatorAndCacheEntry()
+    {
+        await using var app = await StartAsync();
+        using var client = app.GetTestClient();
+        const string path = "/ogc/collections/parcels/tiles/0/0/0";
+        using var first = await client.GetAsync(path);
+        using var hit = await client.GetAsync(path);
+        hit.Headers.GetValues(OutputCacheStatus.HeaderName).Single().Should().Contain("hit;");
+        hit.Headers.ETag.Should().Be(first.Headers.ETag);
+
+        app.Services.GetRequiredService<IConfigurationGenerationSource>()
+            .GetGenerationAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(43L));
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.IfNoneMatch.Add(first.Headers.ETag!);
+        using var changed = await client.SendAsync(request);
+
+        changed.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        changed.Headers.GetValues(OutputCacheStatus.HeaderName).Single().Should().Contain("fwd=miss;");
+        changed.Headers.ETag.Should().NotBe(first.Headers.ETag);
+        changed.Headers.ETag!.Tag.Should().EndWith("-g43\"");
+        (await changed.Content.ReadAsStringAsync()).Should().Be(await first.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task CachedRoute_CredentialedRead_ReportsBypass()
     {
         await using var app = await StartAsync();
@@ -62,6 +86,10 @@ public sealed class OutputCacheStatusTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
+        builder.Services.AddETags();
+        var generation = Substitute.For<IConfigurationGenerationSource>();
+        generation.GetGenerationAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(42L));
+        builder.Services.AddSingleton(generation);
         builder.Services.AddOutputCache(options => options.AddBasePolicy(policy =>
         {
             policy.AddPolicy<RouteTagOutputCachePolicy>();

@@ -822,13 +822,13 @@ internal static partial class StaticMapEndpoints
         }
     }
 
-    private static int ResolveLayerSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveLayerSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? SpatialReference.WGS84.Wkid;
 
     private readonly record struct StaticMapRenderLayer(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int PublicLayerId,
         int StorageLayerId,
         MetadataV2GeometryType GeometryType);

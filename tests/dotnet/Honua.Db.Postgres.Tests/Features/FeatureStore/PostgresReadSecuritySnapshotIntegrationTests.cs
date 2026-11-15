@@ -32,9 +32,9 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
             INSERT INTO {{_schema}}.points VALUES
                 (1, 'a', 'one'), (2, 'a', 'two'), (3, 'b', 'three'), (4, 'b', 'four');
             """);
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns((SqlFragment?)null);
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
     }
 
@@ -50,8 +50,8 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
 
         result.Count.Should().Be(4);
         result.Items.Select(item => item.Id).Should().Equal(1L, 2L, 3L, 4L);
-        await _rows.Received(1).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
-        await _masks.Received(1).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
+        await _rows.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
+        await _masks.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTheory]
@@ -61,7 +61,7 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
     public async Task CountedRead_PolicyChangesDuringOperation_CountAndFeaturesUseInitialPolicy(string operation)
     {
         var resolutions = 0;
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(_ => ++resolutions == 1 ? null : new SqlFragment("\"tenant\" = @p0", ["a"]));
 
         var result = await ReadAsync(CreateReader(), operation);
@@ -82,9 +82,9 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
         first.TotalCount.Should().Be(4);
         first.Items.Should().OnlyContain(item => item.Attributes.ContainsKey("secret"));
 
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(new SqlFragment("\"tenant\" = @p0", ["a"]));
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("secret"));
 
         var second = await reader.QueryAsync(1, query);
@@ -93,8 +93,8 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
         second.Items.Should().OnlyContain(item => !item.Attributes.ContainsKey("secret"));
         query.EnforcedSqlFilter.Should().BeNull();
         query.EnforcedMaskedFields.Should().BeNull();
-        await _rows.Received(2).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
-        await _masks.Received(2).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
+        await _rows.Received(2).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
+        await _masks.Received(2).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -103,12 +103,12 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
         var reader = CreateReader();
         var query = new FeatureQuery();
         (await reader.CountAsync(1, query)).Should().Be(4);
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(new SqlFragment("\"tenant\" = @p0", ["b"]));
 
         (await reader.CountAsync(1, query)).Should().Be(2);
-        await _rows.Received(2).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
-        await _masks.Received(2).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
+        await _rows.Received(2).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
+        await _masks.Received(2).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTheory]
@@ -117,9 +117,9 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
     [InlineData("page-max")]
     public async Task CountedRead_WithPolicies_PreservesRowFilterAndMasks(string operation)
     {
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(new SqlFragment("\"tenant\" = @p0", ["a"]));
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("secret"));
 
         var result = await ReadAsync(CreateReader(), operation);
@@ -131,7 +131,7 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
     [IntegrationTest]
     public async Task QueryAsync_LiteralWildcardIsEmpty_ExpandedNamesKeepVisibleUnmaskedFields()
     {
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("secret"));
         var reader = CreateReader();
 
@@ -185,7 +185,7 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
         var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
             (DbConnection)await fixture.DataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "security-snapshot", Name = "points" },
             SchemaFields =

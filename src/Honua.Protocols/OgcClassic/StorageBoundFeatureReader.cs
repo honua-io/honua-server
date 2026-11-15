@@ -17,8 +17,8 @@ internal static class StorageBoundFeatureReader
         FeatureProviderQueryRouter? router,
         MetadataV2GraphSnapshot? snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Object resource,
+        MetadataV2Layer? publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
@@ -45,7 +45,7 @@ internal static class StorageBoundFeatureReader
     }
 
     internal static bool TargetsManagedFeatureTable(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2StorageBinding? binding)
     {
         if (binding is null)

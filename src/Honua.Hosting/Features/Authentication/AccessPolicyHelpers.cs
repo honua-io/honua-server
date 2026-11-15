@@ -97,7 +97,7 @@ internal static class AccessPolicyHelpers
 
     public static IResult? RequireResourceAccess(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
     {
@@ -117,7 +117,7 @@ internal static class AccessPolicyHelpers
 
     public static Task<IResult?> RequireResourceAccessAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read,
         CancellationToken cancellationToken = default)
@@ -130,7 +130,7 @@ internal static class AccessPolicyHelpers
 
     public static async Task<IResult?> RequireResourceAccessAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AuthorizationOperation operation,
         MetadataV2Service? service = null,
         CancellationToken cancellationToken = default)
@@ -199,7 +199,7 @@ internal static class AccessPolicyHelpers
 
     public static async Task<AccessDecision> EvaluateResourceAccessAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -225,7 +225,7 @@ internal static class AccessPolicyHelpers
         ClaimsPrincipal principal,
         string? tenantId,
         bool applyTenantScope,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken,
@@ -442,7 +442,7 @@ internal static class AccessPolicyHelpers
 
     public static bool IsResourceAccessible(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
         => EvaluateResourceAccess(context, resource, service, scope).IsAllowed;
@@ -450,7 +450,7 @@ internal static class AccessPolicyHelpers
     // A foreign-tenant resource is forbidden before the coarse seam so list surfaces hide it the same way an item check does.
     public static AccessDecision EvaluateResourceAccess(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
     {
@@ -518,7 +518,7 @@ internal static class AccessPolicyHelpers
 
     public static async Task<bool> IsResourceAccessibleAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -531,7 +531,7 @@ internal static class AccessPolicyHelpers
 
     public static bool AllowsAnonymousResourceAccess(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
     {
@@ -562,7 +562,7 @@ internal static class AccessPolicyHelpers
 
     public static async Task<IResult?> RequireAnyMutatingOperationAccessAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         CancellationToken cancellationToken = default)
     {
@@ -593,7 +593,7 @@ internal static class AccessPolicyHelpers
     public static async Task<(T[] Resources, IResult? Error)> FilterAccessibleResourcesAsync<T>(
         HttpContext context,
         IEnumerable<T> candidates,
-        Func<T, MetadataV2Resource> resourceSelector,
+        Func<T, MetadataV2Object> resourceSelector,
         MetadataV2Service service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -623,7 +623,7 @@ internal static class AccessPolicyHelpers
 
     public static Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
         HttpContext context,
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -631,7 +631,7 @@ internal static class AccessPolicyHelpers
 
     public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
         HttpContext context,
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         MetadataV2Service? service,
         IReadOnlyList<AuthorizationOperation> operations,
         CancellationToken cancellationToken = default)
@@ -643,8 +643,8 @@ internal static class AccessPolicyHelpers
             throw new ArgumentException("At least one operation is required.", nameof(operations));
         }
 
-        var decisions = new Dictionary<MetadataV2Resource, AccessDecision>(ReferenceEqualityComparer.Instance);
-        foreach (var resource in resources.Distinct<MetadataV2Resource>(ReferenceEqualityComparer.Instance))
+        var decisions = new Dictionary<MetadataV2Object, AccessDecision>(ReferenceEqualityComparer.Instance);
+        foreach (var resource in resources.Distinct<MetadataV2Object>(ReferenceEqualityComparer.Instance))
         {
             AccessDecision? decision = null;
             foreach (var operation in operations)
@@ -668,13 +668,13 @@ internal static class AccessPolicyHelpers
 
     public static async Task<IResult?> RequireAnyResourceAccessAsync(
         HttpContext context,
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resources);
-        IReadOnlyCollection<MetadataV2Resource> candidates = resources as IReadOnlyCollection<MetadataV2Resource> ?? [.. resources];
+        IReadOnlyCollection<MetadataV2Object> candidates = resources as IReadOnlyCollection<MetadataV2Object> ?? [.. resources];
         var access = await EvaluateResourceAccessSetAsync(
             context, candidates, service, operation, cancellationToken).ConfigureAwait(false);
         return access.RequireAny(candidates);
@@ -682,7 +682,7 @@ internal static class AccessPolicyHelpers
 
     public static IResult? RequireAnyResourceAccess(
         HttpContext context,
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
         => RequireAnyDecision(
@@ -692,8 +692,8 @@ internal static class AccessPolicyHelpers
 
     internal static IResult? RequireAnyDecision(
         HttpContext context,
-        IEnumerable<MetadataV2Resource> resources,
-        Func<MetadataV2Resource, AccessDecision> evaluate)
+        IEnumerable<MetadataV2Object> resources,
+        Func<MetadataV2Object, AccessDecision> evaluate)
     {
         ArgumentNullException.ThrowIfNull(resources);
         var requiresAuth = false;
