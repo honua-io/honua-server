@@ -3,7 +3,7 @@
 
 using System.Text;
 using Honua.Core.Features.Import.Domain;
-using Honua.Db.Postgres.Features.FileImport;
+using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -46,6 +46,26 @@ public sealed class StreamingGeoJsonNullGeometryTests
         result.IsValid.Should().BeFalse();
         result.Issues.Should().Contain(issue => issue.Code == errorCode &&
             issue.Severity == ImportValidationSeverity.Error && issue.FeatureIndex == 1);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\"geometry\":{},")]
+    public async Task ValidateAsync_InvalidFeatureAfterWarningLimit_StillRejectsFile(string geometry)
+    {
+        var features = Enumerable.Repeat(
+            "{\"type\":\"Feature\",\"geometry\":null,\"properties\":{}}", 100)
+            .Append("{\"type\":\"Feature\"," + geometry + "\"properties\":{}}");
+        var json = "{\"type\":\"FeatureCollection\",\"features\":[" + string.Join(',', features) + "]}";
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        result.IsValid.Should().BeFalse();
+        result.FeatureCount.Should().Be(101);
+        result.Issues.Should().HaveCount(100);
+        result.Issues.Should().Contain(issue => issue.FeatureIndex == 101 &&
+            issue.Severity == ImportValidationSeverity.Error);
     }
 
     private static MemoryStream FeatureStream(string geometry) => new(Encoding.UTF8.GetBytes(

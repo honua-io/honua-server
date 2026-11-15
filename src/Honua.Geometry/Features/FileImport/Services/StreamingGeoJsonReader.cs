@@ -332,6 +332,23 @@ internal sealed partial class StreamingGeoJsonReader
         public string? RootProperty { get; set; }
     }
 
+    private static void AddValidationIssues(ValidationState validation, IEnumerable<ImportValidationIssue> issues)
+    {
+        foreach (var issue in issues)
+        {
+            if (validation.Issues.Count < MaxValidationIssues)
+            {
+                validation.Issues.Add(issue);
+            }
+            else if (issue.Severity == ImportValidationSeverity.Error)
+            {
+                var warningIndex = validation.Issues.FindIndex(
+                    existing => existing.Severity == ImportValidationSeverity.Warning);
+                if (warningIndex >= 0) validation.Issues[warningIndex] = issue;
+            }
+        }
+    }
+
     private int ValidateChunk(ReadOnlySpan<byte> data, bool finalBlock,
         ref JsonReaderState state, ValidationState validation)
     {
@@ -352,11 +369,8 @@ internal sealed partial class StreamingGeoJsonReader
                     if (_limits.MaxFeaturesPerFile <= 0 || validation.FeatureCount < _limits.MaxFeaturesPerFile)
                     {
                         validation.FeatureCount++;
-                        if (validation.Issues.Count < MaxValidationIssues)
-                        {
-                            validation.Issues.AddRange(ValidateFeature(feature.RootElement, validation.FeatureCount)
-                                .Take(MaxValidationIssues - validation.Issues.Count));
-                        }
+                        AddValidationIssues(validation,
+                            ValidateFeature(feature.RootElement, validation.FeatureCount));
                     }
                 }
             }
@@ -549,26 +563,8 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!root.TryGetProperty("geometry", out var geometryElement))
+        if (!TryGetLocatedGeometry(root, featureIndex, issues, out var geometryElement))
         {
-            issues.Add(ImportValidationIssue.Create(
-                ImportValidationErrorCodes.GeometryMissing,
-                "GeoJSON feature is missing geometry.",
-                featureIndex,
-                "geometry"));
-            return issues;
-        }
-
-        if (geometryElement.ValueKind == JsonValueKind.Null)
-        {
-            issues.Add(new ImportValidationIssue
-            {
-                Code = ImportValidationErrorCodes.GeometryMissing,
-                Message = "GeoJSON feature has null geometry; its attributes will be imported without a location.",
-                FeatureIndex = featureIndex,
-                Field = "geometry",
-                Severity = ImportValidationSeverity.Warning
-            });
             return issues;
         }
 
@@ -651,6 +647,35 @@ internal sealed partial class StreamingGeoJsonReader
         }
 
         return issues;
+    }
+
+    private static bool TryGetLocatedGeometry(JsonElement root, int featureIndex,
+        List<ImportValidationIssue> issues, out JsonElement geometryElement)
+    {
+        if (!root.TryGetProperty("geometry", out geometryElement))
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature is missing geometry.",
+                featureIndex,
+                "geometry"));
+            return false;
+        }
+
+        if (geometryElement.ValueKind == JsonValueKind.Null)
+        {
+            issues.Add(new ImportValidationIssue
+            {
+                Code = ImportValidationErrorCodes.GeometryMissing,
+                Message = "GeoJSON feature has null geometry; its attributes will be imported without a location.",
+                FeatureIndex = featureIndex,
+                Field = "geometry",
+                Severity = ImportValidationSeverity.Warning
+            });
+            return false;
+        }
+
+        return true;
     }
 
     private static void ValidateReservedAttributes(
