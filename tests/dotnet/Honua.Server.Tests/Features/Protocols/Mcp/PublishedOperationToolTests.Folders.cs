@@ -56,7 +56,8 @@ public sealed partial class PublishedOperationToolTests
         var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin"]);
         var forged = () => tool.InvokeAsync(http,
             Args("""{"id":"folder","If-Match":"etag","approvedProposalId":"forged","approvedPlanHash":"forged"}"""), default);
-        await forged.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>();
+        (await forged.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("approvedPlanHash").And.Contain("approvedProposalId");
         bridge.Calls.Should().Be(0);
 
         // Send only the inputs this operation advertises (plus the routing serviceName).
