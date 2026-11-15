@@ -50,6 +50,12 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     /// <summary>The service-scoped data-editor role (<c>RbacOptions.DataEditorServicePrefix</c>).</summary>
     private const string EditorRole = "data-editor:" + WebAppFixture.TestServiceId;
 
+    /// <summary>The data-editor role for the renamed branch-versioning publication.</summary>
+    private const string PublicationEditorRole = "data-editor:" + BranchVersioningPublicationFixture.ServiceName;
+
+    private const string PublicationLayerBase =
+        "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/FeatureServer/0";
+
     private const string Referer = "https://vms-authorization-proof.example/";
 
     /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
@@ -238,6 +244,80 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var document = JsonDocument.Parse(body);
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
         document.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    /// <summary>
+    /// A protected version is readable by every query caller but takes feature edits only from
+    /// its owner: a non-owner editor's applyEdits is refused and writes nothing, while the owner
+    /// edits it and the same non-owner still edits a public version of the same owner.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureEdits_ProtectedVersionOfAnotherOwner_AreDeniedAndWriteNothing()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var protectedVersion = await CreateVersionAsync(
+            _ownerToken, $"protected_edits_{suffix}", "protected-edit-description", access: "protected");
+        var publicVersion = await CreateVersionAsync(
+            _ownerToken, $"public_edits_{suffix}", "public-edit-description", access: "public");
+        var protectedGuid = protectedVersion.GetProperty("versionGuid").GetString()!;
+        var publicGuid = publicVersion.GetProperty("versionGuid").GetString()!;
+
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Create", "Update", "Delete"]);
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        var ownerToken = await IssueAsync("alice", EditorRole, PublicationEditorRole);
+        var nonOwnerToken = await IssueAsync("bob", EditorRole, PublicationEditorRole);
+
+        var deniedMarker = "vprot_denied_" + suffix;
+        using (var denied = await ApplyVersionedAddAsync(nonOwnerToken, deniedMarker, protectedGuid))
+        {
+            await AssertDeniedAsync(denied, "applyEdits");
+        }
+
+        (await VersionedCountAsync(ownerToken, deniedMarker, protectedGuid)).Should().Be(
+            0, "a denied edit must not reach the protected version");
+
+        // Positive controls: the owner edits its protected version, and the non-owner edits a
+        // public version, so the denial above is attributable to ownership of a protected version.
+        var ownerMarker = "vprot_owner_" + suffix;
+        using (var owner = await ApplyVersionedAddAsync(ownerToken, ownerMarker, protectedGuid))
+        {
+            owner.StatusCode.Should().Be(HttpStatusCode.OK, await owner.Content.ReadAsStringAsync());
+        }
+
+        (await VersionedCountAsync(ownerToken, ownerMarker, protectedGuid)).Should().Be(1);
+
+        var publicMarker = "vpub_nonowner_" + suffix;
+        using (var publicEdit = await ApplyVersionedAddAsync(nonOwnerToken, publicMarker, publicGuid))
+        {
+            publicEdit.StatusCode.Should().Be(HttpStatusCode.OK, await publicEdit.Content.ReadAsStringAsync());
+        }
+
+        (await VersionedCountAsync(nonOwnerToken, publicMarker, publicGuid)).Should().Be(1);
+    }
+
+    private Task<HttpResponseMessage> ApplyVersionedAddAsync(string token, string marker, string versionGuid)
+        => PostFormAsync(
+            token,
+            PublicationLayerBase + "/applyEdits",
+            ("adds", JsonSerializer.Serialize(new[]
+            {
+                new { attributes = new Dictionary<string, object?> { ["name"] = marker } },
+            })),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+
+    private async Task<int> VersionedCountAsync(string token, string marker, string versionGuid)
+    {
+        var where = Uri.EscapeDataString($"name='{marker}'");
+        using var response = await GetAsync(
+            token,
+            $"{PublicationLayerBase}/query?where={where}&returnCountOnly=true&gdbVersion={versionGuid}&f=json");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("count").GetInt32();
     }
 
     /// <summary>
@@ -500,13 +580,16 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             operation);
     }
 
-    private async Task<string> IssueAsync(string principalId)
+    private Task<string> IssueAsync(string principalId)
+        => IssueAsync(principalId, EditorRole);
+
+    private async Task<string> IssueAsync(string principalId, params string[] roles)
         => (await _fixture.GetService<IPortalTokenIssuer>().IssueAsync(
             new PortalTokenIssueRequest(
                 principalId,
                 principalId,
                 TenantId: null,
-                Roles: [EditorRole],
+                Roles: roles,
                 PortalTokenClientType.Referer,
                 Referer,
                 DateTimeOffset.UtcNow.AddMinutes(30)),

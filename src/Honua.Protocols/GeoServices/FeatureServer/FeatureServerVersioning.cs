@@ -20,17 +20,18 @@ internal static class FeatureServerVersioning
         HttpContext context,
         string? gdbVersion,
         CancellationToken cancellationToken)
-        => ResolveAsync(context, gdbVersion, cancellationToken);
+        => ResolveAsync(context, gdbVersion, forEdit: true, cancellationToken);
 
     public static Task<(VersionContext? Version, IResult? Error)> ResolveQueryVersionAsync(
         HttpContext context,
         string? gdbVersion,
         CancellationToken cancellationToken)
-        => ResolveAsync(context, gdbVersion, cancellationToken);
+        => ResolveAsync(context, gdbVersion, forEdit: false, cancellationToken);
 
     private static async Task<(VersionContext? Version, IResult? Error)> ResolveAsync(
         HttpContext context,
         string? gdbVersion,
+        bool forEdit,
         CancellationToken cancellationToken)
     {
         // Fast DEFAULT path: no version requested. Do not touch the entitlement service or the
@@ -73,12 +74,20 @@ internal static class FeatureServerVersioning
         // private versions from callers who do not own them.
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
         var version = versions.FirstOrDefault(item => item.VersionId == resolvedVersion.VersionId);
+        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
         if (version.VersionId != resolvedVersion.VersionId ||
-            !VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
-                ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
+            !VersionAccessPolicy.IsVersionVisible(version, callerOwner, isAdmin))
         {
             return (null, StandardErrorHelpers.CreateNotFound(
                 context, $"Version '{gdbVersion}' was not found."));
+        }
+
+        // A visible version is not necessarily writable: protected versions are read-only to
+        // everyone except their owner and administrators, matching VMS lifecycle rules.
+        if (forEdit && !VersionAccessPolicy.CanEditVersion(version, callerOwner, isAdmin))
+        {
+            return (null, StandardErrorHelpers.CreateForbidden(
+                context, $"Version '{gdbVersion}' accepts edits only from its owner."));
         }
 
         return (resolvedVersion, null);

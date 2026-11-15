@@ -20,6 +20,11 @@ internal static class VersionAccessPolicy
            || version.Access != VersionAccess.Private
            || string.Equals(version.Owner, callerName, StringComparison.OrdinalIgnoreCase);
 
+    // Feature edits follow version access: any editor may write a public version; protected and private versions take edits only from their owner and service administrators.
+    internal static bool CanEditVersion(GdbVersion version, string? callerName, bool isAdmin)
+        => version.Access == VersionAccess.Public
+           || CanManageVersion(version, callerName, isAdmin);
+
     internal static bool CanManageVersion(GdbVersion version, string? callerName, bool isAdmin)
         => isAdmin
            || string.Equals(version.Owner, callerName, StringComparison.OrdinalIgnoreCase);
