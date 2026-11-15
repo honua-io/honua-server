@@ -656,13 +656,14 @@ public sealed class MigrationBatchOrchestratorTests
         public async Task SubmitAsync(GeoservicesImportRequest request, GeoservicesImportProgress initialProgress,
             CancellationToken cancellationToken = default)
         {
-            await _requests.SetProgressAsync(request.JobId, request, cancellationToken: cancellationToken);
-            if (await _progress.GetProgressAsync(request.JobId, cancellationToken) is null)
+            var jobId = Assert.IsType<string>(request.JobId);
+            await _requests.SetProgressAsync(jobId, request, cancellationToken: cancellationToken);
+            if (await _progress.GetProgressAsync(jobId, cancellationToken) is null)
             {
-                await _progress.SetProgressAsync(request.JobId, initialProgress, cancellationToken: cancellationToken);
+                await _progress.SetProgressAsync(jobId, initialProgress, cancellationToken: cancellationToken);
             }
 
-            _queue.Add(request.JobId);
+            _queue.Add(jobId);
         }
 
         public Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
