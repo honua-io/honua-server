@@ -56,7 +56,7 @@ public static partial class GeoParquetFeatureWriter
 
     public static (ReadOnlyMemory<byte> response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
@@ -79,7 +79,7 @@ public static partial class GeoParquetFeatureWriter
 
     public static (Stream response, string contentType) FormatAsGeoParquetStream(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
@@ -217,7 +217,7 @@ public static partial class GeoParquetFeatureWriter
     }
 
     public static List<MetadataV2Field> ResolveSelectedFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         string[]? outFields)
     {
@@ -254,7 +254,7 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private static (Stream response, string contentType) CreateEmptyGeoParquet(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         string[]? outFields,
@@ -268,7 +268,7 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName, string geometryColumnName, string bboxColumnName) BuildSchema(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         string[]? outFields,
@@ -346,7 +346,7 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private static Dictionary<string, string> BuildGeoParquetMetadata(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         IReadOnlyCollection<string>? geometryTypes,
@@ -398,7 +398,7 @@ public static partial class GeoParquetFeatureWriter
         return metadata;
     }
 
-    private static double? ResolveCoordinateEpoch(MetadataV2Resource resource, bool includeGeometry, int outputSrid)
+    private static double? ResolveCoordinateEpoch(MetadataV2Object resource, bool includeGeometry, int outputSrid)
     {
         if (!includeGeometry || resource.Spatial?.StorageCrsCoordinateEpoch is not { } epoch)
         {
@@ -477,7 +477,7 @@ public static partial class GeoParquetFeatureWriter
 
     public static List<(string name, IArrowType type)> DetectRuntimeFields(
         ImmutableArray<Feature> features,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var result = new List<(string name, IArrowType type)>();
         if (features.Length == 0) return result;

@@ -16,7 +16,7 @@ internal sealed partial class PbfQueryFormatter
 {
     public (IResult response, string contentType) FormatAsPbfStream(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,

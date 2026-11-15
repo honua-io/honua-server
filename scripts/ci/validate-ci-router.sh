@@ -39,12 +39,19 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
+# Validate the projection of this head without requiring feature PRs to commit it.
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py
+fi
+
 # shellcheck source=scripts/ci/lib/router-fixtures.sh
 source "${SCRIPT_DIR}/lib/router-fixtures.sh"
 router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
+  run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
+  run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
@@ -1272,7 +1279,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocol and Host Components","Protocol Units"]'
+  '["GeoServices ImageServer 1","GeoServices ImageServer 2","GeoServices ImageServer 3","GeoServices ImageServer 4","GeoServices ImageServer 5","GeoServices ImageServer 6","OGC API Tiles Coverages and Processes 1","OGC API Tiles Coverages and Processes 2","OGC API Tiles Coverages and Processes 3","OGC API Tiles Coverages and Processes 4","OGC Classic WMTS 1","OGC Classic WMTS 2","Protocol and Host Components","Protocol Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
@@ -1734,22 +1741,17 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Maps Rendering and Records" \
+    "OGC API Maps Rendering and Records 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Maps Rendering and Records" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
-    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
-    "WFS 9" \
+    "OGC API Maps Rendering and Records 1" \
   --assert-owner \
     "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS 8" \
-  `# #3204: the ImageServer shard now holds ONLY ImageServerEndpointsTests (a single` \
-  `# 24.1m class); Catalog, Tiles and the smaller ImageServer classes moved to` \
-  `# GeoServices Catalog and ImageServer Support.` \
+  `# Method-split classes (including Wps20EndpointsTests and ImageServerEndpointsTests) are pinned` \
+  `# by shard_partitions, full-run-capacity and real-inventory tests above.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
@@ -1769,11 +1771,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "STAC and API Governance" \
+    "STAC and API Governance 2" \
   --assert-owner \
     "Honua.Server.Tests.Comprehensive.TestQualityValidationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "STAC and API Governance" \
+    "STAC and API Governance 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
@@ -1848,11 +1850,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Elevation and Terrain Analysis" \
+    "Elevation and Terrain Analysis 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving Scene Geometry and Terrain" \
+    "Raster Serving Scene Geometry and Terrain 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1865,18 +1867,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.StreamingFeatureServerEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core Spatial Query and Streaming" \
-  --assert-owner \
-    "Honua.Server.Tests.FeatureServerEndpointTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core Endpoints" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices ImageServer" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices Catalog and ImageServer Support" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
@@ -1894,10 +1884,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices GPServer Endpoints" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices GPServer SOAP" \
-  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "gRPC Protocol and Scene" \
@@ -1912,11 +1898,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices Versioning" \
+    "GeoServices Versioning 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices Geometry VectorTile and Versioning" \
+    "GeoServices Geometry VectorTile and Versioning 4" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.OData.ODataErrorHandlingTests" \
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
@@ -1936,11 +1922,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Tiles Endpoints and CRS" \
+    "OGC API Tiles Endpoints and CRS 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Tiles Coverages and Processes" \
+    "OGC API Tiles Coverages and Processes 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
@@ -1952,7 +1938,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core and Cloud Contracts" \
+    "Core and Cloud Contracts 4" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NetworkDatasetValidationTests" \
     "tests/dotnet/Honua.Routing.UnitTests/Honua.Routing.UnitTests.csproj" \
@@ -1960,7 +1946,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Routing.PgRoutingProviderIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core and Cloud Contracts" \
+    "Core and Cloud Contracts 4" \
   --assert-owner \
     "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
     "tests/dotnet/Honua.Db.Postgres.UnitTests/Honua.Postgres.UnitTests.csproj" \
@@ -1978,15 +1964,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Platform and Connections" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Admin.TileCacheJobExecutorPublishTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation 4" \
-  --assert-owner \
     "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation 4" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation 4" \
   --assert-owner \
@@ -2092,7 +2070,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Alerts.AlertNotificationRateLimiterTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Console and Alerts" \
+    "Server Features Console and Alerts 2" \
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3ShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2132,19 +2110,19 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving Scene Geometry and Terrain" \
+    "Raster Serving Scene Geometry and Terrain 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving Scene Geometry and Terrain" \
+    "Raster Serving Scene Geometry and Terrain 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving Scene Geometry and Terrain" \
+    "Raster Serving Scene Geometry and Terrain 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving Scene Geometry and Terrain"
+    "Raster Serving Scene Geometry and Terrain 1"
 else
   echo "⚠️  Skipping shard filter/test-class coverage checks (no working Python 3: tried python3/python/py)"
 fi

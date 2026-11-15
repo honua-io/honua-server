@@ -27,33 +27,28 @@ using Yarp.ReverseProxy.Configuration;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate deploy-gate certification (honua-server#4617). Rolls a real published Honua server
-/// image (the candidate, <c>HONUA_CANDIDATE_IMAGE</c>) over a distinct real previous image
-/// (<c>HONUA_PREVIOUS_IMAGE</c>) through the production deploy workflow service, reconciler, telemetry
-/// evaluator and self-hosted rolling backend, with real embedded YARP fronting real docker replicas, a
-/// real PostGIS per revision, and a real Prometheus scraping only the candidate replica. Each scenario
-/// injects a failure the gate must catch and asserts the recovery against the real front door.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The control plane under test is this source tree, hosted in-process; the replicas are the named
-/// images. Run the lane from the candidate's own source revision to certify that candidate end to end.
-/// Every scenario writes a JSON receipt (image identities, operation timeline, fault and recovery times,
-/// the gate's evidence read straight from Prometheus, and front-door traffic counts) to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when it is set, and to the test output otherwise.
-/// </para>
-/// <para>
-/// Requirements: Docker, <c>HONUA_TEST_REDIS_URL</c> for the control plane's durable workflow store, and
-/// both image references. Every test <c>[SkippableFact]</c>-skips when any of them is missing.
-/// </para>
-/// </remarks>
+// Exact-candidate deploy-gate certification. Rolls a real published Honua server
+// image (the candidate, HONUA_CANDIDATE_IMAGE) over a distinct real previous image
+// (HONUA_PREVIOUS_IMAGE) through the production deploy workflow service, reconciler, telemetry
+// evaluator and self-hosted rolling backend, with real embedded YARP fronting real docker replicas, a
+// real PostGIS per revision, and a real Prometheus scraping only the candidate replica. Each scenario
+// injects a failure the gate must catch and asserts the recovery against the real front door.
+//
+// The control plane under test is this source tree, hosted in-process; the replicas are the named
+// images. Run the lane from the candidate's own source revision to certify that candidate end to end.
+// Every scenario writes a JSON receipt (image identities, operation timeline, fault and recovery times,
+// the gate's evidence read straight from Prometheus, and front-door traffic counts) to
+// HONUA_CANDIDATE_RECEIPT_DIR when it is set, and to the test output otherwise.
+//
+// Requirements: Docker (which also hosts the PostgreSQL fixture that gives each scenario a freshly
+// migrated system database for the control plane's durable workflow store) and both image references.
+// Every test [SkippableFact]-skips when any of them is missing.
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
-public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<LocalSubstrateDockerFixture>
+public sealed class CandidateTelemetryGateCertificationTests
+    : IClassFixture<LocalSubstrateDockerFixture>, IClassFixture<LocalSubstratePostgresFixture>
 {
     private const string CandidateImageEnvVar = "HONUA_CANDIDATE_IMAGE";
     private const string PreviousImageEnvVar = "HONUA_PREVIOUS_IMAGE";
-    private const string RedisConnectionStringEnvVar = "HONUA_TEST_REDIS_URL";
     private const string ReceiptDirectoryEnvVar = "HONUA_CANDIDATE_RECEIPT_DIR";
     private const string ControlPlaneSourceShaEnvVar = "HONUA_CONTROL_PLANE_SHA";
 
@@ -61,11 +56,16 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
     private static readonly TimeSpan SettleBudget = TimeSpan.FromMinutes(5);
 
     private readonly LocalSubstrateDockerFixture _docker;
+    private readonly LocalSubstratePostgresFixture _postgres;
     private readonly ITestOutputHelper _output;
 
-    public CandidateTelemetryGateCertificationTests(LocalSubstrateDockerFixture docker, ITestOutputHelper output)
+    public CandidateTelemetryGateCertificationTests(
+        LocalSubstrateDockerFixture docker,
+        LocalSubstratePostgresFixture postgres,
+        ITestOutputHelper output)
     {
         _docker = docker;
+        _postgres = postgres;
         _output = output;
     }
 
@@ -89,7 +89,7 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
         await env.AssertStandbyRunsCandidateImageAsync();
 
         // Controller restart inside the observation window: a fresh control-plane host resumes the durable
-        // operation from Redis while the front door keeps serving.
+        // operation from its PostgreSQL system database while the front door keeps serving.
         await env.RestartControlPlaneAsync();
         var committed = await env.ReconcileUntilAsync(operationId, op => IsTerminal(op.Status), SettleBudget);
         var evidence = await env.QueryGateEvidenceAsync(committed);
@@ -207,12 +207,11 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
     {
         var candidate = Environment.GetEnvironmentVariable(CandidateImageEnvVar);
         var previous = Environment.GetEnvironmentVariable(PreviousImageEnvVar);
-        var redis = Environment.GetEnvironmentVariable(RedisConnectionStringEnvVar);
         Skip.If(
             string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(previous),
             $"Set {CandidateImageEnvVar} and {PreviousImageEnvVar} to run the exact-candidate deploy-gate lane.");
-        Skip.If(string.IsNullOrWhiteSpace(redis), $"Set {RedisConnectionStringEnvVar} for the control plane's durable workflow store.");
         Skip.IfNot(_docker.Available, "Docker is not available for the exact-candidate deploy-gate lane.");
+        Skip.IfNot(_postgres.Available, "PostgreSQL is not available for the control plane's durable workflow store.");
 
         var candidateImage = await Docker.ResolveImageAsync(candidate!);
         var previousImage = await Docker.ResolveImageAsync(previous!);
@@ -221,7 +220,7 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
         return new CandidateLane(
             candidateImage,
             previousImage,
-            redis!,
+            await _postgres.CreateMigratedServerDatabaseAsync(),
             Environment.GetEnvironmentVariable(ReceiptDirectoryEnvVar),
             Environment.GetEnvironmentVariable(ControlPlaneSourceShaEnvVar));
     }
@@ -229,7 +228,7 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
     private sealed record CandidateLane(
         ImageIdentity Candidate,
         ImageIdentity Previous,
-        string RedisConnectionString,
+        string SystemConnectionString,
         string? ReceiptDirectory,
         string? ControlPlaneSourceSha);
 
@@ -325,7 +324,23 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
             using var certificate = request.CreateSelfSigned(
                 DateTimeOffset.UtcNow.AddDays(-1),
                 DateTimeOffset.UtcNow.AddDays(1));
-            File.WriteAllBytes(Path.Join(directory, fileName), certificate.Export(X509ContentType.Pfx, password));
+            var path = Path.Join(directory, fileName);
+            File.WriteAllBytes(path, certificate.Export(X509ContentType.Pfx, password));
+
+            // CreateTempSubdirectory makes an owner-only directory, and the replicas read the bind mount as
+            // the image's non-root user, so an owner-only key ring makes every replica exit at startup.
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    directory,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                File.SetUnixFileMode(
+                    path,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+            }
+
             return new KeyRingCertificate(directory, "/keyring", fileName, password);
         }
 
@@ -417,6 +432,8 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
             {
                 var previousPostgres = await StartPostgresAsync($"{containerPrefix}-pg-previous", labels);
                 var candidatePostgres = await StartPostgresAsync($"{containerPrefix}-pg-candidate", labels);
+                // The replicas are published images that may predate the PostgreSQL-only control plane, so they
+                // keep their own Redis; only the in-process control plane under test uses the system database.
                 var redisName = $"{containerPrefix}-redis";
                 await Docker.RunCheckedAsync(["run", "-d", "--name", redisName, .. labels, RedisImage]);
                 var redisAddress = await Docker.ContainerAddressAsync(redisName);
@@ -473,7 +490,7 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
 
                 var configProvider = (InMemoryConfigProvider)proxy.Services.GetRequiredService<IProxyConfigProvider>();
                 var swapper = new YarpInMemoryProxyStateSwapper(configProvider, docker.Runtime, Options.Create(options));
-                var settings = BuildHostSettings(lane.RedisConnectionString, targetId, containerPrefix, docker.RuntimeExecutable, ports);
+                var settings = BuildHostSettings(lane.SystemConnectionString, targetId, containerPrefix, docker.RuntimeExecutable, ports);
                 environmentScope = EnvironmentVariableScope.Apply(settings);
 
                 return new CandidateGateEnvironment(
@@ -852,7 +869,7 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
             };
 
         private static Dictionary<string, string?> BuildHostSettings(
-            string redisConnectionString,
+            string systemConnectionString,
             string targetId,
             string containerPrefix,
             string containerRuntime,
@@ -866,9 +883,11 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
             {
                 ["HONUA_DEV_AUTH"] = "false",
                 ["HONUA_ADMIN_PASSWORD"] = ControlPlaneAdminPassword,
-                ["ConnectionStrings:redis"] = redisConnectionString,
-                // Cache:KeyPrefix is capped at 50 characters; the container prefix is short and still unique per run.
-                ["Cache:KeyPrefix"] = $"honua:{containerPrefix}:",
+                // The deploy workflow store is PostgreSQL-backed and composed only on a host that registers its
+                // own system database. The settings outlive a controller restart, so the restarted host resumes
+                // the same durable operation.
+                ["HONUA_REGISTER_TEST_INFRASTRUCTURE"] = "true",
+                ["ConnectionStrings:DefaultConnection"] = systemConnectionString,
                 ["Licensing:DevGrantEdition"] = "Pro",
                 ["ControlPlane:SelfHosted:Enabled"] = "false",
                 ["ControlPlane:SelfHosted:ContainerRuntime"] = containerRuntime,

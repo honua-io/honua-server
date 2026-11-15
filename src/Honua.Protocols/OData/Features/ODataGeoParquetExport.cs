@@ -14,7 +14,7 @@ internal static class ODataGeoParquetExport
 {
     internal static (ReadOnlyMemory<byte> Payload, string ContentType) FormatPage(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeometryLimits geometryLimits,
         string[]? outFields = null,
         ILogger? logger = null,
@@ -31,7 +31,7 @@ internal static class ODataGeoParquetExport
 
     internal static (Stream Payload, string ContentType) FormatPageStream(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeometryLimits geometryLimits,
         string[]? outFields = null,
         ILogger? logger = null,
