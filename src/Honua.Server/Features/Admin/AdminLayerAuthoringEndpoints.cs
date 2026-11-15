@@ -151,7 +151,7 @@ internal static partial class AdminLayerAuthoringEndpoints
             LayerAuthoringJsonContext.Default.ApiResponseLayerAuthoringDocumentResponse);
     }
 
-    private static MetadataV2Resource WithExtension(MetadataV2Resource resource, string key, JsonElement? value)
+    private static MetadataV2Object WithExtension(MetadataV2Object resource, string key, JsonElement? value)
     {
         var extensions = resource.Extensions.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         if (value is { } element)
@@ -210,7 +210,7 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static (MetadataV2Relationship[] Relationships, string? Error) BuildRelationships(
-        int storageLayerId, MetadataV2Resource resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2Object resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)
     {
         if (request.Relationships is null || request.Relationships.Count > MaxRelationships)
         {
@@ -282,7 +282,7 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static LayerRelationshipResponse BuildRelationshipResponse(
-        int storageLayerId, MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2Object resource, MetadataV2GraphSnapshot snapshot)
     {
         var items = resource.Relationships.Select(rel => new LayerRelationshipItem
         {
@@ -315,7 +315,7 @@ internal static partial class AdminLayerAuthoringEndpoints
 
     // ---- shared helpers ---------------------------------------------------------------------------------
 
-    private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
+    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
         int storageLayerId, HttpContext context, IResourceValidator resourceValidator, CancellationToken cancellationToken)
     {
         var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);

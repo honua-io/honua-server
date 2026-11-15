@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Cryptography;
-using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Routing.Features.Routing.Abstractions;
@@ -10,6 +8,8 @@ using Honua.Routing.Features.Routing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Honua.Server.Features.Admin;
 
@@ -216,7 +216,7 @@ internal static partial class NetworkTopologyEditAdminEndpoints
         }
 
         var contentHash = Convert.ToHexString(SHA256.HashData(bodyBytes));
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.AdminName);
 
         try
         {
@@ -515,9 +515,6 @@ internal static partial class NetworkTopologyEditAdminEndpoints
         NetworkTopologyGenerationState.Retired => "retired",
         _ => "unknown",
     };
-
-    private static string ResolveActor(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
     internal sealed class NetworkTopologyEditAdminLogCategory;
 

@@ -6,8 +6,6 @@ using System.Transactions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -16,8 +14,6 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.IO;
 using Npgsql;
@@ -28,6 +24,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 [Collection("Database")]
 public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
+    private const int LayerId = 1;
     private string _schema = null!;
     private NpgsqlDataSource _source = null!;
     private int _backendPid;
@@ -301,25 +298,14 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
         {
             values["Database:DisableJitForSourceSpatialCounts"] = setting;
         }
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<IConfiguration>(configuration);
-        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
-            services, configuration, TestCoreSchemaMigrations.Manifest);
-        services.AddSingleton(Substitute.For<IMetadataV2GraphProvider>());
-        services.AddSingleton(Substitute.For<IConnectionEncryptionService>());
-        services.AddSingleton(Substitute.For<ISecureConnectionResolver>());
-        services.AddSingleton(Substitute.For<IConnectionSecretResolver>());
-        services.AddSingleton(_provider);
-        await using var container = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        await using var scope = container.CreateAsyncScope();
-        var store = scope.ServiceProvider.GetRequiredService<IFeatureDataProvider>();
         var resource = CreateResource(knownGeometry: true);
-        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Publication(),
-            new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), 1, store, Connection: null);
-        var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(binding);
-        (await reader.CountAsync(1, BboxQuery())).Should().Be(3);
+        var count = await RegisteredPostgresFeatureStore.RunAsync(
+            values,
+            _provider,
+            store => store.CreateReaderForBinding(new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Layer(),
+                new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), LayerId, (IFeatureDataProvider)store, Connection: null))
+                .CountAsync(LayerId, BboxQuery()));
+        count.Should().Be(3);
         await AssertObservedAsync(expected);
         await AssertSessionRestoredAsync();
     }
@@ -389,10 +375,10 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
         preferSerialBoundedSpatialReads: false, disableJitForSourceSpatialCounts: enabled,
         preferSerialSourceSpatialCounts: false);
 
-    private static MetadataV2Resource CreateResource(bool knownGeometry) => new()
+    private static MetadataV2Object CreateResource(bool knownGeometry) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "jit-count", Name = "jit-count" },
-        Spatial = knownGeometry ? new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point } : null,
+        Spatial = knownGeometry ? new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point } : null,
         SchemaFields = [new() { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }]
     };
 

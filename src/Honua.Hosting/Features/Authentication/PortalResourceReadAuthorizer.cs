@@ -67,8 +67,8 @@ internal sealed class PortalResourceReadAuthorizer(
             && TenantReadScope.For(context.RequestServices.GetService<ITenantContext>()).Contains(group.TenantId);
 
     public AccessDecision Evaluate(
-        ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
-        MetadataV2Publication? publication = null)
+        ClaimsPrincipal principal, MetadataV2Object? resource, MetadataV2Service service,
+        MetadataV2Layer? publication = null)
     {
         var context = contextAccessor.HttpContext;
         var tenantId = context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context);

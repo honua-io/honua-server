@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
 using Honua.Server.Features.Admin.Jobs;
@@ -86,6 +87,7 @@ internal static class ObservabilityServiceCollectionExtensions
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
+            CatalogActivationWatches = sp.GetService<Honua.Core.Features.Metadata.Abstractions.ICatalogActivationWatchStore>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
             ExternalEventStore = sp.GetService<IOpsExternalEventStore>(),
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
@@ -130,6 +132,7 @@ internal static class ObservabilityServiceCollectionExtensions
         // Aggregated operate-status surface (A12): composes the ops-health snapshot + findings into
         // one server-authoritative verdict, and binds the SLO/error-budget contract.
         services.AddOperateStatus(configuration);
+        services.AddOpsHeartbeat(configuration);
 
         return services;
     }

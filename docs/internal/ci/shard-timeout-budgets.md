@@ -250,6 +250,10 @@ gh run download <run-id> -p 'server-test-results-*' -D ./artifacts
 scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts --markdown
 ```
 
+Shard artifacts are named `server-test-results-<suffix>-attempt-<n>`. For a run
+that was re-run, delete all but each shard's highest attempt directory before
+auditing, so a superseded (possibly cancelled) attempt does not skew the sample.
+
 Collect several runs into the same directory for a usable p90. Add
 `--fail-on-warn` to turn the audit into a gate.
 
@@ -1382,6 +1386,8 @@ The console timing suggests roughly eleven minutes were spent in the largest cla
 logs cannot predict either child's final wall time. Actual complete child TRX and timing receipts
 remain necessary; the split alone does not establish qualification or close a capacity incident.
 The retained source/timing description is [the WMS fixture](../../../eng/ci/fixtures/shard-capacity/wms.json).
+
+`CapabilitiesMetadataXmlTests` lives in the parent `Ogc.Classic` namespace and exercises WMS, WFS and WMTS capabilities XML. It is claimed by `OGC Classic Capabilities Metadata` instead of being folded into a protocol complement. The WMS and WMTS partitions stay exact. Its dispatch rank 6.0 is an estimate until the next complete full trunk run.
 
 
 ## October 2026 Core attachments capacity split (6451)

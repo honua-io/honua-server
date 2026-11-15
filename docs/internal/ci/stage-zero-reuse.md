@@ -76,8 +76,10 @@ and allowed logical CPUs. CPU usage ranged from 11.91 to 23.82 busy processors
 (median 18.76), with one-minute load from 14.79 to 27.31. This window did not
 show CPU oversubscription. It does not establish the optimal slot/worker split
 or completed builds per hour, and cannot bound demand outside that window.
-Keep six slots by five workers provisional until comparable live completion
-samples cover alternative splits and PR runner demand.
+These historical measurements do not recommend a current slot/worker split.
+The operating limits have since changed; use the current build-host admission
+policy. Comparable live completion samples must cover alternative splits and
+PR runner demand before claiming a throughput optimum.
 
 A later controlled six-file run on 11 November verified actual incremental
 reuse. In one admission, cold compile took 2.71 minutes and immediate warm
@@ -101,12 +103,51 @@ The longest execution included AOT (34.80 minutes), the managed producer
 
 This run predates the completed-run base selection and six-job affected cap.
 The subsequent runtime-base refresh and newest-merge selection cap merged in
-PR #7332. A completed subsequent affected run is still needed before an after
-value can be reported. Full fallback retains complete coverage under the affected
-cap; scheduled full runs retain their separate concurrency budget. Existing
-selector guards determine expensive-suite eligibility, while descending shard
-rank starts estimated slow work first. Queue reduction must be assessed beside
-PR Gate queue times because moving the wait between workflows is not a gain.
+PR #7332. Completed runs now exist, but their selected work differs. The table
+records observations, not minutes saved by that change. Times are minutes.
+
+| Affected run | Result | Elapsed | Jobs created / executed | Job queue median / maximum | Summed job execution |
+| --- | --- | ---: | ---: | ---: | ---: |
+| [42929935484](https://github.com/honua-io/honua-server/actions/runs/42929935484) | Failure | 131.45 | 167 / 166 | 36.03 / 61.15 | 1,529.33 |
+| [43440336773](https://github.com/honua-io/honua-server/actions/runs/43440336773) | Failure | 60.10 | 42 / 31 | 0.07 / 21.18 | 154.25 |
+| [43391539717](https://github.com/honua-io/honua-server/actions/runs/43391539717) | Success; .NET skipped | 24.50 | 30 / 8 | 0.05 / 0.07 | 4.48 |
+| [43367716551](https://github.com/honua-io/honua-server/actions/runs/43367716551) | Success; .NET skipped | 5.47 | 30 / 8 | 0.05 / 0.05 | 5.85 |
+
+The 13 November snapshot uses every page of the jobs API for each completed
+run. Executed jobs have steps and are not skipped. Queue is job creation to
+first-step start; execution is first-step start to job completion. Elapsed is
+run creation to the latest job completion, excluding later metadata updates.
+Summed execution includes parallel jobs and is an occupancy proxy, not billed
+runner minutes or a count of distinct runners. Jobs can share runners.
+
+The newer failure actually executed managed tests. Its producer took 31.98
+minutes, runtime proofs 12.27 and WFS 9 shard 8.88. Its 42 job records include
+31 executed jobs; the baseline created 167 and executed 166. These counts
+show different selected workloads, so neither the shorter wall time nor the
+lower occupancy establishes a causal speedup. The successful samples ran
+routing and summary jobs but skipped the managed producer, foundation tests,
+server tests and runtime proofs. They do not demonstrate faster test CI.
+The 24.50-minute sample also illustrates that low per-job queue time does not
+exclude delay before job creation; it had only 4.48 minutes of summed execution.
+
+Full fallback retains complete coverage under the affected cap; scheduled full
+runs retain their separate concurrency budget. Existing selector guards determine
+expensive-suite eligibility, while descending shard rank starts estimated slow
+work first. Queue reduction must be assessed beside PR Gate queue times because
+moving the wait between workflows is not a gain.
+
+### Remaining evidence for #7268
+
+The controlled Stage 0 repeat above demonstrates incremental compilation for
+one pinned six-file worktree. It does not supply an old-code baseline for both
+small and medium diffs, a fleet hit rate, or a supported concurrency optimum.
+The completed affected runs resolve the missing-run question, but do not yet
+provide a successful managed-test run over a comparable baseline workload.
+Retain those distinctions when reporting the issue; do not infer speedup from
+skipped tests, failures, changed input ranges, or queue movement. A comparison
+must pin inputs and toolchain, record admission and execution separately, and
+include concurrent PR demand. No new full run or runner-setting change was
+needed to collect this snapshot.
 
 ## Why the local receipt cannot skip hosted tests
 

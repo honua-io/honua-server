@@ -90,6 +90,33 @@ public sealed class SharedCacheGuardTests
     }
 
     [UnitTest]
+    public void Guard_ETagFallbackOnACredentialedResponse_IsNotStored()
+    {
+        var context = SharedCacheTestContexts.GrantedTile();
+        context.Request.Headers["X-API-Key"] = "credential";
+        context.Response.Headers.ETag = "\"body-g7\"";
+
+        SharedCacheResponse.Apply(context);
+        context.Response.Headers.CacheControl = "private, must-revalidate";
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+        context.Response.Headers.ETag.ToString().Should().Be("\"body-g7\"");
+    }
+
+    [UnitTest]
+    public void Guard_ChosenPrivateLifetime_IsLeftAlone()
+    {
+        var context = SharedCacheTestContexts.GrantedTile();
+        context.Request.Headers["X-API-Key"] = "credential";
+        context.Response.Headers.CacheControl = "private, max-age=60, must-revalidate";
+
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Contain("private").And.Contain("max-age=60").And.NotContain("no-store");
+    }
+
+    [UnitTest]
     public void Guard_NoCacheControlAtAll_WritesTheSafeDefault()
     {
         var context = new DefaultHttpContext();

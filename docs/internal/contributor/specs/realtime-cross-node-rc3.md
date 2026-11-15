@@ -405,11 +405,12 @@ are folded into these, tagged by `family` and `transport`.
 |---|---|---|
 | `honua.realtime.subscribers` | gauge | Open subscriptions per task, family and transport |
 | `honua.realtime.log.head` / `honua.realtime.dispatch.position` | gauge | Head and dispatched position per family |
-| `honua.realtime.dispatch.lag.events` / `.lag.seconds` | gauge | `head - dispatched`; age of the oldest undispatched row |
+| `honua.realtime.dispatch.lag.events` | gauge | `head - dispatched` when the dispatcher wakes |
+| `honua.realtime.dispatch.lag.seconds` | histogram | per dispatched batch, how long its oldest row waited |
 | `honua.realtime.delivery.latency` | histogram | Commit (`created_at` or `changed_at`) to frame written, per family |
 | `honua.realtime.listener.connected` | gauge 0/1 | Listener health per task |
 | `honua.realtime.listener.reconnects` | counter | |
-| `honua.realtime.wakeups` | counter | Tag `source=notify|safety-poll|degraded-poll` |
+| `honua.realtime.wakeups` | counter | Tag `source=notify|safety-poll|degraded-poll|local-poll` |
 | `honua.realtime.resets` | counter | Tag `reason` |
 | `honua.realtime.slow_consumer.closed` / `.frames.dropped` | counter | |
 | `honua.realtime.authz.frames_filtered` / `.streams_revoked` | counter | |
