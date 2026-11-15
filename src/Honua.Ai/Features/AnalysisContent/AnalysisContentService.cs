@@ -790,10 +790,11 @@ internal sealed partial class AnalysisContentService(
                 "The analysis job or log store is currently unavailable.",
                 ex);
         }
-        // The job and log stores are PostgreSQL. Classify outages as the content store does
-        // (PostgresAnalysisContentStore.IsStoreUnavailable): transient failures plus the
-        // connection (08), resources (53), operator-intervention (57) and authorization (28)
-        // SQL-state classes. Other database errors are defects and propagate unchanged.
+        // The job and log stores are PostgreSQL. A transient failure, or a SQL state in the
+        // connection (08), resources (53), operator-intervention (57) or authorization (28)
+        // class, is an outage, the same classes PostgresAnalysisContentStore.IsStoreUnavailable
+        // uses. Non-transient client errors without a SQL state (for example a TLS or password
+        // misconfiguration) and other database errors are defects and propagate unchanged.
         catch (DbException ex) when (IsDatabaseOutage(ex))
         {
             throw new AnalysisContentStoreUnavailableException(
