@@ -66,7 +66,7 @@ public sealed class RealtimeStreamLifecycleTests
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             drain.IsCompleted.Should().BeFalse("the close callback is still waiting for transport abort");
-            // Start the deadline only after callback entry, independent of thread-pool scheduling.
+            // The deadline timer exists before signalling; expire it only after callback entry, independent of thread-pool scheduling.
             clock.Advance(TimeSpan.FromMilliseconds(100));
             await drain.WaitAsync(TimeSpan.FromSeconds(5));
             aborted.IsSet.Should().BeTrue("the transport must abort before waiting for close callbacks");

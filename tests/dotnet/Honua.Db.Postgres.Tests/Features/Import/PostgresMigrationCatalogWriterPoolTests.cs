@@ -69,8 +69,10 @@ public sealed class PostgresMigrationCatalogWriterPoolTests(PostgresFixture fixt
                 await writer.EnsureCatalogServiceAsync(_dataSource.ConnectionString, request, cancellation.Token));
 
             elapsed.Stop();
-            output.WriteLine("Configured capacity: 1; database sessions: {0}; elapsed: {1:F1} ms", await CountSessionsAsync(), elapsed.Elapsed.TotalMilliseconds);
+            var sessions = await CountSessionsAsync();
+            output.WriteLine("Configured capacity: 1; database sessions: {0}; elapsed: {1:F1} ms", sessions, elapsed.Elapsed.TotalMilliseconds);
             exception.Should().BeAssignableTo<OperationCanceledException>();
+            sessions.Should().Be(1, "the writer must wait on the configured pool instead of opening another session");
         }
 
         using var available = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -87,7 +89,9 @@ public sealed class PostgresMigrationCatalogWriterPoolTests(PostgresFixture fixt
         var writer = scope.ServiceProvider.GetRequiredService<IMigrationCatalogWriter>();
         var settings = new NpgsqlConnectionStringBuilder(_dataSource.ConnectionString)
         {
-            ApplicationName = $"explicit-target-{Guid.NewGuid():N}"
+            ApplicationName = $"explicit-target-{Guid.NewGuid():N}",
+            // No global pool keeps an idle session on the isolated database after the test.
+            Pooling = false
         };
         await using var heldConnection = await _dataSource.OpenConnectionAsync();
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
