@@ -23,36 +23,46 @@ def terminate_test(child, signum):
     # Descendants can leave the timeout group. Snapshot them before TERM
     # so reparented grandchildren remain in the cleanup set.
     descendants = descendant_pids(child.pid)
+    with suppress(ProcessLookupError):
+        os.killpg(child.pid, signum)
     for pid in descendants:
         with suppress(ProcessLookupError):
             os.kill(pid, signum)
     with suppress(subprocess.TimeoutExpired):
         child.wait(timeout=0.5)
     kill_descendants(*descendants)
+    # A test can fork after the snapshot, while TERM escalation is pending; sweep its group too.
+    with suppress(ProcessLookupError):
+        os.killpg(child.pid, signal.SIGKILL)
 
 
 def call_test(command):
-    child = None
     cancellation_signal = None
-    cleanup_started = False
 
     def forward(signum, _frame):
-        nonlocal cancellation_signal, cleanup_started
+        nonlocal cancellation_signal
         if cancellation_signal is None:
             cancellation_signal = signum
-        if child is None or cleanup_started:
-            return
-        cleanup_started = True
-        terminate_test(child, cancellation_signal)
 
     previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
-        # Keep the inherited group and capture cancellation even while Popen is starting.
-        with subprocess.Popen(command) as child:
-            if cancellation_signal is not None:
-                forward(cancellation_signal, None)
-            code = child.wait()
-            return -cancellation_signal if cancellation_signal is not None else code
+        # Grouped shards already have an outer process-group deadline. Inherit
+        # that group so its final KILL still reaches tests if discovery fails.
+        # Standalone shards own a group for bounded signal escalation here.
+        grouped = os.environ.get('HONUA_SERVER_TEST_TIMEOUT_FOREGROUND') == 'true'
+        with subprocess.Popen(command, start_new_session=os.name == 'posix' and not grouped) as child:
+            # A signal handler must not reenter Popen.wait while its waitpid lock
+            # is held. Record cancellation, then clean up outside that wait.
+            while cancellation_signal is None:
+                try:
+                    code = child.wait(timeout=0.1)
+                    if cancellation_signal is None:
+                        return code
+                except subprocess.TimeoutExpired:
+                    continue
+            terminate_test(child, cancellation_signal)
+            child.wait()
+            return -cancellation_signal
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)

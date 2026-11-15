@@ -4,12 +4,20 @@ import os
 import signal
 import subprocess
 
+# The kill passes run after TERM, inside the kill-after grace, where a loaded runner's
+# listing can exceed the pre-TERM snapshot's 0.2 s bound and hide a detached child.
+KILL_LISTING_DEADLINE = 1.0
 
-def descendant_depths(seeds):
+
+def descendant_depths(seeds, deadline=0.2):
     """Each process under the seeds (pid to depth, included as given) with its depth."""
     # The deadline may still be signalling the supervisor's process group.
-    listing = subprocess.check_output(['ps', '-e', '-o', 'pid=,ppid='], text=True,
-                                      start_new_session=True)
+    try:
+        listing = subprocess.check_output(['ps', '-e', '-o', 'pid=,ppid='], text=True,
+                                          start_new_session=True, timeout=deadline)
+    except (OSError, subprocess.TimeoutExpired):
+        # Preserve group escalation even when process discovery is unavailable.
+        return dict(seeds)
     pairs = [tuple(map(int, line.split())) for line in listing.splitlines()]
     depths = dict(seeds)
     while level := {pid: depths[ppid] + 1 for pid, ppid in pairs if ppid in depths and pid not in depths}:
@@ -19,6 +27,10 @@ def descendant_depths(seeds):
 
 def descendant_pids(*parents):
     return set(descendant_depths(dict.fromkeys(parents, 0)))
+
+
+def unstopped(depths, stopped):
+    return {pid: depth for pid, depth in depths.items() if pid not in stopped}
 
 
 def kill_descendants(*parents):
@@ -31,8 +43,7 @@ def kill_descendants(*parents):
     """
     roots, stopped = dict.fromkeys(parents, 0), {}
     try:
-        while fresh := {pid: depth for pid, depth in descendant_depths({**roots, **stopped}).items()
-                        if pid not in stopped}:
+        while fresh := unstopped(descendant_depths({**roots, **stopped}, KILL_LISTING_DEADLINE), stopped):
             for pid in fresh:
                 with suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGSTOP)
