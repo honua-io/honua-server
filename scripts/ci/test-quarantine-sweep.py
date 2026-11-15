@@ -29,7 +29,7 @@ def artifact(identity, run=10, **options):
 
 def source(identity=10, **changes):
     return dict(id=identity, run_attempt=2, path='.github/workflows/pr-gate.yml',
-                head_repository=dict(full_name=REPOSITORY), status='completed', conclusion='success',
+                head_repository=dict(full_name=REPOSITORY), head_branch='trunk', status='completed', conclusion='success',
                 updated_at='2026-11-15T00:00:00Z', html_url=f'https://github.com/{REPOSITORY}/actions/runs/{identity}',
                 **changes)
 
@@ -40,7 +40,7 @@ def cursor(ids=()):
 
 class SweepTests(unittest.TestCase):
     def setUp(self):
-        self.environment = patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY})
+        self.environment = patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'})
         self.environment.start()
         self.addCleanup(self.environment.stop)
 
@@ -120,22 +120,22 @@ class SweepTests(unittest.TestCase):
             sweep.publish_run(source(), [artifact(42)], set())
         self.assertEqual('42', download.call_args.args[1].name)
         self.assertEqual(1, publish.call_count)
-        self.assertTrue(os.environ['QUARANTINE_EVIDENCE_URL'].endswith('/runs/10/attempts/2'))
+        self.assertTrue(os.environ['QUARANTINE_EVIDENCE_URL'].endswith('/runs/10/attempts/1'))
 
 
 class CheckpointTests(unittest.TestCase):
-    def test_legacy_success_bootstraps_from_completion_event_not_artifact_upload(self):
+    def test_legacy_success_reconciles_all_retained_backlog(self):
         run = source(event='workflow_run', created_at=SINCE)
         run['path'] = sweep.WORKFLOW
-        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY}), \
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'}), \
                 patch.object(sweep, 'api', return_value={'workflow_runs': [run]}), \
                 patch.object(sweep, 'inventory', side_effect=lambda path, key: [] if key == 'artifacts' else [{'conclusion': 'success'}]):
-            self.assertEqual(cursor(), sweep.load_cursor())
+            self.assertEqual(dict(cursor(), since='1970-01-01T00:00:00Z'), sweep.load_cursor())
 
     def test_missing_new_checkpoint_fails_closed_instead_of_skipping_backlog(self):
         run = source(event='schedule', created_at=SINCE, display_title='Quarantine evidence sweep')
         run['path'] = sweep.WORKFLOW
-        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY}), \
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'}), \
                 patch.object(sweep, 'api', return_value={'workflow_runs': [run]}), \
                 patch.object(sweep, 'inventory', side_effect=lambda path, key: [] if key == 'artifacts' else [{'conclusion': 'success'}]), self.assertRaisesRegex(ValueError, 'checkpoint missing'):
             sweep.load_cursor()
@@ -143,7 +143,7 @@ class CheckpointTests(unittest.TestCase):
     def test_successful_skipped_completion_does_not_hide_previous_checkpoint(self):
         skipped = source(event='workflow_run', display_title='Quarantine evidence sweep')
         skipped['path'] = sweep.WORKFLOW
-        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY}), \
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'}), \
                 patch.object(sweep, 'api', return_value={'workflow_runs': [skipped, dict(skipped, id=11)]}), \
                 patch.object(sweep, 'inventory', side_effect=[[], [{'conclusion': 'skipped'}],
                     [dict(artifact(2), name=sweep.CURSOR_PREFIX + '2')]]), \
@@ -151,11 +151,33 @@ class CheckpointTests(unittest.TestCase):
                     (root / 'quarantine-cursor.json').write_text(json.dumps(cursor([1])))):
             self.assertEqual(cursor([1]), sweep.load_cursor())
 
+    def test_nondefault_dispatch_cannot_supply_checkpoint(self):
+        run = source(event='workflow_dispatch'); run['path'] = sweep.WORKFLOW
+        run['head_branch'] = 'feature/untrusted'
+        trusted = dict(run, id=11, head_branch='trunk')
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'}), \
+                patch.object(sweep, 'api', return_value={'workflow_runs': [run, trusted]}), \
+                patch.object(sweep, 'cursor_from_run', return_value=cursor([1])) as read:
+            self.assertEqual(cursor([1]), sweep.load_cursor())
+            read.assert_called_once_with(trusted)
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'}), \
+                self.assertRaisesRegex(ValueError, 'Untrusted'):
+            sweep.cursor_from_run(run)
+
+    def test_old_evidence_cannot_renew_legacy_quarantine_during_backfill(self):
+        publisher = sweep.PUBLISHER
+        entry = dict(project='tests/Honua.Core.Tests/Honua.Core.Tests.csproj', test='Example.Flaky')
+        issue = dict(body=publisher.issue_body(entry, 'https://example.com/legacy-run'))
+        with patch.dict(os.environ, {'QUARANTINE_EVIDENCE_CREATED_AT': '2020-01-01T00:00:00Z'}):
+            self.assertTrue(publisher.repeats_evidence(issue, 'https://example.com/legacy-run/attempts/1'))
+        with patch.dict(os.environ, {'QUARANTINE_EVIDENCE_CREATED_AT': '2099-01-01T00:00:00Z'}):
+            self.assertFalse(publisher.repeats_evidence(issue, 'https://example.com/legacy-run/attempts/2'))
+
     def test_checkpoint_is_loaded_only_from_trusted_successful_publisher(self):
         run = source(event='workflow_run'); run['path'] = sweep.WORKFLOW
         def download(item, root):
             (root / 'quarantine-cursor.json').write_text(json.dumps(cursor([1])))
-        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY}), \
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': REPOSITORY, 'QUARANTINE_DEFAULT_BRANCH': 'trunk'}), \
                 patch.object(sweep, 'api', return_value={'workflow_runs': [run]}), \
                 patch.object(sweep, 'inventory', return_value=[dict(artifact(2), name=sweep.CURSOR_PREFIX + '2')]), \
                 patch.object(sweep, 'download', side_effect=download):

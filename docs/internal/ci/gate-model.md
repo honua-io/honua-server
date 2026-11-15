@@ -761,7 +761,8 @@ quarantined methods without exclusions or retries and is explicitly non-gating.
 
 The publisher has issue-write permission only on trusted default-branch code, reached by
 same-repository successful/failed `workflow_run` completions, a twice-hourly recovery
-schedule, or manual dispatch. It validates source workflow/repository provenance, raw case
+schedule, or default-branch manual dispatch. Checkout is pinned to the default branch;
+checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
 evidence and hashes, and never executes downloaded data or checks out the triggering branch.
 Job-level concurrency filters cancelled and fork completions before admission, serializes
 issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
@@ -772,9 +773,12 @@ Remaining artifacts stay discoverable for the next event or scheduled sweep.
 Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
 upload replays from the previous successful checkpoint. Successful skipped jobs are ignored
 when finding that checkpoint. Artifact IDs prevent repeat downloads, and source-attempt
-links prevent replay from reopening the same expired/closed quarantine issue. Missing new
+links use the artifact's producing attempt, preventing a partial rerun from changing
+unchanged evidence identity. Previously quarantined evidence timestamps also prevent
+legacy backfill from reopening expired/closed issues. Missing new
 checkpoints, unsafe archives, excessive inventory and untrusted sources fail closed.
-Migration starts at the last successful legacy publisher's event time; first installation
+Migration reconciles every retained artifact rather than treating one successful legacy
+event as a global watermark; first installation
 backfills 14 days. The checkpoint retains processed IDs while artifacts remain available,
 and expires after 90 days. Recovery therefore requires source evidence still retained by
 GitHub. The existing 25-method cap, 14-day expiry, proof validation and required gates remain

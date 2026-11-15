@@ -77,7 +77,8 @@ def trusted(run, paths):
 
 
 def cursor_from_run(run):
-    if not trusted(run, {WORKFLOW}) or run['event'] not in {'workflow_run', 'schedule', 'workflow_dispatch'}:
+    if (not trusted(run, {WORKFLOW}) or run['event'] not in {'workflow_run', 'schedule', 'workflow_dispatch'}
+            or run.get('head_branch') != os.environ['QUARANTINE_DEFAULT_BRANCH']):
         raise ValueError('Untrusted publication checkpoint run')
     artifacts = inventory(f'actions/runs/{run["id"]}/artifacts', 'artifacts')
     cursors = [item for item in artifacts if item['name'].startswith(CURSOR_PREFIX) and not item['expired']]
@@ -87,9 +88,9 @@ def cursor_from_run(run):
             return None  # Filtered completions can succeed without publishing.
         if run.get('display_title') == 'Quarantine evidence sweep':
             raise ValueError('Publication checkpoint missing or expired; refusing to discard its backlog')
-        # Migration from the FIFO publisher: later completions, including ones
-        # whose artifacts were uploaded earlier, must still be discovered.
-        return dict(schema=SCHEMA, since=run['created_at'], artifact_ids=[])
+        # A successful FIFO event says nothing about other failed/overflowed
+        # events. Reconcile every retained artifact during migration.
+        return dict(schema=SCHEMA, since='1970-01-01T00:00:00Z', artifact_ids=[])
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         download(max(cursors, key=lambda item: item['id']), root)
@@ -102,6 +103,8 @@ def load_cursor():
     for page in range(1, MAX_PAGES + 1):
         response = api(f'actions/workflows/flake-quarantine.yml/runs?status=success&per_page=100&page={page}')
         for run in response['workflow_runs']:
+            if run.get('head_branch') != os.environ['QUARANTINE_DEFAULT_BRANCH']:
+                continue  # A branch dispatch cannot supply the trusted cursor.
             cursor = cursor_from_run(run)
             if cursor is not None:
                 return cursor
@@ -159,8 +162,10 @@ def publish_run(run, artifacts, seen):
             destination = root / str(artifact['id'])
             destination.mkdir()
             download(artifact, destination)
-        os.environ['QUARANTINE_EVIDENCE_URL'] = f'{run["html_url"]}/attempts/{run["run_attempt"]}'
-        PUBLISHER.publish(root)
+            _, attempt = ATTEMPT.fullmatch(artifact['name']).groups()
+            os.environ['QUARANTINE_EVIDENCE_URL'] = run['html_url'] + (f'/attempts/{attempt}' if attempt else '')
+            os.environ['QUARANTINE_EVIDENCE_CREATED_AT'] = artifact['created_at']
+            PUBLISHER.publish(destination)
 
 
 def sweep(checkpoint):

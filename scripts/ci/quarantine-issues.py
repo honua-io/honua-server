@@ -149,7 +149,14 @@ def repeats_evidence(issue, run_url):
     body = issue.get('body') or ''
     if not body.startswith(PREFIX) or not body.endswith('\n```\n'):
         return False
-    return json.loads(body[len(PREFIX):-5]).get('evidence') == run_url
+    metadata = json.loads(body[len(PREFIX):-5])
+    created = os.environ.get('QUARANTINE_EVIDENCE_CREATED_AT')
+    already_known = metadata.get('evidence') == run_url
+    if created:
+        proof_time = datetime.fromisoformat(created.replace('Z', '+00:00'))
+        quarantine_time = datetime.fromisoformat(metadata['quarantined_at'].replace('Z', '+00:00'))
+        already_known |= proof_time <= quarantine_time
+    return already_known
 
 
 def publish(directory):
