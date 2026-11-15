@@ -175,7 +175,7 @@ public sealed class ManagedImportConnectionTests
         return services.BuildServiceProvider();
     }
 
-    private static ServiceCollection Compose(
+    private static IServiceCollection Compose(
         RememberingEncryption encryption,
         string? connectionString,
         ISecureConnectionRegistry registry)
