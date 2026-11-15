@@ -729,18 +729,14 @@ internal sealed partial class FeatureServerQueryHandler(
                         [statisticsOrderByError ?? "orderByFields could not be parsed."]);
                 }
 
-                // BH7-003: Apply the configured MaxRecordCount as an upper bound on
-                // statistics group rows. Without this cap a groupByFieldsForStatistics
-                // on a high-cardinality column (e.g. objectId) forces the server to
-                // materialise every row from the database — an OOM/DoS vector.
+                var statisticsLimit = Math.Min(query.Limit ?? queryLimits.MaxRecordCount, queryLimits.MaxRecordCount);
                 var statisticsQuery = query with
                 {
                     OutStatistics = statisticsDefs,
                     GroupByFields = groupByFields,
                     Having = havingConditions,
-                    // Fetch one probe row beyond the Esri transfer limit so the response
-                    // can truthfully report exceededTransferLimit without unbounded stats.
-                    Limit = checked(queryLimits.MaxRecordCount + 1),
+                    // One probe row distinguishes a full final page from a page with more results.
+                    Limit = checked(statisticsLimit + 1),
                     Offset = query.Offset,
                     OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                     Distinct = false
@@ -765,9 +761,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
-                var statisticsExceeded = statisticsRows.Length > queryLimits.MaxRecordCount;
+                var statisticsExceeded = statisticsRows.Length > statisticsLimit;
                 var boundedStatisticsRows = statisticsExceeded
-                    ? statisticsRows[..queryLimits.MaxRecordCount]
+                    ? statisticsRows[..statisticsLimit]
                     : statisticsRows;
                 var statisticsResponse = BuildStatisticsResponse(
                     queryLayer.Resource, statisticsDefs, groupByFields, boundedStatisticsRows, statisticsExceeded);
@@ -1993,12 +1989,13 @@ internal sealed partial class FeatureServerQueryHandler(
                 throw new ArgumentException(statisticsOrderByError ?? "orderByFields could not be parsed.");
             }
 
+            var statisticsLimit = Math.Min(query.Limit ?? queryLimits.MaxRecordCount, queryLimits.MaxRecordCount);
             var statisticsQuery = query with
             {
                 OutStatistics = statisticsDefs,
                 GroupByFields = groupByFields,
                 Having = havingConditions,
-                Limit = checked(queryLimits.MaxRecordCount + 1),
+                Limit = checked(statisticsLimit + 1),
                 Offset = query.Offset,
                 OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                 Distinct = false
@@ -2015,9 +2012,9 @@ internal sealed partial class FeatureServerQueryHandler(
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
-            var statisticsExceeded = statisticsRows.Length > queryLimits.MaxRecordCount;
+            var statisticsExceeded = statisticsRows.Length > statisticsLimit;
             var boundedStatisticsRows = statisticsExceeded
-                ? statisticsRows[..queryLimits.MaxRecordCount]
+                ? statisticsRows[..statisticsLimit]
                 : statisticsRows;
             return BuildStatisticsResponse(
                 queryLayer.Resource, statisticsDefs, groupByFields, boundedStatisticsRows, statisticsExceeded);
