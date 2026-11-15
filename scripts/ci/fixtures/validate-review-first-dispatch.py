@@ -22,6 +22,9 @@ PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
+# Jobs that queue superseded review events: resolver and attestation; the bridge.
+QUEUED_REVIEW_GATE_JOBS = 2
+QUEUED_REVIEW_BRIDGE_JOBS = 1
 
 
 def read_text(path: Path) -> str:
@@ -235,7 +238,8 @@ def main() -> None:
     for source, label in [(review_gate, "review gate"), (review_bridge, "review bridge")]:
         if "cancel-in-progress: true" in source or "cancel-in-progress: ${{" in source:
             raise AssertionError(f"{label} helpers must queue superseded events, not cancel them red")
-    if review_gate.count("queue: max") != 2 or review_bridge.count("queue: max") != 1:
+    if (review_gate.count("queue: max") != QUEUED_REVIEW_GATE_JOBS
+            or review_bridge.count("queue: max") != QUEUED_REVIEW_BRIDGE_JOBS):
         raise AssertionError("review resolver, attestation and bridge must queue every superseded event")
     require(
         review_gate,
