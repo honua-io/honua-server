@@ -34,13 +34,22 @@ Layer references also require tenant-visible publications and shared resource ac
 
 Modern clients can call `server/discover` without initializing a session. Each request supplies its protocol version and client capabilities in `params._meta`, with the matching `MCP-Protocol-Version` and `Mcp-Method` HTTP headers. Tool calls, resource reads and prompt retrieval also mirror the tool name, resource URI or prompt name in `Mcp-Name`. Discovery lists the revisions accepted through this per-request model; the initialize result describes the legacy revision selected for that session.
 
-Modern requests ignore protocol session and event-replay headers. They return complete result envelopes, and catalog/resource responses include private caching hints with a zero freshness lifetime. Legacy clients retain initialize, sessions, batching and the optional server notification stream.
+Modern requests ignore protocol session and event-replay headers. They return complete result envelopes, except a tool that needs more input (see [Clarification and approval in the client](#clarification-and-approval-in-the-client)). Catalog/resource responses include private caching hints with a zero freshness lifetime. Legacy clients retain initialize, sessions, batching and the optional server notification stream.
 
 With OIDC replay protection enabled, a validated OIDC bearer token is reusable across modern requests on `/mcp`. Its registration binds the exact validated token. Use separate access tokens for modern MCP, legacy MCP sessions and ordinary HTTP: reuse across those surfaces returns 401. Legacy bearer tokens remain bound to their issued session, and ordinary HTTP tokens remain reusable on that API. Token expiry, audience, scopes, tenant and operator grants are checked for every request.
 
 Replay registrations retain their original expiration through the token's expiry plus configured clock skew. The configured retention maximum can refuse longer-lived tokens; see [bearer replay retention](../secure/authentication.md#bearer-replay-retention) for settings and shared-store behavior.
 
-Modern governed proposal calls retain the existing session-bound evidence requirement. Real-client interoperability, MRTR approval support and Skills extension conformance require their own verification. Use the file installation route for operating skills where available.
+Modern governed proposal calls retain the existing session-bound evidence requirement. Real-client interoperability and Skills extension conformance require their own verification. Use the file installation route for operating skills where available.
+
+### Clarification and approval in the client
+
+Modern requests support Multi Round-Trip Requests (MRTR, SEP-2322). Instead of a complete result, a tool may return `resultType: "input_required"` with `inputRequests` and an opaque `requestState`. The client asks the person, then repeats the same `tools/call` with `inputResponses` and the unchanged `requestState`. Any instance can answer the retry: the state is signed with the same key as stateless session ids, bound to the caller, the tool and its arguments, and expires. A changed, expired or foreign `requestState`, or `inputResponses` without one, is refused with `-32602` and data code `invalid_request_state`. The tool does not run.
+
+- **Clarification.** When the request's `clientCapabilities` declare `elicitation` (form mode), `honua_ground_candidates` and `honua_clarify_intent` ask their questions as a form under the key `clarify`. Accepting continues the same intent with every answer given so far. Declining returns the usual `clarification` envelope. Multi-select questions still use the envelope.
+- **Approval.** When the request declares `elicitation.url` and the server has `Mcp:ApprovalConsoleUrl`, a change that needs approval files its proposal as before and asks the client to open that proposal in Console under the key `approve`. The person approves there with their own sign-in. On the retry the server reads the proposal back and reports it: still awaiting approval, running, completed, rejected or failed. It does not ask again; follow a pending proposal as before. Accepting the request in the client only opens the page. It never counts as approval, and the retry never runs the change.
+
+Clients that declare neither mode, and legacy sessions, get the same results as before.
 
 ## API-key proposals
 
@@ -348,6 +357,14 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 Required-input descriptions identify caller-supplied values or their producer tools. Input-validation refusals include source guidance in both JSON channels; missing fields and invalid types also carry field paths.
 
 Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+
+Layer display and spatial configuration are available through the admin `full` catalog as
+`honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
+`honua_admin_layer_spatial_get`, and `honua_admin_layer_spatial_set`.
+Use the storage layer ID from connection-layer discovery. Read the current configuration
+before proposing a change. Set calls preserve omitted fields and require human approval;
+spatial clear flags explicitly remove stored CRS metadata. These tools use the canonical
+Admin API validation. They do not yet offer revision-bound dry-run previews or guarded undo.
 
 A view is **discovery, not authority**:
 

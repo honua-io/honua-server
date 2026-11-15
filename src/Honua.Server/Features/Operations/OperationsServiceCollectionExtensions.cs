@@ -186,7 +186,7 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<OperationLineageAttestationStore>(),
                     sp.GetService<Honua.Core.Features.FileImport.Abstractions.IImportJobService>()));
             }
-            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            AdminOperationLoopbackTls.AddClient(services, AdminConnectImportOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -216,7 +216,7 @@ internal static class OperationsServiceCollectionExtensions
             services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(30);
-            });
+            }).ConfigurePrimaryHttpMessageHandler(AdminOperationLoopbackTls.CreateHandler);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -250,18 +250,11 @@ internal static class OperationsServiceCollectionExtensions
                         definition,
                         sp.GetRequiredService<IOperationSecretStore>()));
             }
-            services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminOperateOperationExecutor(
-                definition,
-                descriptor,
-                sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<IHttpContextAccessor>(),
-                sp.GetService<IAdminApiKeyStore>(),
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<OperationLineageAttestationStore>(),
-                sp.GetRequiredService<IOperationSecretStore>()));
+            services.AddDeferredOperationExecutor(definition.OperationId,
+                sp => AdminOperateOperationExecutor.Create(sp, definition, descriptor));
         }
 
-        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        AdminOperationLoopbackTls.AddClient(services, AdminOperateOperationExecutor.HttpClientName);
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // One policy seam combines typed operation rules with the legacy guardrail ladder.

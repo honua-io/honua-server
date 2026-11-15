@@ -83,6 +83,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
+        AdminOperationLoopbackTls.PinServedCertificate(message, current);
         if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
             message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);

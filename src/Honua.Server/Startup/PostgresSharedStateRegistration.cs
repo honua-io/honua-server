@@ -12,8 +12,10 @@ using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Infrastructure.McpSessions;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Studio.Drafts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -51,6 +53,7 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<ILeaseStore>()));
         services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
+        services.TryAddSingleton<PostgresOpsNotificationStore>();
         services.TryAddSingleton<PostgresWorkflowOperationStore>();
         services.TryAddSingleton<PostgresOperationInstanceStore>();
         services.TryAddSingleton(provider => new PostgresOperationSecretStore(
@@ -76,6 +79,7 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
         services.AddRetentionSweeps();
+        services.AddRealtimeEventLog(configuration);
         return services;
     }
 
@@ -91,6 +95,8 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
         services.AddRetentionSweep<PostgresMcpSessionStore>();
+        services.TryAddSingleton<PostgresWorkflowRunStore>();
+        services.AddRetentionSweep<PostgresWorkflowRunStore>();
     }
 
     // The lease store needs the system database; a host without one has no shared leases.

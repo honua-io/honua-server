@@ -39,7 +39,7 @@ public sealed class FeatureServerExpectedAbsenceTests
         reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(QueryResult<Feature>.Create(0, []));
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("objectid = @p0", [11L])));
         var handler = CreateHandler(reader, filters);
         var context = new FeatureServerEditsHandler.EditOperationContext
@@ -74,7 +74,7 @@ public sealed class FeatureServerExpectedAbsenceTests
 
     private static FeatureServerEditsHandler.EditTarget CreateTarget(string? storageKey)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
