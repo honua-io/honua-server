@@ -650,6 +650,10 @@ An expectation the correct answer cannot meet, such as the same text as both exp
 
 Restore the database only when a destructive migration already ran or data was corrupted: roll the app back first to stop writes, restore the last known-good snapshot, validate schema/version alignment, then readmit traffic — see [Back up and restore](backup-and-restore.md).
 
+### Catalog activations
+
+Each task watches a catalog change for 30 minutes after it is activated and compares serving errors per task before and after it. When errors regress, the server logs an error naming the activation and ends the watch; it does not change the catalog. Setting `ControlPlane:AutomaticCatalogRollback` (`ControlPlane__AutomaticCatalogRollback=true`) lets it restore the previous catalog document as a new revision instead, and then purge the CDN. Even then, a restore that would change access, lifecycle, editing, protocol, storage-binding or connection settings is refused and logged, because serving telemetry is not evidence for an access decision; review and revert such a change yourself.
+
 ## Verify
 
 > Open `/healthz/ready` in a browser, then run `GET /api/v1/admin/deploy/preflight` in the authorized [API explorer](../../reference/openapi-and-explorer.md).
