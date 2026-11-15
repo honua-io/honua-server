@@ -60,14 +60,15 @@ public static class CapabilityUnavailableCodes
         "This server was started without a system database, so the request is refused up front " +
         "instead of being queued and never run.";
 
-    // The workflow definition store has not moved to the system database yet, so this refusal
-    // names the store and the connection that composes it today.
+    // The workflow definition store lives in the system database, so this refusal names the
+    // store and the connection that composes it.
     public const string WorkflowDefinitionStoreDependency = "workflow-definition-store";
 
     public const string WorkflowDefinitionStoreRemediation =
-        "Publish to a target other than Schedule, or set ConnectionStrings__Redis to a reachable " +
-        "Redis instance and restart the server; the durable workflow definition store is composed " +
-        "only with that connection.";
+        "Publish to a target other than Schedule, or run the server on the PostGIS data source " +
+        "(DataSource__Provider=postgis, the default) with ConnectionStrings__DefaultConnection set " +
+        "to its system database and restart; the durable workflow definition store is composed " +
+        "only on that data source.";
 
     public const string WorkflowDefinitionStoreRemediationRef =
         "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";

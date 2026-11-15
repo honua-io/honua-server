@@ -23,7 +23,10 @@ public static class TenantSchemaRoutingExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddOptions<TenantSchemaOptions>()
-            .Bind(configuration.GetSection(TenantSchemaOptions.SectionName));
+            .Bind(configuration.GetSection(TenantSchemaOptions.SectionName))
+            .Validate(options => !options.Enabled || configuration.GetValue<bool>($"{TenantContextOptions.SectionName}:Enabled"),
+                "Tenant schema routing requires MultiTenancy:Enabled=true.")
+            .ValidateOnStart();
 
         if (configuration.IsTenantSchemaRoutingEnabled())
         {

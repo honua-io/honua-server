@@ -196,7 +196,7 @@ public class OidcAuthenticationTests
                         SemanticRoles = ["geometry.primary"],
                     },
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -211,7 +211,7 @@ public class OidcAuthenticationTests
                 layerIndex: 0,
                 storageBindingId: "binding-layer-0",
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
 
         services.RemoveAll<IMetadataV2GraphProvider>();
@@ -1738,6 +1738,35 @@ public class OidcAuthenticationTests
 
         // Assert - name should be extracted from preferred_username
         Assert.Equal("jdoe", result.FindFirst(ClaimTypes.Name)?.Value);
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_BearerAdditionalRoles_UsesCanonicalRoleIdentity()
+    {
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["deployment-admins"],
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = ["cognito:groups"]
+            }
+        });
+        var transformation = new OidcClaimsTransformation(
+            options, new TestLogger<OidcClaimsTransformation>(), EnterpriseEntitledServices());
+        var identity = new ClaimsIdentity(
+            [new Claim("sub", "group-user"), new Claim("cognito:groups", "deployment-admins")],
+            "Bearer", "name", "roles");
+        var principal = new ClaimsPrincipal(identity);
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("admin"));
+        Assert.True(result.IsInRole("deployment-admins"));
+        Assert.Equal(ClaimTypes.Role, Assert.IsType<ClaimsIdentity>(result.Identity).RoleClaimType);
+        var repeated = await transformation.TransformAsync(result);
+        Assert.True(repeated.IsInRole("admin"));
+        Assert.Single(repeated.FindAll(ClaimTypes.Role), claim => claim.Value == "admin");
     }
 
     [UnitTest]

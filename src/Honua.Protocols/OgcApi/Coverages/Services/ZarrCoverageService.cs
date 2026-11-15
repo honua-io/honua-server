@@ -67,7 +67,7 @@ internal sealed class ZarrCoverageService
     /// Builds the OGC API Coverages collection document for a Zarr-backed layer.
     /// </summary>
     public static OgcCoverageCollection CreateCollection(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         ZarrRegistration registration,
         string baseUrl)
@@ -132,7 +132,7 @@ internal sealed class ZarrCoverageService
     /// Builds the field-selection schema for a Zarr-backed collection: one
     /// selectable property per discovered variable.
     /// </summary>
-    public static CoverageSchema CreateSchema(MetadataV2Resource resource, int storageLayerId, ZarrRegistration registration)
+    public static CoverageSchema CreateSchema(MetadataV2Object resource, int storageLayerId, ZarrRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(registration);

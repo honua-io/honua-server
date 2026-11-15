@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -84,8 +85,8 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
 
     public async Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -148,6 +149,15 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        // Middleware freezes the effective deployment/header/execution tenant on
+        // this principal. A provider directory claim must not replace it. The
+        // actor marker also distinguishes an intentionally empty tenant binding
+        // from a principal that has not passed through request resolution.
+        if (CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim) is not null)
+        {
+            return CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim);
+        }
+
         return principal.FindFirstValue(TenantClaimType)
             ?? principal.FindFirstValue(AzureTenantClaimType)
             ?? ambientTenantId;
@@ -205,7 +215,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // sort first, even though the synchronous query surface would have allowed it through B.
         // Every live publication is therefore evaluated and ANY grant admits — matching what the
         // caller could already do interactively (honua-server#3046 review).
-        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>();
+        var candidates = new List<(MetadataV2Object Resource, MetadataV2Service? Service)>();
         var hasLivePublication = false;
         var publications = snapshot.Index.PublicationsByResource[storageResource.Metadata.Id].ToList();
 
@@ -307,8 +317,8 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         string? tenantId,
         bool applyTenantScope,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource storageResource,
-        IReadOnlyList<MetadataV2Publication> publications,
+        MetadataV2Object storageResource,
+        IReadOnlyList<MetadataV2Layer> publications,
         AuthorizationOperation operation,
         IDictionary<object, object?> requestCache,
         CancellationToken cancellationToken)

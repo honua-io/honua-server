@@ -24,6 +24,9 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using NSubstitute;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.PrintingTools;
@@ -57,7 +60,7 @@ public class PrintingToolsRequestHandlerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowedRoles = [coarseAllowed ? "reader" : "editor"] },
@@ -76,7 +79,7 @@ public class PrintingToolsRequestHandlerTests
                 ResourceId = "resource", StorageLayerId = 7,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }],
-            Publications = [new MetadataV2Publication
+            Publications = [new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication", Tenant = tenantVisible ? "tenant-a" : "tenant-b" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
@@ -130,7 +133,7 @@ public class PrintingToolsRequestHandlerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowAnonymous = false },
@@ -149,7 +152,7 @@ public class PrintingToolsRequestHandlerTests
                 ResourceId = "resource", StorageLayerId = 7,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }],
-            Publications = [new MetadataV2Publication
+            Publications = [new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
@@ -306,6 +309,40 @@ public class PrintingToolsRequestHandlerTests
             // A queued result is not available yet, while authorized status polling succeeds.
             statusCode.Should().Be(allowed ? method == "HandleJobStatus" ? 200 : 400 : 404);
         }
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("user-1", true, true)]
+    [InlineData("user-2", true, false)]
+    [InlineData("user-1", false, false)]
+    [Protocol(TestProtocols.PrintingTools)]
+    public void JobPolling_LegacyTenantlessProgress_PreservesOwner(string subject, bool singleTenant, bool allowed)
+    {
+        var tenant = new RequestTenantContext();
+        if (singleTenant)
+        {
+            tenant.SetSingleTenantDefault("public");
+        }
+        else
+        {
+            tenant.Set("public", TenantContextSource.Claim);
+        }
+        using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var owner = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "user-1")], "test"));
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, subject)], "test"))
+        };
+        var progress = PrintProgress.CreateInitial("legacy-print", "PNG32", "MAP_ONLY", 0) with
+        {
+            RequestedBy = CanonicalSecurityActor.Resolve(owner)!.ActorId,
+            AnonymousSubmission = false
+        };
+        var canRead = typeof(PrintingToolsEndpoints).GetMethod("CanReadJob", BindingFlags.Static | BindingFlags.NonPublic)!;
+        ((bool)canRead.Invoke(null, [progress, context])!).Should().Be(allowed);
     }
 
     // --- ResolveFormat ---

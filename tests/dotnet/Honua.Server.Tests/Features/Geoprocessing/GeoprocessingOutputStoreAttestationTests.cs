@@ -192,7 +192,7 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
 }
 
 [CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition
+public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition : ICollectionFixture<DatabaseFixtureAdapter>
 {
     // Host startup reads staging configuration from process environment variables, exactly
     // like the container topology; no other host may be built while they are set.
@@ -209,6 +209,12 @@ public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition
 public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-readiness-").FullName;
+    private readonly DatabaseFixtureAdapter _database;
+
+    public GeoprocessingOutputStoreReadinessEndpointTests(DatabaseFixtureAdapter database)
+    {
+        _database = database;
+    }
 
     [IntegrationTest]
     [Operation(Operations.ReadinessCheck)]
@@ -242,8 +248,11 @@ public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
         using var baseFactory = TestWebApplicationFactory.CreateForEnvironment(environmentName);
         using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
-            // This probe tests the output-store health and cache path without a database.
-            // Development middleware still reads metadata before dispatching the health endpoint.
+            // Shared configuration is refreshed before readiness in Development. Keep that
+            // middleware active and give this host its own pool over the collection's database.
+            services.RemoveAll<Npgsql.NpgsqlDataSource>();
+            services.AddSingleton(_ => Npgsql.NpgsqlDataSource.Create(_database.ConnectionString));
+            // Metadata itself remains test-owned so the probe isolates output-store health.
             services.RemoveAll<IMetadataV2GraphProvider>();
             services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(new MetadataV2Graph
             {

@@ -38,6 +38,35 @@ public sealed class LayerPublishJobTests
 {
     [Theory]
     [Trait("Tier", "Fast")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Get_LegacyTenantlessProgress_OnlySingleTenantUpgradeCanRead(bool singleTenant)
+    {
+        var tenant = new RequestTenantContext();
+        if (singleTenant)
+        {
+            tenant.SetSingleTenantDefault("public");
+        }
+        else
+        {
+            tenant.Set("public", TenantContextSource.Claim);
+        }
+        var store = new MemoryProgress();
+        await store.SetProgressAsync("legacy-publish", new LayerPublishJobProgress
+        {
+            OperationId = "legacy-publish",
+            Status = ProgressStatus.Completed,
+            RowsTotal = 5,
+            StartedAt = DateTimeOffset.UtcNow
+        });
+        var service = Service(Substitute.For<ILayerPublishingService>(), LayerPublishRunnerMode.InProcess,
+            10, store, requestTenant: tenant);
+        var progress = await service.GetAsync("legacy-publish", CancellationToken.None);
+        Assert.Equal(singleTenant, progress is not null);
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(false, false, (int)LayerPublishRunnerMode.InProcess)]
     [InlineData(true, false, (int)LayerPublishRunnerMode.DurableLocal)]
     [InlineData(true, true, (int)LayerPublishRunnerMode.Unavailable)]
@@ -575,7 +604,7 @@ public sealed class LayerPublishJobTests
                     .AddStorageBinding("other-binding", "other-data", "public.other", storageLayerId: 742)
                     .AddService("other-service", "ROADS")
                     .AddPublication("other-publication", "other-service", "other-data", layerIndex: 0,
-                        storageBindingId: "other-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                        storageBindingId: "other-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer)
                     .Build();
                 graph = graph with
                 {
@@ -665,7 +694,7 @@ public sealed class LayerPublishJobTests
             .AddStorageBinding("road-binding", "road-data", "public.roads", storageLayerId: 741)
             .AddService(serviceId, serviceName)
             .AddPublication(publicationId, serviceId, "road-data", layerIndex: 3,
-                storageBindingId: "road-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                storageBindingId: "road-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
 
     private static LayerPublishJobService Service(
@@ -675,7 +704,8 @@ public sealed class LayerPublishJobTests
         MemoryProgress? store = null,
         IServiceScopeFactory? scopes = null,
         IExecutionJobStore? jobStore = null,
-        IJobQueue? queue = null)
+        IJobQueue? queue = null,
+        RequestTenantContext? requestTenant = null)
     {
         var options = Options.Create(new LayerPublishingOptions
         {
@@ -684,8 +714,11 @@ public sealed class LayerPublishJobTests
         });
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
-        var tenant = new RequestTenantContext();
-        tenant.Set("tenant-a", TenantContextSource.Header);
+        var tenant = requestTenant ?? new RequestTenantContext();
+        if (requestTenant is null)
+        {
+            tenant.Set("tenant-a", TenantContextSource.Header);
+        }
         store ??= new MemoryProgress();
         var dispatcher = new LayerPublishJobDispatcher(
             new LayerPublishRunnerDecision(mode), store,
