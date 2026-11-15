@@ -105,6 +105,45 @@ public sealed class InMemoryFilterEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_Like_MatchesABoundedWildcard()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Like,
+            new Literal("%secret%", LiteralType.Text));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"top-secret"}""")).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_Like_RefusesTooManyWildcardsWithoutEchoingThePattern()
+    {
+        const string marker = "saved-like-marker";
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Like,
+            new Literal(marker + new string('%', 33), LiteralType.Text));
+
+        var error = Assert.Throws<UnevaluableLikePatternException>(() =>
+            InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"eeee"}""")));
+
+        error.ToString().Should().NotContain(marker);
+    }
+
+    [UnitTest]
+    public void Evaluate_NotLike_RefusesTooManyWildcardsInsteadOfInverting()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.NotLike,
+            new Literal(new string('_', 33), LiteralType.Text));
+
+        var act = () => InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"eeee"}"""));
+
+        act.Should().Throw<UnevaluableLikePatternException>();
+    }
+
+    [UnitTest]
     public void Evaluate_BigIntegerEquality_PreservesPrecision()
     {
         const long objectId = 9_007_199_254_740_993L;
@@ -203,6 +242,32 @@ public sealed class InMemoryFilterEvaluatorTests
             new Literal(true, LiteralType.Boolean));
 
         InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData(256, 'a')]
+    [InlineData(32, '_')]
+    public void Evaluate_Like_AcceptsPatternAtBoundary(int count, char character)
+    {
+        var expression = new BinaryExpression(new PropertyReference("name"), BinaryOperator.Like,
+            new Literal(new string(character, count), LiteralType.Text));
+        var properties = CreateProperties($"{{\"name\":\"{new string('a', count)}\"}}");
+
+        InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData(257, 'a')]
+    [InlineData(33, '_')]
+    public void Evaluate_Like_RefusesPatternBeyondBoundary(int count, char character)
+    {
+        var expression = new BinaryExpression(new PropertyReference("name"), BinaryOperator.Like,
+            new Literal(new string(character, count), LiteralType.Text));
+        var properties = CreateProperties($"{{\"name\":\"{new string('a', count)}\"}}");
+
+        Action act = () => InMemoryFilterEvaluator.Evaluate(expression, properties);
+
+        act.Should().Throw<UnevaluableLikePatternException>();
     }
 
     private static Dictionary<string, JsonElement> CreateProperties(string json)
