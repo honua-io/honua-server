@@ -40,10 +40,7 @@ public class NetworkDatasetAdminEndpointsTests
         _fixture = application.Fixture;
     }
 
-    /// <summary>
-    /// One application and schema per class: every case registers datasets under its own
-    /// random id and asserts only on those rows, so a host per case bought no isolation.
-    /// </summary>
+    // Cases register datasets under random ids and assert only on their own rows.
     public sealed class SharedApplication : IAsyncLifetime
     {
         public WebAppFixture Fixture { get; } = new WebAppFixture()

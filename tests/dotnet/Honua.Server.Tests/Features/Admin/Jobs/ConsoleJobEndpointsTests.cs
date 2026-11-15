@@ -81,13 +81,8 @@ public sealed partial class ConsoleJobEndpointsTests
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// One application per class: every case resets the in-memory doubles and reseeds the
-    /// same jobs, so building a host and database schema per case bought no isolation.
-    /// Cases that need other configuration still build and dispose their own application.
-    /// The timer-driven job sweepers are removed from this long-lived host so they cannot
-    /// rewrite a case's seeded jobs mid-request; their logic has dedicated tests.
-    /// </summary>
+    // Cases reset and reseed the in-memory doubles. The timer-driven job-store pollers are
+    // removed so they cannot rewrite a case's seeded jobs mid-request.
     public sealed class SharedApplication : IAsyncLifetime
     {
         private static readonly HashSet<string> _jobStorePollers = new(StringComparer.Ordinal)
@@ -96,7 +91,6 @@ public sealed partial class ConsoleJobEndpointsTests
             "ExecutionJobReconcilerBackgroundService",
             "ExecutionQueueDepthCollectorBackgroundService",
             "JobStoreRetentionSweepService",
-            "GeoprocessingOutputArtifactSweeper",
         };
 
         internal RetentionTestClock RetentionClock { get; } = new();

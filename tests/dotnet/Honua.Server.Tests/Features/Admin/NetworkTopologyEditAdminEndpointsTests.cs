@@ -45,11 +45,7 @@ public class NetworkTopologyEditAdminEndpointsTests
         _logCapture = application.LogCapture;
     }
 
-    /// <summary>
-    /// One application and schema per class: every case registers its own randomly named
-    /// dataset, and the captured log is cleared before each case, so a host per case
-    /// bought no isolation. Cases in a class run one at a time.
-    /// </summary>
+    // Cases use their own random datasets; the log capture is cleared before each case.
     public sealed class SharedApplication : IAsyncLifetime
     {
         public SharedApplication()

@@ -8,11 +8,9 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Server.Features.Admin.Routing;
-using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
@@ -62,74 +60,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// One application and schema per class, started on first use because the Redis
-    /// connection comes from the collection fixture. Every case registers its own randomly
-    /// named dataset and asserts only on that dataset's generations, attempts and jobs, so a
-    /// host per case bought no isolation.
-    /// </summary>
-    public sealed class SharedApplication : IAsyncLifetime
-    {
-        private readonly SemaphoreSlim _start = new(1, 1);
-        private WebAppFixture? _fixture;
-
-        public async Task<WebAppFixture> GetAsync(RedisFixture redis)
-        {
-            await _start.WaitAsync();
-            try
-            {
-                if (_fixture is null)
-                {
-                    var fixture = Create(redis.ConnectionString);
-                    try
-                    {
-                        await fixture.InitializeAsync();
-                    }
-                    catch
-                    {
-                        await fixture.DisposeAsync();
-                        throw;
-                    }
-
-                    _fixture = fixture;
-                }
-
-                return _fixture;
-            }
-            finally
-            {
-                _start.Release();
-            }
-        }
-
-        public Task InitializeAsync() => Task.CompletedTask;
-
-        public async Task DisposeAsync()
-        {
-            if (_fixture is not null)
-            {
-                await _fixture.DisposeAsync();
-            }
-
-            _start.Dispose();
-        }
-
-        // Rebuild submission creates a durable ExecutionJobRecord via the shared job
-        // infrastructure (#2718), which the production composition root only wires
-        // (AddJobOrchestration/AddJobWorker) when a Redis connection and a Redis-cache
-        // license entitlement are present — mirrors GpJobWorkerCompositionRootTests.
-        private static WebAppFixture Create(string redisConnectionString) =>
-            new WebAppFixture().WithProductionJobSubstrate()
-                .UseSeed("tests/seed/server.yaml")
-                .ConfigureWebHost(builder =>
-                {
-                    builder.UseEnvironment("Test");
-                    builder.UseSetting("HONUA_DEV_AUTH", "false");
-                    builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                    builder.UseSetting("ConnectionStrings:redis", redisConnectionString);
-                    builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-                });
-    }
+    public sealed class SharedApplication() : RedisBackedNetworkApplication(AdminPassword);
 
     private static string NewId(string suffix) =>
         $"ntr-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
