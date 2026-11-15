@@ -251,7 +251,10 @@ internal static partial class FeatureStreamEndpoints
                 {
                     // Drain channel for headroom only — the store sweep below
                     // delivers everything in cursor order including grace-drops.
-                    while (session.Reader.TryRead(out _)) { }
+                    while (session.Reader.TryRead(out _))
+                    {
+                        // Discard: the store sweep re-delivers these in cursor order.
+                    }
 
                     previousCursor = replayCursor;
                     replayCursor = await ReplayToWebSocketAsync(
@@ -306,7 +309,10 @@ internal static partial class FeatureStreamEndpoints
 
                         // Drain channel for headroom only — the store sweep below
                         // delivers everything in cursor order including grace-drops.
-                        while (session.Reader.TryRead(out _)) { }
+                        while (session.Reader.TryRead(out _))
+                        {
+                            // Discard: the store sweep re-delivers these in cursor order.
+                        }
 
                         long prev = cursor;
                         cursor = await ReplayToWebSocketAsync(
