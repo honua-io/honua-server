@@ -32,7 +32,7 @@ No LTS designation or new support duration is established by this page.
 | --- | --- |
 | Runtime | .NET 11 and ASP.NET Core 11, bundled in the images |
 | Microsoft support for that runtime ends | 14 Nov 2028 (the same day as .NET 10 LTS) |
-| Container base | Ubuntu 26.04, chiseled (no shell or package manager) |
+| Primary server container base | Ubuntu 26.04, chiseled (no shell or package manager) |
 | x64 CPU | x86-64-v2 or newer ([CPU baseline](../guides/deploy/troubleshooting.md#cpu-baseline-x86-64-v2)) |
 | Arm64 CPU | any arm64 |
 
@@ -40,6 +40,14 @@ No LTS designation or new support duration is established by this page.
 so moving to it does not shorten the runtime support window. Honua moves to .NET 12 LTS in the
 first release after .NET 12 ships (November 2027), before .NET 11 support ends. The container
 images carry their own runtime: operators do not install .NET.
+
+Serverless images use separate host bases. The Azure Functions managed and AOT
+images use the Azure Functions host on Ubuntu 24.04; Honua is published
+self-contained with .NET 11, so it does not use the base image's .NET 10 shared
+frameworks. The managed AWS Lambda image uses the Amazon Linux 2023 provided
+runtime base with self-contained .NET 11. The Lambda AOT image uses Ubuntu 26.04
+chiseled runtime dependencies. These base choices are defined in the corresponding
+`docker/Dockerfile.functions*` and `docker/Dockerfile.lambda*` files.
 
 Packages for plug-in and custom-code authors keep .NET 10 LTS working:
 

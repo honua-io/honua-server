@@ -261,10 +261,28 @@ internal sealed partial class PostgresObservationStore
         var tables = await ResolveSensingTablesAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         if (entitySet != "Observations" || bodies.Any(ContainsLocationMutation))
             await LockCatalogRelationshipsAsync(tables, lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
+        await StampObservationScopeAsync(tables, lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         var ids = new List<long>(bodies.Count);
         foreach (var body in bodies) ids.Add(await InsertEntityAsync(tables, lease.Connection, transaction, entitySet, ParseBody(body), 0, cancellationToken).ConfigureAwait(false));
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return ids;
+    }
+
+    // The trigger commits the exact request scope with the observation. Schema is not a tenant
+    // identity, and null remains distinct from a named schema. Transaction-local settings cannot
+    // leak from one pooled connection user to the next.
+    private async Task StampObservationScopeAsync(
+        SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT set_config('honua.observation_scope',
+                jsonb_build_object('tenantId', @tenant, 'schema', @schema, 'tableSchema', @table_schema)::text, true)
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter("tenant", NpgsqlDbType.Text) { Value = (object?)_tenantContext?.TenantId ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("schema", NpgsqlDbType.Text) { Value = (object?)_schemaContext?.CurrentSchema ?? DBNull.Value });
+        command.Parameters.AddWithValue("table_schema", tables.BaseSchema);
+        await ExecuteCatalogNonQueryAsync(command, ct).ConfigureAwait(false);
     }
 
     private static bool ContainsLocationMutation(JsonElement value) => value.ValueKind switch
