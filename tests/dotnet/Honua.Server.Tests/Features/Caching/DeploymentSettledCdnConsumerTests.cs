@@ -9,11 +9,14 @@ using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Caching;
 
 [Collection("Database")]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAdapter fixture)
 {
     [IntegrationTest]
