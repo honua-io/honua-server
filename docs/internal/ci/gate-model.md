@@ -1565,3 +1565,27 @@ the expected CI saving for those shards. Full CI job savings are unmeasured.
 All cases remain in their existing shards on selected PR runs and twice-daily
 full trunk runs. This changes no runner count, required check name, required
 aggregate dependency, workflow or shard definition.
+### Catalog endpoint SOAP raster host lifetime
+
+`GeoservicesCatalogEndpointTests` lazily starts one SOAP raster application per
+class for six read-only tests that use the default raster store. Only Catalog
+Support 5 and 6 contain these cases; the other four shards do not start this host.
+The existing database collection serializes the tests; the class fixture owns
+startup and disposal.
+Cases that customize raster metadata, inspect substitute call counts, mutate
+catalog state or override host configuration retain their private applications.
+Every request, response assertion and discovered case remains in place.
+
+All cases remain in the existing GeoServices Catalog Support shards on selected
+PR runs and twice-daily full trunk runs. Runner count, required check names,
+aggregate dependencies, workflows and shard definitions are unchanged. A paired
+build-host class run passed the same 59 cases without skips: VSTest execution
+185 to 140 seconds; fixture-inclusive TRX interval 214.73 to 159.48 seconds.
+This saves 0.75 execution runner-minutes in one unchanged test process. The six
+shared cases' body total fell from 34.50 to 4.99 seconds; other cases also varied,
+so the observed whole-class reduction is not entirely attributed to host reuse.
+Build and admission time are excluded. The complete existing Support 6 test
+invocation passed the same 24 cases without skips: VSTest 81 to 63 seconds,
+saving 18 seconds (0.30 execution runner-minutes) with one process unchanged;
+fixture-inclusive TRX interval 83.24 to 66.93 seconds. Full CI-job time, including
+setup and build, remains unmeasured.
