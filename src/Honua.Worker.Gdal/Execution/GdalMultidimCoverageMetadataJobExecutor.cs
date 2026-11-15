@@ -112,6 +112,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            using var sourceScope = GdalRemoteInputScope.Trust(vsiPath);
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running gdalmdiminfo", cancellationToken).ConfigureAwait(false);
 
@@ -163,6 +164,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             // userfaultfd is available, and Docker's default seccomp blocks it.
             string? zarrRootPath = DeriveZarrRootPath(objectKey);
             var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath);
+            using var derivedStoreScope = GdalRemoteInputScope.Trust(vsiOut);
             var convertResult = await RunConvertAsync(runner, context, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
             if (convertResult is not { Succeeded: true })
             {
@@ -360,6 +362,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             // The root document has no geotransform; the data array does.
             foreach (var subdataset in SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson))
             {
+                using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdataset, zarrPath);
                 last = await RunInfoAsync(
                     runner, context, subdataset, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))

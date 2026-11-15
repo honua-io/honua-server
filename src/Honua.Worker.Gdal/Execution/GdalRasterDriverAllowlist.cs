@@ -76,15 +76,9 @@ internal static class GdalRasterDriverAllowlist
             return false;
         }
 
-        foreach (var argument in arguments)
-        {
-            if (argument.Contains("/vsi", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        // Only an executor-declared object-store input (multidim coverage reads)
+        // leaves gdalinfo unrestricted; a job value that merely contains "/vsi" does not.
+        return !GdalRemoteInputScope.Classify(arguments).Remote;
     }
 
     private static List<string> ResolveDrivers(GdalWorkerOptions options)
