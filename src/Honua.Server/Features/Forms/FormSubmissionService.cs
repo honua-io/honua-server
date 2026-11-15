@@ -1,12 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
-using System.Globalization;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -24,6 +18,11 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace Honua.Server.Features.Forms;
 
@@ -118,7 +117,7 @@ internal sealed class FormSubmissionService
             return authorizationFailure;
         }
 
-        var actorHash = Hash($"{ResolveActor(context)}|{request.ClientId}");
+        var actorHash = Hash($"{ActorResolver.Resolve(context, ActorResolution.SubjectOrName)}|{request.ClientId}");
         var requestHash = Hash(parseResult.RawRequest);
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
@@ -1178,11 +1177,6 @@ internal sealed class FormSubmissionService
     private static string[] SplitAllowedMimeTypes(string allowedMimeTypes)
         => allowedMimeTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string ResolveActor(HttpContext context)
-        => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-           ?? context.User.Identity?.Name
-           ?? AuditEvent.AnonymousActor;
-
     private Task<string?> RecordAuditAsync(
         HttpContext context,
         string action,
@@ -1194,7 +1188,7 @@ internal sealed class FormSubmissionService
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.AdminAction,
-            Actor = ResolveActor(context),
+            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
             ActorType = context.User.Identity?.IsAuthenticated == true ? AuditActorType.UserId : AuditActorType.Anonymous,
             ResourceType = "form_package",
             ResourceId = formId,
