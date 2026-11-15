@@ -1617,17 +1617,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             GeoPackageTestFiles.Create(filePath, includeSecondLayer: true);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var service = new StreamingFileImportService(
-                provider,
-                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
-                new TestFileFormatDetectionService(),
-                new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance,
-                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
-
             await using var stream = File.OpenRead(filePath);
-            var result = await service.ImportFileAsync(new ImportRequest
+            var result = await CreateGeoPackageImportService(schema).ImportFileAsync(new ImportRequest
             {
                 FileStream = stream,
                 FileName = "two_layers.gpkg",
@@ -1648,6 +1639,18 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await GeoPackageTestFiles.DeleteAsync(filePath);
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    private StreamingFileImportService CreateGeoPackageImportService(string schema)
+    {
+        var provider = new TestConnectionProvider(fixture.DataSource, schema);
+        return new StreamingFileImportService(
+            provider,
+            new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+            new TestFileFormatDetectionService(),
+            new NoopPerformanceMonitor(),
+            NullLogger<StreamingFileImportService>.Instance,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
     }
 
     [IntegrationTest]

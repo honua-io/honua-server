@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public class StreamingImportTests : IAsyncLifetime
+public partial class StreamingImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
@@ -917,43 +917,6 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Import_GeoJsonNullGeometryFeature_ImportsEveryFeatureAndWarnsWithItsIndex()
-    {
-        const string geoJsonContent = """
-        {"type":"FeatureCollection","features":[
-          {"type":"Feature","geometry":{"type":"Point","coordinates":[-157,21]},"properties":{"name":"a"}},
-          {"type":"Feature","geometry":{"type":"Point","coordinates":[-156,21]},"properties":{"name":"b"}},
-          {"type":"Feature","geometry":null,"properties":{"name":"unlocated"}},
-          {"type":"Feature","geometry":{"type":"Point","coordinates":[-155,20]},"properties":{"name":"d"}}]}
-        """;
-        using var content = new MultipartFormDataContent();
-        using var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
-        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
-        {
-            Name = "File",
-            FileName = "null-geometry.geojson"
-        };
-        using var tableName = new StringContent("null_geometry_table");
-        using var overwrite = new StringContent("true");
-        content.Add(fileContent);
-        content.Add(tableName, "TableName");
-        content.Add(overwrite, "OverwriteExisting");
-
-        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
-
-        var responseContent = await response.Content.ReadAsStringAsync();
-        var result = DeserializeImportResult(responseContent);
-        result.Success.Should().BeTrue(responseContent);
-        result.FeatureCount.Should().Be(4, responseContent);
-        result.ValidationErrors.Should().ContainSingle(issue =>
-            issue.Code == ImportValidationErrorCodes.GeometryMissing &&
-            issue.Severity == ImportValidationSeverity.Warning &&
-            issue.FeatureIndex == 3);
-        (await CountNullGeometryRowsAsync("null_geometry_table")).Should().Be((4, 1));
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GeoJsonWithUnsupportedTargetSrid_ReturnsStructuredValidationAndDoesNotCreateTable()
     {
         var geoJsonContent = """
@@ -1327,19 +1290,6 @@ public class StreamingImportTests : IAsyncLifetime
         }
 
         return rows;
-    }
-
-    private async Task<(long Rows, long NullGeometries)> CountNullGeometryRowsAsync(string tableName)
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT count(*), count(*) FILTER (WHERE geometry IS NULL) " +
-            $"FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)}";
-        await using var reader = await command.ExecuteReaderAsync();
-        await reader.ReadAsync();
-        return (reader.GetInt64(0), reader.GetInt64(1));
     }
 
     private async Task<(double X, int Srid)> ReadImportedPointAsync(string tableName)
