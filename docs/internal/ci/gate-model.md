@@ -791,7 +791,10 @@ Each sweep lists the bounded histories of CI and PR Gate, selects completed trus
 updated since the checkpoint, and reads artifacts per source run. It never lists the
 repository-wide artifact collection. Full creation-ordered histories preserve discovery
 of recent reruns of old source runs. The sweep selects each shard's highest attempt and
-publishes at most 25 source runs. Its update watermark retains a five-minute overlap and
+inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
+run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+Source completion and attempt identity are rechecked after artifact discovery; a racing
+rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining
 evidence stays discoverable for the next event or scheduled sweep.
 

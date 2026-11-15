@@ -127,6 +127,13 @@ def validate_cursor(cursor):
         raise ValueError('Invalid quarantine checkpoint')
     if any(type(identity) is not int or identity < 1 for identity in ids):
         raise ValueError('Invalid checkpoint artifact identity')
+    versions = cursor.get('run_versions', {})
+    if not isinstance(versions, dict) or len(versions) > MAX_PAGES * 100:
+        raise ValueError('Invalid checkpoint run versions')
+    for identity, version in versions.items():
+        if not identity.isdecimal() or int(identity) < 1 or not isinstance(version, str):
+            raise ValueError('Invalid checkpoint run version')
+        timestamp(version)
 
 
 def candidates(artifacts, seen):
@@ -189,12 +196,29 @@ def sweep(checkpoint):
     seen = set(cursor['artifact_ids'])
     retained = set()
     completed = 0
+    inspected = 0
+    versions = cursor.get('run_versions', {})
+    recorded = {}
     deferred = []
     for run in runs:
-        if completed >= MAX_BATCH_RUNS:
+        identity = str(run['id'])
+        if versions.get(identity) == run['updated_at']:
+            recorded[identity] = run['updated_at']
+            continue
+        if inspected >= MAX_BATCH_RUNS:
             deferred.append(timestamp(run['updated_at']))
             continue
+        inspected += 1
         artifacts = inventory(f'actions/runs/{run["id"]}/artifacts', 'artifacts')
+        # Recheck after listing artifacts: a new attempt can start mid-sweep.
+        current = api(f'actions/runs/{run["id"]}')
+        if (not trusted(current, SOURCES) or current['status'] != 'completed'
+                or current['conclusion'] not in {'success', 'failure'}
+                or current['run_attempt'] != run['run_attempt']
+                or current['updated_at'] != run['updated_at']):
+            deferred.append(timestamp(run['updated_at']))
+            continue
+        recorded[identity] = run['updated_at']
         retained.update(item['id'] for item in artifacts)
         items = candidates(artifacts, seen).get(run['id'], [])
         if items:
@@ -205,6 +229,7 @@ def sweep(checkpoint):
     boundary = min([started, *deferred])
     cursor['since'] = max(timestamp(cursor['since']), boundary).isoformat()
     cursor['artifact_ids'] = sorted(seen & retained)
+    cursor['run_versions'] = recorded
     checkpoint.write_text(json.dumps(cursor, sort_keys=True) + '\n')
     print(f'Published {completed} source run(s); checkpoint records {len(cursor["artifact_ids"])} retained artifacts')
 

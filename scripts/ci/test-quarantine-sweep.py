@@ -54,6 +54,7 @@ class SweepTests(unittest.TestCase):
                         and sweep.timestamp(run['updated_at']) >= sweep.timestamp((previous or cursor())['since'])]), \
                     patch.object(sweep, 'inventory', side_effect=lambda path, key:
                         [item for item in artifacts if item['workflow_run']['id'] == int(path.split('/')[2])]), \
+                    patch.object(sweep, 'api', side_effect=lambda path: (runs or {})[int(path.split('/')[2])]), \
                     patch.object(sweep, 'publish_run') as publish:
                 sweep.sweep(checkpoint)
             return json.loads(checkpoint.read_text()), publish
@@ -74,6 +75,7 @@ class SweepTests(unittest.TestCase):
             with patch.object(sweep, 'load_cursor', return_value=cursor()), \
                     patch.object(sweep, 'inventory', return_value=evidence), \
                     patch.object(sweep, 'source_runs', return_value=[source()]), \
+                    patch.object(sweep, 'api', return_value=source()), \
                     patch.object(sweep, 'publish_run', side_effect=RuntimeError('API unavailable')), \
                     self.assertRaises(RuntimeError):
                 sweep.sweep(checkpoint)
@@ -109,6 +111,34 @@ class SweepTests(unittest.TestCase):
         with patch.object(sweep, 'MAX_BATCH_RUNS', 1):
             state, publish = self.execute([artifact(1), artifact(2, 11)], {10: source(), 11: source(11)}, cursor([999]))
         self.assertEqual([1], state['artifact_ids'])
+        self.assertEqual(1, publish.call_count)
+
+    def test_empty_runs_count_toward_budget_and_resume_equal_timestamp_backlog(self):
+        runs = {i: source(i) for i in range(1, 1201)}
+        state, publish = self.execute([], runs)
+        self.assertEqual(25, len(state['run_versions']))
+        publish.assert_not_called()
+        state, _ = self.execute([], runs, state)
+        self.assertEqual(50, len(state['run_versions']))
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(source()['updated_at']))
+
+    def test_rerun_started_after_discovery_never_consumes_new_attempt(self):
+        listed = source()
+        pending = dict(listed, status='in_progress', run_attempt=3)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'source_runs', return_value=[listed]), \
+                    patch.object(sweep, 'inventory', return_value=[artifact(3, attempt=3)]), \
+                    patch.object(sweep, 'api', return_value=pending), \
+                    patch.object(sweep, 'publish_run') as publish:
+                sweep.sweep(checkpoint)
+            state = json.loads(checkpoint.read_text())
+        publish.assert_not_called()
+        self.assertEqual([], state['artifact_ids'])
+        self.assertEqual({}, state['run_versions'])
+        state, publish = self.execute([artifact(3, attempt=3)], {10: dict(pending, status='completed')}, state)
+        self.assertEqual([3], state['artifact_ids'])
         self.assertEqual(1, publish.call_count)
 
     def test_source_discovery_scans_old_creation_pages_and_only_source_workflows(self):
