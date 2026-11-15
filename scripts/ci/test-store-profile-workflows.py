@@ -147,6 +147,22 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('matrix.compilation', build['with']['cache-to'])
         self.assertIn('mode=max', build['with']['cache-to'])
 
+    def test_store_matrix_jobs_use_isolated_local_images(self):
+        job = workflow('store-image-size.yml')['jobs']['measure']
+        reference = job.get('env', {}).get('IMAGE', '')
+        for dimension in ('github.run_id', 'github.run_attempt', 'matrix.profile', 'matrix.compilation'):
+            self.assertIn(dimension, reference)
+        build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
+        self.assertEqual(build['with']['tags'], '${{ env.IMAGE }}')
+        text = (ROOT / '.github/workflows/store-image-size.yml').read_text()
+        self.assertNotIn('honua-store-measure:current', text)
+        for step in job['steps']:
+            script = step.get('run', '')
+            if any(command in script for command in ('docker image inspect', 'docker create',
+                                                     'docker run --rm --env', 'smoke-serving-formats.sh',
+                                                     'scripts/ci/measure-serving-image.py ', 'for version in before after')):
+                self.assertIn('"$IMAGE"', script)
+
     def test_store_build_context_does_not_change_when_evidence_is_exported(self):
         job = workflow('store-image-size.yml')['jobs']['measure']
         prepare = next(step for step in job['steps'] if step.get('name') == 'Freeze serving build context')

@@ -39,6 +39,8 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 30
+    env:
+      IMAGE: honua-store-measure:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.profile }}-${{ matrix.compilation }}
     # AOT promotion needs separate full/live parity proof; its old size target must
     # not hold the approved JIT fallback. Evidence is still uploaded on failure.
     continue-on-error: ${{ matrix.compilation == 'aot' }}
@@ -85,7 +87,7 @@ jobs:
           file: ${{ runner.temp }}/store-image-context/${{ matrix.dockerfile }}
           platforms: linux/amd64
           load: true
-          tags: honua-store-measure:current
+          tags: ${{ env.IMAGE }}
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
             HONUA_STORE_PROFILE=${{ matrix.profile }}
@@ -131,14 +133,14 @@ jobs:
           PROFILE: ${{ matrix.profile }}
         run: |
           docker pull --platform linux/amd64 "$BASELINE"
-          test "$(docker image inspect honua-store-measure:current --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
-          python3 scripts/ci/measure-serving-image.py honua-store-measure:current \
+          test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
+          python3 scripts/ci/measure-serving-image.py "$IMAGE" \
             --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
             --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence \
             --oci-archive artifacts/image.oci.tar
       - name: Verify native packages remain visible to scanners
         run: |
-          container=$(docker create honua-store-measure:current)
+          container=$(docker create "$IMAGE")
           trap 'docker rm "$container" >/dev/null' EXIT
           docker cp "$container:/var/lib/dpkg/status" artifacts/runtime-dpkg-status
           if [ '${{ matrix.compilation }}' = aot ]; then
@@ -152,21 +154,21 @@ jobs:
           mkdir -p artifacts
           for provider in duckdb mysql mssql oracle redshift snowflake dbsql featureserver; do
             if timeout 30 docker run --rm --env "DataSource__Provider=$provider" \
-              honua-store-measure:current > "artifacts/startup-$provider.log" 2>&1; then
+              "$IMAGE" > "artifacts/startup-$provider.log" 2>&1; then
               echo "::error::Excluded provider was accepted"
               exit 1
             fi
             grep -F -- '-full' "artifacts/startup-$provider.log"
           done
       - name: Smoke import format support and rendering
-        run: bash scripts/ci/smoke-serving-formats.sh honua-store-measure:current artifacts/formats
+        run: bash scripts/ci/smoke-serving-formats.sh "$IMAGE" artifacts/formats
       - name: Compare vulnerability findings
         env:
           BASELINE: ${{ matrix.baseline }}
         run: |
           for version in before after; do
             image="$BASELINE"
-            if [ "$version" = after ]; then image=honua-store-measure:current; fi
+            if [ "$version" = after ]; then image="$IMAGE"; fi
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               -v "$PWD/.trivyignore:/config/ignore:ro" aquasec/trivy:0.68.1 \
               image --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /config/ignore \
