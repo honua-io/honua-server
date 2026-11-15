@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Npgsql;
 using NpgsqlTypes;
@@ -66,7 +67,7 @@ internal sealed class PostgresWfsStoredQueryStore(JobStoreDatabase database) : I
                     System.Data.IsolationLevel.ReadCommitted, token).ConfigureAwait(false);
                 await LockScopeAsync(transaction, entry.Key.Scope, token).ConfigureAwait(false);
                 var result = await InsertAsync(transaction, entry, token).ConfigureAwait(false);
-                await transaction.CommitAsync(token).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
                 return result;
             },
             StatementRepeat.NotAfterSend,
