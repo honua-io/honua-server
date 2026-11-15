@@ -30,9 +30,19 @@ internal sealed class ChangeTrackerGenerationProbe(IServiceScopeFactory scopeFac
             return null;
         }
 
+        var currentGeneration = await tracker
+            .GetCurrentGenerationAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (currentGeneration <= sinceGeneration)
+        {
+            return null;
+        }
+
         var layerIds = watchedLayerIds as int[] ?? watchedLayerIds.ToArray();
         var changes = await tracker
-            .GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken)
+            .GetChangesInWindowAsync(
+                sinceGeneration, currentGeneration, layerIds,
+                excludeOriginReplicaId: null, cancellationToken)
             .ConfigureAwait(false);
 
         if (changes.Count == 0)
