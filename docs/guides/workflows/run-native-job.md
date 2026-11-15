@@ -140,7 +140,7 @@ Inspect the immutable worker artifact, job definition, role, and shared storage 
 
 Execute against retained input and write a separate owned output. Confirm the provider job and worker evidence, terminal success, and retrievable bytes. Check meaningful format and geometry properties, not merely an output filename.
 
-Continue with [publication](connect-publish-data.md) and [map composition](compose-map.md) only when requested. Keep those additional resources and their cleanup separate from the conversion job.
+Continue with [publication](connect-publish-data.md) and [Map](compose-map.md) only when requested. Keep those additional resources and their cleanup separate from the conversion job.
 
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 

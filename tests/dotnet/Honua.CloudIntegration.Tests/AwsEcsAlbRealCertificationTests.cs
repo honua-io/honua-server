@@ -122,7 +122,9 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         currentTaskDefinition.Should().NotBeNullOrWhiteSpace(
             "the certification ECS service must resolve to a concrete task definition to deploy");
 
-        var backend = new AwsEcsAlbDeployBackend(albClient, ecsClient, NullLogger<AwsEcsAlbDeployBackend>.Instance);
+        var backend = new AwsEcsAlbDeployBackend(
+            new AwsEcsAlbDeployClients(albClient, ecsClient),
+            NullLogger<AwsEcsAlbDeployBackend>.Instance);
         var operation = AwsEcsAlbCertificationSupport.BuildOperation(
             cluster,
             service,

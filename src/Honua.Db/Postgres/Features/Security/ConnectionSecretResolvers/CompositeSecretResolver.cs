@@ -129,6 +129,18 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
     }
 
+    public Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
+        var (provider, _) = ParseSecretReference(secretKey);
+        if (!_resolvers.TryGetValue(provider, out var resolver))
+        {
+            throw new InvalidOperationException("No secret resolver is configured for this provider.");
+        }
+
+        return resolver.ResolveSecretFreshAsync(secretKey, cancellationToken);
+    }
+
     /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {

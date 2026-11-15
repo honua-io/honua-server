@@ -375,6 +375,9 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         return;
     }
 
+    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -1087,7 +1090,7 @@ if (replicaProvider != DataProviderNames.DuckDb &&
 
 // The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
 // lease row in the system database. A host with no system database has one node, so an in-process
-// lock is enough. The async job store below still uses Redis when it is configured.
+// lock is enough.
 if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
 {
     builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
@@ -1098,10 +1101,6 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
     sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
         ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
         : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
-builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
-    new Honua.Infrastructure.Coordination.RedisVersionJobStore(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 if (offlineSyncEnabled)
@@ -1129,7 +1128,7 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
-builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration);
 // ---- End extracted block
 
 // ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
@@ -2004,6 +2003,7 @@ app.MapGeocodingOperationsEndpoints();
 
 // Configure feature-change streaming transport (#501)
 app.MapFeatureStreamEndpoints();
+app.MapRealtimeNotificationEndpoints();
 app.MapFeatureStreamConformanceEndpoints();
 
 // Configure security endpoints (CSP violation reporting)

@@ -30,7 +30,7 @@ public sealed partial class AdminAuthEndpointsTests
         await fixture.InitializeAsync();
         using var browser = fixture.CreateClient();
         browser.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(browser);
+        await BrowserCsrf.SetHeaderAsync(browser);
 
         for (var attempt = 0; attempt < FailureThreshold; attempt++)
         {

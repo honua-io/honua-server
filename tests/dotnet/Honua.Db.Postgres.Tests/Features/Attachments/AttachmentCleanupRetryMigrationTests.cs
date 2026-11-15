@@ -59,7 +59,7 @@ public sealed class AttachmentCleanupRetryMigrationTests(PostgresFixture fixture
         {
             root = root.Parent;
         }
-        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "185_CreateAttachmentCleanupRetries.sql");
+        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "197_CreateAttachmentCleanupRetries.sql");
         await ExecuteAsync(schema, (await File.ReadAllTextAsync(path)).Replace("$HonuaSchema$", "\"{schema}\"", StringComparison.Ordinal));
     }
 

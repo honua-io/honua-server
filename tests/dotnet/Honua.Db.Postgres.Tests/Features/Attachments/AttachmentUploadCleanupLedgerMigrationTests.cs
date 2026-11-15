@@ -56,7 +56,7 @@ public sealed class AttachmentUploadCleanupLedgerMigrationTests(PostgresFixture 
         {
             root = root.Parent;
         }
-        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "183_CreateAttachmentUploadCleanupLedger.sql");
+        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "195_CreateAttachmentUploadCleanupLedger.sql");
         await ExecuteAsync(schema, (await File.ReadAllTextAsync(path)).Replace("$HonuaSchema$", "\"{schema}\"", StringComparison.Ordinal));
     }
 
