@@ -788,7 +788,9 @@ are rejected so a passing sibling cannot conceal a missing failure. Duplicate di
 in unrelated passing methods remain untouched in the merged results. Infrastructure and
 execution failures remain blocking. Each test command runs in a dedicated process group.
 Cancellation signals that group and its snapshotted descendants, including those that leave
-the group. Process discovery has a 0.2-second deadline, with group cleanup preserved
+the group. Signal handlers record cancellation; cleanup runs outside the active child wait
+so it cannot reenter the subprocess wait lock. The supervisor checks cancellation at most
+every 0.1 seconds. Process discovery has a 0.2-second deadline, with group cleanup preserved
 on discovery failure, followed by at most half a second before SIGKILL. Group escalation also reaches
 children forked after the snapshot. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
@@ -1535,3 +1537,25 @@ compatibility path adds no jobs and preserves all documentation assertions.
 
 Older PR bases that lack the retired-cache policy load it from fetched trusted trunk. The explicit base/head diff is still checked, head-supplied policy cannot replace it, and a missing or incomplete trusted policy fails the required hygiene job.
 
+
+### Advisory image and CodeQL runner selection
+
+CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
+`advisory-runner-select.yml` before allocating compute. Same-repository PRs use
+trusted base scripts and the existing OIDC role to read the build-host instance
+and heartbeat. A heartbeat no older than 90 seconds must match the current
+instance and advertise an idle heavy runner. Otherwise the job uses its existing
+hosted label. Missing configuration, credentials, read failures and selector
+failure all fall back to hosted compute. This selector never wakes or resizes
+the host; AWS retries and step timeouts are bounded. The current role trusts PR
+subjects only, so scheduled/manual/full-CI callers retain hosted compute.
+
+Each consumer also checks the PR's repository before accepting the selected
+runner and falls back to hosted compute for forks, independently of the selector.
+Forks stay hosted and do not receive the health credential. CodeQL coverage,
+build modes, image matrices, evidence uploads and required check names remain
+unchanged. A selector failure cannot skip analysis; image impact detection must
+still succeed before its selected matrix executes. Hosted disk cleanup runs only
+on GitHub-hosted runners.
+
+Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.

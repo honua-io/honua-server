@@ -336,7 +336,27 @@ class PullRequestLoadTests(unittest.TestCase):
                     event = {"event_name": "pull_request", "ref": "refs/pull/1/merge", "event": {
                         "pull_request": {"draft": True}, "inputs": {},
                     }}
-                    self.assertFalse(evaluate(condition, event), condition)
+                    needs = {
+                        dependency: {"result": "success", "outputs": {"selected": '["fixture"]'}}
+                        for dependency in job.get("needs", [])
+                    }
+                    self.assertFalse(evaluate(condition, event, {"needs": needs}), condition)
+
+    def test_serving_boundary_requires_successful_detection_and_ready_pr(self):
+        condition = workflow("serving-image-boundary.yml")["jobs"]["build-and-verify"]["if"]
+        event = {"event_name": "pull_request", "event": {"pull_request": {"draft": False}}}
+        needs = {"detect": {"result": "success", "outputs": {"selected": '["fixture"]'}}}
+        self.assertTrue(evaluate(condition, event, {"needs": needs}))
+        event["event"]["pull_request"]["draft"] = True
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
+        event["event"]["pull_request"]["draft"] = False
+        needs["detect"]["result"] = "failure"
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
+        needs["detect"]["result"] = "success"
+        needs["detect"]["outputs"]["selected"] = "[]"
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
+        needs["detect"]["outputs"]["selected"] = '["fixture"]'
+        self.assertFalse(evaluate(condition, event, {"needs": needs, "cancelled": True}))
 
     def test_auto_merge_control_admits_draft_cleanup_only(self):
         condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]

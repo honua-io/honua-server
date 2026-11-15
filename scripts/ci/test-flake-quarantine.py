@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import xml.etree.ElementTree as ET
 
 spec = importlib.util.spec_from_file_location('quarantine', Path(__file__).with_name('flake_quarantine.py'))
@@ -233,6 +233,28 @@ class ProcessSnapshotTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_cancellation_does_not_reenter_an_active_child_wait(self):
+        child = MagicMock(pid=1234)
+        child.__enter__.return_value = child
+        waiting = False
+        cancelled = False
+
+        def wait(timeout=None):
+            nonlocal waiting, cancelled
+            self.assertFalse(waiting, 'Cancellation reentered the active child wait')
+            waiting = True
+            if not cancelled:
+                cancelled = True
+                signal.raise_signal(signal.SIGTERM)
+            waiting = False
+            return 0
+
+        child.wait.side_effect = wait
+        with patch.object(runner.subprocess, 'Popen', return_value=child), \
+                patch.object(runner, 'descendant_pids', return_value={1234}), \
+                patch.object(runner.os, 'killpg'), patch.object(runner.os, 'kill'):
+            self.assertEqual(-signal.SIGTERM, runner.call_test(['fixture']))
+
     def test_duplicate_gate_wrapper_cleans_up_term_ignoring_child(self):
         self.assert_timeout_cleanup(foreground=False)
 
