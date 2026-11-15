@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Queries.Filters;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using InfrastructureGeometryService = Honua.Infrastructure.Services.GeometryService;
@@ -54,8 +55,8 @@ internal static class GeoPackageExportWriter
         await CreateMetadataTablesAsync(connection, cancellationToken).ConfigureAwait(false);
         await InsertSpatialRefAsync(connection, srid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
         var usedNames = fields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var idColumn = ReserveColumnName("fid", usedNames);
-        var geometryColumn = ReserveColumnName("geom", usedNames);
+        var idColumn = ColumnNameReservation.Reserve("fid", usedNames);
+        var geometryColumn = ColumnNameReservation.Reserve("geom", usedNames);
         await CreateFeatureTableAsync(connection, fields, geometryType, idColumn, geometryColumn, cancellationToken).ConfigureAwait(false);
         await RegisterContentsAsync(connection, srid, cancellationToken).ConfigureAwait(false);
 
@@ -473,17 +474,6 @@ internal static class GeoPackageExportWriter
         }
 
         return anyWithoutDimension ? (byte)2 : (byte)1;
-    }
-
-    private static string ReserveColumnName(string preferred, HashSet<string> usedNames)
-    {
-        var candidate = preferred;
-        for (var suffix = 1; !usedNames.Add(candidate); suffix++)
-        {
-            candidate = preferred + "_" + suffix.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return candidate;
     }
 
     private readonly record struct FeatureInsertSummary(int TotalInserted, GeometryDimensionMetadata Dimensions);

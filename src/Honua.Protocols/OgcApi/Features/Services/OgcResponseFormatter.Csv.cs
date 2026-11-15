@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
@@ -37,20 +38,9 @@ internal static partial class OgcResponseFormatter
     private static string BuildCsvHeader(string[] fieldNames)
     {
         var usedNames = new HashSet<string>(fieldNames, StringComparer.OrdinalIgnoreCase);
-        var idHeader = ReserveCsvHeader("id", usedNames);
-        var geometryHeader = ReserveCsvHeader("geometry", usedNames);
+        var idHeader = ColumnNameReservation.Reserve("id", usedNames);
+        var geometryHeader = ColumnNameReservation.Reserve("geometry", usedNames);
         return string.Join(",", fieldNames.Prepend(idHeader).Append(geometryHeader).Select(EscapeCsvField));
-    }
-
-    private static string ReserveCsvHeader(string name, HashSet<string> usedNames)
-    {
-        var candidate = name;
-        for (var suffix = 1; !usedNames.Add(candidate); suffix++)
-        {
-            candidate = $"{name}_{suffix}";
-        }
-
-        return candidate;
     }
 
     private static string BuildCsvRow(GeoJsonFeature feature, string[] fieldNames)
