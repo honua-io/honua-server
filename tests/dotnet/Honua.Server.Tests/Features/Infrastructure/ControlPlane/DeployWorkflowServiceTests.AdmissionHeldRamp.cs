@@ -18,23 +18,7 @@ public sealed partial class DeployWorkflowServiceTests
     public async Task Reconciler_AdmissionHeldRamp_MonitorsExposedCandidate(bool providerFailure, bool telemetryFailure)
     {
         var store = new TestWorkflowOperationStore();
-        var backend = Substitute.For<IDeployBackend, ICheckpointedDeployBackend>();
-        backend.BackendName.Returns("honua-gitops-kubernetes");
-        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
-        ((ICheckpointedDeployBackend)backend).RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
-        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
-            .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
-        backend.ObserveAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
-            .Returns(new DeployObservation
-            {
-                Status = providerFailure ? WorkflowOperationStatus.Failed : WorkflowOperationStatus.Reconciling,
-                PromotionRecommended = !providerFailure,
-                RollbackRecommended = providerFailure,
-                ObservedRevision = "sha256:new",
-                Message = providerFailure ? "Candidate health failed." : "Candidate healthy."
-            });
-        backend.RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
-            .Returns(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
+        var backend = CreateAdmissionHeldRampBackend(providerFailure);
         var evaluator = Substitute.For<IDeployTelemetrySignalEvaluator>();
         evaluator.EvaluateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns(new DeployTelemetryDecision
@@ -81,4 +65,27 @@ public sealed partial class DeployWorkflowServiceTests
             await backend.DidNotReceive().RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
         }
     }
+
+    private static IDeployBackend CreateAdmissionHeldRampBackend(bool providerFailure)
+    {
+        var backend = Substitute.For<IDeployBackend, ICheckpointedDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        ((ICheckpointedDeployBackend)backend).RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        backend.ObserveAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation
+            {
+                Status = providerFailure ? WorkflowOperationStatus.Failed : WorkflowOperationStatus.Reconciling,
+                PromotionRecommended = !providerFailure,
+                RollbackRecommended = providerFailure,
+                ObservedRevision = "sha256:new",
+                Message = providerFailure ? "Candidate health failed." : "Candidate healthy."
+            });
+        backend.RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
+        return backend;
+    }
+
 }

@@ -47,42 +47,7 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (operation.CurrentPhase == ICheckpointedDeployBackend.RampPhase)
         {
-            DeploySubmissionResult step;
-            try
-            {
-                step = await ((IDeployBackend)backend).StartAsync(operation, cancellationToken).ConfigureAwait(false);
-            }
-            catch (DeployAdmissionBlockedException ex)
-            {
-                await MonitorAdmissionHeldRampAsync(operation, (IDeployBackend)backend, ex, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            if (step.Status == WorkflowOperationStatus.Failed)
-            {
-                var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
-                var status = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
-                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
-                var recovering = operation with
-                {
-                    Status = status,
-                    CurrentPhase = rollback.Message ?? "Canary ramp failed; rollback requested.",
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = status == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null
-                };
-                await workflowStore.TrySetAsync(recovering, cancellationToken: cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            var ramp = operation.Deploy?.CanaryRamp ?? throw new InvalidOperationException("Canary ramp is missing.");
-            var advanced = operation with
-            {
-                Status = WorkflowOperationStatus.Reconciling,
-                CurrentPhase = step.Message ?? "Canary step submitted.",
-                ErrorMessage = null,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                Deploy = operation.Deploy! with { CanaryRamp = ramp with { CurrentStepStartedAt = DateTimeOffset.UtcNow } }
-            };
-            await workflowStore.TrySetAsync(advanced, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await ReconcileRampAsync(operation, (IDeployBackend)backend, cancellationToken).ConfigureAwait(false);
             return;
         }
 
