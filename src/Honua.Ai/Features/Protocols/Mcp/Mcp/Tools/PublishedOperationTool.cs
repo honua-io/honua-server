@@ -519,7 +519,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         return parameters;
     }
 
-    private static IReadOnlyList<string> ReadFields(JsonElement? arguments)
+    private static string[] ReadFields(JsonElement? arguments)
     {
         if (arguments is not { ValueKind: JsonValueKind.Object } args ||
             !args.TryGetProperty("fields", out var fields))

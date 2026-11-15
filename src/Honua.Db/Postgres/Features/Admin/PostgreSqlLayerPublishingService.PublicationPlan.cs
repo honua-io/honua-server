@@ -68,9 +68,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             });
         binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, plan.Scope) };
         var objects = (Service: service, Resource: resource, Binding: binding);
-        var feature = BuildPlannedPublication(plan, objects, primary: true);
+        var feature = BuildPlannedPublication(plan, objects, MetadataV2LayerType.EsriFeatureLayer);
         var stac = string.IsNullOrWhiteSpace(plan.Storage.GeometryColumn)
-            ? null : BuildPlannedPublication(plan, objects, primary: false);
+            ? null : BuildPlannedPublication(plan, objects, MetadataV2LayerType.StacCollection);
         service = service with
         {
             PublicationIds = service.PublicationIds.Append(feature.Metadata.Id)
@@ -95,12 +95,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private MetadataV2Layer BuildPlannedPublication(PublishedLayerGraphPlan plan,
-        (MetadataV2Service Service, MetadataV2Object Resource, MetadataV2StorageBinding Binding) objects, bool primary)
+        (MetadataV2Service Service, MetadataV2Object Resource, MetadataV2StorageBinding Binding) objects, MetadataV2LayerType layerType)
     {
+        var primary = layerType == MetadataV2LayerType.EsriFeatureLayer;
         var connectionId = plan.Storage.IsManagedStore ? null : plan.Request.ConnectionId;
         var publication = BuildPublishedPublication(objects.Service, objects.Resource, objects.Binding,
             plan.LayerId.ToString(CultureInfo.InvariantCulture), BuildLayerGraphId("layer", plan.LayerId, connectionId),
-            plan.Request.LayerName.Trim(), primary ? MetadataV2LayerType.EsriFeatureLayer : MetadataV2LayerType.StacCollection,
+            plan.Request.LayerName.Trim(), layerType,
             primary, primary ? "pub" : "pub-stac", plan.Request.Enabled, plan.GeneratedAt,
             primary ? plan.Capabilities : null);
         return publication with { Metadata = ApplyPublicationScope(publication.Metadata, plan.Scope) };
