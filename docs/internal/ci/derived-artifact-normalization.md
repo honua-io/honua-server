@@ -5,7 +5,7 @@ the evidence-driven CI program [#3213](https://github.com/honua-io/honua-server/
 
 ## Scope
 
-Normalization covers exactly three deterministic JSON projections:
+The untrusted normalization envelope covers exactly three deterministic JSON projections:
 
 - `docs/gis/data/feature-catalog.json`
 - `docs/gis/data/geoservices-rest-parity.json`
@@ -70,7 +70,7 @@ default-branch recipe. A pull request that changes this security boundary must
 land that contract independently before later heads can produce admissible
 normalization evidence. This checks the declared orchestration, not every
 transitive setup executable. Outputs remain PR-authored data confined to the
-three allowlisted paths on the contributor's own writable branch. The trunk
+three JSON paths and the trusted numeric projections described below on the contributor's own writable branch. The trunk
 generated-files writer and the merge-train regeneration determine the bytes that
 land on trunk.
 
@@ -186,6 +186,31 @@ this window (the nightly `generated-files-on-trunk` refresh lost a race with a
 moving trunk), so every PR inherited the same drift. No window head was a no-op,
 so no-op stability is shown only by the convergence rule below and by the first
 enforced runs. Enforcement was enabled on main's ruling of 2026-11-12 (#3219).
+
+## Capability concept proof counts
+
+The trusted consumer also projects changed `provingTestCount` values into existing
+`docs/okf/capabilities/<key>.md` pages. This closes the observed #7724 failure:
+normalization updated the matrix while Docs Link Gate still found stale
+FeatureServer (597 → 599) and Geometry Service (144 → 147) concept counts.
+The envelope remains v3 with exactly three JSON outputs; it never accepts Markdown.
+
+Default-branch `normalization-concept-counts.js` reads immutable exact-head Git
+blobs before credential minting. It requires regular `100644` files, generated
+page provenance, matching capability identity, and a unique old or already-new
+count row. Only that numeric row changes; zero counts omit the row, matching the
+canonical generator. New, removed and unpublished concepts remain author work.
+The matrix is bounded to 1 MiB and 256 unique safe keys, pages to 64 KiB each,
+and derived pages to 1 MiB total. The existing same-head compare-and-swap writes
+these projections with the validated JSON outputs. Required drift checks remain
+unchanged and still decide whether the generated files are correct.
+
+This adds zero workflow jobs and zero runners: projection runs inside the
+existing consumer comparison step. Before evidence is Docs Link Gate run
+43670139888 failing its canonical concept check; live repaired timing and a
+successful normalized-head Docs Link Gate must be recorded after deployment.
+Offline fixtures cover both reported deltas, zero counts, idempotence, immutable
+surrounding text, invalid identity/count/path, byte limits and credential ordering.
 
 ## Enforce mode
 

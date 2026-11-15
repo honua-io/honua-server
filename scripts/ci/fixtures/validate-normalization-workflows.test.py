@@ -42,6 +42,19 @@ class NormalizationContractTests(unittest.TestCase):
     def test_current_tree_passes(self) -> None:
         self.assertIn(run(), {"observe", "enforce"})
 
+    def test_concept_projection_cannot_drop_bounds_or_trusted_derivation(self) -> None:
+        for fragment in (
+            "await deriveConceptCountOutputs({ outputs: plan.outputs, readBlob })",
+            "plan.outputs.push(...concepts)",
+            "entry.mode !== '100644'",
+            "content.length !== entry.size",
+        ):
+            with self.subTest(fragment=fragment):
+                consumer = SOURCES["consumer"].replace(fragment, "REMOVED_BOUNDARY", 1)
+                self.assertNotEqual(consumer, SOURCES["consumer"])
+                with self.assertRaisesRegex(AssertionError, "trusted bounded concept derivation"):
+                    run(consumer=consumer)
+
     def test_generator_in_packaging_is_rejected(self) -> None:
         marker = "      - name: Download bounded projection data\n"
         producer = SOURCES["producer"].replace(

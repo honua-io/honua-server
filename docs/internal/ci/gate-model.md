@@ -1407,3 +1407,15 @@ no lifecycle rerun or runtime savings are claimed from unit validation.
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
+
+### Trusted normalization concept counts
+
+The normalization consumer derives numeric proof-count rows for existing
+`docs/okf/capabilities/<key>.md` pages from its validated capability matrix before
+minting write credentials. The untrusted v3 envelope still accepts only its
+three JSON paths. Exact-head regular blobs, generated-page identity, count and
+byte bounds protect the projection; unchanged drift gates and same-head
+compare-and-swap remain authoritative. See
+[derived artifact normalization](derived-artifact-normalization.md#capability-concept-proof-counts).
+This repairs #7724's stale 597→599 and 144→147 count rows without adding jobs
+or runners (delta: 0 / 0). Live elapsed-time improvement is not yet measured.

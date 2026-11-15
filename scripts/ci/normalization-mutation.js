@@ -15,11 +15,14 @@
  * testable offline (scripts/ci/normalization-mutation.test.js).
  */
 
+const { CONCEPT_PATH } = require('./normalization-concept-counts');
+
 const NORMALIZATION_COMMIT_TRAILER = 'Normalization-Source-Sha:';
 
 // The authoritative allowlist lives in scripts/ci/normalization-envelope.py and
 // is enforced by the trusted validator before a plan exists, so the admissible
-// paths are taken from the validated plan rather than copied again here. This
+// paths are taken from the validated plan rather than copied again here. Numeric
+// concept rows are derived separately by trusted default-branch policy. This
 // pattern is only a structural backstop against a future plan that widens the
 // contract to an executable or out-of-tree location.
 const SAFE_OUTPUT_PATH = /^docs\/gis\/data\/[a-z0-9][a-z0-9._-]*\.json$/;
@@ -166,7 +169,8 @@ function planNormalizationMutation(input) {
   } = input || {};
 
   if (!Array.isArray(allowedPaths) || allowedPaths.length === 0
-    || !allowedPaths.every((path) => typeof path === 'string' && SAFE_OUTPUT_PATH.test(path))) {
+    || !allowedPaths.every((path) => typeof path === 'string'
+      && (SAFE_OUTPUT_PATH.test(path) || CONCEPT_PATH.test(path)))) {
     return decision('fail', 'invalid-allowlist');
   }
   if (!Array.isArray(changes)) {

@@ -61,6 +61,19 @@ test('a one-file update commits', () => {
   assert.equal(planNormalizationMutation(input()).action, 'commit');
 });
 
+test('a trusted concept projection may join the validated JSON plan', () => {
+  const path = 'docs/okf/capabilities/serve.geoservices-featureserver.md';
+  const result = planNormalizationMutation(input({ changes: [change(path)], allowedPaths: [...ALLOWED, path] }));
+  assert.equal(result.action, 'commit');
+});
+
+test('concept path traversal, arbitrary Markdown and uppercase names fail closed', () => {
+  for (const path of ['docs/okf/capabilities/../README.md', 'docs/okf/capabilities/README.md', 'docs/okf/README.md']) {
+    const result = planNormalizationMutation(input({ changes: [change(path)], allowedPaths: [...ALLOWED, path] }));
+    assert.equal(result.action, 'fail');
+  }
+});
+
 test('an empty delta emits no commit', () => {
   const result = planNormalizationMutation(input({ changes: [] }));
   assert.equal(result.action, 'skip');

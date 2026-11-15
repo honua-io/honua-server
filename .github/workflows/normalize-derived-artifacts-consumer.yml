@@ -267,6 +267,24 @@ jobs:
             });
             if (tree.truncated) throw new Error('PR tree query was truncated.');
             const entries = new Map(tree.tree.map(entry => [entry.path, entry]));
+            const readBlob = async (path, limit, required) => {
+              const entry = entries.get(path);
+              if (!entry) {
+                if (required) throw new Error(`${path} is absent from the exact PR tree.`);
+                return null;
+              }
+              if (entry.type !== 'blob' || entry.mode !== '100644' || !entry.sha ||
+                  !Number.isSafeInteger(entry.size) || entry.size < 1 || entry.size > limit) {
+                throw new Error(`${path} is not a bounded regular Git blob.`);
+              }
+              const { data: blob } = await github.rest.git.getBlob({
+                ...context.repo, file_sha: entry.sha,
+              });
+              if (blob.encoding !== 'base64') throw new Error(`${path} has unexpected blob encoding.`);
+              const content = Buffer.from(blob.content.replace(/\n/g, ''), 'base64');
+              if (content.length !== entry.size) throw new Error(`${path} blob size differs from its tree.`);
+              return content;
+            };
             const readBlobDigest = async (path, required) => {
               const entry = entries.get(path);
               if (!entry) {
@@ -315,6 +333,15 @@ jobs:
                 throw new Error(`${generator.path} generator digest does not match the exact PR head.`);
               }
             }
+
+            // Only default-branch code derives these numeric rows; Markdown is
+            // never accepted from the untrusted normalization artifact. This
+            // happens before any write credential is minted and reads Git blobs
+            // from the already-verified immutable PR tree without checkout.
+            const { deriveConceptCountOutputs } = require('./scripts/ci/normalization-concept-counts');
+            const concepts = await deriveConceptCountOutputs({ outputs: plan.outputs, readBlob });
+            plan.outputs.push(...concepts);
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/normalization-plan.json`, JSON.stringify(plan));
 
             const changes = [];
             for (const output of plan.outputs) {
@@ -410,7 +437,8 @@ jobs:
             });
 
             // The admissible paths are the ones the trusted default-branch
-            // validator already accepted into the plan; this workflow keeps no
+            // validator accepted, plus numeric concept rows derived by trusted
+            // default-branch policy before minting; this workflow keeps no
             // second copy of the allowlist.
             const outputs = new Map(plan.outputs.map(output => [output.path, output]));
             const changes = changedPaths.map(path => {

@@ -1018,3 +1018,15 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+### Trusted normalization concept counts
+
+The normalization consumer derives numeric proof-count rows for existing
+`docs/okf/capabilities/<key>.md` pages from its validated capability matrix before
+minting write credentials. The untrusted v3 envelope still accepts only its
+three JSON paths. Exact-head regular blobs, generated-page identity, count and
+byte bounds protect the projection; unchanged drift gates and same-head
+compare-and-swap remain authoritative. See
+[derived artifact normalization](derived-artifact-normalization.md#capability-concept-proof-counts).
+This repairs #7724's stale 597→599 and 144→147 count rows without adding jobs
+or runners (delta: 0 / 0). Live elapsed-time improvement is not yet measured.
