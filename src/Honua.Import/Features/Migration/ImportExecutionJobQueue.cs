@@ -215,13 +215,8 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
     private async Task<TProgress?> ReadProgressAsync(IDistributedProgressStore<TProgress> inner, string jobId, CancellationToken cancellationToken)
     {
         var progress = await inner.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (_jobStore is null)
-        {
-            return progress;
-        }
-
-        var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job is null || job.Spec.Kind != _spec.Kind)
+        var job = await ReadMatchingJobAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job is null)
         {
             return progress;
         }
@@ -256,6 +251,14 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
         return progress is not null && job.Status.IsTerminal()
             ? _spec.ProjectEndedJob(progress, job)
             : progress;
+    }
+
+    private async Task<ExecutionJobRecord?> ReadMatchingJobAsync(string jobId, CancellationToken cancellationToken)
+    {
+        var job = _jobStore is null
+            ? null
+            : await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        return job?.Spec.Kind == _spec.Kind ? job : null;
     }
 
     private async Task<TProgress?> RecoverInitialProgressAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
