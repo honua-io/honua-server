@@ -26,6 +26,7 @@ internal static class SharedCacheExtensions
             HttpContextAccessor = provider.GetService<IHttpContextAccessor>(),
             Options = provider.GetService<IOptionsMonitor<SharedCacheOptions>>(),
             LeaseStore = provider.GetService<ILeaseStore>(),
+            Budget = provider.GetService<ICdnPurgeBudget>(),
         });
         services.TryAddSingleton<CdnInvalidationService>();
         return services;
