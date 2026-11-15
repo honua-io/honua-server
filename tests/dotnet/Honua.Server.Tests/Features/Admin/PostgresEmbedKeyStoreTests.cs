@@ -13,8 +13,8 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Admin;
 
 // Each store instance is one task over the same tables.
-[Protocol(TestProtocols.Admin)]
-[Operation(Operations.ApiKeyManagement)]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class PostgresEmbedKeyStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     private static readonly EmbedKeyScope _scope = new()

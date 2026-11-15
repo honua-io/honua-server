@@ -17,8 +17,8 @@ namespace Honua.Server.Tests.Features.Console;
 
 // Each store instance is one task; instances over the same tables are a two-task deployment, and a new
 // instance after the others are gone is a restart.
-[Protocol(TestProtocols.Admin)]
-[Operation(Operations.Configuration)]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class PostgresConsoleStateStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]

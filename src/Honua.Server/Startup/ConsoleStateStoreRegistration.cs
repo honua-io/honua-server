@@ -18,12 +18,14 @@ namespace Honua.Server.Startup;
 // Console content, share, open-data and embed-key state. A host with a system database keeps it there, so
 // every task serves the same state and it survives a restart (ADR-0086). A host without one runs a single
 // task and keeps it in memory; the session bootstrap reports which, and startup refuses more than one task.
+// The shared stores resolved here (configuration documents, security tokens, the job-store database) come from
+// AddPostgresSharedState, which the host composes later. Composing it here would register the job-store database
+// before the job-orchestration registrations check for it.
 internal static class ConsoleStateStoreRegistration
 {
-    public static IServiceCollection AddConsoleStateStores(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddConsoleStateStores(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddPostgresSharedState(configuration);
         services.AddHttpContextAccessor();
         services.AddSingleton<IAuthoredConsoleContent>(static provider => HasDatabase(provider)
             ? new PostgresConsoleContentStore(Storage(provider))

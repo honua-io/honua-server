@@ -81,7 +81,9 @@ public sealed class ConsoleStateStoreRegistrationTests
             services.AddSingleton(dataSource);
         }
 
-        services.AddConsoleStateStores(new ConfigurationBuilder().Build());
+        var configuration = new ConfigurationBuilder().Build();
+        services.AddPostgresSharedState(configuration);
+        services.AddConsoleStateStores();
         return services.BuildServiceProvider();
     }
 }

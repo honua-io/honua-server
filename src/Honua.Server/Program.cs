@@ -925,7 +925,7 @@ builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.I
 
 // Console content, share, open-data and embed-key state: in the system database when there is one,
 // otherwise in the memory of the single task.
-builder.Services.AddConsoleStateStores(builder.Configuration);
+builder.Services.AddConsoleStateStores();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
