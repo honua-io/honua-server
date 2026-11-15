@@ -136,7 +136,7 @@ public sealed partial class BranchVersioningIntegrationTests
         application.Result.CreateResults.Should().OnlyContain(result => result.OperationEvidence.IsDefault);
         await using var count = _fixture.DataSource.CreateCommand($"SELECT count(*) FROM {_schema}.features");
         (await count.ExecuteScalarAsync()).Should().Be(0L);
-        IFeatureEditIdempotencyReceipts receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _schema);
+        var receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _schema);
         (await receipts.TryReadAsync(receipt.Scope)).Should().BeNull();
     }
 
