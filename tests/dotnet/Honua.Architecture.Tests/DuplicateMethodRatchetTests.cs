@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using FluentAssertions;
 using Xunit;
 
@@ -82,38 +81,6 @@ public sealed class DuplicateMethodRatchetTests
             .Where(line => !line.StartsWith('#'))
             .ToArray();
 
-    private static async Task<(int ExitCode, string Output, string Error)> RunAsync(params string[] arguments)
-    {
-        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var script = ArchitectureTestHelpers.CombinePath(root, "scripts", "ci", "duplicate-method-ratchet.py");
-        var start = new ProcessStartInfo("python3")
-        {
-            WorkingDirectory = root,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        start.ArgumentList.Add(script);
-        foreach (var argument in arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(start)
-            ?? throw new InvalidOperationException($"Could not start python3 {RelativeScript}.");
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-        {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException("duplicate-method ratchet exceeded 10 minutes.");
-        }
-
-        return (process.ExitCode, await outputTask, await errorTask);
-    }
+    private static Task<(int ExitCode, string Output, string Error)> RunAsync(params string[] arguments)
+        => RepositoryPythonScript.RunAsync(RelativeScript, arguments);
 }
