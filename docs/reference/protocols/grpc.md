@@ -125,9 +125,13 @@ Notes:
 
 ## Managed global-ID integrity
 
-Declaring `editing.globalIdField` on a managed feature layer creates a per-layer
-unique UUID expression index. Uppercase and braced spellings identify the same
-UUID. Missing and empty values do not conflict. The index also serves UUID
+Declaring `editing.globalIdField` on an unbound managed feature layer creates a
+per-layer unique UUID expression index. Explicit connections to the managed
+database require the same index before the layer advertises managed writes;
+metadata activation does not provision indexes through connection references.
+A missing or mismatched index disables writes while branch reads remain available.
+Uppercase and braced spellings identify the same UUID. Missing and empty values
+do not conflict. The index also serves UUID
 lookups and enforces uniqueness for concurrent writes and rows hidden by row
 security. Object-ID-mode update and delete results carry the stored global ID
 when the caller may see its field.

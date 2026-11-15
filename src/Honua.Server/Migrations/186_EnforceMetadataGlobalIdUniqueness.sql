@@ -58,16 +58,13 @@ BEGIN
             FROM binding_names WHERE table_name = 'features'
         ), managed_bindings AS (
             SELECT * FROM resolved_bindings binding
-            WHERE feature_table IS NOT NULL AND (
+            WHERE feature_table = COALESCE(to_regclass('$HonuaSchema$.features'), to_regclass('features'))
+                AND (
                 NOT source_backed OR (
                     lower(binding->'options'->>'attributesColumn') = 'attributes'
                     AND lower(binding->'options'->>'layerDiscriminatorColumn') = 'layer_id'
                     AND lower(COALESCE(binding->'options'->>'primaryKeyColumn', 'objectid')) = 'objectid'
                     AND lower(COALESCE(binding->'options'->>'geometryColumn', 'geometry')) = 'geometry'
-                    AND (feature_table = to_regclass('features') OR EXISTS (
-                        SELECT 1 FROM resolved_bindings native
-                        WHERE NOT native.source_backed AND native.feature_table = binding.feature_table
-                    ))
                 )
             )
         )

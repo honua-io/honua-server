@@ -307,7 +307,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
                 ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
-            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
+            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites
+                || !await SupportsGlobalIdWritesAsync(layer, context).ConfigureAwait(false))
             {
                 throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,

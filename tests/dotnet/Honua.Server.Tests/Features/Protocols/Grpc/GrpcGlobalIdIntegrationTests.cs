@@ -60,6 +60,38 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task MissingGlobalIdIndex_DisablesCapabilitiesAndRefusesEditsBeforeWriting()
+    {
+        var request = new Proto.DescribeLayerRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
+        (await _client!.DescribeLayerAsync(request, _headers)).Layer.Capabilities.Create.Should().BeTrue();
+        var count = await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId);
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                DO $test$ BEGIN
+                    EXECUTE format('DROP INDEX %I', 'idx_features_gid_' || md5('0:globalid'));
+                END $test$;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var capabilities = (await _client.DescribeLayerAsync(request, _headers)).Layer.Capabilities;
+        capabilities.Create.Should().BeFalse();
+        capabilities.Update.Should().BeFalse();
+        capabilities.Delete.Should().BeFalse();
+        capabilities.Query.Should().BeTrue();
+        var edit = new Proto.ApplyEditsRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
+        edit.Adds.Add(new Proto.Feature { Attributes = { ["name"] = new Proto.AttributeValue { StringValue = AddedName } } });
+        var action = async () => await _client.ApplyEditsAsync(edit, _headers);
+        (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId)).Should().Be(count);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
     public async Task GlobalIds_AddQueryUpdateDelete_RoundTripThroughPostgis()
     {
         var globalId = await AddAsync();

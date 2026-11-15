@@ -383,7 +383,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
     private PostgresStorageMappedFeatureReader CreateReader(bool secured = false, bool externalTable = false,
         DataConnection? connection = null, string? managedFeatureSchema = null, bool sourceBacked = true,
         bool unqualifiedMapping = false, string? connectionString = null,
-        IAdoNetDatabaseConnectionProvider? connectionProvider = null)
+        IAdoNetDatabaseConnectionProvider? connectionProvider = null, bool globalIds = false)
     {
         var resource = new MetadataV2Object
         {
@@ -397,6 +397,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
                 new() { Name = "tenant", Type = MetadataV2FieldType.String },
                 new() { Name = "secret", Type = MetadataV2FieldType.String }
             ],
+            Editing = globalIds ? new() { GlobalIdField = "tenant" } : null,
             PermanentFilter = secured ? new MetadataV2PermanentFilter { Expression = "count < 50" } : null
         };
         var filters = Substitute.For<IFilterExpressionService>();

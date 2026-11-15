@@ -356,6 +356,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 
     [IntegrationTheory]
     [InlineData(false, null)]
+    [InlineData(false, "false")]
     [InlineData(true, null)]
     [InlineData(false, "\ttrue\r\n")]
     [InlineData(false, "\u00a0true\u2003")]
@@ -373,6 +374,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     (7, '{"globalid":"6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"}'),
                     (7, '{"globalid":"{6F1C2D3E-4B5A-4C6D-8E7F-0A1B2C3D4E5F}"}');
                 """);
+            await fixture.ExecuteAsync($"INSERT INTO \"{sourceSchema}\".features SELECT * FROM \"{schema}\".features");
             var graph = GlobalIdGraph(externalConnection ? schema : sourceSchema);
             graph = graph with
             {
@@ -391,7 +393,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     }
                 }]
             };
-            FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]).IsSourceBacked.Should().BeTrue();
+            FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]).IsSourceBacked.Should().Be(sourceBackedText != "false");
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
 
