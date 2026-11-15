@@ -2,31 +2,44 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.SharedCaching;
 
 // Whether an edit made now would reach the CDN as a tag purge. Purge-backed lifetimes are only given while it would:
 // otherwise an edit could stay hidden behind a day-long CDN copy. Every doubt answers no, and the answer is cheap
-// because requests read it: the shared budget counter is read in the background at most once a minute.
+// because requests read it: the shared signals (budget counter, any task's recent purge failure) are read in the
+// background at most once a minute, and an answer older than a few reads counts as no.
 internal sealed partial class CdnPurgeReliability(
     ICdnInvalidator invalidator,
     ILogger<CdnPurgeReliability> logger,
     CdnPurgeCoordination? coordination = null)
 {
-    internal static readonly TimeSpan BudgetReadInterval = TimeSpan.FromMinutes(1);
+    internal const string FailureLeaseKey = CdnInvalidationService.LeaseKeyPrefix + "failed";
 
-    // After a failed purge this task stops giving long lifetimes for this long; responses it already sent keep theirs.
+    internal static readonly TimeSpan SharedReadInterval = TimeSpan.FromMinutes(1);
+
+    internal static readonly TimeSpan SharedReadTimeout = TimeSpan.FromSeconds(10);
+
+    // After a failed purge, on any task, long lifetimes stop for this long; responses already sent keep theirs.
     internal static readonly TimeSpan FailureHoldOff = TimeSpan.FromMinutes(15);
+
+    // The probe holds the failure lease this long at most; a failure recorded meanwhile tries again after it.
+    internal static readonly TimeSpan ProbeHold = TimeSpan.FromSeconds(1);
+
+    private const int StaleAfterReads = 3;
 
     private readonly TimeProvider _clock = coordination?.TimeProvider ?? TimeProvider.System;
     private readonly IOptionsMonitor<SharedCacheOptions>? _options = coordination?.Options;
     private readonly ICdnPurgeBudget? _budget = coordination?.Budget;
+    private readonly ILeaseStore? _leases = coordination?.LeaseStore;
     private readonly Lock _gate = new();
-    private DateTimeOffset _budgetReadAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _sharedReadAt = DateTimeOffset.MinValue;
     private DateTimeOffset _lastFailure = DateTimeOffset.MinValue;
-    private bool _budgetHasHeadroom;
-    private Task? _budgetRead;
+    private bool _sharedSignalsAllow;
+    private long _version;
+    private Task? _sharedRead;
 
     internal bool PurgesReachCdn()
     {
@@ -43,21 +56,25 @@ internal sealed partial class CdnPurgeReliability(
                 return false;
             }
 
-            if (now - _budgetReadAt >= BudgetReadInterval && _budgetRead is null)
+            var age = now - _sharedReadAt;
+            if (age >= SharedReadInterval && _sharedRead is null)
             {
-                _budgetRead = ReadBudgetInBackgroundAsync(options.PurgeBudget);
+                _sharedRead = ReadSharedInBackgroundAsync(options.PurgeBudget);
             }
 
-            return _budgetHasHeadroom;
+            return _sharedSignalsAllow && age < SharedReadInterval * StaleAfterReads;
         }
     }
 
+    // A failed or still-busy purge: this task stops at once, and the other tasks at their next read.
     internal void RecordFailedPurge()
     {
         lock (_gate)
         {
             _lastFailure = _clock.GetUtcNow();
         }
+
+        _ = ShareFailureAsync();
     }
 
     // The budget was found spent by a purge on this task; no need to wait for the next read.
@@ -65,39 +82,53 @@ internal sealed partial class CdnPurgeReliability(
     {
         lock (_gate)
         {
-            _budgetHasHeadroom = false;
-            _budgetReadAt = _clock.GetUtcNow();
+            _sharedSignalsAllow = false;
+            _version++;
         }
     }
 
-    // Awaited by tests and by the background read.
-    internal async Task ReadBudgetAsync(CdnPurgeBudgetOptions budget, CancellationToken cancellationToken)
+    // Awaited by tests and by the background read. A read that started before RecordBudgetSpent does not undo it.
+    internal async Task ReadSharedSignalsAsync(CdnPurgeBudgetOptions budget, CancellationToken cancellationToken)
     {
-        var hasHeadroom = await HasHeadroomAsync(budget, cancellationToken).ConfigureAwait(false);
+        long version;
         lock (_gate)
         {
-            _budgetHasHeadroom = hasHeadroom;
-            _budgetReadAt = _clock.GetUtcNow();
+            version = _version;
+        }
+
+        // Real time, not the injected clock: a hung read must end even where the clock is driven by hand.
+        using var timeout = new CancellationTokenSource(SharedReadTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        var allow = await HasBudgetHeadroomAsync(budget, linked.Token).ConfigureAwait(false)
+                    && !await AnyTaskFailedRecentlyAsync(linked.Token).ConfigureAwait(false);
+        lock (_gate)
+        {
+            if (_version == version)
+            {
+                _sharedSignalsAllow = allow;
+            }
+
+            _sharedReadAt = _clock.GetUtcNow();
         }
     }
 
-    private async Task ReadBudgetInBackgroundAsync(CdnPurgeBudgetOptions budget)
+    private async Task ReadSharedInBackgroundAsync(CdnPurgeBudgetOptions budget)
     {
         await Task.Yield();
         try
         {
-            await ReadBudgetAsync(budget, CancellationToken.None).ConfigureAwait(false);
+            await ReadSharedSignalsAsync(budget, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
             lock (_gate)
             {
-                _budgetRead = null;
+                _sharedRead = null;
             }
         }
     }
 
-    private async Task<bool> HasHeadroomAsync(CdnPurgeBudgetOptions budget, CancellationToken cancellationToken)
+    private async Task<bool> HasBudgetHeadroomAsync(CdnPurgeBudgetOptions budget, CancellationToken cancellationToken)
     {
         // Without a counter or with the cap off, no edit purge is ever refused for budget.
         if (_budget is null || budget.MonthlyEditSubmissions <= 0)
@@ -113,19 +144,68 @@ internal sealed partial class CdnPurgeReliability(
                 return false;
             }
 
-            var reserve = (long)budget.MonthlyEditSubmissions * SharedCachePurgeBacked.BudgetHeadroomPercent / 100;
-            var hasHeadroom = (month?.SubmittedCount ?? 0) < budget.MonthlyEditSubmissions - reserve;
+            var submitted = month?.SubmittedCount ?? 0;
+            var hasHeadroom = submitted < budget.MonthlyEditSubmissions - SharedCachePurgeBacked.BudgetReserve(budget.MonthlyEditSubmissions);
             if (!hasHeadroom)
             {
-                Log.PurgeBackedLifetimesPaused(logger, month?.SubmittedCount ?? 0, budget.MonthlyEditSubmissions);
+                Log.PurgeBackedLifetimesPaused(logger, submitted, budget.MonthlyEditSubmissions);
             }
 
             return hasHeadroom;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            Log.BudgetUnreadable(logger, exception);
+            Log.SharedSignalsUnreadable(logger, exception);
             return false;
+        }
+    }
+
+    // The failure lease is held for the hold-off by whichever task failed. Taking it briefly shows nobody holds it.
+    private async Task<bool> AnyTaskFailedRecentlyAsync(CancellationToken cancellationToken)
+    {
+        if (_leases is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var probe = new LeaseClaim(FailureLeaseKey, "probe:" + Guid.NewGuid().ToString("N"));
+            if (!await _leases.TryAcquireAsync(probe, ProbeHold, cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            await _leases.ReleaseAsync(probe, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.SharedSignalsUnreadable(logger, exception);
+            return true;
+        }
+    }
+
+    private async Task ShareFailureAsync()
+    {
+        if (_leases is null)
+        {
+            return;
+        }
+
+        var failure = new LeaseClaim(FailureLeaseKey, "failure:" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Refused while another failure holds it (already shared) or while a probe does (try again after it).
+            if (!await _leases.TryAcquireAsync(failure, FailureHoldOff).ConfigureAwait(false))
+            {
+                await Task.Delay(ProbeHold * 2, _clock).ConfigureAwait(false);
+                await _leases.TryAcquireAsync(failure, FailureHoldOff).ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.SharedSignalsUnreadable(logger, exception);
         }
     }
 
@@ -140,7 +220,7 @@ internal sealed partial class CdnPurgeReliability(
         [LoggerMessage(
             EventId = 10317,
             Level = LogLevel.Warning,
-            Message = "The CDN purge budget could not be read; responses get the ordinary CDN lifetimes until it can.")]
-        public static partial void BudgetUnreadable(ILogger logger, Exception exception);
+            Message = "The CDN purge budget or the shared purge-failure lease could not be read; responses get the ordinary CDN lifetimes until they can.")]
+        public static partial void SharedSignalsUnreadable(ILogger logger, Exception exception);
     }
 }

@@ -27,6 +27,15 @@ internal sealed class SharedCachePurgeBacked
 
     internal bool Configured => AllLayers || Layers.Count > 0;
 
+    // How long a CDN may still hold a copy stored with a purge-backed lifetime, including stale-while-revalidate.
+    internal TimeSpan LongestSharedLifetime => TimeSpan.FromSeconds(Math.Max(
+        Math.Max(0, Tile.SharedMaxAgeSeconds) + Math.Max(0, Tile.StaleWhileRevalidateSeconds),
+        Math.Max(0, FeatureQuery.SharedMaxAgeSeconds) + Math.Max(0, FeatureQuery.StaleWhileRevalidateSeconds)));
+
+    // The share of the monthly budget kept back, rounded up so that a small limit still keeps one.
+    internal static int BudgetReserve(int monthlyLimit)
+        => (int)(((long)monthlyLimit * BudgetHeadroomPercent + 99) / 100);
+
     // Only a response about one layer qualifies: a response drawing on several carries no single layer's purge.
     internal bool AppliesTo(SharedCacheSubject? subject)
         => subject?.LayerKey is { } layerKey

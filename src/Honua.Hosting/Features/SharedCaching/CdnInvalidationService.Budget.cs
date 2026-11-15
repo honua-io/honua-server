@@ -31,7 +31,7 @@ internal sealed partial class CdnInvalidationService
             return null;
         }
 
-        reliability?.RecordBudgetSpent();
+        _reliability?.RecordBudgetSpent();
         SharedCacheMetrics.RecordPurge(cause, new CdnPurgeSample(paths, "budget", TimeSpan.Zero));
         if (logger.IsEnabled(LogLevel.Warning))
         {

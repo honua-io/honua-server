@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.SharedCaching;
@@ -138,14 +139,13 @@ public sealed class PurgeBackedLifetimeTests
         var service = new CdnInvalidationService(
             new FailingInvalidator(),
             NullLogger<CdnInvalidationService>.Instance,
-            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options) },
-            reliability);
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), Reliability = reliability });
 
         await service.InvalidateNowAsync(["#honua-layer:3"], CancellationToken.None);
 
         reliability.PurgesReachCdn().Should().BeFalse();
         _time.Advance(CdnPurgeReliability.FailureHoldOff);
-        await reliability.ReadBudgetAsync(options.PurgeBudget, CancellationToken.None);
+        await reliability.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
         reliability.PurgesReachCdn().Should().BeTrue();
     }
 
@@ -157,8 +157,7 @@ public sealed class PurgeBackedLifetimeTests
         var service = new CdnInvalidationService(
             new CloudFrontLimits(),
             NullLogger<CdnInvalidationService>.Instance,
-            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), Budget = new FixedBudget(1) },
-            reliability);
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), Budget = new FixedBudget(1), Reliability = reliability });
 
         await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
 
@@ -290,10 +289,141 @@ public sealed class PurgeBackedLifetimeTests
             new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0, layers: [])) });
 
         await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
-        _time.Advance(CdnInvalidationService.FailedEditPurgeRetryDelay);
 
+        // A retry is scheduled synchronously inside the awaited call, so its timer would already be waiting.
+        _time.WaitingTimers.Should().Be(0);
         cdn.Attempts.Should().Be(1);
     }
+
+    [UnitTheory]
+    [InlineData(1, 5)]
+    [InlineData(2, 10)]
+    [InlineData(4, 40)]
+    [InlineData(5, 60)]
+    [InlineData(30, 60)]
+    public void RetryDelay_DoublesFromFiveMinutes_UpToHourly(int attempts, int expectedMinutes)
+        => CdnInvalidationService.RetryDelay(attempts).Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+
+    [UnitTest]
+    public async Task FailingEditPurge_StopsRetrying_OnceEveryPurgeBackedCopyHasExpired()
+    {
+        var cdn = new FlakyInvalidator(failures: int.MaxValue);
+        var options = Options(monthlyLimit: 0, configure: purgeBacked =>
+        {
+            purgeBacked.Tile = new SharedCacheLifetime { SharedMaxAgeSeconds = 600 };
+            purgeBacked.FeatureQuery = new SharedCacheLifetime { SharedMaxAgeSeconds = 60 };
+        });
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options) });
+
+        await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
+        await _time.TimerIsWaiting();
+        _time.Advance(CdnInvalidationService.RetryDelay(1));
+        await cdn.AttemptsReach(2);
+        await _time.TimerIsWaiting();
+        _time.Advance(CdnInvalidationService.RetryDelay(2));
+        await cdn.AttemptsReach(3);
+
+        // Fifteen minutes after the first failure the 600 s copies have expired: the third failure is not retried.
+        _time.WaitingTimers.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SentEditPurge_WithPurgeBackedLayers_IsRepeatedOnceAfterTheSettleDelay()
+    {
+        var cdn = new FlakyInvalidator(failures: 0);
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+
+        await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
+        await _time.TimerIsWaiting();
+        _time.Advance(CdnInvalidationService.SettleDelay);
+        await cdn.AttemptsReach(2);
+
+        _time.WaitingTimers.Should().Be(0, "the settle repeat is not repeated again");
+        cdn.Sent.Should().AllSatisfy(paths => paths.Should().Equal("#honua-layer:3"));
+    }
+
+    [UnitTest]
+    public async Task StoppingTask_SendsTheEditPurgesItStillHolds()
+    {
+        var cdn = new FlakyInvalidator(failures: 1);
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+        await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
+
+        await new CdnPendingPurgeFlush(service).StopAsync(CancellationToken.None);
+
+        cdn.Attempts.Should().Be(2);
+        cdn.Sent[^1].Should().Equal("#honua-layer:3");
+    }
+
+    [UnitTest]
+    public async Task FailureOnAnotherTask_StopsLongLifetimesHereAtTheNextRead()
+    {
+        var options = Options();
+        var leases = new ReleasableLeases(_time);
+        var failingTask = new CdnPurgeReliability(new CloudFrontLimits(), NullLogger<CdnPurgeReliability>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), LeaseStore = leases });
+        var otherTask = new CdnPurgeReliability(new CloudFrontLimits(), NullLogger<CdnPurgeReliability>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), LeaseStore = leases, Budget = new FixedBudget(0) });
+        await otherTask.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+        otherTask.PurgesReachCdn().Should().BeTrue();
+
+        failingTask.RecordFailedPurge();
+        await leases.Held(CdnPurgeReliability.FailureLeaseKey);
+        await otherTask.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+
+        otherTask.PurgesReachCdn().Should().BeFalse();
+        _time.Advance(CdnPurgeReliability.FailureHoldOff);
+        await otherTask.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+        otherTask.PurgesReachCdn().Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task SharedSignalsNotReadForThreeIntervals_KeepTheOrdinaryLifetime()
+    {
+        var options = Options();
+        var reliability = await PrimedReliabilityAsync(options);
+
+        _time.Advance(CdnPurgeReliability.SharedReadInterval * 3);
+
+        reliability.PurgesReachCdn().Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task UnavailableBudgetDecision_KeepsTheOrdinaryLifetime()
+    {
+        var options = Options(monthlyLimit: 10);
+        var reliability = await PrimedReliabilityAsync(options, budget: new FixedBudget(0) { Decision = CdnPurgeBudgetDecision.Unavailable });
+
+        reliability.PurgesReachCdn().Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ReadStartedBeforeTheBudgetWasSpent_DoesNotRestoreLongLifetimes()
+    {
+        var options = Options(monthlyLimit: 10);
+        var budget = new GatedBudget();
+        var reliability = await PrimedReliabilityAsync(options, budget: budget);
+        reliability.PurgesReachCdn().Should().BeTrue();
+
+        budget.Hold();
+        var read = reliability.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+        reliability.RecordBudgetSpent();
+        budget.Release();
+        await read;
+
+        reliability.PurgesReachCdn().Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(5, 1)]
+    [InlineData(10, 1)]
+    [InlineData(11, 2)]
+    [InlineData(1000, 100)]
+    public void BudgetReserve_RoundsUp(int limit, int expected)
+        => SharedCachePurgeBacked.BudgetReserve(limit).Should().Be(expected);
 
     private static SharedCacheOptions Options(
         string? tagHeader = "x-cache-tag",
@@ -323,7 +453,7 @@ public sealed class PurgeBackedLifetimeTests
         SharedCacheOptions options, ICdnInvalidator? invalidator = null, ICdnPurgeBudget? budget = null)
     {
         var reliability = Reliability(options, invalidator ?? new CloudFrontLimits(), budget ?? new FixedBudget(0));
-        await reliability.ReadBudgetAsync(options.PurgeBudget, CancellationToken.None);
+        await reliability.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
         return reliability;
     }
 
@@ -354,6 +484,8 @@ public sealed class PurgeBackedLifetimeTests
     {
         public bool Unreadable { get; init; }
 
+        public CdnPurgeBudgetDecision Decision { get; init; } = CdnPurgeBudgetDecision.Admitted;
+
         public Task<CdnPurgeAdmission> TryAdmitEditAsync(int monthlyLimit, decimal unitCost, CancellationToken cancellationToken = default)
             => Task.FromResult(submitted >= monthlyLimit
                 ? new CdnPurgeAdmission(CdnPurgeBudgetDecision.Exceeded, submitted, 0)
@@ -362,27 +494,166 @@ public sealed class PurgeBackedLifetimeTests
         public Task<CdnPurgeBudgetMonth?> ReadCurrentMonthAsync(CancellationToken cancellationToken = default)
             => Unreadable
                 ? throw new InvalidOperationException("budget store down")
-                : Task.FromResult<CdnPurgeBudgetMonth?>(new CdnPurgeBudgetMonth(submitted, 0, CdnPurgeBudgetDecision.Admitted));
+                : Task.FromResult<CdnPurgeBudgetMonth?>(new CdnPurgeBudgetMonth(submitted, 0, Decision));
     }
 
     private sealed class FlakyInvalidator(int failures) : ICdnInvalidator
     {
+        private readonly Lock _gate = new();
         private readonly TaskCompletionSource _submitted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _attempts;
+        private readonly List<string[]> _sent = [];
+        private TaskCompletionSource _attempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public int Attempts => Volatile.Read(ref _attempts);
+        public int Attempts
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _sent.Count;
+                }
+            }
+        }
+
+        public IReadOnlyList<string[]> Sent
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _sent];
+                }
+            }
+        }
 
         public Task Submitted => _submitted.Task;
 
+        public async Task AttemptsReach(int count)
+        {
+            while (true)
+            {
+                Task attempted;
+                lock (_gate)
+                {
+                    if (_sent.Count >= count)
+                    {
+                        return;
+                    }
+
+                    attempted = _attempted.Task;
+                }
+
+                await attempted.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+
         public Task<CdnInvalidationResult> InvalidateAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref _attempts) <= failures)
+            bool fail;
+            TaskCompletionSource attempted;
+            lock (_gate)
+            {
+                _sent.Add([.. paths]);
+                fail = _sent.Count <= failures;
+                attempted = _attempted;
+                _attempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            attempted.TrySetResult();
+            if (fail)
             {
                 return Task.FromResult(new CdnInvalidationResult(CdnInvalidationOutcome.Failed, "refused"));
             }
 
             _submitted.TrySetResult();
             return Task.FromResult(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, "I1"));
+        }
+    }
+
+    private sealed class ReleasableLeases(TimeProvider clock) : ILeaseStore
+    {
+        private readonly Lock _gate = new();
+        private readonly Dictionary<string, (string Owner, DateTimeOffset ExpiresAt)> _leases = new(StringComparer.Ordinal);
+        private TaskCompletionSource _acquired = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task Held(string key)
+        {
+            while (true)
+            {
+                Task acquired;
+                lock (_gate)
+                {
+                    if (_leases.TryGetValue(key, out var lease) && lease.ExpiresAt > clock.GetUtcNow())
+                    {
+                        return;
+                    }
+
+                    acquired = _acquired.Task;
+                }
+
+                await acquired.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+
+        public Task<bool> TryAcquireAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
+        {
+            TaskCompletionSource acquired;
+            lock (_gate)
+            {
+                if (_leases.TryGetValue(claim.LeaseKey, out var lease) && lease.ExpiresAt > clock.GetUtcNow())
+                {
+                    return Task.FromResult(false);
+                }
+
+                _leases[claim.LeaseKey] = (claim.OwnerId, clock.GetUtcNow() + duration);
+                acquired = _acquired;
+                _acquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            acquired.TrySetResult();
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task ReleaseAsync(LeaseClaim claim, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (_leases.TryGetValue(claim.LeaseKey, out var lease) && lease.Owner == claim.OwnerId)
+                {
+                    _leases.Remove(claim.LeaseKey);
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    // Reports an unspent month, optionally only once the test lets the read finish.
+    private sealed class GatedBudget : ICdnPurgeBudget
+    {
+        private TaskCompletionSource _gate = CompletedGate();
+
+        public void Hold() => _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _gate.TrySetResult();
+
+        public Task<CdnPurgeAdmission> TryAdmitEditAsync(int monthlyLimit, decimal unitCost, CancellationToken cancellationToken = default)
+            => Task.FromResult(new CdnPurgeAdmission(CdnPurgeBudgetDecision.Admitted, 1, 0));
+
+        public async Task<CdnPurgeBudgetMonth?> ReadCurrentMonthAsync(CancellationToken cancellationToken = default)
+        {
+            await _gate.Task.WaitAsync(cancellationToken);
+            return new CdnPurgeBudgetMonth(0, 0, CdnPurgeBudgetDecision.Admitted);
+        }
+
+        private static TaskCompletionSource CompletedGate()
+        {
+            var gate = new TaskCompletionSource();
+            gate.SetResult();
+            return gate;
         }
     }
 

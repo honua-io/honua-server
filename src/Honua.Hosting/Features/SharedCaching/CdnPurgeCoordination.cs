@@ -19,4 +19,6 @@ internal sealed class CdnPurgeCoordination
     public ILeaseStore? LeaseStore { get; init; }
 
     public ICdnPurgeBudget? Budget { get; init; }
+
+    public CdnPurgeReliability? Reliability { get; init; }
 }

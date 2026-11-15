@@ -44,7 +44,7 @@ Edit purges also share one monthly counter in the database (`SharedCache__PurgeB
 
 CloudFront limits how many invalidations may be in progress. When it is busy the service retries for up to 17 seconds; when many layers are edited in the same 30 seconds it invalidates everything once instead of naming each layer.
 
-An admin request that told the CDN carries the response header `Honua-Cdn-Invalidation: submitted`, or `failed` when CloudFront refused. An edit request whose purge was paused by the monthly cap carries `budget`. A failure never undoes the change and never blocks a rollback; a release operation records it in the operation's warnings. Until the invalidation is repeated, cached responses expire with their lifetime.
+An admin request that told the CDN carries the response header `Honua-Cdn-Invalidation: submitted`, or `failed` when CloudFront refused. An edit request whose purge was paused by the monthly cap carries `budget`. A failure never undoes the change and never blocks a rollback; a release operation records it in the operation's warnings. Until the invalidation is repeated, cached responses expire with their lifetime; while purge-backed lifetimes are configured, a failed edit purge is retried (see below).
 
 Every invalidation is logged once as a purge record (event 10311): the reason (`admin`, `edit`, `release` or `operation`), the change it belongs to, the task that sent it, the CloudFront outcome and invalidation id, and the paths. For an admin change, the change is the `X-Correlation-ID` returned to the admin request, so you can find the purge a given change caused.
 
@@ -59,19 +59,25 @@ SharedCache__PurgeBacked__Layers__1=roads/1
 SharedCache__PurgeBacked__AllLayers=true
 ```
 
-`SharedCache__PurgeBacked__Tile__SharedMaxAgeSeconds` (default 86400) and `SharedCache__PurgeBacked__FeatureQuery__SharedMaxAgeSeconds` (default 300) change the lengths. Do not list a layer whose table is also written by a desktop GIS, a load script or another application: nothing would purge its responses, and they would stay stale for the full lifetime.
+`SharedCache__PurgeBacked__Tile__SharedMaxAgeSeconds` (default 86400) and `SharedCache__PurgeBacked__FeatureQuery__SharedMaxAgeSeconds` (default 300) change the lengths. Do not list a layer whose table is also written by a desktop GIS, a load script or another application, unless that writer records its changes through external edit tracking (`ExternalEdits__Enabled`); otherwise nothing purges its responses and they stay stale for the full lifetime. `AllLayers` also covers layers served from read-only or federated sources, whose data changes outside Honua by definition: if you publish any, list layers instead.
 
 A response gets the longer lifetime only while an edit would reach the CDN:
 
 - a CloudFront distribution and `SharedCache__CacheTagHeader` are configured;
-- at least 10% of the monthly edit-purge budget is left, so the rest can still purge what was stored with a long lifetime (the counter is read at most once a minute; if it cannot be read, the ordinary lifetime applies);
-- no purge from this task failed in the last 15 minutes;
+- at least 10% of the monthly edit-purge budget is left (rounded up), so the rest can still purge what was stored with a long lifetime;
+- no purge from any task failed or stayed busy in the last 15 minutes;
 - the layer has no emergency, per-layer or per-tileset lifetime, which win;
 - the response names one layer, and was rendered for this request rather than replayed from the task's memory.
 
-Otherwise the response gets the ordinary lifetime from the table above. Responses with a longer lifetime are not kept in the task's own cache: another task's edit cannot reach that copy, and replaying it after the purge would put the old response back in the CDN for the whole lifetime. The CDN absorbs the repeat requests instead.
+Each task reads the shared budget and failure state at most once a minute; if it cannot, or its last reading is more than 3 minutes old, responses get the ordinary lifetime from the table above. A response with the longer lifetime is not stored in the task's output cache, because another task's edit cannot reach that copy and replaying it after the purge would put the old response back in the CDN for the whole lifetime. A feature query may still be kept in a task's query cache, but a reply from that cache leaves with the ordinary lifetime.
 
-To refresh one layer at once, for example after a one-off bulk load outside Honua, invalidate it through the admin API: `POST /api/v1/admin/operations/cache/invalidate` with `{"serviceId": "parcels", "layerId": 3}`. The task that receives it drops the layer from its own cache and invalidates the CDN, as for any operator invalidation; a copy another task keeps in memory has the ordinary lifetime and expires within it.
+Edit purges carry more weight with these lifetimes, so for as long as any layer is listed:
+
+- a failed edit purge is sent again after 5, 10, 20 and 40 minutes, then hourly, until every copy it should have removed has expired; each attempt counts against the monthly budget;
+- a sent edit purge is repeated once a minute later, for a response that was rendered before the edit was committed and reached the CDN after the first purge;
+- a task that stops sends the edit purges it is still holding. A task that crashes cannot: after an unplanned task loss, invalidate the affected layers' caches.
+
+When you remove a layer from the list, or turn off cache tags or the CDN configuration, copies already stored keep their long lifetime. Invalidate the cache once afterwards (the operator cache purge invalidates everything at the CDN).
 
 ## The server's own cache on several tasks
 

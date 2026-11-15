@@ -83,8 +83,7 @@ internal static class SharedCacheResponse
             return false;
         }
 
-        ResolveLifetime(context, cacheClass, CurrentOptions(context), out var purgeBacked);
-        return purgeBacked;
+        return ResolveLifetime(context, cacheClass, CurrentOptions(context)).PurgeBacked;
     }
 
     // Handlers that write the body themselves call this before the first write; the endpoint filter covers the rest.
@@ -128,7 +127,7 @@ internal static class SharedCacheResponse
             return null;
         }
 
-        return TimeSpan.FromSeconds(Math.Max(0, ResolveLifetime(context, cacheClass, CurrentOptions(context)).SharedMaxAgeSeconds));
+        return TimeSpan.FromSeconds(Math.Max(0, ResolveLifetime(context, cacheClass, CurrentOptions(context)).Lifetime.SharedMaxAgeSeconds));
     }
 
     internal static ResponseCacheClass? DeclaredClass(HttpContext context)
@@ -147,7 +146,7 @@ internal static class SharedCacheResponse
     // s-maxage is always written: the CDN's own minimum is 0, so the origin header is the only lifetime it has.
     private static string FormatCacheControl(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
-        var lifetime = ResolveLifetime(context, cacheClass, options, out var purgeBacked);
+        var (lifetime, purgeBacked) = ResolveLifetime(context, cacheClass, options);
         if (purgeBacked)
         {
             context.Items[PurgeBackedSentKey] = true;
@@ -176,38 +175,31 @@ internal static class SharedCacheResponse
     private static SharedCacheOptions CurrentOptions(HttpContext context)
         => context.RequestServices?.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
 
-    private static SharedCacheLifetime ResolveLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
-        => ResolveLifetime(context, cacheClass, options, out _);
-
     // An operator's emergency, per-layer or per-tileset lifetime wins over the purge-backed one.
-    private static SharedCacheLifetime ResolveLifetime(
-        HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options, out bool purgeBacked)
+    private static ResolvedLifetime ResolveLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
-        purgeBacked = false;
         var subject = Subject(context);
         if (options.Emergency.AppliesTo(subject))
         {
-            return SharedCacheEmergency.Lifetime;
+            return new(SharedCacheEmergency.Lifetime, PurgeBacked: false);
         }
 
         if (subject?.LayerKey is { } layerKey && options.Layers.TryGetValue(layerKey, out var configuredForLayer))
         {
-            return configuredForLayer;
+            return new(configuredForLayer, PurgeBacked: false);
         }
 
         if (context.Items.TryGetValue(LifetimeKey, out var declared) && declared is SharedCacheLifetime layerLifetime)
         {
-            return layerLifetime;
+            return new(layerLifetime, PurgeBacked: false);
         }
 
-        if (PurgeBackedLifetime(context, cacheClass, options) is { } purgeBackedLifetime)
-        {
-            purgeBacked = true;
-            return purgeBackedLifetime;
-        }
-
-        return options.DefaultFor(cacheClass);
+        return PurgeBackedLifetime(context, cacheClass, options) is { } purgeBackedLifetime
+            ? new(purgeBackedLifetime, PurgeBacked: true)
+            : new(options.DefaultFor(cacheClass), PurgeBacked: false);
     }
+
+    private readonly record struct ResolvedLifetime(SharedCacheLifetime Lifetime, bool PurgeBacked);
 
     private static SharedCacheLifetime? PurgeBackedLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
         => options.PurgeBacked.LifetimeFor(cacheClass) is { } lifetime
