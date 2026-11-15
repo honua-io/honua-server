@@ -18,7 +18,7 @@ internal static class OperateStatusServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddScoped<IOperateStatusService, OperateStatusService>();
+        services.AddScoped<OperateStatusService>();
 
         return services;
     }

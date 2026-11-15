@@ -29,12 +29,11 @@ cf_server_config_path <- function() {
 SERVICE_ID <- "test_service"
 COLLECTION_ID <- "0"
 
-# Seeded layer identity. `LAYER_NAME` is the `honua.layers.layer_name` value in
-# tests/seed/client-compat-v1.sql; the WFS 2.0 feature type name the server
-# derives from it is `honua:test_layer`, which is how this lane recognises the
-# certification target among the other seeded services.
+# Seeded layer title and canonical publication identity from
+# honua.seed_metadata_v2_compat_snapshot in tests/seed/client-compat-v1.sql.
+# WFS advertises the publication ID across all supported WFS versions.
 LAYER_NAME <- "Test Layer"
-WFS_TYPE_LOCAL_NAME <- "test_layer"
+WFS_TYPE_LOCAL_NAME <- "pub-test-service-feature-0"
 
 # Row counts in the seeded `features` table for layer 0.
 TOTAL_FEATURES <- 10L
