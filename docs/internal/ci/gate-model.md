@@ -710,6 +710,14 @@ Receipts have scope `archived-customer-journey`, distinguish `candidate` from
 and their cleanup pass. A prospective PR receipt cannot qualify a shipped archive;
 release verification needs a recorded pass from the published candidate.
 
+Command output stays withheld; a failed command reports its operation, exit
+code and fixed signal labels. Compose prints `pull access denied` for a locally
+built image (a name with no registry path, such as the PostGIS datum-grid image)
+before building it, so that line counts only when no local build started;
+`localBuildStarted` says which. When initialization or the health read fails,
+the receipt also records the Compose version and each service's name, state,
+health and exit code, keeping only short identifier-like values.
+
 ### Check registration
 
 Before adding a new workflow or check:

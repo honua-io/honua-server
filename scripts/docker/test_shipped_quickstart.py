@@ -146,8 +146,8 @@ class AssertionTests(unittest.TestCase):
     def test_failure_diagnostics_only_emit_fixed_labels(self):
         result = subprocess.CompletedProcess([], 1, "private token", "failed to solve: private password")
         error = proof.CommandFailure(["python3", "quickstart.py"], result)
-        self.assertEqual({"operation": "initialize", "exitCode": 1, "signals": ["build-failed"]},
-                         error.diagnostic)
+        self.assertEqual({"operation": "initialize", "exitCode": 1, "signals": ["build-failed"],
+                          "localBuildStarted": False}, error.diagnostic)
         self.assertNotIn("private", json.dumps(error.diagnostic))
 
     def test_build_tooling_failure_emits_only_fixed_labels(self):
@@ -157,6 +157,39 @@ class AssertionTests(unittest.TestCase):
         error = proof.CommandFailure(["python3", "quickstart.py"], result)
         self.assertEqual(["image-pull-denied", "buildx-required"], error.diagnostic["signals"])
         self.assertNotIn("private", json.dumps(error.diagnostic))
+
+    def test_local_image_build_fallback_is_not_reported_as_a_registry_failure(self):
+        fallback = ("Error response from daemon: pull access denied for honua-postgis-proj-grids, "
+                    "repository does not exist or may require 'docker login'\n[+] Building 4.1s (9/9)\n"
+                    "dependency failed to start: container private-db is unhealthy")
+        self.assertEqual(["container-unhealthy", "dependency-failed"], proof.failure_signals(fallback))
+        registry = ("Error response from daemon: pull access denied for ghcr.io/honua-io/private, "
+                    "repository does not exist\n[+] Building 4.1s")
+        self.assertEqual(["image-pull-denied", "docker-daemon-error"], proof.failure_signals(registry))
+        without_build = "pull access denied for honua-postgis-proj-grids, repository does not exist"
+        self.assertEqual(["image-pull-denied"], proof.failure_signals(without_build))
+        self.assertEqual((True, False), (proof.local_build_started(fallback), proof.local_build_started(without_build)))
+
+    def test_compose_version_is_reported_only_when_it_looks_like_a_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            installation = proof.Installation(Path(directory))
+            for output, expected in (("2.40.3\n", "2.40.3"), ("v5.7.1", "v5.7.1"), ("private output", "withheld")):
+                with patch.object(installation, "compose", return_value=output):
+                    self.assertEqual(expected, installation.compose_version())
+
+    def test_service_states_keep_only_bounded_identifiers(self):
+        rows = [{"Service": "postgres", "State": "exited", "Health": "", "ExitCode": 3,
+                 "Name": "private-name", "Labels": "private=secret", "Command": "private"},
+                {"Service": "honua", "State": "running", "Health": "unhealthy: private detail", "ExitCode": 0}]
+        with tempfile.TemporaryDirectory() as directory:
+            installation = proof.Installation(Path(directory))
+            for output in (json.dumps(rows), "\n".join(json.dumps(row) for row in rows)):
+                with patch.object(installation, "compose", return_value=output):
+                    states = installation.service_states()
+                self.assertEqual([{"service": "postgres", "state": "exited", "health": "", "exitCode": 3},
+                                  {"service": "honua", "state": "running", "health": "withheld", "exitCode": 0}],
+                                 states)
+                self.assertNotIn("private", json.dumps(states))
 
     def test_inherited_credentials_and_compose_overrides_are_not_forwarded(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(proof.os.environ, {
@@ -193,6 +226,24 @@ class LifecycleTests(unittest.TestCase):
                 patch.object(proof, "check_empty"):
             return proof.main()
 
+    def test_failed_start_records_states_or_says_they_are_unavailable(self):
+        failure = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess([], 1, "", ""))
+        for read, expected in ((Mock(return_value="2.40.3"), "2.40.3"),
+                               (Mock(side_effect=RuntimeError("private")), "unavailable")):
+            with self.subTest(expected=expected):
+                installation = Mock(service_states=read, compose_version=read)
+                self.assertEqual(1, self.execute([installation], [failure]))
+                receipt = json.loads(self.receipt.read_text())
+                self.assertEqual((expected, expected), (receipt["serviceStates"], receipt["composeVersion"]))
+                self.assertNotIn("private", self.receipt.read_text())
+                installation.down.assert_called_once()
+
+    def test_other_failures_do_not_query_service_state(self):
+        installation = Mock()
+        self.assertEqual(1, self.execute([installation], RuntimeError("private failure")))
+        installation.service_states.assert_not_called()
+        self.assertNotIn("serviceStates", json.loads(self.receipt.read_text()))
+
     def test_failed_install_still_tears_down_and_never_reports_success(self):
         installation = Mock()
         self.assertEqual(1, self.execute([installation], RuntimeError("withheld private failure")))
@@ -228,12 +279,15 @@ class LifecycleTests(unittest.TestCase):
 
     def test_cleanup_failure_preserves_original_bounded_command_diagnostic(self):
         installation = Mock()
+        installation.service_states.return_value = [{"service": "postgres", "state": "exited", "exitCode": 1}]
+        installation.compose_version.return_value = "2.40.3"
         installation.down.side_effect = RuntimeError("private teardown output")
         failure = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess(
             [], 1, "private stdout", "permission denied: private path"))
         self.assertEqual(1, self.execute([installation], [failure]))
         receipt = json.loads(self.receipt.read_text())
         self.assertEqual(failure.diagnostic, receipt["commandFailure"])
+        self.assertEqual([{"service": "postgres", "state": "exited", "exitCode": 1}], receipt["serviceStates"])
         self.assertTrue(receipt["cleanupFailed"])
         self.assertNotIn("private", self.receipt.read_text())
         installation.down.assert_called_once()
