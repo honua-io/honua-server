@@ -50,6 +50,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     private readonly GeometryLimits _geometryLimits;
     private readonly EditLimits _editLimits;
     private readonly int _streamBatchSize;
+    private readonly int _maxRecordCount;
 
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
@@ -101,6 +102,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
+        _maxRecordCount = limitsOptions?.Value?.Query?.MaxRecordCount ?? 10000;
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
         _editReceipts = editReceipts;
@@ -207,13 +209,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
         var requestServices = context.GetHttpContext().RequestServices;
-        var resolvedReader = await ResolveReaderAsync(
-                layer, FeatureProviderReadOperation.Query, requestServices, context.CancellationToken)
+        var streamingStore = await ResolveStreamingStoreAsync(layer, requestServices, context.CancellationToken)
             .ConfigureAwait(false);
-        var streamingStore = requestServices.GetService<FeatureProviderQueryRouter>() is null
-            && requestServices.GetService<IMetadataV2GraphProvider>() is null
-            ? _streamingFeatureStore
-            : resolvedReader as IStreamingFeatureStore;
         if (streamingStore is null)
         {
             throw new RpcException(new Status(
@@ -649,6 +646,17 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             layer.StorageLayerId,
             operation,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IStreamingFeatureStore?> ResolveStreamingStoreAsync(
+        GrpcLayerContext layer, IServiceProvider requestServices, CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(layer, FeatureProviderReadOperation.Query, requestServices,
+            cancellationToken).ConfigureAwait(false);
+        return requestServices.GetService<FeatureProviderQueryRouter>() is null
+            && requestServices.GetService<IMetadataV2GraphProvider>() is null
+            ? _streamingFeatureStore
+            : reader as IStreamingFeatureStore;
     }
 
     // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
