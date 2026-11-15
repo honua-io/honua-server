@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -79,6 +80,7 @@ public sealed partial class DirectImportCrsContractTests
     {
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent(CreateProjectedShapefileZip(prj));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         content.Add(fileContent, "File", "projected.zip");
         using var tableContent = upload is null ? null : new StringContent(upload.TableName);
         using var overwriteContent = upload is null ? null : new StringContent("true");
