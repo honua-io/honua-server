@@ -147,9 +147,9 @@ re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers queue superseded events per PR (`queue: max`)
 instead of cancelling them, so a superseded resolver or bridge run ends green
 rather than as a cancelled red mark on the PR page. Each attestation re-reads
-live review/admission state before acting. An attestation already in flight
-when the pull request turns draft or its head moves still fails final review
-revalidation; `ready_for_review` or the new head's event re-attests. Bursts
+live review/admission state before acting. An attestation whose live review
+state changes between its first snapshot and final revalidation fails red;
+the queued event behind that change re-attests an open, ready head. Bursts
 are not collapsed: each event runs in turn, with up to 100 waiting per PR.
 Normalization cancels repeated eligible
 producers for the same PR head. Different heads use separate groups so a delayed
@@ -246,7 +246,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `import-fidelity-scorecard-governance.yml` | Import-fidelity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
-| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. A PR head cut before the workflow inventory generator existed validates its committed inventory instead of failing on the missing script; a head that left trunk after the generator existed and lacks it fails. | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
+| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. A pull request is validated as its merge into trunk, so a head cut before a checker existed is judged by the checkers the workflow calls; the uploaded OKF agent graph is generated from the exact head in a separate tree. | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
 
 ### Affected-scope gate build
 

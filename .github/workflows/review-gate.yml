@@ -109,8 +109,8 @@ jobs:
             // Always reconcile the live head instead of trusting the event head.
             // Live drafts also reach the attest concurrency group, queue behind
             // any active publication, then shed before checkout or status mutation.
-            // A draft conversion therefore no longer stops an active publication;
-            // it stays admitted so this trusted workflow's event contract is unchanged.
+            // A draft conversion does not stop an active publication; it is
+            // admitted only to keep this trusted workflow's event contract.
 
       - name: Resolve every event to one pull request
         id: target
@@ -150,10 +150,9 @@ jobs:
       group: review-gate-${{ needs.resolve.outputs.pr }}
       # Attestations queue in order instead of cancelling red on the PR page.
       # Each re-reads live review and admission state, so the last one
-      # publishes the current verdict. One red path remains by design: an
-      # attestation already past its subject check when the pull request turns
-      # draft or its head moves fails final revalidation, where it used to be
-      # cancelled; `ready_for_review` or the new head's event re-attests.
+      # publishes the current verdict. An attestation whose live review state
+      # changes between its first snapshot and final revalidation fails red;
+      # the queued event behind that change re-attests an open, ready head.
       # Bursts are not collapsed: each event runs in turn, up to 100 waiting.
       cancel-in-progress: false
       queue: max
