@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Hosting;
@@ -793,9 +794,10 @@ internal sealed partial class MetadataReleaseReconciler(
 internal sealed class MetadataReleaseReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     IMetadataReleaseOperationReconciler reconciler,
-    ILogger<MetadataReleaseReconcilerBackgroundService> logger) : BackgroundService
+    ILogger<MetadataReleaseReconcilerBackgroundService> logger,
+    PollWakeSignal<IWorkflowOperationStore>? wake = null) : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly IdlePollPacer _pacer = new(wake);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -803,9 +805,12 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var activeOperations = await workflowStore.ListActiveAsync(WorkflowOperationKind.MetadataRelease, stoppingToken).ConfigureAwait(false);
+                idle = activeOperations.Count == 0;
                 foreach (var operation in activeOperations)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
@@ -834,7 +839,7 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
                 MetadataReleaseReconciler.Log.MetadataReleasePollLoopFailed(logger, ex);
             }
 
-            await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+            await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
         }
     }
 }
