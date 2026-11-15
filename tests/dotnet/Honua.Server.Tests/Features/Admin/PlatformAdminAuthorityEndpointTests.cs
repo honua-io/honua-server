@@ -2,9 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.TestKit;
@@ -27,6 +29,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
 {
     private readonly IAdminApiKeyStore _keys = Substitute.For<IAdminApiKeyStore>();
+    private readonly IWorkflowOperationStore _workflows = Substitute.For<IWorkflowOperationStore>();
     private readonly WebAppFixture _fixture;
 
     public PlatformAdminAuthorityEndpointTests()
@@ -44,6 +47,8 @@ public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
             {
                 services.RemoveAll<IAdminApiKeyStore>();
                 services.AddSingleton(_keys);
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.AddSingleton(_workflows);
                 services.Configure<TenantContextOptions>(options => options.Enabled = true);
                 services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PlatformAdminTestAuthentication>(
                     PlatformAdminTestAuthentication.SchemeName, _ => { });
@@ -69,6 +74,7 @@ public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
     [InlineData("license/status")]
     [InlineData("identity/providers")]
     [InlineData("metadata/release-packages")]
+    [InlineData("metadata/releases/test-package/operation")]
     [InlineData("oauth-clients")]
     [InlineData("oauth-scopes")]
     [InlineData("oidc/providers")]
@@ -79,6 +85,7 @@ public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/license/status")]
     [Endpoint("GET /api/v1/admin/identity/providers")]
     [Endpoint("GET /api/v1/admin/metadata/release-packages")]
+    [Endpoint("GET /api/v1/admin/metadata/releases/{packageId}/operation")]
     [Endpoint("GET /api/v1/admin/oauth-clients")]
     [Endpoint("GET /api/v1/admin/oauth-scopes")]
     [Endpoint("GET /api/v1/admin/oidc/providers")]
@@ -92,6 +99,27 @@ public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Contains("platform_admin_required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         await _keys.DidNotReceive().ListAsync(Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task SubmitMetadataRelease_TenantAdmin_RejectsBeforeStoreAccess()
+    {
+        using var client = CreateClient("tenant-admin");
+        _workflows.ClearReceivedCalls();
+
+        using var response = await client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+        {
+            packageId = "test-package",
+            targetEnvironment = "test",
+            resourceSemanticId = "parcels",
+            newFieldName = "test_field",
+            newFieldType = "String"
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("platform_admin_required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Empty(_workflows.ReceivedCalls());
     }
 
     [IntegrationTheory]
