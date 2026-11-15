@@ -29,6 +29,8 @@ internal static class OpsObservabilityEndpoints
             .WithTags("Admin", "Observability")
             .RequireOpsReadAuthorization();
 
+        group.MapOpsIncidentEndpoints();
+
         group.MapGet("/ops-health", HandleGetOpsHealth)
             .WithDisplayName("Get Ops Health Snapshot")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
