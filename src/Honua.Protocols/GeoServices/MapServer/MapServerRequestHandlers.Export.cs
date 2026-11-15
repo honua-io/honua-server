@@ -175,8 +175,8 @@ internal static partial class MapServerEndpoints
                 cancellationToken);
             if (!transformResult.IsSuccess)
             {
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return CreateExportBadRequest(
+                    context, responseFormat,
                     transformResult.Error ?? "Invalid spatial reference.");
             }
             var renderExtent = transformResult.Extent;
@@ -195,7 +195,7 @@ internal static partial class MapServerEndpoints
             {
                 if (!TryParseRgbList(backgroundColorValue, out var parsedColor))
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context,
+                    return CreateExportBadRequest(context, responseFormat,
                         "Invalid backgroundColor parameter. Expected format: r,g,b or r,g,b,a");
                 }
 
@@ -205,13 +205,13 @@ internal static partial class MapServerEndpoints
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             if (!TryParseLayerDefs(GetValue(values, "layerDefs"), queryValidator, out var layerDefs, out var layerDefsError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
+                return CreateExportBadRequest(context, responseFormat,
                     layerDefsError ?? "Invalid layerDefs parameter.");
             }
 
             if (!TryParseLayerTimeOptions(GetValue(values, "layerTimeOptions"), out var layerTimeOptions, out var layerTimeOptionsError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
+                return CreateExportBadRequest(context, responseFormat,
                     layerTimeOptionsError ?? "Invalid layerTimeOptions parameter.");
             }
 
@@ -221,7 +221,7 @@ internal static partial class MapServerEndpoints
                 publishedLayers.Select(static layer => new DynamicLayerCandidate(layer.PublicLayerId, layer.Resource)));
             if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), dynamicLayerResolver, queryValidator, out var dynamicLayers, out var dynamicLayersError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
+                return CreateExportBadRequest(context, responseFormat,
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
 
@@ -230,12 +230,12 @@ internal static partial class MapServerEndpoints
             var layersValue = NormalizeEmptyLayerSelection(GetValue(values, "layers"));
             if (HasEmptyLayerToken(layersValue))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
+                return CreateExportBadRequest(context, responseFormat, "layers parameter contains an empty layer id.");
             }
 
             if (HasNonIntegerExportLayerToken(layersValue))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter must contain integer layer ids.");
+                return CreateExportBadRequest(context, responseFormat, "layers parameter must contain integer layer ids.");
             }
 
             MapServerLog.ExportRequested(logger, serviceId, imageWidth, imageHeight);
@@ -292,7 +292,8 @@ internal static partial class MapServerEndpoints
                 access,
                 parameters.Layers,
                 dynamicLayers,
-                context);
+                context,
+                responseFormat);
             if (renderLayersError is not null)
             {
                 return renderLayersError;
@@ -403,7 +404,7 @@ internal static partial class MapServerEndpoints
                         out var effectiveTimeRelation,
                         out var timeError))
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context,
+                    return CreateExportBadRequest(context, responseFormat,
                         timeError ?? "Invalid time parameter.");
                 }
 
@@ -416,7 +417,7 @@ internal static partial class MapServerEndpoints
                         out var sqlFilter,
                         out var filterError))
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context,
+                    return CreateExportBadRequest(context, responseFormat,
                         filterError ?? "Invalid filter parameter.");
                 }
 
@@ -433,7 +434,7 @@ internal static partial class MapServerEndpoints
                             out var dynamicMapLibreStyleJson,
                             out var dynamicStyleError))
                     {
-                        return StandardErrorHelpers.CreateBadRequest(context,
+                        return CreateExportBadRequest(context, responseFormat,
                             dynamicStyleError ?? "Invalid dynamicLayers drawingInfo renderer.");
                     }
 
@@ -1146,7 +1147,8 @@ internal static partial class MapServerEndpoints
         ResourceAccessSet access,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
-        HttpContext context)
+        HttpContext context,
+        string responseFormat)
     {
         var layerLookup = publishedLayers.ToDictionary(static layer => layer.PublicLayerId);
         if (dynamicLayers.Count == 0)
@@ -1174,14 +1176,14 @@ internal static partial class MapServerEndpoints
             // default-visible set (include nothing extra, exclude nothing), not a 400.
             if (requestedStaticLayerIds.Count == 0 && visibility == ExportLayerVisibility.Show)
             {
-                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
+                return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(context, responseFormat, "Invalid layers parameter."));
             }
 
             var accessibleLayerIds = accessibleLayers.Select(static layer => layer.PublicLayerId).ToHashSet();
             if (requestedStaticLayerIds.Any(id => !accessibleLayerIds.Contains(id)))
             {
-                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(
+                    context, responseFormat,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
@@ -1240,8 +1242,8 @@ internal static partial class MapServerEndpoints
                 var dynamicLayerIds = dynamicLayers.Select(layer => layer.Id).ToHashSet();
                 if (requestedIds.Any(id => !dynamicLayerIds.Contains(id)))
                 {
-                    return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                        context,
+                    return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(
+                        context, responseFormat,
                         "layers parameter references an invalid or inaccessible layer."));
                 }
 
@@ -1252,8 +1254,8 @@ internal static partial class MapServerEndpoints
                         !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
                         !access.IsAccessible(requestedMapLayer.Resource))
                     {
-                        return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                            context,
+                        return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(
+                            context, responseFormat,
                             "layers parameter references an invalid or inaccessible layer."));
                     }
                 }
@@ -1265,15 +1267,15 @@ internal static partial class MapServerEndpoints
         {
             if (!layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var layer))
             {
-                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(
+                    context, responseFormat,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
             if (!access.IsAccessible(layer.Resource))
             {
-                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(
+                    context, responseFormat,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
@@ -1284,8 +1286,8 @@ internal static partial class MapServerEndpoints
                 (!layerLookup.TryGetValue(exportJoin.RightMapLayerId, out var rightLayer) ||
                  !access.IsAccessible(rightLayer.Resource)))
             {
-                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return (Array.Empty<ExportRenderLayer>(), CreateExportBadRequest(
+                    context, responseFormat,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
