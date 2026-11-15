@@ -1511,7 +1511,8 @@ CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
 `advisory-runner-select.yml` before allocating compute. Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
 and heartbeat. A heartbeat no older than 90 seconds must match the current
-instance and advertise an idle heavy runner. Otherwise the job uses its existing
+instance and advertise more than two idle heavy runners: two stay free for
+required PR Gate jobs. Otherwise the job uses its existing
 hosted label. Missing configuration, credentials, read failures and selector
 failure all fall back to hosted compute. This selector never wakes or resizes
 the host; AWS retries and step timeouts are bounded. The current role trusts PR
