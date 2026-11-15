@@ -7,11 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Single-node fallback <see cref="IVersionJobStore"/> (#1553) used when Redis is not configured. Keeps
-/// reconcile/post job records in process memory so the async job surface is pollable within one node.
-/// The Redis-backed implementation supersedes it for multi-replica and restart-durable deployments.
-/// </summary>
+// For a host with no system database, which runs one node.
 public sealed class InMemoryVersionJobStore : IVersionJobStore
 {
     private readonly ConcurrentDictionary<Guid, VersionJob> _jobs = new();
