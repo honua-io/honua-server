@@ -26,6 +26,7 @@ jobs:
     steps:
       # Only trusted base scripts run with the read credential. Forks stay hosted.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: trusted-base
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.HONUA_HEAVY_RUNNER != ''
         continue-on-error: true
         timeout-minutes: 1
@@ -37,7 +38,7 @@ jobs:
             scripts/ci/gate-runner-heartbeat.sh
           sparse-checkout-cone-mode: false
       - name: Read build-host health credential
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.HONUA_HEAVY_RUNNER != ''
+        if: steps.trusted-base.outcome == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.HONUA_HEAVY_RUNNER != ''
         continue-on-error: true
         timeout-minutes: 2
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
@@ -48,7 +49,7 @@ jobs:
           retry-max-attempts: 1
       - name: Select healthy heavy pool or hosted fallback
         id: select
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.HONUA_HEAVY_RUNNER != ''
+        if: steps.trusted-base.outcome == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.HONUA_HEAVY_RUNNER != ''
         continue-on-error: true
         timeout-minutes: 1
         env:

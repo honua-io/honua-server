@@ -85,6 +85,7 @@ esac
         self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', job['runs-on'])
         self.assertEqual(job['outputs']['runner'], '${{ steps.select.outputs.runner || toJSON(inputs.hosted-runner) }}')
         checkout = job['steps'][0]
+        self.assertEqual(checkout['id'], 'trusted-base')
         self.assertEqual(checkout['with']['ref'], '${{ github.event.pull_request.base.sha }}')
         self.assertFalse(checkout['with']['persist-credentials'])
         for step in job['steps']:
@@ -92,6 +93,8 @@ esac
             self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', step['if'])
             self.assertTrue(step['continue-on-error'])
             self.assertLessEqual(step['timeout-minutes'], 2)
+        for step in job['steps'][1:]:
+            self.assertIn("steps.trusted-base.outcome == 'success' &&", step['if'])
 
     def test_store_native_checks_support_unprivileged_heavy_runners(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/store-image-size.yml').read_text())
