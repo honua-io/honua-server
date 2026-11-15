@@ -8,6 +8,21 @@ namespace Honua.Db.Postgres.Features.Attachments;
 
 internal sealed partial class PostgresAttachmentStore
 {
+    internal async Task LockUploadParentAsync(AttachmentPublicationTransaction database, int layerId, long featureId)
+    {
+        // Feature deletion locks this row before removing attachment metadata. Hold a
+        // compatible read lock through publication so its cleanup sees the new attachment.
+        await using var command = new NpgsqlCommand($"""
+            SELECT 1 FROM {_featureTable} WHERE layer_id = @layer AND objectid = @feature FOR KEY SHARE
+            """, database.Connection, database.Transaction);
+        command.Parameters.AddWithValue("layer", layerId);
+        command.Parameters.AddWithValue("feature", featureId);
+        if (await command.ExecuteScalarAsync(database.CancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new AttachmentUploadException(AttachmentUploadFailure.NotFound, "Parent feature was not found.");
+        }
+    }
+
     internal async Task<Attachment> PublishUploadAsync(AttachmentPublicationTransaction database, Attachment attachment, long? replacementId)
     {
         await EnforceUploadQuotaAsync(database, attachment, replacementId).ConfigureAwait(false);

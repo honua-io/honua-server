@@ -28,7 +28,7 @@ internal sealed partial class PostgresAttachmentStore
             WHERE a.layer_id = @layer AND a.feature_id = @feature AND a.id > @after
                 AND (cardinality(@types) = 0 OR a.content_type = ANY(@types))
                 AND (cardinality(@keywords) = 0 OR
-                    CASE WHEN m.global_id IS NULL THEN a.keywords = ANY(@keywords)
+                    CASE WHEN m.global_id IS NULL THEN string_to_array(a.keywords, ',') && @keywords
                     ELSE m.keywords && @keywords END)
             ORDER BY a.id LIMIT @limit
             """, connection);

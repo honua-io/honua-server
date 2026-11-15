@@ -31,6 +31,9 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         {
             throw Failure(AttachmentUploadFailure.InvalidState, "Upload content is incomplete.");
         }
+        await publisher.LockUploadParentAsync(
+            new AttachmentPublicationTransaction(connection, transaction, cancellationToken),
+            session.Request.LayerId, session.Request.FeatureId).ConfigureAwait(false);
         await CopyVerifiedChunksAsync(database, session, Stream.Null).ConfigureAwait(false);
         var preparedStoragePath = await publishContent(session, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(preparedStoragePath, AttachmentUploadObjectKey.ForSession(session.SessionId), StringComparison.Ordinal))

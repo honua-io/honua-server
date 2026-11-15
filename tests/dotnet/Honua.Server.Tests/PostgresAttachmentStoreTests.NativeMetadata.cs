@@ -9,6 +9,31 @@ namespace Honua.Server.Tests;
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTheory]
+    [InlineData("photo", true)]
+    [InlineData("original", true)]
+    [InlineData("photo,original", false)]
+    [InlineData("missing", false)]
+    public async Task NativeMetadata_LegacyKeywordFilter_MatchesIndividualTags(string keyword, bool matches)
+    {
+        var attachment = await CreateTestAttachment();
+        await _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, attachment.Id, "photo,original");
+        var page = await _attachmentStore.QueryPageAsync(new AttachmentPageQuery
+        {
+            LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 10, Keywords = [keyword]
+        });
+        if (matches)
+        {
+            var item = Assert.Single(page);
+            Assert.Equal(attachment.Id, item.Attachment.Id);
+            Assert.Null(item.Metadata);
+        }
+        else
+        {
+            Assert.Empty(page);
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData("new,keywords")]
     [InlineData(null)]
     public async Task NativeMetadata_LegacyKeywordEdit_UpdatesNativeReadsAndFilters(string? keywords)

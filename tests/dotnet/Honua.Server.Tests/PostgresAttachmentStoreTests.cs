@@ -73,7 +73,8 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
             _schemaName,
-            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
+            featureSchemaName: _schemaName);
 
         // Use the exact production attachment migrations instead of an incomplete
         // hand-authored import shape. The schema remains isolated per test.
