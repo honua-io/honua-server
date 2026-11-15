@@ -14,7 +14,7 @@ namespace Honua.Core.Features.Spec.Services;
 /// raise <see cref="SpecExecutionException"/> with
 /// <see cref="SpecDiagnosticCodes.SpecKindNotInS1"/>.
 /// </summary>
-internal sealed class ReservedSpecResourceStateStore : ISpecResourceStateStore
+internal sealed class ReservedSpecResourceStateStore
 {
     public ReservedSpecResourceStateStore(SpecResourceKind kind)
     {
@@ -23,6 +23,7 @@ internal sealed class ReservedSpecResourceStateStore : ISpecResourceStateStore
 
     public SpecResourceKind Kind { get; }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public Task<SpecResourceState?> ReadCurrentAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(resourceName);
