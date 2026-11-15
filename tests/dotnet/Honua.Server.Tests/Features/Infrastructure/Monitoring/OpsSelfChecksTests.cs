@@ -31,7 +31,8 @@ public sealed class OpsSelfChecksTests
         using var certificate = request.CreateSelfSigned(clock.Now.AddDays(-90), clock.Now.AddDays(days));
         var source = new FakeSource { CertificateExpiresAt = new DateTimeOffset(certificate.NotAfter.ToUniversalTime()) };
 
-        var finding = Assert.Single(await new OpsSelfChecks(clock, source).EvaluateAsync());
+        using var checks = new OpsSelfChecks(clock, source);
+        var finding = Assert.Single(await checks.EvaluateAsync());
 
         Assert.Equal(OpsSelfChecks.CertificateRule, finding.Rule);
         Assert.Equal(severity, finding.Severity);
@@ -46,9 +47,10 @@ public sealed class OpsSelfChecksTests
     {
         var clock = new TestClock();
         var source = new FakeSource { CertificateExpiresAt = clock.Now.AddDays(61) };
-        Assert.Empty(await new OpsSelfChecks(clock, source).EvaluateAsync());
+        using var checks = new OpsSelfChecks(clock, source);
+        Assert.Empty(await checks.EvaluateAsync());
         source.CertificateExpiresAt = null;
-        Assert.Empty(await new OpsSelfChecks(clock, source).EvaluateAsync());
+        Assert.Empty(await checks.EvaluateAsync());
     }
 
     [UnitTest]
@@ -57,7 +59,7 @@ public sealed class OpsSelfChecksTests
     {
         var clock = new TestClock();
         var source = new FakeSource { CertificateExpiresAt = clock.Now.AddDays(31) };
-        var checks = new OpsSelfChecks(clock, source);
+        using var checks = new OpsSelfChecks(clock, source);
         var warning = Assert.Single(await checks.EvaluateAsync());
         clock.Advance(TimeSpan.FromDays(1));
         var critical = Assert.Single(await checks.EvaluateAsync());
@@ -76,7 +78,7 @@ public sealed class OpsSelfChecksTests
         var clock = new TestClock();
         var providerId = Guid.NewGuid();
         var source = new FakeSource { Providers = [new(providerId, false), new(Guid.NewGuid(), true)] };
-        var checks = new OpsSelfChecks(clock, source);
+        using var checks = new OpsSelfChecks(clock, source);
         var finding = Assert.Single(await checks.EvaluateAsync());
         Assert.Equal(OpsSelfChecks.IdentityProviderRule, finding.Rule);
         Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
@@ -107,7 +109,8 @@ public sealed class OpsSelfChecksTests
     public async Task Release_OnlyNewerVersion_ProducesInformation(string current, string latest, bool newer)
     {
         var source = new FakeSource { CurrentVersion = current, Release = new(latest, ReleaseNotes) };
-        var findings = await new OpsSelfChecks(new TestClock(), source).EvaluateAsync();
+        using var checks = new OpsSelfChecks(new TestClock(), source);
+        var findings = await checks.EvaluateAsync();
         if (!newer)
         {
             Assert.DoesNotContain(findings, finding => finding.Rule == OpsSelfChecks.ReleaseRule);
@@ -127,7 +130,7 @@ public sealed class OpsSelfChecksTests
     {
         var clock = new TestClock();
         var source = new FakeSource { Release = new("2026.2", ReleaseNotes) };
-        var checks = new OpsSelfChecks(clock, source);
+        using var checks = new OpsSelfChecks(clock, source);
         var first = Assert.Single(await checks.EvaluateAsync());
         clock.Advance(TimeSpan.FromHours(23));
         Assert.Equal(first.Id, Assert.Single(await checks.EvaluateAsync()).Id);
@@ -143,7 +146,7 @@ public sealed class OpsSelfChecksTests
     public async Task ConcurrentEvaluations_ShareOneProbePerCadence()
     {
         var source = new FakeSource { ProbeGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
-        var checks = new OpsSelfChecks(new TestClock(), source);
+        using var checks = new OpsSelfChecks(new TestClock(), source);
         var reads = Enumerable.Range(0, 12).Select(_ => checks.EvaluateAsync()).ToArray();
         source.ProbeGate.SetResult();
         await Task.WhenAll(reads);
@@ -160,7 +163,8 @@ public sealed class OpsSelfChecksTests
             ProviderFailure = new HttpRequestException("secret-client-key private-authority.internal"),
             Release = new("2026.2", ReleaseNotes)
         };
-        var findings = await new OpsSelfChecks(new TestClock(), source).EvaluateAsync();
+        using var checks = new OpsSelfChecks(new TestClock(), source);
+        var findings = await checks.EvaluateAsync();
         Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.CollectionRule && finding.Severity == OpsFindingSeverity.Warning);
         Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.ReleaseRule);
         Assert.DoesNotContain("secret-client-key", JsonSerializer.Serialize(findings), StringComparison.Ordinal);
@@ -177,7 +181,7 @@ public sealed class OpsSelfChecksTests
             ProviderFailure = new Npgsql.NpgsqlException("private-store-connection"),
             Release = new("2026.2", ReleaseNotes)
         };
-        var checks = new OpsSelfChecks(clock, source);
+        using var checks = new OpsSelfChecks(clock, source);
         var findings = await checks.EvaluateAsync();
         Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.CollectionRule);
         Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.ReleaseRule);
@@ -193,7 +197,7 @@ public sealed class OpsSelfChecksTests
     public async Task CancelledCollection_PropagatesAndDoesNotCacheIncompleteResult()
     {
         var source = new FakeSource { ProviderFailure = new OperationCanceledException() };
-        var checks = new OpsSelfChecks(new TestClock(), source);
+        using var checks = new OpsSelfChecks(new TestClock(), source);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => checks.EvaluateAsync());
         source.ProviderFailure = null;
         await checks.EvaluateAsync();

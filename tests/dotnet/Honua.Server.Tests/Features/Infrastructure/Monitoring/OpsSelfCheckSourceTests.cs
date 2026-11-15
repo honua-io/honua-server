@@ -25,7 +25,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadProviders_UnsafeAuthority_NeverSendsRequest(string authority)
     {
-        var factory = new FakeClients("{}");
+        using var factory = new FakeClients("{}");
         var source = Create(factory, [Provider(authority)]);
         Assert.False(Assert.Single(await source.ReadIdentityProvidersAsync(default)).IsReachable);
         Assert.Equal(0, factory.Requests);
@@ -41,7 +41,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadProviders_Discovery_RequiresMatchingIssuer(string body, bool expected)
     {
-        var factory = new FakeClients(body);
+        using var factory = new FakeClients(body);
         var source = Create(factory, [Provider("https://8.8.8.8")]);
         Assert.Equal(expected, Assert.Single(await source.ReadIdentityProvidersAsync(default)).IsReachable);
         Assert.Equal("https://8.8.8.8/.well-known/openid-configuration", factory.LastUri?.AbsoluteUri);
@@ -57,7 +57,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task AdminAndScheduledDiscovery_UseTheSameHealthContract(string body, bool expected)
     {
-        var factory = new FakeClients(body);
+        using var factory = new FakeClients(body);
         var provider = new OidcProviderConfiguration
         {
             Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
@@ -72,7 +72,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task AdminAndScheduledDiscovery_OversizedDocument_FailsClosed()
     {
-        var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
+        using var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
         var provider = new OidcProviderConfiguration
         {
             Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
@@ -87,7 +87,7 @@ public sealed class OpsSelfCheckSourceTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var factory = new FakeClients("{}");
+        using var factory = new FakeClients("{}");
         var provider = new OidcProviderConfiguration
         {
             Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
@@ -122,7 +122,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadProviders_DisabledOrInvalid_OnlyEnabledProviderReported()
     {
-        var factory = new FakeClients("{}");
+        using var factory = new FakeClients("{}");
         var source = Create(factory,
             [Provider("https://8.8.8.8") with { Enabled = false }, Provider("https://8.8.8.8") with { IsValid = false }]);
         Assert.False(Assert.Single(await source.ReadIdentityProvidersAsync(default)).IsReachable);
@@ -133,7 +133,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadRelease_ValidMetadata_UsesPublicFeedWithoutCredentials()
     {
-        var factory = new FakeClients("{\"tag_name\":\"v2026.2\",\"html_url\":\"https://github.com/honua-io/honua-server/releases/tag/v2026.2\"}");
+        using var factory = new FakeClients("{\"tag_name\":\"v2026.2\",\"html_url\":\"https://github.com/honua-io/honua-server/releases/tag/v2026.2\"}");
         var release = await Create(factory).ReadLatestReleaseAsync(default);
         Assert.Equal("v2026.2", release?.Version);
         Assert.Equal("https://api.github.com/repos/honua-io/honua-server/releases/latest", factory.LastUri?.AbsoluteUri);
@@ -147,7 +147,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadRelease_UntrustedNotes_RejectsMetadata(string url)
     {
-        var factory = new FakeClients(JsonSerializer.Serialize(new { tag_name = "v2026.2", html_url = url }));
+        using var factory = new FakeClients(JsonSerializer.Serialize(new { tag_name = "v2026.2", html_url = url }));
         await Assert.ThrowsAsync<JsonException>(() => Create(factory).ReadLatestReleaseAsync(default));
     }
 
@@ -155,7 +155,8 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadRelease_MissingPublicRelease_ProducesNoRelease()
     {
-        Assert.Null(await Create(new FakeClients("{}") { Status = HttpStatusCode.NotFound }).ReadLatestReleaseAsync(default));
+        using var factory = new FakeClients("{}") { Status = HttpStatusCode.NotFound };
+        Assert.Null(await Create(factory).ReadLatestReleaseAsync(default));
     }
 
     [UnitTheory]
@@ -164,14 +165,16 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadRelease_UnsuccessfulResponse_FailsClosed(HttpStatusCode status)
     {
-        await Assert.ThrowsAsync<HttpRequestException>(() => Create(new FakeClients("{}") { Status = status }).ReadLatestReleaseAsync(default));
+        using var factory = new FakeClients("{}") { Status = status };
+        await Assert.ThrowsAsync<HttpRequestException>(() => Create(factory).ReadLatestReleaseAsync(default));
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadRelease_OversizedResponse_RejectsBeforeParsing()
     {
-        var source = Create(new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1)));
+        using var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
+        var source = Create(factory);
         await Assert.ThrowsAsync<HttpRequestException>(() => source.ReadLatestReleaseAsync(default));
     }
 
@@ -181,14 +184,16 @@ public sealed class OpsSelfCheckSourceTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Create(new FakeClients("{}")).ReadLatestReleaseAsync(cancellation.Token));
+        using var factory = new FakeClients("{}");
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Create(factory).ReadLatestReleaseAsync(cancellation.Token));
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void Handler_Defaults_RejectRedirectsCookiesAndProxy()
     {
-        using var handler = Assert.IsType<SocketsHttpHandler>(PublicHealthCheckHttpHandler.Create());
+        using var primaryHandler = PublicHealthCheckHttpHandler.Create();
+        var handler = Assert.IsType<SocketsHttpHandler>(primaryHandler);
         Assert.False(handler.AllowAutoRedirect);
         Assert.False(handler.UseCookies);
         Assert.False(handler.UseProxy);
