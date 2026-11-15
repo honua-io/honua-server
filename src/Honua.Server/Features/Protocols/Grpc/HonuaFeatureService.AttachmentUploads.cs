@@ -34,7 +34,7 @@ internal sealed partial class HonuaFeatureService
         var session = await BeginAttachmentSessionAsync(request.Upload, "unary", context).ConfigureAwait(false);
         if (session.State == AttachmentUploadState.Uploading && request.Content.Length > 0)
         {
-            session = await AppendAttachmentChunkAsync(session, new Proto.UploadAttachmentChunkRequest
+            session = await AppendUnaryAttachmentAsync(session, new Proto.UploadAttachmentChunkRequest
             {
                 OffsetBytes = 0, Content = request.Content, Sha256 = request.Upload.Sha256
             }, context).ConfigureAwait(false);
@@ -121,6 +121,26 @@ internal sealed partial class HonuaFeatureService
             : mediaType.Equals(value, StringComparison.OrdinalIgnoreCase)))
         {
             throw AttachmentError(StatusCode.InvalidArgument, "The attachment content type is not allowed.");
+        }
+    }
+
+    private static async Task<AttachmentUploadSession> AppendUnaryAttachmentAsync(
+        AttachmentUploadSession session, Proto.UploadAttachmentChunkRequest request, ServerCallContext context)
+    {
+        try
+        {
+            return await AppendAttachmentChunkAsync(session, request, context).ConfigureAwait(false);
+        }
+        catch (AttachmentUploadException exception) when (exception.Failure == AttachmentUploadFailure.InvalidState)
+        {
+            // Another identical unary request may have committed after Begin returned.
+            var current = await AttachmentService<IAttachmentUploadSessionStore>(context).GetAsync(
+                new AttachmentUploadSessionKey(session.Request.OwnerId, session.SessionId), context.CancellationToken).ConfigureAwait(false);
+            if (current.State == AttachmentUploadState.Committed)
+            {
+                return current;
+            }
+            throw;
         }
     }
 
