@@ -4129,7 +4129,17 @@
       "operationKeys": [
         "Grpc::geospatial.v1.FeatureService/QueryFeatures",
         "Grpc::geospatial.v1.FeatureService/QueryFeaturesStream",
-        "Grpc::geospatial.v1.FeatureService/ApplyEdits"
+        "Grpc::geospatial.v1.FeatureService/ApplyEdits",
+        "Grpc::geospatial.v1.FeatureService/AbortAttachmentUpload",
+        "Grpc::geospatial.v1.FeatureService/BeginAttachmentUpload",
+        "Grpc::geospatial.v1.FeatureService/CommitAttachmentUpload",
+        "Grpc::geospatial.v1.FeatureService/DeleteAttachment",
+        "Grpc::geospatial.v1.FeatureService/DescribeLayer",
+        "Grpc::geospatial.v1.FeatureService/DescribeService",
+        "Grpc::geospatial.v1.FeatureService/GetAttachmentUrl",
+        "Grpc::geospatial.v1.FeatureService/ListAttachments",
+        "Grpc::geospatial.v1.FeatureService/UploadAttachment",
+        "Grpc::geospatial.v1.FeatureService/UploadAttachmentChunk"
       ],
       "proofs": [
         {
@@ -4277,7 +4287,9 @@
         "Mcp::resources/templates/list",
         "Mcp::resources/read",
         "Mcp::prompts/list",
-        "Mcp::prompts/get"
+        "Mcp::prompts/get",
+        "Mcp::skills/list",
+        "Mcp::skills/get"
       ],
       "proofs": [
         {

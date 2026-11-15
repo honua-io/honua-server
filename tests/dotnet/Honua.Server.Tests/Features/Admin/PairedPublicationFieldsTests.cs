@@ -72,7 +72,7 @@ public sealed class PairedPublicationFieldsTests
 
     private static MetadataV2Field Field(string name, MetadataV2FieldType type) => new() { Name = name, Type = type, Nullable = true };
 
-    private static MetadataV2Resource Resource(params MetadataV2Field[] fields) => new()
+    private static MetadataV2Object Resource(params MetadataV2Field[] fields) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" },
         SchemaFields =
@@ -80,7 +80,7 @@ public sealed class PairedPublicationFieldsTests
             .. fields,
             new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] }
         ],
-        Spatial = new MetadataV2ResourceSpatial
+        Spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Polygon,

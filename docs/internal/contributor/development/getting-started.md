@@ -99,11 +99,6 @@ export ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_dev;U
 dotnet watch run --project src/Honua.Server
 ```
 
-**With .NET Aspire (dashboard with traces, logs, metrics):**
-```bash
-dotnet run --project src/Honua.AppHost
-```
-
 ## Manual setup (no Docker)
 
 If you prefer running PostgreSQL directly instead of through Docker:

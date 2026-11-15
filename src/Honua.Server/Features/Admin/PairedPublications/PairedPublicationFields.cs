@@ -21,7 +21,7 @@ internal sealed record PairedPublicationFields(
     // Column names the GeoParquet writer owns; a field with one of them would be renamed.
     private static readonly string[] WriterColumns = ["geometry", "bbox"];
 
-    public static PairedPublicationFields Resolve(MetadataV2Resource resource, string identityField)
+    public static PairedPublicationFields Resolve(MetadataV2Object resource, string identityField)
     {
         var geometry = resource.FindPrimaryGeometryField();
         var source = resource.SchemaFields

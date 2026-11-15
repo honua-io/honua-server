@@ -90,7 +90,7 @@ internal sealed class PairedPublicationCapture
     }
 
     public byte[] EncodeGeoParquet(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         PairedPublicationFields fields,
         LimitsOptions limits,
         IReadOnlyDictionary<string, string> fileMetadata)

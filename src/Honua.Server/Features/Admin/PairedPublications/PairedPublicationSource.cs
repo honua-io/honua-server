@@ -33,7 +33,7 @@ internal sealed class PairedPublicationSource
 
     public PMTilesPublishedSource Published { get; }
 
-    public MetadataV2Resource Resource => Published.Resource;
+    public MetadataV2Object Resource => Published.Resource;
 
     public int StorageLayerId { get; }
 
@@ -74,7 +74,7 @@ internal sealed class PairedPublicationSource
         return new PairedPublicationSource(published, storageLayerId, snapshot.Revision, generation, changeTracker);
     }
 
-    private static bool IsManagedTable(MetadataV2Resource resource, MetadataV2StorageBinding? binding)
+    private static bool IsManagedTable(MetadataV2Object resource, MetadataV2StorageBinding? binding)
     {
         // A binding on its own connection is not the database whose edit log the fence reads.
         if (binding is null || !string.IsNullOrWhiteSpace(binding.ConnectionId))

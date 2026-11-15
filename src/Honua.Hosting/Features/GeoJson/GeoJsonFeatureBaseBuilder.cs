@@ -23,7 +23,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
 {
     internal static GeoJsonFeatureBase Create(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeoJsonFeatureBuildOptions options = default)
         => CreateCore(
             feature.Id,
@@ -34,7 +34,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
 
     internal static GeoJsonFeatureBase Create(
         EncodedGeoJsonFeature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeoJsonFeatureBuildOptions options = default)
         => CreateCore(
             feature.Id,
@@ -46,7 +46,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
     private static GeoJsonFeatureBase CreateCore(
         long featureId,
         IReadOnlyDictionary<string, object?> attributes,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool hasGeometry,
         GeoJsonFeatureBuildOptions options)
     {
@@ -165,7 +165,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
         return properties;
     }
 
-    private static string ResolveObjectIdFieldName(MetadataV2Resource resource)
+    private static string ResolveObjectIdFieldName(MetadataV2Object resource)
         => resource.FindPrimaryIdField()?.Name ?? "objectid";
 
     private static bool IsGeometryField(MetadataV2Field field)

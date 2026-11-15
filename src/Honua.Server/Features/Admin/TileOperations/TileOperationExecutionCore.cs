@@ -1100,7 +1100,7 @@ internal sealed partial class TileOperationExecutionCore
         return new TileCoordinateSelection(result, WasTruncated: false, maxTiles);
     }
 
-    private static MetadataV2Resource? ResolveArchiveResource(
+    private static MetadataV2Object? ResolveArchiveResource(
         MetadataV2GraphSnapshot snapshot,
         TileOperationStartRequest request,
         int layerId)
@@ -1131,13 +1131,13 @@ internal sealed partial class TileOperationExecutionCore
     }
 
     // Hidden fields are withheld from every archive, as from every other read surface.
-    private static FeatureQuery? HiddenFieldMask(MetadataV2Resource? resource)
+    private static FeatureQuery? HiddenFieldMask(MetadataV2Object? resource)
     {
         var hidden = resource?.HiddenSchemaFieldNames();
         return hidden is { Count: > 0 } ? new FeatureQuery { EnforcedMaskedFields = [.. hidden] } : null;
     }
 
-    private static Dictionary<string, string> BuildVectorFields(MetadataV2Resource? resource)
+    private static Dictionary<string, string> BuildVectorFields(MetadataV2Object? resource)
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (resource is null)
