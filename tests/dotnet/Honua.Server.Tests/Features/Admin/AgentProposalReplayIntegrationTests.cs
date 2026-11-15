@@ -30,6 +30,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
@@ -47,7 +48,7 @@ namespace Honua.Server.Tests.Features.Admin;
 // them in an interactive Console session, and the server replays the original admin request over
 // its loopback listener. The agent may be an API key with the agent grant on the REST operations
 // API, or any credential on MCP: an operator key presented as a bearer and an OIDC administrator
-// token are both agents there. The host has no Redis.
+// token are both agents there. Jobs run on the PostgreSQL job substrate.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
@@ -60,7 +61,7 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
     private const string Tenant = "public";
     private const string ServiceName = "test";
 
-    private readonly WebAppFixture _fixture = NoRedisJobHost.Create();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
     private HumanApprovalHttpClient _approver = null!;
     private IOperationProposalStore _proposals = null!;
@@ -70,7 +71,8 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         HumanApprovalHttpClient.ConfigureKestrel(_fixture, _identity)
             .ConfigureWebHost(ConfigureIdentity)
             .ConfigureServices(ConfigureReplayServices);
-        await NoRedisJobHost.StartAsync(_fixture);
+        await _fixture.InitializeAsync();
+        await _fixture.Postgres.DataSource.ClearJobSubstrateAsync();
         await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         _proposals = _fixture.Services.GetRequiredService<IOperationProposalStore>();
         UnavailableOperationProposalStore.IsDurable(_proposals).Should().BeTrue("approval replay needs the durable store");
