@@ -48,7 +48,7 @@ public sealed partial class IncidentInvestigationMigrationTests
             CREATE TABLE honua.audit_log (audit_id TEXT PRIMARY KEY, timestamp TIMESTAMPTZ);
             """ + legacy, connection);
         await setup.ExecuteNonQueryAsync();
-        var migration = (await ReadMigrationAsync(Migration)).Replace("$HonuaSchema$", "\"configured\"", StringComparison.Ordinal);
+        var migration = PreprocessMigration("configured", await ReadMigrationAsync(Migration));
         await using var upgrade = new NpgsqlCommand(migration + migration, connection);
         await upgrade.ExecuteNonQueryAsync();
         await using var check = new NpgsqlCommand("""
