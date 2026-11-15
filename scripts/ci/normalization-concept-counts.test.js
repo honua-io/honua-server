@@ -43,6 +43,7 @@ test('reported FeatureServer and geometry drift changes only the canonical numer
 test('zero counts remove the row and restoring a count recreates exactly the original page', () => {
   const without = updateProofCount(page, key, { previous: 597, next: 0 });
   assert.equal(without, page.toString().replace('| Proving tests | 597 |\n', ''));
+  assert.equal(updateProofCount(Buffer.from(without), key, { previous: 597, next: 0 }), null);
   assert.equal(updateProofCount(Buffer.from(without), key, { previous: 0, next: 597 }), page.toString());
   assert.equal(updateProofCount(page, key, { previous: 597, next: 597 }), null);
 });

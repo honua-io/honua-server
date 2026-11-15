@@ -48,7 +48,8 @@ function updateProofCount(bytes, key, { previous, next }) {
   }
   const rows = [...text.matchAll(/^\| Proving tests \| ([0-9]+) \|$/gm)];
   if (rows.length > 1 || (!previous && rows.length && Number(rows[0][1]) !== next)
-      || (previous && (!rows.length || ![previous, next].includes(Number(rows[0][1]))))) {
+      || (previous && ((!rows.length && next !== 0)
+        || (rows.length && ![previous, next].includes(Number(rows[0][1])))))) {
     throw new Error(`${key} has an unexpected proving-test row`);
   }
   if ((rows.length && Number(rows[0][1]) === next) || (!rows.length && next === 0)) return null;
