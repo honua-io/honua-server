@@ -12,7 +12,9 @@ using Honua.Server.Features.Console.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Console;
 
@@ -29,14 +31,18 @@ public sealed class ConsoleStateTwoTaskEndpointTests : IAsyncLifetime
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower, allowIntegerValues: true) },
     };
 
+    // Deployed tasks share the data-protection key ring through the system database; the test environment keeps it
+    // per host, so the two hosts are given one ring explicitly.
+    private readonly DirectoryInfo _keyRing = Directory.CreateDirectory(
+        Path.Join(Path.GetTempPath(), "honua-two-task-keys-" + Guid.NewGuid().ToString("N")));
     private WebAppFixture _taskA = null!;
     private WebAppFixture _taskB = null!;
 
     public async Task InitializeAsync()
     {
-        _taskA = NewTaskHost();
+        _taskA = NewTaskHost(_keyRing);
         await _taskA.InitializeAsync();
-        _taskB = NewTaskHost().ShareSchemaWith(_taskA);
+        _taskB = NewTaskHost(_keyRing).ShareSchemaWith(_taskA);
         await _taskB.InitializeAsync();
     }
 
@@ -44,6 +50,7 @@ public sealed class ConsoleStateTwoTaskEndpointTests : IAsyncLifetime
     {
         await _taskB.DisposeAsync();
         await _taskA.DisposeAsync();
+        _keyRing.Delete(recursive: true);
     }
 
     [IntegrationTest]
@@ -96,7 +103,7 @@ public sealed class ConsoleStateTwoTaskEndpointTests : IAsyncLifetime
         persistence.SharedAcrossReplicas.Should().BeTrue();
     }
 
-    private static WebAppFixture NewTaskHost()
+    private static WebAppFixture NewTaskHost(DirectoryInfo keyRing)
         => new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
@@ -104,7 +111,8 @@ public sealed class ConsoleStateTwoTaskEndpointTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+            })
+            .ConfigureServices(services => services.AddDataProtection().PersistKeysToFileSystem(keyRing).SetApplicationName("Honua.Server"));
 
     private static HttpClient Admin(WebAppFixture host)
         => host.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));

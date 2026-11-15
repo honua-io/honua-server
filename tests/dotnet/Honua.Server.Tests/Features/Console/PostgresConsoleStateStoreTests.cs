@@ -182,7 +182,7 @@ public sealed class PostgresConsoleStateStoreTests(DatabaseFixtureAdapter databa
         await using var harness = await CreateHarnessAsync();
         var documents = harness.CreateConfigurationDocuments();
         var request = Request(await documents.GetGenerationAsync(CancellationToken.None));
-        var store = new PostgresConsoleOpenDataStore(documents, TimeProvider.System, request);
+        var store = new PostgresConsoleOpenDataStore(new(documents, TimeProvider.System, request));
         (await store.GetPageAsync("item-5")).Should().BeNull();
 
         await store.SavePageAsync(new ConsoleOpenDataPage { ItemId = "item-5", Title = "Wells" }, "editor");
@@ -196,7 +196,7 @@ public sealed class PostgresConsoleStateStoreTests(DatabaseFixtureAdapter databa
         await using var harness = await CreateHarnessAsync();
         var documents = harness.CreateConfigurationDocuments();
         var request = Request(await documents.GetGenerationAsync(CancellationToken.None));
-        var taskB = new PostgresConsoleOpenDataStore(documents, TimeProvider.System, request);
+        var taskB = new PostgresConsoleOpenDataStore(new(documents, TimeProvider.System, request));
         (await taskB.GetPageAsync("item-6")).Should().BeNull();
 
         await OpenData(harness).SavePageAsync(new ConsoleOpenDataPage { ItemId = "item-6", Title = "Springs" }, "editor");
@@ -204,6 +204,25 @@ public sealed class PostgresConsoleStateStoreTests(DatabaseFixtureAdapter databa
         (await taskB.GetPageAsync("item-6")).Should().BeNull("a request keeps the generation it started with");
         request.HttpContext!.Items[RequestConfigurationGeneration.ContextKey] = await documents.GetGenerationAsync(CancellationToken.None);
         (await taskB.GetPageAsync("item-6"))!.Title.Should().Be("Springs");
+    }
+
+    [IntegrationTest]
+    public async Task ContentDeletedInsideARequest_StopsItsShareLinkOnTheSameTaskAtOnce()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var documents = harness.CreateConfigurationDocuments();
+        var request = Request(await documents.GetGenerationAsync(CancellationToken.None));
+        var sameTask = new ConsoleStateStorage(documents, TimeProvider.System, request);
+        var content = new PostgresConsoleContentStore(sameTask);
+        var shares = new PostgresConsoleShareStore(sameTask, harness.CreateSecurityTokenStore());
+        var created = await content.CreateAsync(Item("bridges", ConsoleVisibility.Public));
+        var link = await shares.MintPublicLinkAsync(created.Id, ConsoleShareAccessTier.PublicLink, null, "owner");
+        (await shares.ResolvePublicLinkAsync(link.Token!)).Should().NotBeNull();
+
+        (await content.DeleteAsync(created.Id)).Should().BeTrue();
+
+        (await shares.ResolvePublicLinkAsync(link.Token!)).Should().BeNull(
+            "a write through any store on the task refreshes every collection cache on it");
     }
 
     // A request that captured the generation at its start. Synchronous on purpose: the accessor's context is
@@ -227,12 +246,13 @@ public sealed class PostgresConsoleStateStoreTests(DatabaseFixtureAdapter databa
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresConsoleStateStoreTests));
 
-    private static PostgresConsoleContentStore Content(ControlPlaneStateHarness harness)
-        => new(harness.CreateConfigurationDocuments(), TimeProvider.System);
+    private static PostgresConsoleContentStore Content(ControlPlaneStateHarness harness) => new(SeparateTask(harness));
 
     private static PostgresConsoleShareStore Shares(ControlPlaneStateHarness harness)
-        => new(harness.CreateConfigurationDocuments(), harness.CreateSecurityTokenStore(), TimeProvider.System);
+        => new(SeparateTask(harness), harness.CreateSecurityTokenStore());
 
-    private static PostgresConsoleOpenDataStore OpenData(ControlPlaneStateHarness harness)
-        => new(harness.CreateConfigurationDocuments(), TimeProvider.System);
+    private static PostgresConsoleOpenDataStore OpenData(ControlPlaneStateHarness harness) => new(SeparateTask(harness));
+
+    // A new documents instance is a separate task: it shares the tables, not the in-process caches.
+    private static ConsoleStateStorage SeparateTask(ControlPlaneStateHarness harness) => new(harness.CreateConfigurationDocuments(), TimeProvider.System);
 }

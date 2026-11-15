@@ -26,21 +26,19 @@ internal static class ConsoleStateStoreRegistration
         services.AddPostgresSharedState(configuration);
         services.AddHttpContextAccessor();
         services.AddSingleton<IAuthoredConsoleContent>(static provider => HasDatabase(provider)
-            ? new PostgresConsoleContentStore(Documents(provider), Time(provider), provider.GetService<IHttpContextAccessor>())
+            ? new PostgresConsoleContentStore(Storage(provider))
             : new InMemoryConsoleContentStore(Time(provider)));
         services.AddSingleton<IConsoleContentStore>(static provider => provider.GetRequiredService<IAuthoredConsoleContent>());
         services.AddSingleton<IConsoleShareStore>(static provider => HasDatabase(provider)
-            ? new PostgresConsoleShareStore(
-                Documents(provider), provider.GetRequiredService<ISecurityTokenStore>(), Time(provider),
-                provider.GetService<IHttpContextAccessor>())
+            ? new PostgresConsoleShareStore(Storage(provider), provider.GetRequiredService<ISecurityTokenStore>())
             : new InMemoryConsoleShareStore(Time(provider)));
         services.AddSingleton<IConsoleOpenDataStore>(static provider => HasDatabase(provider)
-            ? new PostgresConsoleOpenDataStore(Documents(provider), Time(provider), provider.GetService<IHttpContextAccessor>())
+            ? new PostgresConsoleOpenDataStore(Storage(provider))
             : new InMemoryConsoleOpenDataStore(Time(provider)));
         services.AddSingleton<IEmbedKeyStore>(static provider => HasDatabase(provider)
             ? new PostgresEmbedKeyStore(
-                Documents(provider), provider.GetRequiredService<JobStoreDatabase>(), Time(provider),
-                provider.GetService<IHttpContextAccessor>(), provider.GetService<ILogger<PostgresEmbedKeyStore>>())
+                Storage(provider), provider.GetRequiredService<JobStoreDatabase>(),
+                provider.GetService<ILogger<PostgresEmbedKeyStore>>())
             : new InMemoryEmbedKeyStore(provider.GetService<TimeProvider>()));
         services.AddSingleton(static provider => HasDatabase(provider)
             ? ConsolePersistenceNotice.Postgres
@@ -51,8 +49,8 @@ internal static class ConsoleStateStoreRegistration
 
     private static bool HasDatabase(IServiceProvider provider) => provider.GetService<NpgsqlDataSource>() is not null;
 
-    private static PostgresConfigurationDocuments Documents(IServiceProvider provider)
-        => provider.GetRequiredService<PostgresConfigurationDocuments>();
+    private static ConsoleStateStorage Storage(IServiceProvider provider) => new(
+        provider.GetRequiredService<PostgresConfigurationDocuments>(), Time(provider), provider.GetService<IHttpContextAccessor>());
 
     private static TimeProvider Time(IServiceProvider provider) => provider.GetService<TimeProvider>() ?? TimeProvider.System;
 }

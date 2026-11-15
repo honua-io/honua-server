@@ -171,6 +171,22 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    public async Task CreateContent_WithAPublishedId_IsRefusedAsAClientError()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
+
+        var refusal = await Assert.ThrowsAsync<ConsoleContentIdConflictException>(() => store.CreateAsync(new ConsoleContentItem
+        {
+            Id = "publication",
+            Name = "collision",
+            ItemType = ConsoleContentItemType.Layer,
+        }));
+
+        Assert.Equal("Published metadata is read-only in the content catalog.", refusal.Message);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content")]
     [Endpoint("GET /api/v1/console/content/{id}")]
     [Endpoint("PATCH /api/v1/console/content/{id}")]

@@ -17,15 +17,11 @@ namespace Honua.Server.Features.Admin.EmbedGovernance;
 // so a revocation or rotation on one task is refused on every task. Use is counted in its own table: every task
 // adds to the same rate window, and a request is what records the last use (validation alone only reads).
 internal sealed partial class PostgresEmbedKeyStore(
-    PostgresConfigurationDocuments documents,
-    JobStoreDatabase database,
-    TimeProvider timeProvider,
-    IHttpContextAccessor? contexts = null,
-    ILogger<PostgresEmbedKeyStore>? logger = null) : IEmbedKeyStore
+    ConsoleStateStorage storage, JobStoreDatabase database, ILogger<PostgresEmbedKeyStore>? logger = null) : IEmbedKeyStore
 {
     private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
     private readonly ConfigurationCollectionStore<EmbedKeyRecord> _keys = new(
-        documents, new("embed-key", ConsoleStateJsonContext.Default.EmbedKeyRecord), contexts);
+        storage.Documents, new("embed-key", ConsoleStateJsonContext.Default.EmbedKeyRecord), storage.Requests);
     private readonly string _usage = database.Table("embed_key_usage");
     private HashIndex? _byHash;
 
@@ -43,7 +39,7 @@ internal sealed partial class PostgresEmbedKeyStore(
         string name, EmbedKeyScope scope, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scope);
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         var generated = EmbedKeyMaterial.Generate();
         var record = new EmbedKeyRecord
         {
@@ -71,7 +67,7 @@ internal sealed partial class PostgresEmbedKeyStore(
 
     public async Task<EmbedKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         string? generated = null;
         var rotated = await _keys.MutateAsync(Key(id), existing =>
         {
@@ -120,7 +116,7 @@ internal sealed partial class PostgresEmbedKeyStore(
 
     public async Task<EmbedKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         var revoked = await _keys.MutateAsync(Key(id),
             existing => existing is null ? null : existing with { UpdatedAt = now, RevokedAt = existing.RevokedAt ?? now },
             cancellationToken).ConfigureAwait(false);
@@ -142,7 +138,7 @@ internal sealed partial class PostgresEmbedKeyStore(
             index = new(keys, keys.Values.ToDictionary(static key => Convert.ToHexString(key.KeyHash), StringComparer.Ordinal));
             Volatile.Write(ref _byHash, index);
         }
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         return index.ByHash.TryGetValue(Convert.ToHexString(EmbedKeyMaterial.Hash(keyMaterial)), out var record)
             && record.GetStatus(now) == EmbedKeyStatus.Active
             ? new(record with { LastUsedAt = now, UpdatedAt = now })

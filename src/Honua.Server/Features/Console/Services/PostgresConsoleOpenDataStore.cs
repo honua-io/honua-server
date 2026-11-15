@@ -10,25 +10,23 @@ namespace Honua.Server.Features.Console.Services;
 
 // Open-data pages and STAC publication state in the system database, under the shared configuration
 // generation (ADR-0086): what one task publishes or withdraws, every task serves on its next request.
-internal sealed class PostgresConsoleOpenDataStore(
-    PostgresConfigurationDocuments documents, TimeProvider timeProvider, IHttpContextAccessor? contexts = null)
-    : IConsoleOpenDataStore
+internal sealed class PostgresConsoleOpenDataStore(ConsoleStateStorage storage) : IConsoleOpenDataStore
 {
     internal const string PageKind = "console-open-data-page";
 
     internal const string PublicationKind = "console-stac-publication";
 
     private readonly ConfigurationCollectionStore<ConsoleOpenDataPage> _pages = new(
-        documents, new(PageKind, ConsoleJsonContext.Default.ConsoleOpenDataPage), contexts);
+        storage.Documents, new(PageKind, ConsoleJsonContext.Default.ConsoleOpenDataPage), storage.Requests);
     private readonly ConfigurationCollectionStore<ConsoleStacPublicationState> _publications = new(
-        documents, new(PublicationKind, ConsoleJsonContext.Default.ConsoleStacPublicationState), contexts);
+        storage.Documents, new(PublicationKind, ConsoleJsonContext.Default.ConsoleStacPublicationState), storage.Requests);
 
     public async Task<ConsoleOpenDataPage?> GetPageAsync(string itemId, CancellationToken cancellationToken = default)
         => (await _pages.ReadCurrentByKeyAsync(cancellationToken).ConfigureAwait(false)).GetValueOrDefault(itemId);
 
     public async Task<ConsoleOpenDataPage> SavePageAsync(ConsoleOpenDataPage page, string? principalId, CancellationToken cancellationToken = default)
     {
-        var stored = page with { UpdatedAt = timeProvider.GetUtcNow(), UpdatedById = principalId };
+        var stored = page with { UpdatedAt = storage.Time.GetUtcNow(), UpdatedById = principalId };
         await _pages.MutateAsync(page.ItemId, _ => stored, cancellationToken).ConfigureAwait(false);
         return stored;
     }
@@ -39,7 +37,7 @@ internal sealed class PostgresConsoleOpenDataStore(
 
     public async Task<ConsoleStacPublicationState> PublishStacAsync(string itemId, string? principalId, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         var published = await _publications.MutateAsync(itemId, existing => new ConsoleStacPublicationState
         {
             ItemId = itemId,
@@ -56,7 +54,7 @@ internal sealed class PostgresConsoleOpenDataStore(
 
     public async Task<ConsoleStacPublicationState?> UnpublishStacAsync(string itemId, string? principalId, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         ConsoleStacPublicationState? withdrawn = null;
         await _publications.MutateAsync(itemId, existing =>
         {

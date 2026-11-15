@@ -30,9 +30,29 @@ internal sealed record StoredConsoleShare
     public string? UpdatedById { get; init; }
 }
 
-internal sealed record StoredConsolePublicLink(
-    string TokenId, string TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? ExpiresAt, string? CreatedById, bool IsExpired);
+internal sealed record StoredConsolePublicLink
+{
+    public required string TokenId { get; init; }
+
+    public required string TokenHash { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+
+    public DateTimeOffset? ExpiresAt { get; init; }
+
+    public string? CreatedById { get; init; }
+
+    public bool IsExpired { get; init; }
+}
 
 // The payload kept beside an embed token's digest in the shared security-token table.
-internal sealed record StoredConsoleEmbedToken(
-    string TokenId, string ItemId, ConsoleEmbedAudience Audience, DateTimeOffset ExpiresAt);
+internal sealed record StoredConsoleEmbedToken
+{
+    public required string TokenId { get; init; }
+
+    public required string ItemId { get; init; }
+
+    public ConsoleEmbedAudience Audience { get; init; }
+
+    public DateTimeOffset ExpiresAt { get; init; }
+}

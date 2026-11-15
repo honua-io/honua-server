@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.EmbedGovernance.Domain;
 using Honua.Server.Features.Admin.EmbedGovernance;
+using Honua.Server.Features.Console.Services;
 using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
@@ -93,5 +94,5 @@ public sealed class PostgresEmbedKeyStoreTests(DatabaseFixtureAdapter database) 
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresEmbedKeyStoreTests));
 
     private static PostgresEmbedKeyStore Keys(ControlPlaneStateHarness harness)
-        => new(harness.CreateConfigurationDocuments(), harness.Database, TimeProvider.System);
+        => new(new ConsoleStateStorage(harness.CreateConfigurationDocuments(), TimeProvider.System), harness.Database);
 }

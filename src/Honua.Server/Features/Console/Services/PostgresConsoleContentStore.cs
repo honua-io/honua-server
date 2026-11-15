@@ -10,9 +10,7 @@ namespace Honua.Server.Features.Console.Services;
 
 // Authored Console content in the system database, so every task serves the same items and they survive a restart.
 // Visibility decides who may read an item, so a change advances the shared configuration generation (ADR-0086).
-internal sealed class PostgresConsoleContentStore(
-    PostgresConfigurationDocuments documents, TimeProvider timeProvider, IHttpContextAccessor? contexts = null)
-    : IAuthoredConsoleContent
+internal sealed class PostgresConsoleContentStore(ConsoleStateStorage storage) : IAuthoredConsoleContent
 {
     // An item's share and open-data state is keyed by its id, and an id can be chosen again on create, so that
     // state is deleted with the item: a new item must not inherit the public links or publication of an old one.
@@ -20,7 +18,7 @@ internal sealed class PostgresConsoleContentStore(
         [PostgresConsoleShareStore.Kind, PostgresConsoleOpenDataStore.PageKind, PostgresConsoleOpenDataStore.PublicationKind];
 
     private readonly ConfigurationCollectionStore<ConsoleContentItem> _items = new(
-        documents, new("console-content", ConsoleJsonContext.Default.ConsoleContentItem), contexts);
+        storage.Documents, new("console-content", ConsoleJsonContext.Default.ConsoleContentItem), storage.Requests);
 
     public async Task<ConsoleContentListResult> ListAsync(ConsoleContentQuery query, CancellationToken cancellationToken = default)
         => ConsoleContentSelection.Page(await SnapshotItemsAsync(cancellationToken).ConfigureAwait(false), query);
@@ -33,7 +31,7 @@ internal sealed class PostgresConsoleContentStore(
 
     public async Task<ConsoleContentItem> CreateAsync(ConsoleContentItem item, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         var id = string.IsNullOrWhiteSpace(item.Id) ? Guid.NewGuid().ToString("N") : item.Id;
         var stored = item with
         {
@@ -52,7 +50,7 @@ internal sealed class PostgresConsoleContentStore(
 
     public Task<ConsoleContentItem?> UpdateAsync(ConsoleContentItem item, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         return _items.MutateAsync(item.Id, existing =>
         {
             if (existing is null)
@@ -76,7 +74,7 @@ internal sealed class PostgresConsoleContentStore(
 
     public Task<ConsoleContentItem?> PatchAsync(string id, ConsoleContentItemPatch patch, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         return _items.MutateAsync(id, existing =>
         {
             if (existing is null)

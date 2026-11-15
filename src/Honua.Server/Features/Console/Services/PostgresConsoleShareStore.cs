@@ -15,18 +15,14 @@ namespace Honua.Server.Features.Console.Services;
 // Share state in the system database: access tier, public links and the embed switch are one document per item
 // under the shared configuration generation (ADR-0086), so a revoked link stops resolving on every task. Embed
 // tokens are short-lived and minted per viewer, so they live with the other expiring tokens and change no generation.
-internal sealed class PostgresConsoleShareStore(
-    PostgresConfigurationDocuments documents,
-    ISecurityTokenStore embedTokens,
-    TimeProvider timeProvider,
-    IHttpContextAccessor? contexts = null) : IConsoleShareStore
+internal sealed class PostgresConsoleShareStore(ConsoleStateStorage storage, ISecurityTokenStore embedTokens) : IConsoleShareStore
 {
     internal const string Kind = "console-share";
 
     private const int TokenByteLength = 32;
 
     private readonly ConfigurationCollectionStore<StoredConsoleShare> _shares = new(
-        documents, new(Kind, ConsoleStateJsonContext.Default.StoredConsoleShare), contexts);
+        storage.Documents, new(Kind, ConsoleStateJsonContext.Default.StoredConsoleShare), storage.Requests);
     private LinkIndex? _links;
 
     public async Task<ConsoleShareState?> GetAsync(string itemId, CancellationToken cancellationToken = default)
@@ -36,7 +32,7 @@ internal sealed class PostgresConsoleShareStore(
 
     public async Task<ConsoleShareState> UpdateAccessTierAsync(
         string itemId, ConsoleShareAccessTier tier, string? principalId, CancellationToken cancellationToken = default)
-        => ToState(await ChangeAsync(itemId, tier, principalId, share => share with { AccessTier = tier }, cancellationToken)
+        => ToState(await ChangeAsync(new(itemId, tier, principalId), share => share with { AccessTier = tier }, cancellationToken)
             .ConfigureAwait(false));
 
     public async Task<ConsolePublicLinkToken> MintPublicLinkAsync(
@@ -48,13 +44,20 @@ internal sealed class PostgresConsoleShareStore(
             TokenId = NewTokenId(),
             Token = NewTokenValue(),
             ItemId = itemId,
-            CreatedAt = timeProvider.GetUtcNow(),
+            CreatedAt = storage.Time.GetUtcNow(),
             ExpiresAt = expiresAt,
             CreatedById = principalId,
             IsExpired = false,
         };
-        var link = new StoredConsolePublicLink(token.TokenId, Hash(token.Token), token.CreatedAt, expiresAt, principalId, IsExpired: false);
-        await ChangeAsync(itemId, seedAccessTier, principalId,
+        var link = new StoredConsolePublicLink
+        {
+            TokenId = token.TokenId,
+            TokenHash = Hash(token.Token),
+            CreatedAt = token.CreatedAt,
+            ExpiresAt = expiresAt,
+            CreatedById = principalId,
+        };
+        await ChangeAsync(new(itemId, seedAccessTier, principalId),
             share => share with { PublicLinks = [.. share.PublicLinks, link] }, cancellationToken).ConfigureAwait(false);
         return token;
     }
@@ -66,13 +69,13 @@ internal sealed class PostgresConsoleShareStore(
         {
             return [];
         }
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         return share.PublicLinks.Select(link => ToToken(itemId, link) with { IsExpired = IsExpired(link, now) }).ToArray();
     }
 
     public async Task<bool> ExpirePublicLinkAsync(string itemId, string tokenId, string? principalId, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         var found = false;
         await _shares.MutateAsync(itemId, existing =>
         {
@@ -99,7 +102,7 @@ internal sealed class PostgresConsoleShareStore(
             return null;
         }
         var links = await ReadLinksAsync(cancellationToken).ConfigureAwait(false);
-        if (!links.TryGetValue(Hash(token), out var entry) || IsExpired(entry.Link, timeProvider.GetUtcNow()))
+        if (!links.TryGetValue(Hash(token), out var entry) || IsExpired(entry.Link, storage.Time.GetUtcNow()))
         {
             return null;
         }
@@ -114,7 +117,7 @@ internal sealed class PostgresConsoleShareStore(
     public async Task<ConsoleShareState> SetEmbedAsync(
         string itemId, ConsoleShareAccessTier seedAccessTier, bool enabled, ConsoleEmbedAudience? audience, string? principalId,
         CancellationToken cancellationToken = default)
-        => ToState(await ChangeAsync(itemId, seedAccessTier, principalId,
+        => ToState(await ChangeAsync(new(itemId, seedAccessTier, principalId),
             share => share with { EmbedEnabled = enabled, EmbedAudience = enabled ? audience : null }, cancellationToken)
             .ConfigureAwait(false));
 
@@ -122,7 +125,7 @@ internal sealed class PostgresConsoleShareStore(
         string itemId, ConsoleShareAccessTier seedAccessTier, ConsoleEmbedAudience audience, TimeSpan ttl, string? principalId,
         CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = storage.Time.GetUtcNow();
         var token = new ConsoleEmbedToken
         {
             TokenId = NewTokenId(),
@@ -135,7 +138,7 @@ internal sealed class PostgresConsoleShareStore(
             IsExpired = false,
         };
         var payload = JsonSerializer.SerializeToUtf8Bytes(
-            new StoredConsoleEmbedToken(token.TokenId, itemId, audience, token.ExpiresAt),
+            new StoredConsoleEmbedToken { TokenId = token.TokenId, ItemId = itemId, Audience = audience, ExpiresAt = token.ExpiresAt },
             ConsoleStateJsonContext.Default.StoredConsoleEmbedToken);
         await embedTokens.StoreAsync(new(SecurityTokenKind.ConsoleEmbedToken, token.Token), payload, ttl, cancellationToken)
             .ConfigureAwait(false);
@@ -157,7 +160,7 @@ internal sealed class PostgresConsoleShareStore(
         var minted = JsonSerializer.Deserialize(stored.Payload, ConsoleStateJsonContext.Default.StoredConsoleEmbedToken)
             ?? throw new JsonException("Embed token payload is empty.");
         var shares = await _shares.ReadCurrentByKeyAsync(cancellationToken).ConfigureAwait(false);
-        if (!shares.TryGetValue(minted.ItemId, out var share) || !share.EmbedEnabled || minted.ExpiresAt <= timeProvider.GetUtcNow())
+        if (!shares.TryGetValue(minted.ItemId, out var share) || !share.EmbedEnabled || minted.ExpiresAt <= storage.Time.GetUtcNow())
         {
             return null;
         }
@@ -172,16 +175,15 @@ internal sealed class PostgresConsoleShareStore(
 
     // The first write for an item keeps the caller's effective tier instead of resetting it to private.
     private async Task<StoredConsoleShare> ChangeAsync(
-        string itemId, ConsoleShareAccessTier seedAccessTier, string? principalId,
-        Func<StoredConsoleShare, StoredConsoleShare> change, CancellationToken cancellationToken)
+        ShareEdit edit, Func<StoredConsoleShare, StoredConsoleShare> change, CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow();
-        var updated = await _shares.MutateAsync(itemId, existing =>
-            change(existing ?? new StoredConsoleShare { ItemId = itemId, AccessTier = seedAccessTier }) with
+        var now = storage.Time.GetUtcNow();
+        var updated = await _shares.MutateAsync(edit.ItemId, existing =>
+            change(existing ?? new StoredConsoleShare { ItemId = edit.ItemId, AccessTier = edit.SeedAccessTier }) with
             {
-                ItemId = itemId,
+                ItemId = edit.ItemId,
                 UpdatedAt = now,
-                UpdatedById = principalId ?? existing?.UpdatedById,
+                UpdatedById = edit.PrincipalId ?? existing?.UpdatedById,
             }, cancellationToken).ConfigureAwait(false);
         return updated ?? throw new InvalidOperationException("Share state was not stored.");
     }
@@ -230,6 +232,9 @@ internal sealed class PostgresConsoleShareStore(
     private static string NewTokenId() => Guid.NewGuid().ToString("N");
 
     private static string NewTokenValue() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(TokenByteLength));
+
+    // The item a share write is for, the tier its first write keeps, and who made it.
+    private readonly record struct ShareEdit(string ItemId, ConsoleShareAccessTier SeedAccessTier, string? PrincipalId);
 
     private sealed record LinkIndex(
         IReadOnlyDictionary<string, StoredConsoleShare> Shares,
