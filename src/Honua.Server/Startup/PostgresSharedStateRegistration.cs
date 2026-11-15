@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Studio.Drafts;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
@@ -43,6 +44,11 @@ internal static class PostgresSharedStateRegistration
             configuration[SystemSchemaKey]));
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<PostgresLeaseStore>();
+        services.TryAddSingleton<PostgresCdnPurgeBudget>();
+        services.TryAddSingleton<ICdnPurgeBudget>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresCdnPurgeBudget>()
+                : null!);
         // A host with no system database runs one node and has no lease store (deliberately null),
         // so callers that ask with GetService fall back to in-process coordination.
         services.TryAddSingleton<ILeaseStore>(provider =>
