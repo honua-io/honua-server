@@ -8,12 +8,13 @@ daytime window, where it is cancelled to free heavy runners, so trunk never cert
 the nightly container build has no candidate to image.
 
 `push` events are not throttled, so full-ci-dispatch.yml calls this script on every trunk
-push (plus an hourly backup cron). Between 06:00 and 11:00 UTC it dispatches one full run when
+push (plus an hourly backup cron). Between 22:00 and 03:00 Pacific it dispatches one full run when
 none is queued or running, the night has had fewer than `--max-per-night` full runs that
 were not cancelled, and trunk head has no completed full result yet. Outside the window
-it does nothing: a run dispatched by 10:59 UTC needs about 2 h 50 min plus queueing and
-finishes before 15:00 UTC (07:00 PST). The ci.yml crons stay; a scheduled run that does
-arrive counts like a dispatched one. A night with no trunk push before 11:00 UTC relies on
+it does nothing: a run dispatched by 02:59 Pacific needs about 2 h 50 min plus queueing and
+finishes before 07:00 Pacific. The window is Pacific wall-clock time, so it holds in both PST
+and PDT. The ci.yml crons stay; a scheduled run that does
+arrive counts like a dispatched one. A night with no trunk push before 03:00 Pacific relies on
 those crons, because the backup cron is delivered late too.
 """
 
@@ -27,9 +28,11 @@ import subprocess
 import sys
 import time
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 FULL_EVENTS = frozenset({"schedule", "workflow_dispatch"})
 FULL_TITLE_PREFIX = "CI full"
+PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
 class DispatchError(RuntimeError):
@@ -47,18 +50,20 @@ def is_full_run(run: dict, branch: str) -> bool:
 
 
 def decide(now: dt.datetime, runs: list[dict], trunk_head: str, *, branch: str = "trunk",
-           window_start_hour: int = 6, last_dispatch_hour: int = 11,
+           window_start_hour: int = 22, last_dispatch_hour: int = 3, zone: dt.tzinfo = PACIFIC,
            max_per_night: int = 2) -> tuple[bool, str]:
-    """(dispatch, reason) for one trunk push or backup tick. `now` is UTC-aware."""
-    if not window_start_hour <= now.hour < last_dispatch_hour:
-        return False, (f"outside the {window_start_hour:02d}:00-{last_dispatch_hour:02d}:00 UTC "
-                       f"dispatch window ({now:%H:%M} UTC)")
+    """(dispatch, reason) for one trunk push or backup tick; the window hours are `zone` local time."""
+    local = now.astimezone(zone)
+    if last_dispatch_hour <= local.hour < window_start_hour:
+        return False, (f"outside the {window_start_hour:02d}:00-{last_dispatch_hour:02d}:00 {local:%Z} "
+                       f"dispatch window ({local:%H:%M} {local:%Z})")
     full = [run for run in runs if is_full_run(run, branch)]
     active = [run for run in full if run.get("status") != "completed"]
     if active:
         run = active[0]
         return False, f"full run {run.get('id')} is {run.get('status')}"
-    window_start = now.replace(hour=window_start_hour, minute=0, second=0, microsecond=0)
+    start_day = local.date() if local.hour >= window_start_hour else local.date() - dt.timedelta(days=1)
+    window_start = dt.datetime.combine(start_day, dt.time(window_start_hour), tzinfo=zone)
     tonight = [run for run in full
                if parse_time(run["created_at"]) >= window_start and run.get("conclusion") != "cancelled"]
     if len(tonight) >= max_per_night:
@@ -101,8 +106,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "honua-io/honua-server"))
     parser.add_argument("--workflow", default="ci.yml")
     parser.add_argument("--branch", default="trunk")
-    parser.add_argument("--window-start-hour", type=int, default=6)
-    parser.add_argument("--last-dispatch-hour", type=int, default=11)
+    parser.add_argument("--window-start-hour", type=int, default=22, help="Pacific local hour")
+    parser.add_argument("--last-dispatch-hour", type=int, default=3, help="Pacific local hour")
     parser.add_argument("--max-per-night", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -123,8 +128,8 @@ def main(argv: list[str] | None = None) -> int:
     known = {run.get("id") for run in runs}
     gh([f"repos/{args.repository}/actions/workflows/{args.workflow}/dispatches", "--method", "POST",
         "--input", "-"], stdin=json.dumps({"ref": args.branch}), retry=False)
-    # Wait for the run to appear so the next serialized dispatcher sees it as active; if it
-    # never does, fail so the job is red rather than letting the next push dispatch again.
+    # Wait for the run to appear so the next serialized dispatcher sees it as active. Fail if
+    # it does not, so a possible duplicate dispatch is visible.
     for _ in range(36):
         time.sleep(5)
         new = [run for run in list_runs(gh_json, args.repository, args.workflow, args.branch)

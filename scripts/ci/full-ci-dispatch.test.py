@@ -40,13 +40,29 @@ class DecideTests(unittest.TestCase):
         self.assertTrue(MODULE.decide(at("2026-11-15T06:10:00"), runs, HEAD)[0])
 
     def test_never_dispatches_outside_window(self):
-        for moment in ("2026-11-15T05:59:59", "2026-11-15T11:00:00", "2026-11-15T20:00:00"):
+        for moment in ("2026-11-15T05:59:59", "2026-11-15T11:00:00", "2026-11-15T20:00:00",
+                       "2027-07-15T04:30:00", "2027-07-15T10:00:00"):
             dispatch, reason = MODULE.decide(at(moment), [], HEAD)
             self.assertFalse(dispatch, moment)
             self.assertIn("outside", reason)
 
     def test_last_minute_of_window_still_dispatches(self):
         self.assertTrue(MODULE.decide(at("2026-11-15T10:59:00"), [], HEAD)[0])
+
+    def test_window_follows_pacific_daylight_time(self):
+        # PDT: 22:00-03:00 Pacific is 05:00-10:00 UTC.
+        self.assertTrue(MODULE.decide(at("2027-07-15T05:00:00"), [], HEAD)[0])
+        self.assertTrue(MODULE.decide(at("2027-07-15T09:59:00"), [], HEAD)[0])
+        self.assertFalse(MODULE.decide(at("2027-07-15T10:00:00"), [], HEAD)[0])
+
+    def test_night_starts_at_pacific_window_open_across_midnight(self):
+        # 08:30 UTC is 00:30 PST; a run created at 06:05 UTC (22:05 PST the day before) counts.
+        runs = [run(20, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success"),
+                run(21, "2026-11-15T07:30:00", event="schedule", conclusion="failure")]
+        self.assertFalse(MODULE.decide(at("2026-11-15T08:30:00"), runs, HEAD)[0])
+        # The previous evening's 05:59 UTC run (21:59 PST) is outside tonight's window.
+        runs[0]["created_at"] = "2026-11-15T05:59:00Z"
+        self.assertTrue(MODULE.decide(at("2026-11-15T08:30:00"), runs, HEAD)[0])
 
     def test_active_full_run_blocks_dispatch(self):
         for status in ("queued", "in_progress", "waiting", "pending"):
@@ -101,7 +117,7 @@ class WorkflowTests(unittest.TestCase):
     def test_triggers_on_trunk_push_with_hourly_backup_inside_window(self):
         on = self.workflow["on"]
         self.assertEqual(on["push"]["branches"], ["trunk"])
-        self.assertEqual(on["schedule"], [{"cron": "41 6-10 * * *"}])
+        self.assertEqual(on["schedule"], [{"cron": "41 5-10 * * *"}])
         self.assertIn("workflow_dispatch", on)
 
     def test_runs_serialized_with_least_privilege(self):
