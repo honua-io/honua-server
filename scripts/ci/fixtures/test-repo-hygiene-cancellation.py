@@ -16,6 +16,8 @@ class HygieneCancellationTests(unittest.TestCase):
     def setUpClass(cls):
         workflow = yaml.safe_load((ROOT / '.github/workflows/repo-hygiene.yml').read_text())
         cls.job = workflow['jobs']['repo-hygiene']
+        cls.verdict = next(step for step in cls.job['steps']
+                           if step.get('name') == 'Require all hygiene checks')
 
     def test_cancelled_workflow_or_dependency_does_not_run_aggregate(self):
         expression = self.job['if'].removeprefix('${{').removesuffix('}}').strip()
@@ -29,10 +31,10 @@ class HygieneCancellationTests(unittest.TestCase):
                     self.assertEqual(admitted, not workflow_cancelled and 'cancelled' not in results)
 
     def test_active_verdict_requires_all_successes(self):
-        variables = list(self.job['steps'][0]['env'])
+        variables = list(self.verdict['env'])
         for values in itertools.product(['success', 'failure', 'skipped', ''], repeat=len(variables)):
             with self.subTest(results=values):
-                result = subprocess.run(['bash', '-e', '-c', self.job['steps'][0]['run']],
+                result = subprocess.run(['bash', '-e', '-c', self.verdict['run']],
                     env=dict(os.environ, **dict(zip(variables, values))))
                 self.assertEqual(result.returncode == 0, all(v == 'success' for v in values))
 
@@ -42,7 +44,7 @@ class HygieneCancellationTests(unittest.TestCase):
         self.assertIn('retired-cache-mentions', self.job['needs'])
         self.assertIn('generated-file-ownership', self.job['needs'])
         self.assertIn('shared-hygiene', self.job['needs'])
-        self.assertEqual(len(self.job['steps'][0]['env']), len(self.job['needs']))
+        self.assertEqual(len(self.verdict['env']), len(self.job['needs']))
 
 
 if __name__ == '__main__':

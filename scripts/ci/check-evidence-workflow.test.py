@@ -11,7 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/repo-hygiene.yml").read_text())
-COMMAND = next(step["run"] for step in WORKFLOW["jobs"]["evidence-paths"]["steps"] if "run" in step)
+COMMAND = next(step["run"] for step in WORKFLOW["jobs"]["evidence-paths"]["steps"] if step.get("name") == "Check added paths with trusted base policy")
 
 
 class EvidenceWorkflowTests(unittest.TestCase):

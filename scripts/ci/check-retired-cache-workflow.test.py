@@ -11,7 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/repo-hygiene.yml").read_text())
-COMMAND = next(step["run"] for step in WORKFLOW["jobs"]["retired-cache-mentions"]["steps"] if "run" in step)
+COMMAND = next(step["run"] for step in WORKFLOW["jobs"]["retired-cache-mentions"]["steps"] if step.get("name") == "Check added text")
 POLICY_NAMES = ("check-retired-cache.py", "check-retired-cache.test.py")
 
 
