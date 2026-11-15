@@ -107,7 +107,7 @@ public sealed partial class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_summary")]
-    public async Task Surface_UndeclaredArgument_ReturnsInvalidParamsNamingIt()
+    public async Task Surface_UndeclaredArgument_ReturnsInvalidArgumentNamingIt()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
         var source = new PublishedOperationToolSource(
@@ -126,9 +126,13 @@ public sealed partial class PublishedOperationToolTests
             Rpc("u1", "tools/call", """{"name":"honua_op_geo_summary","arguments":{"layerId":"7","notAField":true}}"""),
             CancellationToken.None);
 
-        response!.Error.Should().NotBeNull();
-        response.Error!.Code.Should().Be(McpErrorMapper.JsonRpcInvalidParams);
-        response.Error.Message.Should().Contain("notAField");
+        // Tool failures travel inside the result (MCP 2025-03-26) as invalid_argument, the
+        // in-result form of JSON-RPC -32602, so stock clients can correct and retry.
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var body = response.Result!.Value.GetProperty("structuredContent");
+        body.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.InvalidArgument);
+        body.GetProperty("message").GetString().Should().Contain("notAField");
         invoker.SubmitCount.Should().Be(0);
     }
 }
