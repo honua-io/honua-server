@@ -82,9 +82,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
         }
         catch (Exception ex) when (run.LicenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
-            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, LicenseExpiredMessage,
-                "Failed: license expired; partial import is incomplete"), CancellationToken.None).ConfigureAwait(false);
-            return NotRetryable(LicenseExpiredMessage);
+            return await FailUncommittedExpiredLicenseAsync(run).ConfigureAwait(false);
         }
         // An unknown COMMIT outcome must reach receipt recovery, including after cancellation.
         catch (Exception ex) when (run.Token.IsCancellationRequested &&
@@ -107,6 +105,13 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
 
         // A committed import remains recoverable when execution-store bookkeeping fails.
         return await CompleteAsync(run, result).ConfigureAwait(false);
+    }
+
+    private static async Task<JobExecutionResult> FailUncommittedExpiredLicenseAsync(ImportRun run)
+    {
+        await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, LicenseExpiredMessage,
+            "Failed: license expired; partial import is incomplete"), CancellationToken.None).ConfigureAwait(false);
+        return NotRetryable(LicenseExpiredMessage);
     }
 
     private async Task<JobExecutionResult> FailImportAsync(ImportRun run, Exception exception)
