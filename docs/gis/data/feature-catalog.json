@@ -6893,6 +6893,7 @@
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.SecurityHeaders_ShouldBePresent",
         "Honua.Server.Tests.HealthEndpointTests.ReadinessEndpoint_ReturnsReady",
         "Honua.Server.Tests.HealthEndpointsTests.HealthEndpoints_AreRegistered",
+        "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_DuringRealtimeDrain_Returns503WhileLivenessRemainsHealthy",
         "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_WithHealthyDatabase_ResponseTime_IsUnder200Ms",
         "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_WithHealthyDatabase_Returns200AndReady",
         "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_WithUnhealthyDatabase_Returns503",
