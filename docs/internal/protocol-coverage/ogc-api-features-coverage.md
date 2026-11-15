@@ -47,7 +47,7 @@ Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.
 | `limit` | Implemented | Validated and normalized by server limits. |
 | `offset` | Implemented | Standard offset paging. |
 | `ids` | Implemented | Comma-separated feature IDs. |
-| `properties` | Implemented | Comma-separated property projection list (`*` keeps default behavior). |
+| `properties` | Implemented | Comma-separated property projection list (`*` keeps default behavior). GeoJSON `properties` contains only requested attributes; the top-level feature `id` is retained. |
 | `sortby` | Implemented | Comma-separated sort expressions (supports `+field`, `-field`, and `field asc|desc`). |
 | `bbox` | Implemented | 4 or 6 comma-separated values; anti-meridian supported for geographic CRS. |
 | `bbox-crs` | Implemented | CRS for interpreting `bbox`; accepts collection defaults plus any EPSG identifier resolved by the CRS registry. |

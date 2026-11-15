@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Provisioner.BuildJobs;
 
-internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobService
+internal sealed partial class ProvisionerBuildJobService
 {
     private readonly IExecutionJobStore _jobStore;
     private readonly IUniversalProgressStore _progressStore;
@@ -192,15 +192,4 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
             "Provisioner build job {OperationId} cannot be cancelled: backend {Backend} is not registered")]
         public static partial void BackendUnavailableForCancel(ILogger logger, string operationId, string backend);
     }
-}
-
-internal interface IProvisionerBuildJobService
-{
-    bool IsEnabled { get; }
-
-    Task<string> SubmitGeocoderBuildAsync(GeocoderBuildRequest request, CancellationToken cancellationToken = default);
-
-    Task<string> SubmitRouterBuildAsync(RouterBuildRequest request, CancellationToken cancellationToken = default);
-
-    Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
 }

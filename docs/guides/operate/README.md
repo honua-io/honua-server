@@ -145,10 +145,48 @@ Current rung by concern:
 | Platform release runtime divergence | L2 | The finding proposes a Deploy operation to the declared artifact. Compose uses live readback, including targets pinned to that declared artifact; other backends use the recorded revision for unpinned targets. |
 | Managed Compose service down or unready | L2 | `managed-compose-service-unhealthy` proposes a bounded `compose.restart_service` for the configured service after separate-principal approval and verifies readiness. |
 | Platform release config skew | L1 | Explicit config pins cannot be cleared by runtime action; change configuration and redeploy. |
+| Key-ring certificate expiry | L1 | `key-ring-certificate-expiry` warns at 60 days and becomes critical at 30 days. Renewal requires an administrator. |
+| Sign-in provider discovery | L1 | `idp-unreachable` reports an enabled provider whose public HTTPS discovery document cannot be read or has a mismatched issuer. |
+| Available Honua release | L1 | `honua-release-available` links to public release notes. Upgrades require human approval. |
 | Pending contract migrations | L1 | Contracting is operator-sequenced. It must not be auto-applied. |
 | GP queue depth | L1 | The finding points at the scale concern; no safe automatic scale action ships in this slice. |
 | Local backend on incompatible substrate | L1 | The finding explains the topology problem; remediation is a deployment decision. |
 | Generic serving latency or error-rate SLO breach | L1 | No single safe generic action exists outside a specific deploy operation. |
+
+### Scheduled certificate, sign-in and release checks
+
+Read `honua_ops_findings` or the MCP resource `honua://ops/findings` to see
+these findings. Long-running hosts sample once a minute, with sign-in discovery
+cached for five minutes and the public GitHub latest-release feed cached for
+24 hours. API Lambda hosts also register the sampler while their execution
+environment is running. Event-handler-only Lambda profiles evaluate checks on a
+findings read. Lambda caches last only for the lifetime of the execution
+environment. Each replica keeps its own cache. Before each sign-in probe, it
+refreshes persisted provider configuration even when it serves no admin requests.
+Provider configuration changes therefore appear in these sampled health findings
+within the five-minute interval; request authentication refreshes independently.
+
+The certificate check reads the expiry of the certificate actually loaded to
+protect the encryption key ring. A host without a configured certificate emits
+no certificate-expiry finding. Findings change identity at the 60-, 30- and
+7-day windows and at expiry so notification consumers can distinguish escalation.
+Rotate the certificate through the deployment's secret-management procedure and
+retain the previous key to decrypt existing secrets; restart with the renewed
+certificate. The check never rotates keys itself.
+
+Sign-in checks send no credentials and accept only public HTTPS destinations,
+without redirects, cookies or proxies. Private-address discovery endpoints are
+reported as unreachable. A provider failure does not stop public map serving.
+Checks use a five-second request budget and a 64 KiB response limit. Restore the
+provider or correct its configuration, then allow the five-minute cache to expire.
+
+Release checks compare the running assembly version with the public latest
+stable release, including numeric `rc.N` ordering. A missing release produces no
+notice; a failed release-feed read produces a sanitized `self-check-unavailable`
+warning until the next daily attempt. Review release notes before approving an
+upgrade. None of these findings includes an executable recommended action.
+They do not by themselves prove inbox or email delivery: that requires deployment
+notification wiring and live validation.
 
 Opt a rule into AutoApply only if all of these are true:
 

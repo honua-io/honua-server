@@ -279,9 +279,8 @@ status="failed"
 # including a host OOM kill during the grace window, which is precisely when a
 # memory-starved runner is most likely to reap the test host — was killed by
 # something else and must keep that diagnosis. Misreading it as a timeout emits
-# HONUA_SHARD_CAPACITY_EXHAUSTED and sends the merge train down its batch-wide
-# capacity escalation, whose remediation (raise/split the shard budget) is not
-# the remediation an OOM kill needs.
+# HONUA_SHARD_CAPACITY_EXHAUSTED, whose remediation (raise/split the shard
+# budget) is not the remediation an OOM kill needs.
 # ---------------------------------------------------------------------------
 kill_escalation_floor_seconds=""
 if [[ "${test_exit_code}" -eq 0 ]]; then
@@ -435,9 +434,9 @@ fi
 
 cat "${log_file}"
 
-# The HONUA_SHARD_* tokens are the stable, greppable contract consumed by the
-# merge train's timeout classifier (scripts/ci/merge-train/classify-timeout.sh).
-# Keep them literal and on the same line as the annotation.
+# The HONUA_SHARD_* tokens are the stable, greppable contract consumed by CI
+# (ci.yml, scripts/ci/audit-shard-headroom.py). Keep them literal and on the
+# same line as the annotation.
 case "${capacity_status}" in
   low_headroom)
     echo "::warning::HONUA_SHARD_LOW_HEADROOM shard='${shard_name}' used ${duration_seconds}s of its ${timeout_minutes}m test budget (${headroom_percent}%, warn at $(awk -v w="${headroom_warn_ratio}" 'BEGIN { printf "%.0f", w * 100 }')%). This shard passed but has almost no room for the next test routed into it — raise test_timeout_minutes/timeout_minutes or rebalance its filter in .github/ci-shards.json."
