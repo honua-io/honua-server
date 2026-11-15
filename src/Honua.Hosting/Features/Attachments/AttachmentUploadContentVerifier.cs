@@ -47,7 +47,7 @@ internal sealed class AttachmentUploadContentVerifier(
         {
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         }
-        return new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()), options);
+        return new FileStream(Path.Join(Path.GetTempPath(), Path.GetRandomFileName()), options);
     }
 
     private static void ValidateFilename(string filename)
