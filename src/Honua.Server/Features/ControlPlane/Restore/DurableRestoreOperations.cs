@@ -579,7 +579,7 @@ internal sealed partial class DurableRestoreWorker(
         internal static partial void LeaseFailed(ILogger logger, string exceptionType);
     }
 
-    private sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, DurableRestoreCompletionVerifier verifier, WorkflowOperationRecord record) : IDurablePriorImageStarter
+    internal sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, DurableRestoreCompletionVerifier verifier, WorkflowOperationRecord record) : IPriorImageStarter
     {
         public async Task<bool> CheckpointRdsAsync(string phase, string instanceId, string? resourceId, int expectedSchema, CancellationToken cancellationToken)
         {

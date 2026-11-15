@@ -247,6 +247,7 @@ internal sealed partial class FeatureDataAccess
             command.Parameters.Add(new NpgsqlParameter { Value = feature.Geometry ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bytea });
             command.Parameters.Add(new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlDbType.Jsonb });
 
+            await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             var newId = await RunRowSecurityCheckedWriteAsync(
                 writeCheck,
                 connection,
@@ -261,8 +262,9 @@ internal sealed partial class FeatureDataAccess
                     return (id, id);
                 },
                 cancellationToken).ConfigureAwait(false);
+            var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             createdIds.Add(newId);
-            createResults.Add(EditOperationResult.Success(newId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            createResults.Add(EditOperationResult.Success(newId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = evidence });
             return true;
         }
         catch (RowSecurityWriteCheckFailedException ex)
@@ -299,6 +301,7 @@ internal sealed partial class FeatureDataAccess
             var update = await PrepareVersionedUpdateAsync(feature, new(
                 new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, feature.Id))), writeCheck), cancellationToken).ConfigureAwait(false);
 
+            await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             await RunRowSecurityCheckedWriteAsync(
                 writeCheck,
                 connection,
@@ -320,7 +323,8 @@ internal sealed partial class FeatureDataAccess
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            updateResults.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            updateResults.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = evidence });
             return true;
         }
         catch (RowSecurityWriteCheckFailedException ex)
@@ -386,6 +390,7 @@ internal sealed partial class FeatureDataAccess
                 return false;
             }
 
+            await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             var rowsAffected = await UpsertOverlayRowAsync(
                 layerId, versionId, objectId, operation: 3, geometry: null, attributes: null,
                 geometryStorageType, layerSrid, isDelete: true, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
@@ -396,7 +401,8 @@ internal sealed partial class FeatureDataAccess
                 return false;
             }
 
-            deleteResults.Add(EditOperationResult.Success(objectId));
+            var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            deleteResults.Add(EditOperationResult.Success(objectId) with { OperationEvidence = evidence });
             return true;
         }
         catch (RowSecurityWriteCheckFailedException ex)

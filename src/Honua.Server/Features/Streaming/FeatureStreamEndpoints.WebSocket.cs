@@ -23,7 +23,7 @@ internal static partial class FeatureStreamEndpoints
         ILogger logger,
         HttpContext context,
         FeatureStreamSession session,
-        IStreamSubscriptionFilter? subscriptionFilter,
+        StreamSubscriptionFilter? subscriptionFilter,
         bool addDefaultSubscription,
         bool announceInitialSubscription,
         FeatureStreamSubscriptionMode mode)
@@ -251,7 +251,10 @@ internal static partial class FeatureStreamEndpoints
                 {
                     // Drain channel for headroom only — the store sweep below
                     // delivers everything in cursor order including grace-drops.
-                    while (session.Reader.TryRead(out _)) { }
+                    while (session.Reader.TryRead(out _))
+                    {
+                        // Discard: the store sweep delivers these in cursor order.
+                    }
 
                     previousCursor = replayCursor;
                     replayCursor = await ReplayToWebSocketAsync(
@@ -306,7 +309,10 @@ internal static partial class FeatureStreamEndpoints
 
                         // Drain channel for headroom only — the store sweep below
                         // delivers everything in cursor order including grace-drops.
-                        while (session.Reader.TryRead(out _)) { }
+                        while (session.Reader.TryRead(out _))
+                        {
+                            // Discard: the store sweep delivers these in cursor order.
+                        }
 
                         long prev = cursor;
                         cursor = await ReplayToWebSocketAsync(
@@ -1153,7 +1159,7 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<(IStreamSubscriptionFilter? Filter, string? Error)> BuildControlSubscriptionFilterAsync(
+    private static async Task<(StreamSubscriptionFilter? Filter, string? Error)> BuildControlSubscriptionFilterAsync(
         FeatureStreamDependencies deps,
         HttpContext context,
         FeatureStreamControlMessage control,

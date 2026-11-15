@@ -15,6 +15,8 @@ using Honua.Server.Features.Protocols.Coverages.Multidimensional.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
+using Honua.Core.Features.Raster.ZarrParser;
+
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
 internal sealed class MultidimensionalCoverageEndpointsLog;
@@ -307,7 +309,7 @@ internal static class MultidimensionalCoverageEndpoints
         }
 
         var zarrStore = context.RequestServices.GetService<IZarrStore>();
-        var zarrMetadataReader = context.RequestServices.GetService<IZarrMetadataReader>();
+        var zarrMetadataReader = context.RequestServices.GetService<ZarrMetadataExtractor>();
         if (zarrStore is null || zarrMetadataReader is null)
         {
             return;

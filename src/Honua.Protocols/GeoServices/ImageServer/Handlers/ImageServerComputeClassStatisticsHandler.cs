@@ -14,20 +14,22 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
+using Honua.Core.Features.Raster.Services;
+
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 internal sealed class ImageServerComputeClassStatisticsHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
-    private readonly IRasterClassStatisticsAnalyzer _analyzer;
+    private readonly RasterClassStatisticsAnalyzer _analyzer;
     private readonly ImageServerClassStatisticsOptions _options;
     private readonly ILogger<ImageServerComputeClassStatisticsHandler> _logger;
 
     public ImageServerComputeClassStatisticsHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        IRasterClassStatisticsAnalyzer analyzer,
+        RasterClassStatisticsAnalyzer analyzer,
         IOptions<ImageServerClassStatisticsOptions> options,
         ILogger<ImageServerComputeClassStatisticsHandler> logger)
     {

@@ -371,7 +371,8 @@ internal static partial class WmsRequestHandlers
         var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
 
         var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
-        var serviceAbstract = service.Metadata.Description ?? "Honua WMS service";
+        // Abstract is optional in WMS 1.1.1 and 1.3.0: emit only catalog metadata, never a placeholder.
+        var serviceAbstract = string.IsNullOrWhiteSpace(service.Metadata.Description) ? null : service.Metadata.Description;
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger(LoggerCategory);
         var preparedLayers = (await Task.WhenAll(accessibleLayers.Select(layer =>
@@ -407,7 +408,8 @@ internal static partial class WmsRequestHandlers
             .Append(isWms111 ? "OGC:WMS" : "WMS")
             .AppendLine("</Name>");
         sb.Append("    <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
-        sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
+        if (serviceAbstract is not null)
+            sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
         AppendWmsKeywords(sb, service.Metadata.Keywords
             .Prepend(service.EffectivePublicName).Prepend("OGC").Prepend("WMS"), "    ");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
@@ -475,7 +477,8 @@ internal static partial class WmsRequestHandlers
 
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
-        sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
+        if (serviceAbstract is not null)
+            sb.Append("      <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
         var layerCrs = preparedLayers.Select(prepared => GetWmsCapabilitiesCrs(prepared.Layer.Resource.Spatial?.SupportedCrs, version)).ToArray();
         var commonCrs = layerCrs.Length == 0
             ? GetWmsCapabilitiesCrs(null, version)
@@ -495,12 +498,13 @@ internal static partial class WmsRequestHandlers
             var layerName = GetWmsLayerDisplayName(layer);
             var layerMetadata = layer.Resource.Metadata;
             var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
-            var layerAbstract = layerMetadata.Description ?? $"WMS layer {layerName}";
+            var layerAbstract = string.IsNullOrWhiteSpace(layerMetadata.Description) ? null : layerMetadata.Description;
 
             sb.AppendLine("      <Layer queryable=\"1\">");
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
-            sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
+            if (layerAbstract is not null)
+                sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
             AppendWmsKeywords(sb, layerMetadata.Keywords.Prepend(layerName), "        ");
             var crsNames = GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, version);
             foreach (var crs in crsNames.Distinct(StringComparer.OrdinalIgnoreCase))
