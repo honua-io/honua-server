@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [trunk]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     paths:
       - 'docs/get-started/**'
       - 'docker-compose*.yml'
@@ -29,10 +30,11 @@ permissions:
 
 concurrency:
   group: archived-quickstart-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   controls:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
