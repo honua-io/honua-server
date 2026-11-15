@@ -107,10 +107,11 @@ class PullRequestLoadTests(unittest.TestCase):
         producer = workflow("normalize-derived-artifacts.yml")
         group = producer["concurrency"]["group"]
 
-        def admission(action, *, draft=False, base_from=None, number=7639, head="head-b"):
+        def admission(action, **subject):
             event = {"event_name": "pull_request", "event": {
-                "action": action, "pull_request": {"number": number, "draft": draft, "head": {"sha": head}},
-                "changes": {"base": {"ref": {"from": base_from}}},
+                "action": action, "pull_request": {"number": subject.get("number", 7639),
+                    "draft": subject.get("draft", False), "head": {"sha": subject.get("head", "head-b")}},
+                "changes": {"base": {"ref": {"from": subject.get("base_from")}}},
             }}
             return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
 
