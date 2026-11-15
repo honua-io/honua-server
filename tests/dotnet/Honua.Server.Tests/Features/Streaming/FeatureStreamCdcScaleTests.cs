@@ -31,21 +31,12 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
     private const double MaxP95LatencyMs = 500.0;
 
     private readonly FeatureStreamSessionManager _sessionManager;
-    private readonly InMemoryFeatureChangeEventStore _store;
-    private readonly FeatureStreamPublisher _publisher;
+    private readonly FakeFeatureChangeEventStore _store = new();
 
     public FeatureStreamCdcScaleTests()
     {
-        var storeOptions = Options.Create(new FeatureChangeEventOptions { MaxRetainedEvents = TotalEdits + 1000 });
-        _store = new InMemoryFeatureChangeEventStore(storeOptions, null);
-
         var streamOptions = Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = TotalEdits + 256 });
         _sessionManager = new FeatureStreamSessionManager(streamOptions, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics());
-
-        _publisher = new FeatureStreamPublisher(
-            _store,
-            _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance);
     }
 
     public void Dispose() => _sessionManager.Dispose();
@@ -117,9 +108,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
 
         for (var i = 0; i < TotalEdits; i++)
         {
-            var publishTick = Stopwatch.GetTimestamp();
-
-            await _publisher.PublishAsync(new FeatureChangeEventRequest
+            var change = _store.Append(new FeatureChangeEventRequest
             {
                 ServiceId = "scale-svc",
                 LayerId = i % 5, // Spread across 5 layers.
@@ -128,19 +117,9 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
                 Protocol = "scale-test",
                 RequestId = $"req-{i}",
                 GeometryChanged = i % 2 == 0
-            }).ConfigureAwait(false);
-
-            // Record publish time after the publisher completes (includes store + broadcast).
-            var storedEvents = await _store.QueryAsync(null, null, null, 1).ConfigureAwait(false);
-            if (storedEvents.Count > 0)
-            {
-                // Use the last published cursor (store is append-only, so the latest has highest cursor).
-                var latest = await _store.QueryAsync((long)(i), null, null, 1).ConfigureAwait(false);
-                if (latest.Count > 0)
-                {
-                    publishTimestamps.TryAdd(latest[0].Cursor, publishTick);
-                }
-            }
+            });
+            publishTimestamps.TryAdd(change.Cursor, Stopwatch.GetTimestamp());
+            Relay(change);
 
             // Pace to target rate — subtract time already spent.
             var targetElapsed = interval * (i + 1);
@@ -181,7 +160,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
 
     [UnitTest]
     [Trait("Category", "Performance")]
-    public async Task CdcFanOut_FilteredSubscribers_ReceiveOnlyMatchingLayerDeltas()
+    public void CdcFanOut_FilteredSubscribers_ReceiveOnlyMatchingLayerDeltas()
     {
         // Arrange: create subscribers with different layer filters.
         var layer0Filter = new StreamSubscriptionFilter(layerIds: [0]);
@@ -202,7 +181,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
         // Act: publish events for layers 0, 1, and 2.
         for (var i = 0; i < 30; i++)
         {
-            await _publisher.PublishAsync(new FeatureChangeEventRequest
+            Relay(_store.Append(new FeatureChangeEventRequest
             {
                 ServiceId = "filter-svc",
                 LayerId = i % 3,
@@ -210,7 +189,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
                 Operation = "create",
                 Protocol = "test",
                 RequestId = $"req-filter-{i}"
-            }).ConfigureAwait(false);
+            }));
         }
 
         // Assert: layer-0 subscriber only gets layer 0 events.
@@ -251,4 +230,11 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
 
         allCount.Should().Be(30, "unfiltered subscriber should receive all 30 events");
     }
+
+    // What the realtime relay does with each change it reads from the log.
+    private void Relay(FeatureChangeEvent change)
+        => _sessionManager.Broadcast(FeatureStreamMessage.Data(
+            FeatureStreamPublisher.ToEnvelope(change),
+            change.GeometryEnvelope,
+            change.PropertiesJson));
 }

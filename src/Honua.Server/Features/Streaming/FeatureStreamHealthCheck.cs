@@ -25,7 +25,6 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
         var maximumPartitionSessions = _sessionManager.MaximumPartitionSessionCount;
         var maxSessions = _sessionManager.MaxConcurrentSessions;
         var slowConsumerDrops = _sessionManager.SlowConsumerDrops;
-        var backlog = _sessionManager.GetClusterBroadcastBacklogSnapshot();
 
         var data = new Dictionary<string, object>(StringComparer.Ordinal)
         {
@@ -33,23 +32,7 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
             ["maximum_partition_sessions"] = maximumPartitionSessions,
             ["max_concurrent_sessions"] = maxSessions,
             ["slow_consumer_drops"] = slowConsumerDrops,
-            ["cluster_broadcast_configured"] = backlog.Configured,
-            ["cluster_broadcast_enabled"] = backlog.Enabled,
-            ["cluster_broadcast_backlog"] = backlog.BacklogDepth,
-            ["cluster_broadcast_dropped"] = backlog.Dropped,
         };
-
-        // Cross-node broadcast is buffering (Redis publish unavailable) or has shed payloads:
-        // cross-node subscribers may miss live events until the durable poll catches them up.
-        if (backlog.Configured && (backlog.BacklogDepth > 0 || backlog.Dropped > 0 || !backlog.Enabled))
-        {
-            return Task.FromResult(HealthCheckResult.Degraded(
-                "Feature-stream cross-node broadcast is degraded (Redis publish unavailable); "
-                + $"{backlog.BacklogDepth.ToString(CultureInfo.InvariantCulture)} payloads buffered, "
-                + $"{backlog.Dropped.ToString(CultureInfo.InvariantCulture)} dropped since startup. "
-                + "Cross-node live events are recoverable via the durable store and cross-node poll.",
-                data: data));
-        }
 
         // Session saturation: at the cap, new stream connections are rejected with 503.
         var saturationThreshold = Math.Max(1, (int)Math.Ceiling(maxSessions * SaturationRatio));
