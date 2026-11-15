@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-public sealed class DeployTelemetrySignalEvaluatorTests
+public sealed partial class DeployTelemetrySignalEvaluatorTests
 {
     [Fact]
     public async Task EvaluateAsync_UsesDefaultKubernetesPolicy_WhenOnlyConnectionAndJobAreConfigured()

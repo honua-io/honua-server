@@ -197,20 +197,14 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/findings")]
-    public async Task DeadLetterStorm_AutoApply_VerifiesConvergenceAndKillSwitchStopsNextRun()
+    public async Task DeadLetterStorm_AutoApplyPolicy_CannotBypassHumanApprovalForUncompensatableAction()
     {
         var fixture = _fixture!;
-        var client = _client!;
         var dispatchStore = fixture.GetService<IAlertDispatchStore>();
         var autonomyStore = fixture.GetService<IOpsAutonomyPolicyStore>();
-        var alertOptions = fixture.GetService<IOptions<AlertOptions>>().Value;
-        alertOptions.Ops.Enabled.Should().BeTrue();
-        alertOptions.Ops.Channels.Should().ContainSingle().Which.Should().Be("webhook");
         var initialRedriveAuditCount = await CountAuditRowsAsync(fixture, RedriveAction);
         await autonomyStore.SetSettingsAsync(
-            new OpsAutonomySettings { KillSwitchEnabled = false },
-            "integration-test",
-            "enable autonomous convergence proof");
+            new OpsAutonomySettings { KillSwitchEnabled = false }, "integration-test");
         await autonomyStore.SetPolicyAsync(
             new OpsAutonomyPolicy
             {
@@ -219,86 +213,26 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
                 MaxAutoActionsPerWindow = 2,
                 Window = TimeSpan.FromHours(1),
                 MaxBlastRadius = SeededDeadLetters,
-            },
-            "integration-test",
-            "prove the bounded auto-safe action");
+            }, "integration-test");
 
         await SeedDeadLetterStormAsync(fixture, SeededDeadLetters);
         await RefreshCachedBacklogAsync(dispatchStore);
-        var finding = await ReadFindingThroughRestAsync(client);
-        finding.GetProperty("rule").GetString().Should().Be(FindingRule);
-
-        await using var autonomyScope = fixture.Services.CreateAsyncScope();
-        var findingsService = autonomyScope.ServiceProvider.GetRequiredService<IOpsFindingsService>();
-        var autoResult = await findingsService.ProposeAsync(finding.GetProperty("id").GetString()!);
-        autoResult.Status.Should().Be(OpsFindingProposalStatus.Executed);
-
-        var convergedBacklog = await dispatchStore.GetBacklogAsync();
-        convergedBacklog.DeadLetteredCount.Should().Be(0);
-        _dispatchHealth.LastBacklog!.DeadLetteredCount.Should().Be(0,
-            "the verifier must refresh the finding signal instead of trusting the stale pre-action snapshot");
-        await ReadFindingThroughRestAsync(client, expectPresent: false);
-
-        var policy = (await autonomyStore.ListPoliciesAsync())
-            .Should()
-            .ContainSingle(snapshot => snapshot.Policy.Rule == FindingRule)
-            .Subject;
-        policy.TrackRecord.AutoApplied.Should().Be(1);
-        policy.TrackRecord.Failed.Should().Be(0);
-        policy.TrackRecord.RolledBack.Should().Be(0);
-
-        var proposalStore = fixture.GetService<IOperationProposalStore>();
-        (await proposalStore.ListActiveAsync(OperationClass.AdminConfigChange)).Should().BeEmpty(
-            "auto-apply must not manufacture a hidden human-approval step");
-
-        var operationId = await ReadLatestAuditCorrelationAsync(fixture, RedriveAction);
-        operationId.Should().StartWith("opsaction-");
-        var auditActions = await ReadAuditActionsAsync(fixture, operationId);
-        auditActions.Should().ContainInOrder(
-            RedriveAction,
-            "operation.auto_executed",
-            "operation.auto_verified",
-            "operation.auto_applied");
-        var opsAlertPayload = await ReadLatestOpsAutonomyAlertAsync(fixture);
-        using (var opsAlert = JsonDocument.Parse(opsAlertPayload))
-        {
-            opsAlert.RootElement.GetProperty("attributes").GetProperty("outcome").GetString().Should().Be("Succeeded");
-            opsAlert.RootElement.GetProperty("body").GetString().Should().Contain("convergence verified");
-        }
-
-        // A second evaluation with no live finding is idempotent: it must not create another
-        // operation or inflate the success record.
-        var replay = await findingsService.ProposeAsync(finding.GetProperty("id").GetString()!);
-        replay.Status.Should().Be(OpsFindingProposalStatus.FindingNotFound);
-        (await CountAuditRowsAsync(fixture, RedriveAction)).Should().Be(initialRedriveAuditCount + 1);
-
-        // Clear pending rows from the first redrive/ops notification so the next seeded row is
-        // unambiguous, then prove the durable kill switch leaves the new fault untouched.
-        await DrainPendingDispatchesAsync(dispatchStore);
-        await autonomyStore.SetSettingsAsync(
-            new OpsAutonomySettings { KillSwitchEnabled = true },
-            "integration-test",
-            "stop autonomous remediation");
-        await SeedDeadLetterStormAsync(fixture, count: 1);
-        await RefreshCachedBacklogAsync(dispatchStore);
-        var killedFinding = (await findingsService.EvaluateAsync())
-            .Should()
-            .ContainSingle(item => item.Rule == FindingRule)
-            .Subject;
-        var routeDecision = await autonomyScope.ServiceProvider
-            .GetRequiredService<IOpsAutonomyEvaluator>()
-            .EvaluateFindingAsync(killedFinding);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var findingsService = scope.ServiceProvider.GetRequiredService<IOpsFindingsService>();
+        var finding = (await findingsService.EvaluateAsync())
+            .Should().ContainSingle(item => item.Rule == FindingRule).Subject;
+        finding.RecommendedAction!.AutoSafe.Should().BeFalse();
+        var routeDecision = await scope.ServiceProvider.GetRequiredService<IOpsAutonomyEvaluator>()
+            .EvaluateFindingAsync(finding);
         routeDecision.CanAutoApply.Should().BeFalse();
-        routeDecision.Reason.Should().Be("store-kill-switch");
-        var killedResult = await findingsService.ProposeAsync(killedFinding.Id);
-        killedResult.Status.Should().Be(OpsFindingProposalStatus.ProposalCreated,
-            "the kill switch must degrade the action to the normal human-approval path");
 
-        var killedBacklog = await dispatchStore.GetBacklogAsync();
-        killedBacklog.DeadLetteredCount.Should().Be(1,
-            "the kill switch must prevent a second autonomous actuator invocation");
-        (await CountAuditRowsAsync(fixture, RedriveAction)).Should().Be(initialRedriveAuditCount + 1);
-        (await proposalStore.ListActiveAsync(OperationClass.AdminConfigChange)).Should().ContainSingle();
+        var result = await findingsService.ProposeAsync(finding.Id);
+        result.Status.Should().Be(OpsFindingProposalStatus.ProposalCreated,
+            "configuration cannot make delivered notifications compensatable");
+        (await dispatchStore.GetBacklogAsync()).DeadLetteredCount.Should().Be(SeededDeadLetters);
+        (await CountAuditRowsAsync(fixture, RedriveAction)).Should().Be(initialRedriveAuditCount);
+        (await fixture.GetService<IOperationProposalStore>()
+            .ListActiveAsync(OperationClass.AdminConfigChange)).Should().ContainSingle();
     }
 
     private async Task SeedDeadLetterStormAsync(WebAppFixture fixture, int count)
