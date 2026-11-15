@@ -13,14 +13,16 @@ public sealed partial class ProposalEndpointsTests
 {
     private const string AuthorityUrl = "/api/v1/admin/agent-authority";
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("public")]
+    [InlineData(null)]
     [Endpoint("PUT /api/v1/admin/agent-authority")]
     [Endpoint("GET /api/v1/admin/agent-authority")]
     [Endpoint("DELETE /api/v1/admin/agent-authority")]
-    public async Task AgentAuthority_HumanCanPersistReadAndRevokeCeiling()
+    public async Task AgentAuthority_HumanCanPersistReadAndRevokeCeiling(string? tenantId)
     {
-        var ceiling = NewAuthorityCeiling();
-        var query = $"?principalId={ceiling.PrincipalId}&tenantId=public";
+        var ceiling = NewAuthorityCeiling() with { TenantId = tenantId };
+        var query = $"?principalId={ceiling.PrincipalId}" + (tenantId is null ? string.Empty : $"&tenantId={tenantId}");
         using var set = await _client.PutAsJsonAsync(AuthorityUrl, ceiling);
         set.StatusCode.Should().Be(HttpStatusCode.NoContent, await set.Content.ReadAsStringAsync());
         var stored = await _client.GetFromJsonAsync<AgentAuthorityCeiling>(AuthorityUrl + query);

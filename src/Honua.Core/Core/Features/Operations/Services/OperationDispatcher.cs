@@ -468,6 +468,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         }
         else
         {
+            var actuationStarted = false;
             try
             {
                 if (!await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken).ConfigureAwait(false))
@@ -480,7 +481,13 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                         Reason = "Agent authority was revoked before actuation.",
                     }, cancellationToken).ConfigureAwait(false);
                 }
+                actuationStarted = true;
                 executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!actuationStarted)
+            {
+                await PersistPreActuationCancellationAsync(envelope, invocationContext).ConfigureAwait(false);
+                throw;
             }
             catch (OperationCanceledException)
             {

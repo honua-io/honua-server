@@ -114,6 +114,37 @@ public sealed class AgentAuthorityTests
         await executor.DidNotReceive().SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task Dispatcher_CancellationDuringFinalCeilingRead_DoesNotReportActuation()
+    {
+        var store = Store(Ceiling());
+        var catalog = Substitute.For<IOperationCatalog>();
+        catalog.GetDescriptorAsync("service.publish", Arg.Any<CancellationToken>()).Returns(Descriptor());
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationId.Returns("service.publish");
+        executor.ValidateAsync(Arg.Any<OperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationValidation { IsValid = true, Status = "valid" });
+        var policy = Substitute.For<IOperationPolicyDecisionPoint>();
+        policy.EvaluateAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                store.GetAsync(Agent.TenantId, Agent.PrincipalId!, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromException<AgentAuthorityCeiling?>(new OperationCanceledException()));
+                return PolicyDecision.Allowed;
+            });
+        var instances = new VolatileOperationInstanceStore();
+        var dispatcher = new OperationDispatcher(catalog, [executor], policy, TimeProvider.System,
+            instanceStore: instances, agentAuthorityStore: store);
+        var context = Agent with { OperationInstanceId = Guid.NewGuid().ToString("N") };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "service.publish" }, context));
+
+        Assert.Equal(OperationHandleStatus.Cancelled, (await instances.GetAsync(context.OperationInstanceId, default))!.Status);
+        await executor.DidNotReceive().SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
     private static IAgentAuthorityStore Store(AgentAuthorityCeiling? ceiling)
     {
         var store = Substitute.For<IAgentAuthorityStore>();
@@ -139,6 +170,7 @@ public sealed class AgentAuthorityTests
             BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,
             SideEffectClass = OperationSideEffectClass.CreatesMetadata,
             Determinism = OperationDeterminism.Deterministic,
+            SupportsDryRun = false,
         },
     };
 }

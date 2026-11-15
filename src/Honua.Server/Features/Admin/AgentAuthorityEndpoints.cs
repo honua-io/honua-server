@@ -25,7 +25,11 @@ internal static class AgentAuthorityEndpoints
             .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
-    internal sealed record AuthorityQuery(string PrincipalId, string? TenantId);
+    internal sealed class AuthorityQuery
+    {
+        public string PrincipalId { get; set; } = string.Empty;
+        public string? TenantId { get; set; }
+    }
 
     private static async Task<IResult> GetAsync([AsParameters] AuthorityQuery query,
         [FromServices] IAgentAuthorityStore store, HttpContext context)
