@@ -555,6 +555,35 @@ internal sealed partial class StreamingGeoJsonReader
         return (features, reader.CurrentState, newProcessingState, lastConsumed);
     }
 
+    // Returns the feature's geometry object to validate, or null after recording why there is none:
+    // a missing member is an error, while RFC 7946 section 3.2 allows "geometry": null for an
+    // unlocated feature, which is imported without geometry and reported as a warning.
+    private static JsonElement? FindGeometry(JsonElement root, int featureIndex, List<ImportValidationIssue> issues)
+    {
+        if (!root.TryGetProperty("geometry", out var geometryElement))
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature is missing geometry.",
+                featureIndex,
+                "geometry"));
+            return null;
+        }
+
+        if (geometryElement.ValueKind != JsonValueKind.Null)
+        {
+            return geometryElement;
+        }
+
+        issues.Add(ImportValidationIssue.Create(
+            ImportValidationErrorCodes.GeometryMissing,
+            "GeoJSON feature has null geometry; it is imported without geometry.",
+            featureIndex,
+            "geometry",
+            ImportValidationSeverity.Warning));
+        return null;
+    }
+
     private List<ImportValidationIssue> ValidateFeature(JsonElement root, int featureIndex)
     {
         var issues = new List<ImportValidationIssue>(1);
@@ -573,25 +602,8 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!root.TryGetProperty("geometry", out var geometryElement))
+        if (FindGeometry(root, featureIndex, issues) is not { } geometryElement)
         {
-            issues.Add(ImportValidationIssue.Create(
-                ImportValidationErrorCodes.GeometryMissing,
-                "GeoJSON feature is missing geometry.",
-                featureIndex,
-                "geometry"));
-            return issues;
-        }
-
-        if (geometryElement.ValueKind == JsonValueKind.Null)
-        {
-            // RFC 7946 section 3.2 allows an unlocated feature; it is imported without geometry.
-            issues.Add(ImportValidationIssue.Create(
-                ImportValidationErrorCodes.GeometryMissing,
-                "GeoJSON feature has null geometry; it is imported without geometry.",
-                featureIndex,
-                "geometry",
-                ImportValidationSeverity.Warning));
             return issues;
         }
 
