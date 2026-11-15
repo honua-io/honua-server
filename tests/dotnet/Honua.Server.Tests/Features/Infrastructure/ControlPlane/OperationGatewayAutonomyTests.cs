@@ -749,45 +749,51 @@ public sealed class OperationGatewayAutonomyTests
             => throw new InvalidOperationException("The wrong-kind executor must never be invoked.");
     }
 
+    // The gateway requires a durable batch store for finding-driven proposals. This batch table mirrors the
+    // Postgres upsert: an open batch keeps its reserved key, a completed batch takes the new candidate.
     private sealed class MultiProposalStore : IOperationProposalStore, IOperationProposalBatchStore
     {
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Batch> _batches = new(StringComparer.Ordinal);
         private readonly Lock _lock = new();
-        private readonly Dictionary<string, OperationProposalBatchCandidate> _batches = new(StringComparer.Ordinal);
 
         public Task<string> ReserveBatchAsync(OperationProposalBatchCandidate candidate, CancellationToken cancellationToken = default)
         {
             lock (_lock)
             {
-                if (!_batches.TryGetValue(candidate.BatchKey, out var current))
+                if (!_batches.TryGetValue(candidate.BatchKey, out var batch) || batch.Completed)
                 {
-                    _batches[candidate.BatchKey] = current = candidate;
+                    batch = new Batch(candidate.IdempotencyKey, candidate.ProposalId, Completed: false);
                 }
-                return Task.FromResult(current.IdempotencyKey);
+
+                _batches[candidate.BatchKey] = batch with { Completed = false };
+                return Task.FromResult(batch.IdempotencyKey);
             }
         }
 
         public Task RetargetOpenBatchAsync(string previousProposalId, string renewedProposalId, CancellationToken cancellationToken = default)
         {
-            lock (_lock)
-            {
-                foreach (var batch in _batches.Values.Where(batch => batch.ProposalId == previousProposalId).ToArray())
-                {
-                    _batches[batch.BatchKey] = batch with { ProposalId = renewedProposalId };
-                }
-                return Task.CompletedTask;
-            }
+            UpdateOpenBatches(previousProposalId, batch => batch with { ProposalId = renewedProposalId });
+            return Task.CompletedTask;
         }
 
         public Task CompleteOpenBatchAsync(string proposalId, CancellationToken cancellationToken = default)
         {
+            UpdateOpenBatches(proposalId, batch => batch with { Completed = true });
+            return Task.CompletedTask;
+        }
+
+        private void UpdateOpenBatches(string proposalId, Func<Batch, Batch> update)
+        {
             lock (_lock)
             {
-                foreach (var batch in _batches.Values.Where(batch => batch.ProposalId == proposalId).ToArray())
+                foreach (var (key, batch) in _batches.ToList())
                 {
-                    _batches.Remove(batch.BatchKey);
+                    if (!batch.Completed && string.Equals(batch.ProposalId, proposalId, StringComparison.Ordinal))
+                    {
+                        _batches[key] = update(batch);
+                    }
                 }
-                return Task.CompletedTask;
             }
         }
 
@@ -871,5 +877,7 @@ public sealed class OperationGatewayAutonomyTests
             string ownerId,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        private sealed record Batch(string IdempotencyKey, string ProposalId, bool Completed);
     }
 }
