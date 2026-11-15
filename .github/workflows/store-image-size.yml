@@ -30,15 +30,15 @@ permissions:
   packages: read
 
 concurrency:
-  group: store-image-size-${{ github.event.pull_request.number || github.run_id }}
+  group: store-image-size-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   measure:
     name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 120
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-24.04' }}
+    timeout-minutes: 30
     # AOT promotion needs separate full/live parity proof; its old size target must
     # not hold the approved JIT fallback. Evidence is still uploaded on failure.
     continue-on-error: ${{ matrix.compilation == 'aot' }}
@@ -49,19 +49,28 @@ jobs:
           - profile: postgis
             compilation: jit
             dockerfile: Dockerfile
+            cache_scope: honua-jit-amd64
             baseline: ghcr.io/honua-io/honua-server@sha256:e150fc0b7990cff9e161bfca3a4cf3231f3a8680c0d9622c3eb4ef6633c5278d
           - profile: full
             compilation: jit
             dockerfile: Dockerfile
+            cache_scope: honua-jit-full-amd64
             baseline: ghcr.io/honua-io/honua-server@sha256:e150fc0b7990cff9e161bfca3a4cf3231f3a8680c0d9622c3eb4ef6633c5278d
           - profile: postgis
             compilation: aot
             dockerfile: docker/Dockerfile.aot
+            cache_scope: honua-aot-amd64
             baseline: ghcr.io/honua-io/honua-server@sha256:1320e634c1f3b304043f4423780ab76202136c07c5d4bde26c178c457f3796b5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Keep generated evidence out of COPY . . on every BuildKit solve. In
+      # particular, the OCI export must not cause a second native compilation.
+      - name: Freeze serving build context
+        run: |
+          mkdir -p "$RUNNER_TEMP/store-image-context"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/store-image-context"
       - name: Test measurement and health probe
         run: |
           python3 scripts/ci/test-measure-serving-image.py
@@ -72,8 +81,8 @@ jobs:
       - name: Build serving image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
-          context: .
-          file: ${{ matrix.dockerfile }}
+          context: ${{ runner.temp }}/store-image-context
+          file: ${{ runner.temp }}/store-image-context/${{ matrix.dockerfile }}
           platforms: linux/amd64
           load: true
           tags: honua-store-measure:current
@@ -83,12 +92,17 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-${{ matrix.compilation }}-amd64
+          # Registry cache warms cold jobs; the PR-scoped Actions cache retains
+          # intermediate compiler layers without granting registry write access.
+          cache-from: |
+            type=gha,scope=store-image-${{ matrix.profile }}-${{ matrix.compilation }}
+            type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=store-image-${{ matrix.profile }}-${{ matrix.compilation }},mode=max
       - name: Export compressed image size evidence
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
-          context: .
-          file: ${{ matrix.dockerfile }}
+          context: ${{ runner.temp }}/store-image-context
+          file: ${{ runner.temp }}/store-image-context/${{ matrix.dockerfile }}
           platforms: linux/amd64
           outputs: type=oci,dest=artifacts/image.oci.tar,compression=gzip,force-compression=true
           build-args: |
@@ -100,8 +114,8 @@ jobs:
       - name: Export compiler and restore evidence
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
-          context: .
-          file: ${{ matrix.dockerfile }}
+          context: ${{ runner.temp }}/store-image-context
+          file: ${{ runner.temp }}/store-image-context/${{ matrix.dockerfile }}
           target: store-evidence
           platforms: linux/amd64
           outputs: type=local,dest=artifacts/build-evidence
