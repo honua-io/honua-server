@@ -99,6 +99,43 @@ public sealed partial class DeployWorkflowServiceTests
     }
 
     [UnitTest]
+    public async Task Reconciler_CompletionAdmissionRefused_PersistsHealthyTelemetryReset()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.ObserveAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation { Status = WorkflowOperationStatus.Reconciling });
+        backend.CompleteProtectionAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling,
+            parameters: new Dictionary<string, string> { [DeployTelemetrySignalEvaluator.BreachStreakParameterKey] = "1" });
+        operation = operation with { Deploy = operation.Deploy! with { Protection = new DeployProtectionState
+        {
+            Phase = DeployProtectionPhase.Observing,
+            PreviousRevision = "sha256:old", CandidateRevision = "sha256:new",
+            FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            ObservationDeadline = DateTimeOffset.UtcNow.AddSeconds(-1), PolicyDigest = "test"
+        } } };
+        await store.TryCreateAsync(operation);
+        var evaluator = new StubDeployTelemetrySignalEvaluator(new DeployTelemetryDecision
+        {
+            UpdatedDeployParameters = new Dictionary<string, string> { [DeployTelemetrySignalEvaluator.BreachStreakParameterKey] = "0" }
+        });
+
+        await CreateReconciler(store, backend, evaluator).ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        var retained = (await store.GetAsync(operation.OperationId))!;
+        retained.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        retained.CompletedAt.Should().BeNull();
+        retained.Deploy!.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        retained.Deploy.Parameters[DeployTelemetrySignalEvaluator.BreachStreakParameterKey].Should().Be("0");
+        retained.ErrorMessage.Should().Be("Deployment alarms are not OK.");
+        await backend.Received(1).CompleteProtectionAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task PromoteAsync_AdmissionRefusedDuringCanary_PreservesRollback()
     {
         var store = new TestWorkflowOperationStore();

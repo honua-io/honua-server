@@ -8,6 +8,21 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class DeployWorkflowReconciler
 {
+    private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowAsync(
+        WorkflowOperationRecord current,
+        IDeployBackend backend,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ApplyPostActivationProtectionWindowCoreAsync(current, backend, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DeployAdmissionBlockedException ex)
+        {
+            return current with { ErrorMessage = ex.Message, UpdatedAt = DateTimeOffset.UtcNow };
+        }
+    }
+
     internal static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,

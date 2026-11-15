@@ -812,7 +812,7 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowAsync(
+    private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowCoreAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
         CancellationToken cancellationToken)
