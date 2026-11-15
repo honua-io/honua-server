@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security;
 
 namespace Honua.Infrastructure.Services;
 
@@ -69,24 +70,18 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private sealed class BoundedParquetStream(int maxBytes) : FileStream(
-        Path.Join(Path.GetTempPath(), $"honua-parquet-{Guid.NewGuid():N}"), CreateOptions())
+        PrivateTempFile.NewPath("honua-parquet-"), CreateOptions())
     {
+        private const int WriteBufferBytes = 64 * 1024;
+
         private static FileStreamOptions CreateOptions()
-        {
-            var options = new FileStreamOptions
+            => PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
             {
-                Mode = FileMode.CreateNew,
                 Access = FileAccess.ReadWrite,
                 Share = FileShare.None,
-                BufferSize = 64 * 1024,
+                BufferSize = WriteBufferBytes,
                 Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            }
-            return options;
-        }
+            });
 
         public bool LimitExceeded { get; private set; }
 

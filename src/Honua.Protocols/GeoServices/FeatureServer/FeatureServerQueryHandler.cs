@@ -502,6 +502,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     ["f=geojson is not supported for returnCountOnly, returnIdsOnly, or returnExtentOnly queries."]);
             }
 
+            // PBF and GeoParquet return a live stream, so they are not stored as a cached byte payload.
             var canCache = !format.Equals("pbf", StringComparison.OrdinalIgnoreCase) &&
                            !format.Equals("parquet", StringComparison.OrdinalIgnoreCase) &&
                            !ShouldBypassQueryResponseCache(validatedParams) &&
