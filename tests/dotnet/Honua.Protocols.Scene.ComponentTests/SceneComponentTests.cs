@@ -97,16 +97,7 @@ public sealed class SceneComponentTests
             builder.Services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
             builder.Services.Configure<OutputCacheTtlOptions>(_ => { });
             OutputCachingRegistration.ConfigureOutputCaching(builder.Services, builder.Configuration);
-            // The supported production disabled licensing mode, without test entitlements.
-            builder.Services.AddSingleton<DisabledLicenseService>();
-            builder.Services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
-            builder.Services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
-            builder.Services.AddApiKeyAuthentication(builder.Configuration);
-            builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
-            {
-                options.EnvironmentName = "Production";
-                options.AdminPassword = "Component-Scene-Only-8!Yq";
-            });
+            AddProductionLicensingAndAuthentication(builder.Services, builder.Configuration);
         }, app =>
         {
             app.UseGlobalExceptionHandling();
@@ -115,20 +106,7 @@ public sealed class SceneComponentTests
             {
                 app.UseResponseCompression();
             }
-            app.Use(static (context, next) =>
-            {
-                context.Response.OnStarting(static state =>
-                {
-                    var response = ((HttpContext)state).Response;
-                    if (response.Headers.ContainsKey("Age"))
-                    {
-                        response.Headers[OutputCacheHitHeader] = "1";
-                    }
-
-                    return Task.CompletedTask;
-                }, context);
-                return next(context);
-            });
+            MarkOutputCacheHits(app);
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices),
@@ -136,6 +114,36 @@ public sealed class SceneComponentTests
             app.MapSceneEndpoints();
         });
     }
+
+    // The supported production disabled licensing mode, without test entitlements.
+    private static void AddProductionLicensingAndAuthentication(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton<DisabledLicenseService>();
+        services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
+        services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
+        services.AddApiKeyAuthentication(configuration);
+        services.Configure<ApiKeyAuthenticationOptions>(options =>
+        {
+            options.EnvironmentName = "Production";
+            options.AdminPassword = "Component-Scene-Only-8!Yq";
+        });
+    }
+
+    private static void MarkOutputCacheHits(IApplicationBuilder app)
+        => app.Use(static (context, next) =>
+        {
+            context.Response.OnStarting(static state =>
+            {
+                var response = ((HttpContext)state).Response;
+                if (response.Headers.ContainsKey("Age"))
+                {
+                    response.Headers[OutputCacheHitHeader] = "1";
+                }
+
+                return Task.CompletedTask;
+            }, context);
+            return next(context);
+        });
 
     private static string FindFixture()
     {
