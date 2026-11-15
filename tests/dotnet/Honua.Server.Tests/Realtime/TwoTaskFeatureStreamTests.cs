@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Tests.Infrastructure.Telemetry;
