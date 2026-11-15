@@ -1,5 +1,7 @@
 # CI Gate Model
 
+A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
