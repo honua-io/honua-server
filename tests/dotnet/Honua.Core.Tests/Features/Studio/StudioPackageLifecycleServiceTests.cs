@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-public sealed class StudioPackageLifecycleServiceTests
+public sealed partial class StudioPackageLifecycleServiceTests
 {
     [UnitTest]
     public async Task CreateDraft_ConcurrentOwners_CannotAttachToAnotherOwnersItem()
@@ -1230,6 +1230,12 @@ public sealed class StudioPackageLifecycleServiceTests
             await MaybeBlockAsync(nameof(GetDraftAsync)).ConfigureAwait(false);
             return null;
         }
+
+        public Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default)
+            => Task.FromResult<StudioDraftRevision?>(null);
+
+        public Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioDraftRevisionSummary>>([]);
 
         public Task<StudioPackageDraft?> UpdateDraftAsync(
             StudioPackageDraft draft,
