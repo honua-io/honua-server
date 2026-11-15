@@ -94,24 +94,24 @@ class ShellServerOwnershipTests(unittest.TestCase):
                 pass
             process.wait(timeout=3)
 
-    def run_scale_launcher(self, owned):
+    def run_scale_launcher(self, published_port):
         script = self.root / "scale-launcher.sh"
         script.write_text(f'exec bash "{ROOT}/scripts/scale/scale-test.sh" --test basic\n')
         environment = {"CI": "true", "HONUA_ADMIN_PASSWORD": "fixture-admin-key",
                        "OWNERSHIP_FAKE_CONTAINER_PID": "1", "HONUA_SCALE_TEST_READY_SECONDS": "0.25",
                        "HONUA_SCALE_TEST_HTTP_PORT": str(self.foreign.server_port)}
-        if owned:
-            environment["OWNERSHIP_FAKE_HTTP_PORT"] = str(self.foreign.server_port)
+        if published_port is not None:
+            environment["OWNERSHIP_FAKE_HTTP_PORT"] = str(published_port)
         with patch.dict(os.environ, environment):
             return self.run_harness(script)
 
     def test_scale_launcher_rejects_a_foreign_healthy_listener(self):
-        code, output = self.run_scale_launcher(False)
+        code, output = self.run_scale_launcher(None)
         self.assertNotEqual(code, 0, output)
         self.assertIn("owned listener", output)
 
     def test_scale_launcher_accepts_its_container_published_listener(self):
-        code, output = self.run_scale_launcher(True)
+        code, output = self.run_scale_launcher(self.foreign.server_port)
         self.assertEqual(code, 0, output)
         self.assertIn("Scale-out testing completed", output)
 
@@ -119,7 +119,7 @@ class ShellServerOwnershipTests(unittest.TestCase):
         for containers in ("", "first\nsecond"):
             with self.subTest(containers=containers), patch.dict(
                     os.environ, {"OWNERSHIP_FAKE_NGINX_CONTAINERS": containers}):
-                code, output = self.run_scale_launcher(True)
+                code, output = self.run_scale_launcher(self.foreign.server_port)
                 self.assertNotEqual(code, 0, output)
                 self.assertIn("Expected exactly one", output)
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
 honua_wait_scale_test() {
-    local container
+    local container newline
     container="$(docker compose -f "$1" ps -q nginx)" || return
-    if [[ -z "$container" || "$container" == *$'\n'* ]]; then
+    newline='
+'
+    if [[ -z "$container" || "$container" == *"$newline"* ]]; then
         echo "Expected exactly one scale-test nginx container" >&2
         return 1
     fi

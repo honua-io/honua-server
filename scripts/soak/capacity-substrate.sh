@@ -19,7 +19,9 @@ case "${1:-}" in
     mv "$prepared.tmp" "$prepared"
     docker compose --project-name "$project" -f "$prepared" up -d
     container="$(docker compose --project-name "$project" -f "$prepared" ps -q honua)"
-    if [[ -z "$container" || "$container" == *$'\n'* ]]; then
+    newline='
+'
+    if [[ -z "$container" || "$container" == *"$newline"* ]]; then
       echo "::error::Expected exactly one capacity candidate container" >&2
       exit 1
     fi
