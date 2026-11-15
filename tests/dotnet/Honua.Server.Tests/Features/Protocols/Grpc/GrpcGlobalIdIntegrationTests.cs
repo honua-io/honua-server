@@ -38,6 +38,7 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
             Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with { GlobalIdField = GlobalIdField },
             SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = GlobalIdField, Type = MetadataV2FieldType.Uuid, Nullable = true }],
         });
+        await ProvisionGlobalIdIndexAsync(GlobalIdField);
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
         {
             HttpHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler())
@@ -126,6 +127,7 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
             Editing = resource.Editing! with { GlobalIdField = customGlobalIdField },
             SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = customGlobalIdField, Type = MetadataV2FieldType.Uuid, Nullable = true }]
         });
+        await ProvisionGlobalIdIndexAsync(customGlobalIdField);
         var globalId = await AddAsync();
         var objectId = (await QueryAsync(globalId, "name")).Features.Should().ContainSingle().Subject.Id;
         var update = new Proto.ApplyEditsRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
@@ -208,6 +210,23 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
         feature.GlobalId.Should().Be(globalId);
         feature.Attributes.Should().ContainKey("name").And.NotContainKey(GlobalIdField);
         (await stream.ResponseStream.MoveNext(CancellationToken.None)).Should().BeFalse();
+    }
+
+    private async Task ProvisionGlobalIdIndexAsync(string field)
+    {
+        // The fixture mutates an in-memory graph, bypassing the production metadata
+        // store that provisions this index when a GlobalID declaration is activated.
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT format('CREATE UNIQUE INDEX %I ON features (((NULLIF(attributes ->> %L, %L))::uuid)) WHERE layer_id = %s',
+                'idx_features_gid_' || md5(@layer::text || ':' || @field), @field, '', @layer)
+            """;
+        command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("field", field);
+        command.CommandText = (string)(await command.ExecuteScalarAsync())!;
+        command.Parameters.Clear();
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task<string> AddAsync(Proto.AttributeValue? createdDate = null)
