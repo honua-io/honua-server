@@ -401,13 +401,16 @@ class AffectedShardVerdictTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             receipt = root / "artifacts" / "server-shard-verdict.json"
+            timings = root / "missing-timings"
+            summary = root / "summary.md"
             self.assertFalse(receipt.parent.exists())
+            self.assertFalse(timings.exists())
             completed = subprocess.run(
                 [
                     sys.executable,
                     str(ROOT / "scripts/ci/affected-shard-verdict.py"),
                     "--timings",
-                    str(root / "missing-timings"),
+                    str(timings),
                     "--receipt",
                     str(receipt),
                 ],
@@ -423,6 +426,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
                     "SELECT_COUNT": "2",
                     "SELECT_MATRIX": json.dumps([{"shard_name": "Core"}, {"shard_name": "WFS"}]),
                     "SHARDS_RESULT": "cancelled",
+                    "GITHUB_STEP_SUMMARY": str(summary),
                 },
             )
             self.assertEqual(completed.returncode, 1, completed.stderr)
@@ -435,6 +439,8 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertEqual(body["verdict"], "no_receipts")
             self.assertFalse(body["test_pass"])
             self.assertEqual(body["check_exit"], 1)
+            self.assertFalse(timings.exists())
+            self.assertIn("no_receipts", summary.read_text(encoding="utf-8"))
 
     def test_cli_writes_the_report_mode_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
