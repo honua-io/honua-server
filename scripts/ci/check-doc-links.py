@@ -22,7 +22,7 @@ companion test:
   scroll for the mixed-case spelling, so a link that reads as working but is not
   should fail the gate.
 
-Three checks run, in order:
+Four checks run, in order:
 
 1.  **Relative links** across `docs/**/*.md`. For every Markdown link
     `[text](target)` whose target is relative (external `http(s)`/`mailto`, the
@@ -52,6 +52,14 @@ Three checks run, in order:
     phase-A URL that the manifest does not list is an error. This is what keeps
     check 2 honest as new references are added.
 
+4.  **Reachability.** Every tracked `docs/**/*.md` page is linked from another
+    Markdown file or named by path or file name in another file, counting only
+    files whose edits start this gate (`NAME_SOURCES`), so a PR
+    that never runs the gate cannot strand a page. A page whose name carries a
+    date fails unless the rot allowlist's `datedNames` lists it; a listed page
+    that is absent fails, and the required `totals.datedNames` pins the count,
+    so any growth is an explicit, reviewed edit. `--skip-reachability` skips this check outside a git checkout.
+
 An entry may carry `"pendingPr": <number>` for a heading that exists only on an
 open pull request. It degrades to a warning until that branch lands, so trunk
 stays green today. Once the heading appears the marker is an ERROR until it is
@@ -65,9 +73,11 @@ Usage:
 Exit code 0 = every checked link, anchor and manifest reference resolves.
 """
 import argparse
+import fnmatch
 import json
 import os
 import re
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -98,6 +108,10 @@ RUNTIME_DOCS_URL_RE = re.compile(
     r"https://(?:docs\.honua\.io/|honua\.io/docs/)[^\s\"'`<>)\\]*")
 # Trailing punctuation that belongs to the surrounding prose or code, not the URL.
 URL_TRAILING_TRIM = ".,;:!?"
+# Files whose edits start the Docs Link Gate; only their links and names keep a page reachable.
+NAME_SOURCES = ("README.md", "docs/*.md", "docs/llms.txt", "docs/okf/*", "skills/*")
+DATED_NAME_RE = re.compile(
+    r"(?<!\d)20\d{2}(?:-?(?:0[1-9]|1[0-2])(?:-?(?:0[1-9]|[12]\d|3[01]))?|-Q[1-4])(?!\d)")
 
 
 def slugify(text):
@@ -425,6 +439,83 @@ def _relative_links(docs_root, repo_root, allowlist_entries, present):
     return report.checked, report.errors, report.warnings
 
 
+def tracked_files(repo_root):
+    listed = subprocess.run(["git", "ls-files", "-z"], cwd=repo_root, capture_output=True)
+    if listed.returncode:
+        raise SystemExit(f"error: reachability needs a git checkout at {repo_root}; pass --skip-reachability")
+    return [path for path in listed.stdout.decode().split("\0") if path]
+
+
+def markdown_link_targets(repo_root, files):
+    """Repository paths that one of the given Markdown files links to, other than itself."""
+    reached = set()
+    for source in (path for path in files if path.endswith(".md")):
+        full = os.path.join(repo_root, source)
+        if not os.path.isfile(full):
+            continue
+        with open(full, "r", encoding="utf-8", errors="replace") as fh:
+            targets = link_targets(fh.read())
+        for target in targets:
+            path_part = target.partition("#")[0].split("?", 1)[0]
+            if not path_part or target.startswith(SKIP_PREFIXES):
+                continue
+            resolved = resolve_repo_path(os.path.dirname(full), path_part, repo_root)
+            if os.path.isdir(resolved):
+                resolved = os.path.join(resolved, "README.md")
+            if resolved != os.path.normpath(full):
+                reached.add(rel(resolved, repo_root))
+    return reached
+
+
+def named_elsewhere(repo_root, files, pages, docs_prefix):
+    """Pages whose path or file name appears in another of the given files."""
+    texts = []
+    for path in files:
+        full = os.path.join(repo_root, path)
+        if os.path.isfile(full):
+            with open(full, "r", encoding="utf-8", errors="ignore") as fh:
+                texts.append((path, fh.read()))
+    named = set()
+    for page in pages:
+        name = os.path.basename(page)
+        forms = [page, page.removeprefix(docs_prefix)] + ([name] if name not in ("README.md", "index.md") else [])
+        pattern = re.compile("|".join(r"(?<![\w./-])" + re.escape(form) for form in forms))
+        if any(path != page and pattern.search(text) for path, text in texts):
+            named.add(page)
+    return named
+
+
+def check_reachability(docs_root, repo_root, dated_debt):
+    """Every docs page is linked or named by another file the gate watches; no new dated names."""
+    files = tracked_files(repo_root)
+    docs_prefix = rel(docs_root, repo_root) + "/"
+    pages = {path for path in files if path.startswith(docs_prefix) and path.endswith(".md")}
+    watched = [path for path in files if any(fnmatch.fnmatchcase(path, pattern) for pattern in NAME_SOURCES)]
+    unreached = pages - markdown_link_targets(repo_root, watched) - {docs_prefix + "README.md", docs_prefix + "SUMMARY.md"}
+    unreached -= named_elsewhere(repo_root, watched, unreached, docs_prefix)
+    errors = [f"{page} is linked from no page and named by no file the Docs Link Gate watches (NAME_SOURCES): link it from an index or delete it"
+              for page in sorted(unreached)]
+    for page in sorted(pages):
+        if DATED_NAME_RE.search(os.path.basename(page)) and page not in dated_debt:
+            errors.append(f"{page} has a date in its name: dated snapshots belong in issues, releases or artifacts/")
+    errors += [f"allowlist datedNames entry {page} is gone: remove it; this list only shrinks"
+               for page in sorted(dated_debt - pages)]
+    return len(pages), errors
+
+
+def run_reachability(docs_root, repo_root, allowlist_path):
+    """Check 4 with the allowlist's dated-name debt and its pinned count."""
+    allowlist = load_json(allowlist_path, "documentation link rot allowlist")
+    dated_debt = set(allowlist.get("datedNames", []))
+    page_count, errors = check_reachability(docs_root, repo_root, dated_debt)
+    declared = allowlist.get("totals", {}).get("datedNames", 0)
+    if declared != len(dated_debt):
+        errors.append(f"rot allowlist totals.datedNames says {declared} but datedNames lists {len(dated_debt)}")
+    print(f"Reachability: {page_count} tracked pages under {rel(docs_root, repo_root)}/ "
+          f"are linked or named, with {len(dated_debt)} dated names on the shrinking list.")
+    return errors
+
+
 def check_manifest(manifest, repo_root, docs_root, redirects):
     """Verify every code-referenced docs URL maps to a real file and heading."""
     errors = []
@@ -537,6 +628,8 @@ def main(argv):
                         help="skip the docs/**/*.md relative-link sweep")
     parser.add_argument("--skip-manifest", action="store_true",
                         help="skip the code-referenced-anchor manifest checks")
+    parser.add_argument("--skip-reachability", action="store_true",
+                        help="skip the unlinked-page and dated-name checks (needs a git checkout)")
     args = parser.parse_args(argv)
 
     repo_root = os.path.abspath(args.repo_root)
@@ -588,6 +681,9 @@ def main(argv):
               f"against {rel(docs_root, repo_root)}/ "
               f"({len(redirects)} .gitbook.yaml redirects known, "
               f"{scanned} distinct URLs found in the scanned source roots).")
+
+    if not args.skip_reachability:
+        errors.extend(run_reachability(docs_root, repo_root, allowlist_path))
 
     for note in notes:
         print("NOTE:", note)

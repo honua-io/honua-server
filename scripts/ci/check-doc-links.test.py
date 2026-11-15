@@ -15,6 +15,9 @@ Three layers, none of which touches the network:
   break, a *stale* allowlist entry, a manifest anchor that moved, a URL served
   only through a `.gitbook.yaml` redirect, a `pendingPr` entry before and after
   its branch lands, and an unregistered URL found by the completeness scan.
+* **Reachability** in temporary git repositories: a page that nothing links to or
+  names fails, and a page name carrying a date fails unless it is on the
+  shrinking debt list.
 * **The live repository**, which asserts the gate is currently green and that
   the shipped `runbook_url` annotations really do resolve, so a later docs edit
   that moves one of those headings fails here as well as in CI.
@@ -26,6 +29,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import subprocess
 import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -57,11 +61,17 @@ def write(root: Path, relative: str, payload: str) -> None:
     path.write_text(payload, encoding="utf-8")
 
 
-def run(root: Path, *extra: str) -> tuple[int, str, str]:
+def run(root: Path, *extra: str, reachability: bool = False) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
+    flags = [] if reachability else ["--skip-reachability"]
     with redirect_stdout(out), redirect_stderr(err):
-        code = MODULE.main(["--repo-root", str(root), *extra])
+        code = MODULE.main(["--repo-root", str(root), *flags, *extra])
     return code, out.getvalue(), err.getvalue()
+
+
+def tracked(root: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
 
 
 def new_tree(stack, manifest: dict | None = None, allowlist: dict | None = None) -> Path:
@@ -339,11 +349,76 @@ def test_gitbook_redirects_parse(stack) -> None:
     assert_that(redirects == {"operator/monitoring": "guides/deploy/monitoring.md"}, f"unexpected: {redirects}")
 
 
+def test_unlinked_page_fails_until_linked_or_named(stack) -> None:
+    root = new_tree(stack)
+    write(root, "docs/README.md", "Home.\n")
+    write(root, "docs/internal/orphan.md", "# Orphan\n\nSee [myself](orphan.md#orphan).\n")
+    write(root, "docs/guides/deploy/index.md", "[Monitor](monitoring.md)\n")
+    tracked(root)
+    code, _, err = run(root, "--skip-manifest", reachability=True)
+    assert_that(code == 1, "a page linked from nowhere, even by itself, must fail")
+    assert_that("docs/internal/orphan.md is linked from no page" in err, err)
+    assert_that("docs/guides/deploy/index.md" in err and "monitoring.md is linked" not in err, err)
+    write(root, "docs/README.md", "Home. Mentions my-orphan.md and scripts/orphan.md only.\n")
+    write(root, "scripts/check.py", "PAGE = 'docs/internal/orphan.md'\n")
+    tracked(root)
+    code, _, err = run(root, "--skip-manifest", reachability=True)
+    assert_that("docs/internal/orphan.md is linked" in err, "a longer name or a script reference keeps nothing alive")
+    write(root, "docs/guides/deploy/monitoring.md", "# Monitor\n\nSee internal/orphan.md.\n")
+    write(root, "docs/SUMMARY.md", "- [Deploy](guides/deploy/index.md)\n")
+    tracked(root)
+    code, out, err = run(root, "--skip-manifest", reachability=True)
+    assert_that(code == 0, f"a page named by another docs page or linked from SUMMARY.md is reachable: {err}")
+    assert_that("Reachability:" in out, out)
+
+
+def test_links_from_files_the_gate_ignores_do_not_count(stack) -> None:
+    root = new_tree(stack)
+    write(root, "docs/README.md", "[Monitor](guides/deploy/monitoring.md)\n")
+    write(root, "docs/internal/setup.md", "# Setup\n")
+    write(root, "AGENTS.md", "[Setup](docs/internal/setup.md)\n")
+    write(root, "tests/fixtures/README.md", "See docs/internal/setup.md.\n")
+    tracked(root)
+    code, _, err = run(root, "--skip-manifest", reachability=True)
+    assert_that(code == 1 and "docs/internal/setup.md is linked from no page" in err,
+                f"a page reached only from files outside the gate's paths must fail: {err}")
+
+
+def test_untracked_page_is_not_graded_and_dated_name_fails(stack) -> None:
+    root = new_tree(stack)
+    write(root, "docs/README.md", "[Status](internal/status-2026-11-15.md) [Q](internal/review-2026-Q4.md)\n")
+    write(root, "docs/internal/status-2026-11-15.md", "# Status\n")
+    write(root, "docs/internal/review-2026-Q4.md", "# Review\n")
+    write(root, "docs/guides/deploy/2026.1-capacity.md", "# Capacity\n")
+    tracked(root)
+    write(root, "docs/internal/scratch.md", "# Not tracked\n")
+    code, _, err = run(root, "--skip-manifest", reachability=True)
+    assert_that(code == 1, "a dated page name must fail")
+    assert_that("status-2026-11-15.md has a date in its name" in err, err)
+    assert_that("review-2026-Q4.md has a date in its name" in err, err)
+    assert_that("2026.1-capacity.md has a date" not in err, "a release version is not a date")
+    assert_that("scratch.md" not in err, "untracked files are not pages")
+
+
+def test_dated_name_debt_passes_and_only_shrinks(stack) -> None:
+    root = new_tree(stack, allowlist={"entries": [], "datedNames": [
+        "docs/internal/status-2026-11-15.md", "docs/internal/gone-2026-01-01.md"]})
+    write(root, "docs/README.md", "[Status](internal/status-2026-11-15.md)\n")
+    write(root, "docs/internal/status-2026-11-15.md", "# Status\n")
+    write(root, "docs/guides/deploy/index.md", "[Monitor](monitoring.md)\n")
+    write(root, "docs/SUMMARY.md", "- [Deploy](guides/deploy/index.md)\n")
+    tracked(root)
+    code, _, err = run(root, "--skip-manifest", reachability=True)
+    assert_that(code == 1, "a dated-name entry for a deleted page must fail")
+    assert_that("status-2026-11-15.md has a date" not in err, "a listed dated page passes")
+    assert_that("datedNames entry docs/internal/gone-2026-01-01.md is gone" in err, err)
+
+
 # --- the live repository ---------------------------------------------------
 
 
 def test_live_repository_is_green() -> None:
-    code, out, err = run(REPO_ROOT)
+    code, out, err = run(REPO_ROOT, reachability=True)
     assert_that(code == 0, f"the live documentation link/anchor gate must be green:\n{err}")
     assert_that("gate passed" in out, out)
 
