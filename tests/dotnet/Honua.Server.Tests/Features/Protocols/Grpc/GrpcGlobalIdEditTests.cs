@@ -152,6 +152,27 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
         AssertNothingRead();
     }
 
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ExactValueSchemaMismatch_InLaterRow_RejectsEntireCallBeforeWriting(bool rollbackOnFailure)
+    {
+        UseLayer(ResourceWith(new MetadataV2Field { Name = "n", Type = MetadataV2FieldType.Decimal, Nullable = true }), capabilities: null);
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = rollbackOnFailure };
+        var valid = new Proto.Feature();
+        valid.Attributes["n"] = new Proto.AttributeValue { DecimalValue = "12345678901234567890.1000" };
+        var wrongWireType = new Proto.Feature();
+        wrongWireType.Attributes["n"] = new Proto.AttributeValue { StringValue = "1.50" };
+        request.Adds.Add(valid);
+        request.Adds.Add(wrongWireType);
+
+        var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        AssertNothingRead();
+    }
+
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task DeleteByGlobalId_WithoutDeleteGrant_IsDeniedBeforeAnyRead()
