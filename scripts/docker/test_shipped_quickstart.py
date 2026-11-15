@@ -150,6 +150,14 @@ class AssertionTests(unittest.TestCase):
                          error.diagnostic)
         self.assertNotIn("private", json.dumps(error.diagnostic))
 
+    def test_build_tooling_failure_emits_only_fixed_labels(self):
+        result = subprocess.CompletedProcess([], 1, "private stdout",
+            "postgres Warning pull access denied for private/image\n"
+            "Compose build requires buildx 0.17 or later; private path")
+        error = proof.CommandFailure(["python3", "quickstart.py"], result)
+        self.assertEqual(["image-pull-denied", "buildx-required"], error.diagnostic["signals"])
+        self.assertNotIn("private", json.dumps(error.diagnostic))
+
     def test_inherited_credentials_and_compose_overrides_are_not_forwarded(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(proof.os.environ, {
                 "GH_TOKEN": "private", "COMPOSE_FILE": "/outside", "HONUA_ADMIN_PASSWORD": "private"}):
