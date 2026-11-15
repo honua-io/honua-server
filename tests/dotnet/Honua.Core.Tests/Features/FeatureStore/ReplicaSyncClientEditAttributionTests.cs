@@ -767,15 +767,16 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
     }
 
-    [UnitTest]
-    public async Task ApplyUpload_ForeignEditAfterTheBatch_DoesNotBecomeTheConflictBaseGeneration()
+    [Theory]
+    [InlineData(60)]
+    [InlineData(90)]
+    public async Task ApplyUpload_WithoutOperationEvidence_KeepsThePreBatchConflictBase(long postBatchGeneration)
     {
-        // The change feed collapses to the latest change per object, so a foreign edit landing between
-        // this batch committing and the change-log probe would be read as the generation our own edit
-        // produced. A staleness check starting after it would then never see it, and a later
-        // keepServer would overwrite the foreign state with the older snapshot.
         var foreignEdit = ServerChange(objectId: 42) with { Generation = 90 };
-        var tracker = new RecordingChangeTracker(foreignEdit) { Generations = new Queue<long>([50L, 60L]) };
+        var tracker = new RecordingChangeTracker(foreignEdit)
+        {
+            Generations = new Queue<long>([50L, postBatchGeneration])
+        };
         var repository = new RecordingConflictRepository();
         var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
 
@@ -787,7 +788,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
         repository.DetectionUpdates.Should().ContainSingle()
             .Which.ResolutionBaseGeneration.Should().Be(
-                60, "the base is clamped to the watermark taken immediately after the batch");
+                50, "a later change and a post-commit watermark cannot identify this operation's generation");
     }
 
     [UnitTest]
