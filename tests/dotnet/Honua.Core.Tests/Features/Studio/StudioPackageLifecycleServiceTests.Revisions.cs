@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Studio;
 
 public sealed partial class StudioPackageLifecycleServiceTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("create-input")]
     [InlineData("create-result")]
     [InlineData("read-result")]
