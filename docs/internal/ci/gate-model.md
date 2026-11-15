@@ -145,12 +145,15 @@ for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Normalization producers and consumers
-cancel superseded work per PR. Draft and metadata-only producer events use
-isolated groups so they cannot cancel eligible generation. A trusted consumer
-admission job resolves the live PR and rejects old-head completions before
-entering the producer-generation concurrency group. Live-head checks and compare-and-swap
-remain required before producing data or mutating a branch.
+review/admission state before acting. Normalization cancels repeated eligible
+producers for the same PR head. Different heads use separate groups so a delayed
+old event cannot cancel current work and then shed without replacement. Draft
+and title/body-edit events use isolated groups because they cannot generate a
+replacement envelope. Trusted consumer admission resolves the live PR, rejects
+stale completions and cancels only older producer generations before per-attempt
+validation. Live-head checks and compare-and-swap remain required before branch
+mutation. Auto-merge eligibility events retain FIFO serialization because each
+event can change merge eligibility.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
 
@@ -373,7 +376,7 @@ carries two independent gate lanes per sampled operation:
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
 
-Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
+Shared OGC capabilities XML tests live in the Wms namespace and run in Maps Supporting. The WMS class/complement partition and its legacy budgets stay unchanged; Supporting also retains catalog metadata and cross-protocol XML source triggers.
 
 ## Verification receipts and batch landing (quality-contract amendment, 2026-09)
 
@@ -809,10 +812,12 @@ receipts. This adds no jobs or runners and changes no required check names or
 unchanged. The quarantine publisher keeps one artifact per shard, the newest
 attempt.
 
-`CapabilitiesMetadataXmlTests` is outside the Wms namespace, so it is not part of
-the OGC Classic Maps class partition. The shard `OGC Classic Capabilities Metadata`
-claims that class alone. Its dispatch rank is an unmeasured 6.0 until a full run
-records it. The WMS children keep the original namespace cut, budgets and paths.
+`CapabilitiesMetadataXmlTests` now lives in the Wms namespace and is covered by
+Maps Supporting. Remove obsolete standalone metadata entries and the stale
+Classic-namespace WMTS clause: they select no tests, and duplicate shard names
+break the budget selector partition. The frozen WMS partition still covers all
+134 methods (61 Core, 73 Supporting), with its original budgets and source
+triggers plus catalog metadata invalidation.
 
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
@@ -831,24 +836,36 @@ complete passing retry evidence, retained alongside the first attempt. Ambiguous
 names in selected failed methods (including passing siblings), or anywhere in the retry,
 are rejected so a passing sibling cannot conceal a missing failure. Duplicate display names
 in unrelated passing methods remain untouched in the merged results. Infrastructure and
-execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
-Cancellation signals the test’s descendants, including those that leave the inherited
-process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
+execution failures remain blocking. Each test command runs in a dedicated process group.
+Cancellation signals that group and its snapshotted descendants, including those that leave
+the group. Signal handlers record cancellation; cleanup runs outside the active child wait
+so it cannot reenter the subprocess wait lock. The supervisor checks cancellation at most
+every 0.1 seconds. Process discovery has a 0.2-second deadline, with group cleanup preserved
+on discovery failure, followed by at most half a second before SIGKILL. Group escalation also reaches
+children forked after the snapshot. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
 
 The publisher has issue-write permission only on trusted default-branch code, reached by
-same-repository successful/failed `workflow_run` completions, a twice-hourly recovery
-schedule, or default-branch manual dispatch. Checkout is pinned to the default branch;
+a twice-hourly schedule or default-branch manual dispatch. Completion events do not
+start full-history scans: at the measured 159 listing requests per sweep, two scheduled
+sweeps consume 318 history requests per hour before bounded artifact inspections. Checkout is pinned to the default branch;
 checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
 evidence and hashes, and never executes downloaded data or checks out the triggering branch.
-Job-level concurrency filters cancelled and fork completions before admission, serializes
-issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
-Each sweep discovers all retained evidence artifacts, including reruns of old source runs,
-selects each shard's highest attempt, and processes at most 25 completed source runs.
-Remaining artifacts stay discoverable for the next event or scheduled sweep.
+Job-level concurrency serializes issue writes and replaces pending sweeps. Source
+provenance and completion filters remain enforced during discovery.
+Each sweep lists the bounded histories of CI and PR Gate, selects completed trusted runs
+updated since the checkpoint, and reads artifacts per source run. It never lists the
+repository-wide artifact collection. Full creation-ordered histories preserve discovery
+of recent reruns of old source runs. The sweep selects each shard's highest attempt and
+inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
+run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+Source completion and attempt identity are rechecked after artifact discovery; a racing
+rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
+never passes the oldest deferred run, including runs with equal timestamps. Remaining
+evidence stays discoverable for the next scheduled or manual sweep.
 
 Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
 upload replays from the previous successful checkpoint. Successful skipped jobs are ignored
@@ -859,8 +876,8 @@ legacy backfill from reopening expired/closed issues. Missing new
 checkpoints, unsafe archives, excessive inventory and untrusted sources fail closed.
 Migration reconciles every retained artifact rather than treating one successful legacy
 event as a global watermark; first installation
-backfills 14 days. The checkpoint retains processed IDs while artifacts remain available,
-and expires after 90 days. Recovery therefore requires source evidence still retained by
+backfills 14 days. The checkpoint retains processed IDs from source runs inspected
+in the current sweep and expires after 90 days. Recovery therefore requires source evidence still retained by
 GitHub. The existing 25-method cap, 14-day expiry, proof validation and required gates remain
 unchanged. This adds no PR-time jobs or runners; recovery uses one publisher job per sweep.
 
