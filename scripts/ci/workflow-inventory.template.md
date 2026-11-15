@@ -165,9 +165,15 @@ Existing release cancellation policy is retained.
 ## Neutral automation helpers
 
 Derived Artifact Normalization (`Generate bounded normalization projections`,
-`Produce data-only normalization envelope`) retains `cancel-in-progress: false`
-and `queue: max`. Superseded normalization subjects skip production and consumer
-mutation. Review helpers instead cancel superseded events; their replacement
+`Produce data-only normalization envelope`) cancels repeated pull-request
+runs for the same head. Different heads use separate groups so delayed old-head
+events cannot cancel current work and then shed without replacement. Draft and
+title/body-edit events also stay separate because they cannot generate a
+replacement envelope. The consumer still
+accepts only a successful envelope for its head SHA. A run that started before the newer push skips production
+when it observes the subject is no longer current. Auto-merge keeps
+`cancel-in-progress: false` and `queue: max` so live eligibility is applied in
+event order. Review helpers instead cancel superseded events; their replacement
 re-reads live review evidence and admission state. Closed/draft review subjects
 finish neutrally before publication. Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status

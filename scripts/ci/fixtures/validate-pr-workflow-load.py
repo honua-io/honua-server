@@ -91,11 +91,41 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                if name == "auto-merge-ready.yml":
+                    # Live eligibility is applied in event order. Cancelling an
+                    # in-flight enable can let that mutation land after a newer
+                    # hold or draft event has been shed.
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
+                elif name == "normalize-derived-artifacts.yml":
+                    self.assertEqual(cancellation, "true")
+                    self.assertNotIn("queue", concurrency)
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+
+    def test_non_generating_normalization_events_cannot_cancel_producer(self):
+        producer = workflow("normalize-derived-artifacts.yml")
+        group = producer["concurrency"]["group"]
+
+        def admission(action, **subject):
+            event = {"event_name": "pull_request", "event": {
+                "action": action, "pull_request": {"number": subject.get("number", 7639),
+                    "draft": subject.get("draft", False), "head": {"sha": subject.get("head", "head-b")}},
+                "changes": {"base": {"ref": {"from": subject.get("base_from")}}},
+            }}
+            return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
+
+        ready = admission("ready_for_review")
+        for action in ("opened", "synchronize", "converted_to_draft", "edited"):
+            self.assertNotEqual(admission(action, draft=True), ready, action)
+        # A title/body edit during generation supplies no replacement envelope.
+        self.assertNotEqual(admission("edited"), ready)
+        self.assertEqual(admission("edited", base_from="old-base"), ready)
+        self.assertEqual(admission("synchronize"), ready)
+        self.assertNotEqual(admission("synchronize", number=7640), ready)
+        # A delayed event for A must not cancel B and then shed as stale.
+        for action in ("opened", "reopened", "synchronize", "ready_for_review", "edited"):
+            self.assertNotEqual(admission(action, head="head-a", base_from="old-base"), ready, action)
 
     def test_stale_draft_events_cannot_cancel_ready_gate(self):
         gate = workflow("pr-gate.yml")
