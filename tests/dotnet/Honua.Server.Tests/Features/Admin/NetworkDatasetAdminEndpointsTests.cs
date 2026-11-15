@@ -21,7 +21,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
+public class NetworkDatasetAdminEndpointsTests
+    : IClassFixture<NetworkDatasetAdminEndpointsTests.SharedApplication>, IAsyncLifetime
 {
     private const string AdminPassword = "netds-admin-key";
 
@@ -34,9 +35,18 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public NetworkDatasetAdminEndpointsTests()
+    public NetworkDatasetAdminEndpointsTests(SharedApplication application)
     {
-        _fixture = new WebAppFixture()
+        _fixture = application.Fixture;
+    }
+
+    /// <summary>
+    /// One application and schema per class: every case registers datasets under its own
+    /// random id and asserts only on those rows, so a host per case bought no isolation.
+    /// </summary>
+    public sealed class SharedApplication : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -44,15 +54,23 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
 
     private static string NewId(string suffix) =>
         $"nd-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
