@@ -49,33 +49,31 @@ internal sealed class PostgresOpsIncidentObservationStore : IOpsIncidentObservat
 
     public async Task<OpsIncidentObservationPage> ReadAsync(OpsIncidentObservationQuery query, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(query);
-        ValidateIdentity(query.AuthorityScope);
-        if (query.Limit is < 1 or > 1000)
-        {
-            throw new ArgumentOutOfRangeException(nameof(query), "Observation limit must be between 1 and 1000.");
-        }
+        ValidateQuery(query);
         await using var connection = await _connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand($"""
-            SELECT {Columns} FROM {_table}
+            SELECT {Columns}, COUNT(*) OVER () FROM {_table}
             WHERE authority_scope = @authority AND observed_at >= @since
+                AND (@finding IS NULL OR finding_id = @finding)
             ORDER BY observed_at DESC, source_id, observation_id LIMIT @limit;
             """, connection);
         command.Parameters.AddWithValue("authority", NpgsqlDbType.Text, query.AuthorityScope);
         command.Parameters.AddWithValue("since", NpgsqlDbType.TimestampTz, query.Since.ToUniversalTime());
-        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit + 1);
+        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit);
+        command.Parameters.AddWithValue("finding", NpgsqlDbType.Text, (object?)query.FindingId ?? DBNull.Value);
         var observations = new List<OpsIncidentObservation>();
+        long totalCount = 0;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             observations.Add(ReadObservation(reader));
+            totalCount = reader.GetInt64(7);
         }
-        var truncated = observations.Count > query.Limit;
-        if (truncated)
+        return new OpsIncidentObservationPage(observations)
         {
-            observations.RemoveAt(observations.Count - 1);
-        }
-        return new OpsIncidentObservationPage(observations) { Truncated = truncated };
+            Truncated = totalCount > observations.Count,
+            TotalCount = totalCount
+        };
     }
 
     private static OpsIncidentObservation ReadObservation(NpgsqlDataReader reader) => new()
@@ -88,6 +86,20 @@ internal sealed class PostgresOpsIncidentObservationStore : IOpsIncidentObservat
         State = (OpsIncidentObservationState)reader.GetInt32(5),
         EvidenceJson = reader.GetString(6)
     };
+
+    private static void ValidateQuery(OpsIncidentObservationQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ValidateIdentity(query.AuthorityScope);
+        if (query.FindingId is not null)
+        {
+            ValidateIdentity(query.FindingId);
+        }
+        if (query.Limit is < 1 or > 1000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(query), "Observation limit must be between 1 and 1000.");
+        }
+    }
 
     private static void ValidateObservation(OpsIncidentObservation observation)
     {

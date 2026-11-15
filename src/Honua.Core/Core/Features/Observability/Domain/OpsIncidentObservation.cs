@@ -24,9 +24,13 @@ public sealed record OpsIncidentObservation
 public sealed record OpsIncidentObservationQuery(
     string AuthorityScope,
     DateTimeOffset Since,
-    int Limit = 100);
+    int Limit = 100)
+{
+    public string? FindingId { get; init; }
+}
 
 public sealed record OpsIncidentObservationPage(IReadOnlyList<OpsIncidentObservation> Observations)
 {
     public bool Truncated { get; init; }
+    public long TotalCount { get; init; }
 }

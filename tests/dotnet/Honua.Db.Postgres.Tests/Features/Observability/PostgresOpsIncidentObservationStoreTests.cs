@@ -68,6 +68,47 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
     }
 
     [IntegrationTest]
+    public async Task ReadAsync_TruncatedHistory_ReportsFullScopedCount()
+    {
+        await WithStoreAsync(async store =>
+        {
+            var original = Observation("authority-a", "one");
+            await store.AppendAsync(original);
+            await store.AppendAsync(original with { ObservationId = "two", State = OpsIncidentObservationState.Unknown });
+            await store.AppendAsync(original with { ObservationId = "three", State = OpsIncidentObservationState.Recovered });
+            await store.AppendAsync(original with { AuthorityScope = "authority-b", ObservationId = "four" });
+            var page = await store.ReadAsync(new("authority-a", DateTimeOffset.UnixEpoch, 1));
+            page.Observations.Should().ContainSingle();
+            page.TotalCount.Should().Be(3);
+            page.Truncated.Should().BeTrue();
+            var missing = await store.ReadAsync(new("authority-c", DateTimeOffset.UnixEpoch));
+            missing.TotalCount.Should().Be(0);
+            missing.Truncated.Should().BeFalse();
+        });
+    }
+
+    [IntegrationTest]
+    public async Task ReadAsync_FindingAndTimeWindow_CountsOnlyMatchingEvidence()
+    {
+        await WithStoreAsync(async store =>
+        {
+            var original = Observation("authority-a", "one");
+            await store.AppendAsync(original);
+            await store.AppendAsync(original with { ObservationId = "two", ObservedAt = original.ObservedAt.AddSeconds(1) });
+            await store.AppendAsync(original with { ObservationId = "three", FindingId = "finding-two" });
+            var finding = await store.ReadAsync(new("authority-a", DateTimeOffset.UnixEpoch, 1) { FindingId = "finding-one" });
+            finding.TotalCount.Should().Be(2);
+            finding.Observations.Should().OnlyContain(item => item.FindingId == "finding-one");
+            var recent = await store.ReadAsync(new("authority-a", original.ObservedAt.AddMilliseconds(1), 1) { FindingId = "finding-one" });
+            recent.TotalCount.Should().Be(1);
+            recent.Truncated.Should().BeFalse();
+            var absent = await store.ReadAsync(new("authority-a", DateTimeOffset.UnixEpoch) { FindingId = "absent" });
+            absent.TotalCount.Should().Be(0);
+            absent.Observations.Should().BeEmpty();
+        });
+    }
+
+    [IntegrationTest]
     public async Task AppendAsync_RecoveryAndUnknown_AreRetainedAsSeparateObservations()
     {
         await WithStoreAsync(async store =>
@@ -90,7 +131,9 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
             foreach (var query in new OpsIncidentObservationQuery[]
             {
                 new("", DateTimeOffset.UnixEpoch), new(new string('a', 257), DateTimeOffset.UnixEpoch), new(" ", DateTimeOffset.UnixEpoch),
-                new("authority-a", DateTimeOffset.UnixEpoch, 0), new("authority-a", DateTimeOffset.UnixEpoch, 1001)
+                new("authority-a", DateTimeOffset.UnixEpoch, 0), new("authority-a", DateTimeOffset.UnixEpoch, 1001),
+                new("authority-a", DateTimeOffset.UnixEpoch) { FindingId = " " },
+                new("authority-a", DateTimeOffset.UnixEpoch) { FindingId = new string('é', 129) }
             })
             {
                 Func<Task> read = () => store.ReadAsync(query);
@@ -158,7 +201,7 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
 
     private async Task ApplyMigrationAsync(string schema)
     {
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "169_CreateOpsIncidentObservations.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "169_CreateOpsIncidentObservations.sql"));
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
