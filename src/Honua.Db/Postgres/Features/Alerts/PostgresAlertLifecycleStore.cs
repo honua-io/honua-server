@@ -177,7 +177,7 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             event_id, lifecycle_status, suppressed_until, suppressed_by, note, updated_at)
         SELECT @event_id, @status, @suppressed_until, @suppressed_by, @note, @updated_at
         WHERE EXISTS (
-            SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id AND severity <> 'critical' FOR UPDATE)
+            SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id AND severity <> 'critical' FOR NO KEY UPDATE)
             AND @suppressed_until > @updated_at
             AND @suppressed_until <= @updated_at + INTERVAL '7 days'
         ON CONFLICT (event_id) DO UPDATE SET
@@ -204,7 +204,7 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
         }
 
         await using var query = new NpgsqlCommand(
-            $"SELECT severity FROM {_eventsTable} WHERE event_id = @event_id FOR UPDATE",
+            $"SELECT severity FROM {_eventsTable} WHERE event_id = @event_id FOR NO KEY UPDATE",
             transaction.Connection, transaction);
         query.Parameters.AddWithValue("event_id", command.EventId);
         var severity = await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

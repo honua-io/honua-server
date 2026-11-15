@@ -299,6 +299,10 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifet
             CREATE TABLE IF NOT EXISTS "{_schema}".alert_event_lifecycle (LIKE honua.alert_event_lifecycle INCLUDING ALL);
             CREATE TABLE IF NOT EXISTS "{_schema}".alert_audit_outbox (LIKE honua.alert_audit_outbox INCLUDING ALL);
             CREATE TABLE IF NOT EXISTS "{_schema}".audit_log (LIKE honua.audit_log INCLUDING ALL);
+            ALTER TABLE "{_schema}".alert_event_lifecycle ADD FOREIGN KEY (event_id)
+                REFERENCES "{_schema}".alert_events(event_id) ON DELETE CASCADE;
+            ALTER TABLE "{_schema}".alert_audit_outbox ADD FOREIGN KEY (event_id)
+                REFERENCES "{_schema}".alert_events(event_id) ON DELETE CASCADE;
             """);
 
     private async Task<long> SeedAlertEventAsync()
