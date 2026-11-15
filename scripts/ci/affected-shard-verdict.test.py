@@ -60,6 +60,15 @@ def decide(**overrides):
     return verdict.decide(selection=selection, **fields)
 
 
+def run_cli(timings: Path, receipt: Path, **environment: str) -> subprocess.CompletedProcess[str]:
+    """Run the verdict CLI as the workflow does, with its inputs in the environment."""
+    return subprocess.run(
+        [sys.executable, str(ROOT / "scripts/ci/affected-shard-verdict.py"),
+         "--timings", str(timings), "--receipt", str(receipt)],
+        check=False, capture_output=True, text=True, env={**os.environ, **environment},
+    )
+
+
 def messages(outcome) -> list[str]:
     return [message for _, message in outcome["annotations"]]
 
@@ -405,29 +414,12 @@ class AffectedShardVerdictTests(unittest.TestCase):
             summary = root / "summary.md"
             self.assertFalse(receipt.parent.exists())
             self.assertFalse(timings.exists())
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts/ci/affected-shard-verdict.py"),
-                    "--timings",
-                    str(timings),
-                    "--receipt",
-                    str(receipt),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                env={
-                    **os.environ,
-                    "MODE": "enforce",
-                    "SELECT_RESULT": "success",
-                    "SELECT_SKIP": "false",
-                    "SELECT_REASON": "selected_server_shards",
-                    "SELECT_COUNT": "2",
-                    "SELECT_MATRIX": json.dumps([{"shard_name": "Core"}, {"shard_name": "WFS"}]),
-                    "SHARDS_RESULT": "cancelled",
-                    "GITHUB_STEP_SUMMARY": str(summary),
-                },
+            completed = run_cli(
+                timings, receipt,
+                MODE="enforce", SELECT_RESULT="success", SELECT_SKIP="false",
+                SELECT_REASON="selected_server_shards", SELECT_COUNT="2",
+                SELECT_MATRIX=json.dumps([{"shard_name": "Core"}, {"shard_name": "WFS"}]),
+                SHARDS_RESULT="cancelled", GITHUB_STEP_SUMMARY=str(summary),
             )
             self.assertEqual(completed.returncode, 1, completed.stderr)
             self.assertEqual(completed.stderr, "")
