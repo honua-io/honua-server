@@ -5,17 +5,17 @@ using System.IO.Compression;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
-using Honua.Server.Features.Admin.Jobs;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -117,7 +117,7 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<OpsHealthFlushSignal>();
-        services.AddScoped<IOpsHealthHistoryService, OpsHealthHistoryService>();
+        services.AddScoped<OpsHealthHistoryService>();
         // The sampler reads and writes the Postgres rollup store on an interval. An event-handler
         // Lambda is frozen between invocations and releases its pool when the request ends, so the
         // loop must not resume on the next thaw and hold a connection past that release.

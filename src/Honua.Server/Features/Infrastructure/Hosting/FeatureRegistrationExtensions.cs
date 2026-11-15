@@ -142,6 +142,7 @@ internal static class FeatureRegistrationExtensions
 #endif
 #if !HONUA_EXCLUDE_OGC_CLASSIC
         services.AddWfs20(configuration);
+        Honua.Server.Features.Protocols.Wfs20.WfsStoredQueryStoreRegistration.AddWfsStoredQueryStore(services);
         services.AddWps20(configuration);
         services.AddWcs20();
 #endif

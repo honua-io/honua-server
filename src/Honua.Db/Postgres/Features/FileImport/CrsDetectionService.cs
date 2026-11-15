@@ -220,7 +220,13 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
 
         // 4. Try to match against PostGIS spatial_ref_sys by WKT comparison
-        return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+        var textMatch = await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+        if (textMatch.HasValue || !isProjected)
+            return textMatch;
+
+        // 5. ESRI-dialect projected WKT (State Plane, national grids, Albers and Lambert projections) never
+        //    matches spatial_ref_sys text; compare its projection parameters, unit and datum instead.
+        return await FindSridByProjectedParametersAsync(cleanedContent, cancellationToken);
     }
 
     private static int? TryMatchEsriProjectedName(string wktContent)
@@ -563,6 +569,44 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             // Intentionally generic: any failure querying spatial_ref_sys (connection, timeout,
             // malformed WKT) should fall through to "no match" rather than propagate, so the
             // import can continue down the remaining SRID-detection fallbacks.
+            CrsLog.SridDetectionByWktFailed(_logger, ex);
+            return null;
+        }
+    }
+
+    // Returns the single EPSG projected CRS whose parameters, unit and datum match; none or several is no match.
+    private async Task<int?> FindSridByProjectedParametersAsync(string wktContent, CancellationToken cancellationToken)
+    {
+        // An unknown datum cannot be verified against a candidate, so it is never inferred.
+        var source = ProjectedCrsSignature.TryCreate(wktContent);
+        if (source?.Datum.EpsgCode is not { } datumCode)
+            return null;
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            using var command = new NpgsqlCommand(@"
+                SELECT srid, srtext
+                FROM spatial_ref_sys
+                WHERE auth_name = 'EPSG' AND srtext LIKE 'PROJCS[%' AND srtext LIKE ANY(@patterns)
+                  AND position(@datum IN srtext) > 0
+                LIMIT 20000", connection);
+            command.Parameters.AddWithValue("@patterns", ProjectedCrsSignature.ProjectionPatterns(source.Projection.Family).ToArray());
+            command.Parameters.AddWithValue("@datum", $"AUTHORITY[\"EPSG\",\"{datumCode}\"]");
+            var matches = new HashSet<int>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken) && matches.Count < 2)
+            {
+                var candidate = ProjectedCrsSignature.TryCreate(reader.GetString(1));
+                if (candidate is not null && source.Matches(candidate))
+                    matches.Add(reader.GetInt32(0));
+            }
+
+            return matches.Count == 1 ? matches.Single() : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            // Same contract as the text match: a spatial_ref_sys failure is "no match", and the import then asks
+            // for an explicit source SRID.
             CrsLog.SridDetectionByWktFailed(_logger, ex);
             return null;
         }
