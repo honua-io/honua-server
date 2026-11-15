@@ -196,6 +196,30 @@ class GeneratedFilesContracts(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_pr_operation_join_uses_fresh_canonical_catalog(self):
+        producer = (ROOT / '.github/workflows/normalize-derived-artifacts.yml').read_text()
+        replay = producer.index('- name: Replay generators and stage only reproducible bounded projections')
+        join = producer.index('- name: Validate operation-capability join against canonical projections')
+        upload = producer.index('- name: Upload bounded projection data')
+        self.assertLess(replay, join)
+        self.assertLess(join, upload)
+        checks = producer[join:upload]
+        self.assertIn("steps.live.outputs.superseded != 'true'", checks)
+        self.assertIn("steps.generated-only.outputs.generated_only != 'true'", checks)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.test.py', checks)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.py --check', checks)
+        self.assertNotIn('continue-on-error:', checks)
+        for path in ('src/**', 'docs/gis/data/**', 'docs/developer/api-specs/**',
+                     'scripts/ci/openapi-drift-check.py',
+                     'scripts/ci/generate-operation-capability.py',
+                     'scripts/ci/generate-operation-capability.test.py'):
+            self.assertIn("- '" + path + "'", producer)
+        matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
+        for name in ('Test the operation-capability join', 'Drift check operation-capability.v1.json'):
+            step = matrix.split('- name: ' + name + '\n', 1)[1].split('- name:', 1)[0]
+            self.assertIn("if: github.event_name != 'pull_request'", step)
+            self.assertIn('python3 scripts/ci/generate-operation-capability', step)
+
     def test_pr_generation_is_hard_and_precedes_strict_validators(self):
         action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
         generation = action.index('bash scripts/ci/regenerate-generated-files.sh')

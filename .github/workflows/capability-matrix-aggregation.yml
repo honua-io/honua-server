@@ -107,13 +107,16 @@ jobs:
       # now an artifact, and stale means the join moved without anyone saying so.
       # Proved before it is trusted, like the doc gates: a join that wrongly
       # reports complete is the failure mode that matters.
+      # PR joins run in normalization after canonical catalog regeneration.
       - name: Test the operation-capability join
+        if: github.event_name != 'pull_request'
         run: python3 scripts/ci/generate-operation-capability.test.py
 
       - name: Test the capability-manifest crosswalk
         run: python3 scripts/ci/generate-capability-manifest-crosswalk.test.py
 
       - name: Drift check operation-capability.v1.json
+        if: github.event_name != 'pull_request'
         run: python3 scripts/ci/generate-operation-capability.py --check
 
       # Fails when a manifest id resolves nowhere and nobody adjudicated it,
