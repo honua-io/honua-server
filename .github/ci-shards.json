@@ -2962,6 +2962,7 @@
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
     },
@@ -2982,6 +2983,7 @@
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
     },
