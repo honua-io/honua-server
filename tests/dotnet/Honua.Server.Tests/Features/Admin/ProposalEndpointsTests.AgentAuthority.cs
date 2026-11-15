@@ -62,7 +62,8 @@ public sealed partial class ProposalEndpointsTests
 
     private static AgentAuthorityCeiling NewAuthorityCeiling() => new()
     {
-        TenantId = "public", PrincipalId = $"agent-{Guid.NewGuid():N}",
+        TenantId = "public",
+        PrincipalId = $"agent-{Guid.NewGuid():N}",
         AllowedOperationIds = ["service.publish"],
         MaximumBlastRadius = OperationBlastRadiusClass.ServiceScope,
         MaximumSideEffect = OperationSideEffectClass.CreatesMetadata,

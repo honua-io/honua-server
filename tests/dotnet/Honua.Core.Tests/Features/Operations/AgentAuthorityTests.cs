@@ -178,8 +178,12 @@ public sealed class AgentAuthorityTests
 
     private static OperationDescriptor Descriptor() => new()
     {
-        OperationId = "service.publish", ProviderId = "test", Title = "Publish", Description = "Publish service",
-        Category = "Publishing", ExecutionKind = OperationExecutionKind.Synchronous,
+        OperationId = "service.publish",
+        ProviderId = "test",
+        Title = "Publish",
+        Description = "Publish service",
+        Category = "Publishing",
+        ExecutionKind = OperationExecutionKind.Synchronous,
         ApprovalModel = OperationApprovalModel.OperatorGate,
         Policy = new OperationPolicyMetadata
         {

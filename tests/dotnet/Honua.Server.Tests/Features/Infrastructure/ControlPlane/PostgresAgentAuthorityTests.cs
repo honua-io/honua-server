@@ -49,7 +49,9 @@ public sealed class PostgresAgentAuthorityTests(DatabaseFixtureAdapter database)
 
     private static AgentAuthorityCeiling Ceiling() => new()
     {
-        TenantId = "tenant", PrincipalId = "agent", AllowedOperationIds = ["service.publish"],
+        TenantId = "tenant",
+        PrincipalId = "agent",
+        AllowedOperationIds = ["service.publish"],
         MaximumBlastRadius = OperationBlastRadiusClass.ServiceScope,
         MaximumSideEffect = OperationSideEffectClass.CreatesMetadata
     };

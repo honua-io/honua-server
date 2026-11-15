@@ -59,7 +59,8 @@ public sealed partial class OperationGatewayStateMachineTests
         var ceiling = Substitute.For<IAgentAuthorityStore>();
         ceiling.GetAsync(null, "canonical-agent", Arg.Any<CancellationToken>()).Returns(new AgentAuthorityCeiling
         {
-            PrincipalId = "canonical-agent", AllowedOperationIds = ["control-plane.deploy"],
+            PrincipalId = "canonical-agent",
+            AllowedOperationIds = ["control-plane.deploy"],
             MaximumBlastRadius = OperationBlastRadiusClass.DeploymentScope,
             MaximumSideEffect = OperationSideEffectClass.DestroysState
         });
