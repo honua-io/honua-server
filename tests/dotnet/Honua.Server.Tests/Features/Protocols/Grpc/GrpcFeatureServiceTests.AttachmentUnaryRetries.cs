@@ -35,12 +35,7 @@ public sealed partial class GrpcFeatureServiceTests
             });
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult(session!));
-        var publisher = Substitute.For<IAttachmentUploadPublisher>();
-        publisher.PublishAsync(Arg.Any<AttachmentUploadSession>(), Arg.Any<CancellationToken>())
-            .Returns(Attachment.CreateForUpload(23, 900, 42, "photo.txt", "text/plain", 4, "private/file") with
-            {
-                NativeMetadata = new AttachmentNativeMetadata(Guid.NewGuid(), [], ValidAttachmentUpload().Sha256.ToByteArray())
-            });
+        var publisher = CommittedUnaryAttachmentPublisher();
         using var context = CreateCallContext(null, null, null, services =>
         {
             services.AddSingleton(store);
@@ -60,6 +55,17 @@ public sealed partial class GrpcFeatureServiceTests
         await store.Received(1).GetAsync(new AttachmentUploadSessionKey(session.Request.OwnerId, session.SessionId),
             Arg.Any<CancellationToken>());
         await publisher.Received(1).PublishAsync(session, Arg.Any<CancellationToken>());
+    }
+
+    private static IAttachmentUploadPublisher CommittedUnaryAttachmentPublisher()
+    {
+        var publisher = Substitute.For<IAttachmentUploadPublisher>();
+        publisher.PublishAsync(Arg.Any<AttachmentUploadSession>(), Arg.Any<CancellationToken>())
+            .Returns(Attachment.CreateForUpload(23, 900, 42, "photo.txt", "text/plain", 4, "private/file") with
+            {
+                NativeMetadata = new AttachmentNativeMetadata(Guid.NewGuid(), [], ValidAttachmentUpload().Sha256.ToByteArray())
+            });
+        return publisher;
     }
 
     [UnitTheory]
