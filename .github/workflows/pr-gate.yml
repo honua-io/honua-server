@@ -244,7 +244,7 @@ jobs:
       # the background while setup and the build proceed. Self-hosted runners
       # have no sudo and keep their own free-disk floor.
       - name: Free disk space
-        if: runner.environment == 'github-hosted' && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false' && runner.environment == 'github-hosted'
         run: |
           nohup sudo rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
 

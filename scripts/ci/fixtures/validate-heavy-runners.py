@@ -360,7 +360,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
         steps = self.jobs["fast-tests"]["steps"]
         self.assertEqual(steps[0]["name"], "Use the job's own temp directory")
         cleanup = next(step for step in steps if step.get("name") == "Free disk space")
-        self.assertTrue(cleanup["if"].startswith("runner.environment == 'github-hosted' && "))
+        self.assertTrue(cleanup["if"].endswith(" && runner.environment == 'github-hosted'"))
         self.assertIn("sudo", cleanup["run"])
 
     def test_heavy_proof_flows_through_existing_dependencies(self):
