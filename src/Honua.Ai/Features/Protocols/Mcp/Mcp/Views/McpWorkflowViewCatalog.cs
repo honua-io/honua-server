@@ -259,13 +259,16 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "connect-import",
                 Title = "Connect and import",
-                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB.",
+                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB; "
+                    + "preview a job artifact, then propose its import into fresh server-owned staging for human approval.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
                     McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_preview"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_import"),
                 ],
             },
             new McpWorkflowViewStageDefinition

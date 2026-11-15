@@ -50,15 +50,7 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<PostgresLeaseStore>();
-        services.TryAddSingleton<PostgresCdnPurgeBudget>();
-        services.TryAddSingleton<ICdnPurgeBudget>(provider =>
-            provider.GetService<NpgsqlDataSource>() is not null
-                ? provider.GetRequiredService<PostgresCdnPurgeBudget>()
-                : null!);
-        // A host with no system database runs one node and has no lease store (deliberately null),
-        // so callers that ask with GetService fall back to in-process coordination.
-        services.TryAddSingleton<ILeaseStore>(provider =>
-            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
+        services.AddSharedCacheCoordination();
 
         services.TryAddSingleton(provider => new ControlPlaneStorage(
             provider.GetRequiredService<JobStoreDatabase>(),
@@ -96,6 +88,19 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweeps();
         services.AddRealtimeEventLog(configuration);
         return services;
+    }
+
+    private static void AddSharedCacheCoordination(this IServiceCollection services)
+    {
+        services.TryAddSingleton<PostgresCdnPurgeBudget>();
+        services.TryAddSingleton<ICdnPurgeBudget>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresCdnPurgeBudget>()
+                : null!);
+        // A host with no system database runs one node and has no lease store (deliberately null),
+        // so callers that ask with GetService fall back to in-process coordination.
+        services.TryAddSingleton<ILeaseStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
     }
 
     private static void AddRetentionSweeps(this IServiceCollection services)

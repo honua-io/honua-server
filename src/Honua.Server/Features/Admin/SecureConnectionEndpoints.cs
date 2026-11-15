@@ -278,6 +278,7 @@ internal static partial class SecureConnectionEndpoints
     {
         try
         {
+            await Services.ManagedImportConnection.EnsureAsync(context.RequestServices, context.RequestAborted);
             var connections = await registry.GetActiveConnectionsAsync(context.RequestAborted);
 
             var summaries = connections.Select(c => new SecureConnectionSummary

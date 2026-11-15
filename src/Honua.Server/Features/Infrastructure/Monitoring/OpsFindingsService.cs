@@ -474,15 +474,16 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         string explanation;
         if (deadLettersOverThreshold)
         {
+            var redriveCount = (int)Math.Clamp(backlog.DeadLetteredCount, 1, 500);
             action = new OpsFindingRecommendedAction
             {
                 Kind = OperationClass.AdminConfigChange,
                 ActionDiscriminator = OpsActionNames.RedriveDeadLetters,
-                Summary = $"Redrive {backlog.DeadLetteredCount} dead-lettered alert dispatch row(s) for redelivery.",
-                ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(),
+                Summary = $"Redrive up to {redriveCount} dead-lettered alert dispatch row(s) for redelivery.",
+                ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(redriveCount),
                 Reason = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries.",
-                AutoSafe = true,
-                BlastRadius = backlog.DeadLetteredCount > int.MaxValue ? int.MaxValue : (int)Math.Max(1, backlog.DeadLetteredCount),
+                AutoSafe = false,
+                BlastRadius = redriveCount,
             };
             explanation = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog {backlog.PendingCount}). Redriving re-enqueues them for redelivery; channel-attributed failures also produce a scoped isolation finding whose pause action remains approval-gated.";
         }
