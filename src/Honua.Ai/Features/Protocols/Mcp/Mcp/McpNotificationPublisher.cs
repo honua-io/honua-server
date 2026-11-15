@@ -3,16 +3,17 @@
 
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Core.Features.Realtime;
 
 namespace Honua.Ai.Protocols.Mcp;
 
 public interface IMcpNotificationPublisher
 {
-    bool PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message);
+    ValueTask<bool> PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message);
 
-    int BroadcastToolsListChanged();
+    ValueTask<int> BroadcastToolsListChanged();
 
-    int BroadcastResourcesListChanged();
+    ValueTask<int> BroadcastResourcesListChanged();
 }
 
 internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
@@ -24,15 +25,17 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
     public const string ResourcesListChangedMethod = "notifications/resources/list_changed";
 
     private readonly McpSessionManager _sessions;
+    private readonly IRealtimeFanoutProvider? _provider;
     private readonly ILogger<McpNotificationPublisher> _logger;
 
-    public McpNotificationPublisher(McpSessionManager sessions, ILogger<McpNotificationPublisher> logger)
+    public McpNotificationPublisher(McpSessionManager sessions, ILogger<McpNotificationPublisher> logger, IRealtimeFanoutProvider? provider = null)
     {
         _sessions = sessions;
+        _provider = provider;
         _logger = logger;
     }
 
-    public bool PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message)
+    public async ValueTask<bool> PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message)
     {
         var parameters = new McpProgressNotificationParams
         {
@@ -45,34 +48,57 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
         var paramsJson = JsonSerializer.Serialize(parameters, McpJsonContext.Default.McpProgressNotificationParams);
         using var document = JsonDocument.Parse(paramsJson);
         var notification = Serialize(ProgressMethod, document.RootElement.Clone());
-        var enqueued = _sessions.TryEnqueue(sessionId, notification);
-        if (enqueued)
+        if (_provider is null)
         {
-            McpLog.NotificationPublished(_logger, ProgressMethod, sessionId);
+            var enqueued = _sessions.TryEnqueue(sessionId, notification);
+            if (enqueued)
+            {
+                McpLog.NotificationPublished(_logger, ProgressMethod, sessionId);
+            }
+
+            return enqueued;
         }
 
-        return enqueued;
+        await AppendAsync(sessionId, ProgressMethod, notification).ConfigureAwait(false);
+        McpLog.NotificationPublished(_logger, ProgressMethod, sessionId);
+        return true;
     }
 
-    public int BroadcastToolsListChanged() => Broadcast(ToolsListChangedMethod);
+    public ValueTask<int> BroadcastToolsListChanged() => BroadcastAsync(ToolsListChangedMethod);
 
-    public int BroadcastResourcesListChanged() => Broadcast(ResourcesListChangedMethod);
+    public ValueTask<int> BroadcastResourcesListChanged() => BroadcastAsync(ResourcesListChangedMethod);
 
-    private int Broadcast(string method)
+    private async ValueTask<int> BroadcastAsync(string method)
     {
         var notification = Serialize(method, parameters: null);
-        var delivered = 0;
-        foreach (var sessionId in _sessions.ActiveSessionIds)
+        int localSessions;
+        if (_provider is null)
         {
-            delivered += _sessions.TryEnqueue(sessionId, notification) ? 1 : 0;
+            localSessions = 0;
+            foreach (var sessionId in _sessions.ActiveSessionIds)
+            {
+                if (_sessions.TryEnqueue(sessionId, notification))
+                {
+                    localSessions++;
+                }
+            }
+        }
+        else
+        {
+            await AppendAsync("*", method, notification).ConfigureAwait(false);
+            localSessions = _sessions.ActiveSessionIds.Count;
         }
 
-        if (delivered > 0)
-        {
-            McpLog.NotificationBroadcast(_logger, method, delivered);
-        }
+        McpLog.NotificationBroadcast(_logger, method, localSessions);
+        return localSessions;
+    }
 
-        return delivered;
+    private async ValueTask AppendAsync(string scope, string method, string notification)
+    {
+        using var document = JsonDocument.Parse(notification);
+        await _provider!.AppendAsync(
+            new RealtimeEventDraft(RealtimeFamily.Mcp, scope, method, document.RootElement.Clone()),
+            null, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static string Serialize(string method, JsonElement? parameters)
