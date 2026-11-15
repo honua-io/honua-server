@@ -85,6 +85,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
   run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
+  run_fixture scripts/ci/download-affected-receipts.test.py "${PYTHON_BIN}" scripts/ci/download-affected-receipts.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi

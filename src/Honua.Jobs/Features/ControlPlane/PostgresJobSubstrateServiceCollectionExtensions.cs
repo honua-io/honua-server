@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
@@ -44,6 +45,7 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
             configuration[SystemSchemaKey]));
         services.TryAddSingleton<JobStoreRetentionSweeper>();
         services.TryAddSingleton<SharedStateRetentionSweeper>();
+        services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<IExecutionJobStore>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
         services.TryAddSingleton<IJobStoreClock>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
@@ -60,6 +62,7 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
             return false;
         }
 
+        services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresJobQueue>();
         services.TryAddSingleton<IJobQueue>(provider => provider.GetRequiredService<PostgresJobQueue>());
         services.TryAddSingleton<IQueueClaimReconciler>(provider => provider.GetRequiredService<PostgresJobQueue>());
