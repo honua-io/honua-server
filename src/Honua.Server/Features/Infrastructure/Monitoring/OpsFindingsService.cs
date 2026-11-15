@@ -34,6 +34,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     internal const string RuleDbBoundedAdmissionPressure = "db-bounded-admission-pressure";
     internal const string RuleServingLatencySlo = "serving-latency-slo-breach";
     internal const string RulePlatformReleaseRuntimeDivergence = "platform-release-runtime-divergence";
+    internal const string RuleCdnPurgeBudget = "cdn-purge-budget";
 
     // BackendName of the in-process baseline batch backend (which reports a KubernetesJob target kind).
     private const string InProcessLocalBackendName = "local";
@@ -59,6 +60,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly OpsFindingsCollectionLedger _collectionLedger;
     private readonly TimeProvider _clock;
     private readonly IManagedComposeObserver? _managedComposeObserver;
+    private readonly OpsSelfChecks? _selfChecks;
+    private readonly ICdnPurgeBudget? _cdnPurgeBudget;
 
     // A signal older than this window cannot authorize a proposal.
     private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
@@ -76,6 +79,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsExtendedSignals? extendedSignals = null)
     {
         _managedComposeObserver = extendedSignals?.ManagedComposeObserver;
+        _selfChecks = extendedSignals?.SelfChecks;
+        _cdnPurgeBudget = extendedSignals?.CdnPurgeBudget;
         _options = options;
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
@@ -128,6 +133,13 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
+        var selfCheckEvaluation = _selfChecks is null ? null
+            : await _selfChecks.EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        if (selfCheckEvaluation is not null)
+        {
+            findings.AddRange(selfCheckEvaluation.Findings);
+        }
+        await EvaluateCdnPurgeBudgetAsync(now, findings, cancellationToken).ConfigureAwait(false);
         var catalogSource = await EvaluateCatalogRollbacksAsync(findings, cancellationToken).ConfigureAwait(false);
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
             ?? EvidencePostureFactory.NotConfigured(
@@ -136,13 +148,23 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 WorkflowOperationStoreBackendId);
 
         var storeSources = new List<EvidenceSourceEnvelope> { workflowSource, catalogSource };
+        if (selfCheckEvaluation is not null)
+        {
+            storeSources.AddRange(selfCheckEvaluation.Sources);
+        }
         var externalSource = await EvaluateExternalEventsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         if (externalSource is not null)
         {
             storeSources.Add(externalSource);
         }
 
-        return new OpsFindingsEvaluation
+        return CreateEvaluation(now, findings,
+            BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets));
+    }
+
+    private static OpsFindingsEvaluation CreateEvaluation(
+        DateTimeOffset now, IReadOnlyList<OpsFinding> findings, EvidencePosture posture)
+        => new()
         {
             EvaluatedAt = now,
             // Most urgent first; stable ordering by rule then id keeps output deterministic.
@@ -151,9 +173,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets),
+            Posture = posture,
         };
-    }
 
     private EvidencePosture BuildEvidencePosture(
         DateTimeOffset now,
