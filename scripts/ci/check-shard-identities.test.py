@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Reject colliding shard ownership while retaining grouped project execution."""
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 SPEC = importlib.util.spec_from_file_location('identities', Path(__file__).with_name('check-shard-identities.py'))
@@ -10,6 +14,19 @@ SPEC.loader.exec_module(CHECKER)
 
 
 class ShardIdentityTests(unittest.TestCase):
+    def test_invalid_inventories_fail_cli(self):
+        inventories = [None, [], {}, '', [None], [{}],
+                       [dict(name='', filter='A')], [dict(name='one', filter=' ')],
+                       [dict(name=1, filter='A')], [dict(name='one', filter=[])]]
+        for shards in inventories:
+            with self.subTest(shards=shards), tempfile.TemporaryDirectory() as directory:
+                config = Path(directory) / 'shards.json'
+                config.write_text(json.dumps(dict(shards=shards)))
+                result = subprocess.run([sys.executable, str(Path(CHECKER.__file__)), str(config)],
+                                        capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('Invalid shard inventory:', result.stderr)
+
     def test_duplicate_names_fail_even_with_distinct_projects(self):
         shards = [dict(name='same', filter='A', csproj='a.csproj'),
                   dict(name='same', filter='B', csproj='b.csproj')]

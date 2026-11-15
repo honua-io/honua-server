@@ -9,10 +9,17 @@ from shard_projects import shard_projects
 
 
 def find_collisions(shards):
+    if not isinstance(shards, list) or not shards:
+        raise ValueError('shards must be a nonempty array')
     names = set()
     owners = {}
     errors = []
     for shard in shards:
+        if not isinstance(shard, dict):
+            raise ValueError('each shard must be an object')
+        for field in ('name', 'filter'):
+            if not isinstance(shard.get(field), str) or not shard[field].strip():
+                raise ValueError(f'shard {field} must be a nonempty string')
         name = shard['name']
         if name in names:
             errors.append(f'duplicate shard name {name!r}')
