@@ -30,6 +30,14 @@ internal ref struct ProtobufWriter
         return result;
     }
 
+    public (byte[] Buffer, int Length) DetachBuffer()
+    {
+        var result = (_buffer, _position);
+        _buffer = Array.Empty<byte>();
+        _position = 0;
+        return result;
+    }
+
     public readonly ReadOnlyMemory<byte> WrittenMemory => _buffer.AsMemory(0, _position);
 
     public void Dispose()
@@ -39,6 +47,13 @@ internal ref struct ProtobufWriter
             ArrayPool<byte>.Shared.Return(_buffer);
             _buffer = Array.Empty<byte>();
         }
+    }
+
+    public void WriteRawBytes(ReadOnlySpan<byte> bytes)
+    {
+        EnsureCapacity(bytes.Length);
+        bytes.CopyTo(_buffer.AsSpan(_position));
+        _position += bytes.Length;
     }
 
     // ── Tag writing ───────────────────────────────────────────
@@ -307,6 +322,26 @@ internal ref struct ProtobufWriter
     }
 
     // ── Sub-message support ───────────────────────────────────
+
+    public int BeginMessage(int fieldNumber)
+    {
+        WriteTag(fieldNumber, 2);
+        EnsureCapacity(5);
+        var lengthPosition = _position;
+        _position += 5;
+        return lengthPosition;
+    }
+
+    public void EndMessage(int lengthPosition)
+    {
+        var bodyPosition = lengthPosition + 5;
+        var length = _position - bodyPosition;
+        _position = lengthPosition;
+        WriteRawVarint((uint)length);
+        var prefixEnd = _position;
+        _buffer.AsSpan(bodyPosition, length).CopyTo(_buffer.AsSpan(prefixEnd));
+        _position += length;
+    }
 
     public void WriteMessage(int fieldNumber, ref ProtobufWriter sub)
     {

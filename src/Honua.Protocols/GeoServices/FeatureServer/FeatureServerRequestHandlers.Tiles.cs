@@ -214,7 +214,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static bool TryBuildTileTemporalFilterV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string timeParam,
         out TemporalFilter? temporalFilter,
         out string? error)
@@ -263,7 +263,7 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    private static MetadataV2FieldType ResolveSchemaFieldType(MetadataV2Resource resource, string fieldName)
+    private static MetadataV2FieldType ResolveSchemaFieldType(MetadataV2Object resource, string fieldName)
     {
         var match = resource.SchemaFields.FirstOrDefault(
             field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));

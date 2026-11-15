@@ -133,8 +133,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
     /// Projects a replaced source schema onto an existing published resource without
     /// changing its identity, storage binding, or unrelated display settings.
     /// </summary>
-    internal static MetadataV2Resource ApplyReplacementFieldMetadata(
-        MetadataV2Resource resource,
+    internal static MetadataV2Object ApplyReplacementFieldMetadata(
+        MetadataV2Object resource,
         IReadOnlyList<MetadataV2Field> schemaFields,
         LayerPublishRequest request,
         string primaryKey,
@@ -179,9 +179,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (string.IsNullOrWhiteSpace(geometryColumn))
         {
             spatial = null;
-            if (datasetKind.Value == MetadataV2ResourceType.FeatureDataset)
+            if (datasetKind.Value == MetadataV2ObjectType.FeatureDataset)
             {
-                datasetKind = MetadataV2ResourceType.Table;
+                datasetKind = MetadataV2ObjectType.Table;
             }
         }
         else if (spatial is not null)
@@ -211,9 +211,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var previousEditing = resource.Editing;
         var globalId = ResolveReplacementGlobalId(schemaFields, request.GlobalIdField, previousEditing?.GlobalIdField);
-        MetadataV2ResourceEditing? editing = previousEditing is null && globalId is null && !request.SupportsAttachments
+        MetadataV2ObjectEditing? editing = previousEditing is null && globalId is null && !request.SupportsAttachments
             ? null
-            : (previousEditing ?? new MetadataV2ResourceEditing { CanModify = false, SupportsRelatedRecords = false }) with
+            : (previousEditing ?? new MetadataV2ObjectEditing { CanModify = false, SupportsRelatedRecords = false }) with
             {
                 GlobalIdField = globalId,
                 SupportsAttachments = request.SupportsAttachments || previousEditing?.SupportsAttachments == true,
@@ -303,7 +303,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ConfigureAwait(false);
     }
 
-    private static MetadataV2Resource? FindPublishedResource(MetadataV2Graph graph, int layerId)
+    private static MetadataV2Object? FindPublishedResource(MetadataV2Graph graph, int layerId)
     {
         var binding = graph.StorageBindings.FirstOrDefault(candidate => candidate.StorageLayerId == layerId);
         if (binding is not null)

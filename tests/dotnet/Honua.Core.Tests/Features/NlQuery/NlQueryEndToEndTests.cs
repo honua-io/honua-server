@@ -20,8 +20,8 @@ namespace Honua.Core.Tests.Features.NlQuery;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class NlQueryEndToEndTests
 {
-    private readonly MetadataV2Resource _parcelsResource;
-    private readonly MetadataV2Resource _sensorResource;
+    private readonly MetadataV2Object _parcelsResource;
+    private readonly MetadataV2Object _sensorResource;
 
     public NlQueryEndToEndTests()
     {
@@ -379,7 +379,7 @@ public sealed class NlQueryEndToEndTests
             ?? throw new InvalidOperationException("Failed to deserialize filter plan fixture.");
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         IReadOnlyList<MetadataV2Field> fields,
@@ -388,7 +388,7 @@ public sealed class NlQueryEndToEndTests
         var geometryField = fields.FirstOrDefault(field =>
             field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
 
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -397,7 +397,7 @@ public sealed class NlQueryEndToEndTests
                 Description = description,
             },
             SchemaFields = fields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,

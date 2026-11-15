@@ -29,6 +29,17 @@ alarm event by event time is presented for an alarm resource. These templates do
 not authorize remediation or spending. Unknown event types are retained without
 creating a finding. Invalid envelopes remain unacknowledged.
 
+Watchdog incident envelopes use source `honua.watchdog`, detail type
+`Honua watchdog incident`, and detail schema version `1`. Valid incidents preserve
+the watchdog's severity, plain-language message, incident id and UTC event time.
+The dashboard shows the latest stage for each incident on each ECS service;
+a recovered incident does not hide another incident on the same service.
+Redelivery uses the existing event ledger and finding identity. Unknown schema
+versions, incomplete incident details, messages over 1,024 characters and stages
+over 128 characters do not create findings. This projection
+does not send another email or request remediation; the watchdog owns its direct
+notification and recovery paths.
+
 `IOpsExternalEventConsumer` runs after persistence and before acknowledgment,
 including on duplicate deliveries. Handlers receive the original envelope with
 its identity and UTC event time, even if a replay supplies a different body. They must deduplicate their own side effects and
@@ -43,3 +54,5 @@ and the poison body in the DLQ after five visibility periods. The script checks
 the DLQ without deleting its message. MAIN also verifies the finding through the
 normal Ops interface and records the result before the release freeze. No test
 stack is created by this script.
+
+For watchdog stages with the same event timestamp, causal stage order breaks ties: observation, probe, diagnosis, action, human escalation, then recovery. Severity breaks ties within a stage; delivery order cannot replace a recovery with an earlier stage.

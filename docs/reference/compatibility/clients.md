@@ -162,7 +162,13 @@ Feature-stream clients retain their last delivered cursor and reconnect with the
 same authorized tenant scope; access policies are evaluated again before replay.
 Changing credentials does not grant access to another tenant's resources.
 SensorThings subscriptions require an explicit tenant claim for non-admin users
-and are live-only: cursor or `Last-Event-ID` resume attempts return HTTP 400.
+and replay committed observation batches within retained history. SSE batches use
+`event: observations` and an `id` such as `observations:42`; WebSocket batches
+include the same value in `cursor`. Reconnect with `Last-Event-ID` or the `cursor`
+query parameter and the same tenant, schema, and optional `datastreamId` filter.
+Without a cursor, subscriptions start live. Invalid cursors or conflicting header
+and query cursors return HTTP 400. A `reset` frame ends a subscription when replay
+is unavailable; refresh observations through OData before subscribing again.
 A SensorThings subscription refused by an admission cap never opens a stream:
 HTTP 429 means the caller's own credential or tenant already holds its share of
 concurrent subscriptions (close one or wait), and HTTP 503 means the node is at

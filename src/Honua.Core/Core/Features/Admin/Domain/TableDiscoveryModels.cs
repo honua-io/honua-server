@@ -31,6 +31,9 @@ public sealed class ColumnInfo
     public bool IsPrimaryKey { get; init; }
 
     public int? MaxLength { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsInternalImportColumn { get; init; }
 }
 
 public sealed class TableDiscoveryResponse

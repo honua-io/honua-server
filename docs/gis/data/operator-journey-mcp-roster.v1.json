@@ -17,7 +17,9 @@
       "toolName": "honua_admin_api_key_effective_permissions",
       "operationId": "admin.api-key.effective-permissions",
       "mode": "read",
-      "inputFields": ["id"]
+      "inputFields": [
+        "id"
+      ]
     },
     {
       "toolName": "honua_admin_connections_list",
@@ -29,13 +31,21 @@
       "toolName": "honua_admin_connection_tables_list",
       "operationId": "admin.connections.tables.discover",
       "mode": "read",
-      "inputFields": ["connectionId"]
+      "inputFields": [
+        "connectionId"
+      ]
     },
     {
       "toolName": "honua_admin_connection_layers_list",
       "operationId": "admin.connections.layers.list",
       "mode": "read",
-      "inputFields": ["connectionId", "page", "pageSize", "q", "serviceName"]
+      "inputFields": [
+        "connectionId",
+        "page",
+        "pageSize",
+        "q",
+        "serviceName"
+      ]
     },
     {
       "toolName": "honua_admin_connections_create",
@@ -58,7 +68,10 @@
       "toolName": "honua_admin_connections_test",
       "operationId": "admin.connections.test",
       "mode": "read",
-      "inputFields": ["dryRun", "id"]
+      "inputFields": [
+        "dryRun",
+        "id"
+      ]
     },
     {
       "toolName": "honua_admin_import_upload_object",
@@ -125,7 +138,8 @@
         "storageMode",
         "subtypes",
         "supportsAttachments",
-        "table"
+        "table",
+        "temporalColumn"
       ]
     },
     {
@@ -138,6 +152,88 @@
         "allowedRoles",
         "allowedWriteRoles",
         "serviceName"
+      ]
+    },
+    {
+      "toolName": "honua_op_dataset_stage_preview",
+      "operationId": "dataset.stage.preview",
+      "mode": "read",
+      "inputFields": [
+        "artifactId",
+        "intentId",
+        "jobId",
+        "referenceSha256",
+        "resultPackageId",
+        "schema",
+        "sourceSrid",
+        "targetId",
+        "targetSrid"
+      ]
+    },
+    {
+      "toolName": "honua_op_dataset_stage_import",
+      "operationId": "dataset.stage.import",
+      "mode": "execute",
+      "inputFields": [
+        "artifactId",
+        "intentId",
+        "jobId",
+        "previewFingerprint",
+        "referenceSha256",
+        "resultPackageId",
+        "schema",
+        "sourceSrid",
+        "targetId",
+        "targetSrid"
+      ]
+    },
+    {
+      "toolName": "honua_admin_import_formats",
+      "operationId": "admin.import.formats",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_import_limits",
+      "operationId": "admin.import.limits",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_import_preview",
+      "operationId": "admin.import.preview",
+      "mode": "read",
+      "inputFields": [
+        "dryRun",
+        "file",
+        "fileName"
+      ]
+    },
+    {
+      "toolName": "honua_admin_import_preview_url",
+      "operationId": "admin.import.preview-url",
+      "mode": "read",
+      "inputFields": [
+        "dryRun",
+        "fileName",
+        "sourceUrl"
+      ]
+    },
+    {
+      "toolName": "honua_admin_connections_tables_validate",
+      "operationId": "admin.connections.tables.validate",
+      "mode": "read",
+      "inputFields": [
+        "dryRun",
+        "fields",
+        "geometryColumn",
+        "id",
+        "layerName",
+        "primaryKey",
+        "schema",
+        "serviceName",
+        "table",
+        "targetSrid"
       ]
     }
   ]

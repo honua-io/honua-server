@@ -158,6 +158,8 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 ? physical.GetString()
                 : tableName;
 
+            await AssertPublishInspectionAsync(admin, (connectionId!, schema!, table!));
+
             // MCP callers are agents: publishing and access-policy changes file a proposal for
             // one human approval instead of executing, even with an administrator key.
             await CallProposalAsync(admin, "honua_admin_layer_publish", new
@@ -199,6 +201,39 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 await fixture.DisposeAsync();
             }
         }
+    }
+
+    // The read-only Publish inspection tools run end to end through tools/call: a multipart file
+    // preview, a URL preview through the import source, and a dry-run table validation by route id.
+    private static async Task AssertPublishInspectionAsync(
+        HttpClient admin, (string ConnectionId, string Schema, string Table) source)
+    {
+        var (connectionId, schema, table) = source;
+        var filePreview = await CallOkAsync(admin, "honua_admin_import_preview", new
+        {
+            file = Convert.ToBase64String(Encoding.UTF8.GetBytes(GeoJson)),
+            fileName = "parcels.geojson",
+        });
+        using var filePreviewBody = ResponseJson(filePreview);
+        filePreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
+
+        var urlPreview = await CallOkAsync(admin, "honua_admin_import_preview_url", new
+        {
+            sourceUrl = SourceUrl,
+            fileName = "parcels.geojson",
+        });
+        using var urlPreviewBody = ResponseJson(urlPreview);
+        urlPreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
+
+        var validated = await CallOkAsync(admin, "honua_admin_connections_tables_validate", new
+        {
+            id = connectionId,
+            schema,
+            table,
+            layerName = "Parcels",
+        });
+        using var validatedBody = ResponseJson(validated);
+        validatedBody.RootElement.GetProperty("data").GetProperty("table").GetString().Should().Be(table);
     }
 
     private static async Task CallProposalAsync(HttpClient client, string name, object arguments)

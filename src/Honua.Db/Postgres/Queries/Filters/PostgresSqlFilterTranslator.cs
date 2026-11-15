@@ -50,7 +50,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     /// <param name="filter">Filter expression to translate.</param>
     /// <param name="resource">Metadata v2 resource.</param>
     /// <returns>SQL fragment with parameters.</returns>
-    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
         => Translate(filter, FilterTranslationContext.FromResource(resource));
 
     protected override string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
@@ -70,8 +70,8 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
     private string TranslateBinaryWithValues(BinaryExpression binary, FilterTranslationContext context)
     {
-        var left = TranslateExpression(binary.Left, context);
-        var right = TranslateExpression(binary.Right, context);
+        var left = TranslateExactOperand(binary.Left, binary.Right, context);
+        var right = TranslateExactOperand(binary.Right, binary.Left, context);
 
         var op = binary.Operator switch
         {
@@ -120,6 +120,38 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         }
 
         return $"{left} {op} {right}";
+    }
+
+    private string TranslateExactOperand(FilterExpression operand, FilterExpression other, FilterTranslationContext context)
+    {
+        if (operand is PropertyReference exactProperty && TryTranslateExactProperty(exactProperty, context, out var exactSql))
+        {
+            return exactSql;
+        }
+        if (_useJsonAttributes && other is PropertyReference property
+            && context.TryGetField(property.PropertyName)?.Type is { } type
+            && type is MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Time)
+        {
+            if (operand is ValueList list)
+            {
+                return $"({string.Join(", ", list.Values.Select(value => TranslateExactOperand(value, other, context)))})";
+            }
+            if (operand is Literal { Value: not null } literal)
+            {
+                var seconds = (type, literal.Value) switch
+                {
+                    (MetadataV2FieldType.TimestampOffset, DateTimeOffset timestamp) =>
+                        (timestamp.UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond,
+                    (MetadataV2FieldType.TimestampOffset, string text) =>
+                        (ExactAttributeValues.ParseTimestampOffset(text).UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond,
+                    (MetadataV2FieldType.Time, TimeOnly time) => time.Ticks / (decimal)TimeSpan.TicksPerSecond,
+                    (MetadataV2FieldType.Time, string text) => ExactAttributeValues.ParseTime(text).Ticks / (decimal)TimeSpan.TicksPerSecond,
+                    _ => throw new ArgumentException("Exact temporal comparisons require a matching temporal literal.")
+                };
+                return AddParameter(seconds);
+            }
+        }
+        return TranslateExpression(operand, context);
     }
 
     protected override string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
@@ -184,6 +216,10 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         }
 
         var nullSafe = $"NULLIF({baseExpression}, '')";
+        if (field.Type == MetadataV2FieldType.TimestampOffset)
+        {
+            return $"{nullSafe}::timestamptz";
+        }
         if (castType is "timestamptz" or "date")
         {
             return BuildEpochAwareTemporalCast(nullSafe, castType);
@@ -191,6 +227,23 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
         return $"{nullSafe}::{castType}";
     }
+
+    private bool TryTranslateExactProperty(PropertyReference property, FilterTranslationContext context, out string sql)
+    {
+        var field = context.TryGetField(property.PropertyName);
+        if (_useJsonAttributes && field?.Type is MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Time)
+        {
+            var text = $"NULLIF({QuoteIdentifier(_attributesColumn)} ->> '{EscapeSqlLiteral(field.Value.Name)}', '')";
+            sql = field.Value.Type == MetadataV2FieldType.Time ? ExactTemporalSql.Time(text) : ExactTemporalSql.Timestamp(text);
+            return true;
+        }
+        sql = string.Empty;
+        return false;
+    }
+
+    private bool RequiresExactTemporal(FilterExpression expression, FilterTranslationContext context)
+        => _useJsonAttributes && expression is PropertyReference property
+            && context.TryGetField(property.PropertyName)?.Type == MetadataV2FieldType.TimestampOffset;
 
     // A date/datetime attribute stored in JSONB may be ISO-8601 text (seeded rows)
     // or epoch-milliseconds rendered as text (Esri applyEdits). A bare
@@ -348,6 +401,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
     protected override string TranslateTemporal(TemporalPredicate temporal, FilterTranslationContext context)
     {
+        var exact = RequiresExactTemporal(temporal.Left, context) || RequiresExactTemporal(temporal.Right, context);
         if (temporal.Operator == TemporalOperator.Before)
         {
             return TranslateTemporalBoundaryComparison(
@@ -356,7 +410,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                 context,
                 TemporalBoundary.End,
                 TemporalBoundary.Start,
-                "<");
+                "<", exact);
         }
 
         if (temporal.Operator == TemporalOperator.After)
@@ -367,7 +421,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                 context,
                 TemporalBoundary.Start,
                 TemporalBoundary.End,
-                ">");
+                ">", exact);
         }
 
         if (temporal.Operator == TemporalOperator.Meets)
@@ -378,7 +432,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                 context,
                 TemporalBoundary.End,
                 TemporalBoundary.Start,
-                "=");
+                "=", exact);
         }
 
         if (temporal.Operator == TemporalOperator.MetBy)
@@ -389,11 +443,11 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                 context,
                 TemporalBoundary.Start,
                 TemporalBoundary.End,
-                "=");
+                "=", exact);
         }
 
-        var left = TranslateTemporalExpression(temporal.Left, context);
-        var right = TranslateTemporalExpression(temporal.Right, context);
+        var left = TranslateTemporalExpression(temporal.Left, context, exact);
+        var right = TranslateTemporalExpression(temporal.Right, context, exact);
 
         EnsureTemporalCompatibility(temporal.Operator, left, right);
 
@@ -433,10 +487,11 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         FilterTranslationContext context,
         TemporalBoundary leftBoundary,
         TemporalBoundary rightBoundary,
-        string sqlOperator)
+        string sqlOperator,
+        bool exact)
     {
-        var left = TranslateTemporalBoundary(leftExpression, context, leftBoundary);
-        var right = TranslateTemporalBoundary(rightExpression, context, rightBoundary);
+        var left = TranslateTemporalBoundary(leftExpression, context, leftBoundary, exact);
+        var right = TranslateTemporalBoundary(rightExpression, context, rightBoundary, exact);
 
         var leftSql = left.Sql;
         var rightSql = right.Sql;
@@ -1140,7 +1195,21 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         throw new NotSupportedException($"Unsupported array expression: {expression.GetType()}");
     }
 
-    private TemporalBounds TranslateTemporalExpression(FilterExpression expression, FilterTranslationContext context)
+    private string TranslateExactTemporalLiteral(Literal literal)
+    {
+        var instant = literal.Value switch
+        {
+            DateTimeOffset timestamp => timestamp,
+            DateTime timestamp => new DateTimeOffset(timestamp.ToUniversalTime()),
+            DateOnly date => new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)),
+            string text when literal.Type == LiteralType.Date => new DateTimeOffset(ExactAttributeValues.ParseDate(text).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)),
+            string text => ExactAttributeValues.ParseTimestampOffset(text),
+            _ => throw new ArgumentException("Unsupported exact temporal literal.")
+        };
+        return AddParameter((instant.UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond);
+    }
+
+    private TemporalBounds TranslateTemporalExpression(FilterExpression expression, FilterTranslationContext context, bool exact = false)
     {
         switch (expression)
         {
@@ -1150,8 +1219,9 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                         ? TemporalKind.Date
                         : TemporalKind.Timestamp;
 
-                    var startSql = interval.Start == null ? "NULL" : TranslateLiteral(interval.Start);
-                    var endSql = interval.End == null ? "NULL" : TranslateLiteral(interval.End);
+                    if (exact) { kind = TemporalKind.ExactTimestamp; }
+                    var startSql = interval.Start == null ? "NULL" : exact ? TranslateExactTemporalLiteral(interval.Start) : TranslateLiteral(interval.Start);
+                    var endSql = interval.End == null ? "NULL" : exact ? TranslateExactTemporalLiteral(interval.End) : TranslateLiteral(interval.End);
 
                     return new TemporalBounds(
                         startSql,
@@ -1163,8 +1233,8 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                 }
             case Literal literal when literal.Type is LiteralType.Date or LiteralType.DateTime:
                 {
-                    var sql = TranslateLiteral(literal);
-                    var kind = literal.Type == LiteralType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    var sql = exact ? TranslateExactTemporalLiteral(literal) : TranslateLiteral(literal);
+                    var kind = exact ? TemporalKind.ExactTimestamp : literal.Type == LiteralType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
                     return new TemporalBounds(sql, sql, kind, false, false, false);
                 }
             case PropertyReference property:
@@ -1178,12 +1248,20 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
                     var kind = field?.Type == MetadataV2FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
                     var sql = TranslateProperty(property, context);
+                    if (exact)
+                    {
+                        sql = TryTranslateExactProperty(property, context, out var exactSql)
+                            ? exactSql : $"EXTRACT(EPOCH FROM ({sql})::timestamptz)";
+                        kind = TemporalKind.ExactTimestamp;
+                    }
                     return new TemporalBounds(sql, sql, kind, false, false, false);
                 }
             case FunctionCall functionCall:
                 {
                     var sql = TranslateFunction(functionCall, context);
-                    return new TemporalBounds(sql, sql, TemporalKind.Timestamp, false, false, false);
+                    return new TemporalBounds(exact ? $"EXTRACT(EPOCH FROM ({sql})::timestamptz)" : sql,
+                        exact ? $"EXTRACT(EPOCH FROM ({sql})::timestamptz)" : sql,
+                        exact ? TemporalKind.ExactTimestamp : TemporalKind.Timestamp, false, false, false);
                 }
             default:
                 throw new NotSupportedException($"Unsupported temporal expression: {expression.GetType()}");
@@ -1193,22 +1271,24 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     private TemporalBound TranslateTemporalBoundary(
         FilterExpression expression,
         FilterTranslationContext context,
-        TemporalBoundary boundary)
+        TemporalBoundary boundary,
+        bool exact = false)
     {
         if (expression is IntervalLiteral interval)
         {
             var kind = interval.Start?.Type == LiteralType.Date || interval.End?.Type == LiteralType.Date
                 ? TemporalKind.Date
                 : TemporalKind.Timestamp;
+            if (exact) { kind = TemporalKind.ExactTimestamp; }
             var literal = boundary == TemporalBoundary.Start ? interval.Start : interval.End;
             var sql = literal == null
                 ? CreateOpenTemporalBoundarySql(kind, boundary)
-                : TranslateLiteral(literal);
+                : exact ? TranslateExactTemporalLiteral(literal) : TranslateLiteral(literal);
 
             return new TemporalBound(sql, kind);
         }
 
-        var bounds = TranslateTemporalExpression(expression, context);
+        var bounds = TranslateTemporalExpression(expression, context, exact);
         return new TemporalBound(
             boundary == TemporalBoundary.Start
                 ? NormalizeTemporalStart(bounds)
@@ -1217,7 +1297,9 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     }
 
     private static string CreateOpenTemporalBoundarySql(TemporalKind kind, TemporalBoundary boundary)
-        => kind == TemporalKind.Date
+        => kind == TemporalKind.ExactTimestamp
+            ? boundary == TemporalBoundary.Start ? "'-infinity'::numeric" : "'infinity'::numeric"
+            : kind == TemporalKind.Date
             ? boundary == TemporalBoundary.Start ? "'-infinity'::date" : "'infinity'::date"
             : boundary == TemporalBoundary.Start ? "'-infinity'::timestamptz" : "'infinity'::timestamptz";
 
@@ -1245,7 +1327,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             return bounds.StartSql;
         }
 
-        return bounds.Kind == TemporalKind.Date ? "'-infinity'::date" : "'-infinity'::timestamptz";
+        return CreateOpenTemporalBoundarySql(bounds.Kind, TemporalBoundary.Start);
     }
 
     private static string NormalizeTemporalEnd(TemporalBounds bounds)
@@ -1260,7 +1342,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             return bounds.EndSql;
         }
 
-        return bounds.Kind == TemporalKind.Date ? "'infinity'::date" : "'infinity'::timestamptz";
+        return CreateOpenTemporalBoundarySql(bounds.Kind, TemporalBoundary.End);
     }
 
     private static string CastTemporal(string sql, TemporalKind from, TemporalKind to)
@@ -1294,7 +1376,8 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     private enum TemporalKind
     {
         Date,
-        Timestamp
+        Timestamp,
+        ExactTimestamp
     }
 
     private static string? GetJsonCastType(MetadataV2FieldType fieldType)
@@ -1307,6 +1390,8 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             // at that same precision rather than widening an already-rounded real value.
             MetadataV2FieldType.Float => "double precision",
             MetadataV2FieldType.Double => "double precision",
+            MetadataV2FieldType.Decimal => "numeric",
+            MetadataV2FieldType.TimestampOffset => "timestamptz",
             MetadataV2FieldType.Boolean => "boolean",
             MetadataV2FieldType.DateTime => "timestamptz",
             MetadataV2FieldType.Date => "date",

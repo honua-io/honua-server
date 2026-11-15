@@ -13,15 +13,51 @@ namespace Honua.Db.Postgres.Tests.Queries.Filters;
 public class PostgresSqlFilterTranslatorTests
 {
     private readonly PostgresSqlFilterTranslator _translator = new();
-    private readonly MetadataV2Resource _resource;
+    private readonly MetadataV2Object _resource;
 
     public PostgresSqlFilterTranslatorTests()
     {
         _resource = CreateResource();
     }
 
+    [Theory]
+    [InlineData(MetadataV2FieldType.Decimal, "::numeric")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "::timestamptz")]
+    public void Translate_ExactAttribute_UsesDeclaredComparisonType(MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with { SchemaFields = [Field("exact_value", type)] };
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true)
+            .Translate(new PropertyReference("exact_value"), resource);
+        result.Sql.Should().Contain(cast);
+        result.Sql.Should().NotContain("::double precision");
+    }
+
+    [Theory]
+    [InlineData(TemporalOperator.Before)]
+    [InlineData(TemporalOperator.Intersects)]
+    public void Translate_OffsetTemporalPredicate_BindsExactEpochSeconds(TemporalOperator op)
+    {
+        var resource = CreateResource() with { SchemaFields = [Field("instant", MetadataV2FieldType.TimestampOffset)] };
+        var instant = DateTimeOffset.Parse("2026-11-15T00:00:00.0000001Z", System.Globalization.CultureInfo.InvariantCulture);
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new TemporalPredicate(op, new PropertyReference("instant"), new Literal(instant, LiteralType.DateTime)), resource);
+        result.Parameters.Should().Equal((instant.UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond);
+        result.Sql.Should().Contain("regexp_replace(").And.Contain("::numeric");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Time, "::time")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "::timestamptz")]
+    public void Translate_TemporalHour_ExtractsFromTemporalType(MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with { SchemaFields = [Field("instant", type)] };
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new FunctionCall("HOUR", [new PropertyReference("instant")]), resource);
+        result.Sql.Should().StartWith("EXTRACT(HOUR FROM ").And.Contain(cast);
+    }
+
     [Fact]
-    public void SRV_DB_017_TimePropertyUsesDirectTimeCast()
+    public void SRV_DB_017_TimePropertyUsesExactSeconds()
     {
         var translator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
 
@@ -29,7 +65,8 @@ public class PostgresSqlFilterTranslatorTests
             new BinaryExpression(new PropertyReference("event_time"), BinaryOperator.Equal,
                 new Literal(new TimeOnly(8, 0), LiteralType.Text)), _resource);
 
-        result.Sql.Should().Contain("::time = @p0");
+        result.Sql.Should().Contain("split_part(").And.Contain("::numeric) = @p0");
+        result.Parameters.Should().Equal(28800m);
         result.Sql.Should().NotContain("::timestamptz");
     }
 
@@ -1193,7 +1230,7 @@ public class PostgresSqlFilterTranslatorTests
         sql.Should().NotContain("ST_Transform(ST_GeomFromWKB(@p0, @p1), " + targetLiteral + ")");
     }
 
-    private static MetadataV2Resource CreateResource(MetadataV2SpatialReference? spatialReference = null)
+    private static MetadataV2Object CreateResource(MetadataV2SpatialReference? spatialReference = null)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -1202,8 +1239,8 @@ public class PostgresSqlFilterTranslatorTests
                 Name = "TestLayer",
                 Description = "Test layer for SQL translation",
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = spatialReference ?? MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

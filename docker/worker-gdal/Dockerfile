@@ -45,6 +45,7 @@ WORKDIR /src
 # Copy solution and project files first for better layer caching.
 COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 COPY src/Honua.Analyzers/*.csproj src/Honua.Analyzers/
 COPY src/Honua.Core/Abstractions/*.csproj src/Honua.Core/Abstractions/
 COPY src/Honua.Core/Core/*.csproj src/Honua.Core/Core/

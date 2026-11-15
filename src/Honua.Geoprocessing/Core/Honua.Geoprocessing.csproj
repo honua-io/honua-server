@@ -36,8 +36,8 @@
     <!--
       Packages required by the carved Geoprocessing surface. Grpc.AspNetCore
       and NetTopologySuite come transitively from Honua.Hosting / Honua.Geometry;
-      Newtonsoft.Json and Npgsql come transitively from Honua.ServiceDefaults
-      (via Aspire.Npgsql). The remaining direct refs are the executor / job-
+      Npgsql comes transitively from Honua.ServiceDefaults via Npgsql.OpenTelemetry.
+      The remaining direct refs are the executor / job-
       service dependencies that are not already in the transitive closure.
     -->
     <PackageReference Include="Geospatial.Grpc" />

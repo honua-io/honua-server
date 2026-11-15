@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation;
@@ -356,7 +357,7 @@ internal static class OgcRecordsEndpoints
         var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var resourceBboxes = new Dictionary<string, ImmutableArray<double>?>();
 
-        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Resource resource)
+        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Object resource)
         {
             if (!resourceBboxes.TryGetValue(resource.Metadata.Id, out var result))
             {
@@ -392,7 +393,7 @@ internal static class OgcRecordsEndpoints
             .Where(item => item.Primary is not null)
             .OrderBy(item => item.Primary!.Metadata.Id, StringComparer.Ordinal);
         var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
-        var recordPublications = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        var recordPublications = new Dictionary<string, MetadataV2Layer>(StringComparer.Ordinal);
         foreach (var item in resourceRecords)
         {
             var resource = item.Resource;
@@ -479,7 +480,7 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateServiceRecord(
         MetadataV2Service service,
-        (MetadataV2Publication Publication, MetadataV2Resource? Resource)[] visiblePublications,
+        (MetadataV2Layer Publication, MetadataV2Object? Resource)[] visiblePublications,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         DateTimeOffset? modified,
@@ -506,15 +507,15 @@ internal static class OgcRecordsEndpoints
             .Order(StringComparer.Ordinal)
             .ToImmutableArray();
 
-        var properties = new OgcRecordProperties
+        var descriptive = DescriptiveMetadataResolver.ForService(snapshot.Graph, service);
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = serviceMetadata.Title ?? service.EffectivePublicName,
-            Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",
             ExternalIds = ImmutableArray.Create(serviceMetadata.Name),
             LayerIds = layerIds
-        };
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -536,8 +537,8 @@ internal static class OgcRecordsEndpoints
     }
 
     private static CatalogRecord CreateResourceRecord(
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
@@ -568,15 +569,15 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
-        var properties = new OgcRecordProperties
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = resource.Metadata.Title ?? resource.Metadata.Name,
-            Description = resource.Metadata.Description,
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
             ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
-        };
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -594,8 +595,8 @@ internal static class OgcRecordsEndpoints
                 $"layer:{publicationId}",
                 publicationId,
                 resource.Metadata.Name,
-                resource.Metadata.Title,
-                resource.Metadata.Description));
+                properties.Title,
+                properties.Description));
     }
 
     private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)
