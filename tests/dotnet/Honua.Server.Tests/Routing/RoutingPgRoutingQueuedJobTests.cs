@@ -10,6 +10,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.Routing.Features.Routing.Providers;
@@ -422,12 +423,29 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     public async Task ProviderFailure_FailsDurablyWithoutPartialResults()
     {
         // Two live hosts on the same job tables would claim each other's jobs, so this host gets job tables of its own.
+        // Only the job store, queue and log store move there: everything else in the system schema (shared
+        // configuration, security tokens, idempotency) stays put, because the isolated schema holds only the job tables.
         await using var isolatedJobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(RoutingPgRoutingQueuedJobTests));
         await using var host = CreateHost(new MissingTableNetworkDatasetResolver(), _routing)
             .ConfigureServices(services =>
             {
-                services.RemoveAll<JobStoreDatabase>();
-                services.AddSingleton(isolatedJobs.Database);
+                services.RemoveAll<PostgresExecutionJobStore>();
+                services.AddSingleton(provider => new PostgresExecutionJobStore(
+                    isolatedJobs.Database,
+                    provider.GetRequiredService<IOptions<JobStoreOptions>>(),
+                    NullLogger<PostgresExecutionJobStore>.Instance,
+                    provider.GetService<PollWakeSignal<IExecutionJobStore>>()));
+                services.RemoveAll<PostgresJobQueue>();
+                services.AddSingleton(provider => new PostgresJobQueue(
+                    isolatedJobs.Database,
+                    NullLogger<PostgresJobQueue>.Instance,
+                    provider.GetService<PollWakeSignal<IJobQueue>>(),
+                    provider.GetService<PollWakeSignal<IExecutionJobStore>>()));
+                services.RemoveAll<IExecutionLogStore>();
+                services.AddSingleton<IExecutionLogStore>(provider => new PostgresExecutionLogStore(
+                    isolatedJobs.Database,
+                    provider.GetRequiredService<IOptions<JobStoreOptions>>(),
+                    NullLogger<PostgresExecutionLogStore>.Instance));
             });
         await host.InitializeAsync();
         using var client = Client(host);
