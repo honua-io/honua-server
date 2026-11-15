@@ -925,10 +925,6 @@ public sealed class PortalTokenIssuerTests
                     ExpiresAt: record.ExpiresAt)),
             CancellationToken.None);
 
-    /// <summary>
-    /// An issuer wired to the real source validator over an in-memory key store, with source
-    /// re-validation caching disabled so a revocation is observable immediately.
-    /// </summary>
     private static SourceBoundIssuer CreateSourceBoundIssuer(
         string? adminPassword = null,
         TimeProvider? timeProvider = null)
@@ -937,7 +933,7 @@ public sealed class PortalTokenIssuerTests
         var keyStore = new InMemoryAdminApiKeyStore(timeProvider);
         var apiKeyOptions = new ApiKeyAuthenticationOptions { AdminPassword = adminPassword };
         var portalOptions = Options.Create(
-            new PortalTokenAuthenticationOptions { SourceRevalidationSeconds = 0 });
+            new PortalTokenAuthenticationOptions());
 
         var services = new ServiceCollection()
             .AddSingleton<IMemoryCache>(memoryCache)
@@ -945,8 +941,6 @@ public sealed class PortalTokenIssuerTests
             .AddSingleton(Options.Create(apiKeyOptions))
             .AddSingleton(portalOptions)
             .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
-                sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
                 sp,
                 timeProvider))
             .BuildServiceProvider();
@@ -990,8 +984,6 @@ public sealed class PortalTokenIssuerTests
             .AddSingleton<IMemoryCache>(memoryCache)
             .AddSingleton(Options.Create(new PortalTokenAuthenticationOptions()))
             .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
-                sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
                 sp))
             .BuildServiceProvider();
         return new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(),

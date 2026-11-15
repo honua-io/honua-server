@@ -539,6 +539,16 @@ host and read its heartbeat, nothing else) and runs
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
 
+A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
+(default `false`) to qualify the light pool while `HONUA_LIGHT_RUNNER` stays unset.
+Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
+`honua-light` runner group and label for the six existing light jobs; it accepts
+no runner label input and leaves producer, heavy-shard and Fast/architecture
+routing unchanged. Other refs and events retain the normal variable and fork
+guards. Qualification is an operator-run health check; the input does not enable
+normal routing or change repository settings. Record ten consecutive green runs
+and their actual runner assignments before restoring the availability variable.
+
 Draft Format and admission/control jobs also use the fork-guarded light selector;
 with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
 matrix, affected-shard selection, the affected-shard aggregate, CI router validation

@@ -10,10 +10,8 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -76,14 +74,9 @@ public sealed class PortalTokenIssuerRoleProvenanceTests
 
     private static PortalTokenIssuer CreateIssuer(HonuaEdition edition)
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var services = new ServiceCollection()
             .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition))
-            .AddSingleton<IMemoryCache>(memoryCache)
-            .AddSingleton(Options.Create(new PortalTokenAuthenticationOptions()))
             .AddSingleton<IPortalTokenSourceValidator>(provider => new PortalTokenSourceValidator(
-                provider.GetRequiredService<IMemoryCache>(),
-                provider.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
                 provider))
             .BuildServiceProvider();
         return new PortalTokenIssuer(new InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);

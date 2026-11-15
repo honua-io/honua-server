@@ -352,10 +352,9 @@ internal sealed partial class StreamingGeoJsonReader
                     if (_limits.MaxFeaturesPerFile <= 0 || validation.FeatureCount < _limits.MaxFeaturesPerFile)
                     {
                         validation.FeatureCount++;
-                        if (validation.Issues.Count < MaxValidationIssues)
+                        foreach (var issue in ValidateFeature(feature.RootElement, validation.FeatureCount))
                         {
-                            validation.Issues.AddRange(ValidateFeature(feature.RootElement, validation.FeatureCount)
-                                .Take(MaxValidationIssues - validation.Issues.Count));
+                            RetainValidationIssue(validation.Issues, issue);
                         }
                     }
                 }
@@ -592,7 +591,7 @@ internal sealed partial class StreamingGeoJsonReader
             return issues;
         }
 
-        var geometry = ParseGeometry(geometryElement);
+        var geometry = HasCompleteGeometryComponents(geometryElement) ? ParseGeometry(geometryElement) : null;
         if (geometry is null)
         {
             issues.Add(ImportValidationIssue.Create(
