@@ -394,7 +394,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
             oidcClient.BaseAddress = new Uri("https://localhost");
-            await SetCsrfHeaderAsync(oidcClient);
+            await BrowserCsrf.SetHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsJsonAsync("/api/v1/admin/auth/logout", new { });
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -1043,7 +1043,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
             oidcClient.BaseAddress = new Uri("https://localhost");
             var rejected = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
             rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            await SetCsrfHeaderAsync(oidcClient);
+            await BrowserCsrf.SetHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -1076,7 +1076,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
             sessionClient.BaseAddress = new Uri("https://localhost");
-            await SetCsrfHeaderAsync(sessionClient);
+            await BrowserCsrf.SetHeaderAsync(sessionClient);
             var response = await sessionClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
