@@ -20,7 +20,7 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
         var sql = await ReadMigrationAsync("168_AddAgentAuditActor.sql");
         sql.Should().Contain("ALTER TABLE honua.audit_log").And.NotContain("$HonuaSchema$");
         MigrationSafetyClassifier.Classify("168_AddAgentAuditActor.sql", sql).Classification
-            .Should().Be(MigrationSafetyClassification.ContractAnnotated);
+            .Should().Be(MigrationSafetyClassification.Expand);
     }
 
     [IntegrationTest]
@@ -30,23 +30,28 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
         try
         {
             await ApplyAsync("033_CreateAuditLog.sql", schema);
+            await ApplyAsync("069_AddAuditLogHashChain.sql", schema);
             foreach (var actorType in new[] { "Anonymous", "UserId", "ApiKey", "System" })
             {
-                await InsertAsync(schema, actorType);
+                await InsertAsync(schema, actorType, $"entry-{actorType}");
             }
 
             await ApplyAsync("168_AddAgentAuditActor.sql", schema);
             await ApplyAsync("168_AddAgentAuditActor.sql", schema);
-            await InsertAsync(schema, "Agent");
+            await InsertAsync(schema, "Agent", "entry-Agent");
             await database.ExecuteAsync($"UPDATE \"{schema}\".audit_log SET actor = 'changed'; DELETE FROM \"{schema}\".audit_log");
             await using var connection = await database.DataSource.OpenConnectionAsync();
-            await using var command = new NpgsqlCommand($"SELECT actor_type, actor FROM \"{schema}\".audit_log ORDER BY audit_id", connection);
+            await using var command = new NpgsqlCommand(
+                $"SELECT actor_type, actor, prev_hash, entry_hash FROM \"{schema}\".audit_log ORDER BY audit_id", connection);
             await using var reader = await command.ExecuteReaderAsync();
             var actors = new List<string>();
             while (await reader.ReadAsync())
             {
+                var actorType = reader.GetString(0);
                 reader.GetString(1).Should().Be("stable-principal");
-                actors.Add(reader.GetString(0));
+                reader.IsDBNull(2).Should().BeTrue();
+                reader.GetString(3).TrimEnd().Should().Be($"entry-{actorType}");
+                actors.Add(actorType);
             }
 
             actors.Should().Equal("Anonymous", "UserId", "ApiKey", "System", "Agent");
@@ -76,12 +81,16 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
         }
     }
 
-    private Task InsertAsync(string schema, string actorType)
-        => database.ExecuteAsync($"""
+    private Task InsertAsync(string schema, string actorType, string? entryHash = null)
+    {
+        var hashColumns = entryHash is null ? "" : ", prev_hash, entry_hash";
+        var hashValues = entryHash is null ? "" : ", NULL, '" + entryHash + "'";
+        return database.ExecuteAsync($"""
             INSERT INTO "{schema}".audit_log
-                (timestamp, event_type, actor, actor_type, resource_type, action, outcome, correlation_id)
-            VALUES (now(), 'AdminAction', 'stable-principal', '{actorType}', 'test', 'test', 'Success', 'migration-test')
+                (timestamp, event_type, actor, actor_type, resource_type, action, outcome, correlation_id{hashColumns})
+            VALUES (now(), 'AdminAction', 'stable-principal', '{actorType}', 'test', 'test', 'Success', 'migration-test'{hashValues})
             """);
+    }
 
     private async Task ApplyAsync(string suffix, string schema)
     {

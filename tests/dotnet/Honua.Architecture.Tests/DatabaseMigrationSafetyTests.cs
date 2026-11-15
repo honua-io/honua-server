@@ -251,6 +251,25 @@ public sealed class DatabaseMigrationSafetyTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("Honua.Server.Migrations.")]
+    [InlineData("src/Honua.Server/Migrations/")]
+    public void MigrationClassifier_AuditActorCheckWidening_RequiresExactNameAndBytes(string prefix)
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "168_AddAgentAuditActor.sql";
+        var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-other-object");
+        MigrationSafetyClassifier.Classify(prefix + name, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.Expand);
+        MigrationReaderCompatibility.Declare(prefix + name, sql).Classification.Should()
+            .Be(MigrationReaderCompatibilityClassification.Expand);
+        MigrationSafetyClassifier.Classify(prefix + name, sql + "\nDROP TABLE honua.features;").IsBreaking
+            .Should().BeTrue();
+        MigrationSafetyClassifier.Classify("future.sql", sql).IsBreaking.Should().BeTrue();
+    }
+
+    [Theory]
     [InlineData(143)]
     [InlineData(144)]
     public void ImportDependencyGuard_DeclaresCoordinatedUpgradeAndRefusesOlderReaders(int readerSchema)

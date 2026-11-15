@@ -145,6 +145,7 @@ public static class MigrationSafetyClassifier
         ArgumentNullException.ThrowIfNull(sql);
 
         var breakingRules = IsReviewedImportGuardDefinition(scriptName, sql)
+            || IsAuditActorCheckWidening(scriptName, sql)
             ? Array.Empty<string>()
             : DetectBreakingRules(sql);
 
@@ -195,6 +196,20 @@ public static class MigrationSafetyClassifier
         };
         return reviewedHash is not null && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == reviewedHash;
+    }
+
+    private static bool IsAuditActorCheckWidening(string scriptName, string sql)
+    {
+        // PostgreSQL cannot add a value to a CHECK in place. Replacing
+        // chk_audit_log_actor_type with the previous values plus Agent keeps
+        // every value an older reader can write, so this one script is expand.
+        // Any other byte, including another DROP, stays contract.
+        const string hash = "58DF2BA66CFBB03D5DEC32EF6410A63A2523C1AD400D2B9D1A6C4EE706A9BCA9";
+        var reviewed = scriptName is "168_AddAgentAuditActor.sql"
+            or "Honua.Server.Migrations.168_AddAgentAuditActor.sql"
+            or "src/Honua.Server/Migrations/168_AddAgentAuditActor.sql";
+        return reviewed && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == hash;
     }
 
     private static Dictionary<string, string> LoadFrozenReaderMigrationHashes()
