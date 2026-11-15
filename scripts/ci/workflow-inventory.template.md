@@ -1021,6 +1021,28 @@ The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migr
 
 Quarantine publication scans retained CI/PR Gate histories twice hourly and on trusted default-branch manual dispatch, rather than once per completion, to amortize API discovery without dropping rerun evidence.
 
+### Feature stream default application lifetime
+
+`FeatureStreamEndpointsTests` shares one seeded Pro application through its
+class fixture. Sequential default-host cases clear sessions and create a fresh admin
+client. The production PostgreSQL event log and its monotonic generations remain
+intact, as they do across separate application lifetimes. Cases that replace licensing,
+metadata or other configuration still build and dispose their own application.
+The shared host uses a one-hour heartbeat interval to avoid unsolicited frames
+between cases; scheduled-heartbeat cases retain their separate configured hosts.
+Credential expiry settings and every assertion are unchanged.
+
+Paired build-host runs of the complete class passed all 126 cases: 802 seconds
+before and 632 seconds after the shared-host change, saving 170 seconds
+(2.83 runner-minutes) with one
+test process in each run. These historical measurements precede the PostgreSQL
+event-log migration and are not timings of the current implementation. The final
+head retains the production database store and is validated in the PR Gate. Full-shard
+elapsed savings have not yet been measured.
+All cases remain in the selected streaming shards and twice-daily full trunk
+runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
+
 ### Advisory heavy compute admission
 
 | Workflow file | Trigger | Compute policy |
