@@ -23,6 +23,13 @@ Honua serves a STAC API v1.0.0 (SpatioTemporal Asset Catalog) at `/stac` for sta
 | GET | `/stac/queryables` | Catalog-level queryables (JSON Schema of filterable properties). |
 | GET | `/stac/collections/{collectionId}/queryables` | Per-collection queryables (JSON Schema). |
 
+## Collection extents
+
+Collection list and detail responses express spatial coverage as WGS 84 longitude/latitude
+bounds. Valid point extents and antimeridian crossings are preserved. Missing coverage,
+coordinates outside geographic bounds, or reversed latitude bounds use the world extent
+`[-180, -90, 180, 90]`. Unknown temporal coverage uses the open interval `[null, null]`.
+
 ## Search parameters
 
 Accepted on `GET /stac/search` as query parameters and on `POST /stac/search` as JSON body fields:

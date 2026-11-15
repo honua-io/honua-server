@@ -521,7 +521,8 @@ internal sealed class StacMappingService
                 extent.North,
                 srid,
                 coordinateTransformService,
-                cancellationToken).ConfigureAwait(false) is { } transformedExtent)
+                cancellationToken).ConfigureAwait(false) is { } transformedExtent &&
+            IsValidGeographicExtent(transformedExtent))
         {
             bbox = ImmutableArray.Create(ImmutableArray.Create(
                 transformedExtent.MinLon,
@@ -555,6 +556,14 @@ internal sealed class StacMappingService
             Temporal = new StacTemporalExtent { Interval = temporalInterval }
         };
     }
+
+    private static bool IsValidGeographicExtent(
+        (double MinLon, double MinLat, double MaxLon, double MaxLat) extent)
+        => extent.MinLon is >= -180 and <= 180 &&
+           extent.MaxLon is >= -180 and <= 180 &&
+           extent.MinLat is >= -90 and <= 90 &&
+           extent.MaxLat is >= -90 and <= 90 &&
+           extent.MinLat <= extent.MaxLat;
 
     private static JsonElement? ConvertGeometryToGeoJsonElement(NetTopologySuite.Geometries.Geometry geom)
     {
