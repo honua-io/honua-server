@@ -196,6 +196,10 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
+                if (diagnostics is not null)
+                {
+                    diagnostics.Headers = headers;
+                }
                 // Spreadsheets in most European locales write ';'-separated files with decimal-comma numbers. Tab and
                 // pipe files are as often written where ',' groups thousands, so only ';' files read a decimal comma.
                 mapping = BuildMapping(headers, options) with { DecimalComma = delimiter == ';' };
@@ -928,6 +932,8 @@ internal sealed class CsvGeometryDiagnostics
     private const int MaxRecordedGeocodeFailures = 100;
 
     private List<CsvGeocodeFailure>? _geocodeFailures;
+
+    public IReadOnlyList<string> Headers { get; internal set; } = [];
 
     /// <summary>
     /// Number of rows whose mapped geometry column held a value that could not be parsed as
