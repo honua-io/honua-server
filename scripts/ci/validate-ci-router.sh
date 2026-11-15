@@ -50,11 +50,14 @@ router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
+  run_fixture code-quality-trust "${PYTHON_BIN}" scripts/ci/fixtures/validate-code-quality-supersession.py
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
+run_fixture normalization-consumer-admission node --test scripts/ci/admit-normalization-consumer.test.js scripts/ci/cancel-older-normalization-consumers.test.js
+run_fixture code-quality-supersession node --test scripts/ci/cancel-superseded-code-quality.test.js
 run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 

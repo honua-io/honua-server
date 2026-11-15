@@ -145,8 +145,12 @@ for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Superseded normalization producers
-and consumers exit neutrally before producing data or mutating a branch.
+review/admission state before acting. Normalization producers and consumers
+cancel superseded work per PR. Draft and metadata-only producer events use
+isolated groups so they cannot cancel eligible generation. A trusted consumer
+admission job resolves the live PR and rejects old-head completions before
+entering the producer-generation concurrency group. Live-head checks and compare-and-swap
+remain required before producing data or mutating a branch.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
 
@@ -1447,5 +1451,26 @@ Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
+
+GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
+workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
+reconciles PR and managed-workflow start events using trusted default-branch code.
+It cancels only active managed Code Quality runs for the same PR whose SHA differs
+from the live PR head, rechecking that head before each cancellation. Current-head
+coverage, trunk scans, required checks and other PRs remain protected. The helper
+checks out no PR code and grants only Actions write, contents read and PR read.
+CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
+already cancel superseded PR runs through their existing per-PR concurrency groups.
+
+Normalization consumer admission reads the exact producer attempt before joining
+its per-PR cancellation group. Only a successful envelope-packaging job admits
+validation; late same-SHA metadata or draft skips cannot cancel useful work.
+Publication of generated documents stays with the trunk producer: feature PRs
+keep envelope validation and drift reporting, and the consumer stays in observe
+mode. Trusted admission cancels only consumers of older producer generations
+associated with that PR; delayed old completions cannot cancel newer work. Only
+admission has Actions write permission for cancellation. Validation retains
+read-only Actions, Contents and Pull requests permissions, and its existing
+installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
