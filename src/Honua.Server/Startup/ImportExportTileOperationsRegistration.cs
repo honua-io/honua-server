@@ -40,7 +40,7 @@ internal static class ImportExportTileOperationsRegistration
         services.AddSingleton<IUniversalProgressStore>(sp =>
             sp.GetService<Npgsql.NpgsqlDataSource>() is not null
                 ? sp.GetRequiredService<Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore>()
-                : new UniversalProgressStore(sp.GetService<IDistributedCache>(), sp.GetRequiredService<ILogger<UniversalProgressStore>>()));
+                : new UniversalProgressStore(null, sp.GetRequiredService<ILogger<UniversalProgressStore>>()));
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));
