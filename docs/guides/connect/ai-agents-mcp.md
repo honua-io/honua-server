@@ -300,10 +300,9 @@ Two rules matter when driving them:
   `version`. `honua_studio_get_version` can retrieve an existing saved version
   and returns those fields at the top level. Submit the current saved item,
   version, hash, route, and visibility to `honua_studio_propose_publication`.
-  An authorized admin receives `Published` and the share URL after completion.
-  Other callers receive `AwaitingApproval` and proposal/operation identities;
-  a separate authorized principal approves, and the agent follows the returned
-  `proposalUri` for the final status and active URL. Do not infer an approval
+  Every MCP caller, administrators included, receives `AwaitingApproval` and
+  proposal/operation identities; a person approves in Console, and the agent
+  follows the returned `proposalUri` for the final status and active URL. Do not infer an approval
   requirement or successful activation from the tool name alone.
 
 These tools authorize against their own operator-grant family (`StudioDraft`), separate from the package-review tools above, so composition access can be scoped independently. The Studio tool inventory is advertised independently of persistence readiness; a host that never composed Studio persistence still lists them but fails calls with a structured, retryable `unavailable` error.

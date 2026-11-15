@@ -153,7 +153,7 @@ Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif`, `layer
 | POST | `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | Cancel a tile operation job |
 | POST | `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | Retry a tile operation job |
 
-Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`. The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. See [Publish tiles](../../guides/publish/publish-tiles.md).
+Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`. The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. `paired-publish` writes a PMTiles and GeoParquet pair from one capture, with a publication descriptor, and reports it as `publishedPublication`. See [Publish tiles](../../guides/publish/publish-tiles.md).
 
 Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"seed","layerId":42,"minZoom":0,"maxZoom":12}`.
 
