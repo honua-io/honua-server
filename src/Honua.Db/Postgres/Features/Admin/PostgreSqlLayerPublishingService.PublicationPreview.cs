@@ -84,8 +84,13 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
         await ValidateLockedPreviewSourceAsync(session, cancellationToken).ConfigureAwait(false);
         var plan = await BuildPreviewPlanAsync(session, cancellationToken).ConfigureAwait(false);
         var planned = BuildPublishedLayerGraph(plan);
-        var fingerprint = await ReadPublicationSourceFingerprintAsync(new PublicationFingerprintContext(
-            connection, transaction, context.Request, context.Source), cancellationToken).ConfigureAwait(false);
+        var fingerprint = await ReadPublicationSourceFingerprintAsync(new PublicationFingerprintContext
+        {
+            Connection = connection,
+            Transaction = transaction,
+            Request = context.Request,
+            Source = context.Source
+        }, cancellationToken).ConfigureAwait(false);
         return SelectPublicationPreview(planned, plan, context.MetadataBase) with { SourceFingerprint = fingerprint };
     }
 
@@ -129,8 +134,17 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
             source.GeometryColumn, source.StorageSrid,
             source.SelectedColumns.Where(column => column.DataType.Equals("smallint", StringComparison.OrdinalIgnoreCase))
                 .Select(column => column.Name).ToArray());
-        var epoch = await ReadImportedStorageEpochAsync(new StorageEpochContext(session.Connection, session.Transaction, request,
-            schema, table, source.GeometryColumn, source.StorageSrid, storage.StorageSrid),
+        var epoch = await ReadImportedStorageEpochAsync(new StorageEpochContext
+        {
+            Connection = session.Connection,
+            Transaction = session.Transaction,
+            Request = request,
+            Schema = schema,
+            Table = table,
+            GeometryColumn = source.GeometryColumn,
+            SourceStorageSrid = source.StorageSrid,
+            PublishedStorageSrid = storage.StorageSrid
+        },
             cancellationToken).ConfigureAwait(false);
         var extent = await ReadLayerExtentAsync(session.Connection, session.Transaction, schema, table, source.GeometryColumn,
             source.StorageSrid, managedLayerId: null, cancellationToken).ConfigureAwait(false);

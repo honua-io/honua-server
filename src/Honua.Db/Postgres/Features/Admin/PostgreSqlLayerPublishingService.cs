@@ -298,8 +298,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "Source schema changed while preparing publication; retry against the current source.");
         }
-        await VerifyPublicationSourceFingerprintAsync(new PublicationFingerprintContext(
-            connection, transaction, request, source), cancellationToken);
+        await VerifyPublicationSourceFingerprintAsync(new PublicationFingerprintContext
+        {
+            Connection = connection,
+            Transaction = transaction,
+            Request = request,
+            Source = source
+        }, cancellationToken);
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
@@ -331,9 +336,17 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 selectedColumns.Where(column => column.DataType.Equals("smallint", StringComparison.OrdinalIgnoreCase))
                     .Select(column => column.Name).ToArray());
 
-        var storageCoordinateEpoch = await ResolveImportedStorageEpochAsync(
-            connection, transaction, request, schema, table, geometryColumn, storageSrid,
-            storage.StorageSrid, cancellationToken);
+        var storageCoordinateEpoch = await ResolveImportedStorageEpochAsync(new StorageEpochContext
+        {
+            Connection = connection,
+            Transaction = transaction,
+            Request = request,
+            Schema = schema,
+            Table = table,
+            GeometryColumn = geometryColumn,
+            SourceStorageSrid = storageSrid,
+            PublishedStorageSrid = storage.StorageSrid
+        }, cancellationToken);
 
         if (storage.IsManagedStore)
         {

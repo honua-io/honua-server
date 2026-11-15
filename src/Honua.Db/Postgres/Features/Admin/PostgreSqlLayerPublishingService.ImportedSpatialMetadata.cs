@@ -9,30 +9,33 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private sealed record StorageEpochContext(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
-        LayerPublishRequest Request, string Schema, string Table, string? GeometryColumn,
-        int SourceStorageSrid, int PublishedStorageSrid);
+    private sealed record StorageEpochContext
+    {
+        public required NpgsqlConnection Connection { get; init; }
+        public required NpgsqlTransaction Transaction { get; init; }
+        public required LayerPublishRequest Request { get; init; }
+        public required string Schema { get; init; }
+        public required string Table { get; init; }
+        public required string? GeometryColumn { get; init; }
+        public required int SourceStorageSrid { get; init; }
+        public required int PublishedStorageSrid { get; init; }
+    }
 
-    private Task<double?> ResolveImportedStorageEpochAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, LayerPublishRequest request,
-        string schema, string table, string? geometryColumn, int sourceStorageSrid, int publishedStorageSrid,
-        CancellationToken cancellationToken) =>
-        ResolveStorageEpochCoreAsync(new StorageEpochContext(connection, transaction, request, schema, table,
-            geometryColumn, sourceStorageSrid, publishedStorageSrid), ReadLockedSpatialFactsAsync, cancellationToken);
+    private Task<double?> ResolveImportedStorageEpochAsync(StorageEpochContext context, CancellationToken cancellationToken) =>
+        ResolveStorageEpochCoreAsync(context, ImportedDatasetSpatialMetadata.ReadAsync, cancellationToken);
 
     private Task<double?> ReadImportedStorageEpochAsync(StorageEpochContext context, CancellationToken cancellationToken) =>
         ResolveStorageEpochCoreAsync(context, ImportedDatasetSpatialMetadata.ReadSnapshotAsync, cancellationToken);
-
-    private static Task<ImportedDatasetSpatialMetadata.Facts?> ReadLockedSpatialFactsAsync(
-        ImportedDatasetSpatialMetadata.ReadTarget target, CancellationToken cancellationToken) =>
-        ImportedDatasetSpatialMetadata.ReadAsync(target.Connection, target.Transaction, target.MetadataSchema,
-            target.Schema, target.Table, target.GeometryColumn, target.Identity, cancellationToken);
 
     private async Task<double?> ResolveStorageEpochCoreAsync(StorageEpochContext context,
         Func<ImportedDatasetSpatialMetadata.ReadTarget, CancellationToken, Task<ImportedDatasetSpatialMetadata.Facts?>> readFacts,
         CancellationToken cancellationToken)
     {
-        var (connection, transaction, _, schema, table, geometryColumn, _, _) = context;
+        var connection = context.Connection;
+        var transaction = context.Transaction;
+        var schema = context.Schema;
+        var table = context.Table;
+        var geometryColumn = context.GeometryColumn;
         var hint = ValidateEpochHint(context);
         if (string.IsNullOrWhiteSpace(geometryColumn))
         {
@@ -54,11 +57,22 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
         var identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
             connection, transaction, schema, table, geometryColumn, cancellationToken);
-        var facts = await readFacts(new ImportedDatasetSpatialMetadata.ReadTarget(
-            connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, geometryColumn, identity),
-            cancellationToken);
+        var facts = await readFacts(CreateReadTarget(context, identity), cancellationToken);
         return ValidateResolvedEpoch(context, facts);
     }
+
+    private ImportedDatasetSpatialMetadata.ReadTarget CreateReadTarget(StorageEpochContext context,
+        ImportedDatasetSpatialMetadata.Identity identity) =>
+        new()
+        {
+            Connection = context.Connection,
+            Transaction = context.Transaction,
+            MetadataSchema = _schemaConfiguration.MetadataSchema,
+            Schema = context.Schema,
+            Table = context.Table,
+            GeometryColumn = context.GeometryColumn!,
+            Identity = identity
+        };
 
     private static double? ValidateEpochHint(StorageEpochContext context)
     {
@@ -87,7 +101,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
         if (facts.Value.StorageSrid != context.SourceStorageSrid ||
-            (hint.HasValue && hint != facts.Value.CoordinateEpoch))
+            (hint.HasValue && !Nullable.Equals(hint, facts.Value.CoordinateEpoch)))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "Source storage CRS or coordinate epoch conflicts with imported metadata.");

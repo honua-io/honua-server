@@ -77,9 +77,16 @@ internal sealed partial class StreamingFileImportService
             }
             else
             {
-                var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
-                    connection, transaction, _schemaConfiguration.MetadataSchema, options.Schema, options.Table, "geometry",
-                    identity!.Value, cancellationToken);
+                var facts = await ImportedDatasetSpatialMetadata.ReadAsync(new ImportedDatasetSpatialMetadata.ReadTarget
+                {
+                    Connection = connection,
+                    Transaction = transaction,
+                    MetadataSchema = _schemaConfiguration.MetadataSchema,
+                    Schema = options.Schema,
+                    Table = options.Table,
+                    GeometryColumn = "geometry",
+                    Identity = identity!.Value
+                }, cancellationToken);
                 storageSrid = await ResolveAppendStorageSridAsync(facts, options, cancellationToken);
             }
             if (mode == ImportLoadMode.Upsert)
@@ -152,9 +159,16 @@ internal sealed partial class StreamingFileImportService
         {
             throw new InvalidDataException("Import target identity changed while reading the source.");
         }
-        var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
-            connection, transaction, _schemaConfiguration.MetadataSchema,
-            schema, table, "geometry", identity, cancellationToken);
+        var facts = await ImportedDatasetSpatialMetadata.ReadAsync(new ImportedDatasetSpatialMetadata.ReadTarget
+        {
+            Connection = connection,
+            Transaction = transaction,
+            MetadataSchema = _schemaConfiguration.MetadataSchema,
+            Schema = schema,
+            Table = table,
+            GeometryColumn = "geometry",
+            Identity = identity
+        }, cancellationToken);
         ImportedDatasetSpatialMetadata.ValidateAppend(facts, storageSrid, guard.CoordinateEpoch);
     }
     private static async Task ValidatePromotionIdentityAsync(

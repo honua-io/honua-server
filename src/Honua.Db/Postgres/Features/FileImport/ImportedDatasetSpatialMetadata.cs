@@ -92,14 +92,19 @@ internal static class ImportedDatasetSpatialMetadata
         return new Identity(reader.GetFieldValue<uint>(0), reader.GetInt16(1));
     }
 
-    internal sealed record ReadTarget(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
-        string MetadataSchema, string Schema, string Table, string GeometryColumn, Identity Identity);
+    internal sealed record ReadTarget
+    {
+        public required NpgsqlConnection Connection { get; init; }
+        public required NpgsqlTransaction Transaction { get; init; }
+        public required string MetadataSchema { get; init; }
+        public required string Schema { get; init; }
+        public required string Table { get; init; }
+        public required string GeometryColumn { get; init; }
+        public required Identity Identity { get; init; }
+    }
 
-    internal static Task<Facts?> ReadAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, string metadataSchema,
-        string schema, string table, string geometryColumn, Identity identity, CancellationToken cancellationToken) =>
-        ReadCoreAsync(new ReadTarget(connection, transaction, metadataSchema, schema, table, geometryColumn, identity),
-            "FOR UPDATE", cancellationToken);
+    internal static Task<Facts?> ReadAsync(ReadTarget target, CancellationToken cancellationToken) =>
+        ReadCoreAsync(target, "FOR UPDATE", cancellationToken);
 
     internal static Task<Facts?> ReadSnapshotAsync(ReadTarget target, CancellationToken cancellationToken) =>
         ReadCoreAsync(target, string.Empty, cancellationToken);

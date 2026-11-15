@@ -11,8 +11,13 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private sealed record PublicationFingerprintContext(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
-        LayerPublishRequest Request, PreparedPublicationSource Source);
+    private sealed record PublicationFingerprintContext
+    {
+        public required NpgsqlConnection Connection { get; init; }
+        public required NpgsqlTransaction Transaction { get; init; }
+        public required LayerPublishRequest Request { get; init; }
+        public required PreparedPublicationSource Source { get; init; }
+    }
 
     private async Task VerifyPublicationSourceFingerprintAsync(PublicationFingerprintContext context,
         CancellationToken cancellationToken)
@@ -36,11 +41,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<string> ReadPublicationSourceFingerprintAsync(PublicationFingerprintContext context,
         CancellationToken cancellationToken)
     {
-        var (connection, transaction, request, source) = context;
+        var connection = context.Connection;
+        var transaction = context.Transaction;
+        var request = context.Request;
+        var source = context.Source;
         var schema = request.Schema.Trim();
         var table = request.Table.Trim();
-        var epoch = await ReadImportedStorageEpochAsync(new StorageEpochContext(connection, transaction, request, schema, table,
-            source.GeometryColumn, source.StorageSrid, source.StorageSrid), cancellationToken).ConfigureAwait(false);
+        var epoch = await ReadImportedStorageEpochAsync(new StorageEpochContext
+        {
+            Connection = connection,
+            Transaction = transaction,
+            Request = request,
+            Schema = schema,
+            Table = table,
+            GeometryColumn = source.GeometryColumn,
+            SourceStorageSrid = source.StorageSrid,
+            PublishedStorageSrid = source.StorageSrid
+        }, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand("""
             SELECT jsonb_build_object('database', current_database(), 'relation', c.oid, 'kind', c.relkind,
                 'columns', (SELECT jsonb_agg(jsonb_build_array(a.attnum, a.attname, a.atttypid,
