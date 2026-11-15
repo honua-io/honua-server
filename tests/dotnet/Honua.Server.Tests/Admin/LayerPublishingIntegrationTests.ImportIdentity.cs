@@ -61,10 +61,12 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /api/v1/admin/import/upload")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/tables/validate")]
     public async Task PublishImportedCsv_DefaultFields_ExposesSourceIdWithoutInternalColumns()
     {
         const string source = "id,name,lon,lat\n100,a,-157,21\n200,b,-156,21";
         await ImportAndPublishAttributesAsync(source, [], "attributes.csv");
+        await AssertImportedBookkeepingSelectionAsync();
         using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("source_id=100", "id ASC"));
         var attributes = rest.RootElement.GetProperty("features").EnumerateArray()
             .Should().ContainSingle().Subject.GetProperty("attributes");
@@ -83,13 +85,15 @@ public sealed partial class LayerPublishingIntegrationTests
         properties.TryGetProperty("created_at", out _).Should().BeFalse();
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("honua:import-owned:v1")]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task PublishOrdinaryTable_DefaultFields_PreservesUserPropertiesAndCreatedAt()
+    public async Task PublishOrdinaryTable_DefaultFields_PreservesUserPropertiesAndCreatedAt(string? ownershipMarker)
     {
         var tableName = $"user_attributes_{Guid.NewGuid():N}";
         _legacyImportedTableName = tableName;
@@ -103,6 +107,11 @@ public sealed partial class LayerPublishingIntegrationTests
                 1, ST_SetSRID(ST_MakePoint(-157,21),4326),
                 '{"business":"value"}'::jsonb, '2026-01-01T00:00:00Z');
             """);
+        if (ownershipMarker is not null)
+        {
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync(
+                $"COMMENT ON TABLE public.{tableName} IS '{ownershipMarker}'");
+        }
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = "public",
@@ -120,6 +129,28 @@ public sealed partial class LayerPublishingIntegrationTests
         using var userProperties = JsonDocument.Parse(attributes.GetProperty("properties").GetString()!);
         userProperties.RootElement.GetProperty("business").GetString().Should().Be("value");
         attributes.TryGetProperty("created_at", out _).Should().BeTrue();
+    }
+
+    private async Task AssertImportedBookkeepingSelectionAsync()
+    {
+        var validation = await ValidateTableForPublishAsync(new ValidateTablePublishRequest
+        {
+            Schema = _importedTableSchema!,
+            Table = _importedTableName!,
+            PrimaryKey = "id",
+            Fields = []
+        });
+        validation.Fields.Where(field => field.IsSelected).Select(field => field.Name)
+            .Should().Contain("source_id").And.NotContain(["properties", "created_at"]);
+        var explicitValidation = await ValidateTableForPublishAsync(new ValidateTablePublishRequest
+        {
+            Schema = _importedTableSchema!,
+            Table = _importedTableName!,
+            PrimaryKey = "id",
+            Fields = ["id", "properties", "created_at"]
+        });
+        explicitValidation.Fields.Where(field => field.IsSelected).Select(field => field.Name)
+            .Should().BeEquivalentTo("id", "properties", "created_at");
     }
 
     private async Task ImportAndPublishAttributesAsync(string source, string[] fields, string fileName = "attributes.geojson")

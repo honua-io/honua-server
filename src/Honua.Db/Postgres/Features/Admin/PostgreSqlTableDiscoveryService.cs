@@ -407,8 +407,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     c.character_maximum_length,
                     CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
                     (c.column_name IN ('properties', 'created_at') AND
-                     obj_description(to_regclass(format('%I.%I', c.table_schema, c.table_name)), 'pg_class')
-                        = 'honua:import-owned:v1') IS TRUE AS is_internal_import_column
+                     col_description(to_regclass(format('%I.%I', c.table_schema, c.table_name)), c.ordinal_position)
+                        = 'honua:import-bookkeeping:v1') IS TRUE AS is_internal_import_column
                 FROM information_schema.columns c
                 LEFT JOIN (
                     SELECT a.attname as column_name

@@ -417,7 +417,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 FieldType = MapPostgresType(column.DataType).ToString(),
                 IsNullable = column.IsNullable,
                 IsPrimaryKey = column.IsPrimaryKey,
-                IsSelected = selectedSet == null || selectedSet.Contains(column.Name),
+                IsSelected = selectedSet == null ? !column.IsInternalImportColumn : selectedSet.Contains(column.Name),
                 MaxLength = column.MaxLength
             })
             .ToArray();
