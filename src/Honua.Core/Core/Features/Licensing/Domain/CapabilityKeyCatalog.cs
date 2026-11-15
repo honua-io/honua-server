@@ -253,7 +253,7 @@ public static class CapabilityKeyCatalog
             }),
     ];
 
-    // Realtime streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
+    // Realtime streams deliver cross-node through the PostgreSQL event log when PostgreSQL is configured.
     private static string? StatusOf(FeatureDefinition feature)
         => feature.Category switch
         {

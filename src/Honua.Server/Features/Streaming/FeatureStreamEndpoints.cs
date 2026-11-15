@@ -31,7 +31,7 @@ internal static partial class FeatureStreamEndpoints
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
-            // Opt-in Experimental: streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
+            // Opt-in Experimental: cross-node delivery uses the PostgreSQL event log when PostgreSQL is configured.
             .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
