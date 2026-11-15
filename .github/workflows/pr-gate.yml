@@ -935,13 +935,16 @@ jobs:
           SERVER_PRODUCER_RESULT: ${{ needs.server-test-producer.result }}
         run: test "${SERVER_PRODUCER_RESULT}" = success
 
+      # Pattern download fetches every earlier attempt. A stale signed URL
+      # then fails the required aggregate even when the newest receipt is
+      # intact. Select by attempt number and download those artifact ids.
       - name: Download affected shard receipts
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: pr-gate-affected-shard-*
-          path: artifacts/pr-gate/shard-results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.matrix_include }}
+        run: python3 scripts/ci/download-affected-receipts.py --output artifacts/pr-gate/shard-results
 
       - name: Report affected-shard verdict
         if: always()

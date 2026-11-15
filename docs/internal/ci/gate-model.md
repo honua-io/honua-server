@@ -725,12 +725,16 @@ and successful jobs. Full CI also checks the merged foundation TRX outcomes;
 foundation security build and test failures count even when built separately.
 `CI Gate` depends on these enforced test summaries.
 
-Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`, and
-both aggregates download every attempt into its own directory. A failed-jobs
-rerun re-runs only failed or cancelled shards; each shard's highest attempt is
-the one counted, so a rerun's receipt replaces the earlier attempt's and a
-shard the rerun did not repeat keeps its earlier passing receipt. A newer
-failing attempt still overrides an older passing one. Before this change the
+Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`.
+The PR Gate aggregate (`scripts/ci/download-affected-receipts.py`) lists the
+run's artifacts and downloads only the newest id for each selected shard whose
+attempt is at most the current run attempt. A shard a failed-jobs rerun did
+not repeat keeps its earlier receipt; an expired, ambiguous or digest-mismatched
+newest receipt fails closed and is not replaced by an older copy. Full CI still
+downloads every attempt directory by name, without merging them. Each shard's
+highest attempt present is the one counted, so a rerun's receipt replaces the
+earlier attempt's. A newer failing attempt still overrides an older passing one.
+Before this change the
 aggregates merged same-named artifacts, and GitHub's artifact ids do not follow
 upload order: on honua-server#7648 run 43603773296 attempt 2, attempt 1's empty
 `Packages and Temporal` artifact outranked attempt 2's receipt, leaving 5/6

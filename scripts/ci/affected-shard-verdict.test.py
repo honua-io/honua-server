@@ -210,20 +210,26 @@ class AffectedShardVerdictTests(unittest.TestCase):
     def test_shard_artifacts_are_named_per_attempt_and_not_merged(self) -> None:
         import yaml
 
-        for filename, job_id, prefix in (
-            ("pr-gate.yml", "affected-shard", "pr-gate-affected-shard-"),
-            ("ci.yml", "server-tests", "server-test-results-"),
-        ):
-            with self.subTest(workflow=filename):
-                workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
-                upload = next(step for step in workflow["jobs"][job_id]["steps"]
-                              if step.get("with", {}).get("name", "").startswith(prefix))
-                self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
-                downloads = [step for job in workflow["jobs"].values() for step in job.get("steps", [])
-                             if step.get("with", {}).get("pattern") == f"{prefix}*"]
-                self.assertTrue(downloads)
-                for download in downloads:
-                    self.assertFalse(download["with"].get("merge-multiple", False))
+        gate = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        upload = next(step for step in gate["jobs"]["affected-shard"]["steps"]
+                      if str(step.get("with", {}).get("name", "")).startswith("pr-gate-affected-shard-"))
+        self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+        broad = [step for job in gate["jobs"].values() for step in job.get("steps", [])
+                 if step.get("with", {}).get("pattern") == "pr-gate-affected-shard-*"]
+        self.assertEqual(broad, [])
+        bounded = next(step for step in gate["jobs"]["affected-shards"]["steps"]
+                       if step.get("name") == "Download affected shard receipts")
+        self.assertIn("download-affected-receipts.py", bounded["run"])
+        self.assertIn("matrix_include", bounded["env"]["SELECT_MATRIX"])
+        full = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        full_upload = next(step for step in full["jobs"]["server-tests"]["steps"]
+                           if str(step.get("with", {}).get("name", "")).startswith("server-test-results-"))
+        self.assertTrue(full_upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+        downloads = [step for job in full["jobs"].values() for step in job.get("steps", [])
+                     if step.get("with", {}).get("pattern") == "server-test-results-*"]
+        self.assertTrue(downloads)
+        for download in downloads:
+            self.assertFalse(download["with"].get("merge-multiple", False))
 
     def test_every_shard_job_preserves_test_failure(self) -> None:
         import yaml
