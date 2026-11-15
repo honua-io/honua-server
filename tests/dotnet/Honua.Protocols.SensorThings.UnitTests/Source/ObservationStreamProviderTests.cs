@@ -23,7 +23,8 @@ public sealed class ObservationStreamProviderTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         await using var session = manager.TryCreateSession(new ObservationStreamRequest(
-            "SSE", 7, new("tenant-a", null)) { PrincipalId = "alice", After = 42 }, out _);
+            "SSE", 7, new("tenant-a", null))
+        { PrincipalId = "alice", After = 42 }, out _);
 
         Assert.NotNull(session);
         Assert.NotNull(request);
@@ -93,7 +94,8 @@ public sealed class ObservationStreamProviderTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         var session = manager.TryCreateSession(new ObservationStreamRequest(
-            "SSE", null, new("tenant-a", null)) { PrincipalId = "alice" }, out _)!;
+            "SSE", null, new("tenant-a", null))
+        { PrincipalId = "alice" }, out _)!;
         await session.DisposeAsync();
         await session.DisposeAsync();
         Assert.Equal(0, manager.SessionCount);

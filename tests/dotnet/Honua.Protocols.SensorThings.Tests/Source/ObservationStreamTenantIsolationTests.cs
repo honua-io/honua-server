@@ -28,7 +28,8 @@ public sealed class ObservationStreamTenantIsolationTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         await using var session = manager.TryCreateSession(new ObservationStreamRequest(
-            "SSE", 1, new("tenant-a", "schema_a")) { PrincipalId = "alice", After = 0 }, out _);
+            "SSE", 1, new("tenant-a", "schema_a"))
+        { PrincipalId = "alice", After = 0 }, out _);
         Assert.NotNull(request);
         Assert.False(request.Filter!(new RealtimeEvent(RealtimeFamily.Observations, 1, "1",
             "observation.created", JsonSerializer.SerializeToElement(new { scope = new { tenantId = tenant, schema } }),

@@ -29,15 +29,15 @@ public sealed class ObservationStreamPostgresTests(DatabaseFixtureAdapter databa
         await nodeA.AppendAsync(Draft("tenant-a", "schema_a", "1"), null, CancellationToken.None);
         await using var first = new ObservationStreamSessionManager(NullLogger<ObservationStreamSessionManager>.Instance, nodeA);
         await using var second = new ObservationStreamSessionManager(NullLogger<ObservationStreamSessionManager>.Instance, nodeB);
-        await using var local = first.TryCreateSession(new("SSE", 1, new("tenant-a", "schema_a"), "alice", 0), out _)!;
-        await using var remote = second.TryCreateSession(new("WebSocket", 1, new("tenant-a", "schema_a"), "alice", 0), out _)!;
-        await using var tenantB = second.TryCreateSession(new("SSE", null, new("tenant-b", "schema_b"), "bob", 0), out _)!;
-        await using var wrongSchema = second.TryCreateSession(new("SSE", null, new("tenant-a", "schema_b"), "alice", 0), out _)!;
+        await using var local = first.TryCreateSession(new("SSE", 1, new("tenant-a", "schema_a")) { PrincipalId = "alice", After = 0 }, out _)!;
+        await using var remote = second.TryCreateSession(new("WebSocket", 1, new("tenant-a", "schema_a")) { PrincipalId = "alice", After = 0 }, out _)!;
+        await using var tenantB = second.TryCreateSession(new("SSE", null, new("tenant-b", "schema_b")) { PrincipalId = "bob", After = 0 }, out _)!;
+        await using var wrongSchema = second.TryCreateSession(new("SSE", null, new("tenant-a", "schema_b")) { PrincipalId = "alice", After = 0 }, out _)!;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await AssertInitialReplayAsync([local, remote], timeout.Token);
         Assert.Equal(2, Assert.IsType<RealtimeDelivery.Event>(await tenantB.Reader.ReadAsync(timeout.Token)).Value.Sequence);
         Assert.False(wrongSchema.Reader.TryRead(out _));
-        await using var resumed = second.TryCreateSession(new("SSE", 1, new("tenant-a", "schema_a"), "alice", 1), out _)!;
+        await using var resumed = second.TryCreateSession(new("SSE", 1, new("tenant-a", "schema_a")) { PrincipalId = "alice", After = 1 }, out _)!;
         Assert.Equal(4, Assert.IsType<RealtimeDelivery.Event>(await resumed.Reader.ReadAsync(timeout.Token)).Value.Sequence);
         Assert.False(resumed.Reader.TryRead(out _));
 
