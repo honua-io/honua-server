@@ -101,6 +101,17 @@ class RetiredCacheTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.check().returncode, 1)
 
+    def test_wide_character_project_files_cannot_hide_dependencies(self):
+        project = '<Project><ItemGroup><PackageReference Include="StackExchange.Redis" /></ItemGroup></Project>\n'
+        encodings = ["utf-16", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"]
+        for encoding in encodings:
+            (self.root / f"{encoding}.csproj").write_bytes(project.encode(encoding))
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for encoding in encodings:
+            self.assertIn(f"{encoding}.csproj:1:", result.stdout)
+
     def test_non_lf_separators_cannot_hide_mentions(self):
         for index, separator in enumerate(["\f", "\r", "\v", "\u0085", "\u2028", "\u2029"]):
             self.write(f"separator-{index}.txt", f"prefix{separator}Redis\n")

@@ -29,6 +29,9 @@ def git_diff(revisions, options):
 
 
 def mentions_retired_cache(line: str) -> bool:
+    # Git's text patch preserves NUL padding in UTF-16/32 files. Redis tokens
+    # use ASCII letters, so remove padding before identifying those tokens.
+    line = line.replace("\x00", "")
     for identifier in re.findall(r"[A-Za-z]+", line):
         if identifier.casefold() == "redis":
             return True
