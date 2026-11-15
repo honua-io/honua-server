@@ -109,6 +109,34 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
             .Should().Be(true, "an allocator without an assigned XID evades the captured snapshot fence");
     }
 
+    [IntegrationTest(Timeout = 180000)]
+    public async Task SnapshotFence_SnapshotBeforeSequence_CanPublishPastAnUnfinishedLowerWriter()
+    {
+        await using var scope = await FenceScope.CreateAsync(fixture);
+        await using var lower = await scope.OpenAsync();
+        await using var higher = await scope.OpenAsync();
+        await using var publisher = await scope.OpenAsync();
+        var staleXmax = (string)(await ScalarAsync(publisher,
+            "SELECT pg_snapshot_xmax(pg_current_snapshot())::text"))!;
+
+        await using var transaction = await lower.BeginTransactionAsync();
+        await ScalarAsync(lower, "SELECT pg_current_xact_id()::text");
+        var lowerGeneration = await AllocateAsync(lower);
+        await ExecuteAsync(lower, $"INSERT INTO changes VALUES ({lowerGeneration})");
+        var higherGeneration = await CommitHigherAsync(higher);
+        var allocated = (long)(await ScalarAsync(publisher, "SELECT last_value FROM generations"))!;
+        var candidate = new Candidate(allocated, staleXmax);
+
+        (await FenceOpenAsync(publisher, candidate)).Should().BeTrue(
+            "a writer starting after the stale snapshot does not hold its xmin fence closed");
+        (await PublishedAsync(publisher, candidate)).Should().Be(higherGeneration);
+        lowerGeneration.Should().BeLessThan(higherGeneration);
+        await transaction.CommitAsync();
+
+        (await ScalarAsync(publisher, $"SELECT EXISTS (SELECT 1 FROM changes WHERE generation = {lowerGeneration})"))
+            .Should().Be(true, "reading the sequence after the snapshot admitted an unfinished lower allocation");
+    }
+
     private readonly record struct Candidate(long AllocatedThrough, string SnapshotXmax);
 
     private static async Task<Candidate> CaptureAsync(NpgsqlConnection publisher)
