@@ -84,5 +84,7 @@ internal sealed class PendingAttachmentBlobs
         return copy;
     }
 
+    public void DiscardAfter(int count) => _paths.RemoveRange(count, _paths.Count - count);
+
     public void Discard() => _paths.Clear();
 }

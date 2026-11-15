@@ -2475,13 +2475,32 @@ internal sealed partial class FeatureDataAccess
         bool requireTransaction = false)
     {
         var origin = ReplicaUploadOriginScope.Current;
-        if (batchTransaction is not null || (origin is null && !requireTransaction && !TryUseTransactionalOutbox(out _)))
+        if (batchTransaction is not null)
         {
-            if (origin is not null)
+            const string savepoint = "honua_edit_row";
+            var pendingBlobCount = _pendingAttachmentBlobs.Count;
+            await batchTransaction.SaveAsync(savepoint, cancellationToken).ConfigureAwait(false);
+            try
             {
-                await SetReplicaUploadOriginAsync(connection, batchTransaction!, origin, cancellationToken).ConfigureAwait(false);
+                if (origin is not null)
+                {
+                    await SetReplicaUploadOriginAsync(connection, batchTransaction, origin, cancellationToken).ConfigureAwait(false);
+                }
+                var row = await mutateAndAppendOutbox(connection, batchTransaction, cancellationToken).ConfigureAwait(false);
+                await batchTransaction.ReleaseAsync(savepoint, cancellationToken).ConfigureAwait(false);
+                return row;
             }
-            return await mutateAndAppendOutbox(connection, batchTransaction, cancellationToken).ConfigureAwait(false);
+            catch
+            {
+                _pendingAttachmentBlobs.DiscardAfter(pendingBlobCount);
+                await batchTransaction.RollbackAsync(savepoint, CancellationToken.None).ConfigureAwait(false);
+                await batchTransaction.ReleaseAsync(savepoint, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+        }
+        if (origin is null && !requireTransaction && !TryUseTransactionalOutbox(out _))
+        {
+            return await mutateAndAppendOutbox(connection, null, cancellationToken).ConfigureAwait(false);
         }
 
         await using var rowTransaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
