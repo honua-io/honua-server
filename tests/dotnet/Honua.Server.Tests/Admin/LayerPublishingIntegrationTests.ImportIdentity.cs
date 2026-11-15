@@ -132,9 +132,12 @@ public sealed partial class LayerPublishingIntegrationTests
         };
         await CreateSecureConnectionAsync(connection.ConnectionString);
         using var upload = new MultipartFormDataContent();
-        upload.Add(new StringContent(source), "File", fileName);
-        upload.Add(new StringContent($"attributes_{Guid.NewGuid():N}"), "TableName");
-        upload.Add(new StringContent("4326"), "TargetSrid");
+        using var fileContent = new StringContent(source);
+        using var tableNameContent = new StringContent($"attributes_{Guid.NewGuid():N}");
+        using var targetSridContent = new StringContent("4326");
+        upload.Add(fileContent, "File", fileName);
+        upload.Add(tableNameContent, "TableName");
+        upload.Add(targetSridContent, "TargetSrid");
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
