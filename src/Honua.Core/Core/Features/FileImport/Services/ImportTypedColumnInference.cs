@@ -16,7 +16,7 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
 
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "id",
+        "__honua_id",
         "geometry",
         "properties",
         "created_at",

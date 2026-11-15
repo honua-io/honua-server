@@ -23,6 +23,29 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed partial class ImportTypedColumnTests
 {
     [IntegrationTheory]
+    [InlineData("100", "200")]
+    [InlineData("0", "-1")]
+    [InlineData("100", "100")]
+    [InlineData("parcel-a", "parcel-b")]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_CsvSourceId_PreservesQueryableValues(string firstId, string secondId)
+    {
+        var csv = $"id,name,lon,lat\n{firstId},a,-157,21\n{secondId},b,-156,21\n";
+        var imported = await ImportAsync("source_ids", "source.csv", Encoding.UTF8.GetBytes(csv));
+        imported.Result.TypedColumns.Should().Contain(column => column.Name == "id");
+
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT id::text FROM \"{imported.Schema}\".\"{imported.Table}\" ORDER BY name";
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be(firstId);
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be(secondId);
+        (await reader.ReadAsync()).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
     [InlineData(12_477, 127, 1899)]
     [InlineData(12_152, 345, 2826)]
     [Operation(Operations.Import)]

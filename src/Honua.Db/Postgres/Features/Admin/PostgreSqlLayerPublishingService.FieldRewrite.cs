@@ -54,7 +54,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var geometryColumn = string.IsNullOrWhiteSpace(request.GeometryColumn)
             ? tableInfo.GeometryColumn
             : request.GeometryColumn;
-        var selectedColumns = ResolveSelectedColumns(tableInfo.Columns, request.Fields);
+        await using var sourceConnection = new NpgsqlConnection(connectionString);
+        await sourceConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var columns = request.Fields.Count == 0
+            ? await ResolvePublishableColumnsAsync(sourceConnection, tableInfo, cancellationToken).ConfigureAwait(false)
+            : tableInfo.Columns;
+        var selectedColumns = ResolveSelectedColumns(columns, request.Fields);
         if (selectedColumns.Count == 0)
         {
             throw new LayerPublishingException(

@@ -122,7 +122,7 @@ public sealed class ImportTypedColumnInferenceTests
     public void Resolve_NestedUnsafeAndReservedNames_StayUnpromoted()
     {
         var inference = new ImportTypedColumnInference();
-        inference.Observe("id", 100);
+        inference.Observe("__honua_id", 100);
         inference.Observe("xmin", 7);
         inference.Observe("ctid", "kept");
         inference.Observe("tableoid", 1);

@@ -135,6 +135,7 @@ public sealed partial class ImportTypedColumnTests(PostgresFixture fixture)
         var imported = await ImportAsync("places", "places.geojson", Encoding.UTF8.GetBytes(geoJson));
         imported.Result.TypedColumns.Select(column => (column.Name, column.PostgresType)).Should().BeEquivalentTo(
         [
+            ("id", "bigint"),
             ("name", "text"),
             ("population", "bigint"),
             ("active", "boolean"),
@@ -152,7 +153,7 @@ public sealed partial class ImportTypedColumnTests(PostgresFixture fixture)
             """;
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
-        reader.GetInt32(0).Should().Be(1);
+        reader.GetInt64(0).Should().Be(100);
         reader.GetString(1).Should().Be("Alpha");
         reader.GetInt64(2).Should().Be(2);
         reader.GetBoolean(3).Should().BeTrue();
@@ -197,7 +198,7 @@ public sealed partial class ImportTypedColumnTests(PostgresFixture fixture)
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "population" && column.PostgresType == "bigint");
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "source_code" && column.PostgresType == "text");
             imported.Result.TypedColumns.Should().Contain(column => column.Name == "source_label" && column.PostgresType == "text");
-            imported.Result.TypedColumns.Should().NotContain(column => column.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
+            imported.Result.TypedColumns.Should().Contain(column => column.Name == "id");
 
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
@@ -849,6 +850,8 @@ public sealed partial class ImportTypedColumnTests(PostgresFixture fixture)
             "108_FixLongImportIndexNames.sql",
             "129_ProtectImportTableOwnership.sql",
             "143_PromoteImportTypedColumns.sql",
+            "183_SeparateImportSourceIdentity.sql",
+            "184_PromoteImportSourceId.sql",
         })
         {
             await fixture.ApplyGlobalSeedSqlAsync(ReadMigration(name));

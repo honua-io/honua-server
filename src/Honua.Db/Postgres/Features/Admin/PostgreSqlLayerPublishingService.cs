@@ -366,7 +366,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
         var storageSrid = tableInfo.Srid is > 0 ? tableInfo.Srid.Value : srid;
 
-        var columns = tableInfo.Columns;
+        var columns = request.Fields.Count == 0
+            ? await ResolvePublishableColumnsAsync(connection, tableInfo, cancellationToken).ConfigureAwait(false)
+            : tableInfo.Columns;
         if (columns.Count == 0)
         {
             throw new LayerPublishingException(
@@ -820,7 +822,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         checks.Add(Pass("source-table", $"Table '{schema}.{table}' is discoverable."));
 
-        var selectedColumns = ResolveSelectedColumnsForValidation(tableInfo.Columns, request.Fields, checks);
+        var columns = request.Fields.Count == 0
+            ? await ResolvePublishableColumnsAsync(connection, tableInfo, cancellationToken, transaction).ConfigureAwait(false)
+            : tableInfo.Columns;
+        var selectedColumns = ResolveSelectedColumnsForValidation(columns, request.Fields, checks);
         if (selectedColumns.Count == 0)
         {
             checks.Add(Error("selected-fields", "No publishable fields were selected."));
