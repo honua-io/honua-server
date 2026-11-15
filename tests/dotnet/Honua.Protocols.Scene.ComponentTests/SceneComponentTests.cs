@@ -67,7 +67,7 @@ public sealed class SceneComponentTests
     }
 
     internal static Task<ComponentTestHost> StartAsync(string? assetRoot = null, string sceneId = "public",
-        IConfigurationGenerationSource? generations = null)
+        IConfigurationGenerationSource? generations = null, bool responseCompression = false)
     {
         var root = assetRoot ?? FindFixture();
         return ComponentTestHost.StartAsync(builder =>
@@ -83,8 +83,13 @@ public sealed class SceneComponentTests
                 ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false"
             });
             builder.Services.AddScene(builder.Configuration);
-            builder.Services.AddResponseCompression(options =>
-                options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>());
+            // Scene asset revalidation calls IETagService directly. Production registers it with observability.
+            builder.Services.AddETags();
+            if (responseCompression)
+            {
+                builder.Services.AddResponseCompression(options =>
+                    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>());
+            }
             if (generations is not null)
             {
                 builder.Services.AddSingleton(generations);
@@ -106,7 +111,10 @@ public sealed class SceneComponentTests
         {
             app.UseGlobalExceptionHandling();
             app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
-            app.UseResponseCompression();
+            if (responseCompression)
+            {
+                app.UseResponseCompression();
+            }
             app.Use(static (context, next) =>
             {
                 context.Response.OnStarting(static state =>

@@ -46,7 +46,7 @@ public sealed class SceneGenerationETagTests
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
     public async Task GetAsset_GzipAcceptedForBinaryAsset_PreservesStrongIfRangeValidator()
     {
-        await using var host = await SceneComponentTests.StartAsync();
+        await using var host = await SceneComponentTests.StartAsync(responseCompression: true);
         const string path = "/scenes/public/tiles/0.b3dm";
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.AcceptEncoding.ParseAdd("gzip");
