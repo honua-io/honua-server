@@ -170,7 +170,9 @@ earlier one could not.
 | **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run is assigned to an owning lane |
 | **4 Full** | `schedule` 07:23 and 13:23 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
-Full runs use off-hour minutes to reduce schedule-delivery contention. The
+Full runs use off-hour minutes to reduce schedule-delivery contention. GitHub still delivers these crons hours late, so
+`full-ci-dispatch.yml` dispatches the full run itself on trunk pushes between 22:00 and
+03:00 Pacific when no full run is active and trunk head has no full result (at most two a night). The
 half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
 20 hours, independently of affected CI activity. It also reports outstanding work without a usable
 result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
@@ -1474,3 +1476,25 @@ read-only Actions, Contents and Pull requests permissions, and its existing
 installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
+
+### Advisory image and CodeQL runner selection
+
+CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
+`advisory-runner-select.yml` before allocating compute. Same-repository PRs use
+trusted base scripts and the existing OIDC role to read the build-host instance
+and heartbeat. A heartbeat no older than 90 seconds must match the current
+instance and advertise an idle heavy runner. Otherwise the job uses its existing
+hosted label. Missing configuration, credentials, read failures and selector
+failure all fall back to hosted compute. This selector never wakes or resizes
+the host; AWS retries and step timeouts are bounded. The current role trusts PR
+subjects only, so scheduled/manual/full-CI callers retain hosted compute.
+
+Each consumer also checks the PR's repository before accepting the selected
+runner and falls back to hosted compute for forks, independently of the selector.
+Forks stay hosted and do not receive the health credential. CodeQL coverage,
+build modes, image matrices, evidence uploads and required check names remain
+unchanged. A selector failure cannot skip analysis; image impact detection must
+still succeed before its selected matrix executes. Hosted disk cleanup runs only
+on GitHub-hosted runners.
+
+Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.

@@ -76,6 +76,8 @@ public sealed partial class LayerPublishingIntegrationTests
               ] }
               """;
         using var upload = new MultipartFormDataContent();
+        using var sourceSridContent = new StringContent("4326");
+        upload.Add(sourceSridContent, "SourceSrid");
         upload.Add(new StringContent(source), "File", scenario == "PointCsv" ? "points.csv" : "features.geojson");
         upload.Add(new StringContent($"geometry_{Guid.NewGuid():N}"), "TableName");
         upload.Add(new StringContent(targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)), "TargetSrid");

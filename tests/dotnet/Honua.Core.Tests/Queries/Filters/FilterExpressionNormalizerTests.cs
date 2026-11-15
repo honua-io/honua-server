@@ -12,6 +12,40 @@ namespace Honua.Core.Tests.Queries.Filters;
 
 public sealed class FilterExpressionNormalizerTests
 {
+    [UnitTheory]
+    [InlineData("12345678901234567890.1000")]
+    [InlineData("-0.00")]
+    public void Normalize_ExactDecimalLiteral_PreservesNumericPrecision(string text)
+    {
+        var expression = new BinaryExpression(new PropertyReference("amount"), BinaryOperator.Equal,
+            new Literal(text, LiteralType.Text));
+        var normalized = (BinaryExpression)FilterExpressionNormalizer.Normalize(expression,
+            ResourceWithField("amount", MetadataV2FieldType.Decimal));
+        ((Literal)normalized.Right).Value.Should().Be(decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [UnitTheory]
+    [InlineData("0.12345678901234567890123456789")]
+    [InlineData("99999999999999999999999999999999")]
+    public void Normalize_ExactDecimalLiteralBeyondPrecision_RejectsRounding(string text)
+    {
+        var expression = new BinaryExpression(new PropertyReference("amount"), BinaryOperator.Equal,
+            new Literal(text, LiteralType.Text));
+        FluentActions.Invoking(() => FilterExpressionNormalizer.Normalize(expression,
+                ResourceWithField("amount", MetadataV2FieldType.Decimal)))
+            .Should().Throw<ArgumentException>();
+    }
+
+    [UnitTest]
+    public void Normalize_ExactDecimalBinaryFloat_RejectsPotentiallyRoundedInput()
+    {
+        var expression = new BinaryExpression(new PropertyReference("amount"), BinaryOperator.Equal,
+            new Literal(0.1d, LiteralType.Number));
+        FluentActions.Invoking(() => FilterExpressionNormalizer.Normalize(expression,
+                ResourceWithField("amount", MetadataV2FieldType.Decimal)))
+            .Should().Throw<ArgumentException>().WithMessage("*quoted decimal literal*");
+    }
+
     [UnitTest]
     public void SRV_DB_007_StringFieldPreservesUntypedFesLiteralLexicalValue()
     {
