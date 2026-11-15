@@ -8,11 +8,13 @@ daytime window, where it is cancelled to free heavy runners, so trunk never cert
 the nightly container build has no candidate to image.
 
 `push` events are not throttled, so full-ci-dispatch.yml calls this script on every trunk
-push (plus an hourly backup cron). Inside the window it dispatches one full run when
+push (plus an hourly backup cron). Between 06:00 and 11:00 UTC it dispatches one full run when
 none is queued or running, the night has had fewer than `--max-per-night` full runs that
 were not cancelled, and trunk head has no completed full result yet. Outside the window
-it does nothing, so a dispatched run always finishes before the daytime window opens.
-The ci.yml crons stay; a scheduled run that does arrive counts like a dispatched one.
+it does nothing: a run dispatched by 10:59 UTC needs about 2 h 50 min plus queueing and
+finishes before 15:00 UTC (07:00 PST). The ci.yml crons stay; a scheduled run that does
+arrive counts like a dispatched one. A night with no trunk push before 11:00 UTC relies on
+those crons, because the backup cron is delivered late too.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ def is_full_run(run: dict, branch: str) -> bool:
 
 
 def decide(now: dt.datetime, runs: list[dict], trunk_head: str, *, branch: str = "trunk",
-           window_start_hour: int = 6, last_dispatch_hour: int = 12,
+           window_start_hour: int = 6, last_dispatch_hour: int = 11,
            max_per_night: int = 2) -> tuple[bool, str]:
     """(dispatch, reason) for one trunk push or backup tick. `now` is UTC-aware."""
     if not window_start_hour <= now.hour < last_dispatch_hour:
@@ -69,9 +71,10 @@ def decide(now: dt.datetime, runs: list[dict], trunk_head: str, *, branch: str =
     return True, f"no full run is active and trunk head {trunk_head[:12]} has no full result"
 
 
-def gh(args: list[str], stdin: str | None = None) -> str:
+def gh(args: list[str], stdin: str | None = None, *, retry: bool = True) -> str:
     env = dict(os.environ, NO_COLOR="1", GH_FORCE_TTY="0")
-    delays = (10, 30, 60)
+    # A retried dispatch POST that GitHub had already accepted would queue a second full run.
+    delays = (10, 30, 60) if retry else ()
     for attempt in range(len(delays) + 1):
         result = subprocess.run(["gh", "api", *args], input=stdin, capture_output=True, text=True, env=env)
         if result.returncode == 0:
@@ -99,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workflow", default="ci.yml")
     parser.add_argument("--branch", default="trunk")
     parser.add_argument("--window-start-hour", type=int, default=6)
-    parser.add_argument("--last-dispatch-hour", type=int, default=12)
+    parser.add_argument("--last-dispatch-hour", type=int, default=11)
     parser.add_argument("--max-per-night", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -119,17 +122,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     known = {run.get("id") for run in runs}
     gh([f"repos/{args.repository}/actions/workflows/{args.workflow}/dispatches", "--method", "POST",
-        "--input", "-"], stdin=json.dumps({"ref": args.branch}))
-    # Wait for the run to appear so the next serialized dispatcher sees it as active.
-    for _ in range(12):
+        "--input", "-"], stdin=json.dumps({"ref": args.branch}), retry=False)
+    # Wait for the run to appear so the next serialized dispatcher sees it as active; if it
+    # never does, fail so the job is red rather than letting the next push dispatch again.
+    for _ in range(36):
         time.sleep(5)
         new = [run for run in list_runs(gh_json, args.repository, args.workflow, args.branch)
                if run.get("id") not in known and is_full_run(run, args.branch)]
         if new:
             print(f"::notice::dispatched full {args.workflow} run {new[0].get('id')} on {args.branch}: {reason}")
             return 0
-    print(f"::warning::dispatched full {args.workflow} on {args.branch} but the run is not listed after 60 s")
-    return 0
+    print(f"::error::dispatched full {args.workflow} on {args.branch} but the run is not listed after 180 s")
+    return 1
 
 
 if __name__ == "__main__":

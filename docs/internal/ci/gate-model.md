@@ -166,7 +166,7 @@ earlier one could not.
 
 Full runs use off-hour minutes to reduce schedule-delivery contention. GitHub still delivers these crons hours late, so
 `full-ci-dispatch.yml` dispatches the full run itself on trunk pushes between 06:00 and
-12:00 UTC when no full run is active and trunk head has no full result (at most two a night). The
+11:00 UTC when no full run is active and trunk head has no full result (at most two a night). The
 half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
 20 hours, independently of affected CI activity. It also reports outstanding work without a usable
 result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
