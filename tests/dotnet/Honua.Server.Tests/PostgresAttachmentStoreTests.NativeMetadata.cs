@@ -9,31 +9,42 @@ namespace Honua.Server.Tests;
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTheory]
-    [InlineData("new,keywords", false)]
-    [InlineData(null, false)]
-    [InlineData("new,keywords", true)]
-    [InlineData(null, true)]
-    public async Task NativeMetadata_LegacyKeywordEdit_UpdatesNativeReadsAndFilters(string? keywords, bool fullUpdate)
+    [InlineData("new,keywords")]
+    [InlineData(null)]
+    public async Task NativeMetadata_LegacyKeywordEdit_UpdatesNativeReadsAndFilters(string? keywords)
+    {
+        var attachment = await CreateAttachmentWithNativeKeywordsAsync();
+        await _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, attachment.Id, keywords);
+        await AssertNativeKeywordsAsync(attachment.Id, keywords);
+    }
+
+    [IntegrationTheory]
+    [InlineData("new,keywords")]
+    [InlineData(null)]
+    public async Task NativeMetadata_LegacyFullUpdate_UpdatesNativeReadsAndFilters(string? keywords)
+    {
+        var attachment = await CreateAttachmentWithNativeKeywordsAsync();
+        await _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, attachment with { Keywords = keywords });
+        await AssertNativeKeywordsAsync(attachment.Id, keywords);
+    }
+
+    private async Task<Attachment> CreateAttachmentWithNativeKeywordsAsync()
     {
         var sessions = await CreateUploadSessionStoreAsync();
         var key = await PrepareCommitSessionAsync(sessions, CreateSessionRequest() with { Keywords = ["old"] });
-        var attachment = await sessions.CommitAsync(key, AttachmentUploadObjectKey.ForSession(key.SessionId));
-        if (fullUpdate)
-        {
-            await _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, attachment with { Keywords = keywords });
-        }
-        else
-        {
-            await _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, attachment.Id, keywords);
-        }
+        return await sessions.CommitAsync(key, AttachmentUploadObjectKey.ForSession(key.SessionId));
+    }
+
+    private async Task AssertNativeKeywordsAsync(long attachmentId, string? keywords)
+    {
         var metadata = Assert.Single(await _attachmentStore.GetNativeMetadataAsync(
-            new AttachmentNativeMetadataQuery(TestLayerId, TestFeatureId, [attachment.Id]))).Value;
+            new AttachmentNativeMetadataQuery(TestLayerId, TestFeatureId, [attachmentId]))).Value;
         Assert.Equal(keywords?.Split(',') ?? [], metadata.Keywords);
         var query = new AttachmentPageQuery { LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 10, Keywords = ["old"] };
         Assert.Empty(await _attachmentStore.QueryPageAsync(query));
         if (keywords != null)
         {
-            Assert.Equal(attachment.Id, Assert.Single(await _attachmentStore.QueryPageAsync(query with { Keywords = ["new"] })).Attachment.Id);
+            Assert.Equal(attachmentId, Assert.Single(await _attachmentStore.QueryPageAsync(query with { Keywords = ["new"] })).Attachment.Id);
         }
     }
 
