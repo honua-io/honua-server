@@ -15,6 +15,66 @@ public sealed class CsvFormatReaderTests
 {
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_SemicolonDecimalComma_ImportsCoordinates()
+    {
+        const string csv = """
+            id;name;lon;lat
+            1;München Marienplatz;11,575490;48,137393
+            2;Köln Dom;6,958281;50,941278
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        features.Should().HaveCount(2);
+        var first = features[0].Geometry.Should().BeOfType<Point>().Subject;
+        first.X.Should().BeApproximately(11.575490, 1e-6);
+        first.Y.Should().BeApproximately(48.137393, 1e-6);
+        first.SRID.Should().Be(4326);
+        features[0].Attributes["name"].Should().Be("München Marienplatz");
+        var second = features[1].Geometry.Should().BeOfType<Point>().Subject;
+        second.X.Should().BeApproximately(6.958281, 1e-6);
+        second.Y.Should().BeApproximately(50.941278, 1e-6);
+        features.Should().OnlyContain(feature => !feature.Attributes.Exists("lon") && !feature.Attributes.Exists("lat"));
+        diagnostics.UnparseableGeometryRows.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("-11,575490", "4,8137393e1")]
+    [InlineData("-11.575490", "48.137393")]
+    public async Task ReadStreamingAsync_SemicolonExplicitCoordinates_ImportsBothDecimalFormats(string longitude, string latitude)
+    {
+        var csv = $"name;easting;northing\nplace;{longitude};{latitude}\n";
+        var options = new CsvImportOptions { LongitudeColumn = "easting", LatitudeColumn = "northing" };
+
+        var (features, diagnostics) = await ReadAllAsync(csv, options);
+
+        var point = features.Should().ContainSingle().Which.Geometry.Should().BeOfType<Point>().Subject;
+        point.X.Should().BeApproximately(-11.575490, 1e-6);
+        point.Y.Should().BeApproximately(48.137393, 1e-6);
+        diagnostics.UnparseableGeometryRows.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(';', "1.234,56")]
+    [InlineData(';', "1,234,56")]
+    [InlineData(',', "11,575490")]
+    [InlineData('|', "11,575490")]
+    public async Task ReadStreamingAsync_UnsupportedCoordinateFormat_PreservesValueAndWarns(char delimiter, string longitude)
+    {
+        var csv = $"name{delimiter}lon{delimiter}lat\nplace{delimiter}\"{longitude}\"{delimiter}48.137393\n";
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        var feature = features.Should().ContainSingle().Which;
+        feature.Geometry.Should().BeNull();
+        feature.Attributes["lon"].Should().Be(longitude);
+        diagnostics.UnparseableGeometryRows.Should().Be(1);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_PostgisEwktExport_ImportsWithGeometry()
     {
         // #2361: a standard PostGIS CSV export encodes the geometry column as EWKT

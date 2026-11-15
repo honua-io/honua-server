@@ -201,7 +201,7 @@ internal static class CsvFormatReader
             }
 
             dataRowNumber++;
-            return BuildFeature(headers, fields, quotedFields, mapping, geometryFactory, wktReader, wkbReader, diagnostics);
+            return BuildFeature(headers, fields, quotedFields, mapping, delimiter, geometryFactory, wktReader, wkbReader, diagnostics);
         }
 
         async Task ApplyAddressGeocodeAsync(Feature feature)
@@ -281,6 +281,7 @@ internal static class CsvFormatReader
         IReadOnlyList<string> fields,
         HashSet<int> quotedFields,
         CsvColumnMapping mapping,
+        char delimiter,
         GeometryFactory geometryFactory,
         WKTReader wktReader,
         WKBReader wkbReader,
@@ -305,7 +306,7 @@ internal static class CsvFormatReader
         }
 
         var geometry = ParseGeometry(
-            fields, mapping, geometryFactory, wktReader, wkbReader, out var unparseableGeometryValue);
+            fields, mapping, delimiter, geometryFactory, wktReader, wkbReader, out var unparseableGeometryValue);
 
         // A geometry column was mapped and carried a value, but none of the supported
         // encodings (WKT/EWKT/WKB hex) could parse it. Rather than silently dropping the
@@ -314,7 +315,7 @@ internal static class CsvFormatReader
         // a warning. Mirrors GeoParquet's skip/warn behaviour for null geometry.
         // Coordinate columns that failed to parse are restored the same way, including
         // heuristic lat/lon pairs. Blank cells stay a null geometry with no warning (#6172).
-        var coordinatesUnparseable = geometry == null && HasUnparseableCoordinates(fields, mapping);
+        var coordinatesUnparseable = geometry == null && HasUnparseableCoordinates(fields, mapping, delimiter);
         if (geometry == null && (unparseableGeometryValue != null || coordinatesUnparseable))
         {
             diagnostics?.RecordUnparseableGeometry();
@@ -341,6 +342,7 @@ internal static class CsvFormatReader
     private static NtsGeometry? ParseGeometry(
         IReadOnlyList<string> fields,
         CsvColumnMapping mapping,
+        char delimiter,
         GeometryFactory geometryFactory,
         WKTReader wktReader,
         WKBReader wkbReader,
@@ -373,8 +375,8 @@ internal static class CsvFormatReader
             var longitudeValue = GetField(fields, mapping.LongitudeIndex.Value);
             var latitudeValue = GetField(fields, mapping.LatitudeIndex.Value);
 
-            if (double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude) &&
-                double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude))
+            if (TryParseCoordinate(longitudeValue, delimiter, out var longitude) &&
+                TryParseCoordinate(latitudeValue, delimiter, out var latitude))
             {
                 // A parseable coordinate pair supersedes an unparseable WKT column.
                 unparseableGeometryValue = null;
@@ -513,7 +515,20 @@ internal static class CsvFormatReader
     private static bool IsGeometrySourceColumn(int index, CsvColumnMapping mapping)
         => mapping.WktIndex == index || mapping.LongitudeIndex == index || mapping.LatitudeIndex == index;
 
-    private static bool HasUnparseableCoordinates(IReadOnlyList<string> fields, CsvColumnMapping mapping)
+    private static bool TryParseCoordinate(string value, char delimiter, out double coordinate)
+    {
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out coordinate))
+        {
+            return true;
+        }
+
+        // Semicolon-separated exports commonly use decimal commas. Float parsing
+        // excludes grouping separators, so mixed or repeated separators remain invalid.
+        return delimiter == ';'
+            && double.TryParse(value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out coordinate);
+    }
+
+    private static bool HasUnparseableCoordinates(IReadOnlyList<string> fields, CsvColumnMapping mapping, char delimiter)
     {
         if (mapping.LongitudeIndex is not { } longitudeIndex || mapping.LatitudeIndex is not { } latitudeIndex)
         {
@@ -527,8 +542,8 @@ internal static class CsvFormatReader
             return false;
         }
 
-        return !double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
-            || !double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        return !TryParseCoordinate(longitudeValue, delimiter, out _)
+            || !TryParseCoordinate(latitudeValue, delimiter, out _);
     }
 
     private static void RestoreUnparseableCoordinate(
