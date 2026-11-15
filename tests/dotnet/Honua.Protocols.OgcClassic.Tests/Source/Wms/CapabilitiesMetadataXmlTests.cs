@@ -15,7 +15,7 @@ using Honua.TestKit.Infrastructure;
 using Xunit;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 [Collection("Database")]
 public sealed class CapabilitiesMetadataXmlTests
