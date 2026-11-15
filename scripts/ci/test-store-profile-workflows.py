@@ -144,7 +144,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(selector['uses'], './.github/workflows/advisory-runner-select.yml')
         self.assertEqual(selector['with']['hosted-runner'], 'ubuntu-24.04')
         self.assertEqual(job['needs'], 'runner-select')
-        self.assertEqual(job['runs-on'], '${{ fromJSON(needs.runner-select.outputs.runner || \'"ubuntu-24.04"\') }}')
+        self.assertEqual(job['runs-on'], "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '\"ubuntu-24.04\"') || 'ubuntu-latest' }}")
         self.assertIn('always() && !cancelled()', job['if'])
         admission = workflow('advisory-runner-select.yml')['jobs']['select']
         self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
