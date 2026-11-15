@@ -102,11 +102,11 @@ internal sealed class PairedPublicationSource
         var router = services.GetService<FeatureProviderQueryRouter>();
         if (router is null)
         {
-            return services.GetRequiredService<IFeatureReader>();
+            throw new PairedPublicationException("Paired publish requires binding-aware managed relation validation.");
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return await router.ResolveReaderAsync(
+        var reader = await router.ResolveReaderAsync(
             snapshot,
             Published.Service,
             Published.Resource,
@@ -114,6 +114,15 @@ internal sealed class PairedPublicationSource
             StorageLayerId,
             FeatureProviderReadOperation.Query,
             cancellationToken).ConfigureAwait(false);
+        // The provider checks relation identity (including schema/search_path), the managed
+        // column shape and the layer partition. A same-named table is not sufficient.
+        if (reader is not IManagedFeatureWriteSupport support
+            || !await support.SupportsManagedWritesAsync(StorageLayerId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PairedPublicationException("Paired publish requires the canonical managed relation and layer partition.");
+        }
+
+        return reader;
     }
 
     // Unchanged metadata and no committed edit to the layer since the fence opened.
