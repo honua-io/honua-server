@@ -51,9 +51,9 @@ CloudWatch alarm state-change envelopes also persist an
 [incident episode lifecycle](incident-episode-lifecycle.md) before acknowledgment.
 The collector derives platform authority on the server and correlates observations
 by the alarm resource ARN, rather than accepting authority from the event detail.
-A missing or ambiguous alarm resource leaves the message unacknowledged. `ALARM`
-activates an episode, `OK` records recovery, and missing or unrecognized state
-records Unknown. Late evidence remains in history without reopening an episode
+A missing or ambiguous alarm resource, or a missing state object or state timestamp,
+leaves the message unacknowledged. `ALARM` activates an episode, `OK` records
+recovery, and a missing or unrecognized state value records Unknown. Late evidence remains in history without reopening an episode
 that has already recovered. A later activation starts a distinct episode.
 
 Duplicate deliveries across tasks retain one immutable observation and one episode

@@ -45,9 +45,13 @@ internal sealed class OpsAlarmIncidentCollector(
     private static OpsIncidentObservation CreateObservation(JsonElement root, OpsExternalEvent externalEvent)
     {
         var alarmArn = AlarmResource(root);
-        var detail = root.GetProperty("detail");
-        var state = detail.TryGetProperty("state", out var stateElement)
-            ? Text(stateElement, "value") : null;
+        if (!root.TryGetProperty("detail", out var detail) || detail.ValueKind != JsonValueKind.Object ||
+            !detail.TryGetProperty("state", out var stateElement) || stateElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("CloudWatch alarm state changes require a detail state object.");
+        }
+
+        var state = Text(stateElement, "value");
         return new OpsIncidentObservation
         {
             AuthorityScope = "platform",

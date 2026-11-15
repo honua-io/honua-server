@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.ops_incident_episode_cursors (
     authority_scope TEXT NOT NULL,
     finding_id TEXT NOT NULL,
     observed_at TIMESTAMPTZ NOT NULL DEFAULT '-infinity',
+    state SMALLINT,
     episode_id UUID,
     PRIMARY KEY (authority_scope, finding_id),
     FOREIGN KEY (authority_scope, episode_id)
@@ -64,7 +65,10 @@ BEGIN
         SELECT * INTO STRICT v_episode FROM $HonuaSchema$.ops_incident_episodes
             WHERE authority_scope = p_authority AND episode_id = v_cursor.episode_id;
     END IF;
-    IF p_observed > v_cursor.observed_at THEN
+    -- Equal timestamps are ordered by state precedence (Active, Unknown, Recovered) so arrival order cannot close an incident.
+    IF p_observed > v_cursor.observed_at OR (p_observed = v_cursor.observed_at AND
+        (CASE p_state WHEN 0 THEN 3 WHEN 2 THEN 2 ELSE 1 END) >
+        (CASE v_cursor.state WHEN 0 THEN 3 WHEN 2 THEN 2 WHEN 1 THEN 1 ELSE 0 END)) THEN
         IF p_state = 0 AND (v_episode.episode_id IS NULL OR v_episode.closed_at IS NOT NULL) THEN
             INSERT INTO $HonuaSchema$.ops_incident_episodes
                 (authority_scope, episode_id, finding_id, lifecycle_version, state, started_at, observed_at)
@@ -79,7 +83,7 @@ BEGIN
                 RETURNING * INTO v_episode;
         END IF;
         UPDATE $HonuaSchema$.ops_incident_episode_cursors
-            SET observed_at = p_observed, episode_id = v_episode.episode_id
+            SET observed_at = p_observed, state = p_state, episode_id = v_episode.episode_id
             WHERE authority_scope = p_authority AND finding_id = p_finding;
     END IF;
     INSERT INTO $HonuaSchema$.ops_incident_episode_receipts

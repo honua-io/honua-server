@@ -14,7 +14,9 @@ An `Active` signal opens an episode with a generated ID and lifecycle version 1.
 Repeated active observations refresh evidence without invalidating that version.
 `Unknown` preserves the open episode and increments the version when its state changes.
 `Recovered` closes it. A later activation gets a new episode ID. Out-of-order evidence
-cannot reopen or refresh a closed episode. Duplicate observation IDs preserve their
+cannot reopen or refresh a closed episode. Observations with the same timestamp are
+ordered by state, `Active` before `Unknown` before `Recovered`, so arrival order never
+closes an incident; a later recovery closes it. Duplicate observation IDs preserve their
 original result, including across tasks and process restarts.
 
 The resolver accepts an authority scope, episode ID and lifecycle version. It returns

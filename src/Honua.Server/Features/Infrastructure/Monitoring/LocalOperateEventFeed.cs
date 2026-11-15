@@ -146,6 +146,13 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             ObservabilityFeedLog.ReleaseSourceFailed(_logger, ex);
         }
 
+        if (requestedKinds?.Contains(OperateEventKind.Incident) == true)
+        {
+            partial = true;
+            sourceErrors ??= new();
+            sourceErrors[OperateEventKind.Incident] = "incident events are not in this timeline; read the incident context";
+        }
+
         collected.RemoveAll(item => !MatchesFilter(filter, item, matchResourceRef: false));
 
         collected.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));

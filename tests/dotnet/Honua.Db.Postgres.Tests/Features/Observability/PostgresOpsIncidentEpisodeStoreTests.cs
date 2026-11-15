@@ -101,6 +101,26 @@ public sealed class PostgresOpsIncidentEpisodeStoreTests(PostgresFixture fixture
         });
     }
 
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ObserveAsync_EqualTimestampsInEitherOrder_KeepTheIncidentActive(bool activationFirst)
+    {
+        await WithStoresAsync(async (store, resolver) =>
+        {
+            var activation = Signal();
+            var recovery = activation with { ObservationId = "observation-tie", State = OpsIncidentEpisodeState.Recovered };
+            foreach (var signal in activationFirst ? new[] { activation, recovery } : [recovery, activation])
+            {
+                await store.ObserveAsync(signal);
+            }
+            var episode = (await store.ObserveAsync(activation))!;
+            episode.State.Should().Be(OpsIncidentEpisodeState.Active);
+            episode.ClosedAt.Should().BeNull();
+            (await resolver.ResolveAsync(Reference(episode))).Should().BeEquivalentTo(episode);
+        });
+    }
+
     [IntegrationTest]
     public async Task ResolveAsync_WrongAuthorityVersionOrStaleEvidence_FailsClosed()
     {

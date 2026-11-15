@@ -231,6 +231,31 @@ public sealed class OpsAlarmIncidentIntegrationTests : IAsyncLifetime
         queue.Deleted.Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData("detail")]
+    [InlineData("state")]
+    public async Task ProcessAsync_MissingStateObject_RejectsAsInvalidEnvelope(string removed)
+    {
+        var queue = new RecordingQueue();
+        await using var provider = CreateProvider();
+        using var ingestion = CreateIngestion(provider, queue);
+        var envelope = JsonNode.Parse(Envelope(0, "ALARM"))!.AsObject();
+        if (removed == "detail")
+        {
+            envelope.Remove("detail");
+        }
+        else
+        {
+            envelope["detail"]!.AsObject().Remove("state");
+        }
+        var process = () => ingestion.ProcessAsync(new("missing-state", envelope.ToJsonString()), CancellationToken.None);
+        await process.Should().ThrowExactlyAsync<JsonException>();
+        (await ReadObservationsAsync(provider)).Observations.Should().BeEmpty();
+        (await ReadEpisodesAsync()).Should().BeEmpty();
+        queue.Deleted.Should().BeEmpty();
+    }
+
     private ServiceProvider CreateProvider(EpisodeStoreMode episodeStoreMode = EpisodeStoreMode.Standard)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
