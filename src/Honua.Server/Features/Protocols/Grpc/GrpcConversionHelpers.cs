@@ -107,16 +107,19 @@ internal static class GrpcConversionHelpers
 
     public static FeatureEditBatch ToFeatureEditBatch(Proto.ApplyEditsRequest request)
     {
+        GrpcGlobalIds.EnsureSelectorMode(request);
         var creates = request.Adds.Count == 0
             ? ImmutableArray<Feature>.Empty
             : request.Adds.Select(feature => ToDomainFeature(feature, requireId: false)).ToImmutableArray();
 
         var updates = request.Updates.Count == 0
             ? ImmutableArray<Feature>.Empty
-            : request.Updates.Select(feature => ToDomainFeature(feature, requireId: true)).ToImmutableArray();
+            : request.Updates.Select(feature => ToDomainFeature(feature, requireId: !request.UseGlobalIds)).ToImmutableArray();
 
-        var deletes = request.Deletes.Count == 0
-            ? ImmutableArray<long>.Empty
+        // Global-ID deletes count as deletes for authorization, capabilities and limits now;
+        // the placeholders are replaced by resolved object IDs before any read or write.
+        var deletes = request.UseGlobalIds
+            ? ImmutableArray.CreateRange(Enumerable.Repeat(0L, request.DeleteGlobalIds.Count))
             : request.Deletes.ToImmutableArray();
 
         return FeatureEditBatch.Create(
@@ -352,7 +355,7 @@ internal static class GrpcConversionHelpers
                 av.DoubleValue = (double)dec;
                 break;
             default:
-                av.StringValue = value.ToString() ?? string.Empty;
+                av.StringValue = GrpcTypedValues.ToInvariantText(value);
                 break;
         }
         return av;
@@ -397,6 +400,15 @@ internal static class GrpcConversionHelpers
             Proto.AttributeValue.ValueOneofCase.BoolValue => value.BoolValue,
             Proto.AttributeValue.ValueOneofCase.DatetimeValue => DateTimeOffset.FromUnixTimeMilliseconds(value.DatetimeValue).UtcDateTime,
             Proto.AttributeValue.ValueOneofCase.BytesValue => value.BytesValue.ToByteArray(),
+            // Validated, then stored as canonical text like every other edit protocol does: the
+            // managed writer serializes attributes without DateOnly/TimeOnly converters.
+            Proto.AttributeValue.ValueOneofCase.DateValue
+                => GrpcTypedValues.FormatDate(GrpcTypedValues.ParseDate(value.DateValue)),
+            Proto.AttributeValue.ValueOneofCase.TimeValue
+                => GrpcTypedValues.FormatTime(GrpcTypedValues.ParseTime(value.TimeValue)),
+            Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue
+                => GrpcTypedValues.ParseTimestampOffset(value.TimestampOffsetValue),
+            Proto.AttributeValue.ValueOneofCase.DecimalValue => GrpcTypedValues.ParseDecimal(value.DecimalValue),
             _ => null
         };
     }
@@ -465,7 +477,8 @@ internal static class GrpcConversionHelpers
         var proto = new Proto.EditResult
         {
             Success = result.IsSuccess,
-            ObjectId = result.ObjectId ?? 0
+            ObjectId = result.ObjectId ?? 0,
+            GlobalId = result.GlobalId is { Length: > 0 } globalId ? GrpcGlobalIds.Normalize(globalId) : string.Empty
         };
 
         if (!result.IsSuccess)

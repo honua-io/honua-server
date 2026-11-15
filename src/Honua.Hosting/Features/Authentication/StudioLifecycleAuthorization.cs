@@ -65,7 +65,8 @@ internal sealed class StudioLifecycleAuthorizationHandler(
             }
             else
             {
-                AuthenticationLog.ScopedAdminKeyDenied(_logger, method ?? "(unknown)");
+                AuthenticationLog.AdminPermissionDenied(
+                    _logger, method ?? "(unknown)", context.User.Identity?.AuthenticationType ?? "(unknown)");
                 context.Fail(new AuthorizationFailureReason(this, ScopedAdminPermissionDeniedCode));
             }
 

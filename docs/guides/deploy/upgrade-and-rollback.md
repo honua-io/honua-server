@@ -60,7 +60,7 @@ expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
-contracting fails CI unless its exact name and hash match the release boundary.
+contract by the reader fails CI unless its exact name and hash match the release boundary.
 Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
 by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
 Redesign incompatible changes as additive migrations with compatible application
@@ -72,6 +72,16 @@ truncation. Historical scripts that acquire a contract classification under thes
 broader checks use their exact frozen name and hash as the review record; their SQL
 is never rewritten to add annotations. They still require contract-apply approval
 when pending against a nonempty migration journal. Fresh installs remain unaffected.
+
+Reader compatibility and contract-apply approval are separate checks. The reader
+recognizes one reviewed removal of eight optional feature indexes, pinned by its
+normalized SQL hash and the numbered `RemoveUnusedFeatureIndexes.sql` basename.
+Its canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
+does not run as a migration. The removal remains contract-classified for upgrade
+approval, while a reader containing this review can verify its forward declaration.
+Other names or changed SQL remain refused. Deploy the prepared reader before
+introducing the separate removal migration, then prove rollback with that reader's
+published image. Readers predating this review still refuse the removal.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and
@@ -175,6 +185,26 @@ Review those values before upgrading, especially environment variables already p
 in deployment manifests. Defaults are unchanged when a key is absent. Existing
 `Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
 the nested evaluation, dispatch, delivery-channel, and operations settings.
+
+### Single-tenant deployments are the default
+
+`MultiTenancy:Enabled` now defaults to `false` for request resolution and Studio
+ownership checks. Single-tenant requests use `MultiTenancy:DefaultTenantId`
+(`public` by default); provider tenant claims and tenant headers do not select a
+separate tenant. Previously stamped Studio content remains accessible within the
+deployment rather than being selected by an identity provider's tenant claim.
+
+Deployments intentionally using tenant isolation must explicitly set
+`MultiTenancy__Enabled=true` before upgrading to retain claim-based resolution and
+Studio isolation. Schema routing now refuses startup unless multi-tenancy is
+explicitly enabled. Review existing tenant IDs and workspace mappings before
+changing this setting. See [authentication configuration](../secure/authentication.md).
+
+Proposals and operation handles created under the previous default carry the tenant
+from the identity provider's claim (for example an Entra `tid`). In single-tenant mode
+they no longer match the deployment tenant, so only `MultiTenancy:MultiTenantAdminRoles`
+holders (`platform_admin` or `multi_tenant_admin` by default) can read or approve them.
+Finish or reject pending proposals before upgrading, or keep `MultiTenancy__Enabled=true`.
 
 ### Credential and identity management requires full-administrator authority
 

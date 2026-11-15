@@ -273,7 +273,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<ISchemaContext>(),
-                serviceProvider.GetRequiredService<IConfiguration>()));
+                serviceProvider.GetRequiredService<IConfiguration>(),
+                serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()));
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore>(
             serviceProvider => (Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore)
                 serviceProvider.GetRequiredService<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>());
@@ -304,6 +305,10 @@ internal static class ServiceCollectionExtensions
         // metadata schema; consumers resolve it as optional so non-Postgres deployments run without history.
         services.AddScoped<IOpsHealthRollupStore>(serviceProvider =>
             new PostgresOpsHealthRollupStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IOpsExternalEventStore>(serviceProvider =>
+            new PostgresOpsExternalEventStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IOpsAutonomyPolicyStore>(serviceProvider =>

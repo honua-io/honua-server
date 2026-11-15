@@ -185,6 +185,49 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_LegacyTenantScope_FiltersBeforePagination()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var owner = $"legacy-owner-{Guid.NewGuid():N}";
+        var created = DateTimeOffset.UtcNow;
+        var expected = new List<string>();
+        foreach (var (tenant, offset) in new (string?, int)[] { ("foreign", 0), (null, 1), ("public", 2), (null, 3) })
+        {
+            var job = CreateQueuedJob($"legacy-list-{Guid.NewGuid():N}") with
+            {
+                CreatedAt = created.AddMinutes(-offset),
+                Audit = new OperationAuditInfo
+                {
+                    RequestedBy = owner,
+                    SubmitterSecurityContext = new JobSecurityContext(owner, tenant, [], "roles")
+                }
+            };
+            (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+            if (tenant != "foreign")
+            {
+                expected.Add(job.OperationId);
+            }
+        }
+
+        var query = new ExecutionJobQuery
+        {
+            RequestedBy = owner,
+            ApplyTenantScope = true,
+            TenantId = "public",
+            IncludeUnassignedTenant = true,
+            Limit = 1
+        };
+        foreach (var id in expected)
+        {
+            var page = await harness.JobStore.QueryAsync(query);
+            page.Items.Should().ContainSingle().Which.OperationId.Should().Be(id);
+            query = query with { Cursor = page.NextCursor };
+        }
+
+        query.Cursor.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ExecutionJobStore_SupportsCasUpdatesAndActiveIndexes()
     {
         await using var harness = await CreateHarnessAsync();
@@ -1058,35 +1101,24 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             harness.JobStore,
             harness.JobStore);
 
-        await service.StartAsync(CancellationToken.None);
-        try
-        {
-            var stored = await WaitForJobAsync(
-                harness.JobStore,
-                operationId,
-                job => job.Status == ExecutionJobStatus.Queued && job.ClaimedBy is null,
-                TimeSpan.FromSeconds(10));
+        // Drive ticks directly: a stalled database read can defer expiry until a later sweep.
+        var stored = await ReconcileUntilQueuedAsync(harness.JobStore, service, operationId);
 
-            stored.CurrentPhase.Should().StartWith("Retrying");
-            stored.NextRetryAt.Should().BeNull();
+        stored.CurrentPhase.Should().StartWith("Retrying");
+        stored.NextRetryAt.Should().BeNull();
 
-            callback.IsCompleted.Should().BeFalse();
+        callback.IsCompleted.Should().BeFalse();
 
-            var queueDepth = await WaitForQueueDepthAsync(
-                harness.Queue,
-                depth => depth == 1,
-                TimeSpan.FromSeconds(5));
-            queueDepth.Should().Be(1);
+        var queueDepth = await WaitForQueueDepthAsync(
+            harness.Queue,
+            depth => depth == 1,
+            TimeSpan.FromSeconds(5));
+        queueDepth.Should().Be(1);
 
-            var reclaimed = await harness.Queue.TryClaimAsync(
-                "worker-reclaim",
-                new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
-            reclaimed.Should().Be(operationId);
-        }
-        finally
-        {
-            await service.StopAsync(CancellationToken.None);
-        }
+        var reclaimed = await harness.Queue.TryClaimAsync(
+            "worker-reclaim",
+            new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
+        reclaimed.Should().Be(operationId);
     }
 
     private static ExecutionJobRecord CreateQueuedJob(
@@ -1115,6 +1147,27 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
                 WorkloadName = "postgres-substrate-integration"
             }
         };
+    }
+
+    private static async Task<ExecutionJobRecord> ReconcileUntilQueuedAsync(
+        PostgresExecutionJobStore jobStore,
+        JobReconciliationService service,
+        string operationId)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await service.SweepActiveJobsAsync(CancellationToken.None);
+            var job = await jobStore.GetAsync(operationId);
+            if (job is { Status: ExecutionJobStatus.Queued, ClaimedBy: null })
+            {
+                return job;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new TimeoutException($"Timed out reconciling job '{operationId}' for retry.");
     }
 
     private static async Task<ExecutionJobRecord> WaitForJobAsync(

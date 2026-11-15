@@ -181,7 +181,7 @@ public sealed class FeatureMutationGeometryTypeTests
         }
 
         (await validator.ValidateGeometryAsync(
-            new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "no-spatial", Name = "no-spatial" } },
+            new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "no-spatial", Name = "no-spatial" } },
             Wkb("POINT (1 2)"),
             CancellationToken.None)).IsValid.Should().BeTrue();
     }
@@ -194,10 +194,10 @@ public sealed class FeatureMutationGeometryTypeTests
         return new FeatureMutationValidator(geometryValidator);
     }
 
-    private static MetadataV2Resource Resource(MetadataV2GeometryType geometryType) => new()
+    private static MetadataV2Object Resource(MetadataV2GeometryType geometryType) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
-        Spatial = new MetadataV2ResourceSpatial
+        Spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = geometryType
