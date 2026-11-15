@@ -3,6 +3,11 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Server.Features.Protocols.Grpc;
+using Honua.Infrastructure.Validation;
+using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Queries.Filters;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -120,6 +125,132 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.True(created.Id > 0);
         Assert.Equal(geometry, created.Geometry);
         Assert.Equal(attributes["name"], created.Attributes["name"]);
+    }
+
+    [IntegrationTheory]
+    [InlineData("12345678901234567890.1000", "2026-11-14T08:30:00.5000-08:00")]
+    [InlineData("-0.00", "2026-11-14T08:30:00.0000001+05:45")]
+    [Operation(Operations.ContractTesting)]
+    public async Task CreateAsync_ExactTypedAttributes_QueryPreservesDecimalScaleAndOffset(string amount, string offsetText)
+    {
+        var request = new Geospatial.V1.ApplyEditsRequest();
+        var add = new Geospatial.V1.Feature();
+        add.Attributes["amount"] = new Geospatial.V1.AttributeValue { DecimalValue = amount };
+        add.Attributes["signed"] = new Geospatial.V1.AttributeValue { TimestampOffsetValue = offsetText };
+        request.Adds.Add(add);
+        var fields = new MetadataV2Field[]
+        {
+            new() { Name = "amount", TypeValue = MetadataV2FieldType.Decimal },
+            new() { Name = "signed", TypeValue = MetadataV2FieldType.TimestampOffset }
+        };
+        var resource = new MetadataV2Object { SchemaFields = fields };
+        var batch = GrpcTypedValues.EnsureStorable(resource,
+            GrpcConversionHelpers.ToFeatureEditBatch(request));
+
+        var validation = resource.ValidateAttributesV2(batch.Creates[0].Attributes);
+        Assert.True(validation.IsValid, validation.ErrorMessage);
+        var created = await _featureStore.CreateAsync(TestLayerId,
+            batch.Creates[0] with { Attributes = validation.Value! });
+        var result = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery());
+        var stored = Assert.Single(result.Items);
+        Assert.Equal(created.Id, stored.Id);
+        Assert.Equal(amount, stored.Attributes["amount"]);
+        Assert.Equal(offsetText, stored.Attributes["signed"]);
+        var wire = GrpcConversionHelpers.ToProtoFeature(stored, fields: fields);
+        Assert.Equal(amount, wire.Attributes["amount"].DecimalValue);
+        Assert.Equal(offsetText, wire.Attributes["signed"].TimestampOffsetValue);
+
+        var updated = await _featureStore.UpdateAsync(TestLayerId, stored);
+        Assert.Equal(stored.Id, updated.Id);
+        var projected = await _featureStore.QueryAsync(TestLayerId,
+            new FeatureQuery { ObjectIds = [created.Id], OutFields = ["amount"] });
+        var projectedFeature = Assert.Single(projected.Items);
+        Assert.Equal(amount, projectedFeature.Attributes["amount"]);
+        Assert.False(projectedFeature.Attributes.ContainsKey("signed"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task QueryAsync_ExactValues_CompareNumericallyAndByInstantWithoutChangingText()
+    {
+        var fields = new MetadataV2Field[]
+        {
+            new() { Name = "amount", Type = MetadataV2FieldType.Decimal },
+            new() { Name = "signed", Type = MetadataV2FieldType.TimestampOffset }
+        };
+        var resource = new MetadataV2Object { SchemaFields = fields };
+        foreach (var (amount, offsetText) in new[]
+        {
+            ("2.00", "2026-11-14T09:00:00+05:00"),
+            ("10.000", "2026-11-14T08:00:00-08:00")
+        })
+        {
+            await _featureStore.CreateAsync(TestLayerId, Feature.Create(0, null,
+                new Dictionary<string, object?> { ["amount"] = amount, ["signed"] = offsetText }.ToImmutableDictionary()));
+        }
+        var ordered = await _featureStore.QueryAsync(TestLayerId,
+            new FeatureQuery { OrderBy = [new OrderByClause("amount", true, MetadataV2FieldType.Decimal)] });
+        Assert.Equal(new[] { "2.00", "10.000" }, ordered.Items.Select(feature => feature.Attributes["amount"]));
+        var temporal = await _featureStore.QueryAsync(TestLayerId,
+            new FeatureQuery { OrderBy = [new OrderByClause("signed", true, MetadataV2FieldType.TimestampOffset)] });
+        Assert.Equal("2026-11-14T09:00:00+05:00", temporal.Items[0].Attributes["signed"]);
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("amount"), BinaryOperator.GreaterThan,
+                new Literal(3m, LiteralType.Number)), resource);
+        var filtered = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = filter });
+        Assert.Equal("10.000", Assert.Single(filtered.Items).Attributes["amount"]);
+    }
+
+    [IntegrationTheory]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-15T00:00:00.0000002Z", "2026-11-15T01:00:00.0000001+01:00")]
+    [InlineData(MetadataV2FieldType.Time, "12:00:00.0000002", "12:00:00.0000001")]
+    [Operation(Operations.ContractTesting)]
+    public async Task QueryAsync_ExactTemporalValues_PreservesSeventhDigitInComparisons(
+        MetadataV2FieldType type, string later, string earlier)
+    {
+        var resource = new MetadataV2Object
+        {
+            SchemaFields = [new MetadataV2Field { Name = "exact_time", Type = type }]
+        };
+        foreach (var text in new[] { later, earlier })
+        {
+            await _featureStore.CreateAsync(TestLayerId, Feature.Create(0, null,
+                new Dictionary<string, object?> { ["exact_time"] = text }.ToImmutableDictionary()));
+        }
+        var ordered = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("exact_time", true, type)]
+        });
+        Assert.Equal(new[] { earlier, later }, ordered.Items.Select(row => row.Attributes["exact_time"]));
+        var distinct = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ["exact_time"],
+            OrderBy = [new OrderByClause("exact_time", true, type)]
+        });
+        Assert.Equal(new[] { earlier, later }, distinct.Items.Select(row => row.Attributes["exact_time"]));
+        var value = type == MetadataV2FieldType.TimestampOffset
+            ? (object)ExactAttributeValues.ParseTimestampOffset(earlier)
+            : ExactAttributeValues.ParseTime(earlier);
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("exact_time"), BinaryOperator.Equal,
+                new Literal(value, type == MetadataV2FieldType.TimestampOffset ? LiteralType.DateTime : LiteralType.Text)), resource);
+        var matched = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = filter });
+        Assert.Equal(earlier, Assert.Single(matched.Items).Attributes["exact_time"]);
+        if (type == MetadataV2FieldType.TimestampOffset)
+        {
+            var before = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+                new TemporalPredicate(TemporalOperator.Before, new PropertyReference("exact_time"),
+                    new Literal(ExactAttributeValues.ParseTimestampOffset(later), LiteralType.DateTime)), resource);
+            var beforeRows = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = before });
+            Assert.Equal(earlier, Assert.Single(beforeRows.Items).Attributes["exact_time"]);
+        }
+        var hour = type == MetadataV2FieldType.Time ? 12d : 0d;
+        var hourFilter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new FunctionCall("HOUR", [new PropertyReference("exact_time")]),
+                BinaryOperator.Equal, new Literal(hour, LiteralType.Number)), resource);
+        var hourRows = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = hourFilter });
+        Assert.Equal(2, hourRows.Items.Length);
     }
 
     private static byte[] CreatePointWkb(double x, double y)

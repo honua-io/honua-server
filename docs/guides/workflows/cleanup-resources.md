@@ -119,7 +119,7 @@ Start from explicit resource identities and creation lineage. “Everything for 
 
 Stop or cancel owned jobs through their existing control surface, and wait for terminal confirmation. Remove owned publication/configuration references in dependency order. Deleting a map drawing layer is not permission to delete its data.
 
-Authoritative source data stays unchanged, even when it is in a workspace associated with the task. Separately created derived outputs may be cleaned up only through a supported, explicitly scoped artifact operation after dependency checks. Never turn a cleanup request into broad feature, table, or bucket deletion.
+Authoritative source data stays unchanged, even when it is associated with the task. Separately created derived outputs may be cleaned up only through a supported, explicitly scoped artifact operation after dependency checks. Never turn a cleanup request into broad feature, table, or bucket deletion.
 
 Verify absence of removed objects and continued access to retained dependencies. Report residual resources and irreversible deletions honestly. Use existing revision history where available; do not promise a universal undo.
 

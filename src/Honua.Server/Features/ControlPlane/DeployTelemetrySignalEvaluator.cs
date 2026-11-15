@@ -82,16 +82,6 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // operations persisted before TrafficExposedAt was tracked, preserving prior behavior for them.
         var exposureAnchor = operation.Deploy.TrafficExposedAt ?? operation.CreatedAt;
 
-        if (DateTimeOffset.UtcNow - exposureAnchor < policy.WarmupDuration)
-        {
-            var remaining = policy.WarmupDuration - (DateTimeOffset.UtcNow - exposureAnchor);
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry warmup to complete before settling deploy ({Math.Ceiling(Math.Max(remaining.TotalSeconds, 0))}s remaining)."
-            };
-        }
-
         // Synthetic /healthz/ready gate (#1849): a provider-independent rollback trigger inherited by
         // every backend and change class. An unhealthy probe short-circuits to the same rollback path
         // as an error-rate/latency breach (subject to the anti-flap debounce). A healthy probe does not
@@ -117,6 +107,16 @@ internal sealed class DeployTelemetrySignalEvaluator(
             {
                 return goldenDecision;
             }
+        }
+
+        if (DateTimeOffset.UtcNow - exposureAnchor < policy.WarmupDuration)
+        {
+            var remaining = policy.WarmupDuration - (DateTimeOffset.UtcNow - exposureAnchor);
+            return ApplyBreachDebounce(operation, new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry warmup to complete before settling deploy ({Math.Ceiling(Math.Max(remaining.TotalSeconds, 0))}s remaining)."
+            });
         }
 
         // Explicit probe-only profile (#4617): the readiness and golden-query probes above are the whole
