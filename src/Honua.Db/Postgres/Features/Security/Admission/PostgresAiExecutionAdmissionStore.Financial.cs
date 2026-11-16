@@ -61,8 +61,13 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         }
         var monthly = new MonthlyActorReservation
         {
-            Connection = connection, Transaction = transaction, Context = context, Policy = policy,
-            Now = now, Tokens = tokens, Money = money,
+            Connection = connection,
+            Transaction = transaction,
+            Context = context,
+            Policy = policy,
+            Now = now,
+            Tokens = tokens,
+            Money = money,
         };
         if (await ExceedsMonthlyActorAsync(monthly, cancellationToken).ConfigureAwait(false))
             return ("financial_monthly_actor_exceeded", null);
