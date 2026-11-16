@@ -25,7 +25,6 @@ internal static class Wfs20HandlerTestFactory
 {
     public static Wfs20Handler Create(IFeatureReader reader, IFeatureWriter writer)
     {
-        var coordinateTransform = Substitute.For<ICoordinateTransformService>();
         var queryServices = new Wfs20QueryServices(
             reader,
             Substitute.For<IGmlFeatureStore>(),
@@ -35,6 +34,12 @@ internal static class Wfs20HandlerTestFactory
             Substitute.For<IQueryProcessor>(),
             Options.Create(new Wfs20Options()),
             Substitute.For<IConfiguration>());
+        return Create(queryServices, writer);
+    }
+
+    public static Wfs20Handler Create(Wfs20QueryServices queryServices, IFeatureWriter writer)
+    {
+        var coordinateTransform = Substitute.For<ICoordinateTransformService>();
         var editServices = new Wfs20EditServices(
             writer,
             new Wfs20EditParameterAdapter(NullLogger<Wfs20EditParameterAdapter>.Instance),
@@ -51,5 +56,4 @@ internal static class Wfs20HandlerTestFactory
             Substitute.For<ICrsRegistry>());
         return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);
     }
-
 }

@@ -32,6 +32,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
 namespace Honua.Protocols.OgcClassic.UnitTests.Wfs20;
 
@@ -281,7 +282,6 @@ public sealed class Wfs20DeclaredEditCapabilityTests
 
     private static Wfs20Handler CreateHandler(IMetadataV2GraphProvider provider, IFeatureWriter writer)
     {
-        var coordinateTransform = Substitute.For<ICoordinateTransformService>();
         var reader = CreateReader();
         var queryServices = new Wfs20QueryServices(
             reader,
@@ -292,20 +292,6 @@ public sealed class Wfs20DeclaredEditCapabilityTests
             new QueryProcessor(Substitute.For<IFilterExpressionTranslator>(), reader, NullLogger<QueryProcessor>.Instance, provider),
             Options.Create(new Wfs20Options()),
             Substitute.For<IConfiguration>());
-        var editServices = new Wfs20EditServices(
-            writer,
-            new Wfs20EditParameterAdapter(NullLogger<Wfs20EditParameterAdapter>.Instance),
-            new EditProcessor(NullLogger<EditProcessor>.Instance),
-            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
-            Options.Create(new LimitsOptions()));
-        var spatialServices = new Wfs20SpatialServices(
-            new OgcFeaturesGeometryServices(
-                Substitute.For<IGeometryService>(),
-                coordinateTransform,
-                Options.Create(new LimitsOptions())),
-            coordinateTransform,
-            Substitute.For<ICrsRegistry>());
-        return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);
+        return Wfs20HandlerTestFactory.Create(queryServices, writer);
     }
 }
