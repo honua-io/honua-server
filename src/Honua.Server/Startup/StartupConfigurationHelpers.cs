@@ -275,7 +275,10 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        material = await ResolveKeyRingMaterialAsync(material, cancellationToken).ConfigureAwait(false);
+        material = await ResolveKeyRingMaterialAsync(
+            material,
+            OperationSecretKeyRingProtection.CertificateMaterialKey,
+            cancellationToken).ConfigureAwait(false);
         var written = OperationSecretKeyRingProtection.WritePkcs12Material(material);
         SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificatePathKey, written.Path);
         if (!string.IsNullOrEmpty(written.Password))
@@ -287,16 +290,48 @@ internal static class StartupConfigurationHelpers
         }
     }
 
+    // The secret accepts the same env: and Secrets Manager references as the certificate bundle.
+    public static async Task EnsureKeyRingSecretResolvedAsync(
+        ConfigurationManager configuration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var secret = configuration[OperationSecretKeyRingProtection.SecretKey];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            return;
+        }
+
+        string resolved;
+        try
+        {
+            resolved = await ResolveKeyRingMaterialAsync(
+                secret,
+                OperationSecretKeyRingProtection.SecretKey,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not InvalidOperationException and not OperationCanceledException)
+        {
+            // The caller reports InvalidOperationException as a startup refusal; anything else would abort the runtime.
+            throw new InvalidOperationException(
+                $"'{OperationSecretKeyRingProtection.SecretKey}' could not be resolved ({exception.GetType().Name}).");
+        }
+
+        if (!string.Equals(resolved, secret, StringComparison.Ordinal))
+        {
+            SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.SecretKey, resolved);
+        }
+    }
+
     private static async Task<string> ResolveKeyRingMaterialAsync(
         string material,
+        string key,
         CancellationToken cancellationToken)
     {
         // Production validation accepts env/aws/azure references for this key, so an
         // env: reference has to resolve here too - otherwise it would validate and
         // then die in WritePkcs12Material as "not a PKCS#12 bundle".
-        material = SecretReferenceResolver.ResolveEnvironmentReference(
-            material,
-            OperationSecretKeyRingProtection.CertificateMaterialKey) ?? material;
+        material = SecretReferenceResolver.ResolveEnvironmentReference(material, key) ?? material;
 
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
         if (!material.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
@@ -310,7 +345,7 @@ internal static class StartupConfigurationHelpers
         if (string.IsNullOrWhiteSpace(resolved))
         {
             throw new InvalidOperationException(
-                $"'{OperationSecretKeyRingProtection.CertificateMaterialKey}' did not resolve to a certificate.");
+                $"'{key}' did not resolve to a value.");
         }
 
         return resolved;

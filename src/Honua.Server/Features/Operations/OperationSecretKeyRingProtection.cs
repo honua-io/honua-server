@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace Honua.Server.Features.Operations;
 
-// The certificate is mandatory whenever the durable channel is composed, because ciphertext in the same store as the keys is not a boundary.
+// A certificate or a secret is mandatory whenever the durable channel is composed, because ciphertext in the same store as the keys is not a boundary.
 internal static class OperationSecretKeyRingProtection
 {
     internal const string CertificatePathKey = "Operations:SecretChannel:KeyRingCertificatePath";
@@ -22,6 +22,8 @@ internal static class OperationSecretKeyRingProtection
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
 
     internal const string CertificateMaterialKey = "Operations:SecretChannel:KeyRingCertificatePkcs12";
+
+    internal const string SecretKey = "Operations:SecretChannel:KeyRingSecret";
 
     internal readonly record struct MaterializedKeyRing(string Path, string? Password);
 
@@ -123,6 +125,18 @@ internal static class OperationSecretKeyRingProtection
     internal static bool IsRootOwnedMode0640(uint owner, uint group, UnixFileMode mode, uint processGroup)
         => owner == 0 && group == processGroup && mode == RootOwnedGroupReadMode;
 
+    // A configured certificate is always loaded, so a broken mount is refused instead of masked by the secret.
+    public static OperationKeyRingProtector ResolveProtector(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var secret = configuration[SecretKey];
+        var material = string.IsNullOrWhiteSpace(secret) ? null : SecretKeyRingMaterial.Parse(secret);
+        var certificate = material is null || !string.IsNullOrWhiteSpace(configuration[CertificatePathKey])
+            ? Resolve(configuration)
+            : null;
+        return new OperationKeyRingProtector(certificate, material);
+    }
+
     public static X509Certificate2 Resolve(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -134,7 +148,8 @@ internal static class OperationSecretKeyRingProtection
                 + "('ConnectionStrings:DefaultConnection'): the operation key ring is stored in that database and this "
                 + $"certificate protects it. Mount a PKCS#12 certificate and set '{CertificatePathKey}', or on a "
                 + $"host that cannot mount files set '{CertificateMaterialKey}' to a Secrets Manager reference "
-                + "for the bundle.");
+                + $"for the bundle. Without a certificate, set '{SecretKey}' to a random secret of at least "
+                + $"{SecretKeyRingMaterial.MinimumSecretLength} characters kept outside the database.");
         }
 
         if (!File.Exists(path))

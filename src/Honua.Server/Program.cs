@@ -352,13 +352,15 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a database reader or backup cannot carry both halves. Lambda
-    // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
-    System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
+    // certificate, or a random secret where no certificate can be made, is mandatory so a database
+    // reader or backup cannot carry both halves. Lambda cannot mount the file, so a Secrets Manager
+    // bundle is written to a private temp file first.
+    OperationKeyRingProtector keyRingProtector;
     try
     {
         await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
-        keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+        await StartupConfigurationHelpers.EnsureKeyRingSecretResolvedAsync(builder.Configuration);
+        keyRingProtector = OperationSecretKeyRingProtection.ResolveProtector(builder.Configuration);
     }
     catch (System.Security.Cryptography.CryptographicException ex)
     {
@@ -371,17 +373,23 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     }
     catch (InvalidOperationException ex)
     {
-        // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
+        // A missing or unreadable certificate, or a short secret, is an operator error. Left unhandled it aborts the
         // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
         // (honua-server#6500). Report it and leave with a plain exit status.
         Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
         return;
     }
 
-    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
-        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    if (keyRingProtector.Certificate is { } keyRingCertificate)
+    {
+        builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+            new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    }
 
-    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
+    keyRing.ProtectKeysWith(keyRingProtector);
+    builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+        .Configure<PostgresDataProtectionKeyRepository>((_, keyRepository) =>
+            keyRepository.EnsureSecretWrappedKeysAreReadable(keyRingProtector.Secret));
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
