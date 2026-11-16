@@ -187,6 +187,7 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
                 Name = "globalid", Type = MetadataV2FieldType.Uuid, Nullable = true
             }]
         });
+        await GrpcGlobalIdIndex.ProvisionAsync(_fixture, "globalid");
     }
 
 }
