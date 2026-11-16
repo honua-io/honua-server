@@ -3,6 +3,8 @@
 
 using Honua.Infrastructure.Security;
 using Honua.Core.Features.Guardrails.Domain;
+using Microsoft.AspNetCore.Http;
+using Honua.Server.Features.Admin;
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -95,6 +97,34 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
                     } } : service).ToArray()
             }, current.Etag);
         }
+    }
+
+    private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var before = await store.GetCurrentAsync();
+        var facet = before.Graph.Services.Last(service => service.Metadata.Name == "test");
+        var restricted = before.Graph with
+        {
+            Services = before.Graph.Services.Select(service => service.Metadata.Id == facet.Metadata.Id
+                ? service with { AccessPolicy = new AccessPolicy { AllowedRoles = ["service-owner"], AllowedWriteRoles = ["service-owner"] } }
+                : service).ToArray()
+        };
+        var saved = await store.SaveAsync(restricted, before.Etag);
+        saved.Etag.Should().NotBe(before.Etag);
+        var policyContext = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        policyContext.Request.Method = HttpMethods.Put;
+        policyContext.Request.Path = "/api/v1/admin/services/test/folder";
+        policyContext.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
+        var authenticated = await policyContext.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        authenticated.Succeeded.Should().BeTrue();
+        policyContext.User = authenticated.Principal!;
+        var deniedFacet = saved.Graph.Services.Single(service => service.Metadata.Id == facet.Metadata.Id);
+        MetadataV2TenantVisibility.IsVisibleToTenant(deniedFacet, null).Should().BeTrue();
+        (await FolderEndpoints.RequireServiceAccessAsync(policyContext, deniedFacet)).Should().NotBeNull(
+            "the real authenticated requester must fail the shared service-policy check before testing proposal admission");
+        return saved;
     }
 
     public async Task InitializeAsync()
