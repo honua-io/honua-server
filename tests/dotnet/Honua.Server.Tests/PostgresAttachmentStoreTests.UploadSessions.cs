@@ -7,12 +7,14 @@ using Honua.Db.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
 
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ConcurrentRetryAfterRestart_PublishesExactlyOnce()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -36,6 +38,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_InvalidWholeFileDigest_PublishesNoAttachmentOrReceipt()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -56,6 +60,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ReceiptFailure_RollsBackAttachmentAndRetainsChunks()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -73,6 +79,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_Replacement_KeepsIdentityAndQueuesRetiredBlob()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -95,6 +103,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ConcurrentDistinctSessions_EnforcesSharedQuota()
     {
         await CreateUploadSessionStoreAsync();
@@ -127,6 +137,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_NonSessionObjectKey_IsRejectedWithoutPublishingMetadata()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -138,6 +150,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ReceiptFailureAfterObjectWrite_ExpiryRemovesObject()
     {
         var store = await CreateUploadSessionStoreAsync();

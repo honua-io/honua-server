@@ -7,6 +7,7 @@ using Honua.Db.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
 
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using NSubstitute;
 
 namespace Honua.Server.Tests;
@@ -14,6 +15,7 @@ namespace Honua.Server.Tests;
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
     public async Task AttachmentMaintenance_ExpiresStagingAndDrainsRetiredBlobs_WithoutRemovingLiveContent()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -48,6 +50,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.DeleteAttachments)]
     public async Task AttachmentMaintenance_FailingBatch_DoesNotStarveLaterObjectsAfterRestart()
     {
         await CreateUploadSessionStoreAsync();
@@ -84,6 +88,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.DeleteAttachments)]
     public async Task AttachmentMaintenance_FalseDeletion_RetainsRetryUntilAbsenceConfirmed()
     {
         await CreateUploadSessionStoreAsync();

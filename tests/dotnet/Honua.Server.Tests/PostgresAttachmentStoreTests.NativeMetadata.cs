@@ -3,12 +3,14 @@
 
 using Honua.Core.Features.Attachments.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTheory]
+    [Operation(Operations.QueryAttachments)]
     [InlineData("photo")]
     [InlineData("original")]
     public async Task NativeMetadata_LegacyKeywordFilter_MatchesIndividualTags(string keyword)
@@ -28,6 +30,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTheory]
+
+    [Operation(Operations.QueryAttachments)]
     [InlineData("photo,original")]
     [InlineData("missing")]
     public async Task NativeMetadata_LegacyKeywordFilter_RejectsNonMatchingTags(string keyword)
@@ -45,6 +49,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTheory]
+
+    [Operation(Operations.UpdateAttachment)]
     [InlineData("new,keywords")]
     [InlineData(null)]
     public async Task NativeMetadata_LegacyKeywordEdit_UpdatesNativeReadsAndFilters(string? keywords)
@@ -55,6 +61,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTheory]
+
+    [Operation(Operations.UpdateAttachment)]
     [InlineData("new,keywords")]
     [InlineData(null)]
     public async Task NativeMetadata_LegacyFullUpdate_UpdatesNativeReadsAndFilters(string? keywords)
@@ -65,6 +73,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.UpdateAttachment)]
     public async Task NativeMetadata_FilenameEdit_PreservesExactKeywordBoundaries()
     {
         var sessions = await CreateUploadSessionStoreAsync();
@@ -101,6 +111,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.QueryAttachments)]
     public async Task NativeMetadata_QueryPage_BoundsAndScopesExactKeywordMatches()
     {
         var sessions = await CreateUploadSessionStoreAsync();
@@ -130,6 +142,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.UpdateAttachment)]
     public async Task NativeMetadata_CommitAndReplacement_PreserveExactKeywordsAndIdentity()
     {
         var sessions = await CreateUploadSessionStoreAsync();
@@ -161,6 +175,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.UpdateAttachment)]
     public async Task NativeMetadata_LegacyReplacement_HidesStaleDescriptor()
     {
         var sessions = await CreateUploadSessionStoreAsync();
@@ -171,6 +187,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.UpdateAttachment)]
     public async Task NativeMetadata_ReceiptFailure_RollsBackDescriptor()
     {
         var sessions = await CreateUploadSessionStoreAsync();

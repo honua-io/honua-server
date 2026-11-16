@@ -5,12 +5,14 @@ using Honua.Core.Features.Attachments.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ConcurrentPublicationCallbacks_InvokesPublisherOnce()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -28,6 +30,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_PublisherFailure_RetainsStagingForRetry()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -44,6 +48,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.DeleteAttachments)]
     public async Task AttachmentMaintenance_ExpiredUncommittedPublication_RemovesUnreferencedBlob()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -70,6 +76,7 @@ public partial class PostgresAttachmentStoreTests
         await AssertMaintenanceQueuesEmptyAsync(key.SessionId);
     }
     [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
     public async Task AttachmentMaintenance_LateUploadAfterExpiry_IsRemovedOnLaterCleanupPass()
     {
         var store = await CreateUploadSessionStoreAsync();

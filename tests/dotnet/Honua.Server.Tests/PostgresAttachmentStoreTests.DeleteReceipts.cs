@@ -6,12 +6,14 @@ using Honua.Db.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
 
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
     public async Task DeleteReceipt_ConcurrentRetryAfterRestart_DeletesOnceAndQueuesBlob()
     {
         var sessions = await CreateUploadSessionStoreAsync();
@@ -30,6 +32,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.DeleteAttachments)]
     public async Task DeleteReceipt_ReceiptFailure_RollsBackDeleteAndCleanup()
     {
         var sessions = await CreateUploadSessionStoreAsync();

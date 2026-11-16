@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Attachments.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Npgsql;
 
 namespace Honua.Server.Tests;
@@ -10,6 +11,7 @@ namespace Honua.Server.Tests;
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ConcurrentParentDeletion_WaitsAndCapturesPublishedAttachment()
     {
         var store = await CreateUploadSessionStoreAsync();
@@ -46,6 +48,8 @@ public partial class PostgresAttachmentStoreTests
     }
 
     [IntegrationTest]
+
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_ParentDeletionWins_DoesNotPublishContent()
     {
         var store = await CreateUploadSessionStoreAsync();

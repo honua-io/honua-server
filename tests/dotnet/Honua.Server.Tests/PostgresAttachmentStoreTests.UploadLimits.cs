@@ -6,12 +6,14 @@ using Honua.Db.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
 
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
     public async Task CommitSession_FileExceedsCurrentLimit_KeepsSessionAndPublishesNothing()
     {
         var sessions = await CreateUploadSessionStoreAsync();

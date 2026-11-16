@@ -308,21 +308,21 @@ public sealed partial class GrpcFeatureServiceTests
 
     private static AttachmentUploadRequest TestUploadRequest(
         string ownerId = "owner", string operation = "chunked", int layerId = 42) => new()
-    {
-        OwnerId = ownerId,
-        ServiceId = "test",
-        LayerId = layerId,
-        PublishedLayerId = 7,
-        FeatureId = 900,
-        Operation = operation,
-        IdempotencyKey = "test-upload",
-        Filename = "photo.txt",
-        ContentType = "text/plain",
-        ExpectedSize = 4,
-        Sha256 = SHA256.HashData("test"u8),
-        MaxChunkBytes = 1024 * 1024,
-        Lifetime = TimeSpan.FromHours(24)
-    };
+        {
+            OwnerId = ownerId,
+            ServiceId = "test",
+            LayerId = layerId,
+            PublishedLayerId = 7,
+            FeatureId = 900,
+            Operation = operation,
+            IdempotencyKey = "test-upload",
+            Filename = "photo.txt",
+            ContentType = "text/plain",
+            ExpectedSize = 4,
+            Sha256 = SHA256.HashData("test"u8),
+            MaxChunkBytes = 1024 * 1024,
+            Lifetime = TimeSpan.FromHours(24)
+        };
 
     private static AttachmentUploadSession NewAttachmentSession(AttachmentUploadRequest request) => new()
     {
