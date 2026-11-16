@@ -335,12 +335,6 @@ internal sealed partial class StreamingFileImportService
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
                 completionWarningsBuilder.AddRange(hiddenSourceWarnings.Values);
-                if (csvSourceIdAlias is not null)
-                {
-                    completionWarningsBuilder.Add(
-                        $"The CSV 'id' column is available as '{csvSourceIdAlias}'; 'id' is the generated feature key.");
-                }
-
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {
                     completionWarningsBuilder.Add(string.Format(
