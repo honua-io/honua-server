@@ -24,7 +24,8 @@ class GpQualificationHarnessTests(unittest.TestCase):
     def test_lifecycle_preserves_existing_scenarios_and_requires_new_mcp_case(self):
         completed, receipts, summary = self.run_harness("lifecycle", HONUA_SERVER_IMAGE="unattested:latest")
         self.assertNotEqual(0, completed.returncode)
-        self.assertEqual(31, summary["declared_scenario_count"])
+        self.assertEqual(27, summary["declared_scenario_count"])
+        self.assertFalse(any(name.startswith("restart-redis-") for name in summary["declared_scenarios"]))
         self.assertIn("mcp-cancel-native-process-started", summary["declared_scenarios"])
         self.assertEqual("fail", receipts["mcp-cancel-native-process-started"]["outcome"])
         self.assertEqual([], summary["missing_scenarios"])
@@ -50,10 +51,10 @@ barrier_record() {
   else echo '{"childProcessId":123}'; fi
 }
 compose() {
-  if [[ "$1" == ps ]]; then echo worker-container
-  elif [[ "$*" == *'GET '* ]]; then echo '{"attemptCount":1}'
-  fi
+  if [[ "$1" == ps ]]; then echo worker-container; fi
 }
+gp_job_record() { echo '{"attemptCount":1}'; }
+gp_sql() { cat >/dev/null; }
 docker() {
   if [[ "$1" == inspect ]]; then
     [[ "$2 $3 $4 $5" == "--type container --format {{.State.Running}}" ]] || return 98
@@ -93,6 +94,67 @@ fi
                 completed = subprocess.run(["bash", "-c", script], cwd=directory,
                                            env={**os.environ, "MODE": mode}, capture_output=True, text=True, check=False)
                 self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_ttl_waits_for_physical_sweeper_deletion(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        function = re.search(r"^run_ttl_cleanup\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
+        for mode in ("swept", "retained"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                script = function + r'''
+set -uo pipefail
+HONUA_GP_SCENARIO_TIMEOUT_SECONDS=3
+submit_async() { echo job-1; }
+wait_terminal() { return 0; }
+result_digest() { echo digest; }
+write_receipt() { echo "$2" > outcome; }
+sleep() { SECONDS=$((SECONDS+1)); }
+gp_sql() {
+  local sql
+  sql="$(cat)"
+  [[ "$*" == --set=job=job-1 ]] || return 91
+  if [[ "$sql" == UPDATE* ]]; then
+    [[ "$sql" == *"expires_at=clock_timestamp()-interval '1 second'"* ]] || return 92
+    touch expired
+  else
+    [[ -e expired && "$sql" == "SELECT count(*) FROM honua.execution_jobs WHERE operation_id=:'job';" ]] || return 93
+    if [[ -e polled && "$MODE" == swept ]]; then echo 0; else touch polled; echo 1; fi
+  fi
+}
+run_ttl_cleanup; status=$?
+[[ -e expired && -e polled ]] || exit 94
+if [[ "$MODE" == swept ]]; then [[ "$status" == 0 && "$(cat outcome)" == pass ]]
+else [[ "$status" != 0 && "$(cat outcome)" == fail ]]; fi
+'''
+                completed = subprocess.run(["bash", "-c", script], cwd=directory,
+                                           env={**os.environ, "MODE": mode}, capture_output=True, text=True, check=False)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_retry_exhaustion_rejects_an_additional_attempt(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        function = re.search(r"^run_retry_exhaustion\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
+        for attempts in (1, 2):
+            with self.subTest(attempts=attempts), tempfile.TemporaryDirectory() as directory:
+                script = function + r'''
+set -uo pipefail
+native_payload='{}'
+compose() { return 0; }
+submit_async() { echo job-1; }
+wait_terminal() { echo '{"status":"failed"}'; }
+gp_job_record() { printf '{"attemptCount":%s}' "$ATTEMPTS"; }
+write_receipt() { echo "$2" > outcome; }
+gp_sql() { cat > updated.sql; }
+run_retry_exhaustion; status=$?
+if [[ "$ATTEMPTS" == 1 ]]; then [[ "$status" == 0 && "$(cat outcome)" == pass ]]
+else [[ "$status" != 0 && "$(cat outcome)" == fail ]]; fi
+'''
+                completed = subprocess.run(["bash", "-c", script], cwd=directory,
+                                           env={**os.environ, "ATTEMPTS": str(attempts)}, capture_output=True, text=True, check=False)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                sql = (Path(directory) / "updated.sql").read_text()
+                for fragment in ("attempt_count=1", "status='Running'", "claimed_by='dead-worker'",
+                                 "last_heartbeat_at=", "queue_visible_at=NULL", "queue_priority=NULL",
+                                 "version=version+1", "{retryPolicy,maxAttempts}"):
+                    self.assertIn(fragment, sql)
 
     def test_failed_timeout_restoration_blocks_follow_up_but_allows_final_cleanup(self):
         source = HARNESS.read_text(encoding="utf-8")
