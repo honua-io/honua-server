@@ -1040,13 +1040,13 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (15 Nov 2026): every `dispatch_rank` with a passing job is the
+Measured ranks (16 Nov 2026): every `dispatch_rank` with a passing job is the
 median passing job duration of full trunk runs 43348507021, 43471044721,
 43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
 43709972683 and 43726623779. The four newest runs were cancelled before they
 finished, so only their passing jobs count. A run counts for a shard only when
 that shard's filter at the run's head equals the current filter, so re-split
-children are never ranked by their predecessor. 178 of 200 shards are measured
+children are never ranked by their predecessor. 171 of 219 shards are measured
 (1 to 7 samples, median 2); `scripts/ci/fixtures/measured-dispatch-ranks.json`
 records the values and runs, and `test-full-run-capacity-partitions.py` fails when
 a rank drifts from it. Split-contract tests require each child to carry its
@@ -1054,15 +1054,15 @@ measured rank, else its contract estimate, else its parent's rank. A measured
 child's estimate is removed from its contract, and the rule that estimates may
 not add up to less than the parent applies only while every child of a split is
 still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
-well under their estimates. Of the 22 unmeasured shards, 16 are the last child
-of a recent split and keep their contract estimate, and STAC Protocol 4 (no passing
-job yet) keeps its parent's 13.6. Five changed their filter after the newest run
-and so leave the record, keeping their previous rank until a run measures the new
-filter: Server Features Streaming Snapshot and Conformance, Miscellaneous 1 and 2
-(#7820), and Admin Layer Publishing and Admin Runtime Operations (renamed publishing
-test method, 49518429d9). Ranks sum to
-1,546.5 runner-minutes (was 1,806.1); 161 of 200 shards fit the 10-minute PR
-shard budget (was 150). The 14 Nov refresh is superseded.
+well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
+estimate: 16 are the last child of an earlier split and 28 are children of the
+nine shards split in #7678, which no full run has executed yet. STAC Protocol 4 (no passing job yet) keeps its parent's
+13.6. Three changed their filter after the newest run and so leave the record,
+keeping their previous rank until a run measures the new filter: Server Features
+Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
+Runtime Operations (renamed publishing test method, 49518429d9). Ranks sum to
+1,644.0 runner-minutes (was 1,894.8); 189 of 219 shards fit the 10-minute PR
+shard budget (was 178). The 14 Nov refresh is superseded.
 
 ### Standalone tooling in affected producer builds
 
