@@ -7,13 +7,6 @@ using Honua.Core.Features.Raster.Abstractions;
 
 namespace Honua.Protocols.Ogc.Api.Edr;
 
-/// <summary>
-/// Shared dependency bag for the OGC API - EDR handler. EDR is a thin query layer over the
-/// same registered coverages/datacubes that OGC API - Coverages and WCS expose, so it adapts
-/// to the shared metadata catalog (<see cref="IMetadataV2GraphProvider"/>) and the canonical
-/// raster read pipeline (<see cref="IRasterStore"/>) rather than reimplementing data access.
-/// The <see cref="ICoordinateTransformService"/> reprojects storage-CRS raster extents to CRS84.
-/// </summary>
 internal sealed class EdrDependencies
 {
     public EdrDependencies(

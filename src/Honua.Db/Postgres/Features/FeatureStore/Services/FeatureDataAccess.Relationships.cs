@@ -23,12 +23,6 @@ internal sealed partial class FeatureDataAccess
             relatedEnforcedMaskedFields: ImmutableArray<string>.Empty,
             cancellationToken);
 
-    /// <summary>
-    /// Postgres-specific overload that enforces permanent (row-visibility) filters
-    /// on both the origin layer (foreign-key resolution) and the related layer
-    /// (returned rows), so queryRelatedRecords cannot read rows the layers'
-    /// metadata-v2 PermanentFilter hides from direct queries.
-    /// </summary>
     public async Task<QueryResult<Feature>> QueryRelatedAsync(
         int layerId,
         RelatedQuery query,
@@ -317,12 +311,6 @@ internal sealed partial class FeatureDataAccess
         => field.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
            field.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Converts origin foreign-key values (text, as read by <c>attributes-&gt;&gt;</c>) into
-    /// destination object ids. Only values whose canonical integer text equals the value are
-    /// kept, which is exactly the set <c>objectid::text = value</c> would match, while binding
-    /// them as <c>bigint</c> keeps the primary-key index usable.
-    /// </summary>
     private static long[] ToObjectIds(List<string> foreignKeyValues)
     {
         return
@@ -337,11 +325,6 @@ internal sealed partial class FeatureDataAccess
         ];
     }
 
-    /// <summary>
-    /// Normalizes a related row's destination foreign-key attribute value into the
-    /// same textual form Postgres produces for the origin via <c>attributes->></c>,
-    /// so origin and destination keys join regardless of JSON numeric/string typing.
-    /// </summary>
     private static bool TryNormalizeForeignKeyValue(object? value, out string normalized)
     {
         switch (value)

@@ -6,49 +6,15 @@ using Honua.Core.Features.Scene.Generation;
 
 namespace Honua.Core.Features.Scene.Conversion;
 
-/// <summary>
-/// Converts an Esri I3S scene-layer descriptor into a Honua 3D Tiles
-/// <see cref="TilesetDocument"/>. This slice maps the layer-level metadata —
-/// geographic extent, vertical range, and a root content reference — into a
-/// single-root tileset so the converted layer can be registered and served
-/// through the existing hosted-scene pipeline.
-/// </summary>
-/// <remarks>
-/// Full per-node geometry decode (node pages -> glTF/b3dm) is a tracked
-/// follow-up. The current converter produces a spec-valid <c>tileset.json</c>
-/// rooted at the I3S full extent with a placeholder content URI, which is the
-/// minimal viable mapping needed to register an I3S layer as a 3D Tiles
-/// tileset and exercise the conversion-and-serve path end to end.
-/// </remarks>
 public static class I3sToTilesetConverter
 {
-    /// <summary>WGS-84 geographic well-known id; the only SRS this slice can place.</summary>
     public const int Wgs84Wkid = 4326;
 
     private const string GeneratorTag = "honua-i3s-converter";
 
-    /// <summary>
-    /// Layer types this converter slice accepts. 3D Object and Integrated Mesh
-    /// share the extent-based root mapping; other profiles (point, building,
-    /// voxel) are rejected with <see cref="I3sConversionErrorReason.UnsupportedLayerType"/>.
-    /// </summary>
     public static IReadOnlySet<string> SupportedLayerTypes { get; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "3DObject", "IntegratedMesh" };
 
-    /// <summary>
-    /// Builds a 3D Tiles tileset document from an I3S scene-layer descriptor.
-    /// </summary>
-    /// <param name="layer">The parsed I3S scene-layer descriptor.</param>
-    /// <param name="rootContentUri">
-    /// Relative URI of the converted root tile content (e.g. <c>0/0.glb</c>).
-    /// When null, the root tile carries no content reference (extent-only
-    /// tileset).
-    /// </param>
-    /// <returns>A spec-valid 3D Tiles 1.1 tileset rooted at the I3S extent.</returns>
-    /// <exception cref="I3sConversionException">
-    /// Thrown when the layer type is unsupported, the extent is missing, or the
-    /// spatial reference cannot be placed geographically.
-    /// </exception>
     public static TilesetDocument Convert(I3sSceneLayerDocument layer, string? rootContentUri = null)
     {
         ArgumentNullException.ThrowIfNull(layer);

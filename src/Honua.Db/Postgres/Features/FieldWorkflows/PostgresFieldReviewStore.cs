@@ -12,13 +12,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FieldWorkflows;
 
-/// <summary>
-/// PostgreSQL-backed store for back-office field review and QA. Read access
-/// projects <c>honua.form_submissions</c>; write access manages the server-owned
-/// <c>honua.field_submission_reviews</c> and <c>honua.field_review_comments</c>
-/// tables. A submission with no review row is reported with a default
-/// <c>pending</c> review state.
-/// </summary>
 internal sealed class PostgresFieldReviewStore : IFieldReviewStore
 {
     private const int MaxLimit = 500;

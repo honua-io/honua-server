@@ -7,17 +7,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Geometries;
 
-/// <summary>
-/// Cuts a geographic polygon whose ring jumps the long way across the antimeridian
-/// into a multipolygon of the short side. Edges of 180 degrees or less, including a
-/// ring that only touches ±180, are returned unchanged.
-/// </summary>
 public static class AntimeridianCutter
 {
-    /// <summary>
-    /// Returns <paramref name="geometry"/> when it is not a geographic polygon with a
-    /// segment longer than 180 degrees. Otherwise returns the short-side coverage.
-    /// </summary>
     public static Geometry Cut(Geometry geometry)
     {
         ArgumentNullException.ThrowIfNull(geometry);
@@ -64,14 +55,6 @@ public static class AntimeridianCutter
         return result;
     }
 
-    /// <summary>
-    /// Cuts a geometry that will be stored in <paramref name="targetSrid"/>.
-    /// An already-geographic geometry is cut in place. A Web Mercator geometry whose
-    /// target is geographic is inverse-projected first, then cut, and the cut result
-    /// is returned in the target SRID so a later <c>ST_Transform</c> does not rebuild
-    /// the long edge. A ring that does not cross is returned unchanged so the database
-    /// transform stays the source of the stored ordinates.
-    /// </summary>
     public static Geometry CutStoredGeometry(Geometry geometry, int targetSrid)
     {
         ArgumentNullException.ThrowIfNull(geometry);

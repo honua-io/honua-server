@@ -8,13 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Metadata;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IMetadataV2StyleGraphSync"/> (ADR-0048, Phase 2,
-/// issue #1389). Reconciles the canonical graph's <c>Type=Style</c> resources and
-/// <c>StyleResourceIds</c> against the independent style catalog whenever a layer's
-/// styles change, so the FeatureServer/MapServer style read path reflects edits
-/// immediately rather than waiting for a re-publish.
-/// </summary>
 internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSync
 {
     private readonly IMetadataV2GraphStore _graphStore;
@@ -38,7 +31,6 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         MetadataV2GraphSnapshot snapshot;

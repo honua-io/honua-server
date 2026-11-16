@@ -8,25 +8,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>gdal.gdalwarp</c>
-/// process: raster reprojection backed by the GDAL <c>gdalwarp</c> CLI.
-///
-/// This is the heavyweight counterpart to the lean managed
-/// <c>geometry.project</c> executor, which deliberately rejects datum-shift
-/// transforms that require PROJ. <c>gdalwarp</c> performs full PROJ-backed raster
-/// reprojection. It runs only inside the GDAL worker image (it overrides
-/// <see cref="AcceptedRuntimeProfiles"/> to <c>{ "native" }</c>). It reads a
-/// base64 GeoTIFF source and a target CRS from the durable spec, reprojects in an
-/// isolated scratch workspace, and publishes the reprojected GeoTIFF as a
-/// canonical data-URI artifact.
-/// </summary>
 internal sealed partial class GdalRasterReprojectJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterReprojectJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "gdal.gdalwarp";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -34,20 +20,13 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

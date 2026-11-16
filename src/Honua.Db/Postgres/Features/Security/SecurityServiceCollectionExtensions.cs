@@ -17,26 +17,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// Service collection extensions for secure connection management.
-/// </summary>
 internal static class SecurityServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds secure connection management services to the service collection.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>Updated service collection for chaining</returns>
-    /// <remarks>
-    /// Registers:
-    /// - Encryption service for connection string encryption/decryption
-    /// - Secret resolvers for external secret management integration
-    /// - Secure connection registry for CRUD operations
-    /// - Secure connection resolver for runtime connection resolution
-    ///
-    /// All services are registered with appropriate lifetimes and logging.
-    /// </remarks>
     public static IServiceCollection AddSecureConnectionServices(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -84,23 +66,6 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Replaces the default database connection provider with a secure connection-aware version.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>Updated service collection for chaining</returns>
-    /// <remarks>
-    /// This method should be called after AddSecureConnectionServices if you want to enable
-    /// automatic secure connection resolution for all database operations.
-    ///
-    /// When enabled, the system will:
-    /// 1. Check if Database:SecureConnection:Name is configured
-    /// 2. If yes, resolve connections from the secure registry
-    /// 3. If no or resolution fails, fall back to DefaultConnection
-    ///
-    /// This maintains backward compatibility while enabling secure connection features.
-    /// </remarks>
     public static IServiceCollection UseSecureConnectionProvider(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -235,16 +200,6 @@ internal static class SecurityServiceCollectionExtensions
             => _inner.ExecuteWithDeadlockRetryAsync(operation, cancellationToken);
     }
 
-    /// <summary>
-    /// Registers the operator-side <see cref="IConnectionSecretResolver"/> chain (<c>env:</c>,
-    /// <c>aws:secretsmanager:</c>, <c>azure:keyvault:</c>, then pass-through) that resolves
-    /// <c>ConnectionStrings:DefaultConnection</c>. It needs no encryption key, registry or request
-    /// policy, so the migrate-only host (honua-server#6470) resolves the connection string with the
-    /// same chain as serving startup without composing the rest of the secure-connection services.
-    /// </summary>
-    /// <param name="services">Service collection to configure.</param>
-    /// <param name="configuration">Application configuration.</param>
-    /// <returns>Updated service collection for chaining.</returns>
     public static IServiceCollection AddConnectionSecretResolution(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -271,16 +226,6 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds AWS Secrets Manager secret resolver support.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>Updated service collection for chaining</returns>
-    /// <remarks>
-    /// Registers the AOT-safe AWS Secrets Manager resolver using HTTP + SigV4 signing.
-    /// Credentials are sourced from standard AWS environment variables or IMDS/ECS metadata.
-    /// </remarks>
     public static IServiceCollection AddAwsSecretsManagerSupport(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -312,16 +257,6 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds Azure Key Vault secret resolver support.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>Updated service collection for chaining</returns>
-    /// <remarks>
-    /// Registers the AOT-safe Azure Key Vault resolver using HTTP + OAuth token exchange.
-    /// Credentials are sourced from AZURE_* client credentials or managed identity.
-    /// </remarks>
     public static IServiceCollection AddAzureKeyVaultSupport(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -353,11 +288,6 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Binds <see cref="ConnectionHostAllowlistOptions"/> from the
-    /// <c>Security:ConnectionAllowlist</c> configuration section without relying on
-    /// reflection-based binding, keeping the path AOT-safe.
-    /// </summary>
     private static ConnectionHostAllowlistOptions BindConnectionHostAllowlistOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection(ConnectionHostAllowlistOptions.SectionName);
