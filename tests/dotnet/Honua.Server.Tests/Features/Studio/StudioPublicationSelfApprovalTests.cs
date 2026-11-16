@@ -47,7 +47,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     private const string Tenant = "tenant-a";
     private const string HumanSessionRequired = "Human approval requires";
 
-    private readonly WebAppFixture _fixture = NoRedisJobHost.Create();
+    private readonly WebAppFixture _fixture = PostgresJobHost.Create();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private string _denialAuditMode = "ok";
 
@@ -95,7 +95,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             });
         await _fixture.InitializeAsync();
         await StudioPostgresTestSchema.ApplyAsync(_fixture);
-        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        PostgresJobHost.AssertPostgresJobs(_fixture);
         using var scope = _fixture.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>()
             .Should().BeOfType<PostgresOperationInstanceStore>();
@@ -261,7 +261,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         }
 
         await _fixture.RestartHostAsync();
-        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        PostgresJobHost.AssertPostgresJobs(_fixture);
         using var admin = CreateBearerClient(CreateToken("postgres-publication-admin", administrator: true));
         (await GetProposalAsync(admin, proposalId)).GetProperty("status").GetString().Should().Be("AwaitingApproval");
         using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
@@ -273,7 +273,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         approved.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
 
         await _fixture.RestartHostAsync();
-        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        PostgresJobHost.AssertPostgresJobs(_fixture);
         using var reader = _fixture.CreateClient();
         using var publication = await reader.GetAsync($"/api/v1/studio/published{route}?includeSources=true");
         var publicationBody = await publication.Content.ReadAsStringAsync();

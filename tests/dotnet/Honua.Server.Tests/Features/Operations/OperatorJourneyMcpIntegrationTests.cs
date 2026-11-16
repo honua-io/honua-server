@@ -32,7 +32,7 @@ public sealed class OperatorJourneyMcpIntegrationTests
     [Endpoint("POST /mcp")]
     public async Task AdminKey_ConfiguresThroughMcp_AndNonAdminCreatesNoRow()
     {
-        var fixture = NoRedisJobHost.Create()
+        var fixture = PostgresJobHost.Create()
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {
@@ -56,7 +56,7 @@ public sealed class OperatorJourneyMcpIntegrationTests
         await fixture.InitializeAsync();
         try
         {
-            NoRedisJobHost.AssertJobsRunWithoutRedis(fixture);
+            PostgresJobHost.AssertPostgresJobs(fixture);
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
             using var admin = fixture.CreateAdminClient();
             var deniedName = $"denied{suffix}";

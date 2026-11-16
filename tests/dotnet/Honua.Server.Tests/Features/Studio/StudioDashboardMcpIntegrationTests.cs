@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = NoRedisJobHost.Create();
+    private readonly WebAppFixture _fixture = PostgresJobHost.Create();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
@@ -48,7 +48,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));
         });
         await _fixture.InitializeAsync();
-        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        PostgresJobHost.AssertPostgresJobs(_fixture);
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
         {
