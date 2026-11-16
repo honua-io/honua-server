@@ -15,6 +15,16 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
 3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt. On an installed Compose project with the [Compose executor](../../get-started/quickstart.md#approved-operations-and-recovery) enabled, that restore is part of an approved rollback: the executor checks the backup, restores it, and only then starts the prior image.
 
+### Database migration deadlocks
+
+An upgrade can contend with writes from an older serving task. On PostgreSQL
+`40P01` (deadlock detected), the migration runner retries the upgrade up to three
+total attempts and waits 100 milliseconds between attempts. It holds the migration
+advisory lock across those attempts. Each failed attempt rolls back that attempt's
+schema changes and journal entries, then the next attempt runs the pending scripts
+again. An optional backup hook runs once, before the first attempt. Cancellation
+stops further attempts. Any other database error, or a third deadlock, fails the run.
+
 ### In-flight geoprocessing jobs
 
 During an ECS traffic shift, removing a task from the ALB does not cancel its GP
@@ -347,7 +357,7 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/submit` | Start the rollout |
 | `POST /api/v1/admin/deploy/operations/{operationId}/promote` | Force the cutover of a rollout parked awaiting promotion |
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
-| `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all serving targets in one call |
+| `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all server deployments in one call |
 
 Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
@@ -373,7 +383,7 @@ An MCP agent follows the same path with a human approval in the middle; it never
 
 1. `honua_platform_release_status` — read the declared release (`releaseVersion`), the serving/execution projections and `isCoVersioned`.
 2. `GET /api/v1/admin/deploy/preflight` — confirm readiness, pending migrations and database compatibility (its `platformRelease` block is the same projection).
-3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent serving target (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
+3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent server deployment (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
 4. A separate authorized principal approves each proposal in the Console inbox or with the Admin CLI; the agent polls the returned `honua://proposals/{proposalId}`. Approval submits the deploy to the product executor for that registered target. On ECS the executor registers a task definition pinned to the immutable serving-artifact digest, runs the product migrate-only task first when the deployment names one, updates the service to that task definition, and waits for steady state. The workflow operation id is the durable record. A GitOps hand-off is not a completed rollout, and a schema migration is not implied by the service or function update.
 5. `honua_propose_rollback` — if the observation window regresses, propose rolling the target back to its prior succeeded revision (again approved by a human). That rollback is a new deploy of the prior digest through the same executor, or a typed refusal when no prior revision exists.
 
@@ -673,3 +683,9 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 - [Back up and restore](backup-and-restore.md)
 - [Monitor Honua Server](monitoring.md)
 - [Deploy on AWS and Azure](cloud-deployments.md)
+
+### Investigation incident references
+
+`193_AllowIncidentInvestigationReferences.sql` adds companion tables for incident links and pinned incident versions. It preserves the existing investigation tables, discriminator checks and identifiers. Apply the migration before deploying the incident-writing API. Older images continue reading their original tables; incident references remain stored in the companion tables and become visible again when an incident-capable image is deployed. The shared pin and link sequences prevent identifiers from colliding across the original and companion tables. No contract approval or database restore is needed for an image rollback.
+
+The companion tables follow the existing investigation family. When a deployment configures a different schema but the original migration created the investigation tables in `honua`, the new tables stay in `honua` alongside them. The migration does not move existing investigation data.

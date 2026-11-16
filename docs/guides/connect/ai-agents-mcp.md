@@ -53,9 +53,11 @@ Clients that declare neither mode, and legacy sessions, get the same results as 
 
 ## API-key proposals
 
-Published MCP tools `honua_admin_api_key_create` and `honua_admin_api_key_revoke` submit proposals through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; it does not create or revoke a key. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Folder mutations use the same proposal-only runtime. Operator-gated tools without a proposal adapter retain their approval-required refusal.
+The published MCP tool `honua_admin_api_key_revoke` submits a proposal through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; the key remains active until approved execution. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Folder mutations use the same proposal-only runtime. Operator-gated tools without a proposal adapter retain their approval-required refusal.
 
-One authorized human resolves the sealed proposal through the [interactive Console approval flow](../secure/authentication.md#human-operation-approval). The requester may be that human; an API key or MCP bearer cannot approve. Replay checks current original-requester authority and uses that original principal, with a single execution claim. Key creation returns an opaque secret reference; the one-time key stays in the protected secret channel and must not enter model context or transcripts. A client tool-consent callback does not constitute server approval.
+One authorized human resolves the sealed proposal through the [interactive Console approval flow](../secure/authentication.md#human-operation-approval). The requester may be that human; an API key or MCP bearer cannot approve. Replay checks current original-requester authority and uses that original principal, with a single execution claim. A client tool-consent callback does not constitute server approval.
+
+API-key creation and rotation are excluded from the MCP catalog because they produce one-time secret material. Create or rotate keys through the authenticated administrative API, outside any agent session. Keep the one-time key in its protected secret channel and out of model context and transcripts; do not ask an agent to call an API-key creation or rotation tool.
 
 Clients may send one printable `Idempotency-Key` header of up to 128 characters on proposal calls. The runtime binds it to the authenticated principal, tenant, proposal mode and request fingerprint. An identical retry returns the existing proposal; changed input cannot reuse that key. Proposal calls bypass the published response cache. Missing durable proposal, audit or secret-aware runtime support fails closed. This source behavior does not establish installed qualification.
 
@@ -143,9 +145,10 @@ This rule is built in and applies whether or not `Operations:Policy` is enabled 
 ### Verify
 
 The [quickstart](../../get-started/quickstart.md) publishes the server on
-`http://localhost:18080` (`HONUA_HTTP_PORT`). Handshake methods are open, so
-this check sends no API key. Use the published MCP Python client to initialize
-the session and list tools:
+`http://localhost:18080` (`HONUA_HTTP_PORT`). The handshake is open, but an
+anonymous `tools/list` returns an empty array, so this check sends an API key.
+Set `HONUA_API_KEY` to the key your agent uses, then use the published MCP
+Python client to initialize the session and list tools:
 
 ```bash
 python3 -m pip install 'mcp==2.1.1'
@@ -154,12 +157,16 @@ python3 -m pip install 'mcp==2.1.1'
 ```bash
 python3 - <<'PY'
 import asyncio
+import os
 
 from mcp import ClientSessionGroup
 from mcp.client.session_group import StreamableHttpParameters
 
 async def discover():
-    server = StreamableHttpParameters(url="http://localhost:18080/mcp")
+    server = StreamableHttpParameters(
+        url="http://localhost:18080/mcp",
+        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
+    )
     async with ClientSessionGroup() as group:
         session = await group.connect_to_server(server)
         listed = await session.list_tools()
@@ -172,7 +179,7 @@ asyncio.run(discover())
 PY
 ```
 
-The response lists the `honua_*` tools this deployment advertises, with JSON Schema input definitions. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
+The script prints the `honua_*` tools in the server's default workflow view (12 discovery tools on a quickstart) and exits non-zero when none is listed, which is what a missing or unknown key produces. Each tool carries a JSON Schema input definition. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
 
@@ -226,7 +233,7 @@ Read-only ops tools give an agent the same operational posture a human sees in C
 - `honua_operate_events` — fused Operate timeline events.
 - `honua_supported_operation_kinds` — the live catalog of operation classes that can actually be routed.
 
-Mutating control-plane requests use schema-closed proposal tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Each creates a proposal and returns its id; a separate authorized principal approves it in the Console inbox or with the Admin CLI. MCP does not approve its own proposals and does not accept opaque execution payloads. The full observe → diagnose → propose → approve loop is in [Operating Honua](../operate/README.md).
+Mutating control-plane requests use schema-closed proposal tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. The `operate` view lists `honua_propose_finding`, `honua_propose_rollback` and `honua_propose_platform_release_convergence`. `honua_propose_deploy_plan` and `honua_propose_deploy_operation` are in no workflow view: they appear only in the paginated `full` catalog (`{"method":"tools/list","params":{"view":"full"}}`, following `nextCursor` until it is absent), so an agent that selects only named views does not see them. Each creates a proposal and returns its id; a separate authorized principal approves it in the Console inbox or with the Admin CLI. MCP does not approve its own proposals and does not accept opaque execution payloads. The full observe → diagnose → propose → approve loop is in [Operating Honua](../operate/README.md).
 
 To upgrade the platform, an agent reads `honua_platform_release_status` and `GET /api/v1/admin/deploy/preflight`, then calls `honua_propose_platform_release_convergence` with an optional `targetVersion` (for example `2026.1-rc.3`; `honua-` and `v` prefixes and a `.0` patch are normalized). If the server's declared release differs, the tool returns `outcome: "rejected"` with `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned` instead of a proposal; a tenant-bound key still gets `platform_admin_required` first. After a separate principal approves, `honua_propose_rollback` is the way back. The server never resolves a version to an image: version-to-digest resolution lives in the signed release lock, which the provisioning executor writes into `ControlPlane__PlatformRelease__*`. See [Agent-driven upgrade over MCP](../deploy/upgrade-and-rollback.md#agent-driven-upgrade-over-mcp).
 
@@ -347,7 +354,7 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 |---|---|
 | `configure` | The closed admin roster (server status, API-key reads, connection/table/service/folder discovery, connection create and test, import from URL, and layer publish and access policy, which file a proposal for human approval), job status and results, inline ingest, service publish, layer reads, style and render. Studio authoring and publication use `setup`. |
 | `folders` | Folder and Service discovery, Folder create, rename and delete, and Service moves through canonical operations. Select `configure` for publishing and access policy. |
-| `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
+| `operate` | Health, findings, events, alerts, platform-release status, deploy operations, `honua_propose_finding`, and the upgrade and rollback proposals `honua_propose_platform_release_convergence` and `honua_propose_rollback`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
 | `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Anonymous listing returns an empty tools array. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |
 | `setup` | The bounded terminal path (`setup.v7`): readiness, read-only connection and table discovery, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), map and app package composition (`honua_create_map_package`, `honua_create_app_package`; anonymous calls are still refused), and publication submit. `honua_studio_propose_publication` stays in the publication stage. The setup-and-publish prompt uses `configure` for the admin roster and switches here for Studio authoring. |
@@ -357,7 +364,26 @@ Required-input descriptions identify caller-supplied values or their producer to
 
 The `configure` inspection stage exposes import formats and limits, file and URL previews, and connection-table validation through the canonical admin operations. These tools require admin authorization and do not import or edit feature data. For `honua_admin_import_preview`, supply base64-encoded `file` content and `fileName` with its format extension. URL preview requires `sourceUrl`. Table validation requires a connection `id` from `honua_admin_connections_list` and `schema` / `table` from `honua_admin_connection_tables_list`.
 
-Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `serviceLayerIndex` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+The configure view includes `honua_admin_connections_test` for a registered
+Connection, `honua_admin_api_key_effective_permissions` to inspect effective
+API-key access, and `honua_admin_import_upload_url` to import from a URL. Discover
+the installed schemas before calling them; workflow metadata grants no authority.
+
+Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `serviceLayerIndex` from `honua_list_layers`, paired with that row's `serviceId`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+
+For `honua_render_map`, put the discovered pair inside `layers`. For example,
+if discovery selected `city-data` at index zero, these arguments render that
+layer over an illustrative extent in EPSG:4326:
+
+```json
+{
+  "layers": [{ "serviceId": "city-data", "serviceLayerIndex": 0 }],
+  "bbox": [-123, 37, -122, 38],
+  "bboxSrid": 4326
+}
+```
+
+Replace the example pair and extent with the selected layer and the requested area.
 
 Layer display and spatial configuration are available through the admin `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,

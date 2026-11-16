@@ -108,7 +108,6 @@ public class DatabricksFeatureStoreReadPolicyTests
 
         return new DatabricksFeatureStore(
             new DatabricksLayerMappingRegistry([mapping]),
-            new DatabricksFeatureQueryBuilder(),
             dataAccess,
             readSecurity);
     }

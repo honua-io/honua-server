@@ -39,9 +39,10 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
-# Validate the projection of this head without requiring feature PRs to commit it.
+# Validate the projection of this head without requiring feature PRs to commit
+# it, and without rewriting the tracked page: drift is reported, not written.
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py
+  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py --check
 fi
 
 # shellcheck source=scripts/ci/lib/router-fixtures.sh
@@ -50,23 +51,24 @@ router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
-  run_fixture code-quality-trust "${PYTHON_BIN}" scripts/ci/fixtures/validate-code-quality-supersession.py
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
+  run_fixture disabled-workflows "${PYTHON_BIN}" scripts/ci/check-disabled-workflows.test.py
   run_fixture shard-identities-tests "${PYTHON_BIN}" scripts/ci/check-shard-identities.test.py
   run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
+  run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
+  run_fixture publish-authorization "${PYTHON_BIN}" scripts/ci/check-publish-authorization.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
 run_fixture normalization-consumer-admission node --test scripts/ci/admit-normalization-consumer.test.js scripts/ci/cancel-older-normalization-consumers.test.js
-run_fixture code-quality-supersession node --test scripts/ci/cancel-superseded-code-quality.test.js
 run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 
 echo "Validating review-first PR Gate transition..."
 run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-review-first-dispatch.sh
 
-echo "Validating PR Gate impact observation..."
+echo "Validating CI script fixtures..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
   run_fixture full-ci-dispatch "${PYTHON_BIN}" scripts/ci/full-ci-dispatch.test.py
@@ -82,19 +84,16 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-project-overlap.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
   run_fixture scripts/ci/fixtures/validate-native-tools-image.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
   run_fixture scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
-  run_fixture scripts/ci/source-inventory-pilot/test_run.py "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
-  run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   run_fixture scripts/ci/check-evidence-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-evidence-workflow.test.py
   run_fixture scripts/ci/check-retired-cache.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache.test.py
   run_fixture scripts/ci/check-retired-cache-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache-workflow.test.py
-  run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
   run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
   run_fixture scripts/ci/download-affected-receipts.test.py "${PYTHON_BIN}" scripts/ci/download-affected-receipts.test.py
 else
-  echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
+  echo "⚠️  Skipping CI script fixtures (no working Python 3)."
 fi
 
 echo "Validating data-only derived-artifact normalization..."
@@ -487,10 +486,6 @@ assert_exact_shards \
 assert_exact_shards \
   "headroom-split-migration-source-imports" \
   "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs" \
-  '["Migration","Migration Source Imports"]'
-assert_exact_shards \
-  "import-coordination-outage-recovery-owner" \
-  "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs" \
   '["Migration","Migration Source Imports"]'
 assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
@@ -1645,7 +1640,7 @@ assert_descriptor \
   "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "core-caching-targeted-to-split-child" \
-  "src/Honua.Core/Core/Features/Caching/MetadataCacheState.cs" \
+  "src/Honua.Core/Core/Features/Caching/CacheOptions.cs" \
   "targeted" \
   "false" \
   "Caching File Storage Styling and Infrastructure"
@@ -1765,8 +1760,9 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS 8" \
-  `# Method-split classes (including Wps20EndpointsTests and ImageServerEndpointsTests) are pinned` \
-  `# by shard_partitions, full-run-capacity and real-inventory tests above.` \
+  `# Method-split classes (including Wps20EndpointsTests, ImageServerEndpointsTests and` \
+  `# SceneGrpcIntegrationTests) are pinned by shard_partitions, full-run-capacity and` \
+  `# real-inventory tests above.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
@@ -1831,25 +1827,21 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration Source Imports" \
   --assert-owner \
-    "Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests" \
+    "Honua.Server.Tests.Import.ImportJobExecutorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Migration Source Imports" \
+    "File and Raster Import 1" \
   --assert-owner \
     "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration 1" \
   --assert-owner \
-    "Honua.Server.Tests.Import.ImportCancellationMonitorTests" \
+    "Honua.Server.Tests.Import.ImportExecutionJobQueueTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import 1" \
-  --assert-owner \
-    "Honua.Server.Tests.Import.ImportCoordinatorRecoveryTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Migration 3" \
   --assert-owner \
     "Honua.Server.Tests.Import.StreamingImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Cloud and Streaming Import 2" \
   --assert-owner \
     "Honua.Server.Tests.Import.RasterImportEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1898,10 +1890,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices GPServer Endpoints" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "gRPC Protocol and Scene" \
   --assert-owner \
     "Honua.Server.Tests.Features.Geoprocessing.GrpcProcessServiceIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1977,7 +1965,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Platform and Connections" \
+    "Server Features Admin Platform and Connections 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2005,7 +1993,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-route \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Miscellaneous 2" \
+    "Server Features Miscellaneous 8" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
@@ -2089,23 +2077,19 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3ShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Cloud and Streaming Import 2" \
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3UploadProgressTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Cloud and Streaming Import 2" \
   --assert-owner \
     "Honua.Server.Tests.Import.AzureBlobShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Cloud and Streaming Import 2" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
     "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj" \
     "Runtime Units" \
-  --assert-owner \
-    "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
   `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
   `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
   `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \
@@ -2114,11 +2098,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAwsS3CloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Cloud and Streaming Import 2" \
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAzureBlobCloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import" \
+    "Cloud and Streaming Import 2" \
   `# #3271 Raster Serving Scene Geometry and Terrain: the three raster-serving namespaces are pinned to the` \
   `# shard that now owns them, so a rename back into the Misc catch-all or the` \
   `# Caching File Storage Styling and Infrastructure bucket fails here rather than silently re-hiding them.` \

@@ -11,6 +11,8 @@ using Honua.Infrastructure.Models;
 using Honua.Server.Features.Protocols.Zarr.Models;
 using Microsoft.AspNetCore.Mvc;
 
+using Honua.Core.Features.Raster.ZarrParser;
+
 namespace Honua.Server.Features.Protocols.Zarr;
 
 internal sealed class ZarrEndpointsLog;
@@ -177,7 +179,7 @@ internal static class ZarrEndpoints
         HttpContext context,
         [FromServices] IZarrStore store,
         [FromServices] IEnumerable<ICloudRangeReader> rangeReaders,
-        [FromServices] IZarrMetadataReader metadataReader,
+        [FromServices] ZarrMetadataExtractor metadataReader,
         ILogger<ZarrEndpointsLog> logger,
         CancellationToken cancellationToken)
     {

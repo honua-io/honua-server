@@ -69,6 +69,7 @@ public sealed partial class GrpcIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        ConfigureAttachmentReadServices();
         await _fixture.InitializeAsync();
 
         // Use GrpcWebHandler wrapping the test server's handler.

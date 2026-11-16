@@ -63,7 +63,8 @@ public sealed class VerticalSliceIsolationTests
         "WorkflowPackages",
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
         "Temporal", // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
-        "FieldWorkflows" // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
+        "FieldWorkflows", // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
+        "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
     };
 
     /// <summary>
@@ -110,6 +111,10 @@ public sealed class VerticalSliceIsolationTests
                                 // endpoints and the MCP package-review tool (the AI surface), so
                                 // the latter doesn't couple to the former's endpoint class.
             "Helpers",          // Hosting carve preserves Honua.Infrastructure.Helpers.*
+            "Attachments",      // Hosting-resident attachment upload verifier and publisher
+                                // (Honua.Infrastructure.Attachments): they bind upload sessions to
+                                // ICloudFileStorage from the FileStorage base above; the native
+                                // attachment RPCs stay in Honua.Server/Features/Protocols/Grpc.
             // Cross-cutting subsystems.
             "Analytics",
             "AuditLog",

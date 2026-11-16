@@ -10,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Security;
+using Honua.Core.Features.TileCachePackage.Services;
 
 namespace Honua.Import.TileCachePackage;
 
@@ -78,8 +79,8 @@ internal static class TileCachePackageEndpoints
         // data provider supplies it) so declaring it as a parameter would make the minimal
         // API request-delegate factory infer it as a JSON body parameter on hosts where it
         // is absent, which fails app startup when the source-generated JSON resolver cannot
-        // produce metadata for the service interface.
-        var importService = context.RequestServices.GetRequiredService<ITileCachePackageImportService>();
+        // produce metadata for the service type.
+        var importService = context.RequestServices.GetRequiredService<TileCachePackageImportService>();
 
         if (string.IsNullOrWhiteSpace(tilesetId))
         {

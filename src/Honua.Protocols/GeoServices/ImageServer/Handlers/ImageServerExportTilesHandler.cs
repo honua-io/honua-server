@@ -215,7 +215,7 @@ internal sealed class ImageServerExportTilesHandler
                 foreach (var tile in plan.Tiles)
                 {
                     token.ThrowIfCancellationRequested();
-                    var tileGeometry = CreateTileEnvelope(tile.Z, tile.Y, tile.X);
+                    var tileGeometry = ImageServerMosaicHelpers.CreateTileEnvelope(tile.Z, tile.Y, tile.X);
                     var selectedRasters = await _rasterStore.QueryRastersAsync(
                         layerId,
                         new RasterSelectionQuery
@@ -446,7 +446,7 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
         }
 
-        if (!RasterParsingHelpers.TryParseRasterFormat(GetString(values, "format"), out var rasterFormat) ||
+        if (!RasterParsingHelpers.TryParseRasterFormat(ImageServerRequestValues.GetString(values, "format"), out var rasterFormat) ||
             rasterFormat is RasterFormat.COG or RasterFormat.Raw)
         {
             return (null, StandardErrorHelpers.CreateBadRequest(
@@ -459,7 +459,7 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format."));
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(ImageServerRequestValues.GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
         }
@@ -472,9 +472,9 @@ internal sealed class ImageServerExportTilesHandler
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
         if (!ExportTilesRequestParser.TryParseExportTileLevels(
-                GetString(values, "levels"),
-                GetString(values, "minZoom"),
-                GetString(values, "maxZoom"),
+                ImageServerRequestValues.GetString(values, "levels"),
+                ImageServerRequestValues.GetString(values, "minZoom"),
+                ImageServerRequestValues.GetString(values, "maxZoom"),
                 limits,
                 out var requestedZooms,
                 out var minZoom,
@@ -484,14 +484,14 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, levelsError ?? "Invalid levels parameter."));
         }
 
-        if (!TryParseExportTilesMaxTiles(GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        if (!TryParseExportTilesMaxTiles(ImageServerRequestValues.GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
         }
 
         if (!TryParseExportTilesExtent(
-                GetString(values, "exportExtent") ?? GetString(values, "bbox"),
-                GetString(values, "exportExtentSR") ?? GetString(values, "bboxSR"),
+                ImageServerRequestValues.GetString(values, "exportExtent") ?? ImageServerRequestValues.GetString(values, "bbox"),
+                ImageServerRequestValues.GetString(values, "exportExtentSR") ?? ImageServerRequestValues.GetString(values, "bboxSR"),
                 out var sourceExtent,
                 out var sourceSrid,
                 out var extentError))
@@ -522,15 +522,15 @@ internal sealed class ImageServerExportTilesHandler
         }
 
         if (!ExportTilesRequestParser.TryResolveExportTilesPackage(
-                GetString(values, "tilePackage"),
-                GetString(values, "storageFormat") ?? GetString(values, "exportBy"),
+                ImageServerRequestValues.GetString(values, "tilePackage"),
+                ImageServerRequestValues.GetString(values, "storageFormat") ?? ImageServerRequestValues.GetString(values, "exportBy"),
                 out var tilePackage,
                 out var packageError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, packageError!));
         }
 
-        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, GetString(values, "mosaicRule"));
+        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, ImageServerRequestValues.GetString(values, "mosaicRule"));
         return (new ExportTilesPlan(
             storageLayerId,
             mergeStrategy,
@@ -819,20 +819,6 @@ internal sealed class ImageServerExportTilesHandler
         return extension.Length > 0;
     }
 
-    private static byte[] CreateTileEnvelope(int level, int row, int col)
-    {
-        const double worldExtent = 20037508.342789244;
-        var tileSpan = (worldExtent * 2d) / (1 << level);
-        var minX = -worldExtent + (col * tileSpan);
-        var maxX = minX + tileSpan;
-        var maxY = worldExtent - (row * tileSpan);
-        var minY = maxY - tileSpan;
-        return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
-    }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
-
     // -----------------------------------------------------------------------
     // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) — #2707
     // -----------------------------------------------------------------------
@@ -841,14 +827,14 @@ internal sealed class ImageServerExportTilesHandler
 
     private static bool IsCompactV2Requested(IReadOnlyDictionary<string, StringValues> values)
     {
-        var storageFormatType = GetString(values, "storageFormatType");
+        var storageFormatType = ImageServerRequestValues.GetString(values, "storageFormatType");
         if (!string.IsNullOrWhiteSpace(storageFormatType)
             && string.Equals(storageFormatType.Trim(), CompactV2StorageMode, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        var storageFormat = GetString(values, "storageFormat") ?? GetString(values, "exportBy");
+        var storageFormat = ImageServerRequestValues.GetString(values, "storageFormat") ?? ImageServerRequestValues.GetString(values, "exportBy");
         return storageFormat?.Trim().ToLowerInvariant() is "tpkx" or "compact" or "compactv2";
     }
 
@@ -874,7 +860,7 @@ internal sealed class ImageServerExportTilesHandler
         {
             var job = await _tileExportJobService!.SubmitAsync(
                 plan!,
-                idempotencyKey: GetString(values, "idempotencyKey"),
+                idempotencyKey: ImageServerRequestValues.GetString(values, "idempotencyKey"),
                 correlationId: context.TraceIdentifier,
                 context.User,
                 cancellationToken).ConfigureAwait(false);
@@ -1149,14 +1135,14 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
         }
 
-        if (!RasterParsingHelpers.TryParseRasterFormat(GetString(values, "format"), out var rasterFormat)
+        if (!RasterParsingHelpers.TryParseRasterFormat(ImageServerRequestValues.GetString(values, "format"), out var rasterFormat)
             || !TryResolveDurableImageFormat(rasterFormat, out var tileImageFormat))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(
                 context, "Compact Cache V2 tile export supports only png or jpeg tile formats."));
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(ImageServerRequestValues.GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
         }
@@ -1169,9 +1155,9 @@ internal sealed class ImageServerExportTilesHandler
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
         if (!ExportTilesRequestParser.TryParseExportTileLevels(
-                GetString(values, "levels"),
-                GetString(values, "minZoom"),
-                GetString(values, "maxZoom"),
+                ImageServerRequestValues.GetString(values, "levels"),
+                ImageServerRequestValues.GetString(values, "minZoom"),
+                ImageServerRequestValues.GetString(values, "maxZoom"),
                 limits,
                 out var requestedZooms,
                 out _,
@@ -1187,14 +1173,14 @@ internal sealed class ImageServerExportTilesHandler
                 context, "Compact Cache V2 tile export requires at least two zoom levels."));
         }
 
-        if (!TryParseExportTilesMaxTiles(GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        if (!TryParseExportTilesMaxTiles(ImageServerRequestValues.GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
         }
 
         if (!TryParseExportTilesExtent(
-                GetString(values, "exportExtent") ?? GetString(values, "bbox"),
-                GetString(values, "exportExtentSR") ?? GetString(values, "bboxSR"),
+                ImageServerRequestValues.GetString(values, "exportExtent") ?? ImageServerRequestValues.GetString(values, "bbox"),
+                ImageServerRequestValues.GetString(values, "exportExtentSR") ?? ImageServerRequestValues.GetString(values, "bboxSR"),
                 out var sourceExtent,
                 out var sourceSrid,
                 out var extentError))
@@ -1211,9 +1197,9 @@ internal sealed class ImageServerExportTilesHandler
         }
 
         var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
-        var mosaicRuleRaw = GetString(values, "mosaicRule");
+        var mosaicRuleRaw = ImageServerRequestValues.GetString(values, "mosaicRule");
         var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, mosaicRuleRaw);
-        var timeRaw = GetString(values, "time");
+        var timeRaw = ImageServerRequestValues.GetString(values, "time");
 
         var descriptor = new TileExportRasterSourceDescriptor(
             snapshot.Revision,

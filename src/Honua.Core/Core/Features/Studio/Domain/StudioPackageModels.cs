@@ -775,6 +775,10 @@ public sealed record StudioContentItemSummary
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 
+    // Owning tenant, used to apply the caller's tenant scope to bridged families; never serialized.
+    [JsonIgnore]
+    public string? TenantId { get; init; }
+
     /// <summary>Identifier of the actor that created the item.</summary>
     [JsonPropertyName("createdBy")]
     public string? CreatedBy { get; init; }
