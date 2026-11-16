@@ -148,6 +148,7 @@ internal sealed partial class HonuaFeatureService
         var layers = new List<GrpcLayerContext>();
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id)
                      .Where(publication => publication.LayerIndex.HasValue && snapshot.IsRoutable(publication))
+                     .DistinctBy(publication => publication.LayerIndex)
                      .OrderBy(publication => publication.LayerIndex))
         {
             var resource = snapshot.ResolveResource(publication)!;

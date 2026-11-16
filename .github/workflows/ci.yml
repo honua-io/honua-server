@@ -3316,6 +3316,8 @@ jobs:
     name: Store image proofs
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
     uses: ./.github/workflows/store-image-size.yml
+    secrets:
+      HONUA_PR_GATE_WAKE_ROLE_ARN: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
     permissions:
       contents: read
       packages: read
