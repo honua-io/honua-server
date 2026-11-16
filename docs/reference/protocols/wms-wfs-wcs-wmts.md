@@ -337,11 +337,14 @@ Rules to know:
   schema document. You are responsible for keeping them consistent.
 - A prefix must be a valid XML name. The prefixes `honua`, `xml`, `xmlns`,
   `xsi`, `xsd`, `xs`, `xlink`, `wfs`, `gml`, `ogc`, `ows` and `fes` cannot be
-  declared. A namespace with an unusable prefix or a URI that is not absolute
+  declared. A namespace with an unusable prefix or a URI without a scheme
   is ignored, and the feature type stays in the server namespace.
-- A prefix names one namespace. When two layers declare the same prefix with
-  different URIs, the first keeps it and the other stays in the server
-  namespace.
+- A prefix names one namespace and a namespace has one prefix. When two layers
+  visible to a caller disagree, the layer whose publication identifier sorts
+  first keeps its declaration and the other stays in the server namespace. The
+  server namespace `http://honua.io/wfs` cannot be declared.
+- `hiddenFields` does not hide the geometry and does not change the schema the
+  server generates for WFS 1.1 and 2.0.
 - A WFS 1.0 DescribeFeatureType response is one schema document. When a request
   selects feature types with different declared documents, the server returns
   the one whose namespace URI sorts first.

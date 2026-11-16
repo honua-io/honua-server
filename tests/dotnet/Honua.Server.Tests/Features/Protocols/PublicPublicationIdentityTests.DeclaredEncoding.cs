@@ -81,6 +81,23 @@ public sealed partial class PublicPublicationIdentityTests
             element => element.Name.Namespace == LegacyGml, "the geometry leads the attributes by default");
     }
 
+    [IntegrationTheory]
+    [InlineData("ListStoredQueries")]
+    [InlineData("DescribeStoredQueries")]
+    [Protocol(TestProtocols.Wfs20)]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.Wfs20, "ListStoredQueries")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeStoredQueries")]
+    [Endpoint("GET /wfs")]
+    public async Task WfsStoredQueries_DeclaredNamespace_IsBoundOnTheResponse(string request)
+    {
+        ConfigureDeclaredEncoding(new JsonObject());
+
+        var response = await ReadXmlAsync($"/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST={request}");
+
+        response.Root!.GetNamespaceOfPrefix("ext").Should().Be(XNamespace.Get(DeclaredNamespaceUri));
+    }
+
     private async Task<XElement> ReadFirstLegacyFeatureAsync(string version, string typeName)
     {
         var collection = await ReadXmlAsync(

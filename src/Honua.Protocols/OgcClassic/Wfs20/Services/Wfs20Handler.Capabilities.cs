@@ -259,9 +259,29 @@ internal sealed partial class Wfs20Handler
         };
     }
 
+    // A prefix names one namespace and a namespace has one prefix; the server prefix and
+    // namespace cannot be declared.
     private static bool TryClaimNamespacePrefix(Dictionary<string, string> claimed, string prefix, string uri)
-        => !string.Equals(prefix, FeatureNamespacePrefix, StringComparison.Ordinal) &&
-           (claimed.TryAdd(prefix, uri) || string.Equals(claimed[prefix], uri, StringComparison.Ordinal));
+    {
+        if (string.Equals(prefix, FeatureNamespacePrefix, StringComparison.Ordinal) ||
+            string.Equals(uri, FeatureNamespaceUri, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (claimed.TryGetValue(prefix, out var claimedUri))
+        {
+            return string.Equals(claimedUri, uri, StringComparison.Ordinal);
+        }
+
+        if (claimed.ContainsValue(uri))
+        {
+            return false;
+        }
+
+        claimed.Add(prefix, uri);
+        return true;
+    }
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,

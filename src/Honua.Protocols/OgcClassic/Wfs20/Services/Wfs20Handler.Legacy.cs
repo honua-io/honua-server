@@ -572,13 +572,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteStartElement("wfs", "FeatureCollection", LegacyWfsNamespace);
             writer.WriteAttributeString("xmlns", "gml", null, GmlLegacyNamespace);
             writer.WriteAttributeString("xmlns", FeatureNamespacePrefix, null, FeatureNamespaceUri);
-            foreach (var descriptor in queryResults
-                .Select(entry => entry.Plan.Descriptor)
-                .Where(descriptor => !descriptor.NamespacePrefix.Equals(FeatureNamespacePrefix, StringComparison.Ordinal))
-                .DistinctBy(descriptor => descriptor.NamespacePrefix))
-            {
-                writer.WriteAttributeString("xmlns", descriptor.NamespacePrefix, null, descriptor.NamespaceUri);
-            }
+            WriteDeclaredNamespaces(writer, queryResults.Select(entry => entry.Plan.Descriptor));
 
             writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
             writer.WriteAttributeString(

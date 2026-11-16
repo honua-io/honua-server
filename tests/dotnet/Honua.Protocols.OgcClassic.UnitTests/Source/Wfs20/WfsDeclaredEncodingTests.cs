@@ -52,6 +52,8 @@ public sealed class WfsDeclaredEncodingTests
     [InlineData("{\"namespace\":{\"prefix\":\"a:b\",\"uri\":\"https://example.test/a\"}}")]
     [InlineData("{\"namespace\":{\"prefix\":\"gml\",\"uri\":\"https://example.test/a\"}}")]
     [InlineData("{\"namespace\":{\"prefix\":\"WFS\",\"uri\":\"https://example.test/a\"}}")]
+    [InlineData("{\"namespace\":{\"prefix\":\"ex\",\"uri\":\"/rooted/path\"}}")]
+    [InlineData("{\"namespace\":{\"prefix\":\"ex\",\"uri\":\"https://example.test/\\u0001\"}}")]
     [InlineData("{\"namespace\":{\"prefix\":7,\"uri\":\"https://example.test/a\"}}")]
     public void Read_MalformedOrReservedNamespace_DeclaresNothing(string json)
         => Read(json).Should().BeSameAs(WfsDeclaredEncoding.None);

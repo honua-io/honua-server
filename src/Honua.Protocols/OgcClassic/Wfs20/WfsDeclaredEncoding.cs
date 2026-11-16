@@ -75,12 +75,32 @@ internal sealed record WfsDeclaredEncoding
             ReadText(declared, "prefix") is not { } prefix ||
             ReadText(declared, "uri") is not { } uri ||
             !IsUsablePrefix(prefix) ||
-            !System.Uri.TryCreate(uri, UriKind.Absolute, out _))
+            !IsUsableUri(uri))
         {
             return (null, null);
         }
 
         return (prefix, uri);
+    }
+
+    // A scheme is required: on Linux a rooted path such as "/x" also parses as an absolute URI.
+    private static bool IsUsableUri(string uri)
+        => System.Uri.TryCreate(uri, UriKind.Absolute, out var parsed) &&
+           !parsed.IsFile &&
+           IsXmlText(uri);
+
+    // Text the XML writer accepts; a control character would fail the response.
+    private static bool IsXmlText(string text)
+    {
+        try
+        {
+            XmlConvert.VerifyXmlChars(text);
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
     }
 
     private static bool IsUsablePrefix(string prefix)
@@ -106,7 +126,9 @@ internal sealed record WfsDeclaredEncoding
         if (encoding.ValueKind != JsonValueKind.Object ||
             !encoding.TryGetProperty("wfs10BoundedBy", out var box) ||
             ReadText(box, "srsName") is not { } srsName ||
-            ReadText(box, "coordinates") is not { } coordinates)
+            ReadText(box, "coordinates") is not { } coordinates ||
+            !IsXmlText(srsName) ||
+            !IsXmlText(coordinates))
         {
             return null;
         }
