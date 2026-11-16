@@ -160,7 +160,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         {
             // No enforced row-visibility filter and no field-level masking apply — take the
             // optimized by-id read path. When either applies we fall through to the select
-            // builder so the enforced filter and column masking (#1940) are honored.
+            // builder so the enforced filter and column masking are honored.
             return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
         }
 

@@ -131,7 +131,7 @@ public sealed partial class TileCachePackageImportService
             }
         }
 
-        // Tiles the new package no longer contains must not keep being served (#6175).
+        // Tiles the new package no longer contains must not keep being served.
         await _sink.DeleteTilesExceptAsync(cacheId, retained, cancellationToken).ConfigureAwait(false);
 
         Log.ImportCompleted(_logger, cacheId, imported, skipped);

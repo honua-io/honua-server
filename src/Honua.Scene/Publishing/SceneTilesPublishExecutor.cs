@@ -252,7 +252,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
 
                 // Choose single-tile (byte-stable v1 layout) or quadtree LOD
-                // partitioning (#1200). The LOD path activates once the dataset
+                // partitioning. The LOD path activates once the dataset
                 // crosses the configured threshold so existing small/medium
                 // datasets keep their deterministic single-tile output.
                 int tileCount;

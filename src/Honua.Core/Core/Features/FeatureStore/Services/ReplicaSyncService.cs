@@ -94,7 +94,7 @@ public sealed partial class ReplicaSyncService
 
             // Resolve each uploaded public object id to the internal id recorded by the storage change
             // log. A custom id.primary can differ from Feature.Id; probing the log with the public value
-            // would miss the concurrent mutation and authorize its overwrite (#2430). The same read also
+            // would miss the concurrent mutation and authorize its overwrite. The same read also
             // captures the manual-review precondition token before detection.
             var preconditionTokens = new Dictionary<long, string>();
             var storageObjectIdsByPublicId = uploadedObjectIds.ToDictionary(id => id, id => id);
@@ -167,7 +167,7 @@ public sealed partial class ReplicaSyncService
             var layerConflictIndexes = new List<int>();
             // Request slot (position in the edit array handed to the applier) of each dispatched
             // conflicting edit, parallel to layerConflictIndexes, so per-row outcomes map back to the
-            // exact edit rather than to an object id several edits may share (#2430).
+            // exact edit rather than to an object id several edits may share.
             var layerConflictSlots = new List<int>();
             var layerConflictIds = new List<string>();
             var layerConflictStartIndex = conflicts.Count;
@@ -248,7 +248,7 @@ public sealed partial class ReplicaSyncService
             // Watermark taken BEFORE the snapshot and the batch. Sampling it after the capture would
             // place an edit that landed in between inside the window while leaving it out of the
             // snapshot, and the staleness probe — which starts from this generation — would then see
-            // nothing newer and let a resolution overwrite that edit (#2430).
+            // nothing newer and let a resolution overwrite that edit.
             var preBatchGeneration = layerConflictCount > 0
                 ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
                 : 0L;
@@ -256,14 +256,14 @@ public sealed partial class ReplicaSyncService
             // Last-write-wins may overwrite the server state represented by the conflict envelope, but
             // only that state. Binding the write to the token captured with the envelope prevents an
             // edit that lands after capture from being overwritten without ever appearing in the
-            // durable conflict record (#2430). An absent capture is bound as expected absence.
+            // durable conflict record. An absent capture is bound as expected absence.
             var lastWriteWinsConflictPreconditions = new Dictionary<long, FeatureEditPrecondition>();
 
             // Snapshot the server side of every conflicting feature HERE: after detection, before the
             // uploaded edits apply. Capturing earlier let a server edit landing in between be flagged
             // as the conflict yet be missing from the snapshot, so a later keep-server resolution
             // restored a state that silently discarded it — and the collapsed change log makes that
-            // undetectable after the fact (#2430).
+            // undetectable after the fact.
             if (serverStateCapturer is not null && layerConflictCount > 0)
             {
                 var targets = layerConflictIndexes
@@ -307,7 +307,7 @@ public sealed partial class ReplicaSyncService
                 // The conflict record already exists, so make each captured envelope durable before
                 // the next cancellable operation. Deliberately do NOT stamp the resolution base yet:
                 // that field is the detection-complete marker, and the upload outcome is not known
-                // until ApplyAsync returns and per-edit attribution is durable below (#2430).
+                // until ApplyAsync returns and per-edit attribution is durable below.
                 await PersistCapturedServerStatesAsync(
                         conflicts,
                         layerConflictStartIndex,
@@ -321,7 +321,7 @@ public sealed partial class ReplicaSyncService
                 // an edit landing between the two is inside the envelope, and pairing it with the older
                 // cursor made every later staleness probe rediscover that same edit and answer Stale
                 // forever. An edit arriving between the capture and this read is the reverse case, and
-                // is caught by the state-token precondition the resolution write carries (#2430).
+                // is caught by the state-token precondition the resolution write carries.
                 var postCaptureGeneration = await _changeTracker
                     .GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
 
@@ -329,7 +329,7 @@ public sealed partial class ReplicaSyncService
                 // older than the cursor it would be paired with, and a later keepServer would see no
                 // post-base change and overwrite the newer state with the stale snapshot. The fallback
                 // is the pre-capture cursor, which fails safe in the other direction: the probe then
-                // finds the edit and answers Stale rather than overwriting it (#2430).
+                // finds the edit and answers Stale rather than overwriting it.
                 if (bindManualReviewEdits)
                 {
                     var confirmation = await serverStateCapturer
@@ -350,8 +350,7 @@ public sealed partial class ReplicaSyncService
             if (bindManualReviewEdits && editsToApply.Count > 0)
             {
                 // Two kinds of edit cannot share the ordinary state-token binding used for uploaded
-                // mutations, and manual review withholds rather than dispatching either unguarded
-                // (#2430):
+                // mutations, and manual review withholds rather than dispatching either unguarded:
                 //   * a target that was ABSENT at capture time - an update has no row to modify, and
                 //     treating an absence-bound delete as an ordinary committed upload would distort
                 //     its per-edit attribution;
@@ -451,7 +450,7 @@ public sealed partial class ReplicaSyncService
                 // The edit batch has already committed at this point, so the detection state that
                 // describes it must not be abandoned if the client disconnects: a record left without
                 // its applied flag or base generation would, after the settle window, let keepServer
-                // plan a no-op while the client edit is in fact committed (#2430).
+                // plan a no-op while the client edit is in fact committed.
                 await MarkConflictsAppliedAsync(
                         conflicts,
                         layerConflictIndexes,
@@ -584,14 +583,14 @@ public sealed partial class ReplicaSyncService
         // same object — an update and a delete, say — and with rollbackOnFailure=false one can commit
         // while the other fails. Object identity cannot say which landed, so attributing by id marked
         // the wrong conflict applied and a later resolution planned against a state that never
-        // committed (#2430).
+        // committed.
         var committedSlots = applyResult.CommittedEditIndexes.IsDefaultOrEmpty
             ? []
             : new HashSet<int>(applyResult.CommittedEditIndexes);
 
         // Slots the writer could not classify. Kept separate from committedSlots: an indeterminate row
         // is neither "landed" nor "did not land", and recording it as either lets one of the two
-        // resolution shortcuts report a state the row may not hold (#2430).
+        // resolution shortcuts report a state the row may not hold.
         var indeterminateSlots = applyResult.IndeterminateEditIndexes.IsDefaultOrEmpty
             ? []
             : new HashSet<int>(applyResult.IndeterminateEditIndexes);
@@ -600,7 +599,7 @@ public sealed partial class ReplicaSyncService
         // Ranked by execution order rather than by request slot: the shared edit pipeline groups a
         // batch into creates, then updates, then deletes, so an upload listing delete(5) before
         // update(5) still ends with the row deleted. Ranking by slot promoted the update, and an
-        // acceptClient on it then finalized as a no-op while the feature was in fact gone (#2430).
+        // acceptClient on it then finalized as a no-op while the feature was in fact gone.
         var lastCommittedByObject = new Dictionary<long, (int Rank, int Slot)>();
         var lastIndeterminateByObject = new Dictionary<long, (int Rank, int Slot)>();
         for (var i = 0; i < layerConflictIndexes.Count; i++)
@@ -643,7 +642,7 @@ public sealed partial class ReplicaSyncService
                 // committed later in execution order. This includes a failed edit: leaving that
                 // conflict at ClientEditApplied=false alone makes the planner read it as a withheld
                 // manual-review edit, so keepServer finalizes a no-op even though the committed sibling
-                // changed (or deleted) the row (#2430).
+                // changed (or deleted) the row.
                 if (winner.Slot >= 0 &&
                     conflict.ConflictId is { Length: > 0 } supersededId)
                 {
@@ -656,7 +655,7 @@ public sealed partial class ReplicaSyncService
             // A committed edit is only the definite final writer if nothing that executes AFTER it for
             // the same object is indeterminate. With rollbackOnFailure=false an earlier row can commit
             // while a later one loses its acknowledgement, and promoting the earlier conflict then let
-            // acceptClient finalize as a no-op even though the row may hold the later edit (#2430).
+            // acceptClient finalize as a no-op even though the row may hold the later edit.
             if (lastIndeterminateByObject.TryGetValue(conflict.ObjectId, out var laterUnknown) &&
                 Outranks(laterUnknown, winner))
             {
@@ -731,7 +730,7 @@ public sealed partial class ReplicaSyncService
     //
     // The record is always written with ClientEditApplied=false; it is promoted by
     // MarkConflictsAppliedAsync once the layer's batch is known to have committed, so the flag
-    // describes what actually landed rather than the requested conflict policy (#2430).
+    // describes what actually landed rather than the requested conflict policy.
     private async Task<string?> RecordConflictAsync(
         ReplicaSyncRequest request,
         ReplicaUploadLayerEdits layer,
@@ -763,10 +762,10 @@ public sealed partial class ReplicaSyncService
             // everything after the insert - the server snapshot, the edit batch, the adapter's later
             // state attachment - can be cut short by a disconnect or a process failure. A record
             // inserted without it reads as settled once the detection window passes, and acceptClient
-            // then has nothing to apply (#2430).
+            // then has nothing to apply.
             ClientStateJson = clientStateJson,
             // Persisted so a later resolution can probe the change log for post-conflict edits without
-            // re-resolving metadata (#2430).
+            // re-resolving metadata.
             StorageLayerId = layer.StorageLayerId,
             StorageObjectId = storageObjectId,
             DetectedAt = DateTimeOffset.UtcNow,

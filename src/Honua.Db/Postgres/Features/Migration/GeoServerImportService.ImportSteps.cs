@@ -251,7 +251,7 @@ internal sealed partial class GeoServerImportService
         {
             try
             {
-                // SLD-to-MapLibre conversion (issue #375).
+                // SLD-to-MapLibre conversion.
                 var sldValidated = false;
                 if (style.Format == "sld")
                 {

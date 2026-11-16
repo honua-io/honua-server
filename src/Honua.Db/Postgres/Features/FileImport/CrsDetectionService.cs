@@ -108,7 +108,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         var cleanedContent = wktContent.Trim();
 
         // Scope compound/bound WKT to the CRS that actually describes the data's horizontal
-        // coordinates before extracting any authority code (#2743). A COMPD_CS/COMPOUNDCRS carries
+        // coordinates before extracting any authority code. A COMPD_CS/COMPOUNDCRS carries
         // a trailing vertical CRS whose authority (5703-family) also validates in spatial_ref_sys,
         // and a BOUNDCRS carries TARGETCRS/transform authorities — taking the "last" node from the
         // whole string would resolve to the wrong code. Plain PROJCS/GEOGCS pass through unchanged.
@@ -143,7 +143,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
 
         // 2. Bare "EPSG:NNNN" reference (rare inside WKT but cheap to check). Only trusted for
         //    non-projected WKT: for projected WKT the first match grabs the inner base-geographic
-        //    authority (4326-family) and would mis-georeference the data (#2743), so projected WKT
+        //    authority (4326-family) and would mis-georeference the data, so projected WKT
         //    skips straight to ESRI-name / spatial_ref_sys matching or an explicit source SRID.
         if (!isProjected)
         {

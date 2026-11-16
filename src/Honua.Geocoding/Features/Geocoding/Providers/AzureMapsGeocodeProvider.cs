@@ -47,7 +47,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         SupportsReverseGeocode: true,
         SupportsSuggest: true,
         SupportsBatch: false, // Azure Maps doesn't have native batch support in Search API
-        SupportsStructuredInput: true, // Mapped to the Azure structured-address search endpoint (#2149)
+        SupportsStructuredInput: true, // Mapped to the Azure structured-address search endpoint
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // Azure Maps returns WGS84 coordinates
@@ -307,7 +307,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
     {
         // Structured input maps onto the Azure Maps structured-address search endpoint, which accepts
         // discrete components (streetName, municipality, countrySubdivision, postalCode, countryCode)
-        // for higher-fidelity matching than a flattened single line (#2149).
+        // for higher-fidelity matching than a flattened single line.
         if (request.StructuredAddress is { } structured && HasAnyStructuredField(structured))
         {
             return BuildStructuredSearchUrl(structured, request);

@@ -283,7 +283,7 @@ internal static class CsvFormatReader
         // attribute so it is never discarded and record the occurrence so the import surfaces
         // a warning. Mirrors GeoParquet's skip/warn behaviour for null geometry.
         // Coordinate columns that failed to parse are restored the same way, including
-        // heuristic lat/lon pairs. Blank cells stay a null geometry with no warning (#6172).
+        // heuristic lat/lon pairs. Blank cells stay a null geometry with no warning.
         var coordinatesUnparseable = geometry == null && HasUnparseableCoordinates(fields, mapping);
         if (geometry == null && (unparseableGeometryValue != null || coordinatesUnparseable))
         {
@@ -394,7 +394,7 @@ internal static class CsvFormatReader
         }
 
         // A point needs both axes. One coordinate-like header (an "x" score, a "long"
-        // description, a lat column with no longitude) is an ordinary attribute (#6172).
+        // description, a lat column with no longitude) is an ordinary attribute.
         if (longitudeIndex.HasValue != latitudeIndex.HasValue)
         {
             longitudeIndex = null;
@@ -683,7 +683,7 @@ internal static class CsvFormatReader
             }
 
             // A quote opens a field only when it is the first character of that field.
-            // A stray inch-mark in 12" is literal text, not a multi-line quoted field (#6173).
+            // A stray inch-mark in 12" is literal text, not a multi-line quoted field.
             if (ch == '"' && atFieldStart)
             {
                 quotedFields?.Add(fields.Count);
@@ -712,7 +712,7 @@ internal static class CsvFormatReader
         }
 
         // Quote state advances once per physical line. Rescanning the accumulated
-        // record made one multi-line field quadratic in its length (#6174).
+        // record made one multi-line field quadratic in its length.
         var cursor = CsvQuoteCursor.Start.Advance(line, delimiter);
         if (!cursor.InQuotes)
         {

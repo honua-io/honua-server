@@ -14,7 +14,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
 
     // Style reconciliation mutates the current graph and saves it, so it loads the base
     // from the persisted snapshot only — never the V1-catalog compat synthesis that
-    // GetCurrentAsync performs for serving paths (honua-server#1412). Building on a
+    // GetCurrentAsync performs for serving paths. Building on a
     // synthesized-but-unpersisted base would fail SaveAsync's reconciliation.
     private readonly IMetadataV2GraphWriteBaseReader? _writeBaseReader;
     private readonly IStyleCatalog _styleCatalog;

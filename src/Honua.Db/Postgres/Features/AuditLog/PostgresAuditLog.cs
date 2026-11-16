@@ -29,7 +29,7 @@ internal sealed class PostgresAuditLog : IAuditLog
     private const string TruncationMarker = "\u2026";
 
     // Stable, table-scoped key for the transaction advisory lock that serializes
-    // hash-chain construction (#350). Concurrent audit inserts briefly contend on
+    // hash-chain construction. Concurrent audit inserts briefly contend on
     // this lock so the (prev_hash -> entry_hash) chain stays linear; audit volume
     // is low (security-relevant events only) so the contention is negligible.
     private const long HashChainAdvisoryLockKey = 0x484F4E55_41554449L; // "HONUAUDI"

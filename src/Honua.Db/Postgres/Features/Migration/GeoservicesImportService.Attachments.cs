@@ -119,7 +119,7 @@ internal sealed partial class GeoservicesImportService
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.AttachmentQueryBatchFailed(_logger, request.LayerId, batch.Length, ex);
-                // #4600: the advertised attachment count for these parents is now unknowable, so the
+                // The advertised attachment count for these parents is now unknowable, so the
                 // attachment check cannot be reported as passing. Record the parents as unverified
                 // rather than letting the run imply they simply had no attachments.
                 unverifiedParents += batch.Length;

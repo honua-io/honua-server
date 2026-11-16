@@ -194,7 +194,7 @@ internal sealed partial class FeatureQueryBuilder
             return "NULL";
         }
 
-        // Field-level security (#1940): the enforced masked-field set is the source of
+        // Field-level security: the enforced masked-field set is the source of
         // attribute columns this expression may project, regardless of the requested
         // outFields. Resolved provider-side, so a restricted role never receives a masked
         // column even when it explicitly asks for it. Empty/unset means no masking.
@@ -306,7 +306,7 @@ internal sealed partial class FeatureQueryBuilder
             return ("NULL", "NULL");
         }
 
-        // Field-level security (#1940): subtract masked columns from the raw attributes
+        // Field-level security: subtract masked columns from the raw attributes
         // jsonb (in addition to the promoted public-id field), so the GeoJSON/GeoServices
         // raw fast paths honor masking just like the materialized-Feature paths.
         var maskedFields = ResolveMaskedFields(query);

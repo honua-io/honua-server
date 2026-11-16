@@ -42,7 +42,7 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         RequireScope(scope);
         var scopeKey = ScopeKey(scope);
         // The attempt holds a session advisory lock. On Lambda the connection is unpooled, so
-        // closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        // closing it ends the RDS Proxy-pinned session.
         await using var connection = await _sessionLockConnections.OpenAsync(_dataSource, cancellationToken)
             .ConfigureAwait(false);
         if (!await TryLockAsync(connection, scopeKey, cancellationToken).ConfigureAwait(false))

@@ -127,7 +127,7 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
-            // honua-server#5825: only an item that actually resolved through the bridge gives up
+            // Only an item that actually resolved through the bridge gives up
             // Studio route ownership. A same-family row that still lives in the inner store
             // (for example a form saved before the native store existed) keeps the default.
             return bridged.Pointers with { GovernsStudioRoutes = false };
@@ -211,7 +211,7 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(request.ItemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
-            // honua-server#3980: a bridged family keeps its pointers in the native store, so the
+            // A bridged family keeps its pointers in the native store, so the
             // compare-and-set is asserted against the pointers just resolved from it. The native
             // store owns the final write; this check stops an approval whose current pointer has
             // already moved from reaching PublishAsync at all.

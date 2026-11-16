@@ -126,7 +126,7 @@ internal sealed partial class GeoservicesImportService
         {
             var domains = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceDomains);
 
-            // #4600: the automated tier is only honest for domains the edit validator enforces. Each field's
+            // The automated tier is only honest for domains the edit validator enforces. Each field's
             // domain goes through GeoServicesFieldDomainParser, the parser the importer persists from: a coded-value
             // domain over the capture cap is not persisted at all, and an unknown domain type, an empty
             // coded-value list or a malformed range is persisted but accepts every value on edit.
@@ -173,7 +173,7 @@ internal sealed partial class GeoservicesImportService
 
         if (HasSubtypeMetadata(resourceElement))
         {
-            // #4824 REQ-002: the finding is derived from the same parser the importer persists
+            // The finding is derived from the same parser the importer persists
             // from, so a source editing construct that cannot be captured is named here instead
             // of surfacing as an opaque failure of the whole layer read.
             var subtypes = _constructCapabilityRegistry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.ResourceSubtypes);
@@ -371,7 +371,7 @@ internal sealed partial class GeoservicesImportService
             var isManyToMany = !string.IsNullOrWhiteSpace(cardinality) &&
                 cardinality.Trim().Equals("esriRelCardinalityManyToMany", StringComparison.OrdinalIgnoreCase);
 
-            // #4600: status and code come from the registry so the classifier and the registry cannot
+            // Status and code come from the registry so the classifier and the registry cannot
             // disagree; the fallback reason keeps the relationship-specific explanation.
             var automated = !(isComposite || isManyToMany);
             var automationStatus = automated

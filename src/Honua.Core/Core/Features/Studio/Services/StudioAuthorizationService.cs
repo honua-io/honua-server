@@ -119,7 +119,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         if (!string.IsNullOrWhiteSpace(candidate))
         {
             // A token subject is unique only within its issuer, and one issuer can mint the same
-            // subject into several tenants (#3429, #3412). Bind issuer-bearing subjects to the
+            // subject into several tenants. Bind issuer-bearing subjects to the
             // validated issuer and the request's resolved tenant so neither an equal subject from
             // another issuer nor the same subject in another tenant ever owns the same draft.
             // Issuer-less principals (API keys, framework sessions) keep their immutable id.
@@ -186,7 +186,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         }
 
         // Tenant ownership is an unconditional boundary over role, grant and ownership
-        // authority (honua-server#4905). It sits ahead of the admin bypass on purpose: the
+        // authority. It sits ahead of the admin bypass on purpose: the
         // platform "admin" role is tenant-scoped, so a tenant-scoped administrator must never
         // read, enumerate or propose another tenant's Studio content. Only the configured
         // MultiTenancy:MultiTenantAdminRoles operate across tenants.

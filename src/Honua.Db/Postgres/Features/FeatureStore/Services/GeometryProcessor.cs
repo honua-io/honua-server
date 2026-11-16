@@ -61,7 +61,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         // enforce the orientation to match the GeoJSON path; ST_ForcePolygonCCW is a no-op for
         // non-polygonal geometry. The geometric surface orientation is preserved through the GML
         // axis-flip option: option 16 relabels axes into srsName (lat/lon) order without reversing
-        // the ring, so the CCW-exterior winding still holds (matches GeoServer) (#2745).
+        // the ring, so the CCW-exterior winding still holds (matches GeoServer).
         return $"ST_AsGML(3, ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)}, NULL, {gmlIdExpression})";
     }
 
@@ -97,7 +97,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
 
         // KML polygons use right-hand-rule winding (exterior CCW, holes CW); normalize CW-exterior
         // stored data to match the GeoJSON/GML paths. ST_ForcePolygonCCW passes non-polygonal
-        // geometry through unchanged (#2745).
+        // geometry through unchanged.
         return $"ST_AsKML(ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision})";
     }
 

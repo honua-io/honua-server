@@ -444,7 +444,7 @@ public sealed class EditProcessor : IEditProcessor
             // error helpers rather than a client-side pre-check.
             //
             // Required attributes are the same per-slot check FeatureServer runs before the
-            // batch is assembled (#6133). Geometry presence is intentionally not pre-checked.
+            // batch is assembled. Geometry presence is intentionally not pre-checked.
             var createRejection = DescribeCreateAttributeRejection(resource, feature.Attributes);
             if (createRejection is not null)
             {

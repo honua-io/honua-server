@@ -389,7 +389,7 @@ internal static partial class MigrationInventoryHelpers
         {
             // Migration-inventory geographic heuristic (WKT-primary above): the whole EPSG 4000-4999
             // block is treated as geographic for inventory/reporting purposes. Intentionally broader
-            // than the runtime GeographicSridClassifier (#2732), which excludes geocentric/projected
+            // than the runtime GeographicSridClassifier, which excludes geocentric/projected
             // codes in that block; inventory over-classification is analysis-only, not a geodesy path.
             >= 4000 and <= 4999 => true,
             > 0 => false,

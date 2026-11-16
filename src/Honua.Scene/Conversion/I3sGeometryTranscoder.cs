@@ -306,7 +306,7 @@ public static class I3sGeometryTranscoder
             BinaryPrimitives.WriteSingleLittleEndian(span.Slice(normalAt + 4, 4), normals[p + 1]);
             BinaryPrimitives.WriteSingleLittleEndian(span.Slice(normalAt + 8, 4), normals[p + 2]);
 
-            // uv0 placeholder (0,0): real unwrapping deferred (#1810 follow-up).
+            // uv0 placeholder (0,0): real unwrapping deferred.
             var uvAt = uvOffset + (v * Uv0BytesPerVertex);
             BinaryPrimitives.WriteSingleLittleEndian(span.Slice(uvAt, 4), 0f);
             BinaryPrimitives.WriteSingleLittleEndian(span.Slice(uvAt + 4, 4), 0f);

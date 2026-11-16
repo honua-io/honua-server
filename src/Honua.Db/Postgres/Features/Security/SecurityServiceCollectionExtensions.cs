@@ -34,9 +34,9 @@ internal static class SecurityServiceCollectionExtensions
         services.TryAddSingleton<ICatalogConnectionIdentityMatcher, PostgresCatalogConnectionIdentityMatcher>();
         services.TryAddSingleton<IConnectionHealthTester, PostgresConnectionHealthTester>();
 
-        // Outbound data-source connection host policy (#354): an operator-configured
+        // Outbound data-source connection host policy: an operator-configured
         // allowlist of permitted database destinations plus optional private-address
-        // blocking, generalizing the outbound-HTTP SSRF guard (#2004). Opt-in — an
+        // blocking, generalizing the outbound-HTTP SSRF guard. Opt-in — an
         // unconfigured section leaves registration unrestricted.
         services.TryAddSingleton<IConnectionHostAllowlist>(_ =>
             new ConnectionHostAllowlist(BindConnectionHostAllowlistOptions(configuration)));

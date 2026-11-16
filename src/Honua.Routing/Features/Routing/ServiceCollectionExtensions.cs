@@ -44,13 +44,13 @@ public static class ServiceCollectionExtensions
             services.AddScoped<INetworkDatasetStore, PostgresNetworkDatasetStore>();
 
             // Topology generation read/allocation and canonical batched content-edit
-            // stores (#2716). Postgres-only, mirroring the registry store above; the admin
+            // stores. Postgres-only, mirroring the registry store above; the admin
             // edit endpoints no-op when these are absent.
             services.AddScoped<INetworkTopologyGenerationStore, PostgresNetworkTopologyGenerationStore>();
             services.AddScoped<INetworkTopologyEditStore, PostgresNetworkTopologyEditStore>();
 
             // Durable isolated shadow-topology rebuild attempts and their multi-node
-            // fencing lease (#2718/#2720), and atomic generation promotion/rollback (#2719).
+            // fencing lease, and atomic generation promotion/rollback.
             services.AddScoped<INetworkTopologyRebuildStore, PostgresNetworkTopologyRebuildStore>();
             services.AddScoped<NetworkTopologyShadowTopologyBuilder>();
             services.AddScoped<INetworkTopologyPromotionStore, PostgresNetworkTopologyPromotionStore>();

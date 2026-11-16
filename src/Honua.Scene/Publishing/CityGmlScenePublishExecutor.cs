@@ -221,7 +221,7 @@ internal sealed partial class CityGmlScenePublishExecutor
             return true;
         }
 
-        // SRID-classifier-guard allowlist (#2732): CityGML srsName geographic detection. Kept local
+        // SRID-classifier-guard allowlist: CityGML srsName geographic detection. Kept local
         // rather than routed through GeographicSridClassifier because it must also accept the
         // deprecated 3D code EPSG:4327, which the canonical axis-order list intentionally omits.
         var epsg = TryParseEpsgCode(srsName);

@@ -254,7 +254,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             // instead of collapsing the sampled X values into a single global min/max — that both
             // inflates the bbox and drops the far-side sliver. When wrapped, take the output X
             // bounds from the transformed western/eastern edges directly (mirrors the in-memory
-            // WebMercatorMath.TransformSampledExtent), keeping MinX > MaxX (#2739).
+            // WebMercatorMath.TransformSampledExtent), keeping MinX > MaxX.
             var wrapped = WebMercatorMath.IsAntimeridianCrossing(minX, maxX);
             var edgesCte = wrapped
                 ? $$"""

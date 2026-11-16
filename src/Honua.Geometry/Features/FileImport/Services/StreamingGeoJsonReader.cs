@@ -34,7 +34,7 @@ internal sealed record JsonProcessingState
 internal sealed record GeoJsonValidationResult(int FeatureCount, IReadOnlyList<ImportValidationIssue> Issues)
 {
     // Warning-severity issues (e.g. a geometry that will be repaired on import) are advisory and
-    // must not fail the file; only Error-severity issues make the document invalid (#2743).
+    // must not fail the file; only Error-severity issues make the document invalid.
     public bool IsValid => !Issues.Any(issue => issue.Severity == ImportValidationSeverity.Error);
 }
 
@@ -150,7 +150,7 @@ internal sealed partial class StreamingGeoJsonReader
                     // A single un-closed feature (or pre-feature leftover) has grown past the
                     // per-feature memory budget. Fail fast instead of buffering the whole file
                     // in RAM, which a few crafted concurrent uploads could otherwise use to OOM
-                    // the host (#1993).
+                    // the host.
                     throw new InvalidDataException(
                         $"A single GeoJSON feature (or unparsed leftover) exceeds the maximum " +
                         $"in-memory size of {_limits.MaxSingleFeatureBytes:N0} bytes. The feature " +
@@ -509,7 +509,7 @@ internal sealed partial class StreamingGeoJsonReader
 
             // A single feature object that spans many chunks accumulates here across
             // ProcessJsonChunk calls. Cap its in-memory size so one pathologically large
-            // (or never-closing) feature cannot buffer the whole file in RAM (#1993).
+            // (or never-closing) feature cannot buffer the whole file in RAM.
             if (_limits.MaxSingleFeatureBytes > 0 &&
                 featureBuffer != null &&
                 featureBuffer.WrittenCount > _limits.MaxSingleFeatureBytes)
@@ -638,7 +638,7 @@ internal sealed partial class StreamingGeoJsonReader
         }
 
         // Topology validity (self-intersection, ring orientation, hole placement) is reported as a
-        // NON-fatal, row-level warning rather than failing the whole file (#2743): the shared
+        // NON-fatal, row-level warning rather than failing the whole file: the shared
         // per-row validity gate at insertion time repairs (default) or rejects invalid geometry per
         // ImportLimits.GeometryValidityMode. Only areal geometry can be topologically invalid, so
         // points/lines skip the expensive IsValid topology-graph build. Accept mode stores geometry

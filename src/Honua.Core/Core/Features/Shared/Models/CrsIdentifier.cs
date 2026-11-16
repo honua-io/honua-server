@@ -73,7 +73,7 @@ public static partial class CrsIdentifier
     // "urn:ogc:def:crs:EPSG::4326" (canonical empty version), an explicit version
     // segment ("urn:ogc:def:crs:EPSG:6.9:4326"), and the historical x-ogc
     // authority — matching the spellings SpatialReferenceHelpers accepts on the
-    // WFS/FES query path (#2737).
+    // WFS/FES query path.
     [GeneratedRegex(
         @"^urn:(?:x-)?ogc:def:crs:EPSG:(?:[0-9]+(?:\.[0-9]+)*)?:(?<code>[1-9][0-9]*)$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]

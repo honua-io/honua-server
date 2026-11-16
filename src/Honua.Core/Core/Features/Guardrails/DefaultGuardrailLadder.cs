@@ -99,7 +99,7 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
             return overridden;
         }
 
-        // #4758: Licensing:Mode=Disabled grants every entitlement and reports Enterprise, but it
+        // Licensing:Mode=Disabled grants every entitlement and reports Enterprise, but it
         // is the unlicensed 2026.1 posture rather than an Enterprise governance deployment. Studio
         // draft composition therefore executes directly, as on Community. Publication, rollback
         // and agent proposals resolve with an action discriminator and keep the approval baseline.

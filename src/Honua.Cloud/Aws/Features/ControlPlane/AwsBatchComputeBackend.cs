@@ -385,7 +385,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var parameters = job.Spec.Parameters;
         // Select the job-definition tier from the honua-iac pool by the job's ephemeral-storage
-        // need (honua-iac#70); falls back to the single batch.job_definition_arn for non-tiered
+        // need; falls back to the single batch.job_definition_arn for non-tiered
         // configs. vCPU/memory/timeout/retry stay SubmitJob overrides below.
         var jobDefinition = AwsBatchJobDefinitionTierSelector.ResolveJobDefinitionArn(parameters);
         var jobDefinitionContractVersion = ResolveJobDefinitionMaxSupportedContractVersion(jobDefinition);

@@ -40,7 +40,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var normalizedSourceSrid = sourceSrid > 0 ? sourceSrid : CatalogExtentSrid;
 
         // A managed-store layer shares the features table with every other managed layer;
-        // its extent covers only its own rows (honua-server#4859).
+        // its extent covers only its own rows.
         var layerPredicate = managedLayerId.HasValue
             ? $" AND {SqlIdentifier.QuoteIdentifier(ManagedLayerDiscriminatorColumn)} = @managedLayerId"
             : string.Empty;

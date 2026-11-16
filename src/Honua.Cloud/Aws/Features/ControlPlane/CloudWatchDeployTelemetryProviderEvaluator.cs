@@ -81,7 +81,7 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
 
         // The request carries one query, so more than one result means the expression resolved to
         // several time series (a SEARCH or a GROUP BY Metrics Insights query). Reading the first one
-        // would promote or hold a deploy on an arbitrary series (#4617), exactly as for a Prometheus
+        // would promote or hold a deploy on an arbitrary series, exactly as for a Prometheus
         // vector or a Log Analytics table with several rows.
         if (results.Count > 1)
         {
@@ -95,7 +95,7 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         {
             // ScanBy.TimestampDescending orders datapoints newest-first. Metric-math over an
             // undefined ratio (for example 0/0) can yield NaN/Infinity; treat that the same as no
-            // datapoint rather than a real reading that could silently satisfy a threshold (#4617).
+            // datapoint rather than a real reading that could silently satisfy a threshold.
             return double.IsFinite(values[0])
                 ? new CloudWatchSignalReading(values[0], SeriesAbsent: false)
                 : CloudWatchSignalReading.Unavailable;
@@ -170,7 +170,7 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
             errorRate = (await metricClient.GetExpressionReadingAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false)).Value;
         }
 
-        // An error-count numerator (honua-server#6474) keeps the "matched no series" outcome so the
+        // An error-count numerator keeps the "matched no series" outcome so the
         // shared gate can read it as zero errors against a floor-meeting sample count. An empty
         // error-RATE result stays missing evidence: a ratio cannot tell no errors from no traffic.
         var errorCount = CloudWatchSignalReading.Unavailable;

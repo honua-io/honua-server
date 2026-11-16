@@ -228,7 +228,7 @@ internal static class PostgresDataSourceFactory
         // (Persist Security Info=false), so those fresh connections failed SCRAM auth with
         // "No password has been provided but the backend requires one (in SASL/SCRAM-SHA-256)"
         // — swallowed as a warning in TryRefreshPublishedSnapshotAsync, leaving published MVT
-        // tiles silently stale after an import (honua-server#1628). This does NOT weaken auth:
+        // tiles silently stale after an import. This does NOT weaken auth:
         // the backend still requires the password; it only stops Npgsql from redacting it from
         // the string handed back to code that must reconnect.
         connectionStringBuilder.PersistSecurityInfo = true;
@@ -277,7 +277,7 @@ internal static class PostgresDataSourceFactory
         // SECURITY: server-side timeouts (lock/statement/idle-in-transaction) prevent
         // indefinite blocking, and an optional default search_path avoids a
         // per-request SET round-trip. How these session settings reach the server
-        // matters (issue #1638):
+        // matters:
         //
         // - Default path (no multiplexing, no schema headers): apply them via a
         //   physical-connection initializer that runs plain SET statements right
@@ -311,7 +311,7 @@ internal static class PostgresDataSourceFactory
         //   come from the database role's defaults (ALTER ROLE ... SET ...), which
         //   PostgreSQL applies at session start and which survive RESET ALL. No
         //   session SET means RDS Proxy can multiplex instead of pinning each client
-        //   connection (honua-server#5870). The role defaults are verified once at
+        //   connection. The role defaults are verified once at
         //   startup by PostgresSessionSettingsVerificationService, which warns with
         //   the ALTER ROLE statements to run; the server never runs ALTER ROLE.
         if (sessionSettingsMode == DatabaseSessionSettingsMode.RoleDefaults)

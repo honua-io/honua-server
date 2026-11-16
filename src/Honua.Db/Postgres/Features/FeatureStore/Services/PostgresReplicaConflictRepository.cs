@@ -158,7 +158,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
     {
         // Only the detection-owned columns are touched, and only while the conflict is still pending:
         // detection post-processing can still be running when an operator resolves the freshly listed
-        // conflict, and a full-record rewrite from a stale read would reopen that resolution (#2430).
+        // conflict, and a full-record rewrite from a stale read would reopen that resolution.
         // COALESCE leaves a column unchanged when the caller passes null for it.
         var sql = $"""
             UPDATE honua.replica_conflicts
@@ -197,7 +197,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         // leaves the row Deferred and can be superseded by a real resolution; without the
         // resolved_by/resolution_action guard the superseded request's late finalizer could mark the
         // NEWER resolution complete before its own write and audit finished, making a crash there
-        // non-resumable (#2430).
+        // non-resumable.
         var sql = $"""
             UPDATE honua.replica_conflicts
             SET write_committed = COALESCE($2, write_committed),
@@ -241,7 +241,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         // a new resolved_at also fences the previous holder, whose finalization and release are both
         // bound to the timestamp being replaced. A committed write does not block the takeover — the
         // resume path is what completes such a claim, and the same statement is used to back-date a
-        // retained claim's lease so the operator's own retry can resume at once (#2430).
+        // retained claim's lease so the operator's own retry can resume at once.
         const string sql = """
             UPDATE honua.replica_conflicts
             SET resolved_at = $5
@@ -272,7 +272,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         CancellationToken cancellationToken = default)
     {
         // Bound to the exact claim, including its timestamp, so a stale release cannot clear a
-        // replacement claim taken after this one expired (#2430).
+        // replacement claim taken after this one expired.
         var sql = $"""
             UPDATE honua.replica_conflicts
             SET status = {(short)ReplicaConflictStatus.Pending},
@@ -315,7 +315,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         // deferred — never one already resolved with a non-defer action. The WHERE guard makes the
         // transition atomic and the RETURNING clause surfaces the post-state for the caller.
         //
-        // `AND finalized` is what makes the claim single-winner across deferrals (#2430): a deferred
+        // `AND finalized` is what makes the claim single-winner across deferrals: a deferred
         // row stays claimable, but only while no attempt is mid-flight on it. Without it two requests
         // could both claim the same Deferred row, and the loser's stale progress updates would be
         // silently dropped while it still reported success. A pending conflict is inserted finalized,

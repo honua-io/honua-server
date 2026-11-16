@@ -50,7 +50,7 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         // The curated canonical geographic-SRID list is the primary source of truth. Until the
-        // classifier unification (#2732) replaces this heuristic, add a safety net: an SRID in the
+        // classifier unification replaces this heuristic, add a safety net: an SRID in the
         // EPSG geographic 2D range (4000-4999) that is not on the allowlist is still a lat/lon
         // degree CRS (e.g. 4674 SIRGAS 2000, 4490 CGCS2000). Planar degree KNN on those would
         // produce meaningless distances, so route them through the same geodesic path as 4326.

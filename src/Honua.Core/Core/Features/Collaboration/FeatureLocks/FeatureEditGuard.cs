@@ -37,7 +37,7 @@ public sealed class FeatureEditGuard : IFeatureEditGuard
             // A lease that was handed out is binding; claiming one stays optional.
             // Only a lease held by a *different* editor blocks the edit, so a caller
             // that never claimed a lock is unaffected while a caller that did is
-            // protected from being overwritten on any write surface (#4402).
+            // protected from being overwritten on any write surface.
             FeatureEditConcurrencyPolicy.HonorActiveLock =>
                 lockSatisfied.HeldByOther is null
                     ? FeatureEditDecision.Allow

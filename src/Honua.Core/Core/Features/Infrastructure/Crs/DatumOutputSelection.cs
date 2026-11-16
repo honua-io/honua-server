@@ -66,7 +66,7 @@ internal static class DatumOutputSelection
         // NAD27 (and the other NADCON/NTv2 datums) have no direct WGS 84 row. Their
         // catalog default is a grid to NAD83, and NAD83 to WGS 84 is the no-operation.
         // Label the grid output as WGS 84 so a Web Mercator tile composes only the
-        // projection afterwards. A non-noop NAD83 step is a realization pipeline (#5186)
+        // projection afterwards. A non-noop NAD83 step is a realization pipeline
         // and is left unset. The same grid, inverted, samples a NAD27 raster from WGS 84.
         if (geographicTarget == Wgs84
             && fromSrid != Nad83

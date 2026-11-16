@@ -414,7 +414,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
         return result;
     }
 
-    // Serializes the mergeable latency distribution as a compact JSON array of per-bucket counts (#2809),
+    // Serializes the mergeable latency distribution as a compact JSON array of per-bucket counts,
     // AOT-safe with no serializer context. Returns null when the point carries no sketch so the column stays
     // NULL and the merge falls back to the weighted-mean approximation.
     private static string? SerializeDistribution(LatencyDistribution? distribution)

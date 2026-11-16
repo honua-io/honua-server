@@ -70,7 +70,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     // The publish path loads the current graph as the base it mutates and saves. It must
     // read only the genuinely-activated snapshot, never the V1-catalog compat synthesis
-    // that GetCurrentAsync performs for serving paths (honua-server#1412): a synthesized
+    // that GetCurrentAsync performs for serving paths: a synthesized
     // base is never persisted, so SaveAsync's reconciliation against metadata_v2_current
     // fails and every AutoPublish import reports "publishing did not complete". The
     // Postgres store implements this seam; a non-implementing test double falls back to
@@ -97,7 +97,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     // The schema the managed feature writer qualifies the shared `features` table with
     // (Database:Schema, the same value FeatureDataAccess receives), or null when it writes
     // the unqualified table through the server connection's search path. A managed-store
-    // binding must name exactly the table that writer writes (honua-server#4859).
+    // binding must name exactly the table that writer writes.
     private readonly string? _configuredFeatureSchema = string.IsNullOrWhiteSpace(metadataSchema)
         ? null
         : metadataSchema.Trim();
@@ -279,7 +279,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             ? await CaptureManagedStoreIdentityAsync(cancellationToken).ConfigureAwait(false)
             : null;
         // This connection holds the importer session lock below. On Lambda it is unpooled, so
-        // closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        // closing it ends the RDS Proxy-pinned session.
         await using var connection = new NpgsqlConnection(
             (sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled).Resolve(connectionString));
         await connection.OpenAsync(cancellationToken);
@@ -402,7 +402,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         // A managed-store layer takes its identity from the managed store, so its source key
-        // may be of any type, unselected or absent (honua-server#4859).
+        // may be of any type, unselected or absent.
         if (!isManagedStore || request.CreateEditableCopy)
         {
             var primaryKeyType = MapPostgresType(primaryKeyColumn!.DataType);
@@ -863,7 +863,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         // A managed-store publication is an independent copy of the source rows, so an existing
-        // layer over the same table is not a conflict (honua-server#4859).
+        // layer over the same table is not a conflict.
         if (!request.ManagedStore)
         {
             await AddExistingLayerCheckAsync(connection, schema, table, checks, cancellationToken, transaction)

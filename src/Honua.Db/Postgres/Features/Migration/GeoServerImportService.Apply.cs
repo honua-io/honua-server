@@ -83,7 +83,7 @@ internal sealed partial class GeoServerImportService
             static store => GetStoreKey(store.WorkspaceName, store.Name),
             StringComparer.OrdinalIgnoreCase);
         var layerGroupsById = filteredResources.LayerGroups.ToDictionary(GetLayerGroupId, StringComparer.Ordinal);
-        // Slice 3 (#1015): style steps come out of the apply-plan builder with
+        // Slice 3: style steps come out of the apply-plan builder with
         // Kind="style" and SourceId=GetStyleId(style). Build a lookup so the
         // apply path can resolve the underlying GeoServerStyleInfo (and its
         // SLD body) without re-running discovery.
@@ -221,7 +221,7 @@ internal sealed partial class GeoServerImportService
         // follow-on slices and recorded as manual-review evidence by the manifest.
         if (string.Equals(step.Kind, "layer-group", StringComparison.Ordinal))
         {
-            // Defensive scoping (#1098): reject layer-group catalog writes whose
+            // Defensive scoping: reject layer-group catalog writes whose
             // owning workspace is not part of the operator's requested scope.
             if (layerGroupsById.TryGetValue(step.SourceId, out var scopeGroup) &&
                 !IsWorkspaceInScope(filteredResources, scopeGroup.WorkspaceName))
@@ -260,7 +260,7 @@ internal sealed partial class GeoServerImportService
                 "The source layer was not present in the filtered GeoServer discovery result.");
         }
 
-        // Defensive scoping (#1098): reject layer catalog writes whose owning
+        // Defensive scoping: reject layer catalog writes whose owning
         // workspace is not part of the operator's requested scope.
         if (!IsWorkspaceInScope(filteredResources, layer.WorkspaceName))
         {
@@ -311,7 +311,7 @@ internal sealed partial class GeoServerImportService
             return CreateExecutionStepResult(step, "manual-review", targetError);
         }
 
-        // Slice 2 (#1015): when applyMode + catalog writer are configured, try to
+        // Slice 2: when applyMode + catalog writer are configured, try to
         // copy feature data from the source PostGIS table into the Honua catalog
         // database before publishing. The copy is idempotent (skip when the
         // target table already exists with rows). On SourceMissing we fall
@@ -504,7 +504,7 @@ internal sealed partial class GeoServerImportService
 
             var sourceId = GetWorkspaceId(workspace.Name);
 
-            // Defensive scoping (#1098): even though FilterRequestedResources should
+            // Defensive scoping: even though FilterRequestedResources should
             // already exclude unscoped workspaces, re-check at the write site so a
             // future regression in plan/translator code cannot smuggle a
             // cross-workspace mutation into honua.services.
@@ -751,7 +751,7 @@ internal sealed partial class GeoServerImportService
         string? convertedBody = null;
         string? convertedFormat = null;
         var diagnostics = new List<StyleDiagnostic>();
-        // Slice 3 (#1015): the manifest translator marks every SLD style as
+        // Slice 3: the manifest translator marks every SLD style as
         // "unsupported" because at inventory time we cannot know whether an
         // ISldStyleConverter is registered (issue #375 was the original gap).
         // The apply path now closes that gap by running the registered

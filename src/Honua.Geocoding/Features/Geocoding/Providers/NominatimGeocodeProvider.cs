@@ -318,7 +318,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
 
         // Structured input uses Nominatim's discrete structured-query parameters (street, city,
         // county, state, postalcode, country) which yield higher-fidelity matches than the free-form
-        // q= search and cannot be combined with it (#2149). Unsupported components are omitted.
+        // q= search and cannot be combined with it. Unsupported components are omitted.
         if (request.StructuredAddress is { } structured && HasAnyStructuredField(structured))
         {
             return BuildStructuredSearchUrl(structured, request, baseUrl, maxResults);
@@ -345,7 +345,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             // Nominatim has no dedicated proximity parameter, so a proximity bias is expressed as
             // an UNbounded viewbox centred on the bias point: results inside it are preferred but
             // results outside are still returned (omitting bounded=1). The half-extent is derived
-            // from BiasDistanceMeters when supplied, otherwise a small default radius (#2148).
+            // from BiasDistanceMeters when supplied, otherwise a small default radius.
             var radiusMeters = request.BiasDistanceMeters is > 0 ? request.BiasDistanceMeters.Value : DefaultBiasRadiusMeters;
             var latHalf = radiusMeters / MetersPerDegreeLatitude;
             var cosLat = Math.Cos(request.BiasLocation.Y * Math.PI / 180.0);

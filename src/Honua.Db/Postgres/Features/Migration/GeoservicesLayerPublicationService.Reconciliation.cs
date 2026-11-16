@@ -52,7 +52,7 @@ internal sealed partial class GeoservicesLayerPublicationService
                 .ReconcileAsync(reconciliationRequest, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Catalog reconciliation (issue #1379): reconcile the published Metadata v2 catalog entry
+            // Catalog reconciliation: reconcile the published Metadata v2 catalog entry
             // against the apply-time source layer definition. This is the deeper "counts can match
             // while the schema is wrong" pass (schema/domain/identifier/relationship/attachment/
             // subtype). Since #4600 its findings feed the same unified migration verdict as the
@@ -131,7 +131,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceFieldNames = sourceFieldNames,
             // The import writes only the selected source population into its own target table, and
             // the caller supplies the source count under the import filter. The where-clause is kept
-            // as provenance; it is not re-run against the target (#4826).
+            // as provenance; it is not re-run against the target.
             TargetContainsOnlyImportedFeatures = true,
             FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause,
             FilterFieldMappings = BuildFilterFieldMappings(layerInfo),

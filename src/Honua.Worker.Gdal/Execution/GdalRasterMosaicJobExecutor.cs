@@ -109,7 +109,7 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
 
         // Bound the DECLARED pixel footprint of every tile before any file is
         // written or gdalwarp is invoked, so a compressible GeoTIFF declaring
-        // enormous dimensions cannot force a decompression-bomb allocation (#2766).
+        // enormous dimensions cannot force a decompression-bomb allocation.
         if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
         {
             Log.InvalidInputs(logger, job.OperationId, dimensionError);
@@ -272,7 +272,7 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
 
             // Refuse a content-sniffed VRT/service-XML indirection blob or an embedded
             // /vsi reference before it is ever staged to scratch and opened by gdalwarp
-            // (#2765). This executor decodes sources inline rather than through the
+            //. This executor decodes sources inline rather than through the
             // shared GdalJobInputReader chokepoint, so the guard must be applied here too.
             if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
             {

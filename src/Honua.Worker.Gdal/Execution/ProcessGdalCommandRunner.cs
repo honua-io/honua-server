@@ -62,7 +62,7 @@ internal sealed partial class ProcessGdalCommandRunner(
             startInfo.ArgumentList.Add(argument);
         }
 
-        // Harden every GDAL subprocess (#2765): skip the indirection/network drivers
+        // Harden every GDAL subprocess: skip the indirection/network drivers
         // (VRT, WMS, …) and — for a pure local-scratch invocation — neutralize the
         // remote virtual-filesystem handlers. Applied by overwriting the inherited
         // environment so a value set on the worker process cannot weaken the policy.

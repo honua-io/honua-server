@@ -176,7 +176,7 @@ internal static class ContentPublicationBodyValidator
                 // A spec on a map/table/text/filter/metric panel is contradictory authoring — the panel
                 // renders as its declared kind and the chart the author wrote never appears, with nothing
                 // saying why — so the publish path rejects it, matching the document validators'
-                // chartSpecNotAllowed error severity (honua-server#3263) — FieldValidationError.Create
+                // chartSpecNotAllowed error severity — FieldValidationError.Create
                 // defaults to ValidationSeverity.Error, and there is no publish-path reason to soften it:
                 // publish is the last gate before the panel is served. Keyed off the same non-empty test
                 // the document validators use, so an absent, null, or empty round-tripped chartSpec never

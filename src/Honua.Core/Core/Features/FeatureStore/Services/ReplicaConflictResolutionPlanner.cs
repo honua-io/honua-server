@@ -65,7 +65,7 @@ public static class ReplicaConflictResolutionPlanner
             // Last-write-wins already committed the client edit; the committed state matches the choice.
             // Skipped when the outcome is unknown: the shortcut asserts the row already holds the client
             // state, and if the ambiguous write never landed this would report the client edit accepted
-            // while the server state was still in place. Writing it is idempotent either way (#2430).
+            // while the server state was still in place. Writing it is idempotent either way.
             return NoEffect(committedNewServerState: false);
         }
 
@@ -102,7 +102,7 @@ public static class ReplicaConflictResolutionPlanner
             // Skipped when the outcome is unknown, and when this edit committed but was superseded by a
             // later one from the same upload: in both cases the shortcut's assertion that the row still
             // holds the server state is wrong, and it would report the server state kept while a client
-            // overwrite remained. Restoring it is idempotent either way (#2430).
+            // overwrite remained. Restoring it is idempotent either way.
             return NoEffect(committedNewServerState: false);
         }
 
@@ -139,7 +139,7 @@ public static class ReplicaConflictResolutionPlanner
         // Field names are matched to schema fields case-insensitively, so `status` and `STATUS` in one
         // payload name the same field with two values and which one wins depends on dictionary
         // enumeration order. Reject rather than pick: the request does not describe a single state, and
-        // an ambiguous merge cannot be reproduced by the resume path either (#2430).
+        // an ambiguous merge cannot be reproduced by the resume path either.
         var duplicate = fieldValues.Keys
             .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(group => group.Count() > 1);
@@ -161,7 +161,7 @@ public static class ReplicaConflictResolutionPlanner
         // side is currently committed. Neither captured envelope describes that side when the upload
         // outcome is indeterminate, nor when this edit was superseded by a later one from the same
         // upload whose state was never captured — the merge would silently revert every unmentioned
-        // field and the geometry. The whole-state actions stay available (#2430).
+        // field and the geometry. The whole-state actions stay available.
         if (conflict.ClientEditOutcomeUnknown || conflict.ClientEditSuperseded)
         {
             return NotApplicable("Which state this feature currently holds is not described by either captured side of this conflict: its uploaded edit either has an unconfirmed commit outcome or was superseded by a later edit in the same upload. A partial resolution would carry the unmentioned attributes and geometry from a side that is not current; choose acceptClient or keepServer, which write a complete known state.");
@@ -212,7 +212,7 @@ public static class ReplicaConflictResolutionPlanner
 
         // Same as a field merge: the attributes come from whichever side is currently committed, and
         // neither an indeterminate outcome nor a superseded edit leaves a captured envelope that
-        // describes it (#2430).
+        // describes it.
         if (conflict.ClientEditOutcomeUnknown || conflict.ClientEditSuperseded)
         {
             return NotApplicable("Which state this feature currently holds is not described by either captured side of this conflict: its uploaded edit either has an unconfirmed commit outcome or was superseded by a later edit in the same upload. A partial resolution would carry the unmentioned attributes and geometry from a side that is not current; choose acceptClient or keepServer, which write a complete known state.");

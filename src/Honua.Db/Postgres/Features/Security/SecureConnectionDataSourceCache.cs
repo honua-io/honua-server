@@ -46,7 +46,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // Request-scoped schema mode covers per-test schema headers and tenant schema routing (#346).
+        // Request-scoped schema mode covers per-test schema headers and tenant schema routing.
         _schemaHeadersEnabled = RequestScopedSchemaConfiguration.IsEnabled(configuration);
         _connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
         // Preserve the configured default schema so named secure connections get the
@@ -57,12 +57,12 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // libpq `options` startup parameter under multiplexing/schema-header modes —
         // honua-server#1638). Without this, background/service callers (where
         // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
-        // search_path and miss schema-qualified tables (honua-server#2949).
+        // search_path and miss schema-qualified tables.
         _defaultSchema = configuration["Database:Schema"];
         // Named and bound pools always SET their session settings per connection (see below).
         // Behind RDS Proxy that pins the proxy session, and a frozen Lambda never prunes its
         // pool, so on Lambda these pools are unpooled: each logical close ends the pinned
-        // session (honua-server#6760).
+        // session.
         _releaseSessionOnClose = ControlPlaneEventHandlerHost.IsLambda(configuration);
         _createDataSource = createDataSource;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -143,7 +143,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // common limits/timeouts without inheriting the primary database's schema.
         // Named pools always apply the session settings per connection, even with
         // Database:SessionSettings:Mode=role-defaults: their role can differ from the
-        // DefaultConnection role the startup check verifies (honua-server#5870).
+        // DefaultConnection role the startup check verifies.
         var dataSource = _createDataSource?.Invoke(connectionString) ?? (preservePrimarySchema
             ? PostgresDataSourceFactory.Create(
                 connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema,

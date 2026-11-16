@@ -295,7 +295,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
         // Geography measures metres. The planar path measures in the layer CRS's own unit, so a
         // distance the parser already normalised to metres (FES uom) is converted to that unit:
-        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS (#5462). Distances without a unit
+        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS. Distances without a unit
         // keep their native planar-in-CRS reading.
         if (!useGeography && spatial.DistanceInMeters)
         {
@@ -323,7 +323,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     // Fallback used only when the translation context does not carry an explicit IsGeographic
     // flag (the primary path derives it from spatial_ref_sys). This gates ::geography-cast /
     // geodesic routing (ST_DWithin/ST_Distance over geography, geodesic Intersects), so it uses
-    // the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // the canonical NARROW geodesic-safe bucket rather than the broad geographic
     // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
     // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
     // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
@@ -347,7 +347,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                     if (geometry.Srid != context.Wkid)
                     {
                         // A geographic literal at latitude ±90 aborts ST_Transform into Web Mercator.
-                        // The shared helper clamps that band; other CRS pairs stay a bare transform (#6186).
+                        // The shared helper clamps that band; other CRS pairs stay a bare transform.
                         geometryExpression = DatumTransformSql.BuildTransformExpression(
                             geometryExpression,
                             context.Wkid,
@@ -638,7 +638,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
             "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
 
-            // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
+            // Extended EXTRACT fields. The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
             // stays a translated, parameter-safe sub-expression.
             "EXTRACT_DOW" => TranslateExtractField("DOW", args),
@@ -1118,7 +1118,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         // FeatureQueryBuilder), so the alias must be rewritten to the real column
         // rather than emitted verbatim (a bare "updated" column does not exist).
         // The OData $deltatoken "changed since" predicate targets the "updated"
-        // alias so the delta filter resolves to the real updated_at column (#1436).
+        // alias so the delta filter resolves to the real updated_at column.
         //
         // Only map the alias when the resource does not expose it as a queryable
         // attribute (TryGetField == null); otherwise fall through to normal schema

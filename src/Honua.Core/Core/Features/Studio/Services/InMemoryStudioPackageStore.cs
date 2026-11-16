@@ -130,7 +130,7 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
 
             // Cascade-delete an orphan content item: if this was the item's last remaining
             // draft and no version has ever been saved for it, the item has nothing openable
-            // (no draft, no version) and must not surface in content-item enumeration (#3003).
+            // (no draft, no version) and must not surface in content-item enumeration.
             if (_items.TryGetValue(draft.ItemId, out var item) &&
                 item.CurrentVersionId is null &&
                 item.PublishedVersionId is null &&
@@ -517,7 +517,7 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
 
-            // honua-server#3980: the caller validated the proposal against the item's current
+            // The caller validated the proposal against the item's current
             // pointer outside this lock, so re-compare here -- inside the same lock that performs
             // the published-pointer write -- before anything is persisted. A draft saved in the
             // meantime moves current_version_id and must fail the proposal rather than publish a
@@ -687,7 +687,7 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
     {
         if (_items.TryGetValue(itemId, out var item))
         {
-            // Ownership is set once, at creation, and immutable thereafter (honua-server#3001):
+            // Ownership is set once, at creation, and immutable thereafter:
             // an existing item's owner_id is never overwritten by a later draft/version upsert.
             return item;
         }

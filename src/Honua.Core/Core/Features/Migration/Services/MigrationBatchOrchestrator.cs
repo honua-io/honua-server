@@ -157,7 +157,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                 continue; // still in flight
             }
 
-            // #4600: the child's per-layer fidelity verdict is copied onto the durable child row here,
+            // The child's per-layer fidelity verdict is copied onto the durable child row here,
             // while the job's progress record (24 h TTL) still holds it, so the service-level fold
             // below never depends on expiring job state.
             var updated = await catalog.UpdateChildAsync(
@@ -177,7 +177,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         }
 
         // 2. Queue the next ready children (dependencies satisfied, no blocking failure).
-        // #4600: a dependency is satisfied once its layer has published, which a review-routed
+        // A dependency is satisfied once its layer has published, which a review-routed
         // (NeedsReview) layer has. Counting only Succeeded stranded every dependent of a review-routed
         // origin layer as pending forever, so the batch never reached a terminal status and never
         // reported a verdict. The review-routed layer still blocks the service-level verdict.
@@ -265,7 +265,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             var manifestBody = await catalog.GetManifestBodyAsync(batch.BatchId, cancellationToken).ConfigureAwait(false);
 
             // Apply relationships only when no child hard-failed and the batch asked
-            // for it (issue #1256). NeedsReview children still published data, so
+            // for it. NeedsReview children still published data, so
             // relationship-apply is eligible; hard failures are not.
             //
             // Note: `pending == 0` is not checked here separately because it is already
@@ -283,7 +283,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                 relationshipsApplied = true;
             }
 
-            // #4600: one service-level verdict. Every layer must have completed at full fidelity and
+            // One service-level verdict. Every layer must have completed at full fidelity and
             // every requested relationship must have reached the target; a deferred relationship or
             // an apply that never ran is a blocking omission, not a footnote in the status note.
             fidelity = MigrationBatchFidelityEvaluator.Evaluate(new MigrationBatchFidelityInput
@@ -405,7 +405,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         bool applyRelationships,
         CancellationToken cancellationToken)
     {
-        // #4600: the job identity derives from the batch child instead of being minted per call.
+        // The job identity derives from the batch child instead of being minted per call.
         // Advancing is re-entrant (StartAsync and the background tick both advance) and a crash can
         // land between queueing the job and recording its id on the child row, so a fresh id queued a
         // second import of the same layer into the same table. A derived id lets a repeat call

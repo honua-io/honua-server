@@ -152,7 +152,7 @@ internal static class RasterMosaicSql
         RasterMosaicOrdering.Northwest =>
             "ST_YMax(ST_Envelope(rast)) ASC, ST_XMin(ST_Envelope(rast)) DESC, id ASC",
 
-        // esriMosaicNadir (#1870): the raster acquired closest to straight-down (the lowest
+        // esriMosaicNadir: the raster acquired closest to straight-down (the lowest
         // off-nadir angle) must sort LAST so a LAST union keeps it. Ordering by off_nadir DESC
         // puts the highest (most off-nadir) first and the lowest (most nadir) last. Rasters with
         // no recorded off-nadir angle (NULL off_nadir, e.g. no sensor metadata row) rank FIRST so

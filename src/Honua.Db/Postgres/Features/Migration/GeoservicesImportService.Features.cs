@@ -72,7 +72,7 @@ internal sealed partial class GeoservicesImportService
         }
 
         // Classify the source WKT, not the geometry stored after ST_MakeValid. A repaired
-        // polygon remains an inherited source defect or an unrepaired rewrite (#4826).
+        // polygon remains an inherited source defect or an unrepaired rewrite.
         var sourceValidity = hasGeometry
             ? $", CASE WHEN @geom IS NULL THEN NULL ELSE ST_IsValid(ST_GeomFromText(@geom, {targetSrid})) END"
             : string.Empty;

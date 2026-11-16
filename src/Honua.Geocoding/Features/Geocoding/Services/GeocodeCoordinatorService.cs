@@ -516,7 +516,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
             // Each provider's own cap, not only the first batch-capable provider. An over-cap
             // candidate is skipped without a call and without consuming the failover budget, so
-            // a later provider with a larger cap can still run (#6160).
+            // a later provider with a larger cap can still run.
             var providerBatchDecision = _limitEnforcer.CheckBatch(
                 provider.Name, provider.Capabilities, request.Queries.Count);
             if (!providerBatchDecision.Allowed)
@@ -642,7 +642,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
     // An explicitly named provider is the only candidate. Substituting the default
     // (public Nominatim) when that provider is missing or down sends the caller's
-    // address to a service they did not choose (#6601).
+    // address to a service they did not choose.
     private static GeocodeResult<T>? RefuseUnregisteredPreferredProvider<T>(
         string? providerName,
         List<IGeocodeProvider> providers)

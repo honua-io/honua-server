@@ -569,7 +569,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         if (current.IsDeleted)
         {
             // Someone else already deleted the feature. This is the delete-vs-delete conflict the wire
-            // contract has always declared and never produced (#2430): it was previously reported as an
+            // contract has always declared and never produced: it was previously reported as an
             // idempotently-applied delete, hiding the divergence from the field client.
             //
             // A genuine retry of the client's OWN delete never reaches here — replays are served from

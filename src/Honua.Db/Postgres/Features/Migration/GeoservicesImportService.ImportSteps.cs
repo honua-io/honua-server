@@ -45,13 +45,13 @@ internal sealed partial class GeoservicesImportService
 
         await using var lease = await OpenConnectionAsync(cancellationToken);
         // The import holds a session advisory lock for the whole job. On Lambda it runs on an
-        // unpooled connection, so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        // unpooled connection, so closing it ends the RDS Proxy-pinned session.
         await using var session = await _sessionLockConnections
             .OpenAsync(lease, cancellationToken, hasCallerTransaction: lease.Transaction is not null);
         var connection = session.Connection;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        // #4600: one import per target table, for the whole job. A retry submitted while the original
+        // One import per target table, for the whole job. A retry submitted while the original
         // job is still running, or two imports aimed at the same table, would otherwise race: the loser
         // blocks on the winner's uncommitted catalog rows and then fails opaquely, or replaces the table
         // the winner just committed, or is still publishing, copying attachments into, or reconciling.
@@ -64,7 +64,7 @@ internal sealed partial class GeoservicesImportService
             return lockFailure;
         }
 
-        // #4827: the step a top-level failure happened in, so the job reports where it failed and
+        // The step a top-level failure happened in, so the job reports where it failed and
         // whether imported rows had already been committed. The counters are outside the try so a
         // cancellation after commit can still report how many rows landed.
         var stage = ImportFailureStage.DiscoveringLayer;
@@ -107,7 +107,7 @@ internal sealed partial class GeoservicesImportService
             var totalFeatures = layerInfo.FeatureCount;
             var batchSize = request.BatchSize ?? layerInfo.MaxRecordCount ?? 1000;
 
-            // #4600: an import that is not a replacement says so instead of failing inside CREATE TABLE.
+            // An import that is not a replacement says so instead of failing inside CREATE TABLE.
             // A job restarted after its data committed lands here too, so the message names that case.
             var targetExists = await RelationExistsAsync(connection, targetSchema, request.TableName, cancellationToken);
             if (targetExists && !request.OverwriteExisting)
@@ -123,7 +123,7 @@ internal sealed partial class GeoservicesImportService
                     stopwatch.Elapsed);
             }
 
-            // #4600: a replacement must never trade a complete prior target for a weaker one. It loads
+            // A replacement must never trade a complete prior target for a weaker one. It loads
             // into a staging table and swaps it in just before commit, so the live target stays readable
             // and unlocked for the whole transfer. The staging table is created inside the import
             // transaction: a failure, a refused replacement, a cancellation or a crashed worker all remove
@@ -175,7 +175,7 @@ internal sealed partial class GeoservicesImportService
                 : sourceObjectIds.Chunk(Math.Max(1, objectIdWindowSize)).ToArray();
             const int maxImportPages = 100_000;
 
-            // #4600: the source population the transfer starts from, with the import's filter applied. It
+            // The source population the transfer starts from, with the import's filter applied. It
             // is compared with the population after the last page, so a source edited mid-transfer is
             // reported rather than implied to be a snapshot, and it is the baseline a filtered import is
             // reconciled against (the discovery count is always unfiltered).
@@ -299,7 +299,7 @@ internal sealed partial class GeoservicesImportService
 
                 if (batchInsert.Failed > 0)
                 {
-                    // #4827: keep the (redacted) reason the database gave, so a rejected geometry or value
+                    // Keep the (redacted) reason the database gave, so a rejected geometry or value
                     // is diagnosable from the job rather than only from the server log.
                     warnings.Add(batchInsert.FirstFailureReason is { } reason
                         ? $"Batch {batchNumber}: {batchInsert.Failed} features failed to insert; first rejection: {reason}"
@@ -314,7 +314,7 @@ internal sealed partial class GeoservicesImportService
                     : queryResult.ExceededTransferLimit || queryResult.Features.Length == batchSize;
             }
 
-            // #4600: the loop stops polling the source once the token fires. Surface that as a
+            // The loop stops polling the source once the token fires. Surface that as a
             // cancellation (rolled back below, so a replaced target is retained) rather than letting it
             // read as a generic incomplete transfer.
             cancellationToken.ThrowIfCancellationRequested();
@@ -326,7 +326,7 @@ internal sealed partial class GeoservicesImportService
 
             if (replacingExistingTarget && failedFeatures > 0)
             {
-                // #4600: refuse the swap. Committing here would replace a complete prior target with
+                // Refuse the swap. Committing here would replace a complete prior target with
                 // one missing the records that failed to load; the rollback discards the staging table
                 // and the prior target was never touched.
                 await transaction.RollbackAsync(CancellationToken.None);
@@ -344,7 +344,7 @@ internal sealed partial class GeoservicesImportService
             seenSourceObjectIds.TrimExcess();
             objectIdWindows = null;
 
-            // #4600: close the bracket around the transfer before committing, so a source that changed
+            // Close the bracket around the transfer before committing, so a source that changed
             // while it was being read is recorded against exactly the data being committed.
             var sourceSnapshot = await CaptureSourceSnapshotAsync(
                 request,
@@ -392,7 +392,7 @@ internal sealed partial class GeoservicesImportService
                     .ConfigureAwait(false);
             }
 
-            // #4600: attachment accounting is kept on its own evidence (advertised / copied / failed /
+            // Attachment accounting is kept on its own evidence (advertised / copied / failed /
             // unreadable-inventory) so attachment parity is decided independently of feature counts.
             MigrationFidelityAttachmentInput? attachmentFidelity = null;
             var attachmentCount = 0;
@@ -438,7 +438,7 @@ internal sealed partial class GeoservicesImportService
 
             // Phase 5: Validating â€” reconcile the published layer against the apply-time source
             // snapshot before declaring the import complete. A hard finding routes the run to
-            // NeedsReview (issue #1380) instead of Completed; warn findings are recorded but do
+            // NeedsReview instead of Completed; warn findings are recorded but do
             // not block. Reconciliation runs outside the import transaction (which is already
             // committed) because it probes the published, queryable layer.
             GeoservicesReconciliationGateOutcome reconciliation = GeoservicesReconciliationGateOutcome.Skipped;
@@ -485,7 +485,7 @@ internal sealed partial class GeoservicesImportService
                     $"{unconvertedGeometryTargetIds.Count} feature(s) were saved with a null geometry because the source geometry could not be converted."));
             }
 
-            // #4600: one verdict, not two. Data-movement reconciliation, catalog (schema/domain/
+            // One verdict, not two. Data-movement reconciliation, catalog (schema/domain/
             // identifier/subtype) reconciliation, dropped records, lost attachments and deferred
             // relationships all fold into a single fidelity evaluation. Any blocking difference
             // routes the run to NeedsReview; a check that never executed downgrades the run to
@@ -651,7 +651,7 @@ internal sealed partial class GeoservicesImportService
         }
         finally
         {
-            // #4600: every path out of the job ends the target lease, after its transaction has committed
+            // Every path out of the job ends the target lease, after its transaction has committed
             // or rolled back. A failure here only means the connection is gone, which releases it anyway.
             try
             {

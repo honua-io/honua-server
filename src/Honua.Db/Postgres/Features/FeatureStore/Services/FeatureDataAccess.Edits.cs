@@ -171,7 +171,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         // The feature row and its attachment rows commit together. Blobs follow that commit,
-        // including when this delete is the only statement in the request (#6137).
+        // including when this delete is the only statement in the request.
         await using var rowTransaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var npgsqlRowTransaction = (NpgsqlTransaction)rowTransaction;
         await EnsureExistingRowVisibleAsync(policy.RowFilter, new RowSecurityContext(conn, npgsqlRowTransaction, new(_tableName, layerId, (null, featureId))), cancellationToken).ConfigureAwait(false);
@@ -323,7 +323,7 @@ internal sealed partial class FeatureDataAccess
             // A single UPDATE has no cross-operation snapshot to preserve. ReadCommitted
             // lets its locked precondition read observe the latest committed row and report
             // a stale token instead of SQLSTATE 40001. GeoServices can then re-read and merge
-            // a partial request without overwriting unrelated concurrent changes (#4113).
+            // a partial request without overwriting unrelated concurrent changes.
             var singleUpdate = editBatch.Updates.Length == 1 &&
                 editBatch.Creates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty &&
                 editBatch.Operations.IsDefaultOrEmpty;
@@ -379,7 +379,7 @@ internal sealed partial class FeatureDataAccess
             partialCreatedIds = createdIds;
             partialCreateResults = createResults;
             // A cancelled autocommit returns the rows already recorded. Do not start
-            // the next kind; the catch below attaches the unknown tail (#6028).
+            // the next kind; the catch below attaches the unknown tail.
             cancellationToken.ThrowIfCancellationRequested();
 
             var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
@@ -447,7 +447,7 @@ internal sealed partial class FeatureDataAccess
             // rollbackOnFailure and a keyed receipt share one transaction. Dispose rolls
             // it back, so a partial receipt would name rows that do not stay committed.
             // Autocommit (no transaction) falls through and returns the rows already
-            // committed plus an unknown tail (#6028). Staged attachment blobs belong to
+            // committed plus an unknown tail. Staged attachment blobs belong to
             // rows this dispose restores, so they must not be deleted.
             DiscardPendingAttachmentBlobs(transaction!);
             throw;
@@ -487,7 +487,7 @@ internal sealed partial class FeatureDataAccess
             // not yet produce a result (the unprocessed tail) should be reported as failed.
             // Reporting all as failed previously drove clients to re-submit already-committed
             // rows, creating duplicates. Cancellation uses the same shape so an autocommit
-            // that already landed is not reported as a clean rollback (#6028).
+            // that already landed is not reported as a clean rollback.
             var unrecordedMessage = ex is OperationCanceledException
                 ? "Edit cancelled."
                 : "Edit batch failed.";
@@ -726,7 +726,7 @@ internal sealed partial class FeatureDataAccess
     internal static Feature PreserveOmittedAttributes(Feature update, Feature current)
     {
         // A partial update that omitted geometry takes it from the row locked in this
-        // transaction, not from the caller's earlier unlocked read (#6094).
+        // transaction, not from the caller's earlier unlocked read.
         if (update.PreserveOmittedGeometry)
         {
             update = update with { Geometry = current.Geometry };
@@ -812,7 +812,7 @@ internal sealed partial class FeatureDataAccess
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // An open transaction, including ApplyEditsWithinTransactionAsync, still
-                // rolls back. Autocommit keeps the rows already recorded (#6028).
+                // rolls back. Autocommit keeps the rows already recorded.
                 if (transaction != null)
                 {
                     throw;
@@ -921,7 +921,7 @@ internal sealed partial class FeatureDataAccess
 
         // Ordered batches keep request sequence. Unordered creates, updates, and deletes use the
         // same processors as a committing ApplyEditsAsync, but this caller owns the transaction:
-        // a later batch can still roll the earlier ones back (#6359).
+        // a later batch can still roll the earlier ones back.
         if (!editBatch.Operations.IsDefaultOrEmpty)
         {
             return await ApplyOrderedEditsAsync(
@@ -1787,7 +1787,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         // The feature row and attachment rows are already durable. Blob failure is an orphan,
-        // not an edit failure, and must not replace a partial autocommit receipt (#6028).
+        // not an edit failure, and must not replace a partial autocommit receipt.
         return _attachmentCleanup.DeleteBlobsAsync(blobs, CancellationToken.None);
     }
 
@@ -1892,7 +1892,7 @@ internal sealed partial class FeatureDataAccess
         var outboxActive = TryUseTransactionalOutbox(out _);
 
         // Replica uploads also require the row transaction so provenance is stamped atomically.
-        // A row-level security write check (#6103) does too: each row is re-selected with the
+        // A row-level security write check does too: each row is re-selected with the
         // caller's predicate and rolled back when it falls outside it, which the autocommit
         // bulk INSERT cannot do.
         if (transaction == null && features.Length > 1 && !outboxActive && !FeatureOperationEvidenceScope.IsActive && ReplicaUploadOriginScope.Current is null &&
@@ -1914,7 +1914,7 @@ internal sealed partial class FeatureDataAccess
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
-                        // Let the adaptive splitter keep the committed prefix and stop (#6028).
+                        // Let the adaptive splitter keep the committed prefix and stop.
                         throw;
                     }
                     // Intentionally broad: per-feature failure in an adaptive batch; sanitize via
@@ -1969,7 +1969,7 @@ internal sealed partial class FeatureDataAccess
             {
                 // BH7-020: stop the rest of the batch. An open transaction still rolls
                 // back, so that cancellation propagates. Autocommit returns the rows
-                // already recorded; the in-flight row stays in the unknown tail (#6028).
+                // already recorded; the in-flight row stays in the unknown tail.
                 if (transaction != null)
                 {
                     throw;
@@ -2022,7 +2022,7 @@ internal sealed partial class FeatureDataAccess
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // One autocommit statement: its ids were not observed. Splitting would
-            // insert the same rows again if the statement had already committed (#6028).
+            // insert the same rows again if the statement had already committed.
             throw;
         }
         // Intentionally broad: adaptive bisection on any batch-insert failure, recursively split in
@@ -2203,7 +2203,7 @@ internal sealed partial class FeatureDataAccess
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // BH7-020: stop the rest of the batch. An open transaction still rolls
-                // back. Autocommit returns the rows already recorded (#6028).
+                // back. Autocommit returns the rows already recorded.
                 if (transaction != null)
                 {
                     throw;
@@ -2295,7 +2295,7 @@ internal sealed partial class FeatureDataAccess
                     if (transaction is null)
                     {
                         // rollbackOnFailure is false: this row already committed. Remove its
-                        // blobs now so a later failed edit cannot leave them behind (#6137).
+                        // blobs now so a later failed edit cannot leave them behind.
                         await ReleaseCommittedAttachmentBlobsAsync(deleted.Value.AttachmentBlobs).ConfigureAwait(false);
                     }
 
@@ -2310,7 +2310,7 @@ internal sealed partial class FeatureDataAccess
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // BH7-020: stop the rest of the batch. An open transaction still rolls
-                // back. Autocommit returns the rows already recorded (#6028).
+                // back. Autocommit returns the rows already recorded.
                 if (transaction != null)
                 {
                     throw;
@@ -2457,7 +2457,7 @@ internal sealed partial class FeatureDataAccess
         var errorMessage = GetSafeEditOperationError(exception, operation);
         if (exception is RowSecurityWriteCheckFailedException)
         {
-            // The row was rolled back before this was raised (#6103); never report it as possibly committed.
+            // The row was rolled back before this was raised; never report it as possibly committed.
             return EditOperationResult.Failure(errorMessage, EditOperationResult.NotPermittedErrorCode, objectId);
         }
 

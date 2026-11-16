@@ -70,7 +70,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? command.ActorId),
             // Tenant ownership is stamped from the request, never from the command, so a
-            // caller cannot claim another tenant's content (honua-server#4905).
+            // caller cannot claim another tenant's content.
             TenantId = NormalizeOptional(_tenantContext?.TenantId),
             ExpectedExistingItemOwnerId = NormalizeOptional(command.ExpectedExistingItemOwnerId),
             ExpectedExistingItemPresent = command.ExpectedExistingItemPresent,
@@ -276,7 +276,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         // loads whatever generation is current, so without the check a concurrent update landing
         // between the caller's UpdateDraftAsync and this read would be versioned in place of the
         // caller's edit. The store's own generation predicate then covers the remaining window
-        // between this check and the write (honua-server#2999 review).
+        // between this check and the write.
         if (expectedGeneration is { } expected && draft.Generation != expected)
         {
             activity?.SetTag("studio.draft.generation.expected", expected);
@@ -469,7 +469,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             : StudioPublicationRequestStatus.Accepted;
         var effectiveIntent = intent ?? version.Envelope.PublicationIntent;
         var effectiveRoute = effectiveIntent?.Route;
-        // honua-server#5825: skip the Studio route check only when this item resolved through a
+        // Skip the Studio route check only when this item resolved through a
         // family bridge. A bridge registered for the family is not enough — an item that still
         // lives in the inner store is enforced by that store and must be rejected here too, or
         // an approval-gated deployment accepts the proposal and fails at actuation.
@@ -502,7 +502,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             GovernsStudioRoutes = governsStudioRoutes,
         };
 
-        // honua-server#3980: the store applies expectedCurrentVersionId as a compare-and-set on the
+        // The store applies expectedCurrentVersionId as a compare-and-set on the
         // item's current pointer, atomically with the published-pointer move, and throws
         // StudioPublicationPointerConflictException when a draft was saved after validation.
         var stored = await _store

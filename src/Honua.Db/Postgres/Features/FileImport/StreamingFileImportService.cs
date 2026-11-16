@@ -604,7 +604,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // A replace whose load dropped rows against an already-populated target never
             // promoted its staging sibling (see ImportStreamingAsync) — the live target is
             // unchanged. Report that truthfully rather than a complete success: the caller asked
-            // to replace the whole dataset and got nothing applied instead (#4006).
+            // to replace the whole dataset and got nothing applied instead.
             if (replacementBlocked)
             {
                 errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
@@ -707,7 +707,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         catch (ImportGeometryTooLargeException ex)
         {
             // A single feature exceeded the geometry size guard and the import is configured to
-            // fail rather than skip (#1626). Surface a clear, machine-readable 413-style error with
+            // fail rather than skip. Surface a clear, machine-readable 413-style error with
             // remediation guidance instead of letting the oversized geometry crash the host.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
             errorMessage = SanitizeImportValidationMessage(ex);

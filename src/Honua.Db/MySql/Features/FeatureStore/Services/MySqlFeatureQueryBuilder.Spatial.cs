@@ -53,7 +53,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
             // beyond performance on MySQL: geographic SRSes (e.g. EPSG:4326) interpret polygon
             // edges as geodesics and reject pole-touching whole-hemisphere envelope rings as
             // invalid (ST_IsValid = 0), so ST_Intersects against a zoom-0 tile envelope silently
-            // matches zero rows while MBRIntersects windows correctly (honua-server#2983).
+            // matches zero rows while MBRIntersects windows correctly.
             SpatialRelationship.Intersects when CanUseEnvelopeOnlyPointIntersects(query, mapping, filter) =>
                 $"MBRIntersects({geomCol}, {filterGeom})",
             // MBRIntersects is index-eligible (uses SPATIAL index when available); ST_Intersects

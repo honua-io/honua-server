@@ -43,7 +43,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     // is serialized behind a transaction-scoped advisory lock (single-flight), so it is given
     // a dedicated, generous timeout â€” independent of the ~30s request-path command/statement
     // timeout default â€” otherwise the first cold read on a large raster times out and the
-    // statistics never persist, retrying forever instead of self-healing (#1649).
+    // statistics never persist, retrying forever instead of self-healing.
     private const int StatisticsComputeTimeoutSeconds = 300;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -495,7 +495,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     // ----- Empty clip-extent export (Esri exportImage no-data contract) ------
-    // A populated export frames the raster onto the clip envelope (#4060). When the layer holds
+    // A populated export frames the raster onto the clip envelope. When the layer holds
     // no raster reaching that envelope there is nothing to frame, and ST_Clip's empty SRID-0
     // result cannot be warped onto the frame grid at all, so the canvas is built on its own here
     // and the band layout is copied from any raster of the layer. The result is encoded by the
@@ -1965,7 +1965,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         // Apply band arithmetic (renderingRule BandArithmetic) on the merged mosaic, collapsing
         // two bands into a single analytic band (e.g. NDVI) before the stretch â€” previously the
-        // mosaic path silently ignored band-math renderingRules (#1803).
+        // mosaic path silently ignored band-math renderingRules.
         if (query.BandArithmetic is { } mosaicBandArithmetic)
         {
             postMergeRasterExpr = BuildBandArithmeticExpression(postMergeRasterExpr, mosaicBandArithmetic);
@@ -2267,7 +2267,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule
-        // (#4064): seamline clips, nadir/attribute projections and the ordered union are shared.
+        //: seamline clips, nadir/attribute projections and the ordered union are shared.
         var mosaicSource = BuildMosaicSourceSelect("raster", ordering, attributeSort);
         // The contributor probe uses the same point as the merged sample. Mixed raster SRIDs
         // transform onto each aligned raster; a uniform SRID reuses the merged sample point.
@@ -2799,7 +2799,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         // Serve persisted statistics (written at import time, or backfilled below). Computing
         // ST_SummaryStats per request scans every raster pixel and takes tens of seconds on
-        // real-world datasets (#1639), so the request path must never recompute.
+        // real-world datasets, so the request path must never recompute.
         var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction: null, rasterId, cancellationToken).ConfigureAwait(false);
 
         if (stats.Count == 0)
@@ -2889,7 +2889,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         try
         {
             // Grant this single-flight transaction the dedicated compute budget so a
-            // county-scale ST_SummaryStats can finish and persist instead of timing out (#1649).
+            // county-scale ST_SummaryStats can finish and persist instead of timing out.
             await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
             // Compute and persist in a single statement (mirrors the import-time
@@ -2947,7 +2947,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         await AcquireBackfillLockAsync(connection, transaction, LayerStatisticsLockNamespace, layerId, cancellationToken).ConfigureAwait(false);
 
         // Grant this single-flight transaction the dedicated compute budget so a large-mosaic
-        // ST_SummaryStats can finish and persist instead of timing out (#1649).
+        // ST_SummaryStats can finish and persist instead of timing out.
         await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
         List<RasterStatistics> persisted;
@@ -4813,7 +4813,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMosaicOrdering ordering,
         RasterMosaicAttributeSort? attributeSort)
     {
-        // esriMosaicSeamline (#1804): clip each raster to its persisted seamline (cutline) before
+        // esriMosaicSeamline: clip each raster to its persisted seamline (cutline) before
         // the union so a contested pixel is resolved by the per-raster seamline geometry rather
         // than ordering alone. A raster without a seamline row contributes its full pixels
         // (COALESCE to the raw clip expression). Other orderings read the raster column directly.
@@ -4849,7 +4849,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             ? $",\n                       {sort.Column} AS {sort.Column}"
             : string.Empty;
 
-        // esriMosaicNadir (#1870): the union's ORDER BY references an off_nadir column, so project
+        // esriMosaicNadir: the union's ORDER BY references an off_nadir column, so project
         // the off-nadir angle from the per-raster sensor metadata into the source CTE. The angle
         // lives in the exterior_orientation JSONB payload (offNadirAngle / off_nadir_angle); a LEFT
         // JOIN keeps rasters without a sensor row (their off_nadir is NULL and ranks last). The
@@ -4896,7 +4896,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMosaicAttributeSort? attributeSort = null)
         // Every mosaic query in this store unions the rows of its `source` CTE. Layers may mix
         // native resolutions or grid origins, so each input is put on one shared grid first
-        // (honua-server#4792); aligned inputs pass through unchanged.
+        //; aligned inputs pass through unchanged.
         => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
 
     private static async Task<byte[]> ReadExportDataAsync(DbDataReader reader, int dataOrdinal, CancellationToken cancellationToken)

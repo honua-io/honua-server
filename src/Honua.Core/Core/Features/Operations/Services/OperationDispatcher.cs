@@ -479,7 +479,7 @@ public sealed partial class OperationDispatcher : IOperationInvoker, IOperationP
             }
             catch (CapabilityUnavailableException)
             {
-                // A frozen host refuses a large layer publish (honua-server#5948). Record the
+                // A frozen host refuses a large layer publish. Record the
                 // failed envelope, then keep the structured dependency receipt so the operations
                 // endpoint can answer the typed 503 instead of a generic failed handle.
                 await PersistFailureAsync(

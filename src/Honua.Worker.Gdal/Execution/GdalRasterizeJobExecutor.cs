@@ -68,7 +68,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
 
         // Bound the caller-controlled OUTPUT resolution (cellSize → -tr) before
         // gdal_rasterize derives the output grid from the input LAYER extent ÷ target cell
-        // size (#2793). The extent comes from the untrusted GeoJSON payload envelope; when
+        // size. The extent comes from the untrusted GeoJSON payload envelope; when
         // it holds no readable positions the input/timeout backstop remains. The -ts
         // (width+height) path is already bounded inside TryBuildGridArgs.
         if (targetCellSize is double cellSize
@@ -209,7 +209,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
             }
             // Bound the attacker-controlled OUTPUT grid before gdal_rasterize allocates
             // a width×height output raster, closing the output-allocation OOM vector
-            // (#2782). Reuses the same caps the input dimension guard applies (#2766).
+            //. Reuses the same caps the input dimension guard applies.
             if (!GdalOutputGridGuard.TryAdmit(width, height, options, out failure))
             {
                 return false;

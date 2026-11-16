@@ -18,7 +18,7 @@ public sealed class GeoServicesSqlParser
     //
     // The first group are the canonical ANSI fields mapped 1:1 to existing single-argument
     // functions (YEAR(d), MONTH(d), ...). The second group are additional Postgres-supported
-    // fields (#1865) that have no equivalent single-arg function, so they are emitted as a
+    // fields that have no equivalent single-arg function, so they are emitted as a
     // distinct EXTRACT_<FIELD> FunctionCall the translator re-emits as EXTRACT(<FIELD> FROM x).
     // Every entry here is a fixed SQL keyword chosen by the parser, never user text, so the
     // field token can be interpolated by the translator while operands stay parameterized.

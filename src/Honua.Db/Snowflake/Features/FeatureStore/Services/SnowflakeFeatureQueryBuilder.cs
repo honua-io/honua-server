@@ -471,7 +471,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
                 $"ST_INTERSECTS({geomCol}, {filterExpr})",
             // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
             // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
-            // filter geometry to match the canonical PostGIS reference (#2068). Reversing the
+            // filter geometry to match the canonical PostGIS reference. Reversing the
             // operands inverts the relationship and returns the wrong (typically empty) result set.
             SpatialRelationship.Within =>
                 $"ST_WITHIN({filterExpr}, {geomCol})",

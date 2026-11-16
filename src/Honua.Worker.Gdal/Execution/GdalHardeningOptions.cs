@@ -36,7 +36,7 @@ internal sealed class GdalHardeningOptions
         "EEDA",
         "EEDAI",
         // Decompression-bomb-capable raster drivers OUTSIDE the dimension-guarded
-        // TIFF/PNG/JPEG allowlist (#2784). Each can declare an enormous canvas that
+        // TIFF/PNG/JPEG allowlist. Each can declare an enormous canvas that
         // GdalRasterDimensionGuard cannot bound, so deny the driver outright.
         // JPEG 2000 (SIZ dimensions to 2^32 — the strongest live vector):
         "JP2OpenJPEG",

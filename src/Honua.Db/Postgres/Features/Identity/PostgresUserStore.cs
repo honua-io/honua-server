@@ -275,7 +275,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         return true;
     }
 
-    // ---- IScimUserStore (#510) -------------------------------------------------------
+    // ---- IScimUserStore -------------------------------------------------------
 
     public async Task<ManagedUser?> CreateUserAsync(ScimUserProvisioning provisioning, CancellationToken cancellationToken = default)
     {

@@ -45,7 +45,7 @@ internal sealed partial class FeatureQueryBuilder
                 geometryStorageType, DatabaseSchema.GeometryColumn, targetQuery.SpatialReferenceSrid);
 
             // Target CTE — filtered subset of target layer with overflow guard.
-            // The target layer's field masks (#1940) are subtracted where the attributes
+            // The target layer's field masks are subtracted where the attributes
             // enter the CTE, so the "attributes" output never carries a masked value.
             // Without masks this is the bare column.
             var targetAttributesSource = BuildMaskedAttributesColumn(
@@ -173,7 +173,7 @@ internal sealed partial class FeatureQueryBuilder
                     $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Intersects({targetGeometryExpression}, {joinGeometryExpression})");
 
             // Operand order is fixed by the canonical enum member names
-            // (honua-server#3069) — the join geometry is the subject of
+            // — the join geometry is the subject of
             // JoinContainsTarget, the target geometry the subject of
             // TargetContainsJoin. The `&&` bounding-box pre-filter is symmetric,
             // so it stays in target-then-join order for both.

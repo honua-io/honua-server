@@ -589,7 +589,7 @@ internal sealed class PostgresGeometryOperationService(
     // Fallback used only when spatial_ref_sys has no row for the SRID. The primary path derives
     // geographic-ness from the spatial_ref_sys WKT/proj4 above; this fallback gates geodesic
     // ::geography measurement (buffer/area/length via ST_Transform(...,4326)::geography), so it
-    // uses the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // uses the canonical NARROW geodesic-safe bucket rather than the broad geographic
     // list — a geography measurement is only sound for the WGS 84-compatible degree CRSes, and this
     // matches the DuckDB provider's narrow gate. The narrow bucket differs from the pre-#2732
     // 6-code fallback (4326/4269/4267/4258/4619/4283): it drops 4619 (SWEREF99) and 4267

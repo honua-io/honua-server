@@ -392,7 +392,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         // it directly; otherwise, when LayerNames narrows the scope we derive the
         // workspace set from the selected layers (and any layer groups) so the
         // catalog-apply loop does not persist honua.services rows for workspaces the
-        // operator never asked to touch (issue #1098). When neither filter is set we
+        // operator never asked to touch. When neither filter is set we
         // preserve the historical "all workspaces" behavior.
         GeoServerWorkspaceInfo[] workspaces;
         if (request.WorkspaceNames != null)

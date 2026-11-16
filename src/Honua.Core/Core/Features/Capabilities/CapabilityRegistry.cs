@@ -231,7 +231,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         // honua.capability_manifest.v1 wire advertises for that family, and the null
         // seam B1 left. It mirrors CapabilityManifestService's package-family list so
         // the derived Packages.Families[] and the descriptors cannot diverge.
-        // T10 (#2346): the built-experimental capabilities are flipped from
+        // T10: the built-experimental capabilities are flipped from
         // Implemented to Experimental here. They are implemented server-side but
         // gated OFF the first-release surface (ADR-0058): with the default config
         // (Capabilities:Experimental:Enabled=false and no per-capability override)
@@ -275,7 +275,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
             // Disconnected-sync replica / conflict review — Preview in 2026.1 per the
-            // 2026-09-03 operator ruling (honua-release#266 / #264). It remains Pro-edition
+            // 2026-09-03 operator ruling. It remains Pro-edition
             // gated (fieldops.offline-sync entitlement); non-security parity is deferred to
             // release/2026.2.
             ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
@@ -299,7 +299,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("serve.sensorthings", "realtime", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             // ImageServer is GA (Implemented) in 2026.1 under the 2026-10-24 operator
             // ruling, which supersedes the 2026-09-03 Preview ruling for ImageServer
-            // only (honua-release#266 / #264); #5238, #6492 and #3558 were pulled into
+            // only; #5238, #6492 and #3558 were pulled into
             // 2026.1. It already serves by default, so only the maturity changes.
             // WMTS and OGC API Coverages stay Preview in 2026.1 under the 2026-09-03 ruling.
             ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
@@ -342,13 +342,13 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // Collaborative-editing leases (#4402). The lease itself IS enforced on every
+            // Collaborative-editing leases. The lease itself IS enforced on every
             // feature-write path, so this is Implemented/Served; what a deployment may or may
             // not have is an IFeatureLockAuthorizer, and that is reported as configured-or-not
             // rather than as support — the shipped authorizer grants no lease at all.
             ("collaboration.feature-locks", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // The two recorded 2026.1 feature-lock gaps (#4402), declared here so a client
+            // The two recorded 2026.1 feature-lock gaps, declared here so a client
             // reads them off the manifest instead of off the docs page: a lease is node-local,
             // and the GeoServices applyEdits surface honours no client-supplied version token.
             // The version-token gap is named for the ONE surface that has it: OGC API Features

@@ -166,8 +166,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 }
 
                 // Phase 5: Optional persisted overview pyramids. Dynamic tile reads sample the
-                // original raster because these rows have no native-source lineage (#5848), so
-                // the default request leaves OverviewFactors empty (#5856). Best-effort when a
+                // original raster because these rows have no native-source lineage, so
+                // the default request leaves OverviewFactors empty. Best-effort when a
                 // caller still sets factors: a missing raster_overviews table (schema predates
                 // migration 061) is tolerated.
                 if (request.OverviewFactors.Length > 0 && srid > 0)
@@ -182,7 +182,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
                 // Phase 6: Persist the per-raster footprint (and a default seamline equal to the
                 // footprint) so esriMosaicSeamline can clip each raster to its cutline before the
-                // union (#1804). Best-effort: a missing raster_footprints table (schema predates
+                // union. Best-effort: a missing raster_footprints table (schema predates
                 // migration 062) is tolerated; seamline mosaics then fall back to the footprint.
                 if (srid > 0)
                 {
@@ -902,7 +902,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     }
 
     // =============================================================================
-    // Overview pyramids (#1836)
+    // Overview pyramids
     // =============================================================================
 
     private async Task GenerateAndStoreOverviewsAsync(
@@ -987,7 +987,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private const int OverviewComputeTimeoutSeconds = 300;
 
     // =============================================================================
-    // Footprint / seamline store (#1804)
+    // Footprint / seamline store
     // =============================================================================
 
     private async Task GenerateAndStoreFootprintAsync(

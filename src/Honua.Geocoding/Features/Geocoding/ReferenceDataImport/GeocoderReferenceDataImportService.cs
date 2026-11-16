@@ -515,7 +515,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
         bool replaceExisting,
         CancellationToken cancellationToken)
     {
-        // Documented reference schema: docs/reference/geocoding/local-postgis-geocoder.md (#2151).
+        // Documented reference schema: docs/reference/geocoding/local-postgis-geocoder.md.
         // Index names are schema-wide, so a plain prefix truncation would let two tables sharing
         // their first 48 characters collide — CREATE INDEX IF NOT EXISTS would then silently
         // leave the second table unindexed. Append a stable digest of the full table name.

@@ -106,14 +106,14 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             var outputPath = Path.Join(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
 
             // Bound the caller-controlled OUTPUT resolution (-tr) before gdalwarp derives
-            // the output grid from the input extent ÷ target cell size (#2793). The input
+            // the output grid from the input extent ÷ target cell size. The input
             // ground extent = declared pixel dimensions × ModelPixelScale (identity 1.0
             // when the raster carries no georeferencing, matching gdalwarp's own -tr
             // interpretation). When the header is not one we can read dimensions from, the
