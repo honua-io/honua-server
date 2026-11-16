@@ -154,6 +154,28 @@ Write failing tests for each migration slice before changing its implementation.
 Record remaining families on the issue; a merged slice is not the live completion
 of this design.
 
+### Inventory baseline and classification
+
+The 16 November working-tree inventory contains 433 admin OpenAPI operations,
+including 221 non-GET operations. Of those, 67 match the four existing admin
+catalogs and 154 do not. These are transport counts, not counts of unsupported
+mutations: a POST may be read-only, and a definition may be provided outside those
+four catalogs. The complete bidirectional inventory remains a migration gate.
+
+Classify by the handler and application service before excluding a route:
+
+| Route or family | Evidence and classification |
+| --- | --- |
+| `POST /alerts/rules/test` | `AlertAdminEndpoints.HandleTestRule` validates a supplied draft and returns findings without storing a rule. Read-only candidate. |
+| `POST /packages/validate` and `/packages/preview` | `PackageReviewEndpoints.HandleReview` delegates to shared package review. Confirm the review service has no persistence before recording an exclusion. |
+| Form package version validation | `FormPackageLifecycleService.ValidateAsync` stores validation for draft versions. Include as a mutation. |
+| Studio draft validation and preview | `StudioPackageLifecycleService.ValidateDraftAsync` updates the draft validation and modification fields; preview calls validation. Include as mutations. |
+| Workflow version validation and dry run | The endpoint uses a mutation-named wrapper, but `WorkflowPackageService` reads a version and computes validation/output schemas. Trace nested services before recording an exclusion. |
+
+Keep route coverage, descriptor coverage and permission to expose an MCP tool as
+separate checks. A read-only exclusion from the mutation inventory does not grant
+public discovery or bypass its existing authorization.
+
 ## Consequences
 
 Adding a governed operation changes one definition and its application handler,
