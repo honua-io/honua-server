@@ -34,7 +34,8 @@ FRAMEWORK_NAMES = {
     "Main", "Dispose", "DisposeAsync", "ToString", "Equals", "GetHashCode", "Configure", "ConfigureServices",
     "Deconstruct", "GetEnumerator", "GetAsyncEnumerator", "GetAwaiter", "GetPinnableReference",
 }
-TYPE_HEADER = re.compile(r"\b(?:class|struct|record)\s+\w+(?:<[^>{]*>)?(?:\((?:[^()]|\([^()]*\))*\))?\s*:\s*([^{;]+?)\s*(?:where\b[^{]*)?\{")
+TYPE_HEADER = re.compile(r"(?P<partial>\bpartial\s+)?\b(?:class|struct|record)\s+(?P<name>\w+)(?P<generic><[^>{]*>)?(?:\((?:[^()]|\([^()]*\))*\))?\s*(?::\s*(?P<bases>[^{;]+?)\s*)?(?:where\b[^{]*)?\{")
+NAMESPACE = re.compile(r"\bnamespace\s+([\w.]+)\s*([;{])")
 DECLARED_TYPE = re.compile(r"\b(?:class|struct|record|interface|enum)\s+([A-Z]\w*)")
 WORD = re.compile(r"\b[A-Za-z_]\w*\b")
 DECLARATION = re.compile(
@@ -78,6 +79,11 @@ def interpolated_literal_end(text: str, start: int) -> int:
         if depth == 0 and (text.startswith('{{', index) or text.startswith('}}', index)):
             index += 2
             continue
+        if depth and character in '\'\"$@':
+            end = quoted_literal_end(text, index, "'") if character == "'" else string_literal_end(text, index)
+            if end is not None:
+                index = end
+                continue
         if character == '{':
             depth += 1
         elif character == '}' and depth:
@@ -137,23 +143,40 @@ def strip_comments(s: str, *, mask_literals: bool = False) -> str:
     return ''.join(out)
 
 
-def type_spans(text: str) -> list[tuple[int, int, list[str]]]:
+def closing_brace(text: str, opening: int) -> int:
+    depth = 0
+    for index in range(opening, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return len(text)
+
+
+def type_declarations(text: str) -> list[tuple[int, int, str, bool, list[str]]]:
     text = strip_comments(text, mask_literals=True)
-    spans = []
+    namespaces = [(match.start(), len(text) if match.group(2) == ";" else closing_brace(text, match.end() - 1),
+                   match.group(1)) for match in NAMESPACE.finditer(text)]
+    declarations = []
     for header in TYPE_HEADER.finditer(text):
-        open_index, depth, index = header.end() - 1, 0, header.end() - 1
-        while index < len(text):
-            if text[index] == "{":
-                depth += 1
-            elif text[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            index += 1
+        opening = header.end() - 1
+        generic = header.group("generic")
+        name = header.group("name") + (f"`{generic.count(',') + 1}" if generic else "")
+        namespace = [name for start, end, name in namespaces if start < opening < end]
+        parents = [identity.rsplit(".", 1)[-1] for start, end, identity, _, _ in declarations
+                   if start < opening < end]
+        identity = ".".join(namespace + parents + [name])
         bases = [part.strip().split("<")[0].split(".")[-1].split("(")[0].strip()
-                 for part in re.split(r",(?![^<]*>)", header.group(1))]
-        spans.append((open_index, index, bases))
-    return spans
+                 for part in re.split(r",(?![^<]*>)", header.group("bases") or "")]
+        declarations.append((opening, closing_brace(text, opening), identity, bool(header.group("partial")), bases))
+    return declarations
+
+
+def type_spans(text: str, partial_bases: dict[str, list[str]] | None = None) -> list[tuple[int, int, list[str]]]:
+    return [(start, end, (partial_bases or {}).get(identity, bases) if partial else bases)
+            for start, end, identity, partial, bases in type_declarations(text)]
 
 
 def has_external_base(spans: list[tuple[int, int, list[str]]], position: int, declared: set[str]) -> bool:
@@ -179,6 +202,11 @@ def scan(root: Path) -> list[str]:
         words.update(WORD.findall(text))
 
     declared = {name for text in sources.values() for name in DECLARED_TYPE.findall(text)}
+    partial_bases: dict[str, list[str]] = {}
+    for text in sources.values():
+        for _, _, identity, partial, bases in type_declarations(text):
+            if partial:
+                partial_bases.setdefault(identity, []).extend(bases)
     entries = set()
     for relative, text in sources.items():
         spans = None
@@ -188,7 +216,7 @@ def scan(root: Path) -> list[str]:
             if name in FRAMEWORK_NAMES or "override" in modifiers or words[name] != 1:
                 continue
             if "private" not in modifiers and any(m in modifiers for m in ("public", "protected", "internal")):
-                spans = spans if spans is not None else type_spans(text)
+                spans = spans if spans is not None else type_spans(text, partial_bases)
                 if has_external_base(spans, match.start(), declared):
                     continue
             entries.add(f"{relative}::{name}")
@@ -196,7 +224,7 @@ def scan(root: Path) -> list[str]:
 
 
 def self_test() -> int:
-    for literal in ('"}"', "'}'", '@"}"', '$"}}"', '"""}"""'):
+    for literal in ('"}"', "'}'", '@"}"', '$"}}"', '"""}"""', '$"{string.Join("}", Array.Empty<string>())}"'):
         source = f"class Writer : IBufferWriter<byte> {{ object value = {literal}; void Advance() {{ }} }}"
         if not has_external_base(type_spans(source), source.index("void Advance"), set()):
             print(f"self-test failed: literal {literal} truncated the containing type", file=sys.stderr)
@@ -225,12 +253,28 @@ def self_test() -> int:
             "}\n",
             encoding="utf-8",
         )
+        (root / "src" / "PartialBase.cs").write_text(
+            "namespace Streams; public partial class PartialWriter : System.Buffers.IBufferWriter<byte> { }",
+            encoding="utf-8",
+        )
+        (root / "src" / "PartialMethods.cs").write_text(
+            "namespace Streams; public partial class PartialWriter {\n"
+            "    public void CompleteBuffer() { }\n"
+            "    private void PartialHelper() { }\n}\n",
+            encoding="utf-8",
+        )
+        (root / "src" / "Unrelated.cs").write_text(
+            "namespace Other { public partial class PartialWriter {\n"
+            "    public void UnrelatedMethod() { }\n} }\n",
+            encoding="utf-8",
+        )
         subprocess.run(["git", "init", "-q", str(root)], check=True)
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
         actual = scan(root)
     expected = [
+        "src/PartialMethods.cs::PartialHelper",
         "src/Sample.cs::Caller", "src/Sample.cs::Commented", "src/Sample.cs::EscapedCaller", "src/Sample.cs::Helper",
-        "src/Sample.cs::MaskedCaller", "src/Sample.cs::Unused",
+        "src/Sample.cs::MaskedCaller", "src/Sample.cs::Unused", "src/Unrelated.cs::UnrelatedMethod",
     ]
     if actual != expected:
         print(f"self-test failed: expected {expected}, got {actual}", file=sys.stderr)
