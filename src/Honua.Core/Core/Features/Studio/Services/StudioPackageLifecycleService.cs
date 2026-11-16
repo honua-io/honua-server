@@ -11,12 +11,8 @@ using Honua.Core.Features.Studio.Services.Bridging;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// Canonical lifecycle service for Studio package drafts, versions, and publication requests.
-/// </summary>
 public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleService
 {
-    /// <summary>Activity source name used by Studio package lifecycle operations.</summary>
     public const string ActivitySourceName = "Honua.Studio.PackageLifecycle";
 
     private static readonly ActivitySource ActivitySource = new(ActivitySourceName);
@@ -26,25 +22,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     private readonly TimeProvider _timeProvider;
     private readonly ITenantContext? _tenantContext;
 
-    /// <summary>
-    /// Initializes a new Studio package lifecycle service.
-    /// </summary>
-    /// <param name="store">The Studio package store.</param>
-    /// <param name="registry">The package-family registry.</param>
-    /// <param name="validator">The package envelope validator.</param>
-    /// <param name="timeProvider">The time provider.</param>
-    /// <param name="bridgeCatalog">
-    /// Optional ADR-0069 family persistence bridges (honua-server#3004). When at least one
-    /// bridge is available, the store is wrapped with <see cref="BridgedStudioPackageStore"/>
-    /// so bridged families (form, analysis) read and write through their native stores.
-    /// </param>
-    /// <param name="tenantContext">
-    /// Optional per-request tenant context (honua-server#4905). Every draft this service
-    /// creates records the tenant the request resolved to, and the immutable versions and
-    /// content item minted from that draft inherit it, so a later lifecycle call can be
-    /// refused when it comes from another tenant. Hosts without tenant resolution pass
-    /// <see langword="null"/> and keep recording no tenant at all.
-    /// </param>
     public StudioPackageLifecycleService(
         IStudioPackageStore store,
         StudioPackageFamilyRegistry registry,
@@ -66,7 +43,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         _tenantContext = tenantContext;
     }
 
-    /// <inheritdoc />
     public StudioPackageFamilyCapabilities GetCapabilities()
     {
         using var activity = ActivitySource.StartActivity("studio.package.capabilities");
@@ -74,7 +50,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return _registry.GetCapabilities();
     }
 
-    /// <inheritdoc />
     public async Task<StudioPackageDraft> CreateDraftAsync(
         CreateStudioPackageDraftCommand command,
         CancellationToken cancellationToken = default)
@@ -117,7 +92,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return created;
     }
 
-    /// <inheritdoc />
     public async Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.draft.get");
@@ -125,7 +99,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return await _store.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioPackageDraft?> UpdateDraftAsync(
         Guid draftId,
         UpdateStudioPackageDraftCommand command,
@@ -163,7 +136,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return stored;
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.draft.delete");
@@ -178,7 +150,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return await _store.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioValidationSummary?> ValidateDraftAsync(
         Guid draftId,
         string? actorId,
@@ -206,7 +177,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return validation;
     }
 
-    /// <inheritdoc />
     public async Task<StudioPreviewPlan?> PreviewPlanAsync(
         Guid draftId,
         string? actorId,
@@ -238,21 +208,9 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         };
     }
 
-    /// <summary>
-    /// Whether <paramref name="family"/> requires a background job to preview
-    /// (gp/etl/workflow) rather than an inline preview. Extracted as a pure,
-    /// non-persisting helper so callers that need this classification without
-    /// the mutating side effects of <see cref="PreviewPlanAsync"/> (which
-    /// persists a refreshed validation summary through
-    /// <see cref="ValidateDraftAsync"/>) — e.g. a genuinely read-only MCP tool
-    /// — can compute it without going through the store (honua-server#3002 PR
-    /// review: preview/validate must not silently mutate draft state behind a
-    /// <c>readOnlyHint: true</c> advertisement).
-    /// </summary>
     public static bool RequiresBackgroundJob(StudioPackageFamily family)
         => family is StudioPackageFamily.Geoprocessing or StudioPackageFamily.Etl or StudioPackageFamily.Workflow;
 
-    /// <inheritdoc />
     public Task<StudioContentVersion?> SaveDraftAsVersionAsync(
         Guid draftId,
         string? changeNote,
@@ -267,7 +225,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             checkpoint: null,
             cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioContentVersion?> SaveDraftAsCheckpointVersionAsync(
         Guid draftId,
         string? changeNote,
@@ -286,7 +243,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
@@ -294,7 +250,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         CancellationToken cancellationToken = default) =>
         _store.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
 
-    /// <inheritdoc />
     public Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default) =>
@@ -360,7 +315,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return version;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
         Guid itemId,
         CancellationToken cancellationToken = default)
@@ -370,7 +324,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return await _store.ListVersionsAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentItemPointers?> GetPointersAsync(
         Guid itemId,
         CancellationToken cancellationToken = default)
@@ -380,7 +333,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentItemListResult> ListContentItemsAsync(
         StudioContentItemQuery query,
         CancellationToken cancellationToken = default)
@@ -394,7 +346,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return result;
     }
 
-    /// <inheritdoc />
     public async Task<StudioPackageDraftListResult> ListDraftsAsync(
         StudioPackageDraftQuery query,
         CancellationToken cancellationToken = default)
@@ -408,7 +359,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return result;
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentVersion?> GetVersionAsync(
         Guid itemId,
         Guid versionId,
@@ -420,7 +370,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return await _store.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioVersionComparison?> CompareVersionsAsync(
         Guid itemId,
         Guid leftVersionId,
@@ -470,7 +419,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         };
     }
 
-    /// <inheritdoc />
     public async Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -483,7 +431,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             itemId, versionId, expectedCurrentVersionId, intent, warningAcknowledgement, actorId,
             Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc />
     public async Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -565,7 +512,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return stored;
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -573,13 +519,11 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         CancellationToken cancellationToken = default)
         => _store.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
         CancellationToken cancellationToken = default)
         => _store.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<StudioPackageDraft?> ReopenVersionAsync(
         Guid itemId,
         Guid versionId,
@@ -614,7 +558,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioRollbackRequest?> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -686,14 +629,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    /// <summary>
-    /// Coalesces optional envelope collections (bindings, dependencies, provenance) that a client
-    /// may send as an explicit JSON <c>null</c> to their empty defaults, so that a null collection
-    /// is treated identically to an omitted one. This keeps the envelope's non-null collection
-    /// contract intact through persistence and downstream enumeration (for example the immutable
-    /// version sidecar path), preventing a spurious <see cref="ArgumentNullException"/> on the
-    /// otherwise-successful create/update path (honua-server#2351).
-    /// </summary>
     private static StudioPackageEnvelope NormalizeEnvelope(StudioPackageEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -712,10 +647,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         };
     }
 
-    /// <summary>
-    /// True unless this item's pointers resolved through a family bridge. Missing pointers
-    /// keep the check: the inner store is the authority for anything it still owns.
-    /// </summary>
     private async Task<bool> ItemGovernsStudioRoutesAsync(Guid itemId, CancellationToken cancellationToken)
     {
         var pointers = await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);

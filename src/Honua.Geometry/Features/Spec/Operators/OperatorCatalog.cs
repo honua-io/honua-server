@@ -7,47 +7,19 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Operators;
 
-/// <summary>
-/// In-code registry of the S1 operator set. This is intentionally keyed on
-/// a constant version string so that downstream consumers can compare against
-/// <see cref="SpecGrammarVersion.CurrentOperatorCapability"/>.
-/// </summary>
 public interface IOperatorCatalog
 {
-    /// <summary>
-    /// Capability version advertised by this catalog. Grows independently of
-    /// the grammar version so that non-breaking operator additions do not
-    /// force a grammar bump.
-    /// </summary>
     string CapabilityVersion { get; }
 
-    /// <summary>
-    /// Looks up an operator signature by name. Returns <c>null</c> when the
-    /// operator is not registered (the caller emits an
-    /// <see cref="SpecDiagnosticCode.UnknownOperator"/> diagnostic).
-    /// </summary>
-    /// <param name="name">Operator name.</param>
-    /// <returns>Signature or <c>null</c>.</returns>
     OperatorSignature? Lookup(string name);
 
-    /// <summary>
-    /// Enumerates all registered operator names.
-    /// </summary>
     IReadOnlyCollection<string> OperatorNames { get; }
 }
 
-/// <summary>
-/// Default in-code operator catalog covering the six S1 operators defined by
-/// the design: <c>filter</c>, <c>spatial_join</c>, <c>buffer</c>,
-/// <c>reproject</c>, <c>zonal_stats</c>, <c>slope</c>.
-/// </summary>
 public sealed class OperatorCatalog : IOperatorCatalog
 {
     private readonly FrozenDictionary<string, OperatorSignature> _signatures;
 
-    /// <summary>
-    /// Creates the default S1 catalog.
-    /// </summary>
     public OperatorCatalog()
     {
         var datasetInput = new OperatorPort("input", TypeRef.Intrinsic(SpecTypeKind.Dataset));
@@ -115,13 +87,10 @@ public sealed class OperatorCatalog : IOperatorCatalog
         _signatures = defs.ToFrozenDictionary(sig => sig.Name, StringComparer.Ordinal);
     }
 
-    /// <inheritdoc />
     public string CapabilityVersion => SpecGrammarVersion.CurrentOperatorCapability;
 
-    /// <inheritdoc />
     public IReadOnlyCollection<string> OperatorNames => _signatures.Keys;
 
-    /// <inheritdoc />
     public OperatorSignature? Lookup(string name)
         => _signatures.TryGetValue(name, out var signature) ? signature : null;
 }

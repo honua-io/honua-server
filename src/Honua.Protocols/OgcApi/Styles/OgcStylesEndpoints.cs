@@ -26,14 +26,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Styles;
 
-/// <summary>
-/// OGC API - Styles endpoints (ADR-0048, Phase 1). Projects Honua's per-layer style
-/// storage as conformant OGC styles: landing, conformance, OpenAPI, the styles list,
-/// content-negotiated stylesheets (MapLibre canonical + derived SLD 1.0/1.1 and Esri
-/// drawingInfo), style metadata, and the <c>manage-styles</c> surface (PUT/POST/DELETE).
-/// PUT, POST, and DELETE all reach standalone styleId-keyed styles in the independent
-/// style catalog (ADR-0048 Phase 2, issue #1389).
-/// </summary>
 public static class OgcStylesEndpoints
 {
     private const string SldBaseMediaType = "application/vnd.ogc.sld+xml";
@@ -44,9 +36,6 @@ public static class OgcStylesEndpoints
     private static readonly ImmutableHashSet<string> OpenApiQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
 
-    /// <summary>
-    /// Maps OGC API - Styles endpoints to the application.
-    /// </summary>
     public static void MapOgcStylesEndpoints(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -137,9 +126,6 @@ public static class OgcStylesEndpoints
             .RequireAdminAuthorization();
     }
 
-    /// <summary>
-    /// Get the OGC API - Styles styles list (also the landing surface).
-    /// </summary>
     private static async Task<IResult> GetStyles(
         HttpContext context,
         string? f,
@@ -206,9 +192,6 @@ public static class OgcStylesEndpoints
             "Styles");
     }
 
-    /// <summary>
-    /// Get OGC API - Styles conformance classes.
-    /// </summary>
     private static async Task<IResult> GetConformance(
         OgcStylesConformanceHandler handler,
         CancellationToken cancellationToken = default)
@@ -243,9 +226,6 @@ public static class OgcStylesEndpoints
             fallbackSpec).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Get a stylesheet, content-negotiated by the Accept header.
-    /// </summary>
     private static async Task<IResult> GetStylesheet(
         string styleId,
         HttpContext context,
@@ -284,9 +264,6 @@ public static class OgcStylesEndpoints
         return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);
     }
 
-    /// <summary>
-    /// Get style metadata.
-    /// </summary>
     private static async Task<IResult> GetStyleMetadata(
         string styleId,
         HttpContext context,
@@ -397,10 +374,6 @@ public static class OgcStylesEndpoints
             context, resource, service, AccessScope.Read, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Update an existing style (manage-styles, PUT). Honors Prefer: handling=strict
-    /// and ?validate for strict validation.
-    /// </summary>
     private static async Task<IResult> UpdateStyle(
         string styleId,
         HttpContext context,
@@ -476,11 +449,6 @@ public static class OgcStylesEndpoints
         }
     }
 
-    /// <summary>
-    /// Create a standalone style (manage-styles, POST). Stores a MapLibre stylesheet in
-    /// the independent style catalog (ADR-0048 Phase 2). The optional desired identifier
-    /// is read from the X-Style-Id header; otherwise the server assigns one.
-    /// </summary>
     private static async Task<IResult> CreateStyle(
         HttpContext context,
         IOgcStyleProjection projection,
@@ -551,10 +519,6 @@ public static class OgcStylesEndpoints
         }
     }
 
-    /// <summary>
-    /// Delete a standalone style (manage-styles, DELETE) from the independent style
-    /// catalog (ADR-0048 Phase 2).
-    /// </summary>
     private static async Task<IResult> DeleteStyle(
         string styleId,
         HttpContext context,
@@ -579,12 +543,6 @@ public static class OgcStylesEndpoints
         }
     }
 
-    /// <summary>
-    /// Evicts the output-cached styles surfaces (styles list, stylesheets, metadata —
-    /// all tagged 'ogc-styles') after a successful mutation so anonymous clients do
-    /// not keep receiving stale stylesheets until the cache TTL expires. Best-effort:
-    /// the mutation has already been committed, so eviction failures only log.
-    /// </summary>
     private static async Task EvictStylesOutputCacheAsync(HttpContext context, ILogger logger)
     {
         var cacheStore = context.RequestServices.GetService<IOutputCacheStore>();
@@ -639,10 +597,6 @@ public static class OgcStylesEndpoints
         return links.ToImmutable();
     }
 
-    /// <summary>
-    /// Negotiates the stylesheet encoding from the Accept header. MapLibre/Mapbox JSON
-    /// is the default when no specific stylesheet media type is requested.
-    /// </summary>
     private static bool TryNegotiateEncoding(HttpContext context, out OgcStyleEncoding encoding)
     {
         encoding = OgcStyleEncoding.MapboxStyle;

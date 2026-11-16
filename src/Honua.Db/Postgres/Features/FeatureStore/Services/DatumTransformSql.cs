@@ -7,41 +7,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Single chokepoint for emitting PostGIS reprojection SQL. Centralizing
-/// <c>ST_Transform</c> generation keeps datum-pipeline selection consistent across
-/// the ~20 SQL call sites in the feature-query builders and prevents drift between
-/// the bare 2-argument form (PROJ picks its own pipeline) and the explicit
-/// <c>ST_TransformPipeline</c> form that honors an explicit datum transformation.
-/// Geographic inputs aimed at Web Mercator are clipped to the Mercator latitude
-/// band here so one polar vertex cannot abort the statement.
-/// </summary>
 internal static class DatumTransformSql
 {
-    /// <summary>
-    /// Builds an <c>ST_Transform</c> expression that reprojects <paramref name="operand"/>
-    /// to <paramref name="toSrid"/>.
-    /// </summary>
-    /// <param name="operand">The SQL geometry expression to reproject.</param>
-    /// <param name="toSrid">Target SRID.</param>
-    /// <param name="selection">
-    /// Optional resolved datum transformation. When present and it carries a PROJ
-    /// pipeline, the explicit <c>ST_TransformPipeline(geom, '&lt;pipeline&gt;', toSrid)</c>
-    /// form is emitted so PostGIS uses the selected (Esri-parity) pipeline. Otherwise
-    /// the 2-argument form is emitted and PROJ chooses its default pipeline.
-    /// A pipeline whose geographic pair differs from <paramref name="fromSrid"/> or
-    /// <paramref name="toSrid"/> is composed between those defining conversions:
-    /// unproject to <see cref="DatumTransformationSelection.FromSrid"/>, run the
-    /// pipeline, then project to <paramref name="toSrid"/>.
-    /// </param>
-    /// <param name="fromSrid">
-    /// Source SRID of <paramref name="operand"/>, when known. A geographic source
-    /// reprojected to Web Mercator has each point latitude clamped to
-    /// ±<see cref="SpatialConstants.WebMercatorMaxLatitude"/>, and every other shape
-    /// clipped to that band, before <c>ST_Transform</c>. PROJ rejects latitude ±90 and
-    /// PostGIS aborts the whole statement. Unknown or projected sources are left unchanged.
-    /// </param>
-    /// <returns>The reprojection SQL expression.</returns>
     public static string BuildTransformExpression(
         string operand,
         int toSrid,
@@ -91,16 +58,6 @@ internal static class DatumTransformSql
         return $"ST_Transform({transformedOperand}, {toSrid})";
     }
 
-    /// <summary>
-    /// Builds an <c>ST_Transform</c> expression for an operand whose SRID is known only per
-    /// row (the layer SRID is unknown when the SQL is generated). When <paramref name="toSrid"/>
-    /// is Web Mercator, rows whose runtime <c>ST_SRID</c> is geographic get the same latitude
-    /// clamp/clip as <see cref="BuildTransformExpression"/>, so a polar vertex cannot abort the
-    /// statement; other rows are transformed unchanged.
-    /// </summary>
-    /// <param name="operand">The SQL geometry expression to reproject.</param>
-    /// <param name="toSrid">Target SRID.</param>
-    /// <returns>The reprojection SQL expression.</returns>
     public static string BuildTransformExpressionForRuntimeSrid(string operand, int toSrid)
     {
         if (!SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
@@ -153,11 +110,6 @@ internal static class DatumTransformSql
         return current;
     }
 
-    /// <summary>
-    /// Axis-aligned geographic clip box for the Web Mercator latitude band, in
-    /// <paramref name="sourceSrid"/>. Callers use this when a raster (not a geometry
-    /// expression) must be cropped before <c>ST_Transform</c>.
-    /// </summary>
     internal static string BuildWebMercatorClipEnvelope(int sourceSrid)
         => BuildWebMercatorClipEnvelope(sourceSrid.ToString(CultureInfo.InvariantCulture));
 
@@ -208,11 +160,6 @@ internal static class DatumTransformSql
             + "ELSE ST_SetSRID(ST_MakePoint(" + x + ", " + y + ", ST_Z(" + point + "), ST_M(" + point + ")), " + sourceSrid + ") END";
     }
 
-    /// <summary>
-    /// Escapes a string for use as a single-quoted PostgreSQL string literal.
-    /// PROJ pipeline strings are catalog-sourced (never user input), but quoting
-    /// defensively keeps the emitted SQL well-formed.
-    /// </summary>
     private static string QuoteLiteral(string value)
         => $"'{value.Replace("'", "''", StringComparison.Ordinal)}'";
 }

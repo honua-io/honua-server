@@ -8,38 +8,17 @@ using Honua.Core.Features.Validation;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Shared parsing utilities for raster-related request parameters used by ImageServer and OGC Maps.
-/// </summary>
 internal static class RasterParsingHelpers
 {
-    /// <summary>
-    /// Bounds parsing work while allowing full-precision client coordinates.
-    /// ArcGIS Pro can serialize four valid ordinates to more than 100 characters.
-    /// </summary>
     private const int MaxBboxLength = 1024;
 
-    /// <summary>
-    /// Maximum coordinate value supporting projected CRS (e.g., Web Mercator ~20,037,508).
-    /// </summary>
     private const double MaxProjectedBound = 40_000_000;
 
-    /// <summary>
-    /// Tolerance used in place of exact floating-point equality when checking for a
-    /// degenerate (zero-width) geographic bounding box.
-    /// </summary>
     private const double DegenerateWidthEpsilon = 1e-9;
 
-    /// <summary>
-    /// Safely parses a bounding box string with validation.
-    /// Supports both geographic and projected coordinate systems.
-    /// </summary>
     public static bool TryParseBoundingBox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
         => TryParseBoundingBox(bbox, AxisOrder.EastNorth, isGeographic: false, out minX, out minY, out maxX, out maxY);
 
-    /// <summary>
-    /// Safely parses a bounding box string with explicit axis-order and geographic-range handling.
-    /// </summary>
     public static bool TryParseBoundingBox(
         string bbox,
         AxisOrder axisOrder,
@@ -97,10 +76,6 @@ internal static class RasterParsingHelpers
         return true;
     }
 
-    /// <summary>
-    /// Validates if a coordinate is within reasonable bounds.
-    /// Supports both geographic (WGS84) and projected (Web Mercator) coordinate systems.
-    /// </summary>
     public static bool IsValidCoordinate(double coordinate)
     {
         return !double.IsNaN(coordinate) &&
@@ -112,9 +87,6 @@ internal static class RasterParsingHelpers
 
     private static bool IsValidLatitude(double coordinate) => coordinate >= -90.0 && coordinate <= 90.0;
 
-    /// <summary>
-    /// Parses a format string to the corresponding <see cref="RasterFormat"/> enum value.
-    /// </summary>
     public static RasterFormat ParseRasterFormat(string? format)
     {
         return TryParseRasterFormat(format, out var rasterFormat)
@@ -122,12 +94,6 @@ internal static class RasterParsingHelpers
             : RasterFormat.PNG;
     }
 
-    /// <summary>
-    /// Tries to parse a raster format string.
-    /// </summary>
-    /// <param name="format">Requested format value.</param>
-    /// <param name="rasterFormat">Parsed output format when successful.</param>
-    /// <returns>True when the format is explicitly supported, otherwise false.</returns>
     public static bool TryParseRasterFormat(string? format, out RasterFormat rasterFormat)
     {
         if (string.IsNullOrEmpty(format))

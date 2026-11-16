@@ -16,7 +16,8 @@ internal sealed class AdminPortalCredentialVerifier(
     IConnectionSecretResolver? secretResolver = null,
     IAdminApiKeyStore? adminApiKeyStore = null,
     ITenantContext? tenantContext = null,
-    ILogger<AdminPortalCredentialVerifier>? logger = null) : IPortalCredentialVerifier
+    ILogger<AdminPortalCredentialVerifier>? logger = null,
+    IHttpContextAccessor? httpContextAccessor = null) : IPortalCredentialVerifier
 {
     private const string AdminUsername = "admin";
     private static readonly string[] AdminRoles = ["admin"];
@@ -49,6 +50,11 @@ internal sealed class AdminPortalCredentialVerifier(
             // the API key as the password under any username so existing clients can
             // pass through without code changes. A store outage returns no principal
             // rather than throwing; only the admin username has a break-glass password.
+            return null;
+        }
+
+        if (!PermitsAdminPasswordFromClient())
+        {
             return null;
         }
 
@@ -91,6 +97,21 @@ internal sealed class AdminPortalCredentialVerifier(
                 PortalCredentialSourceKind.AdminPassword,
                 Reference: null,
                 Version: PortalCredentialSourceVersion.ForAdminPassword(configuredPassword)));
+    }
+
+    private bool PermitsAdminPasswordFromClient()
+    {
+        if (AdminPasswordNetworkPolicy.Permits(_apiKeyOptions, ClientConnection.From(httpContextAccessor?.HttpContext).Reach))
+        {
+            return true;
+        }
+
+        if (_logger is not null)
+        {
+            AuthenticationLog.AdminPasswordRefusedOnNetworkPath(_logger);
+        }
+
+        return false;
     }
 
     private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)

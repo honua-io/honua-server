@@ -34,6 +34,9 @@ internal sealed record AwsBatchJobSubmission
     public int? RetryAttempts { get; init; }
 
     public string? ShareIdentifier { get; init; }
+
+    // Tags let the install's IAM policy limit cancel and terminate to the jobs this stack submitted.
+    public IReadOnlyDictionary<string, string> Tags { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 internal sealed record AwsBatchSubmitResult
@@ -126,6 +129,18 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
                 throw new InvalidOperationException("Custom-code provider image must match the admitted immutable worker digest.");
             }
         }
+        var request = BuildSubmitJobRequest(submission);
+        var response = await client.SubmitJobAsync(request, cancellationToken).ConfigureAwait(false);
+        return new AwsBatchSubmitResult
+        {
+            JobId = response.JobId,
+            JobArn = response.JobArn,
+            JobName = response.JobName
+        };
+    }
+
+    internal static SubmitJobRequest BuildSubmitJobRequest(AwsBatchJobSubmission submission)
+    {
         var request = new SubmitJobRequest
         {
             JobName = submission.JobName,
@@ -133,6 +148,11 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
             JobQueue = submission.JobQueue,
             ContainerOverrides = BuildContainerOverrides(submission)
         };
+
+        if (submission.Tags.Count > 0)
+        {
+            request.Tags = new Dictionary<string, string>(submission.Tags, StringComparer.Ordinal);
+        }
 
         if (submission.AttemptDurationSeconds.HasValue)
         {
@@ -155,13 +175,7 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
             request.ShareIdentifier = submission.ShareIdentifier;
         }
 
-        var response = await client.SubmitJobAsync(request, cancellationToken).ConfigureAwait(false);
-        return new AwsBatchSubmitResult
-        {
-            JobId = response.JobId,
-            JobArn = response.JobArn,
-            JobName = response.JobName
-        };
+        return request;
     }
 
     internal static void ValidateCredentialFreeCustomCodeDefinition(

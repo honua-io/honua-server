@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.ControlPlane;
 
-/// <summary>Readiness record published when a qualification barrier is reached.</summary>
 internal sealed record QualificationReadyReceipt(
     string OperationId,
     string WorkerId,
@@ -16,7 +15,6 @@ internal sealed record QualificationReadyReceipt(
     int? ChildProcessId,
     bool ExecutorIgnoresCancellation);
 
-/// <summary>Record published when the execution token is observed cancelled at a barrier.</summary>
 internal sealed record QualificationSignalObservedReceipt(
     string OperationId,
     string WorkerId,
@@ -26,7 +24,6 @@ internal sealed record QualificationSignalObservedReceipt(
     int? ChildProcessId,
     bool TokenCancelled);
 
-/// <summary>Record published once the qualification runner releases a barrier.</summary>
 internal sealed record QualificationReleasedReceipt(
     string OperationId,
     string WorkerId,
@@ -35,11 +32,6 @@ internal sealed record QualificationReleasedReceipt(
     int WorkerProcessId,
     int? ChildProcessId);
 
-/// <summary>
-/// Source-generated serialization for the qualification barrier receipts. The barrier runs
-/// inside the trimmed/AOT-published worker, so these records may never go through the
-/// reflection-based <see cref="JsonSerializer"/> overloads (IL2026/IL3050).
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(QualificationReadyReceipt))]
 [JsonSerializable(typeof(QualificationSignalObservedReceipt))]

@@ -6,11 +6,6 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Web Mercator SQL for raster tile pre-generation. Geographic envelopes use the
-/// same latitude clip as <see cref="DatumTransformSql"/> so a ±90° corner cannot
-/// abort <c>ST_Transform</c> to EPSG:3857.
-/// </summary>
 internal static class RasterWebMercatorSql
 {
     internal const int TileSrid = 3857;
@@ -18,11 +13,6 @@ internal static class RasterWebMercatorSql
     internal static string BuildEnvelopeExpression(string envelopeOperand, int sourceSrid)
         => DatumTransformSql.BuildTransformExpression(envelopeOperand, TileSrid, selection: null, sourceSrid);
 
-    /// <summary>
-    /// Reprojects a raster to EPSG:3857. Geographic rasters whose envelope leaves
-    /// the Mercator band are cropped first; rasters already inside the band keep
-    /// the bare <c>ST_Transform</c> so ordinary imports do not change pixels.
-    /// </summary>
     internal static string BuildRasterExpression(string rasterOperand, int sourceSrid)
     {
         if (!GeographicSridClassifier.IsGeographicSrid(sourceSrid))

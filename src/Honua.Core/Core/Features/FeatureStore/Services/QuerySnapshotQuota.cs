@@ -3,21 +3,12 @@
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Global cap on unexpired durable query snapshots. The store enforces this
-/// before insert so anonymous track-changes baselines cannot fill the table.
-/// </summary>
 public static class QuerySnapshotQuota
 {
-    /// <summary>Maximum unexpired snapshot rows.</summary>
     public const int MaxLiveSnapshots = 64;
 
-    /// <summary>Maximum combined unexpired payload bytes.</summary>
     public const long MaxLiveBytes = 256L * 1024L * 1024L;
 
-    /// <summary>
-    /// Rejects an insert that would exceed the live row count or byte budget.
-    /// </summary>
     public static void Ensure(int liveCount, long liveBytes, int incomingBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(liveCount);
@@ -32,7 +23,4 @@ public static class QuerySnapshotQuota
     }
 }
 
-/// <summary>
-/// Raised when a durable query snapshot would exceed <see cref="QuerySnapshotQuota"/>.
-/// </summary>
 public sealed class QuerySnapshotQuotaExceededException(string message) : Exception(message);

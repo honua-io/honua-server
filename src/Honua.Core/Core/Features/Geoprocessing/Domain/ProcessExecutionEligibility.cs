@@ -3,16 +3,8 @@
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
-/// <summary>
-/// Provides the canonical runtime eligibility predicates shared by process protocol adapters.
-/// </summary>
 public static class ProcessExecutionEligibility
 {
-    /// <summary>
-    /// Returns <see langword="true"/> when a process may be submitted to the shared
-    /// asynchronous geoprocessing job runtime.
-    /// Requires an explicit job entry-point declaration, including for replacement catalogs.
-    /// </summary>
     public static bool IsJobCallable(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -21,10 +13,6 @@ public static class ProcessExecutionEligibility
             && Declares(definition, ProcessEntryPoints.Job);
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when a process may be submitted by the trusted
-    /// workflow orchestration runtime.
-    /// </summary>
     public static bool IsWorkflowCallable(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -33,12 +21,6 @@ public static class ProcessExecutionEligibility
             && Declares(definition, ProcessEntryPoints.Workflow);
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the catalog declares <paramref name="entryPoint"/>
-    /// for <paramref name="definition"/>. This is the single predicate every advertisement
-    /// surface must consult before projecting an operation: a process is offered on an
-    /// entry point only when the catalog says it supports that entry point.
-    /// </summary>
     public static bool Declares(ProcessDefinition definition, ProcessEntryPoints entryPoint)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -46,10 +28,6 @@ public static class ProcessExecutionEligibility
             && (definition.SupportedEntryPoints & entryPoint) == entryPoint;
     }
 
-    /// <summary>
-    /// Renders declared entry points in the canonical, stable order used by the catalog
-    /// documents and the evidence matrix (<c>job</c>, <c>protocol</c>, <c>workflow</c>).
-    /// </summary>
     public static IReadOnlyList<string> DescribeEntryPoints(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);

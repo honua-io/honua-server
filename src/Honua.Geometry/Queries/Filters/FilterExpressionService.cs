@@ -9,23 +9,15 @@ using Honua.Core.Queries.Filters.OData;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Default implementation for shared filter parsing and translation.
-/// </summary>
 public sealed class FilterExpressionService : IFilterExpressionService
 {
     private readonly IFilterExpressionTranslator _translator;
 
-    /// <summary>
-    /// Creates a new filter expression service.
-    /// </summary>
-    /// <param name="translator">Translator for converting expressions to SQL.</param>
     public FilterExpressionService(IFilterExpressionTranslator translator)
     {
         _translator = translator ?? throw new ArgumentNullException(nameof(translator));
     }
 
-    /// <inheritdoc />
     public FilterParseResult Parse(FilterLanguage language, string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
@@ -60,7 +52,6 @@ public sealed class FilterExpressionService : IFilterExpressionService
         }
     }
 
-    /// <inheritdoc />
     public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -80,14 +71,12 @@ public sealed class FilterExpressionService : IFilterExpressionService
         }
     }
 
-    /// <inheritdoc />
     public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return _translator.Normalize(expression, resource);
     }
 
-    /// <inheritdoc />
     public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);

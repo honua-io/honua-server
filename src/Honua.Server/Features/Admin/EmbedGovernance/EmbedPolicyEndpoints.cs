@@ -57,7 +57,7 @@ internal static partial class EmbedPolicyEndpoints
 
     private static async Task<Results<Ok<EmbedPolicyResponse>, UnauthorizedHttpResult, JsonHttpResult<ApiResponse<object>>>>
         HandlePolicy(
-            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] IEmbedKeyStore store,
             [FromServices] InMemoryEmbedAnalyticsStore analytics,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
@@ -110,7 +110,7 @@ internal static partial class EmbedPolicyEndpoints
     private static async Task<Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>, JsonHttpResult<ApiResponse<object>>>>
         HandleAnalytics(
             IngestEmbedAnalyticsRequest request,
-            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] IEmbedKeyStore store,
             [FromServices] InMemoryEmbedAnalyticsStore analytics,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
@@ -182,7 +182,7 @@ internal static partial class EmbedPolicyEndpoints
         return TypedResults.Ok(ApiResponse<EmbedAnalyticsIngestResponse>.CreateSuccess(response));
     }
 
-    private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(InMemoryEmbedKeyStore store, HttpContext context)
+    private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(IEmbedKeyStore store, HttpContext context)
     {
         var keyMaterial = ExtractKeyMaterial(context);
         if (string.IsNullOrWhiteSpace(keyMaterial))

@@ -9,12 +9,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Maps ArcGIS field names onto the columns of an imported PostGIS table.
-/// <c>objectid</c> is always reserved for the surrogate key. <c>geom</c> is reserved when the
-/// layer has a geometry type. Any other collision, including two source names that sanitize to
-/// the same identifier, is disambiguated deterministically.
-/// </summary>
 internal static class GeoservicesImportColumns
 {
     internal const int MaxIdentifierLength = 63;
@@ -114,11 +108,6 @@ internal static class GeoservicesImportColumns
             .ToArray();
     }
 
-    /// <summary>
-    /// Rewrites <c>$feature.Name</c> and <c>$feature["Name"]</c> when the import
-    /// allocated a different column. A case-only change is left alone because field
-    /// lookup is already case-insensitive. Text inside quotes is not rewritten.
-    /// </summary>
     internal static string RemapFeatureReferences(string? expression, GeoservicesImportColumnMap map)
     {
         if (string.IsNullOrEmpty(expression))
@@ -347,30 +336,16 @@ internal static class GeoservicesImportColumns
     }
 }
 
-/// <summary>One importable source field and the column it lands in.</summary>
-/// <param name="Field">Source field. Attribute values are still read by its original name.</param>
-/// <param name="SanitizedName">Identifier after <c>SanitizeFieldName</c>, before collision handling.</param>
-/// <param name="ColumnName">Physical column name.</param>
-/// <param name="Renamed">True when <paramref name="ColumnName"/> differs from <paramref name="SanitizedName"/>.</param>
 internal sealed record GeoservicesImportColumn(
     GeoservicesFieldInfo Field,
     string SanitizedName,
     string ColumnName,
     bool Renamed);
 
-/// <summary>Column mapping for one ArcGIS layer.</summary>
-/// <param name="Columns">Importable attribute columns, in source order.</param>
-/// <param name="Spatial">True when the layer has a geometry column named <c>geom</c>.</param>
 internal sealed record GeoservicesImportColumnMap(
     IReadOnlyList<GeoservicesImportColumn> Columns,
     bool Spatial)
 {
-    /// <summary>
-    /// Maps a source field or metadata reference onto the physical column name.
-    /// An importable field uses its allocated column. A name that sanitizes to <c>objectid</c>
-    /// or, on a spatial layer, <c>geom</c> and is not itself an importable field refers to the
-    /// reserved column.
-    /// </summary>
     internal string MapReference(string? sourceName)
     {
         if (string.IsNullOrWhiteSpace(sourceName))
