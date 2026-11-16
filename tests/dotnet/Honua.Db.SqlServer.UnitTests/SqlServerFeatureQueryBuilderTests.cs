@@ -901,8 +901,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(expected, SqlServerIdentifier.IsValid(value));
     }
 
-    // SRID resolves to 0 when both filter and mapping SRID are absent ->
-    // SQL Server spatial predicates return NULL (not false) -> silent zero-row result.
+    // Reject missing SRIDs to prevent silent empty results.
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SpatialFilter_NullFilterSridAndNullMappingSrid_Throws()
