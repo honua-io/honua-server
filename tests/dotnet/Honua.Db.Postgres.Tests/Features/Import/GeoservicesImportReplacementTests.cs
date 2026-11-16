@@ -32,7 +32,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// dropped and the target held only the records that happened to load.
 /// </remarks>
 [Collection("Database")]
-public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
+public sealed partial class GeoservicesImportReplacementTests(PostgresFixture fixture)
 {
     private const string TableName = "geoservices_replace_target";
 

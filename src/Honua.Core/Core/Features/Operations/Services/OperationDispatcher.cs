@@ -11,7 +11,7 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
+public sealed partial class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
 {
     private static readonly TimeSpan PostActuationPersistenceTimeout = TimeSpan.FromSeconds(10);
 
@@ -24,6 +24,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
     private readonly OperationEnvelopeFactory _envelopeFactory;
     private readonly IOperationApprovalReplayVerifier? _approvalReplayVerifier;
     private readonly TimeProvider _clock;
+    private readonly IAgentAuthorityStore? _agentAuthorityStore;
 
     public OperationDispatcher(
         IOperationCatalog catalog,
@@ -33,7 +34,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         IOperationApprovalBridge? approvalBridge = null,
         IOperationInstanceStore? instanceStore = null,
         IAuditLog? auditLog = null,
-        IOperationApprovalReplayVerifier? approvalReplayVerifier = null)
+        OperationActuationGuards? guards = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -46,7 +47,8 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         _instanceStore = instanceStore ?? new VolatileOperationInstanceStore();
         _auditLog = auditLog ?? new VolatileOperationAuditLog();
         _envelopeFactory = new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
-        _approvalReplayVerifier = approvalReplayVerifier;
+        _approvalReplayVerifier = guards?.ApprovalReplayVerifier;
+        _agentAuthorityStore = guards?.AgentAuthorityStore;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -331,21 +333,11 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         PolicyDecision decision;
         try
         {
-            decision = string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
-                ? await _policy
-                    .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
-                    .ConfigureAwait(false)
-                : PolicyDecision.Allowed;
-            // Only this trusted mode adds an approval floor. A refusal is never promoted,
-            // and verified approved replay remains on the ordinary submission path.
-            if (proposalOnly && decision.Kind == PolicyDecisionKind.Allow)
+            decision = await EvaluateSubmissionDecisionAsync(descriptor, request, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (proposalOnly)
             {
-                decision = new PolicyDecision
-                {
-                    Kind = PolicyDecisionKind.RequireApproval,
-                    ApprovalLane = "control-plane",
-                    Reason = "Operator-gated proposal submission requires separate approval.",
-                };
+                decision = RequireProposalApproval(decision);
             }
             envelope = envelope with
             {
@@ -465,6 +457,13 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         }
         else
         {
+            var refused = await RefuseRevokedAgentAuthorityAsync(envelope, descriptor, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (refused is not null)
+            {
+                return refused;
+            }
+
             try
             {
                 executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);

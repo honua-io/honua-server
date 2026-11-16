@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Security;
@@ -13,15 +14,20 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class CoordinatedReleaseHumanApprovalTests
 {
     [UnitTheory]
-    [InlineData(CoordinatedReleaseStep.ContainerRollout, true)]
-    [InlineData(CoordinatedReleaseStep.ContainerRollout, false)]
-    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, true)]
-    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, false)]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, true, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, true, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, true, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, true, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, false, (int)AdminAuthSessionOrigin.Builtin)]
     public async Task VerifyGateAsync_LiveHuman_BindsRequesterOrOtherAuthorizedPerson(
-        CoordinatedReleaseStep gate, bool requesterApproves)
+        CoordinatedReleaseStep gate, bool requesterApproves, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         var actor = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId;
         var operation = Workflow(gate) with
         {
@@ -35,12 +41,21 @@ public sealed class CoordinatedReleaseHumanApprovalTests
             OperationHumanApprovalTestHost.Approval(human), default);
 
         evidence.ActorId.Should().Be(actor);
+        evidence.Channel.Should().Be(origin == AdminAuthSessionOrigin.Builtin
+            ? OperationHumanApprovalEvidence.InteractivePasswordChannel
+            : OperationHumanApprovalEvidence.InteractiveOidcChannel);
         evidence.WorkflowId.Should().Be(operation.OperationId);
         evidence.WorkflowVersion.Should().Be(operation.Version);
         evidence.Gate.Should().Be(gate);
         evidence.PlanHash.Should().Be(review.PlanHash);
         evidence.SessionReference.Should().HaveLength(64).And.NotBe(human.SessionId);
         evidence.CapabilityReference.Should().HaveLength(64);
+        AssertExecutionAuthority(operation, gate, evidence);
+    }
+
+    private static void AssertExecutionAuthority(WorkflowOperationRecord operation, CoordinatedReleaseStep gate,
+        CoordinatedReleaseHumanApproval evidence)
+    {
         var approved = operation with
         {
             Version = operation.Version + 1,
@@ -52,6 +67,16 @@ public sealed class CoordinatedReleaseHumanApprovalTests
             },
         };
         CoordinatedReleaseApprovalBinding.HasExecutionAuthority(approved, gate).Should().BeTrue();
+        var unknownChannel = evidence with { Channel = "unverified-channel" };
+        var invalid = approved with
+        {
+            CoordinatedRelease = approved.CoordinatedRelease! with
+            {
+                ContainerHumanApproval = unknownChannel,
+                DataHumanApproval = unknownChannel,
+            },
+        };
+        CoordinatedReleaseApprovalBinding.HasExecutionAuthority(invalid, gate).Should().BeFalse();
     }
 
     [UnitTheory]
