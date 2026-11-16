@@ -127,13 +127,16 @@ def legacy_configuration(common, install, env):
 
 
 # Start the services the retained release's server depends on that the candidate does not compose.
-def start_legacy_only_dependencies(current, env, legacy, legacy_env):
-    def services(command, environment):
+# Each stack is a (compose command, environment) pair.
+def start_legacy_only_dependencies(candidate, retained):
+    def services(stack):
+        command, environment = stack
         return json.loads(run(command + ["config", "--format", "json"], env=environment))["services"]
-    composed = services(current, env)
-    missing = [name for name in services(legacy, legacy_env)["honua"].get("depends_on", {}) if name not in composed]
+    composed = services(candidate)
+    missing = [name for name in services(retained)["honua"].get("depends_on", {}) if name not in composed]
     if missing:
-        run(legacy + ["up", "-d", "--wait", *missing], env=legacy_env)
+        command, environment = retained
+        run(command + ["up", "-d", "--wait", *missing], env=environment)
 
 
 def test_manual_database_restore_replaces_partitioned_schema(tmp_path):
@@ -188,7 +191,7 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
                               "-tA", "-v", "ON_ERROR_STOP=1", "-c", statement], env=env)
     try:
         run(current + ["up", "-d", "--wait", "postgres"], env=env)
-        start_legacy_only_dependencies(current, env, legacy, legacy_env)
+        start_legacy_only_dependencies((current, env), (legacy, legacy_env))
         # This one-shot exits successfully; --wait expects selected services to
         # stay running. Run it separately and require its actual exit status.
         run(current + ["run", "--rm", "--no-deps", "keyring-init"], env=env)
