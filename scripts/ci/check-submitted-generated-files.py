@@ -45,10 +45,16 @@ def roster_body(data):
         document = json.loads(data)
         if not re.fullmatch('[0-9a-f]{40}', document['serverSha']):
             return None
+        if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z', document['generatedAt']):
+            return None
         datetime.datetime.strptime(document['generatedAt'], '%Y-%m-%dT%H:%M:%SZ')
-        body, count = re.subn(
-            rb'^  "(?:serverSha|generatedAt)": "[^"\r\n]*",\n', b'', data, flags=re.MULTILINE)
-        return body if count == 2 else None
+        body = data
+        for field in (b'serverSha', b'generatedAt'):
+            pattern = rb'^(  "' + field + rb'": ")[^"\r\n]*(",\n)'
+            body, count = re.subn(pattern, lambda match: match[1] + match[2], body, flags=re.MULTILINE)
+            if count != 1:
+                return None
+        return body
     except (ValueError, KeyError, TypeError):
         return None
 

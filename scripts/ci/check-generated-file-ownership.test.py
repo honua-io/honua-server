@@ -184,10 +184,14 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(submitted.mismatches(base, head), [])
         self.write(roster, json.dumps(dict(fresh, tools=['wrong']), indent=2) + '\n')
         self.assertEqual(submitted.mismatches(base, head), [roster])
-        for field, value in [('serverSha', 'invalid'), ('generatedAt', 'not-a-date')]:
+        for field, value in [('serverSha', 'invalid'), ('generatedAt', 'not-a-date'),
+                             ('generatedAt', '2026-1-2T3:4:5Z')]:
             with self.subTest(field=field):
                 self.write(roster, json.dumps(dict(fresh, **{field: value}), indent=2) + '\n')
                 self.assertEqual(submitted.mismatches(base, head), [roster])
+        reordered = dict(tools=fresh['tools'], generatedAt=fresh['generatedAt'], serverSha=fresh['serverSha'])
+        self.write(roster, json.dumps(reordered, indent=2) + '\n')
+        self.assertEqual(submitted.mismatches(base, head), [roster])
         self.write(roster, json.dumps(fresh, indent=4) + '\n')
         self.assertEqual(submitted.mismatches(base, head), [roster])
         Path(roster).chmod(0o755)
