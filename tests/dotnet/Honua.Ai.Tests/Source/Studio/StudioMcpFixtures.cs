@@ -25,6 +25,8 @@ internal static class StudioMcpFixtures
             services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
             services.RemoveAll<IOperationPolicyDecisionPoint>();
             services.AddSingleton<IOperationPolicyDecisionPoint, CompositionTestPolicy>();
+            services.RemoveAll<IAgentAuthorityStore>();
+            services.AddSingleton<IAgentAuthorityStore, CompositionAgentAuthorityStore>();
         });
 
     // Setup must not invoke approval-gated draft creation or update tools.
@@ -47,6 +49,27 @@ internal static class StudioMcpFixtures
                 Body = body,
             },
         });
+    }
+
+    private sealed class CompositionAgentAuthorityStore : IAgentAuthorityStore
+    {
+        public Task<AgentAuthorityCeiling?> GetAsync(
+            string? tenantId, string principalId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AgentAuthorityCeiling?>(new AgentAuthorityCeiling
+            {
+                TenantId = tenantId,
+                PrincipalId = principalId,
+                Enabled = tenantId is null && principalId == WebAppFixture.DevelopmentBypassActorId,
+                AllowedOperationIds = [StudioDraftMutationContext.UpdateOperationId],
+                MaximumBlastRadius = OperationBlastRadiusClass.ResourceScope,
+                MaximumSideEffect = OperationSideEffectClass.MutatesMetadata,
+            });
+
+        public Task SetAsync(AgentAuthorityCeiling ceiling, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Composition fixture authority is immutable.");
+
+        public Task<bool> DeleteAsync(string? tenantId, string principalId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Composition fixture authority is immutable.");
     }
 
     // Admit only updates of this fixture's own drafts, while retaining the canonical runtime.
