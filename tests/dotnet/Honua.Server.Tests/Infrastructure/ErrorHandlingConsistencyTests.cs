@@ -270,7 +270,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         {
             ["/rest/services/non-existent/FeatureServer"] = "application/json",
             ["/ogc/features/collections/non-existent"] = "application/problem+json",
-            ["/tiles/99999/1/0/0.mvt"] = "application/problem+json", // honua-server#2945
+            ["/tiles/99999/1/0/0.mvt"] = "application/problem+json",
             ["/odata/Features(99999)"] = "application/json", // OData errors are also JSON
         };
 

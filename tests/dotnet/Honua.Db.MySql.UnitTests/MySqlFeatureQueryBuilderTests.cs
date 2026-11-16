@@ -1248,9 +1248,6 @@ public class MySqlFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_WithLimitAndOffset_EmitsLimitBeforeOffset()
     {
-        // Combined LIMIT and OFFSET is the canonical paged-read shape; verify the parameter
-        // order so the regression that introduced the bare-OFFSET path (now using a sentinel
-        // LIMIT for offset-only) cannot reappear.
         var query = new FeatureQuery { Limit = 10, Offset = 20 };
 
         var result = _builder.BuildSelectQuery(LayerId, query);

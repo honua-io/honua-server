@@ -1132,9 +1132,6 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         }
     }
 
-    // Esri's large-page JSON path used the streaming formatter before this regression:
-    // returnDistinctValues was ignored there, so duplicate attributes and feature OIDs
-    // leaked into the response.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]

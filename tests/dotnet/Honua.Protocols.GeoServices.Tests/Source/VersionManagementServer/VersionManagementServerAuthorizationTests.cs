@@ -47,7 +47,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         _fixture.ConfigureWebHost(builder =>
         {
-            // Displace the F1 development-authentication bypass: without this every request is an
+            // Displace the development-authentication bypass: without this every request is an
             // admin and the ownership branch under test is unreachable.
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);

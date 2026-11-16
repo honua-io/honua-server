@@ -173,7 +173,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithReprojectionAndNoDatumTransformation_AppliesDefault_Returns200(/* #1274 */)
+    public async Task Query_WithReprojectionAndNoDatumTransformation_AppliesDefault_Returns200()
     {
         // Reproject the layer (3857) to WGS84 with no client datumTransformation. The
         // catalog has no curated default for this pair, so the query falls through to the
@@ -257,7 +257,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError(/* #1274 */)
+    public async Task Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError()
     {
         // An unknown datumTransformation WKID must produce an explicit error rather than
         // a silent substitution to PROJ's default pipeline.
@@ -272,7 +272,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithDatumTransformationNotApplicableToReprojection_ReturnsExplicitError(/* #1274 */)
+    public async Task Query_WithDatumTransformationNotApplicableToReprojection_ReturnsExplicitError()
     {
         // WKID 108001 connects NAD83<->WGS84; it does not apply to the layer's 3857->4326
         // reprojection. A known-but-inapplicable WKID must be rejected explicitly rather
@@ -288,7 +288,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError(/* #1274 */)
+    public async Task Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError()
     {
         // outSR carrying a vertical CS (vcsWkid) requests a vertical datum transformation,
         // which is not supported; it must fail explicitly instead of being ignored.
