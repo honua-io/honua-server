@@ -8,7 +8,7 @@ using Honua.Core.Features.Compliance.Domain;
 namespace Honua.Core.Features.Compliance.Services;
 
 // Publishing a control here is enough to show it; controls without automated evidence are omitted on purpose.
-internal sealed class DefaultComplianceControlCatalog : IComplianceControlCatalog
+internal sealed class DefaultComplianceControlCatalog
 {
     private readonly FrozenDictionary<string, ComplianceControl> _byId;
 

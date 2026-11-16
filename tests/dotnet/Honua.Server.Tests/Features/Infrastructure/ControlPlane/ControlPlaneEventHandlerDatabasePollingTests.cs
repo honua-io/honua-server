@@ -18,11 +18,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Control-plane event Lambdas share the server image but their Npgsql pool is capped at 2
-/// and released when the invocation ends. The database polling loops that the API host keeps
-/// must not be hosted there (honua-server#6515).
-/// </summary>
 public sealed class ControlPlaneEventHandlerDatabasePollingTests
 {
     [UnitTest]
@@ -34,8 +29,6 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<JobExecutionService>(services).Should().BeFalse();
         Hosts<NetworkTopologyRebuildReconcilerBackgroundService>(services).Should().BeFalse();
         Hosts<MigrationBatchBackgroundService>(services).Should().BeFalse();
-        Hosts<GeoservicesImportBackgroundService>(services).Should().BeFalse();
-        Hosts<GeoServerImportBackgroundService>(services).Should().BeFalse();
         Hosts<OpsHealthRollupSampler>(services).Should().BeFalse();
         Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeFalse();
     }
@@ -49,8 +42,6 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<JobExecutionService>(services).Should().BeTrue();
         Hosts<NetworkTopologyRebuildReconcilerBackgroundService>(services).Should().BeTrue();
         Hosts<MigrationBatchBackgroundService>(services).Should().BeTrue();
-        Hosts<GeoservicesImportBackgroundService>(services).Should().BeTrue();
-        Hosts<GeoServerImportBackgroundService>(services).Should().BeTrue();
         Hosts<OpsHealthRollupSampler>(services).Should().BeTrue();
         Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeTrue();
     }

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import sys
 import subprocess
 import tempfile
@@ -212,13 +213,57 @@ class Classify(unittest.TestCase):
             self.assertEqual(n1.exit_code_for(outcome), 1)
 
 
+class ReviewedIndexRemovalBoundary(unittest.TestCase):
+    """The real migration 183 refusal must use an immutable release-boundary pin."""
+
+    def setUp(self) -> None:
+        self.script = "183_RemoveUnusedFeatureIndexes.sql"
+        self.sql = (n1.REPO_ROOT / "src/Honua.Server/Migrations" / self.script).read_text()
+        self.boundary = json.loads((n1.REPO_ROOT / n1.RELEASE_BOUNDARY).read_text())["migrations"]
+        self.refusal = n1.parse_refusal(
+            "schema_reader_incompatible: this server cannot verify compatibility with applied migration(s): "
+            f"Honua.Server.Migrations.{self.script}. Start a compatible server or restore the database backup "
+            "matching this revision. Application rollback does not reverse database migrations. "
+            f"Forward-compatibility declaration(s) refused: Honua.Server.Migrations.{self.script} "
+            "(declared contract, not expand).\n")
+
+    def migration_evidence(self, **overrides) -> "n1.Evidence":
+        values = dict(journal_delta=[self.script], classifications={self.script: "contract"},
+                      script_text={self.script: self.sql}, boundary_hashes=self.boundary,
+                      refusal=self.refusal, ready=False, serve_ok=False)
+        values.update(overrides)
+        return evidence(**values)
+
+    def test_exact_reviewed_contract_refusal_is_expected(self) -> None:
+        outcome, why = n1.classify(self.migration_evidence())
+        self.assertEqual(outcome, "expected-refusal", why)
+        self.assertEqual(n1.exit_code_for(outcome), 0)
+
+    def test_expand_declaration_does_not_hide_old_reader_refusal(self) -> None:
+        outcome, _ = n1.classify(self.migration_evidence(classifications={self.script: "expand"}))
+        self.assertEqual(outcome, "reader-incompatible-regression")
+
+    def test_review_annotation_cannot_approve_changed_sql_or_another_name(self) -> None:
+        for name, sql in ((self.script, self.sql + "DROP TABLE public.features;\n"),
+                          ("999_RemoveUnusedFeatureIndexes.sql", self.sql)):
+            with self.subTest(name=name):
+                outcome, _ = n1.classify(self.migration_evidence(
+                    journal_delta=[name], classifications={name: "contract"}, script_text={name: sql}))
+                self.assertEqual(outcome, "release-boundary-violation")
+
+    def test_contract_served_does_not_claim_successful_rollback(self) -> None:
+        outcome, _ = n1.classify(self.migration_evidence(refusal=None, ready=True, serve_ok=True))
+        self.assertEqual(outcome, "expected-refusal-missing")
+
+
 class Applies(unittest.TestCase):
     def test_paths(self) -> None:
         for path in ("src/Honua.Server/Migrations/136_AddX.sql",
                      "src/Honua.Db/Postgres/Migrations/008_AddRaster.sql",
                      "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/PostgresCoreSchemaGuard.cs",
                      "src/Honua.Core/Core/Features/Infrastructure/Migrations/MigrationReaderCompatibility.cs",
-                     "eng/schema/schema-migration-hashes.v1.json",
+                     "eng/schema/migration-hashes/src/Honua.Server/Migrations/146_AddX.sql.sha256",
+                     "eng/schema/migration-hashes/src/Honua.Db/Postgres/Migrations/009_AddRaster.sql.sha256",
                      n1.RELEASE_BOUNDARY,
                      "scripts/ci/n1-reader-compat.py"):
             self.assertTrue(n1.path_applies(path), path)

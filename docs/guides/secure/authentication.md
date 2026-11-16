@@ -49,6 +49,8 @@ HONUA_ADMIN_PASSWORD=$ADMIN_PASSWORD
 
 This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitoring endpoints). Clients send it in the `X-API-Key` header; failures return `WWW-Authenticate: ApiKey`. Resolve it from a secret manager and rotate it regularly.
 
+Outside Development and Test the server refuses to start without it, unless `Oidc__Enabled=true` and an OIDC provider is fully configured; administrators then sign in through the identity provider. If you keep the password as a break-glass credential next to OIDC, set `Authentication__AdminPassword__LoopbackOnly=true`. The password is then accepted only on a direct loopback connection, from a shell on the host or in the container, on every path that takes it, including `generateToken`. A request that carries a forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP` and similar) is refused even when its address reads as loopback, so a proxy on the same host must set `X-Forwarded-For`. The setting cannot be used on AWS Lambda. A refusal answers like a wrong password, counts as a failed attempt and is logged at Warning with event id `4123`. Managed API keys are not affected. Tokens and sessions minted from the password on the host stay valid from anywhere until they expire, so sign out or let them expire after break-glass use.
+
 ### 2. Create scoped API keys for automation
 
 Don't share the admin password with CI jobs — mint named keys instead:
@@ -149,20 +151,20 @@ policies, field masks and row-level filters apply to wildcard reads exactly as t
 a named `read:` grant. The full grammar is in
 [Users, roles and licensing](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
 
-For a focused read/reject automation client, mint a named key with:
+For a focused proposal-reading automation client, mint a named key with:
 
 ```json
 {
-  "name": "proposal-read-reject",
+  "name": "proposal-reader",
   "permissions": ["admin:read", "admin:approve"],
   "expiresAt": null
 }
 ```
 
-`admin:approve` remains read-level on the general admin surface and permits
-`POST /api/v1/admin/proposals/{proposalId}/reject`. The approval route additionally
-requires a verified interactive human session and private review capability;
-an API key cannot approve. This grant does not permit other mutations. In particular, some read-like workflows use POST and are unavailable
+`admin:approve` remains read-level on the general admin surface. Approving or
+rejecting a proposal requires a verified interactive human session in Console;
+an API key gets 403 on both routes and the refusal is audited as
+`human_session_required`. This grant does not permit other mutations. In particular, some read-like workflows use POST and are unavailable
 to this key: `connections/test`, `external-services/discover`, and
 `import/geoservices/start`. It also grants no service or layer data reads; add
 `read:{service}` or `read:*` grants if the client must read data. This scope
@@ -173,8 +175,7 @@ enforcement. Console users who sign in with an operator bearer
 token are authorized by operator RBAC instead of this API-key recipe.
 
 Approval and execution remain separate authorities. Console uses its private
-verified human session and review capability for approval, retaining ordinary
-read/reject grants for those actions. After approval, Honua
+verified human session for both decisions, and a review capability for approval. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
 method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
 The tenant binding is restored from the persisted credential during authentication
@@ -212,6 +213,13 @@ Successful sign-in sets an opaque HttpOnly, Secure, SameSite=Strict cookie lasti
 to the current identity. Cookie-authenticated writes, bearer issuance, and logout
 require that token in the `X-Honua-CSRF` header. Logout removes the server-side
 session as well as the browser cookie.
+
+An explicit API key or bearer is validated independently when a browser session
+cookie is also present. Successful explicit authentication does not require the
+session's CSRF token for API operations, including gRPC-Web calls. Session sign-in,
+bearer issuance, logout, and provider authorization still enforce browser CSRF
+protection when they use the session. Invalid explicit credentials do not fall
+back to the browser session.
 
 Password sign-in requires HTTPS and accepts the configured administrator password,
 not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
@@ -437,7 +445,7 @@ Redis shares replay registrations across nodes. When a configured Redis connecti
 #### Human operation approval
 
 A pending operation proposal requires one authorized person using a live
-interactive OIDC session in Console. The requester may approve their own proposal.
+interactive browser session (password or OIDC) in Console. The requester may approve their own proposal.
 Sign in to the server that owns the proposal, open its current review, and use
 **Approve**. Existing operation permissions, tenant restrictions and the original
 requester's current authority remain required. API keys, generic or operator
@@ -452,8 +460,10 @@ the session or applicable proposal evidence. Changing environment, changing the
 plan, logging out or losing authority requires a new review. A lost decision
 response requires reading the durable proposal status before deciding again.
 
-Configure the server's canonical `Public:BaseUrl`, the existing OIDC provider,
-and shared protected keys and session storage for replicas. Approval refuses
+Configure the server's canonical `Public:BaseUrl`, password sign-in or an OIDC
+provider, and shared protected keys and session storage for replicas. Approval
+evidence records `console-interactive-password` or `console-interactive-oidc`
+from the stored session's origin. Approval refuses
 when live shared-session authority cannot be verified. Copying bearer claims
 such as an authentication-method or session claim does not create an interactive
 session. Keep capability values, upstream cookies and one-time operation secrets

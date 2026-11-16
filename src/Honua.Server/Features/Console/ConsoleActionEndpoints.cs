@@ -38,7 +38,8 @@ internal static class ConsoleActionEndpoints
         group.MapPost("/check", HandleCheck)
             .WithDisplayName("Check Console Actions")
             .WithSummary("Bulk evaluates whether the requesting principal may perform the supplied actions on a set of content items and/or navigation routes.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithRouteAgentRule("Evaluates permissions and changes nothing.");
     }
 
     private static async Task<Results<Ok<ApiResponse<ConsoleActionCheckResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>> HandleCheck(

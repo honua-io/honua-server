@@ -19,10 +19,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Verifies that the canonical "mysql" name and the "mariadb" alias both resolve to
-/// the MySQL/MariaDB feature provider through <see cref="IFeatureDataProviderRegistry"/>.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MySqlProviderResolutionTests
 {

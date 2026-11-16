@@ -7,17 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet for blocking waits on tasks under <c>src/</c>.
-/// </summary>
-/// <remarks>
-/// Flags <c>GetAwaiter().GetResult()</c>, empty <c>.Wait()</c>, <c>Task.WaitAll</c>,
-/// <c>Task.WaitAny</c>, and reading <c>.Result</c> from a <c>*Task</c> or from an
-/// <c>*Async(...)</c> call. Property reads such as <c>response.Result</c> are not
-/// blocking waits and are left alone. <c>Semaphore.Wait</c> takes arguments, so it
-/// does not match empty <c>.Wait()</c>. Comment lines are ignored. The baseline may
-/// only shrink once it is on trunk.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class SyncOverAsyncRatchetTests
 {

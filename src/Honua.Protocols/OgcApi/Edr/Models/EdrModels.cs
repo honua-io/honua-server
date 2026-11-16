@@ -7,7 +7,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Edr.Models;
 
-/// <summary>OGC API - EDR landing page.</summary>
 internal sealed record EdrLandingPage
 {
     [JsonPropertyName("title")]
@@ -21,14 +20,12 @@ internal sealed record EdrLandingPage
     public required ImmutableArray<Link> Links { get; init; }
 }
 
-/// <summary>OGC API - EDR conformance declaration.</summary>
 internal sealed record EdrConformance
 {
     [JsonPropertyName("conformsTo")]
     public required ImmutableArray<string> ConformsTo { get; init; }
 }
 
-/// <summary>The EDR collections document.</summary>
 internal sealed record EdrCollections
 {
     [JsonPropertyName("collections")]
@@ -38,7 +35,6 @@ internal sealed record EdrCollections
     public required ImmutableArray<Link> Links { get; init; }
 }
 
-/// <summary>An EDR collection: a coverage/datacube exposing position and cube queries.</summary>
 internal sealed record EdrCollection
 {
     [JsonPropertyName("id")]
@@ -69,7 +65,6 @@ internal sealed record EdrCollection
     public required ImmutableDictionary<string, EdrParameter> ParameterNames { get; init; }
 }
 
-/// <summary>The supported EDR query families for a collection.</summary>
 internal sealed record EdrDataQueries
 {
     [JsonPropertyName("position")]
@@ -79,14 +74,12 @@ internal sealed record EdrDataQueries
     public EdrDataQuery? Cube { get; init; }
 }
 
-/// <summary>Metadata for a single EDR query family.</summary>
 internal sealed record EdrDataQuery
 {
     [JsonPropertyName("link")]
     public required EdrQueryLink Link { get; init; }
 }
 
-/// <summary>A link describing an EDR query endpoint.</summary>
 internal sealed record EdrQueryLink
 {
     [JsonPropertyName("href")]
@@ -99,7 +92,6 @@ internal sealed record EdrQueryLink
     public EdrQueryVariables? Variables { get; init; }
 }
 
-/// <summary>Query-type variables for an EDR data query.</summary>
 internal sealed record EdrQueryVariables
 {
     [JsonPropertyName("query_type")]
@@ -109,7 +101,6 @@ internal sealed record EdrQueryVariables
     public required ImmutableArray<string> OutputFormats { get; init; }
 }
 
-/// <summary>An EDR parameter (observed property / coverage range field).</summary>
 internal sealed record EdrParameter
 {
     [JsonPropertyName("type")]
@@ -125,7 +116,6 @@ internal sealed record EdrParameter
     public required EdrObservedProperty ObservedProperty { get; init; }
 }
 
-/// <summary>An EDR unit-of-measurement object.</summary>
 internal sealed record EdrUnit
 {
     [JsonPropertyName("label")]
@@ -135,7 +125,6 @@ internal sealed record EdrUnit
     public string? Symbol { get; init; }
 }
 
-/// <summary>An EDR observed-property descriptor.</summary>
 internal sealed record EdrObservedProperty
 {
     [JsonPropertyName("id")]
@@ -147,7 +136,6 @@ internal sealed record EdrObservedProperty
 
 // ---- CoverageJSON response models (RFC-style, used for position + cube) ----
 
-/// <summary>A CoverageJSON Coverage document returned by position/cube queries.</summary>
 internal sealed record CoverageJson
 {
     [JsonPropertyName("type")]
@@ -163,7 +151,6 @@ internal sealed record CoverageJson
     public required ImmutableDictionary<string, CoverageJsonRange> Ranges { get; init; }
 }
 
-/// <summary>The CoverageJSON domain (axes definition).</summary>
 internal sealed record CoverageJsonDomain
 {
     [JsonPropertyName("type")]
@@ -179,21 +166,18 @@ internal sealed record CoverageJsonDomain
     public required ImmutableArray<CoverageJsonReferencing> Referencing { get; init; }
 }
 
-/// <summary>A CoverageJSON axis (a list of coordinate values).</summary>
 internal sealed record CoverageJsonAxis
 {
     [JsonPropertyName("values")]
     public required ImmutableArray<double> Values { get; init; }
 }
 
-/// <summary>A CoverageJSON temporal axis (a list of ISO-8601 instants).</summary>
 internal sealed record CoverageJsonTimeAxis
 {
     [JsonPropertyName("values")]
     public required ImmutableArray<string> Values { get; init; }
 }
 
-/// <summary>A CoverageJSON referencing-system entry.</summary>
 internal sealed record CoverageJsonReferencing
 {
     [JsonPropertyName("coordinates")]
@@ -203,7 +187,6 @@ internal sealed record CoverageJsonReferencing
     public required CoverageJsonReferenceSystem System { get; init; }
 }
 
-/// <summary>A CoverageJSON reference system.</summary>
 internal sealed record CoverageJsonReferenceSystem
 {
     [JsonPropertyName("type")]
@@ -213,7 +196,6 @@ internal sealed record CoverageJsonReferenceSystem
     public string? Id { get; init; }
 }
 
-/// <summary>A CoverageJSON NdArray range of values for a single parameter.</summary>
 internal sealed record CoverageJsonRange
 {
     [JsonPropertyName("type")]
@@ -232,7 +214,6 @@ internal sealed record CoverageJsonRange
     public required ImmutableArray<double?> Values { get; init; }
 }
 
-/// <summary>Source-generated JSON context for EDR + CoverageJSON wire models.</summary>
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(EdrLandingPage))]
 [JsonSerializable(typeof(EdrConformance))]

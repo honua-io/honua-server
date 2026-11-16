@@ -7,19 +7,15 @@ using SkiaSharp;
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 // Raster legend swatches are a fixed size across every class.
-internal interface IImageServerLegendSwatchBuilder
-{
-    LegendSwatch Render(SKColor color);
-}
-
 internal readonly record struct LegendSwatch(string Base64Png, int Width, int Height);
 
-internal sealed class ImageServerLegendSwatchBuilder : IImageServerLegendSwatchBuilder
+internal sealed class ImageServerLegendSwatchBuilder
 {
     public const int SwatchWidth = 20;
 
     public const int SwatchHeight = 20;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the instance API used by dependency-injected consumers.")]
     public LegendSwatch Render(SKColor color)
     {
         var info = new SKImageInfo(SwatchWidth, SwatchHeight, SKColorType.Rgba8888, SKAlphaType.Premul);

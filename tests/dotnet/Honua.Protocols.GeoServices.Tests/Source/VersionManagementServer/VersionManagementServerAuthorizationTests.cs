@@ -18,28 +18,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// #4423: HTTP-level authorization proof for the VersionManagementServer lifecycle handlers.
-/// <para>
-/// Every VMS route is <c>.AllowAnonymous()</c> at the framework level, so the handler-internal
-/// ownership policy is the only control. Before this file, <c>VersionAccessPolicyTests</c> proved
-/// <c>VersionAccessPolicy.CanManageVersion</c> in isolation and every VMS endpoint test ran
-/// under the F1 development-authentication bypass, which returns an <c>admin</c> principal before
-/// any credential is read. Under that bypass <c>isAdmin</c> is always <see langword="true"/>, so
-/// the non-owner denial branches (BH3-002/003/004, BH6-001) were never executed through
-/// <c>HandleDelete</c>, <c>HandleAlter</c>, <c>HandleReconcile</c>, <c>HandlePost</c> or
-/// <c>HandleInspectConflicts</c>, and nothing proved those handlers call the policy at all.
-/// </para>
-/// <para>
-/// These tests run with <c>HONUA_DEV_AUTH=false</c> and two genuinely non-admin portal
-/// credentials that differ only in principal name. Both hold the service-scoped data-editor role,
-/// so both clear the service write gate — the positive control below proves that by having the
-/// non-owner successfully create and manage a version of its own. What the non-owner cannot do is
-/// touch a version it does not own, and the assertions go past the status: after every denied
-/// attempt the owner re-reads the version and finds its name, access, description and status
-/// unchanged, i.e. the denial produced no mutation.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.VersionManagementServer)]
 public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
@@ -47,12 +25,16 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     private const string ServiceBase =
         "/rest/services/" + WebAppFixture.TestServiceId + "/VersionManagementServer";
 
-    /// <summary>The service-scoped data-editor role (<c>RbacOptions.DataEditorServicePrefix</c>).</summary>
     private const string EditorRole = "data-editor:" + WebAppFixture.TestServiceId;
+
+    // The data-editor role for the renamed branch-versioning publication.
+    private const string PublicationEditorRole = "data-editor:" + BranchVersioningPublicationFixture.ServiceName;
+
+    private const string PublicationLayerBase =
+        "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/FeatureServer/0";
 
     private const string Referer = "https://vms-authorization-proof.example/";
 
-    /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
     private const int GeoServicesTokenRequired = 499;
 
     private readonly WebAppFixture _fixture = new();
@@ -78,10 +60,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// A non-owner, non-admin, service-write-authorized principal is refused by all five
-    /// lifecycle handlers, and the owner's version is unchanged afterwards.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete")]
@@ -174,10 +152,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             "a denied delete/reconcile/post must leave the version active");
     }
 
-    /// <summary>
-    /// A private version is not disclosed to a non-owner by the list or info surfaces, and the
-    /// owner still sees it — the visibility half of the same policy.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions")]
@@ -240,13 +214,78 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         document.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
-    /// <summary>
-    /// #5036: a read session follows the read rule, not the lifecycle rule. A client starts one on
-    /// DEFAULT to open the workspace and on each version it creates or switches to, so a non-owner,
-    /// non-admin reader opens and closes read sessions on DEFAULT and on another owner's public
-    /// version, while another owner's private version stays undisclosed (404, no acknowledgement).
-    /// Edit sessions are not part of that exchange and stay owner-or-admin only.
-    /// </summary>
+    // A protected version is readable by every query caller but takes feature edits only from
+    // its owner: a non-owner editor's applyEdits is refused and writes nothing, while the owner
+    // edits it and the same non-owner still edits a public version of the same owner.
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureEdits_ProtectedVersionOfAnotherOwner_AreDeniedAndWriteNothing()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var protectedVersion = await CreateVersionAsync(
+            _ownerToken, $"protected_edits_{suffix}", "protected-edit-description", access: "protected");
+        var publicVersion = await CreateVersionAsync(
+            _ownerToken, $"public_edits_{suffix}", "public-edit-description", access: "public");
+        var protectedGuid = protectedVersion.GetProperty("versionGuid").GetString()!;
+        var publicGuid = publicVersion.GetProperty("versionGuid").GetString()!;
+
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Create", "Update", "Delete"]);
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        var ownerToken = await IssueAsync("alice", EditorRole, PublicationEditorRole);
+        var nonOwnerToken = await IssueAsync("bob", EditorRole, PublicationEditorRole);
+
+        var deniedMarker = "vprot_denied_" + suffix;
+        using (var denied = await ApplyVersionedAddAsync(nonOwnerToken, deniedMarker, protectedGuid))
+        {
+            await AssertDeniedAsync(denied, "applyEdits");
+        }
+
+        (await VersionedCountAsync(ownerToken, deniedMarker, protectedGuid)).Should().Be(
+            0, "a denied edit must not reach the protected version");
+
+        // Positive controls: the owner edits its protected version, and the non-owner edits a
+        // public version, so the denial above is attributable to ownership of a protected version.
+        var ownerMarker = "vprot_owner_" + suffix;
+        using (var owner = await ApplyVersionedAddAsync(ownerToken, ownerMarker, protectedGuid))
+        {
+            owner.StatusCode.Should().Be(HttpStatusCode.OK, await owner.Content.ReadAsStringAsync());
+        }
+
+        (await VersionedCountAsync(ownerToken, ownerMarker, protectedGuid)).Should().Be(1);
+
+        var publicMarker = "vpub_nonowner_" + suffix;
+        using (var publicEdit = await ApplyVersionedAddAsync(nonOwnerToken, publicMarker, publicGuid))
+        {
+            publicEdit.StatusCode.Should().Be(HttpStatusCode.OK, await publicEdit.Content.ReadAsStringAsync());
+        }
+
+        (await VersionedCountAsync(nonOwnerToken, publicMarker, publicGuid)).Should().Be(1);
+    }
+
+    private Task<HttpResponseMessage> ApplyVersionedAddAsync(string token, string marker, string versionGuid)
+        => PostFormAsync(
+            token,
+            PublicationLayerBase + "/applyEdits",
+            ("adds", JsonSerializer.Serialize(new[]
+            {
+                new { attributes = new Dictionary<string, object?> { ["name"] = marker } },
+            })),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+
+    private async Task<int> VersionedCountAsync(string token, string marker, string versionGuid)
+    {
+        var where = Uri.EscapeDataString($"name='{marker}'");
+        using var response = await GetAsync(
+            token,
+            $"{PublicationLayerBase}/query?where={where}&returnCountOnly=true&gdbVersion={versionGuid}&f=json");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("count").GetInt32();
+    }
+
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
@@ -323,10 +362,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// With the development bypass off, an unauthenticated caller reaches no VMS lifecycle
-    /// operation and learns nothing about the versions that exist.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
@@ -500,13 +535,16 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             operation);
     }
 
-    private async Task<string> IssueAsync(string principalId)
+    private Task<string> IssueAsync(string principalId)
+        => IssueAsync(principalId, EditorRole);
+
+    private async Task<string> IssueAsync(string principalId, params string[] roles)
         => (await _fixture.GetService<IPortalTokenIssuer>().IssueAsync(
             new PortalTokenIssueRequest(
                 principalId,
                 principalId,
                 TenantId: null,
-                Roles: [EditorRole],
+                Roles: roles,
                 PortalTokenClientType.Referer,
                 Referer,
                 DateTimeOffset.UtcNow.AddMinutes(30)),

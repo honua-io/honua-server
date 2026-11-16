@@ -10,12 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// A saved graph that omits (or nulls) its optional maps must read back with empty maps, never
-/// <c>null</c>: the domain types declare them non-nullable. Source-generated System.Text.Json
-/// assigns <c>default</c> to omitted init-only members of records with required members, which
-/// previously overwrote the empty-map initializers.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
 public sealed class WorkflowGraphJsonNullMapTests

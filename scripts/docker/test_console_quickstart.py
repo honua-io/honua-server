@@ -35,6 +35,22 @@ class ConsoleLifecycleTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual(0, rendered.returncode, rendered.stderr)
             self.assertEqual(CONSOLE_WEB_IMAGE, json.loads(rendered.stdout)['services']['console']['image'])
 
+    def test_console_profile_keeps_customer_override_order(self):
+        # Customer overrides listed after the Console overlay must keep winning on every run.
+        customer = 'compose.yaml:compose.executor.yaml:compose.console.yaml:compose.customer.yaml:compose.executor.image.yaml'
+        with patch.object(compose_quickstart, 'console_image_settings', return_value={}):
+            unchanged = compose_quickstart.console_profile_settings(
+                None, None, dict(COMPOSE_FILE=customer, COMPOSE_PROFILES='console'))
+            added = compose_quickstart.console_profile_settings(
+                None, None, dict(COMPOSE_FILE='compose.yaml:compose.executor.yaml:compose.customer.yaml:'
+                                 'compose.executor.image.yaml'))
+            bare = compose_quickstart.console_profile_settings(None, None, dict(COMPOSE_FILE='compose.yaml'))
+
+        self.assertNotIn('COMPOSE_FILE', unchanged)
+        self.assertEqual(customer, added['COMPOSE_FILE'])
+        self.assertEqual('console', added['COMPOSE_PROFILES'])
+        self.assertEqual('compose.yaml:compose.console.yaml', bare['COMPOSE_FILE'])
+
     def test_console_files_are_readable_by_the_web_server_after_a_private_extract(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare_console(Path(directory))

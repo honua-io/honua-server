@@ -11,22 +11,8 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// Shared GeoJSON page-fetch + feature-projection helper for the HTTP DAG source
-/// connectors (<c>source.ogc-features</c>, <c>source.wfs</c>). Reuses the migration
-/// <see cref="MigrationHttpContentReader"/> body-size ceiling so the bounded-buffer
-/// SSRF-mitigation posture matches the import scanners. Parses a GeoJSON
-/// FeatureCollection page and projects each member onto <see cref="DagSourceFeature"/>
-/// (geometry re-serialised as a GeoJSON geometry string, properties flattened to a
-/// scalar attribute map).
-/// </summary>
 internal static class GeoJsonPageReader
 {
-    /// <summary>
-    /// Fetches a GeoJSON document from <paramref name="url"/> and returns the parsed
-    /// page: the projected features, an optional <c>numberMatched</c> total, and the
-    /// raw first-feature text used to detect a non-advancing server.
-    /// </summary>
     public static async Task<GeoJsonPage> FetchPageAsync(
         HttpClient httpClient,
         Uri url,
@@ -145,7 +131,6 @@ internal static class GeoJsonPageReader
     }
 }
 
-/// <summary>A single parsed GeoJSON page from a paginated HTTP source.</summary>
 internal sealed record GeoJsonPage(
     IReadOnlyList<DagSourceFeature> Features,
     string? FirstFeatureRaw,

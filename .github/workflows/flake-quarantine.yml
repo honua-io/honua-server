@@ -2,9 +2,6 @@ name: Publish Flaky Test Quarantine
 run-name: Quarantine evidence sweep
 
 on:
-  workflow_run:
-    workflows: [CI, PR Gate]
-    types: [completed]
   schedule:
     - cron: '17,47 * * * *'
   workflow_dispatch:
@@ -16,13 +13,9 @@ permissions:
 
 jobs:
   publish:
-    if: >-
-      github.ref_name == github.event.repository.default_branch && (
-      github.event_name != 'workflow_run' || (
-        github.event.workflow_run.head_repository.full_name == github.repository &&
-        contains(fromJson('["success","failure"]'), github.event.workflow_run.conclusion)))
-    # Filter cancelled/fork completions before admission. One pending sweep
-    # replaces older pending sweeps; each discovers all unpublished evidence.
+    if: github.ref_name == github.event.repository.default_branch
+    # Two scheduled sweeps per hour amortize full history discovery. One pending
+    # sweep replaces older pending sweeps; manual dispatch also reconciles backlog.
     concurrency:
       group: publish-flaky-test-quarantine
       cancel-in-progress: false

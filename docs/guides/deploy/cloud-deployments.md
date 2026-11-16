@@ -41,8 +41,6 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 | AWS ECS/Fargate + ALB | Certified rc.2 target | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
 | AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
 | Kubernetes (EKS/AKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
-| Azure Container Apps | Not offered in 2026.1 | Steady traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
-| Azure Functions | Not offered in 2026.1 | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) | `azure-functions` |
 
 2026.1 certifies `x86_64` only. arm64 images, including `*-lambda-aot-arm64`, are unsupported. Preview patterns stay available for evaluation and are outside GA operational, SLA, and scale commitments. A tier label does not remove routes or change authorization.
 
@@ -51,7 +49,7 @@ for the managed PostGIS, and `observability-stack`.
 
 Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the chiseled JIT image with PostGIS as its only database store. Unsuffixed generic release and nightly tags select that image. Native AOT is a separate, optional `-aot` variant; its promotion requires suite and live-journey parity evidence. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
 
-Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot`, `*-lambda-aot`, and `*-functions-aot` select Native AOT. The shorter `*-ecs`, `*-lambda`, and `*-functions` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
+Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot` and `*-lambda-aot` select Native AOT. The shorter `*-ecs` and `*-lambda` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
 
 The Native-AOT serving-image boundary excludes GDAL/OGR CLI, native GDAL/PROJ/GEOS libraries, and .NET GDAL bindings from the AOT web images. PostGIS may use its own database-side GDAL support, and native raster/ETL jobs may use the independently built `honua-worker-etl` image; neither dependency is copied into the web container.
 
@@ -124,17 +122,17 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 - Use the generic web image at the release digest (mirrored to ECR if your account requires it), with the task definition's `runtimePlatform.cpuArchitecture` set to `X86_64`; container ports 8080 (HTTP) and 8081 (h2c gRPC).
 - Health checks: ALB target group on `/healthz/ready`; container health on `/healthz/live`.
 - Inject secrets via ECS task-definition `secrets` from Secrets Manager or SSM Parameter Store.
-- Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file.
-- Behind CloudFront with a VPC origin to an internal ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, and trust it only from the VPC:
+- Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file. Where no certificate can be created, set `Operations__SecretChannel__KeyRingSecret` instead to a random secret of at least 43 characters (for example a Secrets Manager generated string injected through task-definition `secrets`). Keep that secret for the life of the database and restore it with every database restore: a ring wrapped with one secret cannot be read with another, so turn secret rotation off; the server refuses to use the ring and names both fingerprints when they differ. A build older than this setting cannot start on a secret-only install, so application rollback past it needs a certificate-based install. When a certificate is also configured it keeps wrapping new keys, and keys wrapped with either stay readable. Retain that certificate and its private key while certificate-wrapped keys remain: setting `KeyRingSecret` does not rewrap existing keys, and startup refuses a secret-only configuration for such a ring.
+- Behind CloudFront to an ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, set the ALB's `routing.http.xff_header_processing.mode` attribute to `preserve`, and trust forwarded headers only from the VPC. The ALB must be reachable only through CloudFront: use an internal ALB behind a CloudFront VPC origin, or protect a public ALB with both a security group admitting only the `com.amazonaws.global.cloudfront.origin-facing` prefix list and a secret origin header set by your distribution. For the public ALB, forward to the target group only when the listener matches that secret header; the default listener action must return `403`. Keep the header name and value secret, and use HTTPS from CloudFront to the public ALB to protect them in transit. The prefix list admits every CloudFront distribution, so it cannot authenticate your distribution on its own. Follow [AWS's origin access guidance](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html) before trusting these headers:
 
   ```bash
   ForwardedHeaders__Enabled=true
-  ForwardedHeaders__ForwardLimit=2
+  ForwardedHeaders__ForwardLimit=1
   ForwardedHeaders__ProtoHeaderName=CloudFront-Forwarded-Proto
   ForwardedHeaders__KnownNetworks__0=10.0.0.0/16   # the VPC CIDR; ALB node addresses change
   ```
 
-  The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
+  The limit is one hop. CloudFront appends the viewer address to `X-Forwarded-For`, and with `preserve` the ALB passes that header on unchanged, so the last entry is the viewer and the immediate peer is the ALB inside the VPC. The server takes that last entry and ignores any addresses the viewer sent itself. With the ALB's default `append` mode the ALB adds the address CloudFront connected from. For a public ALB that is a CloudFront origin-facing address outside the VPC range, so the server would report CloudFront as the client; `preserve` with one hop works for public and VPC-origin ALBs alike.
 
   Do not forward the viewer's `X-Forwarded-Host` in the origin request policy: neither CloudFront nor the ALB overwrites it, and the server applies it from a trusted hop. Set `Public__BaseUrl` (and `HostValidation__AllowedHosts__<n>` if you list hosts) to the distribution's host.
 
@@ -326,30 +324,6 @@ To let the proxy multiplex, move the settings onto the database role and tell Ho
 At startup, in `role-defaults` mode, Honua reads the effective values once and logs a warning (event 5870) for each setting that is unset or differs from `Limits__Connections__*`, with the exact `ALTER ROLE` statement to run. It never fails startup over this and never runs `ALTER ROLE` itself. `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` reports the mode, the verification result (`verified`, `mismatch`, `pending` or `unavailable`) and the same statements under `databaseSessionSettings`. The mode covers the `DefaultConnection` data source only: named secure connections (`Database__SecureConnection__Name`), source-bound data sources, migrations and the PostGIS preflight still set their own values. With schema-per-tenant routing (`MultiTenancy__SchemaRouting__Enabled=true`) Honua still sets `search_path` per request, which pins.
 
 See [Connection poolers and proxies](../../reference/configuration/data-sources/postgis.md#connection-poolers-and-proxies-rds-proxy-pgbouncer).
-
-## Azure Container Apps
-
-- Use the generic web image (`ghcr.io/honua-io/honua-server` at a pinned digest or dated `nightly-YYYYMMDD` tag until the first release; `latest` afterwards); it is native AOT. The `latest-aot` alias is retained for compatibility.
-- Configure secrets as Container Apps secrets referenced from env vars; ingress handles TLS.
-- Rollouts use revision traffic splitting: immediate cutover or canary percentage, driven by the deploy backend `honua-azure-container-apps-revision` with a telemetry gate.
-
-```bash
-az containerapp update --name honua-prod --resource-group honua \
-  --image ghcr.io/honua-io/honua-server:nightly-YYYYMMDD
-```
-
-## Azure Functions
-
-Functions production images are built from [`docker/Dockerfile.functions.aot`](../../../docker/Dockerfile.functions.aot) (amd64); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.functions`](../../../docker/Dockerfile.functions). The Functions host shim lives in [`docker/cloud`](../../../docker/cloud).
-
-- Use the `vX.Y.Z-functions-aot` tag from ACR as a custom container.
-- Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band, as with Lambda.
-- Rollouts are atomic staging-slot swaps via the deploy backend `honua-gitops-azure-functions`; a post-swap telemetry breach triggers an automatic reverse swap.
-
-```bash
-az functionapp config container set --name honua-prod --resource-group honua \
-  --image honuaprod.azurecr.io/honua-server:v1.2.3-functions-aot
-```
 
 ## Ops control plane and batch-compute backends
 

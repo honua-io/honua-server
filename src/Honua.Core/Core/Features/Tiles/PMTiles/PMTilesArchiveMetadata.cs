@@ -30,6 +30,9 @@ public sealed record PMTilesArchiveMetadata
     public string? Description { get; init; }
 
     public IReadOnlyList<PMTilesVectorLayerMetadata> VectorLayers { get; init; } = [];
+
+    // Extra top-level string members of the archive's JSON metadata, written after the standard ones.
+    public IReadOnlyDictionary<string, string> Extensions { get; init; } = new Dictionary<string, string>();
 }
 
 public sealed record PMTilesVectorLayerMetadata

@@ -47,10 +47,10 @@ Besides the progress fields (`status`, `featuresProcessed`, `currentPhase`, `err
 
 | Field | Value |
 |---|---|
-| `runner` | `batch`: a batch-compute execution worker (AWS Batch on `aws-serverless`) runs the import. `in-process`: a long-lived server process runs it, either the job worker of any replica (Redis on) or the server that accepted the upload (Redis off). Absent on jobs recorded before 2026.1. |
+| `runner` | `batch`: a batch-compute execution worker (AWS Batch on `aws-serverless`) runs the import. `in-process`: a long-lived server process runs it, either the job worker of any replica (durable job store available) or the server that accepted the upload (no durable job store). Absent on jobs recorded before 2026.1. |
 | `instanceId` | The `Honua-Instance` identity of the process running the import; for `batch`, the AWS Batch job id when the worker runs on AWS Batch. Until a worker picks up a queued job, the instance that accepted the upload. |
 
-With a durable runner the job document is stored in Redis, so it survives a restart of the server that accepted the upload. If the worker stops before it records an outcome (crash, timeout, cancellation, or a rejected batch submission), the status reflects the durable job's terminal state instead of staying `processing`. A host that cannot run background imports answers `503 Background import service not available` on the upload; the `import.background` capability states the runner (`batch`, `in-process` or `unavailable`) and, when unavailable, the cause in `reasonCode`.
+With a durable runner the job is stored in the system PostgreSQL database, so it survives a restart of the server that accepted the upload. If the worker stops before it records an outcome (crash, timeout, cancellation, or a rejected batch submission), the status reflects the durable job's terminal state instead of staying `processing`. A host that cannot run background imports answers `503 Background import service not available` on the upload; the `import.background` capability states the runner (`batch`, `in-process` or `unavailable`) and, when unavailable, the cause in `reasonCode`.
 
 ## Migration scan
 
@@ -153,7 +153,7 @@ Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif`, `layer
 | POST | `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | Cancel a tile operation job |
 | POST | `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | Retry a tile operation job |
 
-Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`. The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. See [Publish tiles](../../guides/publish/publish-tiles.md).
+Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`. The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. `paired-publish` writes a PMTiles and GeoParquet pair from one capture, with a publication descriptor, and reports it as `publishedPublication`. See [Publish tiles](../../guides/publish/publish-tiles.md).
 
 Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"seed","layerId":42,"minZoom":0,"maxZoom":12}`.
 

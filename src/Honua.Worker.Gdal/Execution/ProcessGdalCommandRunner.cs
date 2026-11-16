@@ -11,12 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Production <see cref="IGdalCommandRunner"/> that invokes the GDAL/OGR CLI
-/// tools as child processes. The tools are provided by the GDAL base image the
-/// worker container is built from; this runner does not bundle managed GDAL
-/// bindings so it adds no native package dependencies to any managed assembly.
-/// </summary>
 internal sealed partial class ProcessGdalCommandRunner(
     IOptions<GdalHardeningOptions> hardening,
     IOptions<AwsS3Options> s3Options,
@@ -43,7 +37,6 @@ internal sealed partial class ProcessGdalCommandRunner(
         "AZURE_TENANT_ID"
     ];
 
-    /// <inheritdoc />
     public async Task<GdalCommandResult> RunAsync(
         string tool,
         IReadOnlyList<string> arguments,
@@ -69,18 +62,18 @@ internal sealed partial class ProcessGdalCommandRunner(
             startInfo.ArgumentList.Add(argument);
         }
 
-        // Harden every GDAL subprocess (#2765): skip the indirection/network drivers
+        // Harden every GDAL subprocess: skip the indirection/network drivers
         // (VRT, WMS, …) and — for a pure local-scratch invocation — neutralize the
         // remote virtual-filesystem handlers. Applied by overwriting the inherited
         // environment so a value set on the worker process cannot weaken the policy.
-        var referencesRemoteVsi = GdalRuntimeHardening.ArgumentsReferenceVsi(arguments);
+        var remoteInputs = GdalRemoteInputScope.Classify(arguments);
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            referencesRemoteVsi,
+            remoteInputs.Remote,
             s3Options.Value,
             azureOptions.Value,
-            GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
-            GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
+            remoteInputs.S3,
+            remoteInputs.Azure);
         ApplyHardenedEnvironment(
             startInfo.Environment,
             hardeningEnv,

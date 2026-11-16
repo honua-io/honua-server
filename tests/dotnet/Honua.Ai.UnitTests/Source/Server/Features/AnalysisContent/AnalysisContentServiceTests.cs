@@ -30,7 +30,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -120,7 +119,8 @@ public sealed class AnalysisContentServiceTests
             Substitute.For<IGeoprocessingJobService>(),
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         var exception = await Assert.ThrowsAsync<AnalysisContentValidationException>(() =>
             sut.CreateItemAsync(
@@ -151,7 +151,8 @@ public sealed class AnalysisContentServiceTests
             Substitute.For<IGeoprocessingJobService>(),
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         var exception = await Assert.ThrowsAsync<AnalysisContentValidationException>(() =>
             sut.CreateItemAsync(
@@ -192,7 +193,8 @@ public sealed class AnalysisContentServiceTests
             Substitute.For<IGeoprocessingJobService>(),
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         var result = await sut.AddVersionAsync(
             ConflictOnceAnalysisContentStore.ItemId,
@@ -284,14 +286,14 @@ public sealed class AnalysisContentServiceTests
     [Operation(Operations.JobStatus)]
     public async Task GetJobLogsAsync_WhenLogStoreUnavailable_ThrowsStoreUnavailable()
     {
-        // A Redis-backed log store outage must surface as the documented retryable 503
+        // A log store outage must surface as the documented retryable 503
         // (AnalysisContentStoreUnavailableException), not a generic 500.
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-logs", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(CreateFailedJob("job-logs", "validation failed"));
         var logStore = Substitute.For<IExecutionLogStore>();
         logStore.TailAsync("job-logs", Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+            .Throws(new Npgsql.NpgsqlException("database unavailable"));
         var sut = CreateService(jobService: jobService, logStores: [logStore]);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -322,7 +324,7 @@ public sealed class AnalysisContentServiceTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+            .Throws(new Npgsql.NpgsqlException("database unavailable"));
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -503,7 +505,8 @@ public sealed class AnalysisContentServiceTests
             jobService,
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         await Assert.ThrowsAsync<GeoprocessingAuthorizationException>(
             () => sut.SubmitAnalysisPackageAsync(
@@ -657,7 +660,8 @@ public sealed class AnalysisContentServiceTests
             jobs,
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
     private static ExecutionJobRecord JobFromMetadata(IReadOnlyDictionary<string, string>? metadata)
     {
@@ -726,7 +730,8 @@ public sealed class AnalysisContentServiceTests
             jobService ?? Substitute.For<IGeoprocessingJobService>(),
             logStores ?? Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
     private static ClaimsPrincipal Principal() => new(new ClaimsIdentity("Test"));
 

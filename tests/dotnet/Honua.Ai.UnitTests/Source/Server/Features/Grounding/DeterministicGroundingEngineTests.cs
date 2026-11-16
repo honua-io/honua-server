@@ -12,11 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Unit tests for the deterministic workflow-family classifier and the
-/// weighted bag-of-lemma candidate ranker. These pin the canonical outputs the
-/// conformance harness (honua-server-734) replays against fixtures.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class DeterministicGroundingEngineTests
 {

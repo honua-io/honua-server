@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.DataEnrichment.Models;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
@@ -10,16 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression coverage for the minimal-API JSON resolver wiring (<see cref="JsonContextRegistration"/>).
-/// At startup ASP.NET's RequestDelegate source generator eagerly resolves a
-/// <c>JsonTypeInfo</c> for every <c>[FromBody]</c> parameter against the configured HTTP JSON
-/// options; if a feature's source-generated context is not part of the registered resolver the
-/// host throws a fatal <see cref="System.NotSupportedException"/> while building the endpoints,
-/// taking the whole application down. These tests exercise the exact registration path the app
-/// uses (no Docker / no test host) so a missing context is caught as a fast unit failure rather
-/// than a startup crash in every integration shard.
-/// </summary>
 public sealed class JsonContextRegistrationTests
 {
     private static Microsoft.AspNetCore.Http.Json.JsonOptions BuildConfiguredHttpJsonOptions()
@@ -46,6 +37,17 @@ public sealed class JsonContextRegistrationTests
             .Should().NotBeNull("the enrichment update-dataset [FromBody] type must be in the configured HTTP JSON resolver");
         serializerOptions.GetTypeInfo<EnrichmentDatasetMetadata>()
             .Should().NotBeNull("the enrichment dataset response body must be serializable through the configured HTTP JSON resolver");
+    }
+
+    [UnitTest]
+    public void AddHonuaJsonContexts_ResolvesLocalProcessRequestBodies()
+    {
+        var serializerOptions = BuildConfiguredHttpJsonOptions().SerializerOptions;
+
+        serializerOptions.GetTypeInfo<LocalProcessBindRequest>().Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessSourceWrite>().Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessSnapshotRequest>().Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessRunRequest>().Should().NotBeNull();
     }
 
     [UnitTest]

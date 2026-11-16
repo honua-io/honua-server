@@ -27,17 +27,6 @@ using WireMock.Server;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// End-to-end OIDC bearer-token validation (honua-server#2945). Every previous "proving" test
-/// for identity.oidc only exercised CRUD on <c>InMemoryOidcProviderStore</c> — no test signed a
-/// real JWT or drove it through the actual JwtBearer pipeline, so a broken/no-op validator would
-/// ship undetected. This stands up a fake in-process IdP (WireMock discovery document + JWKS
-/// endpoint, RSA-signed tokens) and drives real bearer tokens through a protected admin endpoint
-/// (<c>GET /api/v1/admin/oidc/providers</c>, gated by <c>AuthenticationExtensions.AdminPolicy</c>,
-/// which <see cref="Honua.Infrastructure.Authentication.OidcAuthenticationExtensions.AddOidcAuthorization"/>
-/// extends to accept the Composite/JwtBearer scheme once OIDC is enabled) to prove accept-valid /
-/// reject-expired / reject-wrong-issuer / reject-wrong-audience / reject-tampered-signature.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
@@ -307,19 +296,13 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
-    public async Task ProposalDecision_SignedAdminWithPublishScope_RejectsButCannotApprove()
+    public async Task ProposalDecision_SignedAdminWithPublishScope_CannotDecideWithoutHumanSession()
     {
         foreach (var action in new[] { "approve", "reject" })
         {
             foreach (var scope in new[] { "honua.mcp.publish", "honua.mcp.full" })
             {
                 var proposal = PrepareProposal();
-                _proposalGateway.ApplyApprovedProposalAsync(proposal.ProposalId,
-                    Arg.Any<OperationProposalApprovalContext>(), Arg.Any<CancellationToken>())
-                    .Returns(proposal with { Status = OperationProposalStatus.Succeeded });
-                _proposalGateway.RejectProposalAsync(proposal.ProposalId, Arg.Any<string>(),
-                    Arg.Any<string>(), Arg.Any<CancellationToken>())
-                    .Returns(proposal with { Status = OperationProposalStatus.Rejected });
                 using var client = _fixture.CreateClient();
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
                     "Bearer", CreateToken(scope: scope, tenant: "public"));
@@ -327,18 +310,12 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                     $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
                     new { reason = "authorized decision" });
 
-                if (action == "approve")
-                {
-                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-                    _proposalGateway.ReceivedCalls().Should().BeEmpty();
-                    (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
-                }
-                else
-                {
-                    response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-                    _proposalGateway.ReceivedCalls().Should().ContainSingle();
-                    _proposalGateway.ReceivedCalls().Single().GetMethodInfo().Name.Should().Be("RejectProposalAsync");
-                }
+                // A bearer token is not a human session, so neither decision reaches the gateway.
+                var body = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+                body.Should().Contain("live interactive browser session", $"{scope} must be refused for the transport, not the scope");
+                _proposalGateway.ReceivedCalls().Should().BeEmpty();
+                (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
             }
         }
     }
@@ -355,12 +332,6 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 foreach (var scope in new[] { "honua.mcp.read", "honua.mcp.publish", "honua.mcp.rollback", "honua.mcp.full" })
                 {
                     var proposal = PrepareProposal(operationId, OperationClass.Deploy, "deploy.rollback");
-                    _proposalGateway.ApplyApprovedProposalAsync(proposal.ProposalId,
-                        Arg.Any<OperationProposalApprovalContext>(), Arg.Any<CancellationToken>())
-                        .Returns(proposal with { Status = OperationProposalStatus.Succeeded });
-                    _proposalGateway.RejectProposalAsync(proposal.ProposalId, Arg.Any<string>(),
-                        Arg.Any<string>(), Arg.Any<CancellationToken>())
-                        .Returns(proposal with { Status = OperationProposalStatus.Rejected });
                     using var client = _fixture.CreateClient();
                     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
                         "Bearer", CreateToken(scope: scope, tenant: "public"));
@@ -368,22 +339,19 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                         $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
                         new { reason = "legacy rollback scope boundary" });
 
-                    if (action == "reject" && (scope is "honua.mcp.rollback" or "honua.mcp.full"))
+                    var body = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{scope} cannot {action} a rollback: {body}");
+                    if (scope is "honua.mcp.rollback" or "honua.mcp.full")
                     {
-                        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-                        _proposalGateway.ReceivedCalls().Should().ContainSingle();
-                        _proposalGateway.ReceivedCalls().Single().GetMethodInfo().Name.Should().Be(
-                            action == "approve" ? "ApplyApprovedProposalAsync" : "RejectProposalAsync");
+                        // The scope admits the decision; the bearer transport is what refuses it.
+                        body.Should().Contain("live interactive browser session");
                     }
-                    else
-                    {
-                        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{scope} cannot {action} a rollback");
-                        _proposalGateway.ReceivedCalls().Should().BeEmpty();
-                        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
-                        proposal.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
-                        proposal.ResolvedAt.Should().BeNull();
-                        _proposalStore.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name == "GetAsync");
-                    }
+
+                    _proposalGateway.ReceivedCalls().Should().BeEmpty();
+                    (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
+                    proposal.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+                    proposal.ResolvedAt.Should().BeNull();
+                    _proposalStore.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name == "GetAsync");
                 }
             }
         }
@@ -412,12 +380,6 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         return proposal;
     }
 
-    /// <summary>
-    /// Mints an RSA-signed JWT. Defaults describe a fully valid token (correct issuer/audience,
-    /// live validity window, real signature, an "admin" role claim so accept-valid isolates JWT
-    /// trust-chain validation from the separate role/authorization check) — callers override only
-    /// the dimension under test.
-    /// </summary>
     private string CreateToken(
         string? issuer = null,
         string? audience = null,

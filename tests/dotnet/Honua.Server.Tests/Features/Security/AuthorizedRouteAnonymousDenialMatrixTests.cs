@@ -15,15 +15,6 @@ using Microsoft.AspNetCore.Routing.Patterns;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Anonymous column of the route authorization matrix. Every deployed route that carries endpoint
-/// authorization metadata (as classified by <see cref="RouteAuthorizationInventoryGuardTests"/>) is
-/// requested with no credentials against a host with the development auth bypass disabled, and must
-/// answer <c>401 Unauthorized</c> (or, on ArcGIS REST/Portal sharing routes, the protocol-native
-/// HTTP 200 <c>error.code 499</c> "token required" envelope). The denominator is the live endpoint data source, so a new protected
-/// route is covered automatically, method-agnostic routes are requested with both GET and POST, and a
-/// route whose metadata is not actually enforced fails here.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.TestQuality)]
@@ -41,21 +32,19 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
         });
 
-    /// <inheritdoc />
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
-    /// <inheritdoc />
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     // Cross-cutting: the denominator is every endpoint-authorized route in the live route table. The
     // [Endpoint] entries name representative routes this test drives that have no other anonymous proof:
-    // the SignalR admin hub (method-agnostic) and the introspection route (ArcGIS 499 envelope).
+    // the admin SSE stream and the introspection route (ArcGIS 499 envelope).
     [IntegrationTest]
-    [Endpoint("GET /hubs/admin")]
+    [Endpoint("GET /api/v1/admin/live")]
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task EveryAuthorizedRoute_AnonymousCaller_Returns401()
     {
-        // Method-agnostic endpoints (no HttpMethodMetadata: SignalR hub transport and negotiate, /metrics)
+        // Method-agnostic endpoints (no HttpMethodMetadata: /metrics)
         // are expanded into concrete GET and POST requests, not skipped. The gRPC unimplemented-method
         // catch-all only matches gRPC requests, so it is sent as an application/grpc POST.
         var routes = RouteAuthorizationInventoryGuardTests.ClassifyDeployedRoutes(_fixture.Services)
@@ -99,10 +88,6 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
             string.Join('\n', failures));
     }
 
-    /// <summary>
-    /// ArcGIS REST and Portal sharing surfaces report authentication failures in their native wire envelope:
-    /// HTTP 200 carrying <c>{"error":{"code":499,...}}</c> ("token required"). That is the protocol's 401.
-    /// </summary>
     private static bool IsGeoServicesTokenRequired(string pattern, HttpResponseMessage response, string body)
     {
         if (response.StatusCode != HttpStatusCode.OK
@@ -128,10 +113,6 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
     private static bool IsGrpcUnimplementedCatchAll(string pattern)
         => pattern.Contains(":grpcunimplemented}", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Builds a request body in the content type the endpoint accepts, so routing selects the endpoint and
-    /// authorization runs instead of a 415 from content-type matching.
-    /// </summary>
     private static HttpContent CreateBody(string? acceptsContentType)
     {
         if (acceptsContentType is not null && acceptsContentType.StartsWith("multipart/", StringComparison.OrdinalIgnoreCase))

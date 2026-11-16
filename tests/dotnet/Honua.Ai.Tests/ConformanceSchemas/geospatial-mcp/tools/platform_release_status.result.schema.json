@@ -43,8 +43,8 @@
       "required": ["id", "projectedFromRelease", "skewed"],
       "properties": {
         "id": { "type": "string" },
-        "runtimeProfile": { "type": "string" },
-        "effectiveArtifactReference": { "type": "string" },
+        "runtimeProfile": { "type": ["string", "null"] },
+        "effectiveArtifactReference": { "type": ["string", "null"] },
         "projectedFromRelease": { "type": "boolean" },
         "skewed": { "type": "boolean" }
       }

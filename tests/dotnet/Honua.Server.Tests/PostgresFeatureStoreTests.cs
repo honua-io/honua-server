@@ -22,9 +22,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for PostgresFeatureStore using real PostgreSQL database.
-/// </summary>
 [Collection("Database.CoreFeatureStore")]
 [Protocol(ProtocolNames.Infrastructure)]
 public class PostgresFeatureStoreTests : IAsyncLifetime
@@ -579,14 +576,6 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.False(result.HasErrors);
     }
 
-    /// <summary>
-    /// honua-server#4406: the previous body of this test carried two <em>valid</em> creates on both
-    /// paths and asserted <c>WasRolledBack == false</c> twice, so it was a happy-path create test
-    /// wearing a rollback name — a genuinely broken rollback could not have failed it. It now
-    /// includes an operation that must fail (an update of an object id that does not exist), so
-    /// the two <c>rollbackOnFailure</c> paths are distinguished by what they leave in the database:
-    /// all-or-nothing discards the sibling create, partial-commit keeps it.
-    /// </summary>
     [Fact]
     public async Task ApplyEditsAsync_WithRollbackOnFailure_DiscardsTheSiblingCreate()
     {
@@ -617,11 +606,6 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Empty(survivors.Items);
     }
 
-    /// <summary>
-    /// The contrasting half of <see cref="ApplyEditsAsync_WithRollbackOnFailure_DiscardsTheSiblingCreate"/>:
-    /// with <c>rollbackOnFailure=false</c> the same batch commits the create the failing update
-    /// would otherwise have discarded. Together the two tests prove the flag changes behaviour.
-    /// </summary>
     [Fact]
     public async Task ApplyEditsAsync_WithoutRollbackOnFailure_KeepsTheSiblingCreate()
     {

@@ -134,8 +134,8 @@ internal static class ImageServerSensorModel
                 }
 
                 double? referenceZ = TryGetDouble(referenceElement, "z", out var z) ? z : null;
-                var referenceSrid = ReadWkid(referenceElement) ?? defaultReferenceSrid;
-                var imageSrid = ReadWkid(imageElement);
+                var referenceSrid = ImageServerGeometryHelpers.ReadWkid(referenceElement) ?? defaultReferenceSrid;
+                var imageSrid = ImageServerGeometryHelpers.ReadWkid(imageElement);
 
                 points.Add(new PhotogrammetricControlPoint(
                     imageX, imageY, imageSrid,
@@ -248,30 +248,6 @@ internal static class ImageServerSensorModel
 
         value = default;
         return false;
-    }
-
-    private static int? ReadWkid(JsonElement element)
-    {
-        if (!element.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (sr.TryGetProperty("latestWkid", out var latest) &&
-            latest.ValueKind == JsonValueKind.Number &&
-            latest.TryGetInt32(out var latestWkid))
-        {
-            return latestWkid;
-        }
-
-        if (sr.TryGetProperty("wkid", out var wkid) &&
-            wkid.ValueKind == JsonValueKind.Number &&
-            wkid.TryGetInt32(out var wkidValue))
-        {
-            return wkidValue;
-        }
-
-        return null;
     }
 
     private static bool TryReadAny(JsonElement root, out double value, params string[] names)

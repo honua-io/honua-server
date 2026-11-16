@@ -71,6 +71,20 @@ public sealed class ZstdCodecTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void Decompress_EmptyPayload_ReturnsEmpty()
+        => ZstdCodec.Decompress([], 1_024).Should().BeEmpty();
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Decompress_CompressedEmptyFrame_ReturnsEmpty()
+    {
+        var framed = ZstdCodec.Compress([], CompressionLevel.Optimal);
+
+        ZstdCodec.Decompress(framed, 0).Should().BeEmpty();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void Decompress_CorruptPayload_ThrowsInvalidData()
     {
         var framed = ZstdCodec.Compress(Sample(4_096), CompressionLevel.Optimal);

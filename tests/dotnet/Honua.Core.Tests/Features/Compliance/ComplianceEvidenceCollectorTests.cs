@@ -11,12 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="DefaultComplianceEvidenceCollector"/> — covers the
-/// "SOC 2 evidence collection can gather automated control evidence from server
-/// audit and configuration state" and "dependencies are explicit and enforced"
-/// acceptance criteria for #352.
-/// </summary>
 public sealed class ComplianceEvidenceCollectorTests
 {
     [Trait("Tier", "Fast")]

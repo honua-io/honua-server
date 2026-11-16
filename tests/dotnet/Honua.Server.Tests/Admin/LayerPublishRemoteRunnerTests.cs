@@ -19,7 +19,6 @@ using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using ProgressStatus = Honua.Core.Features.Infrastructure.Domain.OperationStatus;
 
@@ -281,7 +280,7 @@ public sealed class LayerPublishRemoteRunnerTests
                 services.AddSingleton<IExecutionJobStore>(Jobs);
                 services.AddSingleton(Queue);
             }
-            services.AddSingleton<IUniversalProgressStore>(new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance));
+            services.AddSingleton<IUniversalProgressStore>(new UniversalProgressStore());
             services.AddSingleton(Substitute.For<IHostApplicationLifetime>());
             services.AddScoped<RequestTenantContext>();
             services.AddScoped<ITenantContext>(provider => provider.GetRequiredService<RequestTenantContext>());

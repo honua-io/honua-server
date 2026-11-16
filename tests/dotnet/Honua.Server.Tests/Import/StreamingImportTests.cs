@@ -21,14 +21,10 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for memory-efficient streaming file imports.
-/// Tests the streaming parser, batch processing, and background job functionality.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public class StreamingImportTests : IAsyncLifetime
+public partial class StreamingImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
@@ -1268,12 +1264,6 @@ public class StreamingImportTests : IAsyncLifetime
         return result is bool exists && exists;
     }
 
-    /// <summary>
-    /// Reads every row an import created, straight out of PostGIS, ordered by the named attribute.
-    /// honua-server#4419: most per-format import tests asserted only that the JSON response echoed
-    /// the table name, so an importer that dropped rows, transposed longitude and latitude, or
-    /// mangled an attribute passed them all. A read-back is the only assertion that can fail.
-    /// </summary>
     private async Task<List<(double X, double Y, int Srid, string? Name)>> ReadImportedRowsAsync(
         string tableName,
         string nameAttribute = "name")

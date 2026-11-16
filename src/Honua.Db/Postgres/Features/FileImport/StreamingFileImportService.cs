@@ -26,11 +26,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-/// <summary>
-/// Memory-efficient streaming file import service.
-/// Processes features incrementally using IAsyncEnumerable and batched database insertion
-/// to maintain constant memory usage regardless of file size.
-/// </summary>
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
     // PA-161: the batch-insert hot path (InsertBatchAsync, StreamingFileImportService.Batch.cs)
@@ -73,7 +68,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =
-        CompositeFormat.Parse("{0} row(s) had a geometry value that could not be parsed as WKT, EWKT, or WKB; each raw value was preserved as an attribute and the row was imported without geometry.");
+        CompositeFormat.Parse("{0} row(s) had a geometry value that could not be read as longitude/latitude numbers or as WKT, EWKT, or WKB; each raw value was preserved as an attribute and the row was imported without geometry.");
     private static readonly CompositeFormat _wktUnparseableGeometryWarningFormat =
         CompositeFormat.Parse("{0} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
     private static readonly CompositeFormat _csvGeocodeFailureWarningFormat =
@@ -117,20 +112,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
     }
 
-    /// <summary>
-    /// Resolves the Esri-default datum-transformation PROJ pipeline for the
-    /// <paramref name="sourceSrid"/> -&gt; <paramref name="targetSrid"/> import reprojection,
-    /// so the import path honors the same auditable geotransformation the query path uses
-    /// (#1501). Returns <see langword="null"/> when no transform is needed (equal SRIDs),
-    /// no catalog is wired, or the catalog has no curated default for the pair — in every
-    /// such case the import keeps PROJ's default (2-argument <c>ST_Transform</c>) behavior.
-    /// </summary>
-    /// <remarks>
-    /// Reverse selections are oriented with <see cref="ProjPipelineInverter"/> before they
-    /// are bound. <c>honua.insert_import_feature</c> executes a non-empty pipeline with
-    /// <c>ST_TransformPipeline</c>. An exact <c>+proj=noop</c> selection is returned as-is;
-    /// the function rewrites that to <c>ST_SetSRID</c> so every ordinate is kept.
-    /// </remarks>
     private string? ResolveImportDatumPipeline(
         int sourceSrid,
         int targetSrid,
@@ -204,20 +185,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             : new DatumAreaEnvelope(west.Value, south.Value, east.Value, north.Value);
     }
 
-    /// <inheritdoc/>
     public ImportLimits Limits => _limits;
 
-    /// <inheritdoc/>
     public SupportedFileFormat? DetectFormat(string fileName) => _formatDetectionService.DetectFormat(fileName);
 
-    /// <inheritdoc/>
     public string[] GetSupportedExtensions() => _formatDetectionService.GetSupportedExtensions();
 
-    /// <inheritdoc/>
     public Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default)
         => ImportFileAsync(request, null, cancellationToken);
 
-    /// <inheritdoc/>
     public async Task<ImportResult> ImportFileAsync(
         ImportRequest request,
         IProgress<ImportProgress>? progress,
@@ -334,11 +310,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 GeoPackageLayerInfo layer;
                 try
                 {
-                    layer = ResolveSingleGeoPackageImportLayer(layers);
+                    layer = ResolveGeoPackageImportLayer(layers, request.SourceLayer);
                 }
-                catch (InvalidDataException)
+                catch (InvalidDataException ex)
                 {
-                    errorMessage = "Invalid GeoPackage import request.";
+                    errorMessage = SanitizeImportValidationMessage(ex);
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,
@@ -502,7 +478,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
-                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected. Supply the EPSG code of the source CRS as sourceSrid.";
                 var validationErrors = SourceSridRequiredIssues(errorMessage);
                 result = ImportResult.CreateFailure(
                     request.TableName,
@@ -628,7 +604,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // A replace whose load dropped rows against an already-populated target never
             // promoted its staging sibling (see ImportStreamingAsync) — the live target is
             // unchanged. Report that truthfully rather than a complete success: the caller asked
-            // to replace the whole dataset and got nothing applied instead (#4006).
+            // to replace the whole dataset and got nothing applied instead.
             if (replacementBlocked)
             {
                 errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
@@ -731,7 +707,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         catch (ImportGeometryTooLargeException ex)
         {
             // A single feature exceeded the geometry size guard and the import is configured to
-            // fail rather than skip (#1626). Surface a clear, machine-readable 413-style error with
+            // fail rather than skip. Surface a clear, machine-readable 413-style error with
             // remediation guidance instead of letting the oversized geometry crash the host.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
             errorMessage = SanitizeImportValidationMessage(ex);

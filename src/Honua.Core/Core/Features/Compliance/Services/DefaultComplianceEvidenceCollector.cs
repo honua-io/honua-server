@@ -11,18 +11,18 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
 {
     private static readonly string ServerVersion = ResolveServerVersion();
 
-    private readonly IComplianceControlCatalog _catalog;
+    private readonly DefaultComplianceControlCatalog _catalog;
     private readonly IComplianceDependencyGate _gate;
     private readonly IDataResidencyPolicyProvider _residency;
-    private readonly IEncryptionPostureProvider _encryption;
+    private readonly InMemoryEncryptionPostureProvider _encryption;
     private readonly IOptionsMonitor<ComplianceOptions> _options;
     private readonly TimeProvider _timeProvider;
 
     public DefaultComplianceEvidenceCollector(
-        IComplianceControlCatalog catalog,
+        DefaultComplianceControlCatalog catalog,
         IComplianceDependencyGate gate,
         IDataResidencyPolicyProvider residency,
-        IEncryptionPostureProvider encryption,
+        InMemoryEncryptionPostureProvider encryption,
         IOptionsMonitor<ComplianceOptions> options,
         TimeProvider timeProvider)
     {

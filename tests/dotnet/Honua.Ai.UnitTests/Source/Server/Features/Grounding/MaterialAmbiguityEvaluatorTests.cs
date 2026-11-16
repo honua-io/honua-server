@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Pins the ADR-0027 material-ambiguity rule set. Each rule has at least one
-/// positive and one negative case so a refactor that drops a finding trips
-/// here rather than in a downstream conformance run.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class MaterialAmbiguityEvaluatorTests
 {

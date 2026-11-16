@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the security-critical custody decisions for transcript-provenance signing.
-/// Private key construction is deliberately confined to the signer that resolves a
-/// secret reference; production code must never create substitute key material.
-/// </summary>
 public sealed class TranscriptProvenanceSigningBoundaryTests
 {
     [Fact]

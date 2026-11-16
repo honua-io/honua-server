@@ -15,6 +15,8 @@ internal sealed record FeatureStreamEnvelope
     // The cursor is the store position, not a per-subscription sequence, because a filtered subscription skips values.
     public required long Cursor { get; init; }
 
+    public string ResumeCursor => FeatureStreamCursor.Format(Cursor);
+
     // Null when the path has no subscription sequence; absence is not sequence zero.
     public long? Sequence { get; init; }
 
@@ -82,7 +84,7 @@ internal sealed record FeatureStreamControlMessage
 
     public string? Datetime { get; init; }
 
-    public long? Cursor { get; init; }
+    public JsonElement Cursor { get; init; }
 
     public string? Mode { get; init; }
 }
@@ -165,6 +167,9 @@ internal sealed record FeatureStreamSnapshotEndFrame
 
     public required long Cursor { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResumeCursor => Complete ? FeatureStreamCursor.Format(Cursor) : null;
+
     public required long FeatureCount { get; init; }
 
     // The client must not treat a truncated baseline as authoritative state.
@@ -182,6 +187,9 @@ internal sealed record FeatureStreamSnapshotFrame
     public required long Sequence { get; init; }
 
     public required long Cursor { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResumeCursor => Complete ? FeatureStreamCursor.Format(Cursor) : null;
 
     public required string Reason { get; init; }
 
@@ -227,6 +235,16 @@ internal sealed record FeatureStreamSnapshotGeoJsonFeature
 
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public Dictionary<string, JsonElement>? Properties { get; init; }
+}
+
+// Tells the client its position cannot be resumed: resynchronize, then continue after Head.
+internal sealed record FeatureStreamResetFrame
+{
+    public string Type { get; init; } = "reset";
+
+    public required string Reason { get; init; }
+
+    public required string Head { get; init; }
 }
 
 internal sealed record FeatureStreamStatusFrame
@@ -353,12 +371,6 @@ internal sealed record StreamTemporalFilter(
     string? EndField,
     DateTimeOffset? Start,
     DateTimeOffset? End);
-
-internal readonly record struct ClusterBroadcastBacklogSnapshot(
-    bool Configured,
-    bool Enabled,
-    int BacklogDepth,
-    long Dropped);
 
 internal sealed record FeatureStreamSessionInfo(
     Guid SessionId,

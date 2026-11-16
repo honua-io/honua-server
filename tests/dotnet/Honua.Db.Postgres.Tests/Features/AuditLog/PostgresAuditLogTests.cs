@@ -14,12 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAuditLog"/> using the shared
-/// Testcontainers Postgres fixture. Exercises real SQL against an isolated
-/// schema so the append-only contract (RULE-blocked UPDATE/DELETE) and the
-/// composite indexes from migration 033 are validated end-to-end (#1144).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAuditLogTests(PostgresFixture fixture)
 {
@@ -208,20 +202,7 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
         // rules are installed too, so the tamper-resistance assertion is real.
         await fixture.ExecuteAsync($"""
             CREATE TABLE IF NOT EXISTS "{schema}".audit_log (
-                audit_id         BIGSERIAL    PRIMARY KEY,
-                timestamp        TIMESTAMPTZ  NOT NULL,
-                event_type       VARCHAR(32)  NOT NULL,
-                actor            VARCHAR(256) NOT NULL,
-                actor_type       VARCHAR(32)  NOT NULL,
-                resource_type    VARCHAR(64)  NOT NULL,
-                resource_id      VARCHAR(256),
-                action           VARCHAR(128) NOT NULL,
-                outcome          VARCHAR(16)  NOT NULL,
-                correlation_id   VARCHAR(64)  NOT NULL,
-                remote_ip        VARCHAR(64),
-                user_agent       VARCHAR(512),
-                details          TEXT         NOT NULL DEFAULT '',
-                prev_hash        CHAR(64),
+                {AuditLogTestTable.Columns}
                 entry_hash       CHAR(64),
                 CONSTRAINT chk_audit_log_event_type_{schema} CHECK (event_type IN (
                     'Authentication','Authorization','AdminAction',
@@ -295,12 +276,6 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
         string? UserAgent,
         string Details);
 
-    /// <summary>
-    /// Minimal <see cref="IAdoNetDatabaseConnectionProvider"/> that pins the
-    /// per-test isolated schema on every connection. Lives in the test
-    /// assembly because <c>Honua.TestKit.TestDatabaseConnectionProvider</c>
-    /// is only IVT-visible to <c>Honua.Server.Tests</c>.
-    /// </summary>
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;

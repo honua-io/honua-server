@@ -16,13 +16,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Worker-side coverage for the native-profile GDAL executors. The fake-runner
-/// tests pin routing, input validation, guardrails, and the canonical
-/// artifact-publication contract without requiring GDAL on the host. The
-/// integration test exercises the real <c>ogr2ogr</c> CLI when it is present in
-/// the worker image / dev host.
-/// </summary>
 public sealed class GdalWorkerExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-test";

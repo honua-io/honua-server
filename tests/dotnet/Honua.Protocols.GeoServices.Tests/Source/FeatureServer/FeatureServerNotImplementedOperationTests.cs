@@ -12,25 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the FeatureServer operations that complete Esri REST
-/// coverage with honest, specification-shaped responses: contingent values, shared
-/// templates, HTML pop-ups, the image resource, layer assets, 3D geometry, and
-/// layer-metadata updates. These surfaces have no backing data model yet, so the
-/// assertions verify the documented spec shape and honest status codes rather than
-/// fabricated success.
-/// </summary>
-/// <remarks>
-/// The endpoints are intentionally exercised in a handful of grouped test methods
-/// (service reads, service rejections, layer reads, layer rejections) rather than
-/// one method per endpoint. Each <see cref="WebAppFixture"/> initialization seeds an
-/// isolated Postgres schema (several seconds), so grouping keeps this file's
-/// contribution to the FeatureServer test shard to a few fixture inits while still
-/// sending a real HTTP request to every registered route — including both the
-/// happy-path and the invalid-service (404) branch for each operation. Each route is
-/// written as a full literal path so the EndpointRegistry HTTP-backing drift guard
-/// can anchor every registry entry to a same-method request in this file.
-/// </remarks>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerNotImplementedOperationTests : IClassFixture<WebAppFixture>

@@ -95,17 +95,21 @@ def check_source_owner_failure_injection(config: dict[str, Any]) -> None:
         raise FixtureError("accepted a source path whose every PR owner is over budget")
 
 
-def slowest_uniquely_owned_shard(config: dict[str, Any]) -> dict[str, Any]:
+def deferred_only_config(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A copy of the map in which the slowest shard with a uniquely owned prefix is over budget."""
     limit = budget_module.load_time_budget(config)["max_shard_minutes"]
-    return next(
+    mutated = copy.deepcopy(config)
+    slow = next(
         shard
-        for shard in sorted(config["shards"], key=lambda s: -s["dispatch_rank"])
-        if shard["dispatch_rank"] > limit and shard_fixtures.unique_owned_prefix(config, shard)
+        for shard in sorted(mutated["shards"], key=lambda s: -s["dispatch_rank"])
+        if shard_fixtures.unique_owned_prefix(mutated, shard)
     )
+    slow["dispatch_rank"] = max(slow["dispatch_rank"], limit + 1)
+    return mutated, slow
 
 
 def check_all_deferred_selection_skips_offline(config: dict[str, Any]) -> None:
-    slow = slowest_uniquely_owned_shard(config)
+    config, slow = deferred_only_config(config)
     probe = [f"{shard_fixtures.unique_owned_prefix(config, slow)}AffectedShardsFixtureProbe.cs"]
     result = select_within_budget(config, probe, shard_fixtures.router(config, probe))
     if result["shards"] or result["reason"] != budget_module.DEFERRED_SKIP_REASON:
@@ -114,12 +118,15 @@ def check_all_deferred_selection_skips_offline(config: dict[str, Any]) -> None:
 
 def check_all_deferred_selection_through_the_cli(config: dict[str, Any]) -> None:
     """The CLI receipt, step summary and `deferred_to_trunk` output all name the deferred shard."""
-    slow = slowest_uniquely_owned_shard(config)
+    config, slow = deferred_only_config(config)
     probe = f"{shard_fixtures.unique_owned_prefix(config, slow)}AffectedShardsFixtureProbe.cs\n"
     with tempfile.TemporaryDirectory() as directory:
         output = Path(directory) / "github-output"
+        mutated = Path(directory) / "ci-shards.json"
+        mutated.write_text(json.dumps(config), encoding="utf-8")
         completed = subprocess.run(
-            [sys.executable, str(shard_fixtures.SELECTOR), "--changed-files", "-", "--time-budget", "--github-output"],
+            [sys.executable, str(shard_fixtures.SELECTOR), "--changed-files", "-", "--time-budget", "--github-output",
+             "--config", str(mutated)],
             input=probe, capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "GITHUB_OUTPUT": str(output)},
         )

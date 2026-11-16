@@ -13,11 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit coverage for the GA-promotion (#2428) feature-stream health check: healthy under
-/// normal load, degraded when sessions approach the concurrent cap, and never Unhealthy
-/// (best-effort delivery with durable replay must not fail readiness).
-/// </summary>
 public sealed class FeatureStreamHealthCheckTests
 {
     private static FeatureStreamSessionManager CreateManager(int maxConcurrentSessions)
@@ -120,17 +115,5 @@ public sealed class FeatureStreamHealthCheckTests
 
         result.Status.Should().Be(HealthStatus.Healthy);
         result.Data["active_sessions"].Should().Be(0);
-    }
-
-    [UnitTest]
-    public async Task CheckHealth_WithoutRedis_ReportsClusterBroadcastUnconfigured()
-    {
-        using var manager = CreateManager(maxConcurrentSessions: 10);
-
-        var result = await CheckAsync(manager);
-
-        result.Status.Should().Be(HealthStatus.Healthy);
-        result.Data["cluster_broadcast_configured"].Should().Be(false);
-        result.Data["cluster_broadcast_backlog"].Should().Be(0);
     }
 }

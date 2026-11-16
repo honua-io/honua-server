@@ -303,8 +303,10 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         (await store.ListDueAsync(clock.Now, 100)).Should().ContainSingle().Which.Should().BeEquivalentTo(pending);
     }
 
-    [IntegrationTest]
-    public async Task IncompleteCollection_PreservesEpisodeUntilCompleteRecovery()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IncompleteCollection_PreservesEpisodeUntilCompleteRecovery(bool failedSelfCheck)
     {
         await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
         var clock = new ReminderClock(DateTimeOffset.UtcNow);
@@ -313,14 +315,15 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var original = (await store.ListDueAsync(clock.Now, 100)).Single();
         var findings = CreateFindings();
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        var posture = failedSelfCheck ? await FailedSelfCheckPostureAsync(clock) : EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
+            EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+            EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
+            EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)]);
         findings.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(new OpsFindingsEvaluation
         {
             EvaluatedAt = clock.Now,
             Findings = [],
-            Posture = EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
-                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
-                EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
-                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)])
+            Posture = posture
         });
         var notifications = CreateNotifications(Substitute.For<IAlertOutboxWriter>(), new AlertOptions());
         OpsNotificationReminderRunner Runner(IOpsFindingsEvidenceSource source) => new(store, source,
@@ -336,6 +339,18 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         recovered.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
         await Runner(recovered).RunAsync(CancellationToken.None);
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().BeEmpty();
+    }
+
+    private static async Task<EvidencePosture> FailedSelfCheckPostureAsync(TimeProvider clock)
+    {
+        var source = Substitute.For<IOpsSelfCheckSource>();
+        source.CurrentVersion.Returns("2026.1");
+        source.ReadIdentityProvidersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<IReadOnlyList<OpsIdentityProviderHealth>>(new InvalidOperationException()));
+        source.ReadLatestReleaseAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<OpsPublishedRelease?>(null));
+        using var checks = new OpsSelfChecks(clock, source);
+        var sample = await checks.EvaluateWithEvidenceAsync();
+        return EvidencePostureFactory.Build(clock.GetUtcNow(), [.. sample.Sources]);
     }
 
     [IntegrationTest]

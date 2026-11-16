@@ -20,6 +20,7 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.ComponentTests" />
+    <EmbeddedResource Include="SharedMigrations/**/*.fixture" />
     <!-- Canonical SQL, linked rather than forked. Keep original resource/journal identities. -->
     <EmbeddedResource Include="../../../src/Honua.Server/Migrations/*.sql"
                       Link="Migrations/%(Filename)%(Extension)"

@@ -5,6 +5,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
@@ -16,7 +17,7 @@ internal sealed class FeatureStreamDependencies
         FeatureStreamSessionManager sessionManager,
         IFeatureChangeEventStore eventStore,
         IOptions<FeatureStreamOptions> options,
-        IOptions<FeatureChangeEventOptions> eventOptions,
+        RealtimeCapabilityLimits realtimeLimits,
         IFilterExpressionService filterExpressionService,
         IMetadataV2GraphProvider metadataV2GraphProvider,
         FeatureStreamRoutabilityGuard routabilityGuard,
@@ -26,7 +27,7 @@ internal sealed class FeatureStreamDependencies
         SessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         EventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         Options = options ?? throw new ArgumentNullException(nameof(options));
-        EventOptions = eventOptions ?? throw new ArgumentNullException(nameof(eventOptions));
+        RealtimeLimits = realtimeLimits ?? throw new ArgumentNullException(nameof(realtimeLimits));
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         MetadataV2GraphProvider = metadataV2GraphProvider ?? throw new ArgumentNullException(nameof(metadataV2GraphProvider));
         RoutabilityGuard = routabilityGuard ?? throw new ArgumentNullException(nameof(routabilityGuard));
@@ -37,7 +38,7 @@ internal sealed class FeatureStreamDependencies
     public FeatureStreamSessionManager SessionManager { get; }
     public IFeatureChangeEventStore EventStore { get; }
     public IOptions<FeatureStreamOptions> Options { get; }
-    public IOptions<FeatureChangeEventOptions> EventOptions { get; }
+    public RealtimeCapabilityLimits RealtimeLimits { get; }
     public IFilterExpressionService FilterExpressionService { get; }
     public IMetadataV2GraphProvider MetadataV2GraphProvider { get; }
     public FeatureStreamRoutabilityGuard RoutabilityGuard { get; }

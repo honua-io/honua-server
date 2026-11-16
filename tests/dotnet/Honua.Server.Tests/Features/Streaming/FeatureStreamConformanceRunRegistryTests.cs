@@ -9,10 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for conformance-run leasing, ownership tokens, budgets, and TTL reclamation
-/// (honua-server#3038, REQ-005/REQ-006/NFR-001).
-/// </summary>
 public sealed class FeatureStreamConformanceRunRegistryTests
 {
     private const string TestRevision = "0123456789abcdef0123456789abcdef01234567";
@@ -178,10 +174,6 @@ public sealed class FeatureStreamConformanceRunRegistryTests
         FeatureStreamConformanceMarker.TryParse(stored, out _).Should().BeFalse();
     }
 
-    /// <summary>
-    /// Minimal controllable clock, mirroring the local <c>FakeTimeProvider</c> convention used
-    /// elsewhere in this suite rather than taking an external test-time package dependency.
-    /// </summary>
     private sealed class FakeTimeProvider : TimeProvider
     {
         private DateTimeOffset _utcNow = new(2026, 8, 4, 12, 0, 0, TimeSpan.Zero);

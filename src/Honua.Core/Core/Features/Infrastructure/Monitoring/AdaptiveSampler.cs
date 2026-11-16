@@ -10,12 +10,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
+public sealed partial class AdaptiveSampler : IDisposable
 {
     private readonly AdaptiveSamplingOptions _options;
     private readonly ISystemMetricsCollector _metricsCollector;
     private readonly ILogger<AdaptiveSampler> _logger;
-    private readonly ISmartSamplingRules? _smartSamplingRules;
+    private readonly SmartSamplingRules? _smartSamplingRules;
     private readonly Timer? _evaluationTimer;
 
     private double _currentSamplingRate;
@@ -34,7 +34,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         IOptions<AdaptiveSamplingOptions> options,
         ISystemMetricsCollector metricsCollector,
         ILogger<AdaptiveSampler> logger,
-        ISmartSamplingRules? smartSamplingRules = null)
+        SmartSamplingRules? smartSamplingRules = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _metricsCollector = metricsCollector ?? throw new ArgumentNullException(nameof(metricsCollector));
@@ -508,16 +508,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
             double avgSuccess,
             double globalConfidence);
     }
-}
-
-public interface IAdaptiveSampler
-{
-    bool ShouldSample(string operationName, ActivityKind activityKind = ActivityKind.Internal);
-
-    bool ShouldSample(SamplingContext context);
-
-    double GetCurrentSamplingRate();
-
 }
 
 // WEEK 5 FIX: ML-based intelligence component classes

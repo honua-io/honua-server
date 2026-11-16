@@ -23,7 +23,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
+internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, IChecksOwnArgumentNames
 {
     public const string NamePrefix = "honua_op_";
 
@@ -36,10 +36,14 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled,
         TimeSpan.FromSeconds(1));
 
+    // Request routing fields and the preview flag are read from the arguments directly.
+    private static readonly string[] RoutingArgumentNames = ["dryRun", "connectionId", "serviceName"];
+
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
     private readonly ILogger _logger;
     private readonly JsonElement _inputSchema;
+    private readonly HashSet<string> _acceptedArgumentNames;
 
     public PublishedOperationTool(
         OperationDescriptor descriptor,
@@ -56,6 +60,14 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
                 Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name),
                 Title = McpInputDescriptions.Describe(descriptor.OperationId, parameter.Name, parameter.Title)
             }).ToArray(), descriptor.Policy.SupportsDryRun);
+        _acceptedArgumentNames = new HashSet<string>(
+            descriptor.InputSchema.Select(parameter => McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name)),
+            StringComparer.Ordinal);
+        // Routing fields stay accepted even when the descriptor does not declare them.
+        foreach (var routingName in RoutingArgumentNames)
+        {
+            _acceptedArgumentNames.Add(routingName);
+        }
     }
 
     public string Name { get; }
@@ -184,6 +196,10 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
+
+        // Before resume, policy, cache or proposal: a misspelled argument must not
+        // become a silent no-op proposal that a human is then asked to approve.
+        ValidateArgumentNames(arguments);
 
         var dryRun = ReadBool(arguments, "dryRun");
         // Supported previews use normal dispatch so configured preview restrictions
@@ -495,18 +511,35 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         return licensing?.GetSnapshot().Edition.ToString().ToLowerInvariant();
     }
 
-    private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
+    private void ValidateArgumentNames(JsonElement? arguments)
     {
+        if (arguments is not { ValueKind: JsonValueKind.Object } supplied)
+        {
+            return;
+        }
+
         // The operation descriptor can accept plaintext credentials for other transports.
         // MCP advertises references only, so reject hidden secret fields before dispatch
         // rather than letting a manually constructed tools/call bypass that contract.
-        if (arguments is { ValueKind: JsonValueKind.Object } supplied
-            && supplied.EnumerateObject().Any(property => IsSecretValueInput(property.Name)))
+        // This check runs first so its message stays specific and never echoes a value.
+        if (supplied.EnumerateObject().Any(property => IsSecretValueInput(property.Name)))
         {
             throw new GeoprocessingValidationException(
                 "Inline credentials are not accepted by published MCP tools; use a secretReference.");
         }
 
+        var unknown = supplied.EnumerateObject()
+            .Select(property => property.Name)
+            .Where(name => !_acceptedArgumentNames.Contains(name))
+            .ToArray();
+        if (unknown.Length > 0)
+        {
+            throw McpDeclaredArgumentGuard.Refusal(Name, unknown);
+        }
+    }
+
+    private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
+    {
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
         // codeql[cs/linq/missed-where]: copies only arguments the caller actually supplied
         foreach (var parameter in _descriptor.InputSchema)
@@ -596,6 +629,8 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
             }
 
             writer.WriteEndArray();
+            // Calls with undeclared arguments are refused (-32602), so say so up front.
+            writer.WriteBoolean("additionalProperties", false);
             writer.WriteEndObject();
         }
 
@@ -633,6 +668,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
             writer.WriteString("type", type);
         }
         if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
+        if (schema.Minimum is { } minimum) writer.WriteNumber("minimum", minimum);
         if (schema.EnumValues.Count > 0)
         {
             writer.WriteStartArray("enum");

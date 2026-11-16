@@ -4,8 +4,7 @@
 # conclude success themselves (operator ruling A, 2026-09-11; epic #3213). This
 # script is the single definition of the class: pr-gate.yml's `format`,
 # `pr-gate` and `affected-shards-select` jobs all call it, and nothing else
-# decides. It is separate from, and wider than, the observe-only `docs-only`
-# class of scripts/ci/classify-pr-gate-impact.py, which is left as it is.
+# decides.
 #
 # USAGE
 #   docs-only-diff.sh [--github-output]                   pull_request merge ref (CI)
@@ -254,7 +253,6 @@ GATE_INPUTS = (
     ".github/actions/setup-dotnet-ci",
     ".github/ci-shards.json",
     "scripts/ci/lib",
-    "scripts/ci/merge-train",
     "scripts/ci/check-server-test-shard-coverage.py",
     "scripts/ci/compute-affected-projects.sh",
     "scripts/ci/compute-affected-shards.py",

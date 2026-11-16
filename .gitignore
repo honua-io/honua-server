@@ -59,14 +59,6 @@ artifacts/
 *.scc
 AutoTest.Net/
 [Ee]xpress/
-DocProject/buildhelp/
-DocProject/Help/*.HxT
-DocProject/Help/*.HxC
-DocProject/Help/*.hhc
-DocProject/Help/*.hhk
-DocProject/Help/*.hhp
-DocProject/Help/Html2
-DocProject/Help/html
 publish/
 !docs/guides/publish/
 *.[Pp]ublish.xml
@@ -120,9 +112,6 @@ _Chutzpah*
 # JetBrains Rider
 .idea/
 *.sln.iml
-
-# CodeRush personal settings
-.cr/personal
 
 # Python Tools for Visual Studio
 __pycache__/

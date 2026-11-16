@@ -5,10 +5,10 @@ using System.Globalization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Protocols.GeoServices.ImageServer.Models;
-using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -31,13 +31,13 @@ internal sealed class ImageServerLegendHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
-    private readonly IImageServerLegendSwatchBuilder _swatchBuilder;
+    private readonly ImageServerLegendSwatchBuilder _swatchBuilder;
     private readonly ILogger<ImageServerLegendHandler> _logger;
 
     public ImageServerLegendHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        IImageServerLegendSwatchBuilder swatchBuilder,
+        ImageServerLegendSwatchBuilder swatchBuilder,
         ILogger<ImageServerLegendHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));

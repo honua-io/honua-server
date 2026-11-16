@@ -3,8 +3,8 @@
 
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Services;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Features.Styling;
 
@@ -12,7 +12,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddStyleSuggestionCore(this IServiceCollection services)
     {
-        services.TryAddScoped<IStyleSuggestionService, StyleSuggestionService>();
+        services.TryAddScoped<StyleSuggestionService>();
         return services;
     }
 }

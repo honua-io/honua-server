@@ -16,10 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Metadata v2 layer 0 is the storage handle FeatureServer queries. The provider must
-/// serve that query from the storage binding with no <c>Databricks:Layers[]</c> entry.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksMetadataV2QueryTests
 {
@@ -137,7 +133,6 @@ public class DatabricksMetadataV2QueryTests
         var client = new DatabricksStatementClient(httpClient, options);
         return new DatabricksFeatureStore(
             new DatabricksLayerMappingRegistry([]),
-            new DatabricksFeatureQueryBuilder(),
             new DatabricksFeatureDataAccess(client));
     }
 
@@ -145,7 +140,6 @@ public class DatabricksMetadataV2QueryTests
     {
         var store = new DatabricksFeatureStore(
             new DatabricksLayerMappingRegistry([]),
-            new DatabricksFeatureQueryBuilder(),
             new DatabricksFeatureDataAccess(new DatabricksStatementClient(
                 new HttpClient(new StubHttpMessageHandler()) { BaseAddress = new Uri("https://example.cloud.databricks.com") },
                 Options.Create(new DatabricksOptions

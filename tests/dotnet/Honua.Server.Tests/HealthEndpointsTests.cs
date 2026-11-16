@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Events;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -14,10 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Tests for health check endpoints (/healthz/live, /healthz/ready)
-/// Validates Kubernetes-compatible health checks with PostgreSQL connectivity
-/// </summary>
 [Protocol(TestProtocols.Health)]
 [Collection("Performance")]
 public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFactory>
@@ -31,6 +28,14 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     {
         _factory = factory;
         _client = _factory.CreateClient();
+    }
+
+    // The test host has no PostgreSQL data source, so readiness gets a healthy change-log double
+    // and the database checker under test decides the outcome.
+    private static void UseReadinessDoubles(IServiceCollection services, IDatabaseHealthChecker databaseHealthChecker)
+    {
+        services.AddScoped(_ => databaseHealthChecker);
+        services.AddSingleton<IFeatureChangeEventStoreHealth>(new FakeFeatureChangeEventStore());
     }
 
     [IntegrationTest]
@@ -78,7 +83,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
             builder.ConfigureServices(services =>
             {
                 // Replace the real health checker with a healthy mock
-                services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
+                UseReadinessDoubles(services, new MockHealthyDatabaseChecker());
             });
         });
 
@@ -106,7 +111,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
             builder.ConfigureServices(services =>
             {
                 // Replace the real health checker with an unhealthy mock
-                services.AddScoped<IDatabaseHealthChecker>(_ => new MockUnhealthyDatabaseChecker());
+                UseReadinessDoubles(services, new MockUnhealthyDatabaseChecker());
             });
         });
 
@@ -178,7 +183,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
             builder.ConfigureServices(services =>
             {
                 // Replace with fast healthy mock
-                services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
+                UseReadinessDoubles(services, new MockHealthyDatabaseChecker());
             });
         });
 
@@ -259,7 +264,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureServices(services =>
             {
-                services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
+                UseReadinessDoubles(services, new MockHealthyDatabaseChecker());
             });
         });
 
@@ -289,7 +294,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureServices(services =>
             {
-                services.AddScoped<IDatabaseHealthChecker>(_ => new MockUnhealthyDatabaseChecker());
+                UseReadinessDoubles(services, new MockUnhealthyDatabaseChecker());
             });
         });
 
@@ -357,9 +362,6 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
 }
 
-/// <summary>
-/// Mock implementation that always returns healthy
-/// </summary>
 internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
@@ -368,9 +370,6 @@ internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
     }
 }
 
-/// <summary>
-/// Mock implementation that always returns unhealthy
-/// </summary>
 internal sealed class MockUnhealthyDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)

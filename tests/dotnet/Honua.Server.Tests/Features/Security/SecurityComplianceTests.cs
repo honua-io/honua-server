@@ -17,9 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Comprehensive security compliance tests covering OWASP Top 10 and enterprise security requirements
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]

@@ -80,8 +80,44 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         { Progress = new TileCacheAttemptProgress(_progressStore, context) };
         var started = await StartAsync(run, context, cancellationToken).ConfigureAwait(false);
         var finalProgress = await RunAsync(run, started, cancellationToken).ConfigureAwait(false);
-        await run.Progress.WriteAsync(finalProgress, cancellationToken)
-            .ConfigureAwait(false);
+        return await CompleteAsync(finalProgress, run.Progress, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<JobExecutionResult> CompleteAsync(
+        TileOperationProgress finalProgress,
+        TileCacheAttemptProgress progress,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (finalProgress.Status == OperationStatus.Completed && finalProgress.PublishedPublication is { } publication)
+        {
+            // Activation has committed. Cancellation can no longer undo it, and a terminal
+            // progress/report failure must not make the durable runner retry the publication.
+            try
+            {
+                await context.RecordCommittedEffectAsync(
+                    "paired-publication:" + publication.DescriptorKey, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.CommittedPublicationReceiptFailed(_logger, finalProgress.JobId, ex);
+                return JobExecutionResult.Succeeded(finalProgress.Warnings) with { CompletedWithCommittedEffects = true };
+            }
+
+            try
+            {
+                await progress.WriteCommittedAsync(finalProgress).ConfigureAwait(false);
+                await ReportAsync(finalProgress, context, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.CommittedPublicationProgressFailed(_logger, finalProgress.JobId, ex);
+            }
+
+            return JobExecutionResult.Succeeded(finalProgress.Warnings) with { CompletedWithCommittedEffects = true };
+        }
+
+        await progress.WriteAsync(finalProgress, cancellationToken).ConfigureAwait(false);
         await ReportAsync(finalProgress, context, cancellationToken).ConfigureAwait(false);
 
         // A failure is already reported on the tile progress; an operator retries it explicitly.
@@ -224,6 +260,14 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         [LoggerMessage(9210, LogLevel.Warning,
             "Tile-cache executor rejected job {OperationId}: {Reason}")]
         public static partial void InvalidSpec(ILogger logger, string operationId, string reason);
+
+        [LoggerMessage(9212, LogLevel.Error,
+            "Activated publication for tile job {OperationId} could not record its committed-effect receipt")]
+        public static partial void CommittedPublicationReceiptFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9213, LogLevel.Warning,
+            "Activated publication for tile job {OperationId} could not project terminal progress")]
+        public static partial void CommittedPublicationProgressFailed(ILogger logger, string operationId, Exception exception);
 
         [LoggerMessage(9211, LogLevel.Error,
             "Tile-cache executor failed job {OperationId} during {Operation}")]

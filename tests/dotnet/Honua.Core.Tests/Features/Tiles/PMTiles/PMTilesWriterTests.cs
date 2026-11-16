@@ -314,6 +314,41 @@ public class PMTilesWriterTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task WriteAsync_MetadataExtensions_AreWrittenAsTopLevelMembers()
+    {
+        var metadata = DefaultMetadata with
+        {
+            Extensions = new Dictionary<string, string> { ["honua:captureId"] = "capture-1" }
+        };
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, CreateFakeTileData(16));
+
+        using var stream = new MemoryStream();
+        await writer.WriteAsync(stream, metadata);
+
+        var header = PMTilesHeader.ReadFrom(stream.ToArray());
+        using var json = JsonDocument.Parse(stream.ToArray().AsMemory(
+            checked((int)header.JsonMetadataOffset), checked((int)header.JsonMetadataLength)));
+        json.RootElement.GetProperty("honua:captureId").GetString().Should().Be("capture-1");
+        json.RootElement.GetProperty("type").GetString().Should().Be("overlay");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task WriteAsync_ExtensionNamedLikeAStandardMember_IsRejected()
+    {
+        var metadata = DefaultMetadata with { Extensions = new Dictionary<string, string> { ["name"] = "other" } };
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, CreateFakeTileData(16));
+
+        using var stream = new MemoryStream();
+        var write = () => writer.WriteAsync(stream, metadata);
+
+        await write.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task WriteAsync_LargeTileSection_WritesAllPayloadsWithoutStagingArchiveInOutputMemory()
     {
         var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
@@ -376,11 +411,6 @@ public class PMTilesWriterTests
         writer.TileCount.Should().Be(2);
     }
 
-    /// <summary>
-    /// Regression test for BH-018: latitude header fields must be clamped to [-90, 90],
-    /// not to the longitude range [-180, 180].  A swapped or out-of-range latitude (e.g.
-    /// 91°) must be clamped to 90° before being encoded as an E7 integer.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_OutOfRangeLatitude_ClampsToLatitudeBounds()
@@ -415,10 +445,6 @@ public class PMTilesWriterTests
         header.MaxLonE7.Should().Be(1_800_000_000);
     }
 
-    /// <summary>
-    /// Regression test for BH-018 (negative case): a longitude of 181 must be clamped
-    /// to 180, ensuring the longitude helper also enforces its own bounds.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_OutOfRangeLongitude_ClampsToLongitudeBounds()

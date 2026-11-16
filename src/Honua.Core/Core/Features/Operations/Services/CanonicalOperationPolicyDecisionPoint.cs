@@ -47,7 +47,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
+        if (AgentApprovalRule.Applies(descriptor, context.Roles))
         {
             var agentGuardrail = ResolveGuardrail(gatewayRequest);
             return agentGuardrail.Tier == GuardrailTier.Blocked
@@ -63,14 +63,6 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         // Carry that decision into this single PDP instead of masquerading it as an
         // approved proposal (proposal identity must only identify a real proposal).
         if (string.Equals(context.AuthorizationOutcome, "autonomy-authorized", StringComparison.Ordinal))
-        {
-            return PolicyDecision.Allowed;
-        }
-
-        // Human administrators may publish directly; agents use the approval floor above.
-        if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
-            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal)
-            && !AgentApprovalRule.IsAgent(context.Roles))
         {
             return PolicyDecision.Allowed;
         }
@@ -117,7 +109,8 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
     {
         if (_resolveInitiation is null) return false;
         var initiation = await _resolveInitiation(cancellationToken).ConfigureAwait(false);
-        return initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc);
+        return initiation is (OperationInitiationKind.Human,
+            OperationInitiationChannel.InteractiveOidc or OperationInitiationChannel.InteractivePassword);
     }
 
     private static bool IsDefaultPrivateDraftApproval(

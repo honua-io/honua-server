@@ -3,12 +3,11 @@
 
 using System.Collections.Frozen;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstructCapabilityRegistry
+public sealed class GeoServicesConstructCapabilityRegistry
 {
     public static class Keys
     {
@@ -34,7 +33,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
 
         public const string ResourceTimeMetadata = "resource.time-metadata";
 
-        // --- Portal-facade serve lane (#1382) -------------------------------
+        // --- Portal-facade serve lane -------------------------------
         // The Portal facade re-exposes imported Esri-shaped Metadata v2 services
         // as ArcGIS Portal items. These keys carry the per-service-construct
         // "can this construct be served through the facade?" verdict so the
@@ -47,7 +46,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
 
         public const string FacadeImageService = "facade.image-service";
 
-        // --- GP-translation lane (#1382) ------------------------------------
+        // --- GP-translation lane ------------------------------------
         // The geoprocessing migration evidence classifier groups built-in
         // processes into construct families. These keys carry the per-family
         // automation verdict so the GP lane resolves from the shared registry
@@ -146,8 +145,8 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
         },
         new GeoServicesConstructCapabilityDescriptor
         {
-            // #4600: domains stayed "assisted / enforcement not automated" long after the importer began
-            // persisting them onto the published fields (#1255) and the shared FeatureMutationValidator
+            // Domains stayed "assisted / enforcement not automated" long after the importer began
+            // persisting them onto the published fields and the shared FeatureMutationValidator
             // began enforcing coded-value and range domains on FeatureServer applyEdits, OGC API Features
             // and WFS-T edits. Catalog reconciliation verifies the persisted domain against the source.
             ConstructKey = Keys.ResourceDomains,
@@ -173,7 +172,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
                 + "editing behavior (per-subtype defaults and domain overrides on applyEdits) still needs operator review "
                 + "before cutover.",
             ManualSteps = ["Recreate subtype behavior or document an accepted gap before cutover."],
-            // #4824 REQ-002: a source editing construct the canonical model cannot represent
+            // A source editing construct the canonical model cannot represent
             // (multiple templates per type, explicit domain clearing, an unusable type identity)
             // is not captured at all. It takes this fallback tier, and GeoServicesSubtypeFidelityClassifier
             // supplies the construct-specific code and reason so the finding names what was lost.
@@ -188,7 +187,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
         },
         new GeoServicesConstructCapabilityDescriptor
         {
-            // #4600: the classifier emitted simple relationships as automated while this descriptor said
+            // The classifier emitted simple relationships as automated while this descriptor said
             // manual review for every relationship, so the two disagreed. The descriptor now reads per
             // relationship: simple classes are automated (relationship apply persists each and reports its
             // outcome); composite, attributed and many-to-many classes take the fallback.
@@ -207,8 +206,8 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
         },
         new GeoServicesConstructCapabilityDescriptor
         {
-            // #4600: the classifier already emitted attachments as automated while this descriptor said manual
-            // review. Attachment copy is automated and reconciled on its own evidence (#4661); the fallback
+            // The classifier already emitted attachments as automated while this descriptor said manual
+            // review. Attachment copy is automated and reconciled on its own evidence; the fallback
             // covers an import that cannot run the copy.
             ConstructKey = Keys.ResourceAttachments,
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
@@ -246,7 +245,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
             RequiresCheck = true
         },
 
-        // --- Portal-facade serve lane (#1382) -------------------------------
+        // --- Portal-facade serve lane -------------------------------
         new GeoServicesConstructCapabilityDescriptor
         {
             ConstructKey = Keys.FacadeFeatureService,
@@ -278,7 +277,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
             RequiresCheck = false
         },
 
-        // --- GP-translation lane (#1382) ------------------------------------
+        // --- GP-translation lane ------------------------------------
         new GeoServicesConstructCapabilityDescriptor
         {
             ConstructKey = Keys.GpVectorDeterministic,
@@ -303,7 +302,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
         new GeoServicesConstructCapabilityDescriptor
         {
             // Projected through OGC API Processes for direct process-id discovery
-            // and execution (#2698). CanServe drives the GP lane's
+            // and execution. CanServe drives the GP lane's
             // IsProjectedThroughOgcApiProcesses verdict; the raster/surface family
             // is now callable directly at /ogc/processes/processes/{id} exactly as a
             // single-step honua-geoprocessing plan wrapper already invoked it — the
@@ -340,7 +339,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
         },
         new GeoServicesConstructCapabilityDescriptor
         {
-            // Imagery/ML GP lane (#2241): inference is DELEGATED to a configured
+            // Imagery/ML GP lane: inference is DELEGATED to a configured
             // cloud endpoint (SageMaker/Vertex/Azure ML/OpenAI-compatible REST) —
             // Honua bundles no model runtime. CanServe = true so imagery.classify
             // is projected through OGC API Processes / GPServer for direct

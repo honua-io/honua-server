@@ -6,7 +6,7 @@
     <IsTestProject>true</IsTestProject>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <!--
-      honua-server#2947: secondary-provider HTTP-stack GA proof. Deliberately its own
+      Secondary-provider HTTP-stack GA proof. Deliberately its own
       project (not folded into Honua.Server.Tests or a per-protocol *.Tests project):
       it spans multiple protocol families (GeoServices FeatureServer, OGC API Features,
       OData, Tiles) against multiple provider-parameterized web-app fixtures (DuckDB in-

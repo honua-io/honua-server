@@ -15,11 +15,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Native source.ogr archive budgets (#5469) and vector output size admission (#5470).
-/// GDAL is not required: a fake command runner stands in for ogr2ogr, and the
-/// assertions are on the host-side guard that runs before and after that call.
-/// </summary>
 public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
 {
     private const string GeoJson = """{"type":"FeatureCollection","features":[]}""";

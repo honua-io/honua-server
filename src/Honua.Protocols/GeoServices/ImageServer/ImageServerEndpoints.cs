@@ -1402,7 +1402,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        return await GetMultidimensionalInfo(id, GetString(merged, "f"), context, handler, cancellationToken);
+        return await GetMultidimensionalInfo(id, ImageServerRequestValues.GetString(merged, "f"), context, handler, cancellationToken);
     }
 
     private static async Task<IResult> GetMultidimensionalInfoPostByService(
@@ -1465,7 +1465,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        return await GetSlices(id, GetString(merged, "f"), context, handler, cancellationToken);
+        return await GetSlices(id, ImageServerRequestValues.GetString(merged, "f"), context, handler, cancellationToken);
     }
 
     private static async Task<IResult> GetSlicesPostByService(
@@ -2077,7 +2077,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2114,7 +2114,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2145,7 +2145,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2182,7 +2182,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2213,7 +2213,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2265,7 +2265,7 @@ internal static class ImageServerEndpoints
             merged[pair.Key] = pair.Value;
         }
 
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2301,7 +2301,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2343,7 +2343,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2379,7 +2379,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2421,7 +2421,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2457,7 +2457,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2494,7 +2494,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2525,7 +2525,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2562,7 +2562,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2593,7 +2593,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2630,7 +2630,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2661,7 +2661,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2698,7 +2698,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2729,7 +2729,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2766,7 +2766,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2797,7 +2797,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2834,7 +2834,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2865,7 +2865,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2902,7 +2902,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -2947,7 +2947,7 @@ internal static class ImageServerEndpoints
         CancellationToken cancellationToken)
     {
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -3012,7 +3012,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -3215,7 +3215,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -3288,13 +3288,13 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        var format = GetString(merged, "f");
+        var format = ImageServerRequestValues.GetString(merged, "f");
         if (!IsSupportedJsonResponseFormat(format) && !string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.GetLegendAsync(context, id, cancellationToken, GetString(merged, "renderingRule"),
+        return await handler.GetLegendAsync(context, id, cancellationToken, ImageServerRequestValues.GetString(merged, "renderingRule"),
             asPng: string.Equals(format, "png", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -3362,12 +3362,12 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.GetColormapAsync(context, id, GetString(merged, "renderingRule"), cancellationToken);
+        return await handler.GetColormapAsync(context, id, ImageServerRequestValues.GetString(merged, "renderingRule"), cancellationToken);
     }
 
     private static async Task<IResult> GetColormapPostByService(
@@ -3393,7 +3393,7 @@ internal static class ImageServerEndpoints
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -3445,7 +3445,7 @@ internal static class ImageServerEndpoints
             merged[pair.Key] = pair.Value;
         }
 
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        if (!IsSupportedJsonResponseFormat(ImageServerRequestValues.GetString(merged, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -3734,7 +3734,7 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        return (GetString(merged, "f"), null);
+        return (ImageServerRequestValues.GetString(merged, "f"), null);
     }
 
     private static async Task<(
@@ -3844,23 +3844,23 @@ internal static class ImageServerEndpoints
     private static ExportImageRequest CreateExportImageRequest(IReadOnlyDictionary<string, StringValues> values)
         => new()
         {
-            Bbox = GetString(values, "bbox"),
-            Size = GetString(values, "size"),
-            ImageSr = GetString(values, "imageSR") ?? GetString(values, "imageSr"),
-            BboxSr = GetString(values, "bboxSR") ?? GetString(values, "bboxSr"),
-            Format = GetString(values, "format") ?? "png",
-            PixelType = GetString(values, "pixelType"),
-            NoData = GetString(values, "noData"),
-            NoDataInterpretation = GetString(values, "noDataInterpretation") ?? "esriNoDataMatchAny",
-            Interpolation = GetString(values, "interpolation"),
-            Compression = GetString(values, "compression"),
+            Bbox = ImageServerRequestValues.GetString(values, "bbox"),
+            Size = ImageServerRequestValues.GetString(values, "size"),
+            ImageSr = ImageServerRequestValues.GetString(values, "imageSR") ?? ImageServerRequestValues.GetString(values, "imageSr"),
+            BboxSr = ImageServerRequestValues.GetString(values, "bboxSR") ?? ImageServerRequestValues.GetString(values, "bboxSr"),
+            Format = ImageServerRequestValues.GetString(values, "format") ?? "png",
+            PixelType = ImageServerRequestValues.GetString(values, "pixelType"),
+            NoData = ImageServerRequestValues.GetString(values, "noData"),
+            NoDataInterpretation = ImageServerRequestValues.GetString(values, "noDataInterpretation") ?? "esriNoDataMatchAny",
+            Interpolation = ImageServerRequestValues.GetString(values, "interpolation"),
+            Compression = ImageServerRequestValues.GetString(values, "compression"),
             CompressionQuality = TryGetInt(values, "compressionQuality"),
-            BandIds = GetString(values, "bandIds"),
-            MosaicRule = GetString(values, "mosaicRule"),
-            RenderingRule = GetString(values, "renderingRule"),
-            MultidimensionalDefinition = GetString(values, "multidimensionalDefinition"),
-            Time = GetString(values, "time"),
-            F = GetString(values, "f") ?? "json"
+            BandIds = ImageServerRequestValues.GetString(values, "bandIds"),
+            MosaicRule = ImageServerRequestValues.GetString(values, "mosaicRule"),
+            RenderingRule = ImageServerRequestValues.GetString(values, "renderingRule"),
+            MultidimensionalDefinition = ImageServerRequestValues.GetString(values, "multidimensionalDefinition"),
+            Time = ImageServerRequestValues.GetString(values, "time"),
+            F = ImageServerRequestValues.GetString(values, "f") ?? "json"
         };
 
     private static ExportImageRequest CreateRasterItemImageRequest(
@@ -3880,7 +3880,7 @@ internal static class ImageServerEndpoints
         long rasterId)
     {
         var item = LockToRaster(CreateExportImageRequest(values), rasterId);
-        return item with { Size = item.Size ?? DefaultThumbnailSize, F = GetString(values, "f") ?? InlineImageFormat };
+        return item with { Size = item.Size ?? DefaultThumbnailSize, F = ImageServerRequestValues.GetString(values, "f") ?? InlineImageFormat };
     }
 
     // A raster item renders one locked raster, so the time and multidimensional slices that choose
@@ -3896,24 +3896,24 @@ internal static class ImageServerEndpoints
     private static IdentifyRequest CreateIdentifyRequest(IReadOnlyDictionary<string, StringValues> values)
         => new()
         {
-            Geometry = GetString(values, "geometry") ?? string.Empty,
-            GeometryType = GetString(values, "geometryType") ?? "esriGeometryPoint",
-            Sr = GetString(values, "sr"),
-            MosaicRule = GetString(values, "mosaicRule"),
-            RenderingRule = GetString(values, "renderingRule"),
-            MultidimensionalDefinition = GetString(values, "multidimensionalDefinition"),
+            Geometry = ImageServerRequestValues.GetString(values, "geometry") ?? string.Empty,
+            GeometryType = ImageServerRequestValues.GetString(values, "geometryType") ?? "esriGeometryPoint",
+            Sr = ImageServerRequestValues.GetString(values, "sr"),
+            MosaicRule = ImageServerRequestValues.GetString(values, "mosaicRule"),
+            RenderingRule = ImageServerRequestValues.GetString(values, "renderingRule"),
+            MultidimensionalDefinition = ImageServerRequestValues.GetString(values, "multidimensionalDefinition"),
             PixelSize = TryGetInt(values, "pixelSize"),
-            Time = GetString(values, "time"),
+            Time = ImageServerRequestValues.GetString(values, "time"),
             ReturnGeometry = TryGetBool(values, "returnGeometry") ?? true,
             ReturnCatalogItems = TryGetBool(values, "returnCatalogItems") ?? false,
-            F = GetString(values, "f") ?? "json"
+            F = ImageServerRequestValues.GetString(values, "f") ?? "json"
         };
 
     private static int? TryGetInt(IReadOnlyDictionary<string, StringValues> values, string key)
-        => int.TryParse(GetString(values, key), CultureInfo.InvariantCulture, out var value) ? value : null;
+        => int.TryParse(ImageServerRequestValues.GetString(values, key), CultureInfo.InvariantCulture, out var value) ? value : null;
 
     private static bool? TryGetBool(IReadOnlyDictionary<string, StringValues> values, string key)
-        => bool.TryParse(GetString(values, key), out var value) ? value : null;
+        => bool.TryParse(ImageServerRequestValues.GetString(values, key), out var value) ? value : null;
 
     private static bool TryValidateComputeStatisticsHistogramsRequest(
         IReadOnlyDictionary<string, StringValues> values,
@@ -3921,20 +3921,20 @@ internal static class ImageServerEndpoints
     {
         error = null;
 
-        if (string.IsNullOrWhiteSpace(GetString(values, "geometry")))
+        if (string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, "geometry")))
         {
             error = "geometry is required.";
             return false;
         }
 
-        var geometryType = GetString(values, "geometryType");
+        var geometryType = ImageServerRequestValues.GetString(values, "geometryType");
         if (string.IsNullOrWhiteSpace(geometryType))
         {
             error = "geometryType is required.";
             return false;
         }
 
-        if (!TryValidateEsriGeometry(GetString(values, "geometry"), geometryType, out error))
+        if (!TryValidateEsriGeometry(ImageServerRequestValues.GetString(values, "geometry"), geometryType, out error))
         {
             return false;
         }
@@ -3948,7 +3948,7 @@ internal static class ImageServerEndpoints
     {
         error = null;
 
-        if (string.IsNullOrWhiteSpace(GetString(values, "geometry")))
+        if (string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, "geometry")))
         {
             error = "geometry is required.";
             return false;
@@ -3963,7 +3963,7 @@ internal static class ImageServerEndpoints
     {
         error = null;
 
-        var classDescriptions = GetString(values, "classDescriptions");
+        var classDescriptions = ImageServerRequestValues.GetString(values, "classDescriptions");
         if (string.IsNullOrWhiteSpace(classDescriptions))
         {
             error = "classDescriptions is required.";
@@ -4050,9 +4050,6 @@ internal static class ImageServerEndpoints
 
     private static bool HasNumericProperty(JsonElement element, string propertyName)
         => element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number;
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 
     private static IResult CreateUnsupportedJsonFormatResult(HttpContext context)
         => StandardErrorHelpers.CreateBadRequest(context, "Only JSON format is supported. Use f=json or f=pjson");

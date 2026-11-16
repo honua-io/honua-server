@@ -106,12 +106,6 @@ public sealed partial class TileCacheJobExecutorPublishTests
         AssertEveryArchivedTileDecodes(stub.LastUploadBytes!, header);
     }
 
-    /// <summary>
-    /// Walks the archive's directories and decodes every declared tile slice as a PMTiles client
-    /// would address it. Decoding the tile-data section as one blob is not enough: concatenated
-    /// protobuf messages merge into a single valid message, so a wrong offset or length would still
-    /// "decode".
-    /// </summary>
     private static void AssertEveryArchivedTileDecodes(byte[] archiveBytes, PMTilesHeader header)
     {
         header.TileType.Should().Be(PMTilesTileType.Mvt);
@@ -700,16 +694,11 @@ public sealed partial class TileCacheJobExecutorPublishTests
         return options;
     }
 
-    /// <summary>
-    /// Harness accessor for <see cref="TileCacheSeedCoverageTests"/>, which drives the same job
-    /// service through a seed operation. Reusing this composition keeps both suites on one wiring.
-    /// </summary>
     internal static ServiceProvider BuildScopeForSeed(
         StubCloudStorage stub,
         Action<ITileProvider> configureTileProvider)
         => BuildScope(stub, includeCloudStorage: true, configureTileProvider: configureTileProvider);
 
-    /// <summary>Harness accessor for <see cref="TileCacheSeedCoverageTests"/>.</summary>
     internal static TileCacheJobRunner CreateSutForSeed(ServiceProvider serviceProvider)
         => CreateSut(serviceProvider);
 
@@ -751,16 +740,8 @@ public sealed partial class TileCacheJobExecutorPublishTests
             => _progressStore.GetProgressAsync<TileOperationProgress>(jobId);
     }
 
-    /// <summary>
-    /// Storage layers the unscoped publish and archive tests address by a bare layer id.
-    /// </summary>
     private static readonly int[] _unscopedStorageLayerIds = [1, 5, 9, 21, 22, 31, 100];
 
-    /// <summary>
-    /// Gives every bare layer id the suite publishes without a serviceId a routable source: a
-    /// resource, its storage binding and a publication in a routable service. #5624 refuses to
-    /// upload an archive whose storage layer resolves to no routable publication.
-    /// </summary>
     private static TestMetadataV2GraphBuilder AddRoutableStorageLayers(TestMetadataV2GraphBuilder builder)
     {
         foreach (var layerId in _unscopedStorageLayerIds)

@@ -17,13 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// End-to-end authorization tests for the mutating-process execution tier (#2798) on the
-/// OGC API Processes protocol surface. Proves that an operator whose grant covers only the
-/// baseline <c>Process.Execute</c> permission can execute an analytic plan but receives 403
-/// when the submitted plan contains a mutating (durable side-effect) step, and that the
-/// denial is a genuine tier decision rather than a blanket process-execute rejection.
-/// </summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesMutatingTierAuthorizationTests
 {
@@ -97,11 +90,6 @@ public sealed class OgcProcessesMutatingTierAuthorizationTests
             new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "data-management.delete-features"));
     }
 
-    /// <summary>
-    /// Minimal role store granting the <see cref="ProcessRunnerRole"/> only
-    /// <c>process:*:execute</c> — deliberately withholding
-    /// <see cref="OperatorOperation.ExecuteMutatingProcess"/> so the mutating-tier gate fires.
-    /// </summary>
     private sealed class ProcessExecuteOnlyRoleStore : IRoleStore
     {
         private static readonly PermissionGrant ExecuteGrant = new()

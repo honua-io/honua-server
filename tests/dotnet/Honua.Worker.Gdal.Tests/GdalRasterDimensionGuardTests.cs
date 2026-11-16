@@ -8,13 +8,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalRasterDimensionGuard"/> — the pre-processing
-/// pixel-dimension admission control (#2766). Exercises the cheap TIFF-header
-/// dimension read AND the pure cap evaluation directly, with NO GDAL binary, so
-/// the decompression-bomb reject is proven to happen from a header read before any
-/// full-raster allocation.
-/// </summary>
 public sealed class GdalRasterDimensionGuardTests
 {
     private static GdalWorkerOptions Options() => new();
@@ -83,9 +76,15 @@ public sealed class GdalRasterDimensionGuardTests
         var contour = GdalRasterDriverAllowlist.Prefix("gdal_contour", ["in.tif", "out.geojson"], options);
         contour.Should().Equal("in.tif", "out.geojson");
 
-        var multidim = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
-        multidim.Should().NotContain("-if");
-        multidim.Should().Contain("/vsis3/bucket/coverage.nc");
+        var undeclared = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
+        undeclared.Should().ContainInOrder("-if", "GTiff");
+
+        using (GdalRemoteInputScope.Trust("/vsis3/bucket/coverage.nc"))
+        {
+            var multidim = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
+            multidim.Should().NotContain("-if");
+            multidim.Should().Contain("/vsis3/bucket/coverage.nc");
+        }
 
         var viewshed = GdalRasterDriverAllowlist.Prefix("gdal_viewshed", ["dem.tif", "out.tif"], options);
         viewshed.Should().Equal("dem.tif", "out.tif");

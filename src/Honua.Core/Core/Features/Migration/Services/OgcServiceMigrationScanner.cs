@@ -121,7 +121,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                                    ex is JsonException ||
                                    ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
-            Log.ScanFailed(_logger, sourceKind, ToSafeSourceUrl(serviceUri), ex);
+            Log.ScanFailed(_logger, sourceKind, MigrationSourceUrls.ToSafeSourceUrl(serviceUri), ex);
             return CreateFailedArtifact(sourceKind, serviceUri, normalizedServiceType, ToSafeScanFailureReason(ex));
         }
     }
@@ -634,7 +634,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             Source = new MigrationSourceIdentity
             {
                 DisplayName = displayName,
-                BaseUrl = ToSafeSourceUrl(serviceUri),
+                BaseUrl = MigrationSourceUrls.ToSafeSourceUrl(serviceUri),
                 Product = product,
                 Version = version,
                 ServiceType = serviceType
@@ -675,7 +675,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             Source = new MigrationSourceIdentity
             {
                 DisplayName = $"OGC {serviceType}",
-                BaseUrl = ToSafeSourceUrl(serviceUri),
+                BaseUrl = MigrationSourceUrls.ToSafeSourceUrl(serviceUri),
                 Product = $"OGC {serviceType}",
                 ServiceType = serviceType
             },
@@ -1495,7 +1495,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         var isWcs2 = version.StartsWith("2.", StringComparison.Ordinal);
         var builder = new UriBuilder(serviceUri)
         {
-            Query = BuildQuery(
+            Query = MigrationSourceUrls.BuildQuery(
                 serviceUri.Query,
                 new Dictionary<string, string?>
                 {
@@ -1714,7 +1714,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         }
 
         var builder = new UriBuilder(serviceUri);
-        var query = BuildQuery(builder.Query, new Dictionary<string, string?>
+        var query = MigrationSourceUrls.BuildQuery(builder.Query, new Dictionary<string, string?>
         {
             ["service"] = serviceType,
             ["request"] = "GetCapabilities",
@@ -1728,7 +1728,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
     {
         var builder = new UriBuilder(serviceUri)
         {
-            Query = BuildQuery(
+            Query = MigrationSourceUrls.BuildQuery(
                 serviceUri.Query,
                 new Dictionary<string, string?>
                 {
@@ -1739,38 +1739,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                 })
         };
         return builder.Uri;
-    }
-
-    private static string BuildQuery(string existingQuery, IReadOnlyDictionary<string, string?> values)
-    {
-        var pairs = new List<KeyValuePair<string, string>>();
-        var trimmed = existingQuery.TrimStart('?');
-        if (trimmed.Length > 0)
-        {
-            foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var separator = part.IndexOf('=', StringComparison.Ordinal);
-                var key = separator < 0 ? Uri.UnescapeDataString(part) : Uri.UnescapeDataString(part[..separator]);
-                if (values.Keys.Any(candidate => string.Equals(candidate, key, StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                var value = separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]);
-                pairs.Add(new KeyValuePair<string, string>(key, value));
-            }
-        }
-
-        foreach (var (key, value) in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                pairs.Add(new KeyValuePair<string, string>(key, value));
-            }
-        }
-
-        return string.Join("&", pairs.Select(static pair =>
-            $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
     }
 
     private static bool HasQueryParameter(Uri uri, string name, string value)
@@ -1794,19 +1762,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         }
 
         return false;
-    }
-
-    private static string ToSafeSourceUrl(Uri uri)
-    {
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
     }
 
     private static string ToSafeCapabilitiesUrl(Uri uri)

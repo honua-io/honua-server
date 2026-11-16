@@ -1,0 +1,191 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
+
+namespace Honua.Infrastructure.SharedCaching;
+
+// Edit purges: the coalescing window, the leases that share it across tasks, and what happens to paths that were not sent.
+internal sealed partial class CdnInvalidationService
+{
+    private async Task InvalidatePendingWhenWindowClosesAsync(DateTimeOffset windowClosesAt)
+    {
+        var delay = windowClosesAt - _timeProvider.GetUtcNow();
+        if (delay > TimeSpan.Zero)
+        {
+            await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
+        }
+
+        PurgeBatch[] pending;
+        lock (_gate)
+        {
+            if (_windowClosesAt != windowClosesAt)
+            {
+                return;
+            }
+
+            pending = PurgeBatch.Group(_pendingEditPaths);
+            _pendingEditPaths.Clear();
+            _windowClosesAt = null;
+            _lastEditInvalidation = _timeProvider.GetUtcNow();
+        }
+
+        foreach (var batch in pending)
+        {
+            var result = await SendAfterEditAsync(batch.Paths, batch.Cause, CancellationToken.None)
+                .ConfigureAwait(false);
+            // A busy CDN has already been handed the paths again for the next window.
+            if (result is { Outcome: CdnInvalidationOutcome.Failed })
+            {
+                Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+            }
+        }
+    }
+
+    // An address another task invalidated within the window is retried shortly: that purge may have preceded this edit.
+    private async Task<CdnInvalidationResult?> SendAfterEditAsync(string[] paths, CdnPurgeCause cause, CancellationToken cancellationToken)
+    {
+        string[] claimed;
+        CdnInvalidationResult result;
+        try
+        {
+            claimed = await ClaimAcrossTasksAsync(paths, cancellationToken).ConfigureAwait(false);
+            // Edit settles may rely on a newer purge. Exempt purges must retry: the holder may exhaust its edit budget.
+            if (claimed.Length < paths.Length && (cause.Kind is not CdnPurgeKind.Settle || cause.Reason != "edit"))
+            {
+                DeferToNextWindow(paths.Except(claimed, StringComparer.Ordinal), HeldLeaseRetryDelay(), cause);
+            }
+
+            if (claimed.Length == 0)
+            {
+                return null;
+            }
+
+            var batches = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
+            result = batches.Result;
+
+            // Handle each submission independently: an unsent batch must not suppress another batch's settle repeat.
+            foreach (var batch in batches.Batches)
+            {
+                if (batch.Result.Outcome is CdnInvalidationOutcome.Busy)
+                {
+                    // This task holds the leases, so no other task will send these paths before the next window.
+                    DeferToNextWindow(batch.Paths, CurrentCoalescingWindow(), cause);
+                }
+
+                AfterEditPurge(batch.Paths, batch.Result, cause);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The edit request gave up, not the edit: its purge goes out with the next window.
+            DeferToNextWindow(paths, CurrentCoalescingWindow(), cause);
+            throw;
+        }
+
+        return result;
+    }
+
+    internal void InvalidateWithNextWindow(IEnumerable<string> paths)
+    {
+        if (CdnConfigured)
+        {
+            string[] edited = [.. paths];
+            NoteEditQueued(edited);
+            DeferToNextWindow(edited, CurrentCoalescingWindow());
+        }
+    }
+
+    private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay, CdnPurgeCause? cause = null)
+    {
+        var due = _timeProvider.GetUtcNow() + delay;
+        string[]? unsent = null;
+        lock (_gate)
+        {
+            // After the shutdown flush no window timer will fire before the process ends.
+            if (_stopping)
+            {
+                unsent = [.. paths];
+            }
+            else
+            {
+                AddPendingPurges(paths, cause ?? CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits));
+                if (_windowClosesAt is { } scheduled && scheduled <= due)
+                {
+                    return;
+                }
+
+                _windowClosesAt = due;
+                _lastEditInvalidation = _timeProvider.GetUtcNow();
+            }
+        }
+
+        if (unsent is not null)
+        {
+            Log.ShutdownPurgesNotSent(logger, unsent.Length, string.Join(' ', unsent));
+            return;
+        }
+
+        _ = InvalidatePendingWhenWindowClosesAsync(due);
+    }
+
+    // Called under _gate. Coalescing an edit must not downgrade an administrative purge's exemption.
+    private void AddPendingPurges(IEnumerable<string> paths, CdnPurgeCause cause)
+    {
+        foreach (var path in paths)
+        {
+            if (!_pendingEditPaths.TryGetValue(path, out var pending))
+            {
+                _pendingEditPaths[path] = cause;
+                continue;
+            }
+
+            var stated = pending.Reason != "edit" && (cause.Reason == "edit" || pending.Kind is CdnPurgeKind.Change)
+                ? pending : cause;
+            // A new change needs its own repeat even when it joins an exempt settle retry.
+            _pendingEditPaths[path] = pending.Kind is CdnPurgeKind.Change || cause.Kind is CdnPurgeKind.Change
+                ? stated.AsChange() : stated;
+        }
+    }
+
+    // One lease per address in the shared database: whichever task takes it sends the purge, and nobody else does until it expires.
+    // A host without that database is one task, and its own window is enough.
+    private async Task<string[]> ClaimAcrossTasksAsync(string[] paths, CancellationToken cancellationToken)
+    {
+        if (_leaseStore is null || paths.Length == 0)
+        {
+            return paths;
+        }
+
+        var lease = CurrentCoalescingWindow() - LeaseMargin;
+        var claims = new bool[paths.Length];
+        await Parallel.ForAsync(
+            0,
+            paths.Length,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentLeaseClaims, CancellationToken = cancellationToken },
+            async (index, token) => claims[index] = await TryClaimAsync(paths[index], lease, token).ConfigureAwait(false))
+            .ConfigureAwait(false);
+        return [.. paths.Where((_, index) => claims[index])];
+    }
+
+    // An unreachable lease store must not leave content stale: purging twice is cheaper than serving the old version.
+    private async Task<bool> TryClaimAsync(string path, TimeSpan lease, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // A normal-window lease must not delay an emergency purge; emergency tasks still coalesce together.
+            var prefix = lease == EmergencyCoalescingWindow - LeaseMargin ? LeaseKeyPrefix + "emergency:" : LeaseKeyPrefix;
+            return await _leaseStore!.TryAcquireAsync(new LeaseClaim(prefix + path, _leaseOwner), lease, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Log.PurgeLeaseUnavailable(logger, exception, path);
+            return true;
+        }
+    }
+
+    // The store does not say when another task's lease ends, so a held address is retried several times per window.
+    private TimeSpan HeldLeaseRetryDelay() => CurrentCoalescingWindow() / 6;
+}

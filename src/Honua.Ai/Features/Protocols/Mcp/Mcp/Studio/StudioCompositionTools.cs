@@ -12,15 +12,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-/// <summary>
-/// MCP tool that adds a layer to a map/app/dashboard-family Studio draft's composition
-/// (honua-server#3002, REQ-002). Mirrors the honua-sdk-js agent-tools
-/// <c>addLayer(layer, beforeId?)</c> shape so the SDK and server stay
-/// vocabulary-aligned.
-/// </summary>
 internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_add_layer";
 
     private readonly ILogger<AddStudioLayerTool> _typedLogger;
@@ -31,13 +24,10 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -48,7 +38,6 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.Write("Add Studio layer", destructive: false, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -92,13 +81,8 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         ?? throw new GeoprocessingValidationException("'generation' is required.");
 }
 
-/// <summary>
-/// MCP tool that removes a layer from a map/app/dashboard-family Studio draft's
-/// composition (honua-server#3002, REQ-002).
-/// </summary>
 internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_remove_layer";
 
     private readonly ILogger<RemoveStudioLayerTool> _typedLogger;
@@ -109,13 +93,10 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -128,7 +109,6 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         Annotations = McpToolAnnotationSets.Write("Remove Studio layer", destructive: true, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -157,13 +137,8 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
     }
 }
 
-/// <summary>
-/// MCP tool that sets (or clears) a layer's bound style reference in a
-/// map/app/dashboard-family Studio draft's composition (honua-server#3002, REQ-002).
-/// </summary>
 internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_set_layer_style";
 
     private readonly ILogger<SetStudioLayerStyleTool> _typedLogger;
@@ -174,13 +149,10 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -193,7 +165,6 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         Annotations = McpToolAnnotationSets.Write("Set Studio layer style", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -243,20 +214,8 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
     }
 }
 
-/// <summary>
-/// MCP tool that shows or hides a layer in a map/app/dashboard-family Studio draft's
-/// composition (honua-server#3199), the server-side execution path for the
-/// ADR-0030 <c>setVisibility</c> action verb.
-/// </summary>
-/// <remarks>
-/// <c>visible</c> is part of the stored <c>StudioCompositionLayer</c> wire shape, so a draft sync
-/// overwrites a client-local visibility toggle with the stored value. Before this tool the only
-/// writer of <c>visible</c> was <c>honua_studio_add_layer</c>, which sets it once and rejects
-/// duplicate ids — leaving composition state with no way to change a layer's visibility at all.
-/// </remarks>
 internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_set_layer_visibility";
 
     private readonly ILogger<SetStudioLayerVisibilityTool> _typedLogger;
@@ -267,13 +226,10 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -286,7 +242,6 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
         Annotations = McpToolAnnotationSets.Write("Set Studio layer visibility", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -324,7 +279,6 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
 
 internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_set_view";
 
     private readonly ILogger<SetStudioViewTool> _typedLogger;
@@ -335,13 +289,10 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -352,7 +303,6 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.Write("Set Studio view", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -388,13 +338,8 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
     }
 }
 
-/// <summary>
-/// MCP tool that adds a widget to a map/app/dashboard-family Studio draft's composition
-/// (honua-server#3002, REQ-002).
-/// </summary>
 internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_add_widget";
 
     private readonly ILogger<AddStudioWidgetTool> _typedLogger;
@@ -405,13 +350,10 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -422,7 +364,6 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.Write("Add Studio widget", destructive: false, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -466,13 +407,8 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
     }
 }
 
-/// <summary>
-/// MCP tool that removes a widget from a map/app/dashboard-family Studio draft's
-/// composition (honua-server#3002, REQ-002).
-/// </summary>
 internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_remove_widget";
 
     private readonly ILogger<RemoveStudioWidgetTool> _typedLogger;
@@ -483,13 +419,10 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -500,7 +433,6 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         Annotations = McpToolAnnotationSets.Write("Remove Studio widget", destructive: true, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -529,18 +461,8 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
     }
 }
 
-/// <summary>
-/// MCP tool that adds or replaces one declarative event→action binding in a
-/// map/app/dashboard-family Studio draft's composition — the reference implementation of
-/// the geospatial-mcp standard's <c>bind_interaction</c> (ADR-0030, <c>composition</c>
-/// profile). The standard-level target is a composition document
-/// (<c>mapPackageId</c>/<c>appPackageId</c>); Honua authors compositions through the
-/// draft lifecycle, and that <c>draftId</c> + <c>generation</c> spelling is admitted
-/// upstream as <c>x-honua-reference-shape</c>.
-/// </summary>
 internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_bind_interaction";
 
     private readonly ILogger<BindStudioInteractionTool> _typedLogger;
@@ -551,13 +473,10 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -574,7 +493,6 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         Annotations = McpToolAnnotationSets.Write("Bind Studio interaction", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -599,12 +517,6 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
     }
 
-    /// <summary>
-    /// Maps the wire input onto the domain <see cref="StudioInteraction"/>, enforcing the
-    /// required members and the closed event/verb vocabulary in the HANDLER. The advertised
-    /// <c>inputSchema</c> states the same contract, but MCP dispatch does not evaluate it,
-    /// so the schema is documentation and this is the gate.
-    /// </summary>
     private static StudioInteraction BuildInteraction(McpStudioInteractionInput? input)
     {
         var interaction = input ?? throw new GeoprocessingValidationException("'interaction' is required.");
@@ -672,15 +584,8 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
     }
 }
 
-/// <summary>
-/// MCP tool that removes one declarative event→action binding, by id, from a
-/// map/app/dashboard-family Studio draft's composition — the reference implementation of the
-/// geospatial-mcp standard's <c>remove_interaction</c> (ADR-0030, <c>composition</c>
-/// profile). Removing an unknown id is an error, not a no-op.
-/// </summary>
 internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_remove_interaction";
 
     private readonly ILogger<RemoveStudioInteractionTool> _typedLogger;
@@ -691,13 +596,10 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -710,7 +612,6 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         Annotations = McpToolAnnotationSets.Write("Remove Studio interaction", destructive: true, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -745,20 +646,8 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
     }
 }
 
-/// <summary>
-/// MCP tool that adds or replaces one control in a map/app/dashboard-family Studio draft's
-/// composition — the reference implementation of the geospatial-mcp standard's
-/// <c>add_control</c> (ADR-0031, <c>composition</c> profile). Controls are a peer
-/// collection to layers and widgets, not a widget kind: a control is an input
-/// affordance that emits <c>change</c> and is the target a <c>control:{id}</c>
-/// interaction reference resolves against. The standard-level target is a composition
-/// document (<c>mapPackageId</c>/<c>appPackageId</c>); Honua authors compositions
-/// through the draft lifecycle, and that <c>draftId</c> + <c>generation</c> spelling is
-/// admitted upstream as <c>x-honua-reference-shape</c>.
-/// </summary>
 internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_add_control";
 
     private readonly ILogger<AddStudioControlTool> _typedLogger;
@@ -769,13 +658,10 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -792,7 +678,6 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         Annotations = McpToolAnnotationSets.Write("Add Studio control", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {
@@ -817,12 +702,6 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
     }
 
-    /// <summary>
-    /// Maps the wire input onto the domain <see cref="StudioCompositionControl"/>, enforcing
-    /// the required members and the closed kind vocabulary in the HANDLER. The advertised
-    /// <c>inputSchema</c> states the same contract, but MCP dispatch does not evaluate it,
-    /// so the schema is documentation and this is the gate.
-    /// </summary>
     private static StudioCompositionControl BuildControl(McpStudioControlInput? input)
     {
         var control = input ?? throw new GeoprocessingValidationException("'control' is required.");
@@ -872,18 +751,8 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
     }
 }
 
-/// <summary>
-/// MCP tool that removes one control, by id, from a map/app/dashboard-family Studio draft's
-/// composition — the reference implementation of the geospatial-mcp standard's
-/// <c>remove_control</c> (ADR-0031, <c>composition</c> profile). Removing an unknown id
-/// is an error, not a no-op, and removing a control an interaction still references
-/// either fails (default) or removes those bindings with it
-/// (<c>cascadeInteractions</c>): a document never silently retains a dangling
-/// <c>control:{id}</c> binding.
-/// </summary>
 internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpTool
 {
-    /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_studio_remove_control";
 
     private readonly ILogger<RemoveStudioControlTool> _typedLogger;
@@ -894,13 +763,10 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
         _typedLogger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -913,7 +779,6 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
         Annotations = McpToolAnnotationSets.Write("Remove Studio control", destructive: true, idempotent: false)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
     {

@@ -12,8 +12,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -164,4 +166,58 @@ public sealed partial class ProposalEndpointsTests
         _notifier.ResolvedCount.Should().Be(0);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
+    public async Task RejectProposal_AdminKey_RequiresHumanSessionAndRecordsDenial()
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+
+        using var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",
+            new { reason = "an agent closing another agent's proposal" });
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+        body.Should().Contain(ProposalEndpoints.HumanRejectionRequiredMessage);
+        var stored = (await _proposalStore.GetAsync(proposal.ProposalId))!;
+        stored.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        stored.ResolvedAt.Should().BeNull();
+        _notifier.ResolvedCount.Should().Be(0);
+        await AssertRejectionDenialAuditedAsync(proposal.ProposalId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
+    public async Task RejectProposal_PasswordSession_MarksRejected()
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var human = await HumanApprovalHttpClient.AuthenticateWithPasswordAsync(_fixture, AdminPassword);
+
+        using var response = await human.Client.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",
+            new { reason = "not safe right now" });
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("status").GetString().Should().Be("Rejected");
+        document.RootElement.GetProperty("resolutionReason").GetString().Should().Be("not safe right now");
+        var stored = (await _proposalStore.GetAsync(proposal.ProposalId))!;
+        stored.Status.Should().Be(OperationProposalStatus.Rejected);
+        stored.ResolvedAt.Should().NotBeNull();
+        _executor.ExecutionCount.Should().Be(0);
+        _notifier.ResolvedCount.Should().Be(1);
+    }
+
+    private async Task AssertRejectionDenialAuditedAsync(string proposalId)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
+        var denial = audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied").Subject;
+        using var details = JsonDocument.Parse(denial.Details!);
+        details.RootElement.GetProperty("reason").GetString().Should().Be("human_session_required");
+        details.RootElement.GetProperty("decision").GetString().Should().Be("reject");
+    }
 }

@@ -18,7 +18,7 @@ newest of the 100 latest trunk commits that is certified, never HEAD at cron
 time. It builds and checks out that sha, stamps `HONUA_GIT_SHA` and the
 `org.opencontainers.image.revision` label with it, and publishes the per-sha tags
 above plus the dated and channel tags (`nightly`, `nightly-<yyyymmdd>`, `trunk`,
-and the `-aot`, `-lambda-aot`, `-jit` and `-functions-aot` variants), so those
+and the `-aot`, `-lambda-aot` and `-jit` variants), so those
 channel tags now point at the newest certified image. The run log and step
 summary name the chosen sha and its certifying run. When no commit in that
 window qualifies, the run fails and lists the missing or unsuccessful lanes for
@@ -30,8 +30,10 @@ certified.
 
 The default serving images contain the PostGIS store. Import and export formats remain
 available, including GeoPackage, Shapefile, GeoTIFF and Parquet. SQLite supports file I/O;
-it is not an additional server data store. The runtime is chiseled-extra, with ICU,
-rendering fonts and required native libraries, and no shell or package manager.
+it is not an additional server data store. The JIT runtime is chiseled-extra, with ICU,
+rendering fonts and required native libraries, and no shell or package manager. The
+native-AOT PostGIS image uses the plain chiseled runtime in invariant globalization mode,
+with time-zone data and the same fonts and native libraries, and no ICU.
 
 Use the JIT full variant for additional stores: `nightly-jit-full`,
 `nightly-jit-<candidate-sha7>-full`, or a release's `-ecs-jit-full` tag. Pin the selected

@@ -17,13 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-5 <c>geometry.simplify</c> executor. Pins
-/// the same failure surfaces as the earlier vector executors plus the
-/// happy-path GeoJSON Feature shape: a near-straight zig-zag line with a
-/// 0.001-unit perturbation collapses to the two-vertex segment under a
-/// tolerance of 1.0 (Douglas-Peucker removes the below-tolerance vertex).
-/// </summary>
 public sealed class GeometrySimplifyJobExecutorTests
 {
     private const string FeatureDataUriPrefix = "data:application/geo+json;base64,";

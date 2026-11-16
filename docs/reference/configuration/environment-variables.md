@@ -172,7 +172,7 @@ These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../
 | `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
 | `Mcp__SessionMode` | `Auto` | Session mode on a host without a system database: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
 | `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids and MRTR `requestState` values. When unset, `ConnectionStrings__DefaultConnection` is used. |
-| `Mcp__ApprovalConsoleUrl` | — | Absolute `https` URL of the Console that approves agent changes (`http` only on loopback). When set, a modern MCP request that declares URL-mode elicitation is sent to `<url>/inbox?proposalId=<id>` for approval. When unset, agents report the proposal and people approve in Console as before. |
+| `Mcp__ApprovalConsoleUrl` | — | Absolute `https` URL of the Console that approves agent changes (`http` only on loopback). When set, a modern MCP request that declares URL-mode elicitation is sent to `<url>/inbox?proposalId=<id>` for approval. When unset, agents report the proposal and people approve in Console as before. The quickstart with Console sets `https://localhost:${HONUA_CONSOLE_PORT}/console/`. |
 | `Mcp__StatelessSessionLifetime` | `08:00:00` | Absolute lifetime of a stateless session id, counted from `initialize`. |
 
 With a system database, MCP session records are shared through the `mcp_sessions` table. A session negotiated on any instance is then honoured by every instance. Without one, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
@@ -224,7 +224,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `Limits__Query__MaxBboxAreaSqKm` | `100000` | Max bounding-box query area. |
 | `Limits__Query__MaxMapLayersPerRequest` | `50` | Max layer tokens in one WMS GetMap/GetFeatureInfo `LAYERS` or `QUERY_LAYERS` list; larger lists are rejected with `InvalidParameterValue`. |
 | `Limits__Replica__MaxChangesPerLayer` | `50000` | Max adds, updates, or deletes per layer in one offline replica response. Larger backlogs are delivered in consecutive generation windows (`exceededTransferLimit: true`), never rejected. |
-| `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. |
+| `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. Also the most vertices a Geometry Service request may add to one geometry (`densify`, shape-preserving measurement). |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
 | `Limits__Geometry__MaxCoordinatePrecision` | `8` | Max coordinate decimal precision. |
 | `Limits__Edits__MaxFeaturesPerEdit` | `500` | Max features per edit operation. |
@@ -277,6 +277,8 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `FeatureChangeEvents__Webhook__Enabled` | `false` | Enable outbound webhook delivery of feature-change events. |
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
+
+Outbound clients using DNS-validated direct connections, including feature-change webhooks, URL imports, migration sources and external-service discovery, ignore system HTTP proxy settings. Permit direct egress to their configured destinations.
 
 Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF. Its counters are per node: a limit of N admits up to N requests per window on each replica.
 
@@ -452,6 +454,10 @@ Enabled remote AI transfers require exact operator approval rules. See [AI model
 ## AI invocation admission
 
 Model calls require `AiExecutionAdmission__DeploymentId` (empty by default).
-`AiExecutionAdmission__Backend` accepts `auto` (default), `postgres` or `redis`.
-See [AI invocation admission](ai-execution-admission.md) for authoritative backend selection,
-policy fields, typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.
+PostgreSQL is the sole admission authority. Remove the retired
+`AiExecutionAdmission__Backend` selector; legacy `auto` and `postgres` values remain
+accepted, while any other value prevents startup. Preserve the deployment
+identity and ledger; switching from the retired cache backend requires an
+explicit migration plan for outstanding invocations and charged history.
+See [AI invocation admission](ai-execution-admission.md) for policy fields,
+typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.

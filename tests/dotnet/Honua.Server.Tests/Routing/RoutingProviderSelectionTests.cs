@@ -10,13 +10,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Unit tests (no database) for routing provider selection in
-/// <see cref="ServiceCollectionExtensions.AddRouting"/>. Verifies that the
-/// default does NOT register the pgRouting provider on non-Postgres data
-/// providers, so the NAServer adapter can respond clearly instead of executing
-/// pgRouting SQL against an incompatible database.
-/// </summary>
 public sealed class RoutingProviderSelectionTests
 {
     private static Type? SelectedProviderType(params (string Key, string Value)[] settings)

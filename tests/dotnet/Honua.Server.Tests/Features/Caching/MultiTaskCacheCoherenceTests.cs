@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Caching;
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Cache)]
-public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
+public sealed partial class MultiTaskCacheCoherenceTests : IAsyncLifetime
 {
     private const string CollectionPath = "/ogc/features/collections/0";
     private const string TilePath = "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0";
@@ -43,6 +43,7 @@ public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
         _taskA = NewTaskHost();
         await _taskA.InitializeAsync();
         await InstallCatalogTablesAsync(_taskA);
+        await InstallExternalEditTablesAsync();
         var seed = _taskA.GetService<TestMetadataV2GraphProvider>().GetCurrentForSchema(_taskA.CurrentSchema).Graph;
         await SaveCatalogAsync(_taskA, seed with { Environment = _environment, Revision = 1 }, expectedEtag: null);
 
@@ -53,6 +54,7 @@ public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _taskB.DisposeAsync();
+        await _taskA.Postgres.DropSchemaAsync(_externalSchema);
         await _taskA.DisposeAsync();
     }
 
@@ -111,6 +113,7 @@ public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
             .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
         fixture.ConfigureServices(services =>
         {
+            ConfigureExternalRevisions(services);
             services.RemoveAll<IMetadataV2GraphProvider>();
             services.RemoveAll<IMetadataV2GraphStore>();
             services.AddScoped<IMetadataV2GraphStore>(provider => new PostgresMetadataV2GraphStore(

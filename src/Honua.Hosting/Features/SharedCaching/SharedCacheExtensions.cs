@@ -20,14 +20,25 @@ internal static class SharedCacheExtensions
         services.AddSingleton<IConfigurationDocumentationContributor, SharedCacheConfigurationDocumentationContributor>();
         services.TryAddSingleton<ICdnInvalidator, NoCdnInvalidator>();
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton(static provider => new CdnPurgeCoordination
+        services.TryAddSingleton(static provider =>
         {
-            TimeProvider = provider.GetRequiredService<TimeProvider>(),
-            HttpContextAccessor = provider.GetService<IHttpContextAccessor>(),
-            Options = provider.GetService<IOptionsMonitor<SharedCacheOptions>>(),
-            LeaseStore = provider.GetService<ILeaseStore>(),
+            var shared = new CdnPurgeCoordination
+            {
+                TimeProvider = provider.GetRequiredService<TimeProvider>(),
+                HttpContextAccessor = provider.GetService<IHttpContextAccessor>(),
+                Options = provider.GetService<IOptionsMonitor<SharedCacheOptions>>(),
+                LeaseStore = provider.GetService<ILeaseStore>(),
+                Budget = provider.GetService<ICdnPurgeBudget>(),
+            };
+            var reliability = new CdnPurgeReliability(
+                provider.GetRequiredService<ICdnInvalidator>(),
+                provider.GetRequiredService<ILogger<CdnPurgeReliability>>(),
+                shared);
+            return shared with { Reliability = reliability };
         });
+        services.TryAddSingleton(static provider => provider.GetRequiredService<CdnPurgeCoordination>().Reliability!);
         services.TryAddSingleton<CdnInvalidationService>();
+        services.AddHostedService<CdnPendingPurgeFlush>();
         return services;
     }
 

@@ -18,9 +18,9 @@
 # SAFETY NET / MISS-RISK CONTRACT (same shape as the affected build scope):
 # a format/analyzer diagnostic triggered in a file OUTSIDE the diff — e.g. a
 # deleted type leaving an unnecessary using elsewhere — is not caught by the
-# scoped per-PR run. It IS caught by the full-solution `dotnet format` that the
-# merge train / ci.yml `Build & Format Check` runs before the change lands, and
-# is fixed forward from there; it never reaches trunk unverified.
+# scoped per-PR run. It IS caught by the full-solution `dotnet format` in
+# ci.yml `Build & Format Check` (post-merge and scheduled full CI), and is fixed
+# forward from there.
 #
 # WHEN THIS REFUSES TO NARROW (falls back to `full`):
 #   * The caller asked for `full` (default), or the event is not pull_request

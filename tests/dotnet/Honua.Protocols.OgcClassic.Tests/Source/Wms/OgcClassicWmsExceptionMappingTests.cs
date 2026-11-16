@@ -11,10 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Verifies that an unexpected WMS failure remains an HTTP failure while retaining
-/// the protocol-level ServiceExceptionReport payload.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicWmsExceptionMappingTests : IAsyncLifetime

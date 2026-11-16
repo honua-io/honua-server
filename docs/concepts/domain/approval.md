@@ -23,13 +23,12 @@ Routine Studio composition does not acquire an approval step merely because an
 agent performs it. Check the [composition policy](../../studio/mcp-tools.md#composition-policy)
 for current deployment limitations.
 
-Honua MCP control-plane proposal tools do not approve their own proposals. Studio publication binds an exact saved version and hash. For an authorized
-admin, its MCP tool can publish directly without creating a proposal. For a
-non-admin, it returns a proposal resource to follow. A pending proposal requires
-one authorized human decision through a live interactive OIDC session in Console;
-that human may be the requester. An API key, ordinary bearer, MCP transport or
-client confirmation cannot supply that decision. Direct publication and approval
-of an existing proposal are different paths.[^contract]
+Honua MCP control-plane proposal tools do not approve their own proposals. Studio publication binds an exact saved version and hash. Its MCP tool returns a
+proposal resource to follow for every caller, administrators included. A pending
+proposal requires one authorized human decision, to approve or to reject, through
+a live interactive browser session (password or OIDC) in Console; that human may
+be the requester. An API key, ordinary bearer, MCP transport or client
+confirmation cannot supply that decision.[^contract]
 
 [Permissions](permissions.md) to compose or propose are distinct from approval authority. A proposal can remain pending or be rejected. Do not report the change as completed while waiting, and do not replace the selected version silently after approval.
 

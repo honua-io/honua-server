@@ -201,12 +201,6 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         root.TryGetProperty("updatedFeatureCount", out _).Should().BeTrue();
     }
 
-    /// <summary>
-    /// #6100: calculate is a bulk field rewrite, so it must be POST-only. A GET mapping let a
-    /// cross-site top-level navigation (which carries a SameSite=Lax session cookie) rewrite
-    /// every matching row as the victim. GET must be refused by routing and leave rows untouched;
-    /// the same expression over POST is the positive control that the row is reachable.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Calculate)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]

@@ -4,7 +4,9 @@
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Admin;
@@ -22,6 +24,28 @@ namespace Honua.Server.Tests.Startup;
 
 public sealed class ImportExportTileOperationsRegistrationTests
 {
+    [UnitTest]
+    public async Task AddTileOperations_WithLocalCache_AdmitsProgressAtomicallyWithoutSharingAcrossHosts()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDistributedMemoryCache();
+        services.AddHonuaImportExportAndTileOperations(configuration);
+        await using var firstHost = services.BuildServiceProvider();
+        await using var secondHost = services.BuildServiceProvider();
+        var firstStore = firstHost.GetRequiredService<IUniversalProgressStore>();
+        var secondStore = secondHost.GetRequiredService<IUniversalProgressStore>();
+        var progress = UploadProgress.CreateInitial("local-upload", "data.bin", 100);
+
+        (await firstStore.TryReplaceProgressAsync(new OperationProgressWrite("local-upload", progress), null))
+            .Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await firstStore.TryReplaceProgressAsync(new OperationProgressWrite("local-upload", progress), null))
+            .Outcome.Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+        (await firstStore.GetProgressAsync("local-upload")).Should().NotBeNull();
+        (await secondStore.GetProgressAsync("local-upload")).Should().BeNull();
+    }
+
     [UnitTest]
     public void AddTileOperations_WithoutSystemDatabase_ComposesNoSharedLeaseStore()
     {
@@ -48,12 +72,6 @@ public sealed class ImportExportTileOperationsRegistrationTests
         ValidateContainer(services);
     }
 
-    /// <summary>
-    /// Composes the tile-operations module over production service lifetimes: Postgres registers
-    /// <see cref="IMetadataV2GraphProvider"/> as <em>scoped</em>
-    /// (<c>src/Honua.Db/Postgres/ServiceCollectionExtensions.cs</c>), unlike the singleton the
-    /// file-backed <c>AddFileMetadataV2Graph</c> dev/test path registers.
-    /// </summary>
     private static ServiceCollection BuildProductionShapedServices(string substrate)
     {
         var configuration = new ConfigurationBuilder().Build();
@@ -84,12 +102,6 @@ public sealed class ImportExportTileOperationsRegistrationTests
         return services;
     }
 
-    /// <summary>
-    /// Builds the container the way a Development-environment host does. This must stay
-    /// <c>ValidateOnBuild</c>-based: a lazy resolve only covers the services a test happens to ask
-    /// for, while <c>ValidateOnBuild</c> walks every descriptor in the module and turns a
-    /// three-minute e2e boot timeout into a fast unit failure.
-    /// </summary>
     private static void ValidateContainer(IServiceCollection services)
     {
         var build = () =>

@@ -437,6 +437,8 @@ internal sealed class McpPlatformOpsReader(
         var accepted = await envelopeFactory.CreateAcceptedAsync($"control-plane.{kind.ToString().ToLowerInvariant()}", new OperationPolicyContext
         {
             PrincipalId = actor,
+            Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value)
+                .Append("agent").Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             IdempotencyKey = idempotencyKey,
             AuthorizationOutcome = authorizationOutcome,
             ScopeGoverned = scopeGoverned,

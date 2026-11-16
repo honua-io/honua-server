@@ -11,9 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Styling;
 
-/// <summary>
-/// Unit tests for the style suggestion service field selection logic.
-/// </summary>
 public sealed class StyleSuggestionServiceTests
 {
     [Trait("Tier", "Fast")]
@@ -155,10 +152,6 @@ public sealed class StyleSuggestionServiceTests
         };
     }
 
-    /// <summary>
-    /// Minimal stub for <see cref="IFieldProfilingService"/> used by unit tests
-    /// that do not require database access.
-    /// </summary>
     private sealed class StubFieldProfilingService(
         IReadOnlyList<FieldProfile> profiles,
         double[] numericValues) : IFieldProfilingService

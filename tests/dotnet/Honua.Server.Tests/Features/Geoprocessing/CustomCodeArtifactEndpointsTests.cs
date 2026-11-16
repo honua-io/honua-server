@@ -29,7 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>HTTP broker security, durable receipt publication and immutable byte round trips.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

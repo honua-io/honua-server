@@ -3,19 +3,21 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Core.Features.FileImport.Abstractions;
-using Honua.Core.Features.FileImport.Domain;
-using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-internal sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggestionService
+internal sealed partial class ImportSchemaSuggestionService
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "Retain the existing instance-based service registration and consumers.")]
     public Task<SchemaSuggestion> SuggestAsync(
         FilePreview preview, string fileName,
         CancellationToken cancellationToken = default)
@@ -59,7 +61,7 @@ internal sealed partial class ImportSchemaSuggestionService : IImportSchemaSugge
         }
 
         // For well-known geographic CRS, keep as-is.
-        // SRID-classifier-guard allowlist (#2732): deliberately narrow import heuristic. Only the
+        // SRID-classifier-guard allowlist: deliberately narrow import heuristic. Only the
         // three highest-confidence geographic codes are kept-as-is here; widening to the full
         // GeographicSridClassifier list would change import reprojection suggestions and is out of
         // scope for the classifier-unification (behaviour-neutral) change.

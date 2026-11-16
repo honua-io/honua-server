@@ -20,15 +20,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Drives the migration acceptance suite readiness stage end-to-end across the same fixture set
-/// used by the slice-2 scan, slice-3 apply, and slice-4 parity stage tests: one ArcGIS GeoServices
-/// REST fixture, one GeoServer REST fixture, and one OGC API Features snapshot fixture. The
-/// readiness stage consumes the upstream scan, apply, and parity reports and emits one
-/// <see cref="MigrationReadinessAttestationArtifact"/> per source plus the aggregate
-/// <see cref="MigrationReadinessStageReport"/>, classifying each source as <c>ready</c>,
-/// <c>conditional</c>, or <c>not-ready</c> with cited evidence artifact hashes.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceReadinessStageTests
 {

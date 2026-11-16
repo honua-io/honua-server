@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Configuration;
 
-/// <summary>
-/// Unit tests for LimitsOptionsValidator to ensure proper validation of configuration limits.
-/// </summary>
 public class LimitsOptionsValidatorTests
 {
     private readonly LimitsOptionsValidator _validator = new();

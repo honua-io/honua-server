@@ -27,9 +27,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Integration tests for API key authentication with development bypass functionality
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -44,10 +41,12 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     private static readonly string[] FeatureServerCapabilities = ["Query", "Extract"];
     private static readonly string[] FeatureServerSupportedFormats = ["JSON", "GeoJSON"];
     private readonly ITestOutputHelper _output;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly WebAppFixture _fixture = new();
 
-    public ApiKeyAuthenticationTests(ITestOutputHelper output)
+    public ApiKeyAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
+        _database = database;
         _output = output;
     }
 
@@ -61,10 +60,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Helper method to configure WebApplicationFactory with proper test environment settings.
-    /// </summary>
-    private static WebApplicationFactory<Program> CreateTestFactory(
+    private WebApplicationFactory<Program> CreateTestFactory(
         string environmentName,
         Action<IWebHostBuilder> configure)
     {
@@ -185,7 +181,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
             .BuildProvider();
     }
 
-    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
+    private string TestPostgresConnectionString => _database.ConnectionString;
 
     private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
     {

@@ -15,13 +15,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies that the reconciliation service re-reads job state before applying
-/// heartbeat or timeout transitions, preventing overwrites of jobs that completed
-/// between the sweep snapshot and the handler invocation.
-/// </summary>
 [Collection("ControlPlaneTransitionTelemetry")]
-public sealed class JobReconciliationServiceTests
+public sealed partial class JobReconciliationServiceTests
 {
     private static ExecutionJobRecord CreateRunningJob(
         string operationId = "job-1",
@@ -62,8 +57,13 @@ public sealed class JobReconciliationServiceTests
         };
     }
 
-    [UnitTest]
-    public async Task SweepActiveJobs_InterruptedLocalSubmission_RepairsMissingDeliveryWithoutRestartingClaimedJobs()
+    [UnitTheory]
+    [InlineData(ExecutionJobKind.Geoprocessing)]
+    [InlineData(ExecutionJobKind.Export)]
+    [InlineData(ExecutionJobKind.TileCache)]
+    [InlineData(ExecutionJobKind.GeoservicesImport)]
+    [InlineData(ExecutionJobKind.GeoServerImport)]
+    public async Task SweepActiveJobs_InterruptedLocalSubmission_RepairsMissingDeliveryWithoutRestartingClaimedJobs(ExecutionJobKind kind)
     {
         var queued = CreateRunningJob() with
         {
@@ -72,7 +72,8 @@ public sealed class JobReconciliationServiceTests
             ClaimedBy = null,
             ClaimedAt = null,
             LastHeartbeatAt = null,
-            Priority = OperationPriority.High
+            Priority = OperationPriority.High,
+            Spec = CreateRunningJob().Spec with { Kind = kind }
         };
         var store = Substitute.For<IExecutionJobStore>().WithTrySet();
         store.ListActiveAsync(null, null, Arg.Any<CancellationToken>()).Returns([queued]);
@@ -235,12 +236,6 @@ public sealed class JobReconciliationServiceTests
             "stealing a live claim would notify the submitter of a failure that never happened");
     }
 
-    /// <summary>
-    /// Regression: once the fresh record has moved back to Queued, the
-    /// reconciler must classify the snapshot as stale even if stale claim
-    /// metadata is still present. Only actively claimed attempts are eligible
-    /// for heartbeat expiry handling.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_LogsStale_WhenJobMovedBackToQueuedSinceSweep()
     {
@@ -340,10 +335,6 @@ public sealed class JobReconciliationServiceTests
             "a job that no longer exists has no terminal state to report");
     }
 
-    /// <summary>
-    /// Regression: a heartbeat arriving between the sweep snapshot and the
-    /// reconciler handler must prevent the transition — the worker is alive.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_SkipsTransition_WhenHeartbeatRefreshedSinceSweep()
     {
@@ -445,11 +436,6 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a job that timed out in the sweep snapshot but was requeued
-    /// and reclaimed by the same worker with a fresh ClaimedAt must not be
-    /// failed — the new attempt has not timed out.
-    /// </summary>
     [UnitTest]
     public async Task TimeoutExpiry_SkipsTransition_WhenReclaimedBySameWorkerWithFreshClaimTime()
     {
@@ -500,12 +486,6 @@ public sealed class JobReconciliationServiceTests
         await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: once the fresh record has moved back to Queued, the timeout
-    /// handler must classify the snapshot as stale rather than as a refreshed
-    /// timeout window. Only actively claimed attempts are eligible for timeout
-    /// expiry handling.
-    /// </summary>
     [UnitTest]
     public async Task TimeoutExpiry_LogsStale_WhenJobMovedBackToQueuedSinceSweep()
     {
@@ -554,12 +534,6 @@ public sealed class JobReconciliationServiceTests
         Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == 9049);
     }
 
-    /// <summary>
-    /// Regression: when the reconciler requeues a job after heartbeat expiry,
-    /// any stale CTS left by the previous worker must be revoked so that a
-    /// subsequent Cancel() call returns false and the API caller writes
-    /// Cancelled directly instead of delegating to a stale worker.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_Requeue_RevokesStaleWorkerCancellationToken()
     {
@@ -609,10 +583,6 @@ public sealed class JobReconciliationServiceTests
         Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
     }
 
-    /// <summary>
-    /// Regression: when the reconciler terminally fails a job after heartbeat
-    /// expiry (no retries remaining), the stale CTS must also be revoked.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_TerminalFailure_RevokesStaleWorkerCancellationToken()
     {
@@ -666,11 +636,6 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when <c>RequeueAsync</c> fails after the store transition to
-    /// Queued, the stale CTS must already be revoked so cancel paths do not
-    /// delegate to a dead worker. The stale-claim reconciler repairs the queue.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_Requeue_RevokesCtBeforeRequeueAsync_SoRequeueFailureDoesNotLeakStaleCts()
     {
@@ -725,11 +690,6 @@ public sealed class JobReconciliationServiceTests
         Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
     }
 
-    /// <summary>
-    /// Regression: when <c>RemoveAsync</c> fails after the store transition to
-    /// Failed (timeout), the stale CTS must already be revoked and the terminal
-    /// callback must still fire despite the queue failure.
-    /// </summary>
     [UnitTest]
     public async Task TimeoutExpiry_RevokesCtsAndNotifiesCallback_WhenQueueRemovalFails()
     {
@@ -771,11 +731,6 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when a durable cancellation signal (CancellationRequestedAt) is
-    /// set on a job whose heartbeat has expired, the reconciler must transition to
-    /// Cancelled instead of retrying, honouring the operator's cancellation intent.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_HonoursDurableCancellationSignal_TransitionsToCancelled()
     {
@@ -827,11 +782,6 @@ public sealed class JobReconciliationServiceTests
         await jobQueue.Received(1).RemoveAsync(snapshot.OperationId, Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when queue removal fails after a heartbeat-expired terminal
-    /// failure, the terminal callback must still fire so the admin progress store
-    /// reflects the correct terminal state.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_TerminalFailure_NotifiesCallback_WhenQueueRemovalFails()
     {
@@ -878,10 +828,6 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when queue removal fails for a heartbeat-expired job honouring
-    /// a durable cancellation signal, the terminal callback must still fire.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_DurableCancellation_NotifiesCallback_WhenQueueRemovalFails()
     {
@@ -1054,11 +1000,6 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a durable cancellation signal that arrives between the initial
-    /// cancellation check and the retry write must be caught by the pre-retry
-    /// re-read so the reconciler cancels instead of requeueing.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_HonoursCancellation_WhenSignalArrivesBeforeRetryWrite()
     {
@@ -1116,11 +1057,6 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a durable cancellation signal that arrives between the initial
-    /// cancellation check and the terminal fail write (retries exhausted) must be
-    /// caught by the pre-fail re-read so the reconciler cancels instead of failing.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatExpiry_HonoursCancellation_WhenSignalArrivesBeforeFailWrite()
     {
@@ -1294,11 +1230,6 @@ public sealed class JobReconciliationServiceTests
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
         => tags.FirstOrDefault(tag => tag.Key == name).Value?.ToString();
 
-    /// <summary>
-    /// Invokes the reconciler's sweep logic once without running the full
-    /// BackgroundService loop. Uses reflection to call the private method
-    /// since the service is internal and sealed.
-    /// </summary>
     private static async Task RunSingleSweepAsync(
         JobReconciliationService service,
         CancellationToken cancellationToken)
@@ -1311,10 +1242,6 @@ public sealed class JobReconciliationServiceTests
         await task.ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Records every terminal notification the reconciler emits, so a test can assert
-    /// that a job it must leave alone produced no terminal notification at all.
-    /// </summary>
     private sealed class CountingTerminalCallback : IJobTerminalCallback
     {
         private readonly List<ExecutionJobRecord> _notifications = [];

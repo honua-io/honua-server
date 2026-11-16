@@ -7,7 +7,6 @@ using System.Text;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
@@ -17,7 +16,8 @@ internal sealed class AdminPortalCredentialVerifier(
     IConnectionSecretResolver? secretResolver = null,
     IAdminApiKeyStore? adminApiKeyStore = null,
     ITenantContext? tenantContext = null,
-    ILogger<AdminPortalCredentialVerifier>? logger = null) : IPortalCredentialVerifier
+    ILogger<AdminPortalCredentialVerifier>? logger = null,
+    IHttpContextAccessor? httpContextAccessor = null) : IPortalCredentialVerifier
 {
     private const string AdminUsername = "admin";
     private static readonly string[] AdminRoles = ["admin"];
@@ -50,6 +50,11 @@ internal sealed class AdminPortalCredentialVerifier(
             // the API key as the password under any username so existing clients can
             // pass through without code changes. A store outage returns no principal
             // rather than throwing; only the admin username has a break-glass password.
+            return null;
+        }
+
+        if (!PermitsAdminPasswordFromClient())
+        {
             return null;
         }
 
@@ -94,6 +99,21 @@ internal sealed class AdminPortalCredentialVerifier(
                 Version: PortalCredentialSourceVersion.ForAdminPassword(configuredPassword)));
     }
 
+    private bool PermitsAdminPasswordFromClient()
+    {
+        if (AdminPasswordNetworkPolicy.Permits(_apiKeyOptions, ClientConnection.From(httpContextAccessor?.HttpContext).Reach))
+        {
+            return true;
+        }
+
+        if (_logger is not null)
+        {
+            AuthenticationLog.AdminPasswordRefusedOnNetworkPath(_logger);
+        }
+
+        return false;
+    }
+
     private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)
     {
         // This bridge mints token roles, not API-key permission, layer-write, or
@@ -131,11 +151,9 @@ internal sealed class AdminPortalCredentialVerifier(
 
         try
         {
-            return await RedisClientFault.RetryCompletedReaderAsync(
-                () => _adminApiKeyStore.ValidateAsync(password, cancellationToken),
-                cancellationToken).ConfigureAwait(false);
+            return await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
+        catch (Exception ex) when (CredentialStoreFault.IsUnavailable(ex))
         {
             if (_logger is not null)
             {

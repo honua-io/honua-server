@@ -15,16 +15,11 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Track A (#1272) coverage for the canonical replica-upload synchronization pipeline:
-/// multi-layer uploads, upload+download round-trips that exclude the client's own edits,
-/// base-generation conflict detection with durable conflict records, and last-write-wins behavior.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
+public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture;
 
     public async Task InitializeAsync()
     {

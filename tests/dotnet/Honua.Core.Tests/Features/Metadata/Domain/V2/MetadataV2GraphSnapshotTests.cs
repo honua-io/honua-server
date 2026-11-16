@@ -10,9 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Tests for the canonical snapshot wrapper, its lookup indexes, and consumer helpers.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2GraphSnapshotTests
 {
@@ -704,10 +701,6 @@ public sealed class MetadataV2GraphSnapshotTests
                 : binding).ToArray(),
         };
 
-    /// <summary>
-    /// <see cref="AliasedGraph"/> plus a feature resource with no storage binding whose
-    /// publication's service-local index equals <c>resource.permits</c>' storage handle.
-    /// </summary>
     private static MetadataV2Graph UnboundCollidingGraph()
     {
         var graph = AliasedGraph();
@@ -736,15 +729,6 @@ public sealed class MetadataV2GraphSnapshotTests
     private const int AliasedParcelsStorageLayerId = 7;
     private const int AliasedCollidingStorageLayerId = 3;
 
-    /// <summary>
-    /// Graph in which <c>resource.parcels</c> is published with the service-local index
-    /// <see cref="AliasedCollidingStorageLayerId"/> while its storage binding carries
-    /// <see cref="AliasedParcelsStorageLayerId"/>, and a second resource,
-    /// <c>resource.permits</c>, owns <see cref="AliasedCollidingStorageLayerId"/> as its
-    /// storage handle. Reading the index as a storage handle therefore lands on the other
-    /// resource. Manifest-authored, release-authored and imported graphs produce this shape
-    /// (#4065); the admin publish path does not.
-    /// </summary>
     internal static MetadataV2GraphSnapshot AliasedSnapshot()
         => new(AliasedGraph(), "\"aliased\"", DateTimeOffset.UtcNow);
 

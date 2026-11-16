@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Infrastructure.Events;
+using Honua.Server.Tests.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -18,13 +19,11 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
-    private IFeatureChangeEventStore _store = null!;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
-        _store = _fixture.GetService<IFeatureChangeEventStore>();
     }
 
     public async Task DisposeAsync()
@@ -36,7 +35,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/feature-events/replay")]
     public async Task Replay_WithCursorLimit_ReturnsOrderedEventsAndCursor()
     {
-        var first = await _store.AppendAsync(new FeatureChangeEventRequest
+        var first = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "svc-a",
             LayerId = 7,
@@ -46,7 +45,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
             RequestId = "req-1"
         });
 
-        var second = await _store.AppendAsync(new FeatureChangeEventRequest
+        var second = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "svc-a",
             LayerId = 7,
@@ -56,7 +55,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
             RequestId = "req-2"
         });
 
-        var third = await _store.AppendAsync(new FeatureChangeEventRequest
+        var third = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "svc-a",
             LayerId = 7,
@@ -92,7 +91,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
     public async Task Replay_WithTimeWindow_FiltersEvents()
     {
         var now = DateTimeOffset.UtcNow;
-        _ = await _store.AppendAsync(new FeatureChangeEventRequest
+        _ = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "svc-window",
             LayerId = 2,
@@ -103,7 +102,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
             Timestamp = now.AddHours(-2)
         });
 
-        var inWindow = await _store.AppendAsync(new FeatureChangeEventRequest
+        var inWindow = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "svc-window",
             LayerId = 2,
@@ -131,7 +130,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/feature-events/replay")]
     public async Task Replay_WithNoCursor_ReturnsFromBeginning()
     {
-        _ = await _store.AppendAsync(new FeatureChangeEventRequest
+        _ = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "svc-nocursor",
             LayerId = 1,

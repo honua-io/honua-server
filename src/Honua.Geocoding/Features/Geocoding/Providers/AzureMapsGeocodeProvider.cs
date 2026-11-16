@@ -10,25 +10,14 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Geocoding.Features.Geocoding.Providers;
 
-/// <summary>
-/// Azure Maps geocoding provider
-/// </summary>
 internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 {
-    /// <summary>
-    /// Azure Maps provider name constant
-    /// </summary>
     public const string ProviderName = "azure-maps";
 
     private readonly AzureMapsProviderConfiguration _configuration;
     private readonly HttpClient _httpClient;
     private int _validatedBaseUrl;
 
-    /// <summary>
-    /// Initialize a new Azure Maps geocode provider
-    /// </summary>
-    /// <param name="configuration">Provider configuration</param>
-    /// <param name="httpClient">HTTP client for API calls</param>
     public AzureMapsGeocodeProvider(
         AzureMapsProviderConfiguration configuration,
         HttpClient httpClient)
@@ -51,16 +40,14 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         // applied on each outbound request instead (see SendGetAsync).
     }
 
-    /// <inheritdoc />
     public override string Name => ProviderName;
 
-    /// <inheritdoc />
     public override GeocodeProviderCapabilities Capabilities => new(
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
         SupportsSuggest: true,
         SupportsBatch: false, // Azure Maps doesn't have native batch support in Search API
-        SupportsStructuredInput: true, // Mapped to the Azure structured-address search endpoint (#2149)
+        SupportsStructuredInput: true, // Mapped to the Azure structured-address search endpoint
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // Azure Maps returns WGS84 coordinates
@@ -73,7 +60,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         RateLimitPerMinute = 500 // Azure Maps default limit
     };
 
-    /// <inheritdoc />
     public override async Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -136,7 +122,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
-    /// <inheritdoc />
     public override async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -194,7 +179,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
-    /// <inheritdoc />
     protected override async Task<IReadOnlyList<GeocodeSuggestion>> SuggestCoreAsync(
         SuggestGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -249,7 +233,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
-    /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
         await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
@@ -283,12 +266,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
     }
 
-    /// <summary>
-    /// Issues a GET against the injected (potentially shared) HttpClient, applying the Azure Maps
-    /// subscription-key header and request timeout per request rather than mutating the shared
-    /// client. The key is sent as a header so it is not captured by URL request-logging. The
-    /// caller owns disposal of the returned response.
-    /// </summary>
     private async Task<HttpResponseMessage> SendGetAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -330,7 +307,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
     {
         // Structured input maps onto the Azure Maps structured-address search endpoint, which accepts
         // discrete components (streetName, municipality, countrySubdivision, postalCode, countryCode)
-        // for higher-fidelity matching than a flattened single line (#2149).
+        // for higher-fidelity matching than a flattened single line.
         if (request.StructuredAddress is { } structured && HasAnyStructuredField(structured))
         {
             return BuildStructuredSearchUrl(structured, request);

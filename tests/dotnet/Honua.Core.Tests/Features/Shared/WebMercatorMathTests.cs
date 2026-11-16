@@ -7,10 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Unit coverage for <see cref="WebMercatorMath"/>, focused on the antimeridian-preserving
-/// extent transform (#2739).
-/// </summary>
 public sealed class WebMercatorMathTests
 {
     [UnitTest]

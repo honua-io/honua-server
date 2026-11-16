@@ -22,8 +22,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authorize-publish:
+    uses: ./.github/workflows/publish-authorization.yml
+    with:
+      tag-patterns: 'v*'
+
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
+    needs: authorize-publish
     continue-on-error: ${{ matrix.image_key == 'aot' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150

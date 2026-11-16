@@ -26,12 +26,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Integration tests for the OGC API - Styles adapter (ADR-0048, issues #1388/#1389).
-/// Covers landing/styles list, conformance, content-negotiated stylesheets (MapLibre +
-/// derived SLD and Esri drawingInfo), style metadata, and the manage-styles PUT/POST/DELETE
-/// surface for both collection-keyed and standalone catalog styles (#3188).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
 public sealed class OgcStylesEndpointTests : IAsyncLifetime
@@ -172,6 +166,25 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("version").GetInt32().Should().Be(8);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    public async Task GetStylesheet_OwnedTileSource_AdvertisesTileRouteZoomRange()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await SeedAndResolveStyleIdAsync(client);
+        using var tileJson = JsonDocument.Parse(await client.GetStringAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json"));
+
+        var response = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var source = document.RootElement.GetProperty("sources").GetProperty(StyleDefaults.GetSourceId(WebAppFixture.TestLayerId));
+        source.GetProperty("maxzoom").GetInt32().Should().Be(tileJson.RootElement.GetProperty("maxzoom").GetInt32());
+        source.GetProperty("minzoom").GetInt32().Should().Be(tileJson.RootElement.GetProperty("minzoom").GetInt32());
     }
 
     [IntegrationTest]
@@ -1113,10 +1126,6 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         response.Be200Ok();
     }
 
-    /// <summary>
-    /// Creates a standalone (layer-less) catalog style through the manage-styles POST
-    /// surface and returns its identifier.
-    /// </summary>
     private static async Task<string> CreateStandaloneStyleAsync(
         HttpClient adminClient,
         MetadataV2GeometryType geometryType,

@@ -19,6 +19,9 @@ internal static class SharedCacheResponse
     private static readonly object LifetimeKey = new();
     private static readonly object SubjectKey = new();
     private static readonly object AdHocSpatialKey = new();
+    private static readonly object ProcessCacheKey = new();
+    private static readonly object PurgesReachCdnKey = new();
+    private static readonly object PurgeBackedSentKey = new();
 
     internal static void UseLifetime(HttpContext context, SharedCacheLifetime lifetime)
         => context.Items[LifetimeKey] = lifetime;
@@ -61,6 +64,28 @@ internal static class SharedCacheResponse
         }
     }
 
+    // A response replayed from this task's memory may predate an edit another task made, and that task's purge cannot
+    // reach this task's memory. Only a response rendered from the data for this request may get a purge-backed lifetime.
+    internal static void MarkServedFromProcessCache(HttpContext context)
+        => context.Items[ProcessCacheKey] = true;
+
+    // True when this response gets, or was sent with, a purge-backed CDN lifetime. No in-process cache may store such a
+    // response: replaying it on this task after another task's edit would hand the CDN a stale copy for a day.
+    internal static bool IsPurgeBacked(HttpContext context)
+    {
+        if (context.Items.ContainsKey(PurgeBackedSentKey))
+        {
+            return true;
+        }
+
+        if (DeclaredClass(context) is not { } cacheClass)
+        {
+            return false;
+        }
+
+        return ResolveLifetime(context, cacheClass, CurrentOptions(context)).PurgeBacked;
+    }
+
     // Handlers that write the body themselves call this before the first write; the endpoint filter covers the rest.
     internal static void Apply(HttpContext context)
     {
@@ -74,13 +99,14 @@ internal static class SharedCacheResponse
             return;
         }
 
-        var options = context.RequestServices.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
+        var options = CurrentOptions(context);
         context.Response.Headers.CacheControl = FormatCacheControl(context, cacheClass, options);
-        AddMissingVary(context.Response, VaryFor(cacheClass));
+        VaryHeader.AppendMissing(context.Response.Headers, VaryFor(cacheClass));
         if (options.CacheTagsEnabled && CdnCacheTags.ForResponse(Subject(context), context.Request.Path, context.Request.RouteValues["serviceId"]?.ToString())
                 is { Length: > 0 } tags)
         {
-            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags);
+            var tileOptions = context.RequestServices.GetService<IOptions<TileOptions>>()?.Value ?? new TileOptions();
+            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags.Concat(CdnTileRegionTags.ForNativeTile(context.Request.Path, tileOptions)));
         }
     }
 
@@ -101,8 +127,7 @@ internal static class SharedCacheResponse
             return null;
         }
 
-        var options = context.RequestServices?.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
-        return TimeSpan.FromSeconds(Math.Max(0, ResolveLifetime(context, cacheClass, options).SharedMaxAgeSeconds));
+        return TimeSpan.FromSeconds(Math.Max(0, ResolveLifetime(context, cacheClass, CurrentOptions(context)).Lifetime.SharedMaxAgeSeconds));
     }
 
     internal static ResponseCacheClass? DeclaredClass(HttpContext context)
@@ -121,7 +146,12 @@ internal static class SharedCacheResponse
     // s-maxage is always written: the CDN's own minimum is 0, so the origin header is the only lifetime it has.
     private static string FormatCacheControl(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
-        var lifetime = ResolveLifetime(context, cacheClass, options);
+        var (lifetime, purgeBacked) = ResolveLifetime(context, cacheClass, options);
+        if (purgeBacked)
+        {
+            context.Items[PurgeBackedSentKey] = true;
+        }
+
         var directives = new List<string>
         {
             "public",
@@ -142,35 +172,57 @@ internal static class SharedCacheResponse
         return string.Join(", ", directives);
     }
 
-    private static SharedCacheLifetime ResolveLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
+    private static SharedCacheOptions CurrentOptions(HttpContext context)
+        => context.RequestServices?.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
+
+    // An operator's emergency, per-layer or per-tileset lifetime wins over the purge-backed one.
+    private static ResolvedLifetime ResolveLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
         var subject = Subject(context);
         if (options.Emergency.AppliesTo(subject))
         {
-            return SharedCacheEmergency.Lifetime;
+            return new(SharedCacheEmergency.Lifetime, PurgeBacked: false);
         }
 
         if (subject?.LayerKey is { } layerKey && options.Layers.TryGetValue(layerKey, out var configuredForLayer))
         {
-            return configuredForLayer;
+            return new(configuredForLayer, PurgeBacked: false);
         }
 
-        return context.Items.TryGetValue(LifetimeKey, out var declared) && declared is SharedCacheLifetime layerLifetime
-            ? layerLifetime
-            : options.DefaultFor(cacheClass);
+        if (context.Items.TryGetValue(LifetimeKey, out var declared) && declared is SharedCacheLifetime layerLifetime)
+        {
+            return new(layerLifetime, PurgeBacked: false);
+        }
+
+        return PurgeBackedLifetime(context, cacheClass, options) is { } purgeBackedLifetime
+            ? new(purgeBackedLifetime, PurgeBacked: true)
+            : new(options.DefaultFor(cacheClass), PurgeBacked: false);
+    }
+
+    private readonly record struct ResolvedLifetime(SharedCacheLifetime Lifetime, bool PurgeBacked);
+
+    private static SharedCacheLifetime? PurgeBackedLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
+        => options.PurgeBacked.LifetimeFor(cacheClass) is { } lifetime
+           && options.PurgeBacked.AppliesTo(Subject(context))
+           && !context.Items.ContainsKey(ProcessCacheKey)
+           && PurgesReachCdn(context)
+            ? lifetime
+            : null;
+
+    // Read once per request, so the lifetime written and the storage decision made later agree.
+    private static bool PurgesReachCdn(HttpContext context)
+    {
+        if (!context.Items.TryGetValue(PurgesReachCdnKey, out var reaches))
+        {
+            reaches = context.RequestServices?.GetService<CdnPurgeReliability>()?.PurgesReachCdn() == true;
+            context.Items[PurgesReachCdnKey] = reaches;
+        }
+
+        return reaches is true;
     }
 
     private static string Seconds(int seconds)
         => Math.Max(0, seconds).ToString(CultureInfo.InvariantCulture);
-
-    private static void AddMissingVary(HttpResponse response, string[] requestHeaders)
-    {
-        var present = response.Headers.Vary.ToString();
-        foreach (var requestHeader in requestHeaders.Where(header => !present.Contains(header, StringComparison.OrdinalIgnoreCase)))
-        {
-            response.Headers.Append(HeaderNames.Vary, requestHeader);
-        }
-    }
 
     // Origin is always listed: the CORS policy reflects the request origin, and only on requests that send one.
     // A tile without an explicit format is PNG or vector by Accept.

@@ -17,7 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>HTTP execution evidence for the bounded FindRoutes tool and both advertised URLs.</summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class FindRoutesExecuteTests(FindRoutesExecuteTestsFixture fixture)
@@ -181,7 +180,6 @@ public sealed class FindRoutesExecuteTests(FindRoutesExecuteTestsFixture fixture
     }
 }
 
-/// <summary>Captures actual provider calls made by the HTTP adapter.</summary>
 public sealed class FindRoutesExecuteTestsFixture : IAsyncLifetime
 {
     public ConcurrentQueue<RouteSolveRequest> Requests { get; } = new();

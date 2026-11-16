@@ -189,6 +189,16 @@ class PrManagedBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / 'pr-gate.yml'
             contract.PR_GATE = candidate
+            # The tracked inventory page is trunk-published and may lag; project
+            # this head's page so each rejection below comes from its mutation.
+            generator = importlib.util.spec_from_file_location(
+                'inventory', ROOT / 'scripts/ci/generate-workflow-inventory.py')
+            inventory = importlib.util.module_from_spec(generator)
+            generator.loader.exec_module(inventory)
+            contract.WORKFLOW_INVENTORY = Path(directory) / 'workflow-inventory.md'
+            contract.WORKFLOW_INVENTORY.write_text(inventory.render(ROOT))
+            candidate.write_text(TEXT)
+            contract.main()
             for source in mutations:
                 candidate.write_text(source)
                 with self.assertRaises((AssertionError, ValueError)):

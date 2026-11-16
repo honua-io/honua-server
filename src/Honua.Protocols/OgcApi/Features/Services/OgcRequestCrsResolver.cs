@@ -9,15 +9,8 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Resolves request-side CRS headers for OGC Features write operations.
-/// </summary>
 internal static class OgcRequestCrsResolver
 {
-    /// <summary>
-    /// Resolves the request body CRS, defaulting to CRS84 when Content-Crs is absent
-    /// as required for GeoJSON request bodies, regardless of the storage CRS.
-    /// </summary>
     internal static async Task<(bool IsValid, CrsDefinition Definition, string? Error)> TryResolveInputCrsAsync(
         HttpRequest request,
         MetadataV2Object resource,

@@ -4,6 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -12,12 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalSurfaceJobExecutor"/>: argument
-/// projection per surface.* id, source-bytes guardrails, and the canonical
-/// data-URI artifact contract. Integration coverage with the real gdaldem CLI
-/// fires only when GDAL is present on the host.
-/// </summary>
 public sealed class GdalSurfaceExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-surface-test";
@@ -299,17 +294,6 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
-    /// <summary>
-    /// Real <c>gdaldem slope</c> with an analytical value oracle (honua-server#4400).
-    /// </summary>
-    /// <remarks>
-    /// This test's entire oracle used to be <c>data:image/tiff</c> plus the <c>II</c>/<c>MM</c>
-    /// magic bytes, so anyone auditing by name read "reconciles against source" as a decoded
-    /// receipt when nothing was reconciled. The sample DEM is a 16x16 Float32 raster burned to a
-    /// single constant elevation, so the slope of every cell is exactly zero — a value oracle
-    /// derived from the input, not a snapshot of the output. A pass-through, a wrong band, or a
-    /// slope computed from the wrong source all break it.
-    /// </remarks>
     [GdalCliFact("gdaldem", "gdalinfo")]
     [Protocol(ProtocolNames.TestQuality)]
     [Operation(Operations.TestInfrastructure)]
@@ -375,14 +359,63 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
-    /// <summary>
-    /// Number of slope cells that must carry a valid (non-NoData) value: everything but the
-    /// one-cell border <c>gdaldem</c> leaves NoData when it is invoked without
-    /// <c>-compute_edges</c>. Asserted as a floor so a GDAL build that does compute the edges
-    /// still passes with every cell valid.
-    /// </summary>
     private const int MinimumSlopeValidCellCount =
         (GdalCli.SampleDemSize - 2) * (GdalCli.SampleDemSize - 2);
+
+    [UnitTest]
+    public async Task Slope_ReferencedObjectStoreCog_RunsGdaldemWithTheDeclaredRemoteInput()
+    {
+        GdalRemoteInputs? classified = null;
+        string? inputArgument = null;
+        var runner = new FakeGdalCommandRunner((_, args, _) =>
+        {
+            classified = GdalRemoteInputScope.Classify(args);
+            inputArgument = args[^2];
+            return new GdalCommandResult { ExitCode = 1, StandardError = "stop" };
+        });
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var descriptor = new ObjectStoreCogRasterSourceDescriptor
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                StoreReference = "imagery",
+                ObjectKey = "dem.tif",
+                DeclaredDimensions = new RasterSourceDimensions(100, 100, 1, 16),
+                DeclaredPixelScale = new RasterSourcePixelScale(30d, 30d),
+                Version = "version-1",
+                Content = new RasterContentIdentity
+                {
+                    SizeBytes = 1024,
+                    MediaType = "image/tiff",
+                    ETag = "etag-1",
+                },
+                SecurityContext = new RasterSecurityContextReference
+                {
+                    TenantId = "tenant-a",
+                    AuthorizationSnapshotReference = "catalog-registration:1",
+                },
+            };
+            var job = GdalJobFactory.Job(GdalSurfaceJobExecutor.SlopeProcessId);
+            var parameters = (Dictionary<string, string>)job.Spec.Parameters;
+            parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor);
+
+            await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            inputArgument.Should().StartWith("/vsis3/");
+            classified.Should().Be(
+                new GdalRemoteInputs(Remote: true, S3: true, Azure: false),
+                "gdaldem must open the executor-declared object-store COG with remote access");
+            GdalRemoteInputScope.Classify(new[] { inputArgument! }).Should().Be(
+                GdalRemoteInputs.None,
+                "the scope closes when the executor returns");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
 
     private static GdalSurfaceJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

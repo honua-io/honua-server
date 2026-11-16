@@ -8,21 +8,12 @@ using System.Text.Json;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services.Bridging;
 
-/// <summary>
-/// Bridges the Studio <c>analysis</c> package family onto the native analysis content store
-/// (ADR-0069, honua-server#3004). Envelope bodies are native <see cref="AnalysisPackageContent"/>
-/// payloads serialized with the family's own <see cref="AnalysisContentJsonContext"/>, and the
-/// native job/artifact provenance links (<c>createdFromJobId</c>, <c>createdFromArtifactIds</c>,
-/// <c>basedOnVersionId</c>) are projected into the envelope's <c>dependencies</c> sidecar and
-/// written back on save, so lifecycle-authored versions keep the joins the analysis artifacts
-/// and jobs APIs resolve. Saves append immutable native versions with the same monotonic
-/// numbering and conflict-retry the native service uses.
-/// </summary>
 public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
 {
     private const string IdNamespace = "analysis";
@@ -30,13 +21,10 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
     private const string NativeIdPrefix = "analysis-content-";
     private const int MaxVersionCreateAttempts = 3;
 
-    /// <summary>Native package format for bridged analysis content.</summary>
     public const string NativeFormat = "honua.analysis-content.v1";
 
-    /// <summary>Dependency kind used for job provenance links.</summary>
     public const string JobDependencyKind = "job";
 
-    /// <summary>Dependency kind used for artifact provenance links.</summary>
     public const string ArtifactDependencyKind = "artifact";
 
     private static readonly StudioPackageOperation[] Operations =
@@ -63,7 +51,6 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
     private readonly IAnalysisContentStore _store;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>Initializes the analysis family bridge.</summary>
     public AnalysisStudioPackageBridge(IAnalysisContentStore store, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(store);
@@ -72,22 +59,16 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
         _timeProvider = timeProvider;
     }
 
-    /// <inheritdoc />
     public StudioPackageFamily Family => StudioPackageFamily.Analysis;
 
-    /// <inheritdoc />
     public string Format => NativeFormat;
 
-    /// <inheritdoc />
     public bool PublishSupported => false;
 
-    /// <inheritdoc />
     public IReadOnlyList<StudioPackageOperation> SupportedOperations => Operations;
 
-    /// <inheritdoc />
     public IReadOnlyList<string> Limitations => BridgeLimitations;
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentItemSummary>> ListItemSummariesAsync(CancellationToken cancellationToken = default)
     {
         var page = await _store.ListItemsAsync(
@@ -101,7 +82,6 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
         return page.Items.Select(ToSummary).ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         var item = await ResolveItemAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -118,10 +98,10 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
             // Content Publication Registry (ADR-0069 divergence).
             PublishedVersionId = null,
             OwnerId = item.OwnerId,
+            TenantId = item.TenantId,
         };
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         var item = await ResolveItemAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -138,7 +118,6 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
             .ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
     {
         var item = await ResolveItemAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -153,7 +132,6 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
         return match is null ? null : ToContentVersion(itemId, item, match);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentVersion> SaveVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -212,6 +190,9 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
                 Name = draft.PackageKey,
                 Title = null,
                 OwnerId = draft.OwnerId,
+                // The draft's tenant was stamped from the creating request; the native item
+                // keeps it so Studio's tenant rail authorizes the bridged item like any other.
+                TenantId = TenantOwnership.Normalize(draft.TenantId),
                 CurrentVersion = 1,
                 CurrentVersionId = version.VersionId,
                 CreatedAt = now,
@@ -252,7 +233,6 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest> PublishAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(
             "Publish-request is not supported for the bridged analysis family; use the Content Publication Registry for route publication.");
@@ -336,6 +316,7 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
         CurrentVersionId = VersionGuid(item.CurrentVersionId),
         PublishedVersionId = null,
         OwnerId = item.OwnerId,
+        TenantId = item.TenantId,
         CreatedBy = item.CreatedBy,
         UpdatedBy = null,
         CreatedAt = item.CreatedAt,
@@ -361,6 +342,7 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
             PackageKey = SafePackageKey(item.Name, item.ItemId),
             WorkspaceId = null,
             OwnerId = item.OwnerId,
+            TenantId = item.TenantId,
             VersionId = VersionGuid(version.VersionId),
             VersionNumber = version.Version,
             ContentHash = version.ContentHash,

@@ -1,13 +1,22 @@
 name: CodeQL
 
 on:
-  # Tier: PR gate + weekly full scan.
-  # - pull_request: uses C# no-build extraction and the default high-precision
-  #   query suite to keep the required security gate on the PR critical path.
+  # Tier: PR gate, trunk, and weekly full scan.
+  # - pull_request and push to trunk: use C# no-build extraction and the default
+  #   high-precision query suite; superseded trunk pushes cancel each other.
   # - schedule: performs a full instrumented build with security-extended
   #   queries to catch lower-confidence findings and dependency churn.
   #   It also covers test code, which never ships, so test-only PRs skip the
   #   PR lane.
+  push:
+    branches: [trunk]
+    paths:
+      - 'src/**'
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'Honua.sln'
+      - '.github/codeql/**'
+      - '.github/workflows/codeql.yml'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
@@ -64,9 +73,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The action inspects the host root cgroup, outside the runner's 16 GiB slice.
+      - name: Bound self-hosted CodeQL resources
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          {
+            echo 'CODEQL_RAM=8192'
+            echo 'CODEQL_THREADS=4'
+            echo 'DOTNET_PROCESSOR_COUNT=4'
+          } >> "$GITHUB_ENV"
+
       # The scheduled instrumented build needs more disk than the PR no-build lane.
       - name: Free disk space
-        if: ${{ github.event_name != 'pull_request' && runner.environment == 'github-hosted' }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && runner.environment == 'github-hosted' }}
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
@@ -77,35 +96,39 @@ jobs:
           swap-storage: true
 
       - name: Setup .NET
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Initialize CodeQL (pull request)
-        if: ${{ github.event_name == 'pull_request' }}
+      - name: Initialize CodeQL (pull request and trunk)
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: csharp
+          ram: ${{ env.CODEQL_RAM }}
+          threads: ${{ env.CODEQL_THREADS }}
           config-file: ./.github/codeql/codeql-config.yml
           build-mode: none
           dependency-caching: true
 
       - name: Initialize CodeQL (full scan)
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: csharp
+          ram: ${{ env.CODEQL_RAM }}
+          threads: ${{ env.CODEQL_THREADS }}
           config-file: ./.github/codeql/codeql-config.yml
           build-mode: manual
           queries: security-extended
 
       - name: Restore dependencies
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: dotnet restore Honua.sln
 
       - name: Build
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: dotnet build Honua.sln --no-restore --configuration Release
 
       - name: Perform CodeQL Analysis

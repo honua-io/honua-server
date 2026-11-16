@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster;
 
-/// <summary>
-/// Unit tests for the line-of-sight / viewshed analysis math. The DEM is
-/// modeled by a synthetic <see cref="IElevationService"/> stub so the analysis
-/// can be exercised deterministically without a live database. The stub
-/// decodes the 2-point LineString WKB the analysis service builds and samples a
-/// terrain function along it, exactly the contract the real
-/// <c>PostgresElevationService</c> fulfills via <c>ST_LineInterpolatePoint</c>.
-/// </summary>
 public sealed class VisibilityAnalysisServiceTests
 {
     private const int LayerId = 7;
@@ -335,11 +327,6 @@ public sealed class VisibilityAnalysisServiceTests
         return samples;
     }
 
-    /// <summary>
-    /// Base test elevation service. Decodes the 2-point LineString WKB built by
-    /// the analysis service and produces a profile by sampling a terrain
-    /// function along the geodesic line.
-    /// </summary>
     private abstract class TerrainElevationServiceBase : IElevationService
     {
         public Task<ElevationPointResult> QueryPointAsync(
@@ -398,10 +385,6 @@ public sealed class VisibilityAnalysisServiceTests
 
         protected abstract double? ElevationAt(double lon, double lat, double distanceFromStartMeters);
 
-        /// <summary>
-        /// Optional index-aware post-processing of the generated samples (e.g.
-        /// to mark specific endpoints as no-data). Default is a no-op.
-        /// </summary>
         protected virtual void TransformSamples(ElevationSample[] samples)
         {
         }
@@ -457,11 +440,6 @@ public sealed class VisibilityAnalysisServiceTests
                 : baseElevation;
     }
 
-    /// <summary>
-    /// Valid terrain everywhere, then marks the observer (first sample) and/or
-    /// target (last sample) endpoint as no-data, modeling an observer/target
-    /// that falls on a no-data pixel or outside the raster coverage.
-    /// </summary>
     private sealed class EndpointNoDataElevationService(
         bool observerNoData,
         bool targetNoData,
@@ -489,10 +467,6 @@ public sealed class VisibilityAnalysisServiceTests
         }
     }
 
-    /// <summary>
-    /// Valid terrain at both endpoints but no-data across the interior of the
-    /// profile, exercising the best-effort <c>HasNoDataSamples</c> flag.
-    /// </summary>
     private sealed class InteriorNoDataElevationService(double baseElevation) : TerrainElevationServiceBase
     {
         protected override double? ElevationAt(double lon, double lat, double distanceFromStartMeters)

@@ -13,16 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Proves the #2765 GDAL untrusted-input controls actually block: the content
-/// pre-check refuses a base64-supplied VRT / XML indirection blob and any
-/// <c>/vsi</c> reference before GDAL ever opens it, the base64 input readers wire
-/// that pre-check in, and every GDAL subprocess inherits a driver-skip /
-/// remote-VSI-disable environment. GDAL is not required for any of these — they
-/// pin the pre-check and the subprocess-environment construction (the two controls
-/// that block, independent of a live gdal binary). The end-to-end "gdal actually
-/// refuses to open the VRT" assertion needs a gdal-present integration run.
-/// </summary>
 public sealed class GdalUntrustedInputHardeningTests
 {
     private const string ScratchSuite = "honua-gdal-hardening-test";
@@ -399,16 +389,12 @@ public sealed class GdalUntrustedInputHardeningTests
     }
 
     [UnitTest]
-    public void Hardening_ArgumentsReferenceVsi_DetectsVsiPaths()
+    public void Hardening_DisablesGmlSchemaDownload_ForLocalAndRemoteInvocations()
     {
-        GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/vsis3/bucket/x.nc" })
-            .Should().BeTrue();
-        GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/scratch/op/input.tif" })
-            .Should().BeFalse();
-        GdalRuntimeHardening.ArgumentsReferenceS3Vsi(new[] { "/vsis3/bucket/input.tif" })
-            .Should().BeTrue();
-        GdalRuntimeHardening.ArgumentsReferenceAzureVsi(new[] { "/vsiaz/container/input.tif" })
-            .Should().BeTrue();
+        GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: false)
+            ["GML_DOWNLOAD_SCHEMA"].Should().Be("NO");
+        GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: true)
+            ["GML_DOWNLOAD_SCHEMA"].Should().Be("NO");
     }
 
     [UnitTest]

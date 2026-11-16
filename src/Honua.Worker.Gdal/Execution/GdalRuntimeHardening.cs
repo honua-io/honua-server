@@ -5,39 +5,15 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Builds the restrictive GDAL environment every GDAL/OGR CLI subprocess inherits
-/// (#2765). Pure and deterministic so the exact variable set can be asserted
-/// offline; both the in-process (<see cref="ProcessGdalCommandRunner"/>) and
-/// container-exec (<see cref="DockerGdalCommandRunner"/>) runners apply it so no
-/// invocation escapes the driver-skip / remote-VSI-disable policy.
-/// </summary>
 internal static class GdalRuntimeHardening
 {
-    /// <summary>Sentinel extension gated into the <c>/vsicurl</c>-family allow-list to block it.</summary>
     private const string BlockedCurlExtension = ".honua-vsi-blocked";
 
-    /// <summary>
-    /// Builds the GDAL environment variables to set on a subprocess.
-    /// </summary>
-    /// <param name="options">The configured hardening policy.</param>
-    /// <param name="inputReferencesRemoteVsi">
-    /// <see langword="true"/> when the invocation's argument vector legitimately
-    /// references a <c>/vsi</c> path (the trusted cloud-coverage reader). Such an
-    /// invocation keeps remote VSI enabled; a pure local-scratch invocation (every
-    /// untrusted-blob executor) gets the remote handlers neutralized.
-    /// </param>
-    /// <param name="s3Options">
-    /// Execution-owned S3 endpoint settings projected only for trusted remote-VSI
-    /// invocations. The durable job descriptor remains limited to bucket and key.
-    /// </param>
-    /// <param name="azureOptions">Execution-owned Azure Blob connection settings.</param>
-    /// <param name="inputReferencesS3Vsi">Whether the arguments contain a trusted <c>/vsis3</c> path.</param>
-    /// <param name="inputReferencesAzureVsi">Whether the arguments contain a trusted <c>/vsiaz</c> path.</param>
-    /// <param name="environmentVariableReader">
-    /// Optional environment seam for tests. Production uses <see cref="Environment.GetEnvironmentVariable(string)"/>.
-    /// </param>
-    /// <returns>An ordered map of environment variable name to value.</returns>
+    // Only an invocation whose arguments include an object-store path declared through
+    // GdalRemoteInputScope keeps remote VSI; every other one, including every
+    // untrusted-blob executor, gets the remote handlers neutralized. The S3 and Azure
+    // settings are execution-owned and projected only for those trusted invocations;
+    // the durable job descriptor stays limited to bucket and key.
     public static IReadOnlyDictionary<string, string> BuildEnvironment(
         GdalHardeningOptions options,
         bool inputReferencesRemoteVsi,
@@ -58,6 +34,10 @@ internal static class GdalRuntimeHardening
 
             // Never negotiate around an invalid TLS certificate.
             ["GDAL_HTTP_UNSAFESSL"] = "NO",
+
+            // The GML driver otherwise fetches the xsi:schemaLocation an input
+            // names, which turns an uploaded file into an outbound request.
+            ["GML_DOWNLOAD_SCHEMA"] = "NO",
         };
 
         if (options.DisableRemoteVsiForLocalInputs && !inputReferencesRemoteVsi)
@@ -90,14 +70,6 @@ internal static class GdalRuntimeHardening
         return env;
     }
 
-    /// <summary>
-    /// Driver short names written to <c>GDAL_SKIP</c>. Blank entries are dropped
-    /// and the rest are trimmed, in configured order. Output-driver admission
-    /// must use this sequence so a padded token cannot disagree with the
-    /// subprocess environment.
-    /// </summary>
-    /// <param name="options">The configured hardening policy.</param>
-    /// <returns>The effective skip list, possibly empty.</returns>
     public static IReadOnlyList<string> EffectiveSkipDrivers(GdalHardeningOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -182,40 +154,6 @@ internal static class GdalRuntimeHardening
         }
     }
 
-    /// <summary>
-    /// Reports whether any argument references a GDAL virtual-filesystem path
-    /// (<c>/vsi…</c>). Used by the runners to decide whether an invocation is the
-    /// trusted cloud-coverage reader (keep remote VSI) or a local-scratch-only op
-    /// (neutralize remote VSI).
-    /// </summary>
-    public static bool ArgumentsReferenceVsi(IReadOnlyList<string> arguments)
-    {
-        ArgumentNullException.ThrowIfNull(arguments);
-        return arguments.Any(arg => arg is not null && arg.Contains("/vsi", StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>Reports whether any argument references an S3 VSI path.</summary>
-    public static bool ArgumentsReferenceS3Vsi(IReadOnlyList<string> arguments)
-        => ArgumentsReferenceVsiPrefix(arguments, "/vsis3/");
-
-    /// <summary>Reports whether any argument references an Azure Blob VSI path.</summary>
-    public static bool ArgumentsReferenceAzureVsi(IReadOnlyList<string> arguments)
-        => ArgumentsReferenceVsiPrefix(arguments, "/vsiaz/");
-
-    private static bool ArgumentsReferenceVsiPrefix(
-        IReadOnlyList<string> arguments,
-        string prefix)
-    {
-        ArgumentNullException.ThrowIfNull(arguments);
-        return arguments.Any(arg =>
-            arg is not null && arg.Contains(prefix, StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>
-    /// Formats the environment as <c>docker run -e KEY</c> argument pairs, in a
-    /// stable order, for the container-exec runner. Values are supplied to the
-    /// container-runtime process environment so credentials never enter argv.
-    /// </summary>
     public static IReadOnlyList<string> ToDockerEnvArguments(IReadOnlyDictionary<string, string> environment)
     {
         ArgumentNullException.ThrowIfNull(environment);

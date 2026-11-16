@@ -13,7 +13,7 @@
     <!-- PostgreSQL/PostGIS -->
     <PackageReference Include="BouncyCastle.Cryptography" />
     <!-- DbUp: TestKit serializes the embedded migration set under the shared seed advisory lock
-         (RunEmbeddedMigrationsUnderLockAsync) so global-honua DDL stays off the 40P01 path (#1568). -->
+         (RunEmbeddedMigrationsUnderLockAsync) so global-honua DDL stays off the 40P01 path. -->
     <PackageReference Include="dbup-postgresql" />
     <PackageReference Include="DuckDB.NET.Data.Full" />
     <PackageReference Include="FluentAssertions" />

@@ -8,20 +8,6 @@ namespace Honua.Core.Features.FileImport.Services;
 
 internal sealed partial class StreamingGeoJsonReader
 {
-    private static void RetainValidationIssue(List<ImportValidationIssue> issues, ImportValidationIssue issue)
-    {
-        if (issues.Count < MaxValidationIssues)
-        {
-            issues.Add(issue);
-        }
-        else if (issue.Severity == ImportValidationSeverity.Error &&
-            issues.All(existing => existing.Severity != ImportValidationSeverity.Error))
-        {
-            // A bounded warning list must never conceal a later fatal error.
-            issues[^1] = issue;
-        }
-    }
-
     private bool HasCompleteGeometryComponents(JsonElement geometry)
     {
         if (geometry.ValueKind != JsonValueKind.Object ||

@@ -64,7 +64,11 @@ test('bot credentials are scoped and contributor code is never executed', () => 
   assert.match(workflow, /permission-pull-requests: write/);
   assert.match(workflow, /permission-workflows: write/);
   assert.match(workflow, /permissions: \{\}/);
-  assert.doesNotMatch(workflow, /actions\/checkout|pull_request_target/);
+  // pull_request_target runs the trunk copy with a trunk ref, which the bot-app environment's
+  // trunk-only rule admits; with no checkout, contributor code still never runs.
+  assert.match(workflow, /^on:\n  pull_request_target:\n/m);
+  assert.doesNotMatch(workflow, /^  pull_request:/m);
+  assert.doesNotMatch(workflow, /actions\/checkout/);
   assert.match(workflow, /cancel-in-progress: false\n  queue: max/);
 });
 
@@ -82,24 +86,30 @@ test('live ineligibility disables existing auto-merge', async () => {
     assert.equal(actions[0].action, 'disable');
   }
 });
-test('live commit-count changes replace the previous merge method', async () => {
-  const actions = await run({ ...ready(), commits: { totalCount: 2 },
-    autoMergeRequest: { mergeMethod: 'SQUASH' } });
-  assert.equal(actions.length, 2);
-  assert.equal(actions[0].action, 'disable');
-  assert.equal(actions[1].action, 'enable');
-  assert.equal(actions[1].mergeMethod, 'MERGE');
-  const single = await run({ ...ready(), autoMergeRequest: { mergeMethod: 'MERGE' } });
-  assert.equal(single.length, 2);
-  assert.equal(single[0].action, 'disable');
-  assert.equal(single[1].action, 'enable');
-  assert.equal(single[1].mergeMethod, 'SQUASH');
+test('existing merge methods survive commit-count changes', async () => {
+  for (const mergeMethod of ['SQUASH', 'MERGE', 'REBASE']) {
+    for (const totalCount of [1, 2, 3]) {
+      assert.deepEqual(await run({ ...ready(), commits: { totalCount },
+        autoMergeRequest: { mergeMethod } }), []);
+    }
+  }
 });
 
 test('already mergeable pull requests stay neutral without direct merging', async () => {
   for (const mergeStateStatus of ['CLEAN', 'UNSTABLE', 'HAS_HOOKS']) {
     assert.equal((await run({ ...ready(), mergeStateStatus })).length, 0);
   }
+});
+test('conflicted pull requests are not armed, but stale admission is still revoked', async () => {
+  // pull_request_target also fires for a PR whose merge ref cannot be built; pull_request did not.
+  const dirty = ready(); dirty.mergeStateStatus = 'DIRTY';
+  assert.deepEqual(await run(dirty), []);
+  const held = ready(); held.mergeStateStatus = 'DIRTY'; held.autoMergeRequest = { mergeMethod: 'SQUASH' };
+  held.labels.nodes = [{ name: 'hold' }];
+  assert.deepEqual((await run(held)).map(mutation => mutation.action), ['disable']);
+});
+test('the bot key is requested only inside the trunk-only bot-app environment', () => {
+  assert.match(workflow, /\n    environment: bot-app\n/);
 });
 test('Dependabot PRs are skipped before requesting unavailable App secrets', () => {
   assert.match(workflow, /github.event.pull_request.user.login != 'dependabot\[bot\]'/);
@@ -108,12 +118,13 @@ test('Dependabot PRs are skipped before requesting unavailable App secrets', () 
 test('retargeting away from trunk still revokes admission', () => {
   assert.match(workflow, /\(github\.event\.pull_request\.base\.ref == 'trunk' \|\| github\.event\.action == 'edited'\)/);
 });
-test('already mergeable method changes revoke stale auto-merge', async () => {
-  const actions = await run({ ...ready(), mergeStateStatus: 'CLEAN', commits: { totalCount: 3 },
-    autoMergeRequest: { mergeMethod: 'SQUASH' } });
-  assert.equal(actions.length, 1);
-  assert.equal(actions[0].action, 'disable');
+test('existing merge method survives becoming mergeable or conflicted', async () => {
+  for (const mergeStateStatus of ['CLEAN', 'UNSTABLE', 'HAS_HOOKS', 'DIRTY']) {
+    assert.deepEqual(await run({ ...ready(), mergeStateStatus, commits: { totalCount: 3 },
+      autoMergeRequest: { mergeMethod: 'SQUASH' } }), []);
+  }
 });
+
 test('mergeability computation race stays neutral only for the clean-status API error', async () => {
   const pr = { ...ready(), mergeStateStatus: 'UNKNOWN' };
   await run(pr, 'Pull request is in clean status');

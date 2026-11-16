@@ -20,9 +20,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// State for tracking JSON processing across chunks
-/// </summary>
 internal sealed record JsonProcessingState
 {
     public bool InFeaturesArray { get; init; }
@@ -37,14 +34,10 @@ internal sealed record JsonProcessingState
 internal sealed record GeoJsonValidationResult(int FeatureCount, IReadOnlyList<ImportValidationIssue> Issues)
 {
     // Warning-severity issues (e.g. a geometry that will be repaired on import) are advisory and
-    // must not fail the file; only Error-severity issues make the document invalid (#2743).
+    // must not fail the file; only Error-severity issues make the document invalid.
     public bool IsValid => !Issues.Any(issue => issue.Severity == ImportValidationSeverity.Error);
 }
 
-/// <summary>
-/// Memory-efficient streaming GeoJSON reader that processes features incrementally.
-/// Uses Utf8JsonReader for low-allocation parsing without loading the entire file into memory.
-/// </summary>
 internal sealed partial class StreamingGeoJsonReader
 {
     private readonly ImportLimits _limits;
@@ -67,10 +60,6 @@ internal sealed partial class StreamingGeoJsonReader
         _geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
     }
 
-    /// <summary>
-    /// Stream features from a GeoJSON file asynchronously.
-    /// Features are yielded one at a time to maintain constant memory usage.
-    /// </summary>
     public async IAsyncEnumerable<IFeature> ReadFeaturesAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -161,7 +150,7 @@ internal sealed partial class StreamingGeoJsonReader
                     // A single un-closed feature (or pre-feature leftover) has grown past the
                     // per-feature memory budget. Fail fast instead of buffering the whole file
                     // in RAM, which a few crafted concurrent uploads could otherwise use to OOM
-                    // the host (#1993).
+                    // the host.
                     throw new InvalidDataException(
                         $"A single GeoJSON feature (or unparsed leftover) exceeds the maximum " +
                         $"in-memory size of {_limits.MaxSingleFeatureBytes:N0} bytes. The feature " +
@@ -324,7 +313,28 @@ internal sealed partial class StreamingGeoJsonReader
 
     private sealed class ValidationState
     {
+        private int _warningCount;
+
         public List<ImportValidationIssue> Issues { get; } = [];
+
+        public int ErrorCount { get; private set; }
+
+        // Errors and warnings are capped separately so advisory warnings (null or repaired geometries, possibly
+        // one per feature) can never crowd out an error later in the file.
+        public void Add(IEnumerable<ImportValidationIssue> issues, int cap)
+        {
+            foreach (var issue in issues)
+            {
+                var isError = issue.Severity == ImportValidationSeverity.Error;
+                if ((isError ? ErrorCount : _warningCount) >= cap)
+                    continue;
+                Issues.Add(issue);
+                if (isError)
+                    ErrorCount++;
+                else
+                    _warningCount++;
+            }
+        }
         public int FeatureCount { get; set; }
         public bool IsFeatureCollection { get; set; }
         public bool HasFeaturesArray { get; set; }
@@ -352,10 +362,8 @@ internal sealed partial class StreamingGeoJsonReader
                     if (_limits.MaxFeaturesPerFile <= 0 || validation.FeatureCount < _limits.MaxFeaturesPerFile)
                     {
                         validation.FeatureCount++;
-                        foreach (var issue in ValidateFeature(feature.RootElement, validation.FeatureCount))
-                        {
-                            RetainValidationIssue(validation.Issues, issue);
-                        }
+                        if (validation.ErrorCount < MaxValidationIssues)
+                            validation.Add(ValidateFeature(feature.RootElement, validation.FeatureCount), MaxValidationIssues);
                     }
                 }
             }
@@ -386,9 +394,6 @@ internal sealed partial class StreamingGeoJsonReader
         return checked((int)reader.BytesConsumed);
     }
 
-    /// <summary>
-    /// Process a chunk of JSON data synchronously to avoid ref struct issues
-    /// </summary>
     private (List<IFeature> features, JsonReaderState newState, JsonProcessingState newProcessingState, int consumed) ProcessJsonChunk(
         ReadOnlyMemory<byte> data,
         JsonReaderState jsonReaderState,
@@ -504,7 +509,7 @@ internal sealed partial class StreamingGeoJsonReader
 
             // A single feature object that spans many chunks accumulates here across
             // ProcessJsonChunk calls. Cap its in-memory size so one pathologically large
-            // (or never-closing) feature cannot buffer the whole file in RAM (#1993).
+            // (or never-closing) feature cannot buffer the whole file in RAM.
             if (_limits.MaxSingleFeatureBytes > 0 &&
                 featureBuffer != null &&
                 featureBuffer.WrittenCount > _limits.MaxSingleFeatureBytes)
@@ -530,6 +535,26 @@ internal sealed partial class StreamingGeoJsonReader
         return (features, reader.CurrentState, newProcessingState, lastConsumed);
     }
 
+    // An absent geometry member is an error. RFC 7946 section 3.2 gives an unlocated feature a null geometry: it is
+    // imported without geometry and reported as a warning, as CSV rows without geometry are.
+    private static ImportValidationIssue? GeometryPresenceIssue(JsonElement? geometry, int featureIndex)
+    {
+        if (geometry is null)
+        {
+            return ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing, "GeoJSON feature is missing geometry.", featureIndex, "geometry");
+        }
+
+        return geometry.Value.ValueKind == JsonValueKind.Null
+            ? ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature has a null geometry; it was imported without geometry.",
+                featureIndex,
+                "geometry",
+                ImportValidationSeverity.Warning)
+            : null;
+    }
+
     private List<ImportValidationIssue> ValidateFeature(JsonElement root, int featureIndex)
     {
         var issues = new List<ImportValidationIssue>(1);
@@ -548,16 +573,15 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!root.TryGetProperty("geometry", out var geometryElement) ||
-            geometryElement.ValueKind == JsonValueKind.Null)
+        JsonElement? geometryMember = root.TryGetProperty("geometry", out var member) ? member : null;
+        var presence = GeometryPresenceIssue(geometryMember, featureIndex);
+        if (presence is not null)
         {
-            issues.Add(ImportValidationIssue.Create(
-                ImportValidationErrorCodes.GeometryMissing,
-                "GeoJSON feature is missing geometry.",
-                featureIndex,
-                "geometry"));
+            issues.Add(presence);
             return issues;
         }
+
+        var geometryElement = geometryMember!.Value;
 
         if (geometryElement.ValueKind != JsonValueKind.Object)
         {
@@ -614,7 +638,7 @@ internal sealed partial class StreamingGeoJsonReader
         }
 
         // Topology validity (self-intersection, ring orientation, hole placement) is reported as a
-        // NON-fatal, row-level warning rather than failing the whole file (#2743): the shared
+        // NON-fatal, row-level warning rather than failing the whole file: the shared
         // per-row validity gate at insertion time repairs (default) or rejects invalid geometry per
         // ImportLimits.GeometryValidityMode. Only areal geometry can be topologically invalid, so
         // points/lines skip the expensive IsValid topology-graph build. Accept mode stores geometry
@@ -658,9 +682,6 @@ internal sealed partial class StreamingGeoJsonReader
 
     }
 
-    /// <summary>
-    /// Parse a single GeoJSON feature from a byte span.
-    /// </summary>
     private Feature? ParseFeature(ReadOnlyMemory<byte> featureJson)
     {
         try
@@ -714,9 +735,6 @@ internal sealed partial class StreamingGeoJsonReader
         }
     }
 
-    /// <summary>
-    /// Parse a GeoJSON geometry element into a NetTopologySuite Geometry.
-    /// </summary>
     private NtsGeometry? ParseGeometry(JsonElement geometryElement)
     {
         if (geometryElement.ValueKind == JsonValueKind.Null)
@@ -793,11 +811,11 @@ internal sealed partial class StreamingGeoJsonReader
         }
 
         // Topology validity (self-intersection, ring orientation, hole placement) is intentionally
-        // NOT rejected here. Previously an invalid ring failed the whole-file preflight, which is
+        // NOT rejected here: failing the whole-file preflight on an invalid ring would be
         // inconsistent with every other import reader and with the edit paths' shared repair
         // pipeline. The shared per-row validity gate at insertion time (CreateWkb /
-        // ImportLimits.GeometryValidityMode, #2743) now repairs (default), rejects, or accepts
-        // invalid geometry per config — so a single bad ring no longer discards the entire file.
+        // ImportLimits.GeometryValidityMode) repairs (default), rejects, or accepts invalid
+        // geometry per config — so a single bad ring does not discard the entire file.
         return null;
     }
 

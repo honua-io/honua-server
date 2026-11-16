@@ -5,10 +5,7 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 
 namespace Honua.Core.Features.EmbedGovernance.Abstractions;
 
-public sealed record EmbedKeyCreateResult(EmbedKeyRecord Record, string Key);
-
-public sealed record EmbedKeyValidationResult(EmbedKeyRecord Record);
-
+// Embed keys and their use: in PostgreSQL on a host with a system database, in memory on a single task without one.
 public interface IEmbedKeyStore
 {
     Task<IReadOnlyList<EmbedKeyRecord>> ListAsync(CancellationToken cancellationToken);

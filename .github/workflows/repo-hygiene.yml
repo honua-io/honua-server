@@ -14,8 +14,16 @@ concurrency:
 jobs:
   evidence-paths:
     name: Execution evidence paths
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -31,10 +39,52 @@ jobs:
           git show "$BASE_SHA:scripts/ci/check-evidence-paths.test.py" > "$policy_dir/check-evidence-paths.test.py"
           python3 "$policy_dir/check-evidence-paths.test.py"
           python3 "$policy_dir/check-evidence-paths.py" --base "$BASE_SHA" --head "$HEAD_SHA"
+  migration-numbers:
+    name: Migration number admission
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Reject migration numbers already on current trunk
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin refs/heads/trunk:refs/remotes/origin/trunk
+          policy_dir="$(mktemp -d)"
+          trap 'rm -rf "$policy_dir"' EXIT
+          # Existing PR heads need not contain the newly introduced checker.
+          # The rollout PR is verified locally; enforcement begins on trunk.
+          if git cat-file -e origin/trunk:scripts/ci/check-migration-numbers.py; then
+            git show origin/trunk:scripts/ci/check-migration-numbers.py > "$policy_dir/check-migration-numbers.py"
+            git show origin/trunk:scripts/ci/check-migration-numbers.test.py > "$policy_dir/check-migration-numbers.test.py"
+            python3 "$policy_dir/check-migration-numbers.test.py"
+            python3 "$policy_dir/check-migration-numbers.py" --base "$BASE_SHA" --head "$HEAD_SHA" --trunk origin/trunk
+          else
+            echo 'Migration policy rollout: trusted trunk checker is not installed yet.'
+          fi
   retired-cache-mentions:
     name: Retired cache mentions
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -48,9 +98,10 @@ jobs:
           policy_dir="$(mktemp -d)"
           trap 'rm -rf "$policy_dir"' EXIT
           policy_ref="$BASE_SHA"
-          # Bootstrap the policy in its introducing PR; later PRs use the trusted base.
+          # Older PR bases load the policy from trusted trunk.
           if ! git cat-file -e "$BASE_SHA:scripts/ci/check-retired-cache.py"; then
-            policy_ref="$HEAD_SHA"
+            git fetch --no-tags origin refs/heads/trunk:refs/remotes/origin/trunk
+            policy_ref="$(git rev-parse origin/trunk)"
           fi
           git show "$policy_ref:scripts/ci/check-retired-cache.py" > "$policy_dir/check-retired-cache.py"
           git show "$policy_ref:scripts/ci/check-retired-cache.test.py" > "$policy_dir/check-retired-cache.test.py"
@@ -61,8 +112,16 @@ jobs:
     permissions:
       contents: read
       actions: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -72,7 +131,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --no-tags origin trunk
+          git fetch --no-tags origin refs/heads/trunk:refs/remotes/origin/trunk
           policy_ref="$(git rev-parse origin/trunk)"
           policy_dir="$(mktemp -d)"
           trap 'rm -rf "$policy_dir"' EXIT
@@ -88,9 +147,17 @@ jobs:
           python3 "$policy_dir/check-generated-file-ownership.py" --base "$policy_ref" --head "$HEAD_SHA"
   shard-identities:
     name: Shard inventory identities
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       # Validate GitHub's merge tree so independent additions collide before landing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,20 +166,55 @@ jobs:
         run: |
           python3 scripts/ci/check-shard-identities.test.py
           python3 scripts/ci/check-shard-identities.py
+  surface-vocabulary:
+    name: Surface vocabulary
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
+      # Check GitHub's merge tree so independently added routes or tools are caught.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Policy, exceptions and checker are reviewed together, so a change to any of them lands in one PR.
+      - name: Check routes, tools and stage operations
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 scripts/ci/check-surface-vocabulary.test.py
+          python3 scripts/ci/check-surface-vocabulary.py --base "$BASE_SHA"
   shared-hygiene:
-    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
+    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # light runner switch
   repo-hygiene:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.
     if: ${{ !cancelled() && !contains(needs.*.result, 'cancelled') }}
-    needs: [evidence-paths, retired-cache-mentions, generated-file-ownership, shard-identities, shared-hygiene]
-    runs-on: ubuntu-latest
+    needs: [evidence-paths, migration-numbers, retired-cache-mentions, generated-file-ownership, shard-identities, surface-vocabulary, shared-hygiene]
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Require all hygiene checks
         env:
           EVIDENCE_RESULT: ${{ needs.evidence-paths.result }}
+          MIGRATION_RESULT: ${{ needs.migration-numbers.result }}
           CACHE_RESULT: ${{ needs.retired-cache-mentions.result }}
           GENERATED_RESULT: ${{ needs.generated-file-ownership.result }}
           SHARDS_RESULT: ${{ needs.shard-identities.result }}
+          VOCABULARY_RESULT: ${{ needs.surface-vocabulary.result }}
           SHARED_RESULT: ${{ needs.shared-hygiene.result }}
-        run: test "$EVIDENCE_RESULT" = success && test "$CACHE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARDS_RESULT" = success && test "$SHARED_RESULT" = success
+        run: test "$EVIDENCE_RESULT" = success && test "$MIGRATION_RESULT" = success && test "$CACHE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARDS_RESULT" = success && test "$VOCABULARY_RESULT" = success && test "$SHARED_RESULT" = success

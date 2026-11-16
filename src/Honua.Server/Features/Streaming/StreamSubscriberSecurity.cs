@@ -137,13 +137,32 @@ internal sealed class StreamSubscriberSecurity
 
         public IReadOnlySet<(string Service, int Layer)> DeniedExactRoutes => deniedExactRoutes;
 
+        private readonly Lazy<IReadOnlyDictionary<int, StreamLayerReadPolicy>> _byLayer = new(() => CombineByLayer(exactRoutes));
+
         public StreamLayerReadPolicy? Resolve(FeatureStreamEnvelope envelope)
         {
+            // A change made directly in the database names no service, so it is read under every
+            // readable publication of its layer at once: all their predicates, all their masks.
+            if (envelope.ServiceId.Length == 0)
+            {
+                return _byLayer.Value.GetValueOrDefault(envelope.LayerId);
+            }
+
             var isExact = exactServiceIds.Contains(envelope.ServiceId);
             var routes = isExact ? exactRoutes : namedRoutes;
             var service = isExact ? envelope.ServiceId : envelope.ServiceId.ToUpperInvariant();
             return routes.GetValueOrDefault((service, envelope.LayerId));
         }
+
+        private static Dictionary<int, StreamLayerReadPolicy> CombineByLayer(
+            IReadOnlyDictionary<(string Service, int Layer), StreamLayerReadPolicy> routes)
+            => routes
+                .GroupBy(route => route.Key.Layer)
+                .ToDictionary(
+                    layer => layer.Key,
+                    layer => new StreamLayerReadPolicy(
+                        layer.SelectMany(route => route.Value.Predicates).ToArray(),
+                        layer.SelectMany(route => route.Value.MaskedFields).ToHashSet(StringComparer.OrdinalIgnoreCase)));
     }
 }
 

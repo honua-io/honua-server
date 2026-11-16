@@ -6,10 +6,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Adapter that wraps PostgresFixture to provide the abstracted IDatabaseFixture interface.
-/// This allows Server tests to use database functionality without depending directly on PostgreSQL infrastructure.
-/// </summary>
 public sealed class DatabaseFixtureAdapter : IDatabaseFixture
 {
     private readonly PostgresFixture _postgresFixture;
@@ -21,9 +17,6 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
 
     public NpgsqlDataSource DataSource => _postgresFixture.DataSource;
 
-    /// <summary>
-    /// Gets the initialized database connection string, including credentials when required by the fixture.
-    /// </summary>
     public string ConnectionString => _postgresFixture.ConnectionString;
 
     public async Task InitializeAsync()

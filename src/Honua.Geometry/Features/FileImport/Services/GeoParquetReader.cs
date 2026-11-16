@@ -20,18 +20,10 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming GeoParquet format reader. Reads GeoParquet files using Parquet.Net,
-/// extracting WKB geometry and attribute columns into NTS features.
-/// </summary>
 internal static class GeoParquetReader
 {
     private const int YieldInterval = 256;
 
-    /// <summary>
-    /// Error message used when a GeoParquet file uses a non-WKB geometry encoding.
-    /// Shared between the import and preview rejection paths.
-    /// </summary>
     internal const string UnsupportedEncodingMessage =
         "GeoParquet native geometry encodings are valid GeoParquet 1.1, but this importer supports only WKB geometry encoding.";
 
@@ -41,9 +33,6 @@ internal static class GeoParquetReader
     internal const string UnsupportedMultipleGeometryMessage =
         "GeoParquet multiple geometry columns cannot be preserved by this importer; select a single geometry column before importing.";
 
-    /// <summary>
-    /// Streams features from a GeoParquet file. The stream must be seekable.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         ImportLimits limits,
@@ -193,10 +182,6 @@ internal static class GeoParquetReader
         }
     }
 
-    /// <summary>
-    /// Extracts all import-relevant metadata from a GeoParquet stream in a single pass:
-    /// SRID, encoding support, and warnings. Resets stream position to 0 after reading.
-    /// </summary>
     internal static async Task<GeoParquetFileMetadata> ExtractMetadataAsync(
         Stream stream, CancellationToken cancellationToken)
     {
@@ -287,9 +272,6 @@ internal static class GeoParquetReader
         public bool HasPlanarEdges => true;
     }
 
-    /// <summary>
-    /// Import-relevant metadata extracted from a GeoParquet file in a single reader pass.
-    /// </summary>
     internal sealed record GeoParquetFileMetadata(
         int? Srid,
         bool IsWkbEncoding,
@@ -299,11 +281,6 @@ internal static class GeoParquetReader
         double? CoordinateEpoch = null,
         bool Crs84Implied = false);
 
-    /// <summary>
-    /// Opens a Parquet reader, normalizing library-level I/O and format errors
-    /// (e.g. invalid magic bytes) to <see cref="InvalidDataException"/> so callers
-    /// can treat them as client input errors rather than server faults.
-    /// </summary>
     private static async Task<ParquetReader> CreateReaderAsync(
         Stream stream, CancellationToken cancellationToken)
     {

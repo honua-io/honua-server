@@ -286,27 +286,12 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
     }
 
     [IntegrationTest]
-    [Endpoint("GET /hubs/admin")]
-    public async Task AdminHub_WithSqlLikeOpaqueConnectionId_ReachesSignalR()
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task AdminLive_WithSqlInjectionInQuery_ReturnsBadRequest()
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            "/hubs/admin?id=opaque--connection-token");
-        request.Headers.Add("X-API-Key", AdminPassword);
-
-        using var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await response.Content.ReadAsStringAsync()).Should().NotContain("SQL injection attempt detected");
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /hubs/admin")]
-    public async Task AdminHub_WithSqlInjectionInNonTransportParameter_ReturnsBadRequest()
-    {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            "/hubs/admin?where=1%3D1--");
+            "/api/v1/admin/live?where=1%3D1--");
         request.Headers.Add("X-API-Key", AdminPassword);
 
         using var response = await _fixture.Client.SendAsync(request);

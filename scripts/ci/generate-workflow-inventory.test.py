@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Exercise inventory projection against independent workflow/template edits."""
 import importlib.util
+import re
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,6 +46,27 @@ class InventoryTests(unittest.TestCase):
                 '| `test.yml` | Test | `push` | Note. |\n' * 2)
             with self.assertRaisesRegex(ValueError, 'duplicate live workflow row'):
                 inventory.render(root)
+
+    def test_output_projects_without_rewriting_the_tracked_page(self):
+        tracked = inventory.ROOT / 'docs/internal/ci/workflow-inventory.md'
+        before = tracked.read_bytes()
+        with tempfile.TemporaryDirectory() as temp:
+            scratch = Path(temp) / 'inventory.md'
+            subprocess.run([sys.executable, str(Path(__file__).with_name('generate-workflow-inventory.py')),
+                            '--output', str(scratch)], check=True)
+            self.assertEqual(scratch.read_text(), inventory.render(inventory.ROOT))
+        self.assertEqual(tracked.read_bytes(), before)
+
+    def test_only_the_regeneration_entry_point_rewrites_the_tracked_page(self):
+        # PR Gate runs validators before steps that require an unchanged
+        # checkout (prove-nuget-auth.py), so a validator must not write it.
+        writers = []
+        for script in sorted(inventory.ROOT.glob('scripts/ci/*.sh')):
+            for line in script.read_text().splitlines():
+                call = line.split('#', 1)[0]
+                if 'generate-workflow-inventory.py' in call and not re.search(r'--(check|output)\b', call):
+                    writers.append(script.name)
+        self.assertEqual(writers, ['regenerate-generated-files.sh'])
 
 
 if __name__ == '__main__':

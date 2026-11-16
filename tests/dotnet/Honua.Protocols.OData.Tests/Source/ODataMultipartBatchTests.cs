@@ -13,10 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData multipart/mixed batch request format.
-/// Verifies parsing, execution, and response generation for the RFC 2616 batch format.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataMultipartBatchTests : IAsyncLifetime

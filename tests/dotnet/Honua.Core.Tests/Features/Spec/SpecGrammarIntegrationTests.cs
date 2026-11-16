@@ -9,16 +9,13 @@ using Honua.Core.Features.Spec.Canonical;
 using Honua.Core.Features.Spec.Domain;
 using Honua.Core.Features.Spec.Grammar;
 using Honua.Core.Features.Spec.Operators;
+using Honua.Core.Features.Spec.Services;
 using Honua.Core.Features.Spec.Validation;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// End-to-end integration tests that drive the full parse → canonicalize →
-/// validate pipeline over a realistic S1 spec and exercise
-/// <see cref="ServiceCollectionExtensions.AddSpecGrammar"/>.
-/// </summary>
 public sealed class SpecGrammarIntegrationTests
 {
     private const string FullS1Spec = """
@@ -127,6 +124,21 @@ public sealed class SpecGrammarIntegrationTests
         var parser1 = provider.GetRequiredService<ISpecParser>();
         var parser2 = provider.GetRequiredService<ISpecParser>();
         parser1.Should().BeSameAs(parser2);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void AddSpecCore_RepeatedRegistration_PreservesReservedStoreSingleton()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
+        services.AddSpecCore(configuration);
+        services.AddSpecCore(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var store = Assert.Single(provider.GetServices<ReservedSpecResourceStateStore>());
+        Assert.Equal(SpecResourceKind.Dataset, store.Kind);
+        Assert.Same(store, provider.GetRequiredService<ReservedSpecResourceStateStore>());
     }
 
     [Trait("Tier", "Fast")]

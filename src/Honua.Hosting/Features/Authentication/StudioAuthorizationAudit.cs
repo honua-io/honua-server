@@ -30,6 +30,7 @@ internal static class StudioAuthorizationAudit
             EventType = AuditEventType.Authorization,
             Actor = actor,
             ActorType = actorType,
+            ActorAgent = AuditContextResolver.ResolveAgent(context),
             ResourceType = resourceType,
             ResourceId = resourceId,
             Action = $"studio.{ToSnakeCase(operation)}",

@@ -19,13 +19,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// HTTP integration tests for the Console Operate investigation endpoints (#1168).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class InvestigationEndpointsTests : IAsyncLifetime
+public sealed partial class InvestigationEndpointsTests : IAsyncLifetime
 {
     private readonly InMemoryInvestigationStore _store = new();
     private readonly CapturingAuditLog _audit = new();

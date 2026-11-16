@@ -72,7 +72,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (!IsSupportedFormat(GetString(values, "f")))
+            if (!IsSupportedFormat(ImageServerRequestValues.GetString(values, "f")))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, "Unsupported format");
                 return StandardErrorHelpers.CreateBadRequest(
@@ -80,7 +80,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     "Only JSON format is supported. Use f=json or f=pjson.");
             }
 
-            if (!TryParseBinCount(GetString(values, "histogramParameters"), out var binCount, out var binError))
+            if (!TryParseBinCount(ImageServerRequestValues.GetString(values, "histogramParameters"), out var binCount, out var binError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, binError ?? "Invalid histogramParameters");
                 return StandardErrorHelpers.CreateBadRequest(context, binError ?? "Invalid histogramParameters.");
@@ -89,19 +89,19 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             // Per ArcGIS ImageServer spec, rasterIds selects raster catalog object IDs (long).
             // Band selection is done via the optional bandIds extension parameter, 0-based like
             // exportImage bandIds (#4068) and shifted to the raster store's 1-based bands.
-            if (!ImageServerCatalogIdParser.TryParseRasterIds(GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
+            if (!ImageServerCatalogIdParser.TryParseRasterIds(ImageServerRequestValues.GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
                 return StandardErrorHelpers.CreateBadRequest(context, rasterIdsError ?? "Invalid rasterIds.");
             }
 
-            if (!ImageServerCatalogIdParser.TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
+            if (!ImageServerCatalogIdParser.TryParseBandIds(ImageServerRequestValues.GetString(values, "bandIds"), out var bands, out var bandIdsError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, bandIdsError ?? "Invalid bandIds");
                 return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(ImageServerRequestValues.GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
@@ -119,7 +119,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             // preserves the raw-source statistics contract. Unsupported chains surface 400/501
             // exactly as on exportImage.
             RasterIdentifyRendering? rendering = null;
-            var rawRenderingRule = GetString(values, "renderingRule");
+            var rawRenderingRule = ImageServerRequestValues.GetString(values, "renderingRule");
             if (!string.IsNullOrWhiteSpace(rawRenderingRule) &&
                 !TryMapRenderingRule(rawRenderingRule, out rendering, out var renderingError, out var notImplemented))
             {
@@ -135,7 +135,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             byte[]? selectionGeometry = null;
             byte[]? clipGeometry = null;
             int? selectionSrid = null;
-            var rawGeometry = GetString(values, "geometry");
+            var rawGeometry = ImageServerRequestValues.GetString(values, "geometry");
             if (!string.IsNullOrWhiteSpace(rawGeometry))
             {
                 if (!ImageServerGeometryHelpers.TryGetEnvelope(rawGeometry, out var aoi, out var geometryError))
@@ -146,7 +146,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
                 if (!ImageServerGeometryHelpers.TryCreatePolygonClipGeometry(
                         rawGeometry,
-                        GetString(values, "geometryType"),
+                        ImageServerRequestValues.GetString(values, "geometryType"),
                         out clipGeometry,
                         out var clipError))
                 {
@@ -161,7 +161,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
             // Parse before selection so a lock, an unsupported where, or an unsupported
             // method constrains the rasters the same way exportImage and identify do.
-            var rawMosaicRule = GetString(values, "mosaicRule");
+            var rawMosaicRule = ImageServerRequestValues.GetString(values, "mosaicRule");
             if (!ImageServerMosaicRule.TryParse(rawMosaicRule, out var mosaicRule, out var mosaicError, out var mosaicNotImplemented))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, mosaicError);
@@ -477,7 +477,4 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         rendering = resolved.HasRendering ? resolved : null;
         return true;
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }
