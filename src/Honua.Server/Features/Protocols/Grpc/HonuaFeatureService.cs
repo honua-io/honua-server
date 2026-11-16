@@ -388,9 +388,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         // Change events carry the stamped tracking values, as GeoServices events do.
-        var stampedAt = (grpcHttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
-        editBatch = GrpcEditorTracking.Stamp(layer.Resource, ownerPrepared.Batch, principal.Name, stampedAt);
-        requestBatch = GrpcEditorTracking.Stamp(layer.Resource, requestBatch, principal.Name, stampedAt);
+        var stamp = GrpcEditorTracking.CallerStamp(
+            principal.Name,
+            (grpcHttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        editBatch = GrpcEditorTracking.Stamp(layer.Resource, ownerPrepared.Batch, stamp);
+        requestBatch = GrpcEditorTracking.Stamp(layer.Resource, requestBatch, stamp);
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,

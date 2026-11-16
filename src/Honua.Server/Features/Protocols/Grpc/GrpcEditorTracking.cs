@@ -26,24 +26,23 @@ internal static class GrpcEditorTracking
             };
     }
 
-    public static FeatureEditBatch Stamp(
-        MetadataV2Object resource,
-        FeatureEditBatch batch,
-        string? principalName,
-        DateTimeOffset utcNow)
+    // The caller and instant for one ApplyEdits call, in the gRPC stored timestamp forms.
+    public static EditorTrackingStamp CallerStamp(string? principalName, DateTimeOffset utcNow)
+        => new(principalName, field => TimeValue(field, utcNow));
+
+    public static FeatureEditBatch Stamp(MetadataV2Object resource, FeatureEditBatch batch, EditorTrackingStamp stamp)
     {
         if (resource.Editing is null)
         {
             return batch;
         }
 
-        Func<MetadataV2Field?, object?> timeValue = field => TimeValue(field, utcNow);
         return batch with
         {
             Creates = Map(batch.Creates, feature => StampFeature(feature, attributes =>
-                EditorTrackingFields.StampInsert(resource, attributes, principalName, timeValue))),
+                EditorTrackingFields.StampInsert(resource, attributes, stamp))),
             Updates = Map(batch.Updates, feature => StampFeature(feature, attributes =>
-                EditorTrackingFields.StampUpdate(resource, attributes, principalName, timeValue))),
+                EditorTrackingFields.StampUpdate(resource, attributes, stamp))),
         };
     }
 

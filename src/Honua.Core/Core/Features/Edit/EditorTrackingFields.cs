@@ -8,7 +8,7 @@ namespace Honua.Core.Features.Edit;
 // Editor-tracking fields (creator, created at, editor, updated at) belong to the server in every
 // edit protocol: client values are ignored, inserts stamp all four from the caller and the clock,
 // and updates stamp the editor and updated-at fields. Each protocol supplies the stored timestamp
-// for a declared field; a null timestamp leaves that field unstamped.
+// through EditorTrackingStamp.
 public static class EditorTrackingFields
 {
     public static IEnumerable<string> Names(MetadataV2ObjectEditing? editing)
@@ -30,34 +30,28 @@ public static class EditorTrackingFields
     public static void StampInsert(
         MetadataV2Object resource,
         IDictionary<string, object?> attributes,
-        string? principalName,
-        Func<MetadataV2Field?, object?> timeValue)
+        EditorTrackingStamp stamp)
     {
-        ArgumentNullException.ThrowIfNull(resource);
-        ArgumentNullException.ThrowIfNull(attributes);
-        ArgumentNullException.ThrowIfNull(timeValue);
+        var target = Target.Of(resource, attributes, stamp);
         if (resource.Editing is { } editing)
         {
-            SetUser(resource, attributes, editing.CreatorField, principalName);
-            SetTime(resource, attributes, editing.CreatedAtField, timeValue);
+            target.SetUser(editing.CreatorField, stamp.PrincipalName);
+            target.SetTime(editing.CreatedAtField, stamp.TimeValue);
         }
 
-        StampUpdate(resource, attributes, principalName, timeValue);
+        StampUpdate(resource, attributes, stamp);
     }
 
     public static void StampUpdate(
         MetadataV2Object resource,
         IDictionary<string, object?> attributes,
-        string? principalName,
-        Func<MetadataV2Field?, object?> timeValue)
+        EditorTrackingStamp stamp)
     {
-        ArgumentNullException.ThrowIfNull(resource);
-        ArgumentNullException.ThrowIfNull(attributes);
-        ArgumentNullException.ThrowIfNull(timeValue);
+        var target = Target.Of(resource, attributes, stamp);
         if (resource.Editing is { } editing)
         {
-            SetUser(resource, attributes, editing.EditorField, principalName);
-            SetTime(resource, attributes, editing.UpdatedAtField, timeValue);
+            target.SetUser(editing.EditorField, stamp.PrincipalName);
+            target.SetTime(editing.UpdatedAtField, stamp.TimeValue);
         }
     }
 
@@ -79,27 +73,33 @@ public static class EditorTrackingFields
         return null;
     }
 
-    private static void SetUser(
-        MetadataV2Object resource,
-        IDictionary<string, object?> attributes,
-        string? fieldName,
-        string? principalName)
+    private readonly record struct Target(MetadataV2Object Resource, IDictionary<string, object?> Attributes)
     {
-        if (!string.IsNullOrWhiteSpace(fieldName))
+        public static Target Of(
+            MetadataV2Object resource,
+            IDictionary<string, object?> attributes,
+            EditorTrackingStamp stamp)
         {
-            attributes[CanonicalName(resource, fieldName)] = principalName;
+            ArgumentNullException.ThrowIfNull(resource);
+            ArgumentNullException.ThrowIfNull(attributes);
+            ArgumentNullException.ThrowIfNull(stamp.TimeValue);
+            return new Target(resource, attributes);
         }
-    }
 
-    private static void SetTime(
-        MetadataV2Object resource,
-        IDictionary<string, object?> attributes,
-        string? fieldName,
-        Func<MetadataV2Field?, object?> timeValue)
-    {
-        if (!string.IsNullOrWhiteSpace(fieldName) && timeValue(FindField(resource, fieldName)) is { } value)
+        public void SetUser(string? fieldName, string? principalName)
         {
-            attributes[CanonicalName(resource, fieldName)] = value;
+            if (!string.IsNullOrWhiteSpace(fieldName))
+            {
+                Attributes[CanonicalName(Resource, fieldName)] = principalName;
+            }
+        }
+
+        public void SetTime(string? fieldName, Func<MetadataV2Field?, object?> timeValue)
+        {
+            if (!string.IsNullOrWhiteSpace(fieldName) && timeValue(FindField(Resource, fieldName)) is { } value)
+            {
+                Attributes[CanonicalName(Resource, fieldName)] = value;
+            }
         }
     }
 }

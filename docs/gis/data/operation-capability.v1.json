@@ -8,7 +8,7 @@
   },
   "summary": {
     "operationCount": 523,
-    "unresolvedCount": 0,
+    "unresolvedCount": 1,
     "capabilityCount": 23,
     "perSpec": {
       "admin-api": 429,
@@ -5278,5 +5278,12 @@
       "catalogEntryId": "post-api-v1-studio-kind-id-export"
     }
   ],
-  "unresolved": []
+  "unresolved": [
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/incidents/{incidentId}",
+      "operationId": "getOpsIncidentContext"
+    }
+  ]
 }

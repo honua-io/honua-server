@@ -91,17 +91,18 @@ internal static class ServerMaintainedEditFields
             return;
         }
 
+        var stamp = new EditorTrackingStamp(principal.Name, field => TimeValue(field, utcNow));
         if (isInsert)
         {
             StampInsertGlobalId(resource, attributes, editing.GlobalIdField, useGlobalIds);
-            EditorTrackingFields.StampInsert(resource, attributes, principal.Name, field => TimeValue(field, utcNow));
+            EditorTrackingFields.StampInsert(resource, attributes, stamp);
             return;
         }
 
         Restore(resource, attributes, existingAttributes, editing.GlobalIdField);
         Restore(resource, attributes, existingAttributes, editing.CreatorField);
         Restore(resource, attributes, existingAttributes, editing.CreatedAtField);
-        EditorTrackingFields.StampUpdate(resource, attributes, principal.Name, field => TimeValue(field, utcNow));
+        EditorTrackingFields.StampUpdate(resource, attributes, stamp);
     }
 
     private static void StampInsertGlobalId(
