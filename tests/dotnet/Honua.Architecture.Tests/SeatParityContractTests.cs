@@ -131,7 +131,7 @@ public sealed class SeatParityContractTests
                 || string.Equals(type, "LoggingAdminConfigChangeApplier", StringComparison.Ordinal),
             "a logging/no-op admin config applier silently drops approved actions");
 
-        var loggingAppliers = ArchitectureTestHelpers.GetTypesSafely(typeof(Program).Assembly)
+        var loggingAppliers = ArchitectureTestHelpers.GetTypesSafely(typeof(Honua.Server.Startup.LicensingRegistration).Assembly)
             .Where(type => typeof(IAdminConfigChangeApplier).IsAssignableFrom(type))
             .Where(type => type.Name.Contains("Logging", StringComparison.Ordinal))
             .Select(type => type.FullName)
@@ -297,7 +297,7 @@ public sealed class SeatParityContractTests
 
     private static Dictionary<string, string> LoadOpsActionNameConstants()
     {
-        var type = typeof(Program).Assembly.GetType("Honua.ControlPlane.Executors.OpsActionNames");
+        var type = typeof(Honua.Server.Startup.LicensingRegistration).Assembly.GetType("Honua.ControlPlane.Executors.OpsActionNames");
         type.Should().NotBeNull("OpsActionNames is the stable action-id vocabulary");
 
         return type!.GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -310,7 +310,7 @@ public sealed class SeatParityContractTests
 
     private static HashSet<string> LoadRegisteredOpsActions()
     {
-        var type = typeof(Program).Assembly.GetType("Honua.ControlPlane.Executors.OpsActionCatalog");
+        var type = typeof(Honua.Server.Startup.LicensingRegistration).Assembly.GetType("Honua.ControlPlane.Executors.OpsActionCatalog");
         type.Should().NotBeNull("OpsActionCatalog is the T4 action registry");
 
         var field = type!.GetField("GuardrailTiers", BindingFlags.Public | BindingFlags.Static);
