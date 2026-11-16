@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 using Xunit;
 using IAgentAuthorityStore = Honua.Core.Features.Operations.Abstractions.IAgentAuthorityStore;
 
@@ -24,7 +25,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class OperationGatewayAutonomyTests
 {
-    [Fact]
+    [UnitTest]
     public async Task OrdinaryRoute_ServiceNameAndAutonomyContext_DoNotGrantRemediationAuthority()
     {
         var evaluator = AutoApplyingEvaluator();
@@ -38,7 +39,7 @@ public sealed partial class OperationGatewayAutonomyTests
         executor.ExecuteCount.Should().Be(0);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Remediation_RealReservation_ConcurrentRetriesActuateOnce()
     {
         var policyStore = await PolicyStoreForGuardAsync();
@@ -56,7 +57,7 @@ public sealed partial class OperationGatewayAutonomyTests
         audit.Events.Should().OnlyContain(item => item.Actor == "service:ops-findings" && item.ActorAgent == null);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("disabled")]
     [InlineData("config-kill")]
     [InlineData("store-kill")]
@@ -159,7 +160,7 @@ public sealed partial class OperationGatewayAutonomyTests
         executor.ExecuteCount.Should().Be(1);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("ordinary")]
     [InlineData("ceiling-remediation")]
     public async Task RouteAsync_AuthenticatedAgentClaimsServiceIdentity_RequiresApproval(string invocation)

@@ -18,13 +18,14 @@ using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
 public sealed partial class OpsFindingsServiceTests
 {
-    [Fact]
+    [UnitTest]
     public async Task BackgroundEvaluation_EligibleFinding_UsesServerBoundaryWhileProposeUsesOrdinaryRoute()
     {
         var gateway = Substitute.For<IOperationGateway, IOpsRemediationGateway>();
@@ -55,7 +56,7 @@ public sealed partial class OpsFindingsServiceTests
         await jobs.Received(1).ReleaseLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task BackgroundEvaluation_EligibleFinding_ActuatesThroughCanonicalGatewayWithServiceAudit()
     {
         var (gateway, evaluator, executor, audit) = CanonicalRemediationGateway();
@@ -76,7 +77,7 @@ public sealed partial class OpsFindingsServiceTests
             && item.Actor == "service:ops-findings" && item.ActorAgent == null), Arg.Any<CancellationToken>());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("disabled")]
     [InlineData("kill-switch")]
     [InlineData("lease-denied")]
@@ -104,7 +105,7 @@ public sealed partial class OpsFindingsServiceTests
         await gateway.DidNotReceive().RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("stale")]
     [InlineData("unavailable")]
     public async Task Remediate_StaleOrIncompleteEvidence_NeverRoutes(string evidenceState)
