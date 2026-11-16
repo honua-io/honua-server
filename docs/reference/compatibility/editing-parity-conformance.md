@@ -107,6 +107,9 @@ never by parsing the message.
 
 - **Supported:** owner policies (#2132), contingent values (#2133), attribute-rule depth (#2134),
   attribute rules, contingent values and plugin edit hooks on OGC API Features and gRPC edits
-  (part of #7855; shared tracking/validation and receipt consolidation remain).
+  (#7855). The shared edit core also prepares attribute rules, omits and stamps server-maintained
+  tracking fields, and validates normalized attributes across protocol adapters. Shared receipt
+  storage and replay coordination preserve each protocol's existing idempotency contract;
+  OGC API Features does not gain an idempotency-key contract.
 - **Partial / deferred to #2135:** VersionManagementServer `conflictDetection=byAttribute`,
   `withPost` auto-post, and the `resolveConflicts` accepted-resolution echo.
