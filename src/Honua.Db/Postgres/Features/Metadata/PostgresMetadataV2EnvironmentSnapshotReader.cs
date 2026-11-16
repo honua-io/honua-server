@@ -82,6 +82,34 @@ internal sealed class PostgresMetadataV2EnvironmentSnapshotReader : IMetadataV2E
         return MaterializeSnapshot(reader.GetString(0), reader.GetString(1));
     }
 
+    public async ValueTask<MetadataV2GraphSnapshot?> GetByEtagAsync(
+        string environment,
+        string etag,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(environment) || string.IsNullOrWhiteSpace(etag))
+        {
+            return null;
+        }
+
+        var sql = $"""
+            SELECT document, etag
+            FROM {_snapshotsTable}
+            WHERE environment = @environment AND etag = @etag
+            ORDER BY revision DESC
+            LIMIT 1
+            """;
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@environment", environment.Trim());
+        command.Parameters.AddWithValue("@etag", etag);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? MaterializeSnapshot(reader.GetString(0), reader.GetString(1))
+            : null;
+    }
+
     public async IAsyncEnumerable<MetadataV2EnvironmentRevision> ListCurrentRevisionsAsync(
         IReadOnlyList<string> environments,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)

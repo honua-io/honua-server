@@ -13,16 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// OGC API Features mirror tests for the Pro-tier spatial analytics endpoints.
-/// These act as a smoke-test suite verifying that each OGC route is wired to
-/// the same shared core handlers exercised by <see cref="SpatialAnalyticsRestTests"/>.
-/// The REST suite covers comprehensive parameter validation; this suite checks
-/// that the <c>/ogc/features/collections/{collectionId}/...</c> surface returns
-/// the same GeoJSON shape for a happy-path request and produces consistent
-/// error responses when the collection does not exist or a required parameter
-/// is missing.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsOgcTests : IAsyncLifetime

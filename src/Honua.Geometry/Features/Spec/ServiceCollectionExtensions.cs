@@ -17,24 +17,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Spec;
 
-/// <summary>
-/// Service registration helpers for the declarative Honua spec language.
-/// <see cref="AddSpecGrammar"/> wires the grammar, canonical AST, and
-/// validator (<see cref="ISpecParser"/>, <see cref="ISpecCanonicalizer"/>,
-/// <see cref="ISpecValidator"/>). <see cref="AddSpecCore"/> wires the plan
-/// / apply engine: planner, apply engine, content-hash cache, and reserved
-/// resource-state stores. Consumers may call one or both from their
-/// composition roots.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the spec parser, canonicalizer, validator, and default S1
-    /// operator catalog. Idempotent — safe to call from multiple composition
-    /// roots.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddSpecGrammar(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -46,12 +30,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the spec planner, apply engine, content-hash cache, and
-    /// reserved S1 resource-state stores. Does not register a
-    /// <see cref="ISpecComputeExecutor"/>; callers must provide one before
-    /// the engine is resolved.
-    /// </summary>
     public static IServiceCollection AddSpecCore(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -65,13 +43,13 @@ public static class ServiceCollectionExtensions
             .AddOptions<SpecCostEstimatorOptions>()
             .Bind(configuration.GetSection("Spec:CostEstimator"));
 
-        services.TryAddSingleton<ISpecCostEstimator>(sp =>
+        services.TryAddSingleton<SpecCostEstimator>(sp =>
             new SpecCostEstimator(
                 sp.GetRequiredService<IProcessCatalog>(),
                 sp.GetRequiredService<IOptions<SpecCostEstimatorOptions>>().Value));
 
         services.TryAddSingleton<ISpecPlanner>(sp =>
-            new SpecPlanner(sp.GetRequiredService<ISpecCostEstimator>()));
+            new SpecPlanner(sp.GetRequiredService<SpecCostEstimator>()));
 
         services.TryAddSingleton<IContentHashArtifactCache>(sp =>
             new InMemoryContentHashArtifactCache(sp.GetService<TimeProvider>()));
@@ -87,12 +65,7 @@ public static class ServiceCollectionExtensions
                 sp.GetService<TimeProvider>(),
                 sp.GetService<ILogger<SpecApplyOrchestrator>>()));
 
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISpecResourceStateStore>(
-            new ReservedSpecResourceStateStore(SpecResourceKind.Dataset)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISpecResourceStateStore>(
-            new ReservedSpecResourceStateStore(SpecResourceKind.Service)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISpecResourceStateStore>(
-            new ReservedSpecResourceStateStore(SpecResourceKind.App)));
+        services.TryAddSingleton(new ReservedSpecResourceStateStore(SpecResourceKind.Dataset));
 
         return services;
     }

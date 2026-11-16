@@ -9,9 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Tests for OgcMapsConformanceHandler functionality.
-/// </summary>
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsConformanceHandlerTests
 {

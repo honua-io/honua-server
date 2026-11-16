@@ -3,8 +3,6 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Core.Features.SensorThings.Abstractions;
-using Honua.Core.Features.SensorThings.Domain;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
@@ -14,12 +12,4 @@ internal sealed record ObservationStreamScope(string? TenantId, string? Schema)
     internal static ObservationStreamScope FromServices(IServiceProvider services) => new(
         services.GetService<ITenantContext>()?.TenantId,
         services.GetService<ISchemaContext>()?.CurrentSchema);
-}
-
-internal sealed class ObservationStreamPublisher(
-    ObservationStreamSessionManager manager,
-    ObservationStreamScope scope) : IObservationChangeEventPublisher
-{
-    public void PublishObservations(IReadOnlyList<SensorThingsObservation> observations) =>
-        manager.PublishObservations(observations, scope);
 }

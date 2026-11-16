@@ -21,6 +21,9 @@ internal static class BatchAndDeployBackendsRegistration
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
+        services.AddOptions<AwsDeploymentAlarmOptions>().BindConfiguration(AwsDeploymentAlarmOptions.SectionName);
+        services.AddSingleton<IAwsDeploymentAlarmClient, AwsSdkDeploymentAlarmClient>();
+        services.AddSingleton<IAwsDeploymentAlarmAdmission, AwsDeploymentAlarmAdmission>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
         services.AddScoped<IOpsExternalEventConsumer, DeploymentSettledCdnConsumer>();
         services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
@@ -28,8 +31,6 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<Honua.ControlPlane.Executors.IGovernedWorkloadExecutor, Honua.ControlPlane.Executors.AwsGovernedWorkloadExecutor>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
-        services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
-        services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
         services.AddSingleton<IAzureBatchClient, AzureBatchDataPlaneClient>();
         services.AddSingleton<AzureBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AzureBatchComputeBackend>());
@@ -41,8 +42,8 @@ internal static class BatchAndDeployBackendsRegistration
 
         // Multi-provider deploy telemetry gate. The dispatcher selects a provider evaluator by the
         // telemetry connection's Provider; Prometheus is always available, CloudWatch is added with
-        // the rest of the AWS surface, and Azure Monitor with the Azure surface so Azure deploy
-        // backends get the same health-gated rollback parity as AWS.
+        // the rest of the AWS surface, and Azure Monitor with the Azure surface so a deploy whose
+        // metrics live in Log Analytics gets the same health-gated rollback.
         services.AddSingleton<IDeployTelemetryProviderEvaluator, PrometheusDeployTelemetryProviderEvaluator>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<ICloudWatchMetricClient, AwsSdkCloudWatchMetricClient>();
@@ -63,38 +64,23 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IArgoRolloutsClient, ArgoRolloutsClient>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>
-        // resolution below — keep the existing K8s/AWS/Azure ordering.
+        // resolution below — keep the existing K8s/AWS ordering.
         services.AddSingleton<KubernetesGitOpsDeployBackend>();
         services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
+        services.AddSingleton(sp => new AwsEcsAlbDeployClients(
+            sp.GetRequiredService<IAwsAlbClient>(), sp.GetRequiredService<IAwsEcsClient>(),
+            sp.GetRequiredService<IRollbackDataPlaneProbe>()));
         services.AddSingleton<AwsEcsAlbDeployBackend>();
-#endif
-#if !HONUA_EXCLUDE_AZURE
-        services.AddSingleton<AzureContainerAppsGitOpsDeployBackend>();
-        services.AddSingleton<AzureContainerAppsRevisionDeployBackend>();
-#endif
-#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
-#endif
-#if !HONUA_EXCLUDE_AZURE
-        services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
 #endif
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesArgoRolloutsDeployBackend>());
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());
-#endif
-#if !HONUA_EXCLUDE_AZURE
-        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsGitOpsDeployBackend>());
-        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
-#endif
-#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
-#endif
-#if !HONUA_EXCLUDE_AZURE
-        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
 #endif
 
         // Substrate-neutral, single-host rolling-replace deploy backend (ADR-0060). Registered
@@ -124,7 +110,8 @@ internal static class BatchAndDeployBackendsRegistration
         // whenever an operator targets Backend=honua-aws-batch.
 #if !HONUA_EXCLUDE_AWS
         services.AddOptions<AwsBatchExecutionOptions>()
-            .BindConfiguration(AwsBatchExecutionOptions.SectionName);
+            .BindConfiguration(AwsBatchExecutionOptions.SectionName)
+            .PostConfigure<IConfiguration>(AwsBatchExecutionOptions.ApplyStackNameFallback);
         services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
         services.AddSingleton<AwsBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());

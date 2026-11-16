@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.TileCachePackage.Services;
 
-public sealed partial class TileCachePackageImportService : ITileCachePackageImportService
+public sealed partial class TileCachePackageImportService
 {
     private const string StyleIdentifier = "default";
 
@@ -131,7 +131,7 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
             }
         }
 
-        // Tiles the new package no longer contains must not keep being served (#6175).
+        // Tiles absent from the new package must not keep being served.
         await _sink.DeleteTilesExceptAsync(cacheId, retained, cancellationToken).ConfigureAwait(false);
 
         Log.ImportCompleted(_logger, cacheId, imported, skipped);

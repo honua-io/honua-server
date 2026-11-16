@@ -21,12 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that the MCP functional tools delegate to
-/// <see cref="IGeoprocessingJobService"/> with the right resource type,
-/// operation, and domain plan, and that they translate the service result into
-/// the published MCP output shape.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpToolDelegationTests
 {
@@ -189,7 +183,7 @@ public sealed class McpToolDelegationTests
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
         var bridge = new McpJobProgressBridge(
-            new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance),
+            Substitute.For<IMcpNotificationPublisher>(),
             sessions,
             scopeFactory,
             NullLogger<McpJobProgressBridge>.Instance,

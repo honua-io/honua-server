@@ -9,29 +9,10 @@ using Npgsql;
 
 namespace Honua.TestKit.Mixins;
 
-/// <summary>
-/// Audit-A2 mixin: the large-dataset seeding helper that <see cref="WebAppFixture"/>
-/// historically inlined as ~55 LOC of <c>EnsureLargeTestDatasetAsync</c> plus the WKB
-/// point-generation helper. Used by streaming-performance tests that need 2000+ feature
-/// rows; entirely independent of the fixture's HTTP client, V2 graph, and schema
-/// wiring, so it lives here as static helpers that take the
-/// <see cref="PostgresFixture"/> + schema name + layer id.
-/// </summary>
-/// <remarks>
-/// Per structural-audit-2026-05 (group A2), this is the fifth slice of the WebAppFixture
-/// mixin split. Behaviour is byte-identical to the previous inline implementation —
-/// pure relocation.
-/// </remarks>
 internal static class WebAppFixtureLargeDatasetMixin
 {
     private const int TargetFeatureCount = 2000;
 
-    /// <summary>
-    /// Ensures the supplied schema contains at least <see cref="TargetFeatureCount"/>
-    /// feature rows for the supplied layer id. Existing rows count toward the target so
-    /// repeat invocations are idempotent. Mirrors the historic behaviour of
-    /// <see cref="WebAppFixture.EnsureLargeTestDatasetAsync"/>.
-    /// </summary>
     internal static async Task EnsureLargeTestDatasetAsync(
         PostgresFixture postgres,
         string schemaName,
@@ -88,10 +69,6 @@ internal static class WebAppFixtureLargeDatasetMixin
         await transaction.CommitAsync();
     }
 
-    /// <summary>
-    /// Creates a simple test point geometry as WKB. Mirrors the historic
-    /// <c>CreateTestPointGeometry</c> private helper.
-    /// </summary>
     private static byte[] CreateTestPointGeometry(double x, double y)
     {
         var geometryFactory = new GeometryFactory();

@@ -21,10 +21,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Integration tests for the ArcGIS-compatible <c>/sharing/rest/generateToken</c>
-/// endpoint and the matching <c>PortalToken</c> authentication scheme.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -69,17 +65,12 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
                 // Re-check a token's backing credential on every request so a revocation is
                 // observable immediately instead of after the revalidation window.
-                builder.UseSetting("Authentication:PortalToken:SourceRevalidationSeconds", "0");
                 builder.UseSetting("Cors:AllowedOrigins:0", "http://localhost:3000");
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
             });
     }
 
-    /// <summary>
-    /// Stamps a fixed remote IP onto each request so IP-bound token flows behave as they
-    /// do behind Kestrel, where Connection.RemoteIpAddress is always populated.
-    /// </summary>
     private sealed class RemoteIpStartupFilter(IPAddress remoteIp) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)

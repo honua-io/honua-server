@@ -16,6 +16,47 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class PostgresWorkflowOperationStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
+    public async Task TryCreateAsync_RealtimeAppendFails_RollsBackAuthoritativeWrite()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateWorkflowOperationStore(new RejectingRealtimeWriter());
+        var operation = Deploy(NewTargetId(), DateTimeOffset.UtcNow);
+
+        var create = () => store.TryCreateAsync(operation);
+        await create.Should().ThrowAsync<InvalidOperationException>();
+        (await store.GetAsync(operation.OperationId)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task Updates_RealtimeAppendFails_PreserveVersionAndState()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var original = harness.CreateWorkflowOperationStore();
+        var operation = Deploy(NewTargetId(), DateTimeOffset.UtcNow);
+        (await original.TryCreateAsync(operation)).Should().BeTrue();
+        var stored = (await original.GetAsync(operation.OperationId))!;
+        var failing = harness.CreateWorkflowOperationStore(new RejectingRealtimeWriter());
+        var update = stored with { Status = WorkflowOperationStatus.Succeeded };
+
+        var trySet = () => failing.TrySetAsync(update);
+        await trySet.Should().ThrowAsync<InvalidOperationException>();
+        var set = () => failing.SetAsync(update);
+        await set.Should().ThrowAsync<InvalidOperationException>();
+        (await original.GetAsync(operation.OperationId)).Should().BeEquivalentTo(stored);
+    }
+
+    private sealed class RejectingRealtimeWriter : IControlPlaneRealtimeWriter
+    {
+        public void NotifyCommitted() => throw new InvalidOperationException("Unexpected notification after failed append");
+
+        public Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context)
+            => throw new InvalidOperationException("Simulated realtime append failure");
+
+        public Task AppendProposalAsync(OperationProposal proposal, ControlPlaneWriteContext context)
+            => throw new InvalidOperationException("Simulated realtime append failure");
+    }
+
+    [IntegrationTest]
     public async Task TryCreateAsync_SameIdOnEightStores_ExactlyOneWinsAtVersionOne()
     {
         await using var harness = await CreateHarnessAsync();

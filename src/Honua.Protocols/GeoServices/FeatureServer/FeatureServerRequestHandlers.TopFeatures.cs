@@ -303,19 +303,19 @@ internal static partial class FeatureServerEndpoints
         {
             var pbfFormatter = context.RequestServices.GetRequiredService<PbfQueryFormatter>();
             var topSrid = outputSrid ?? resource.ReadSrid();
-            var (pbfPayload, pbfContentType) = pbfFormatter.FormatAsPbf(
-                result,
-                resource,
-                returnGeometry: returnGeometry,
-                outputSrid: topSrid,
-                returnZ: false,
-                returnM: false,
-                geometryPrecision: null,
-                maxAllowableOffset: null,
-                outFields: query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty
-                    ? [.. query.OutFields.Value]
-                    : null);
-            return Results.Bytes(pbfPayload, pbfContentType);
+            var (pbfPayload, _) = pbfFormatter.FormatAsPbfStream(result, resource, new PbfStreamEncodingOptions
+            {
+                ReturnGeometry = returnGeometry,
+                OutputSrid = topSrid,
+                ReturnZ = false,
+                ReturnM = false,
+                GeometryPrecision = null,
+                MaxAllowableOffset = null,
+                OutFields = query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty
+                        ? [.. query.OutFields.Value]
+                        : null
+            });
+            return pbfPayload;
         }
 
         return CreateTopFeaturesJsonResult(

@@ -11,24 +11,12 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the OAuth2 <c>client_credentials</c> grant (ADR-0053, #1860) on
-/// <see cref="PortalOAuthTokenService"/>. These prove, independent of the HTTP
-/// pipeline: (1) with the grant disabled the request is rejected with
-/// <c>unsupported_grant_type</c> exactly as before — the no-behaviour-change-by-default
-/// guarantee; (2) with the grant enabled a full-admin API-key secret mints an opaque,
-/// IP-bound portal token carrying the admin role, and no refresh token; (3) a
-/// constrained key is refused with <c>unauthorized_client</c> rather than having its
-/// permission labels turned into roles (#4577); (4) an unknown/missing secret is
-/// rejected with <c>invalid_client</c>.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -598,10 +586,6 @@ public sealed class PortalOAuthClientCredentialsTests
         return (service, issuer, secret);
     }
 
-    /// <summary>
-    /// Builds the service over an issuer wired to the real source validator, so a token
-    /// minted from the API key is re-checked against that key on every restore.
-    /// </summary>
     private static async Task<(PortalOAuthTokenService Service, IPortalTokenIssuer Issuer, string Secret, InMemoryAdminApiKeyStore KeyStore, Guid KeyId)>
         CreateKeyBoundServiceAsync(
             bool enableClientCredentials,
@@ -610,7 +594,6 @@ public sealed class PortalOAuthClientCredentialsTests
             IHttpClientFactory? httpClientFactory = null,
             PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var apiKeyStore = new InMemoryAdminApiKeyStore();
         var created = await apiKeyStore.CreateAsync(
             name: "etl-worker",
@@ -626,12 +609,11 @@ public sealed class PortalOAuthClientCredentialsTests
                 EnableClientCredentials = enableClientCredentials,
                 ClientCredentialsFederation = federationOptions ?? new PortalOAuthClientCredentialsFederationOptions(),
             },
-            SourceRevalidationSeconds = 0,
         });
 
         var services = new ServiceCollection()
             .AddSingleton<IAdminApiKeyStore>(apiKeyStore)
-            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(memoryCache, options, sp))
+            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(sp))
             .BuildServiceProvider();
         var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
         var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
@@ -644,11 +626,6 @@ public sealed class PortalOAuthClientCredentialsTests
         return (service, issuer, created.Key, apiKeyStore, created.Record.Id);
     }
 
-    /// <summary>
-    /// An <see cref="IHttpClientFactory"/> that hands out a plain client. Federation
-    /// is disabled in these tests (no TokenEndpoint configured), so the factory is
-    /// never asked to reach an external IdP.
-    /// </summary>
     private sealed class NullHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();

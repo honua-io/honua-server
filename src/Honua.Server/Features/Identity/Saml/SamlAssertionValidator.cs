@@ -1,19 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Xml;
+using System.Security.Cryptography;
 using System.Xml.Linq;
+using System.Xml;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Identity.Saml;
-
-public interface ISamlAssertionValidator
-{
-    SamlValidationResult Validate(string responseXml);
-}
 
 public sealed class SamlValidationResult
 {
@@ -51,14 +46,14 @@ public sealed class SamlSubject
 // Unsigned assertions are rejected, and the signature is checked with primitives rather than the framework signed-XML types.
 internal sealed class SamlAssertionValidator(
     IOptions<SamlAuthenticationOptions> options,
-    ISamlAssertionReplayCache? replayCache = null) : ISamlAssertionValidator
+    SamlAssertionReplayCache? replayCache = null)
 {
     private const string DsigNs = "http://www.w3.org/2000/09/xmldsig#";
     private const string SamlAssertionNs = "urn:oasis:names:tc:SAML:2.0:assertion";
     private const string SamlProtocolNs = "urn:oasis:names:tc:SAML:2.0:protocol";
 
     private readonly SamlAuthenticationOptions _options = options.Value;
-    private readonly ISamlAssertionReplayCache _replay = replayCache
+    private readonly SamlAssertionReplayCache _replay = replayCache
         ?? new SamlAssertionReplayCache(new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
 
     public SamlValidationResult Validate(string responseXml)

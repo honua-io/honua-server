@@ -8,11 +8,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Classification-rule tests for <see cref="ToolboxTranslationValidator"/> (#2145): the
-/// server-authoritative round-trip of SDK-translated toolbox tool descriptors against the
-/// canonical process catalog.
-/// </summary>
 public sealed class ToolboxTranslationValidatorTests
 {
     [Trait("Tier", "Fast")]
@@ -546,12 +541,6 @@ public sealed class ToolboxTranslationValidatorTests
         TargetParameter = target
     };
 
-    /// <summary>
-    /// Stands in for the canonical <see cref="IProcessConditionalInputProbe"/>: reports a
-    /// missing conditional input unless at least one member of the group is supplied, reports
-    /// the parameters it was told are branch-dependent, and reports the exact branch
-    /// requirements it was told an enumerable domain proves.
-    /// </summary>
     private sealed class FakeProbe(
         string[] requiredAnyOf,
         string[]? branchDependent = null,
@@ -612,11 +601,6 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
-        /// <summary>
-        /// Mirrors the shape of catalog processes such as <c>surface.aspect</c> whose raster
-        /// source parameters are individually optional but conditionally required by the
-        /// canonical plan validator.
-        /// </summary>
         private static readonly ProcessDefinition OptionalOnly = new()
         {
             ProcessId = "test.optional-only",
@@ -632,11 +616,6 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
-        /// <summary>
-        /// Mirrors a process such as <c>analytics.cluster-managed</c>: an enumerable
-        /// discriminator whose branches require different parameters, so branch coverage across
-        /// all reported gaps is decidable.
-        /// </summary>
         private static readonly ProcessDefinition Branching = new()
         {
             ProcessId = "test.branching",

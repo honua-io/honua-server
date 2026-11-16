@@ -4,6 +4,7 @@
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -54,6 +55,8 @@ internal static class RealtimeServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
         services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton<IRealtimeTransactionWriter, RealtimeTransactionWriter>();
+        services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();
 
         var crossNode = UsesPostgresProvider(configuration);
@@ -67,6 +70,9 @@ internal static class RealtimeServiceCollectionExtensions
                 ? new PostgresRealtimeFanoutProvider(log, dispatcher, presence, leases)
                 : new InProcessRealtimeFanoutProvider(log, dispatcher, presence, leases);
         });
+
+        services.TryAddSingleton<IOptionalRealtimeFanout>(provider => new OptionalRealtimeFanout(
+            provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetRequiredService<IRealtimeFanoutProvider>()));
 
         if (crossNode)
         {
@@ -145,3 +151,5 @@ internal static class RealtimeServiceCollectionExtensions
         return RealtimeProviderNames.Is(configured, RealtimeProviderNames.Postgres);
     }
 }
+
+internal sealed record OptionalRealtimeFanout(IRealtimeFanoutProvider? Provider) : IOptionalRealtimeFanout;

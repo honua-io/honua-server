@@ -7,103 +7,63 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Raster;
 
-/// <summary>Configurable admission limits for raster source descriptors.</summary>
 public sealed record RasterSourceValidationOptions
 {
-    /// <summary>Default validation limits.</summary>
     public static RasterSourceValidationOptions Default { get; } = new();
 
-    /// <summary>
-    /// Maximum decoded bytes accepted in an inline descriptor, capped by the absolute
-    /// <see cref="RasterSourceContract.MaximumInlinePayloadBytes"/> wire-contract limit.
-    /// </summary>
     public int MaxInlineBytes { get; init; } = RasterSourceContract.MaximumInlinePayloadBytes;
 
-    /// <summary>Maximum band indexes accepted in one bounded selection.</summary>
     public int MaxBandSelections { get; init; } = 256;
 
-    /// <summary>Maximum named dimension slices accepted in one bounded selection.</summary>
     public int MaxDimensionSelections { get; init; } = 64;
 
-    /// <summary>Maximum total typed raster bindings accepted across one plan.</summary>
     public int MaxSourcesPerPlan { get; init; } = 32;
 
-    /// <summary>Maximum length of a raster process-parameter binding name.</summary>
     public int MaxParameterNameLength { get; init; } = 64;
 
-    /// <summary>Maximum serialized descriptor bytes accepted across one plan.</summary>
     public int MaxSerializedBytesPerPlan { get; init; } = 256 * 1024;
 }
 
-/// <summary>Stable validation error codes for raster source admission.</summary>
 public static class RasterSourceValidationCodes
 {
-    /// <summary>The descriptor contract version is not supported.</summary>
     public const string UnsupportedContractVersion = "unsupported_contract_version";
 
-    /// <summary>An immutable source version, ETag, or checksum is required.</summary>
     public const string ImmutableIdentityRequired = "immutable_identity_required";
 
-    /// <summary>The source locator contains a URI, traversal, VSI path, or unsafe characters.</summary>
     public const string UnsafeLocator = "unsafe_locator";
 
-    /// <summary>The security context is missing or resembles a path, URI, or credential value.</summary>
     public const string InvalidSecurityContext = "invalid_security_context";
 
-    /// <summary>The inline payload exceeds the configured ceiling.</summary>
     public const string InlinePayloadTooLarge = "inline_payload_too_large";
 
-    /// <summary>A descriptor field is missing, malformed, or outside its bounded range.</summary>
     public const string InvalidField = "invalid_field";
 
-    /// <summary>The content size, media type, checksum, or ETag is malformed.</summary>
     public const string InvalidContentIdentity = "invalid_content_identity";
 
-    /// <summary>The inline payload does not match its declared strong checksum.</summary>
     public const string ChecksumMismatch = "checksum_mismatch";
 
-    /// <summary>The plan contains more typed raster bindings than the configured ceiling.</summary>
     public const string TooManySources = "too_many_sources";
 
-    /// <summary>A raster binding key is too long or is not a safe process parameter name.</summary>
     public const string InvalidParameterName = "invalid_parameter_name";
 
-    /// <summary>Serialized raster descriptors exceed the configured per-plan budget.</summary>
     public const string SerializedBudgetExceeded = "serialized_budget_exceeded";
 
-    /// <summary>A typed raster source is bound to a parameter not declared as a raster input.</summary>
     public const string InvalidParameterBinding = "invalid_parameter_binding";
 
-    /// <summary>Inline raster bytes are not permitted in durable analysis content.</summary>
     public const string InlinePersistenceDenied = "inline_persistence_denied";
 }
 
-/// <summary>A single raster source validation failure.</summary>
-/// <param name="Code">Stable machine-readable error code.</param>
-/// <param name="Field">Descriptor field associated with the failure.</param>
-/// <param name="Message">Caller-safe validation explanation.</param>
 public sealed record RasterSourceValidationError(string Code, string Field, string Message);
 
-/// <summary>Result of validating one raster source descriptor.</summary>
 public sealed record RasterSourceValidationResult
 {
-    /// <summary>Validation errors; an empty list indicates success.</summary>
     public required IReadOnlyList<RasterSourceValidationError> Errors { get; init; }
 
-    /// <summary>Whether the descriptor is safe to persist.</summary>
     public bool IsValid => Errors.Count == 0;
 }
 
-/// <summary>
-/// Validates versioned raster descriptors before they enter a durable job specification.
-/// </summary>
 public static class RasterSourceDescriptorValidator
 {
-    /// <summary>Validates a descriptor against the supplied admission limits.</summary>
-    /// <param name="descriptor">Descriptor to validate.</param>
-    /// <param name="options">Optional validation limits.</param>
-    /// <param name="cancellationToken">Cancellation token checked throughout bounded collections.</param>
-    /// <returns>All caller-safe validation failures.</returns>
     public static RasterSourceValidationResult Validate(
         RasterSourceDescriptor descriptor,
         RasterSourceValidationOptions? options = null,
@@ -127,7 +87,7 @@ public static class RasterSourceDescriptorValidator
         ValidateSelection(descriptor.Selection, options, errors, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(descriptor.Version)
-            && (!IsSafeText(descriptor.Version, 512)
+            && (!RasterDescriptorChecks.IsSafeText(descriptor.Version, 512)
                 || descriptor.Version.Contains("://", StringComparison.Ordinal)
                 || descriptor.Version.Contains('?')
                 || descriptor.Version.Contains('#')))
@@ -283,19 +243,19 @@ public static class RasterSourceDescriptorValidator
                 "Content sizeBytes must be positive.");
         }
 
-        if (!IsMediaType(content.MediaType))
+        if (!RasterDescriptorChecks.IsMediaType(content.MediaType))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.mediaType",
                 "Content mediaType must be a simple IANA media type without parameters.");
         }
 
-        if (content.Checksum is { } checksum && !IsChecksum(checksum))
+        if (content.Checksum is { } checksum && !RasterDescriptorChecks.IsChecksum(checksum))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.checksum",
                 "Checksum must be a sha256 or sha512 hex digest.");
         }
 
-        if (content.ETag is { } etag && (!IsSafeText(etag, 256) || etag.Contains('?')))
+        if (content.ETag is { } etag && (!RasterDescriptorChecks.IsSafeText(etag, 256) || etag.Contains('?')))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.eTag",
                 "ETag contains unsafe characters.");
@@ -307,8 +267,8 @@ public static class RasterSourceDescriptorValidator
         List<RasterSourceValidationError> errors)
     {
         if (securityContext is null
-            || !IsOpaqueReference(securityContext.TenantId)
-            || !IsOpaqueReference(securityContext.AuthorizationSnapshotReference))
+            || !RasterDescriptorChecks.IsOpaqueReference(securityContext.TenantId)
+            || !RasterDescriptorChecks.IsOpaqueReference(securityContext.AuthorizationSnapshotReference))
         {
             Add(errors, RasterSourceValidationCodes.InvalidSecurityContext, "securityContext",
                 "Tenant and authorization snapshot references must be opaque identifiers.");
@@ -389,7 +349,7 @@ public static class RasterSourceDescriptorValidator
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (dimension is null
-                    || !IsOpaqueReference(dimension.Dimension)
+                    || !RasterDescriptorChecks.IsOpaqueReference(dimension.Dimension)
                     || dimension.Start < 0
                     || dimension.Stop <= dimension.Start
                     || dimension.Step <= 0
@@ -408,7 +368,7 @@ public static class RasterSourceDescriptorValidator
         string field,
         List<RasterSourceValidationError> errors)
     {
-        if (!IsOpaqueReference(value))
+        if (!RasterDescriptorChecks.IsOpaqueReference(value))
         {
             Add(errors, RasterSourceValidationCodes.UnsafeLocator, field,
                 $"{field} must be an opaque identifier, not a URI or path.");
@@ -432,32 +392,16 @@ public static class RasterSourceDescriptorValidator
         string field,
         List<RasterSourceValidationError> errors)
     {
-        if (!IsSafeObjectStoreKey(value))
+        if (!RasterDescriptorChecks.IsSafeObjectStoreKey(value))
         {
             Add(errors, RasterSourceValidationCodes.UnsafeLocator, field,
                 $"{field} must be a bounded object key without traversal, URI, query, or control syntax.");
         }
     }
 
-    private static bool IsOpaqueReference(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 160)
-        {
-            return false;
-        }
-
-        if (value.Any(character =>
-                !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':')))
-        {
-            return false;
-        }
-
-        return value[0] != '.' && !value.Contains("..", StringComparison.Ordinal);
-    }
-
     private static bool IsSafeRelativeLocator(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !IsSafeText(value, 2048))
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !RasterDescriptorChecks.IsSafeText(value, 2048))
         {
             return false;
         }
@@ -483,7 +427,7 @@ public static class RasterSourceDescriptorValidator
             return false;
         }
 
-        if (!IsSafeText(decoded, 2048)
+        if (!RasterDescriptorChecks.IsSafeText(decoded, 2048)
             || decoded.StartsWith('/')
             || decoded.StartsWith('\\')
             || decoded.Contains('\\')
@@ -507,84 +451,12 @@ public static class RasterSourceDescriptorValidator
             && !decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSafeObjectStoreKey(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !IsSafeText(value, 2048))
-        {
-            return false;
-        }
-
-        // S3 keys and Azure blob names legally contain spaces, '#', ':', repeated slashes, and
-        // words such as "http-data". They remain inside the execution-owned provider/bucket VSI
-        // envelope, so reject only syntax that can change that envelope or smuggle traversal.
-        if (value[0] is '/' or '\\'
-            || value.Contains('\\')
-            || value.Contains('?')
-            || value.Contains("://", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        string decoded;
-        try
-        {
-            decoded = Uri.UnescapeDataString(value);
-        }
-        catch (UriFormatException)
-        {
-            return false;
-        }
-
-        if (!IsSafeText(decoded, 2048)
-            || decoded[0] is '/' or '\\'
-            || decoded.Contains('\\')
-            || decoded.Contains('?')
-            || decoded.Contains("://", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return decoded
-            .Split('/', StringSplitOptions.None)
-            .All(segment => segment is not "." and not "..");
-    }
-
-    private static bool IsMediaType(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 127 || value.Contains(';'))
-        {
-            return false;
-        }
-
-        var slash = value.IndexOf('/');
-        return slash > 0
-            && slash == value.LastIndexOf('/')
-            && slash < value.Length - 1
-            && value.All(character => char.IsAsciiLetterOrDigit(character)
-                || character is '/' or '-' or '+' or '.' or '_');
-    }
-
-    private static bool IsChecksum(RasterChecksum checksum)
-    {
-        var length = checksum.Algorithm switch
-        {
-            "sha256" => 64,
-            "sha512" => 128,
-            _ => 0,
-        };
-
-        return length > 0
-            && checksum.Value is { } value
-            && value.Length == length
-            && value.All(Uri.IsHexDigit);
-    }
-
     private static void ValidateInlineChecksum(
         byte[] payload,
         RasterChecksum? checksum,
         List<RasterSourceValidationError> errors)
     {
-        if (checksum is null || !IsChecksum(checksum))
+        if (checksum is null || !RasterDescriptorChecks.IsChecksum(checksum))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.checksum",
                 "Inline raster payloads require a valid sha256 or sha512 checksum.");
@@ -604,10 +476,6 @@ public static class RasterSourceDescriptorValidator
         }
     }
 
-    private static bool IsSafeText(string value, int maximumLength) =>
-        value.Length is > 0 && value.Length <= maximumLength
-        && value.All(character => !char.IsControl(character));
-
     private static void Add(
         List<RasterSourceValidationError> errors,
         string code,
@@ -615,10 +483,8 @@ public static class RasterSourceDescriptorValidator
         string message) => errors.Add(new RasterSourceValidationError(code, field, message));
 }
 
-/// <summary>Applies bounded validation to all typed raster bindings in an analysis plan.</summary>
 public static class RasterSourcePlanValidator
 {
-    /// <summary>Validates binding keys, descriptors, count, and serialized-size budgets.</summary>
     public static RasterSourceValidationResult Validate(
         AnalysisPlan plan,
         RasterSourceValidationOptions? options = null,

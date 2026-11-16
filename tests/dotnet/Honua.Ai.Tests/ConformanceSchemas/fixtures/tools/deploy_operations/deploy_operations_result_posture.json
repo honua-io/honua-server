@@ -1,0 +1,40 @@
+{
+  "id": "deploy_operations.result_with_evidence",
+  "schemaRef": "tools/deploy_operations.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "evidencePosture": {
+      "schemaVersion": "1.0",
+      "status": "complete",
+      "sources": [
+        {
+          "sourceId": "honua_deploy_operations",
+          "backendKind": "durableStore",
+          "backendId": "workflow-operation-store",
+          "observedAt": "2026-11-15T09:00:00Z",
+          "lastSuccessfulAt": "2026-11-15T09:00:00Z",
+          "completeness": "complete",
+          "reasonCodes": [],
+          "coverage": {
+            "page": 1,
+            "pageSize": 50,
+            "hasMore": false,
+            "truncated": false
+          },
+          "maximumAgeSeconds": 300,
+          "validUntil": "2026-11-15T09:05:00Z"
+        }
+      ]
+    },
+    "items": [],
+    "page": 1,
+    "pageSize": 50,
+    "totalCount": 0,
+    "hasMore": false
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "DeployOperationResponse",
+    "EvidencePosture"
+  ]
+}

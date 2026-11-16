@@ -21,13 +21,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Apply-plan construction and execution for the GeoServer import: turns a
-/// filtered source inventory into a deterministic
-/// <see cref="MigrationApplyPlanArtifact"/>, executes each step against the
-/// catalog (workspaces, data sources, styles, layer groups), and aggregates the
-/// per-step results into the final <see cref="GeoServerImportResult"/>.
-/// </summary>
 internal sealed partial class GeoServerImportService
 {
     private async Task<MigrationApplyPlanArtifact> CreateApplyPlanAsync(
@@ -90,7 +83,7 @@ internal sealed partial class GeoServerImportService
             static store => GetStoreKey(store.WorkspaceName, store.Name),
             StringComparer.OrdinalIgnoreCase);
         var layerGroupsById = filteredResources.LayerGroups.ToDictionary(GetLayerGroupId, StringComparer.Ordinal);
-        // Slice 3 (#1015): style steps come out of the apply-plan builder with
+        // Slice 3: style steps come out of the apply-plan builder with
         // Kind="style" and SourceId=GetStyleId(style). Build a lookup so the
         // apply path can resolve the underlying GeoServerStyleInfo (and its
         // SLD body) without re-running discovery.
@@ -228,7 +221,7 @@ internal sealed partial class GeoServerImportService
         // follow-on slices and recorded as manual-review evidence by the manifest.
         if (string.Equals(step.Kind, "layer-group", StringComparison.Ordinal))
         {
-            // Defensive scoping (#1098): reject layer-group catalog writes whose
+            // Defensive scoping: reject layer-group catalog writes whose
             // owning workspace is not part of the operator's requested scope.
             if (layerGroupsById.TryGetValue(step.SourceId, out var scopeGroup) &&
                 !IsWorkspaceInScope(filteredResources, scopeGroup.WorkspaceName))
@@ -267,7 +260,7 @@ internal sealed partial class GeoServerImportService
                 "The source layer was not present in the filtered GeoServer discovery result.");
         }
 
-        // Defensive scoping (#1098): reject layer catalog writes whose owning
+        // Defensive scoping: reject layer catalog writes whose owning
         // workspace is not part of the operator's requested scope.
         if (!IsWorkspaceInScope(filteredResources, layer.WorkspaceName))
         {
@@ -318,7 +311,7 @@ internal sealed partial class GeoServerImportService
             return CreateExecutionStepResult(step, "manual-review", targetError);
         }
 
-        // Slice 2 (#1015): when applyMode + catalog writer are configured, try to
+        // Slice 2: when applyMode + catalog writer are configured, try to
         // copy feature data from the source PostGIS table into the Honua catalog
         // database before publishing. The copy is idempotent (skip when the
         // target table already exists with rows). On SourceMissing we fall
@@ -493,15 +486,6 @@ internal sealed partial class GeoServerImportService
         }
     }
 
-    /// <summary>
-    /// Persist a catalog service entry for each filtered GeoServer workspace.
-    /// </summary>
-    /// <remarks>
-    /// This is the slice-1 application of the migration manifest: workspaces become
-    /// idempotent <c>honua.services</c> rows so that subsequent layer-group and layer
-    /// apply steps can attach to them. Re-running the same manifest does not create
-    /// duplicates because the underlying writer uses <c>ON CONFLICT DO NOTHING</c>.
-    /// </remarks>
     private async Task<IReadOnlyList<MigrationApplyExecutionStepResult>> ApplyWorkspaceCatalogStepsAsync(
         FilteredResources filteredResources,
         GeoServerImportRequest request,
@@ -520,7 +504,7 @@ internal sealed partial class GeoServerImportService
 
             var sourceId = GetWorkspaceId(workspace.Name);
 
-            // Defensive scoping (#1098): even though FilterRequestedResources should
+            // Defensive scoping: even though FilterRequestedResources should
             // already exclude unscoped workspaces, re-check at the write site so a
             // future regression in plan/translator code cannot smuggle a
             // cross-workspace mutation into honua.services.
@@ -554,17 +538,6 @@ internal sealed partial class GeoServerImportService
         return results;
     }
 
-    /// <summary>
-    /// Persist a migration data-source row per filtered GeoServer data store.
-    /// </summary>
-    /// <remarks>
-    /// Slice 2 of issue #1015. GeoServer data stores are recorded in the
-    /// inventory as <c>ExternalDependency</c> entries — they do not appear as
-    /// resource-level apply-plan steps. We therefore iterate the filtered data
-    /// stores directly here so each apply run produces a deterministic step
-    /// result with create / skip / error outcomes per data source. Persistence
-    /// is idempotent via <c>ON CONFLICT (source_kind, source_id) DO NOTHING</c>.
-    /// </remarks>
     private async Task<IReadOnlyList<MigrationApplyExecutionStepResult>> ApplyDataSourceStepsAsync(
         FilteredResources filteredResources,
         GeoServerImportRequest request,
@@ -576,10 +549,10 @@ internal sealed partial class GeoServerImportService
             return [];
         }
 
-        // Workspace scope (#1098 / PR #1100): respect the operator's requested
+        // Workspace scope: respect the operator's requested
         // workspace scope so unrelated workspaces' data stores are not applied.
         // When WorkspaceNames is set, only data stores in those workspaces are
-        // eligible. The pre-existing FilterRequestedResources path keeps the
+        // eligible. The FilterRequestedResources path keeps the
         // datastore array workspace-agnostic, so the filter is re-applied here.
         var scopedWorkspaceNames = request.WorkspaceNames is { Length: > 0 } names
             ? new HashSet<string>(names, StringComparer.OrdinalIgnoreCase)
@@ -737,24 +710,6 @@ internal sealed partial class GeoServerImportService
         return string.Join(";", parts);
     }
 
-    /// <summary>
-    /// Persist a migration style row per filtered GeoServer style.
-    /// </summary>
-    /// <remarks>
-    /// Slice 3 of issue #1015. Each style apply-plan step produces an
-    /// idempotent row in <c>honua.migration_styles</c> with the original
-    /// source body, any converter output, and structured conversion
-    /// diagnostics. SLD styles are run through the registered
-    /// <see cref="ISldStyleConverter"/> when available; conversion warnings
-    /// and errors are persisted so operators can audit the deterministic
-    /// migration outcome. When the converter reports errors (or when no
-    /// converter is registered) the row is persisted with disposition
-    /// <c>manual-review</c> — we do not claim perfect SLD visual parity
-    /// when diagnostics report manual review (issue #1015 AC). Re-apply
-    /// is idempotent via PK on (source_kind, source_id). Cross-workspace
-    /// styles outside the operator's requested scope are rejected per
-    /// issue #1098.
-    /// </remarks>
     private async Task<MigrationApplyExecutionStepResult> ApplyStyleCatalogStepAsync(
         MigrationApplyPlanStep step,
         Dictionary<string, GeoServerStyleInfo> stylesById,
@@ -772,7 +727,7 @@ internal sealed partial class GeoServerImportService
                 "The source style was not present in the filtered GeoServer discovery result.");
         }
 
-        // Workspace scope (#1098 / PR #1100): respect the operator's requested
+        // Workspace scope: respect the operator's requested
         // workspace scope so unrelated workspaces' styles are not applied.
         if (request.WorkspaceNames is { Length: > 0 } scopedNames &&
             !string.IsNullOrWhiteSpace(style.WorkspaceName) &&
@@ -796,11 +751,10 @@ internal sealed partial class GeoServerImportService
         string? convertedBody = null;
         string? convertedFormat = null;
         var diagnostics = new List<StyleDiagnostic>();
-        // Slice 3 (#1015): the manifest translator marks every SLD style as
+        // The manifest translator marks every SLD style as
         // "unsupported" because at inventory time we cannot know whether an
-        // ISldStyleConverter is registered (issue #375 was the original gap).
-        // The apply path now closes that gap by running the registered
-        // converter and recording diagnostics, so the apply disposition must
+        // ISldStyleConverter is registered. The apply path runs the registered
+        // converter and records diagnostics, so the apply disposition must
         // reflect the converter's actual outcome rather than mirroring the
         // conservative manifest-level tag. We start optimistic ("applied")
         // and degrade to "manual-review" below when the converter is absent,
@@ -852,7 +806,7 @@ internal sealed partial class GeoServerImportService
 
                 // Conversion produced no layers (HasErrors), or converter
                 // emitted at least one error diagnostic: do not claim visual
-                // parity. Per #1015 AC, mark the row manual-review.
+                // parity; mark the row manual-review.
                 if (conversion.HasErrors)
                 {
                     disposition = "manual-review";

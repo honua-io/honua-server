@@ -31,6 +31,11 @@ internal sealed class LayerPublishJobPayload
 
     public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; init; }
 
+    // An approved proposal's metadata pin, enforced by the worker exactly as by a direct publish.
+    public long? ExpectedMetadataRevision { get; init; }
+
+    public string? ExpectedMetadataEtag { get; init; }
+
     internal string ToJson()
         => JsonSerializer.Serialize(this, LayerPublishingJsonContext.Default.LayerPublishJobPayload);
 

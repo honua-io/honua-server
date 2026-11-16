@@ -19,10 +19,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Observability;
 
-/// <summary>
-/// Unit tests for <see cref="LocalOperateEventFeed"/> covering fan-out, sort,
-/// partial-failure handling, and post-merge filters (#1168).
-/// </summary>
 public sealed class LocalOperateEventFeedTests
 {
     [UnitTest]
@@ -299,6 +295,18 @@ public sealed class LocalOperateEventFeedTests
         page.SourceErrors!.Should().ContainKey(OperateEventKind.Alert);
         page.Items.Should().HaveCount(1);
         page.Items[0].Kind.Should().Be(OperateEventKind.Audit);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_IncidentKindRequested_ReportsTheSourceAsUnavailable()
+    {
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, null, new FakeAuditReader());
+
+        var page = await feed.ListAsync(new OperateEventFilter { Kinds = [OperateEventKind.Incident] });
+
+        page.Items.Should().BeEmpty();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Incident);
     }
 
     [UnitTest]

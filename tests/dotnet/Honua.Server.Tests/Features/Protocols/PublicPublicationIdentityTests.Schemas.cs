@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Xml;
 using System.Xml.Linq;
 using FluentAssertions;
@@ -58,6 +60,7 @@ public sealed partial class PublicPublicationIdentityTests
     public async Task DescribeFeatureType_MixedNamespaces_ImportsResolvablePublicationSchema(string version)
     {
         ConfigureDistinctStyleResources();
+        ConfigureDistinctStorageLayers();
         ConfigureSchemaPublication("Other", "Other");
         var schema = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION={version}");
         XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
@@ -72,6 +75,18 @@ public sealed partial class PublicPublicationIdentityTests
         imported.Root.Elements(xsd + "element").Should().Contain(element => element.Attribute("name")!.Value == "Other");
     }
 
+    private void ConfigureDistinctStorageLayers()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var secondary = graph.Publications.Single(publication => publication.Metadata.Id == SecondPublicationId);
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == secondary.StorageBindingId
+                ? binding with { StorageLayerId = 42 } : binding).ToArray(),
+        });
+    }
+
     private void ConfigureSchemaPublication(string resourceName, string publicationId)
     {
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
@@ -80,9 +95,36 @@ public sealed partial class PublicPublicationIdentityTests
         {
             Revision = graph.Revision + 1,
             Resources = graph.Resources.Select(resource => resource.Metadata.Id == primaryResourceId
-                ? resource with { Metadata = resource.Metadata with { Name = resourceName } } : resource).ToArray(),
+                ? resource with { Metadata = resource.Metadata with { Name = resourceName }, Extensions = DeclaredWfsExtensions(resourceName) ?? resource.Extensions }
+                : resource).ToArray(),
             Publications = graph.Publications.Select(publication => publication.Metadata.Id == PublicationId
                 ? publication with { Metadata = publication.Metadata with { Id = publicationId, Name = publicationId } } : publication).ToArray(),
         });
+    }
+
+    // "Other" and "Points" stand for resources that follow an external application schema: they
+    // declare its namespace and its WFS 1.0 schema document under extensions.wfs.
+    private static Dictionary<string, JsonElement>? DeclaredWfsExtensions(string resourceName)
+    {
+        var (prefix, uri) = resourceName switch
+        {
+            "Other" => ("cdf", "http://www.opengis.net/cite/data"),
+            "Points" => ("cgf", "http://www.opengis.net/cite/geometry"),
+            _ => (null, null)
+        };
+        if (prefix is null)
+        {
+            return null;
+        }
+
+        var declared = new JsonObject
+        {
+            ["namespace"] = new JsonObject { ["prefix"] = prefix, ["uri"] = uri },
+            ["legacyEncoding"] = new JsonObject
+            {
+                ["wfs10Schema"] = $"""<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" targetNamespace="{uri}"><xsd:element name="{resourceName}"/></xsd:schema>"""
+            }
+        };
+        return new Dictionary<string, JsonElement> { ["wfs"] = JsonSerializer.SerializeToElement(declared) };
     }
 }

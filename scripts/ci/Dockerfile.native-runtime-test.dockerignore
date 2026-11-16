@@ -1,0 +1,8 @@
+**
+!docker/
+!docker/runtime/
+!docker/runtime/verify-native.sh
+!docker/runtime/verify-env.c
+!scripts/
+!scripts/ci/
+!scripts/ci/test-runtime-native.py

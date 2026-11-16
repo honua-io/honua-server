@@ -41,7 +41,8 @@ internal static class AlertDeliveryServiceCollectionExtensions
         services.TryAddSingleton(_ => new AlertDestinationGuard());
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
-        services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();
+        services.AddSingleton<IAlertDeliverySink>(sp => new WebSocketAlertDeliverySink(
+            new Lazy<RealtimeAlertNotificationBroadcaster>(sp.GetRequiredService<RealtimeAlertNotificationBroadcaster>)));
         services.AddSingleton<IAlertDeliverySink, EmailAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.Digest));
 

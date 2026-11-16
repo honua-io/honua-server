@@ -118,6 +118,31 @@ public sealed class PostgresOpsAutonomyPolicyStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task TryReserveAutoAction_DifferentRulesShareAction_EnforcesOneDurableBudget()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresOpsAutonomyPolicyStoreTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var store = new PostgresOpsAutonomyPolicyStore(
+                new TestConnectionProvider(fixture.DataSource, schema), schemaName: schema);
+            var requests = Enumerable.Range(0, 8).Select(index => Reservation($"finding-{index}") with
+            {
+                Rule = $"rule-{index}",
+            });
+
+            var results = await Task.WhenAll(requests.Select(request => store.TryReserveAutoActionAsync(request)));
+
+            results.Count(result => result.Reserved).Should().Be(1);
+            results.Count(result => result.Reason == "rate-limit-exceeded").Should().Be(7);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static OpsAutonomyReservationRequest Reservation(string findingId)
         => new()
         {

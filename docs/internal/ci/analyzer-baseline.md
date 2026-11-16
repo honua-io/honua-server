@@ -44,12 +44,11 @@ analyzer inputs so previously recorded debt is captured again, rather than silen
 dropped during recapture. It is never a CI default.
 
 The CodeQL security workflow uses `.github/codeql/codeql-config.yml`, which
-excludes `cs/linq/missed-where` and `cs/linq/missed-select`. These exclusions
-do **not** configure the separately managed GitHub Code Quality commenter.
-The CodeQL Action currently rejects query customizations when only
-`code-quality` analysis is enabled. Keep its security checks enabled;
-changing the managed commenter's behavior requires a supported GitHub
-configuration rather than silently weakening security analysis.
+excludes `cs/linq/missed-where` and `cs/linq/missed-select`. GitHub-managed
+Code Quality is switched off for this repository; if it is switched on again,
+these exclusions do **not** configure it (the CodeQL Action rejects query
+customizations when only `code-quality` analysis is enabled). Keep the security
+checks enabled rather than weakening security analysis to change it.
 
 `dotnet format` does not load the diagnostic suppressor in the current SDK
 ([upstream report](https://github.com/dotnet/sdk/issues/51364)). CI and pre-PR

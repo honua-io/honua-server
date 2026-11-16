@@ -11,9 +11,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Protects Esri function-name uniqueness and established canonical routes.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerTaskNameTests
 {

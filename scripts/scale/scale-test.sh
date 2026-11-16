@@ -8,7 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$PROJECT_DIR/docker/scale-test/compose.yml"
-BASE_URL="${BASE_URL:-http://localhost:${HONUA_SCALE_TEST_HTTP_PORT:-8080}}"
+source "$SCRIPT_DIR/scale-test-readiness.sh"
+source "$SCRIPT_DIR/../ci/lib/isolate-test-compose.sh"
 # The scale stack boots with ASPNETCORE_ENVIRONMENT=ScaleTest, which is not a relaxed
 # environment: startup validation refuses shipped credential literals, so there is no
 # default to fall back to here either.
@@ -48,7 +49,7 @@ compose_canary_cmd() {
 # Function to wait for services to be healthy
 wait_for_services() {
     log_info "Waiting for services to be healthy..."
-    wait_for_http_status "${BASE_URL}/healthz/live" "200" 30 10 "services"
+    honua_wait_scale_test "$COMPOSE_FILE" "$BASE_URL"
 }
 
 # Function to test basic connectivity
@@ -343,6 +344,7 @@ EOF
     log_info "Rolling back to the baseline configuration..."
     compose_cmd up -d --force-recreate --scale honua=3 honua nginx
 
+    wait_for_services
     wait_for_http_status "${BASE_URL}/healthz/ready" "200" 30 10 "post-rollback readiness"
     wait_for_preflight_state "true" 18 10
 
@@ -359,7 +361,7 @@ configure_canary_routing() {
         HONUA_SCALE_TEST_CANARY_WEIGHT="$weight" \
         docker compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps nginx
 
-    wait_for_http_status "${BASE_URL}/healthz/live" "200" 18 5 "nginx after canary reconfiguration"
+    wait_for_services
 }
 
 start_canary_service() {
@@ -498,18 +500,19 @@ EOF
 # Function to show monitoring URLs
 show_monitoring_urls() {
     log_info "Monitoring URLs (if --monitoring flag was used):"
-    echo "  Redis Insight:  http://localhost:8001"
-    echo "  Prometheus:     http://localhost:9090"
-    echo "  Grafana:        http://localhost:3000 (admin/admin)"
+    echo "  Insight:        http://127.0.0.1:${HONUA_SCALE_TEST_INSIGHT_PORT:-8001}"
+    echo "  Prometheus:     http://127.0.0.1:${HONUA_SCALE_TEST_PROMETHEUS_PORT:-9090}"
+    echo "  Grafana:        http://127.0.0.1:${HONUA_SCALE_TEST_GRAFANA_PORT:-3000} (admin/admin)"
     echo ""
-    echo "Load Balancer:    http://localhost:8080"
-    echo "Direct DB:        postgresql://honua_user:honua_password@localhost:5434/honua_scale_test"
+    echo "Load Balancer:    $BASE_URL"
+    echo "Direct DB:        postgresql://honua_user:honua_password@127.0.0.1:${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}/honua_scale_test"
     echo "Direct Redis:     redis://localhost:6379"
 }
 
 print_stop_command() {
+    log_info "To reuse the running stack, export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-honua-scale-test} HONUA_SCALE_TEST_NETWORK=${HONUA_SCALE_TEST_NETWORK:-honua-scale-test} HONUA_SCALE_TEST_HTTP_PORT=${HONUA_SCALE_TEST_HTTP_PORT:-8080}"
     if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
-        log_info "To stop the environment: docker compose -p ${COMPOSE_PROJECT_NAME} -f $COMPOSE_FILE --profile canary down"
+        log_info "To stop the environment: HONUA_SCALE_TEST_NETWORK=${HONUA_SCALE_TEST_NETWORK:-honua-scale-test} docker compose -p ${COMPOSE_PROJECT_NAME} -f $COMPOSE_FILE --profile canary down"
         return
     fi
 
@@ -553,7 +556,10 @@ main() {
         esac
     done
 
-    log_info "Starting scale-out testing environment..."
+    honua_isolate_test_compose "$COMPOSE_FILE"
+    export HONUA_SCALE_TEST_NETWORK="${HONUA_SCALE_TEST_NETWORK:-${COMPOSE_PROJECT_NAME:-honua-scale-test}}"
+    BASE_URL="${BASE_URL:-http://127.0.0.1:${HONUA_SCALE_TEST_HTTP_PORT:-8080}}"
+    log_info "Starting scale-out testing environment at $BASE_URL..."
 
     # Start services
     log_info "Starting services with 3 Honua instances..."

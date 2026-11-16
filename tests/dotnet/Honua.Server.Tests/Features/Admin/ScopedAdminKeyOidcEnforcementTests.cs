@@ -17,19 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Regression coverage for scoped admin API-key enforcement while OIDC is enabled.
-/// </summary>
-/// <remarks>
-/// When <c>Oidc:Enabled=true</c>, <c>AddOidcAuthorization</c> rebuilds the general
-/// <c>Admin</c>-family policies so they accept composite OIDC/session/operator-bearer
-/// principals. The rebuilt policies originally kept only the admin-role assertion and
-/// dropped <c>AdminPermissionRequirement</c>, so a scoped key (which the API-key handler
-/// stamps with the <c>admin</c> role because its grants are <c>admin:</c>-prefixed)
-/// silently regained full mutating authority whenever OIDC was turned on. These tests
-/// pin the scope ceiling in the OIDC-enabled configuration; the OIDC-disabled
-/// counterpart lives in <see cref="ProposalEndpointsTests"/>.
-/// </remarks>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

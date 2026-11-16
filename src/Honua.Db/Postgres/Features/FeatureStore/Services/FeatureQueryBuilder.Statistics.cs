@@ -132,6 +132,12 @@ internal sealed partial class FeatureQueryBuilder
         string fieldExpr,
         MetadataV2FieldType? fieldType = null)
     {
+        if (fieldType is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset
+            && statisticType != StatisticType.Count)
+        {
+            throw new NotSupportedException("Aggregates on exact decimal and offset timestamp fields require a lossless result contract.");
+        }
+
         var numericExpr = $"({fieldExpr})::numeric";
         var orderedExpr = IsNumericFieldType(fieldType)
             ? numericExpr
@@ -202,14 +208,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Appends ORDER BY to an aggregate statistics query (#3372). Ordering an aggregate result set
-    /// can only reference the columns that set actually has — a declared
-    /// <c>outStatisticFieldName</c> alias or a group-by field — so each clause is re-resolved
-    /// against those declarations and the SQL is rebuilt from the matched declaration. Nothing from
-    /// the clause's own text is emitted, and a clause that matches no declaration throws rather than
-    /// reaching the database.
-    /// </summary>
     private static void AppendStatisticsOrderByClause(
         StringBuilder sql,
         ImmutableArray<OrderByClause>? orderBy,

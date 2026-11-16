@@ -24,6 +24,7 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | [Draft](content-version.md) | Mutable authoring state for a supported Studio kind, with a generation for optimistic concurrency. |
 | [Version](content-version.md) | An immutable saved snapshot of a supported Studio kind, identified by its version identifier and content hash. |
 | [Released](content-version.md) | A Version active at its governed route. Go live means activate that Version; saving and previewing do not activate it. |
+| [Go live](publication.md) | Activate a saved Map or App Version at its governed route; that Version becomes Released. |
 | [Catalog](catalog.md) | The browsable listing of accessible Services, Layers, and Apps. Listing grants no access. |
 | [Proposal](approval.md) | A requested change and its target and evidence, submitted for an authorized decision. |
 | [Approval](approval.md) | The authorized decision on a Proposal. AwaitingApproval is the canonical waiting state; the Approval page defines the current authority rules. |
@@ -77,6 +78,8 @@ Review new UI labels, model types, database names, API fields, MCP schemas, publ
 - HonuaApiToken for an API key;
 - package, family, or composition as Studio object names; use the actual kind, such as Map, App, or Dashboard;
 - tenant selection as a product surface; internal isolation checks still apply.
+
+`scripts/ci/check-surface-vocabulary.py` applies these rules to REST routes, MCP tool names and the SDK, CLI and skill operations in the [workflow stage map](../../guides/workflows/stage-map.v1.json), and to Console page routes when run in the Console repository. Each exception names one exact surface name, its kind (protocol, technical or pending rename) and a reason; it fails once that name is gone, and a new name cannot be recorded as a pending rename.
 
 Ordinary technical uses such as HTTP resource, MCP resource, coordinate projection, and package dependency are not product-object names. Historical filenames and existing implementation references remain readable during migration. A compatibility exception must identify the exact literal, location, and reason; never split a retired term to evade a scan. Keep protocol-defined wire names where clients depend on them. Prefer `feature-service` and `feature-layer` for Honua's own type names.
 

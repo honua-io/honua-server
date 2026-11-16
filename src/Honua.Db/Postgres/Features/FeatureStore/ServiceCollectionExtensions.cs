@@ -23,20 +23,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
-/// <summary>
-/// Dependency injection extensions for the refactored feature store services
-/// </summary>
 internal static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the refactored feature store services with dependency injection
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="schemaName">Optional database schema name</param>
-    /// <param name="preferSerialBoundedSpatialReads">Null enables automatic serial plans for small first-page source-backed point bbox reads; false opts out.</param>
-    /// <param name="disableJitForSourceSpatialCounts">Opt in to disabling JIT within source-backed point bbox count queries.</param>
-    /// <param name="preferSerialSourceSpatialCounts">Null scopes serial plans to counts associated with eligible bounded reads; true also enables standalone spatial counts.</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null,
         bool? preferSerialBoundedSpatialReads = null, bool disableJitForSourceSpatialCounts = false,
         bool? preferSerialSourceSpatialCounts = null)
@@ -151,7 +139,7 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
 
-        // Feature-change transactional outbox (#692). PostgreSQL is the canonical
+        // Feature-change transactional outbox. PostgreSQL is the canonical
         // mutation-capable provider so it owns the outbox repository implementation and
         // reports SupportsTransactionalOutbox = true. Both registrations are scoped to
         // match the connection-provider lifetime used by the data access layer.

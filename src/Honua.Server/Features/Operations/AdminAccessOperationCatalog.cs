@@ -62,6 +62,8 @@ internal static class AdminAccessOperationCatalog
         Read("admin.oidc-provider.get", "Get OIDC provider", "/oidc/providers/{id}", "getOidcProvider"),
         Write("admin.oidc-provider.update", "Update OIDC provider", HttpMethod.Put, "/oidc/providers/{id}", "updateOidcProvider"),
         Write("admin.oidc-provider.delete", "Delete OIDC provider", HttpMethod.Delete, "/oidc/providers/{id}", "deleteOidcProvider", OperationSideEffectClass.DestroysState),
+        Read("admin.oidc-provider.revisions", "List OIDC provider revisions", "/oidc/providers/{id}/revisions", "listOidcProviderRevisions"),
+        Write("admin.oidc-provider.undo", "Undo OIDC provider change", HttpMethod.Post, "/oidc/providers/{id}/undo", "undoOidcProviderChange"),
         Read("admin.oidc-provider.test", "Test OIDC provider connection", HttpMethod.Post, "/oidc/providers/{id}/test", "testOidcProvider"),
 
         Read("admin.oauth-client.list", "List OAuth clients", "/oauth-clients", "listOAuthClients"),
@@ -78,6 +80,8 @@ internal static class AdminAccessOperationCatalog
         Read("admin.rate-limit-policy.get", "Get rate-limit policy", "/rate-limits/{id}", "getRateLimitPolicy"),
         Write("admin.rate-limit-policy.update", "Update rate-limit policy", HttpMethod.Put, "/rate-limits/{id}", "updateRateLimitPolicy"),
         Write("admin.rate-limit-policy.delete", "Delete rate-limit policy", HttpMethod.Delete, "/rate-limits/{id}", "deleteRateLimitPolicy", OperationSideEffectClass.DestroysState),
+        Read("admin.rate-limit-policy.revisions", "List rate-limit policy revisions", "/rate-limits/{id}/revisions", "listRateLimitPolicyRevisions"),
+        Write("admin.rate-limit-policy.undo", "Undo rate-limit policy change", HttpMethod.Post, "/rate-limits/{id}/undo", "undoRateLimitPolicyChange"),
 
         Read("admin.field-mask-policy.list", "List field-mask policies", "/field-mask-policies", "listFieldMaskPolicies"),
         Write("admin.field-mask-policy.create", "Create field-mask policy", HttpMethod.Post, "/field-mask-policies", "createFieldMaskPolicy"),

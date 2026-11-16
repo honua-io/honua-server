@@ -15,10 +15,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Service-level tests for <see cref="OgcCoverageImportService"/> (issue #1030 slice 2).
-/// Cover GeoTIFF / COG selection, dry-run vs apply, idempotency, and error propagation.
-/// </summary>
 public sealed class OgcCoverageImportServiceTests
 {
     private const string ServiceUrl = "https://example.com/geoserver/wcs";
@@ -399,10 +395,6 @@ public sealed class OgcCoverageImportServiceTests
             }
         };
 
-    /// <summary>
-    /// Creates a minimal GeoTIFF response payload. Includes the classic GeoTIFF
-    /// little-endian header so anything sniffing the file can identify it.
-    /// </summary>
     private static HttpResponseMessage CreateGeoTiffResponse()
     {
         // II*\0 = little-endian TIFF magic. Padding bytes simulate a small coverage body.

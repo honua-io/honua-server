@@ -11,11 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for the template mapper (#1878): derives the Esri-style layer <c>types</c>
-/// (each with an editing template seeded from the subtype's default values) from the
-/// canonical Metadata v2 subtype set, mirroring how ArcGIS projects layer types from subtypes.
-/// </summary>
 public sealed class GeoServicesTemplateMapperTests
 {
     private static JsonElement Number(int value)

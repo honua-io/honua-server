@@ -27,10 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Publisher-hidden fields stay out of MCP feature queries, layer descriptions, and the
-/// grounding catalog (#6118).
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class QueryFeaturesToolTests
 {
@@ -40,6 +36,30 @@ public sealed class QueryFeaturesToolTests
     private const int StorageLayerId = 42;
 
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("svc-parcels", "\"retired-layer\"")]
+    [InlineData("__certification_missing_service__", "\"retired-layer\"")]
+    [InlineData("svc-parcels", "null")]
+    [InlineData("__certification_missing_service__", "null")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_RetiredSelector_ReturnsInvalidArgumentBeforeLookup(string serviceId, string layerId)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{serviceId}}","serviceLayerIndex":0,"layerId":{{layerId}}}""");
+
+        AssertInvalidArgument(response);
+        var message = response.Result!.Value.GetProperty("structuredContent").GetProperty("message").GetString();
+        message.Should().Contain("layerId");
+        message.Should().Contain("serviceLayerIndex");
+        message.Should().NotContain("Honua.Ai");
+        reader.ReceivedCalls().Should().BeEmpty();
+    }
 
     [UnitTest]
     [Operation(Operations.Query)]
@@ -306,6 +326,45 @@ public sealed class QueryFeaturesToolTests
             value.GetProperty("gid").GetInt32().Should().Be(1);
             value.GetProperty("name").GetString().Should().Be("alpha");
         }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_FeaturePage_DoesNotDescribeItselfAsCountOnly()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var wide = new string('x', 1200);
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 3,
+                Items =
+                [
+                    new Feature
+                    {
+                        Id = 7,
+                        Geometry = null,
+                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", wide)
+                    }
+                ]
+            });
+
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"returnGeometry":false}""");
+
+        response.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(1);
+        structured.GetProperty("count").GetInt64().Should().Be(3);
+        structured.GetProperty("features").GetArrayLength().Should().Be(1);
+        var summary = result.GetProperty("content")[0].GetProperty("text").GetString();
+        summary.Should().Contain("Returned 1 feature");
+        summary.Should().NotContain("count only");
+        summary.Should().Contain(ServiceId);
     }
 
     private static QueryResult<Feature> FeatureWithHiddenValue()

@@ -35,9 +35,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Integration tests for OIDC authentication with JWT Bearer support.
-/// </summary>
 [Collection("Database.OidcAuthentication")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -46,19 +43,18 @@ public class OidcAuthenticationTests
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
+    private readonly DatabaseFixtureAdapter _database;
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
     private const string TestIssuer = "https://test-issuer.example.com";
     private const string TestAudience = "test-client-id";
 
-    public OidcAuthenticationTests(ITestOutputHelper output)
+    public OidcAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
+        _database = database;
         _output = output;
     }
 
-    /// <summary>
-    /// Helper method to configure WebApplicationFactory with OIDC settings.
-    /// </summary>
-    private static WebApplicationFactory<Program> CreateOidcTestFactory(
+    private WebApplicationFactory<Program> CreateOidcTestFactory(
         Action<IWebHostBuilder>? configure = null,
         Dictionary<string, string?>? oidcSettings = null,
         string environmentName = "Test")
@@ -153,13 +149,8 @@ public class OidcAuthenticationTests
             });
     }
 
-    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
+    private string TestPostgresConnectionString => _database.ConnectionString;
 
-    /// <summary>
-    /// Service provider carrying an Enterprise-entitled license so claims transformation tests
-    /// exercise the pre-#2997 behavior (custom claims mapping applied); the unentitled path is
-    /// covered by OidcClaimsMappingEntitlementTests.
-    /// </summary>
     private static ServiceProvider EnterpriseEntitledServices()
         => new ServiceCollection()
             .AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(
@@ -258,9 +249,6 @@ public class OidcAuthenticationTests
         return settings;
     }
 
-    /// <summary>
-    /// Generates a test JWT token with the specified claims.
-    /// </summary>
     private static string GenerateTestJwtToken(
         string userId = "test-user-id",
         string name = "Test User",
@@ -803,7 +791,7 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/observability/errors")]
     [Endpoint("GET /api/v1/admin/observability/logs")]
     [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
-    [Endpoint("GET /hubs/admin")]
+    [Endpoint("GET /api/v1/admin/live")]
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     [Endpoint("POST /api/mobile/exceptions")]
     [Endpoint("GET /api/v1/admin/api-keys")]
@@ -814,7 +802,6 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/cache/status")]
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
     [Endpoint("GET /sharing/rest/info")]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
@@ -857,7 +844,7 @@ public class OidcAuthenticationTests
             ("OAuth scopes", route => route.StartsWith("/api/v{version:apiVersion}/admin/oauth-scopes", StringComparison.Ordinal)),
             ("client-certificate trust", route => route.StartsWith("/api/v{version:apiVersion}/admin/security/client-certificates", StringComparison.Ordinal)),
             ("rate-limit policy administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/rate-limits", StringComparison.Ordinal)),
-            ("admin realtime hub", route => route.Equals("/hubs/admin", StringComparison.Ordinal)),
+            ("admin realtime hub", route => route.Equals("/api/v1/admin/live", StringComparison.Ordinal)),
             ("stateless GeometryServer", route => route.StartsWith("/rest/services/Utilities/Geometry/GeometryServer/", StringComparison.Ordinal))
         };
 
@@ -883,7 +870,6 @@ public class OidcAuthenticationTests
             "Get Cache Status",
             "Get Cache Health",
             "Get Cache Statistics",
-            "Get Redis Cache Metrics",
             "ArcGIS Portal Sharing Info"
         }.Select(displayName =>
             Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
@@ -917,7 +903,7 @@ public class OidcAuthenticationTests
                 (route.StartsWith("/api/v{version:apiVersion}/admin/", StringComparison.Ordinal) ||
                  route.StartsWith("/api/v{version:apiVersion}/metrics/", StringComparison.Ordinal) ||
                  route.StartsWith("/monitoring/", StringComparison.Ordinal) ||
-                 route is "/metrics" or "/hubs/admin" or "/api/mobile/exceptions");
+                 route is "/metrics" or "/api/v1/admin/live" or "/api/mobile/exceptions");
         });
 
         Assert.All(markedAdminEndpoints, endpoint =>
@@ -958,7 +944,6 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/cache/status")]
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
     [Endpoint("GET /sharing/rest/info")]
     public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
     {
@@ -985,7 +970,6 @@ public class OidcAuthenticationTests
             "/api/v1/admin/cache/status",
             "/api/v1/admin/operations/cache/health",
             "/api/v1/admin/operations/cache/statistics",
-            "/api/v1/admin/operations/cache/redis",
             "/sharing/rest/info"
         }.Select(route => new HttpRequestMessage(HttpMethod.Get, route)))
         {
@@ -2103,9 +2087,6 @@ public class OidcAuthenticationTests
             $"Expected Bearer failure status 400/401 but received {(int)statusCode}.");
     }
 
-    /// <summary>
-    /// Test logger implementation for unit testing.
-    /// </summary>
     private sealed class TestLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;

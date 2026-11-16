@@ -30,6 +30,11 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             throw new OpsActionException($"Unknown ops action '{request.Name}'.");
         }
 
+        if (OpsActionCatalog.Actions[request.Name].Tier == OpsRemediationTier.Never)
+        {
+            throw new OpsActionException($"The ops action '{request.Name}' is blocked.");
+        }
+
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
         var now = timeProvider.GetUtcNow();

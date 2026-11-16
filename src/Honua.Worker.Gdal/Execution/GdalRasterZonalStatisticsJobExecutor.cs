@@ -15,21 +15,11 @@ using NetTopologySuite.IO;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the catalog
-/// <c>raster.zonal-statistics</c> process. Consumes a source raster and an
-/// inline GeoJSON <c>FeatureCollection</c> of zone polygons. For each zone the
-/// executor runs <c>gdalwarp -cutline -crop_to_cutline</c> to extract the
-/// intersecting pixels, then reads the clipped band's valid cells in bounded
-/// windows through the worker's GDAL Python helper. Aggregates are projected onto a single JSON
-/// scalar artifact (one entry per zone, only the requested statistics emitted).
-/// </summary>
 internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterZonalStatisticsJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.zonal-statistics";
 
     private const string ScalarContentType = "application/json";
@@ -48,20 +38,13 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     // Candidate attribute names ZoneId probes, in preference order.
     private static readonly string[] ZoneIdAttributeNames = ["id", "ID", "Id"];
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -124,7 +107,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         // Bound the cumulative per-zone work BEFORE the loop runs: each zone drives
         // its own clip + statistics subprocess pair, so an unbounded zone count
         // (or a handful of pathologically dense polygons) is a resource DoS even
-        // under the per-invocation ToolTimeout (#2766).
+        // under the per-invocation ToolTimeout.
         if (!GdalZoneAdmission.TryAdmit(zones, opts, out var zoneError))
         {
             Log.InvalidInputs(logger, job.OperationId, zoneError);
@@ -176,10 +159,11 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
 
             // Bound the DECLARED pixel footprint before any native tool runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);

@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Live, opt-in integration tests against a real Databricks SQL Warehouse. These are
-/// gated behind <c>HONUA_TEST_DATABRICKS=1</c> plus host/warehouse/token/table env vars
-/// and report an explicit credential skip in normal CI where no workspace is available.
-/// </summary>
 [Trait("Category", "Databricks")]
 public sealed class DatabricksLiveIntegrationTests
 {
@@ -36,7 +31,6 @@ public sealed class DatabricksLiveIntegrationTests
         var registry = new DatabricksLayerMappingRegistry([layer]);
         var store = new DatabricksFeatureStore(
             registry,
-            new DatabricksFeatureQueryBuilder(),
             new DatabricksFeatureDataAccess(statementClient));
 
         var result = await store.QueryAsync(layer.LayerId, new FeatureQuery { Limit = 5 }, CancellationToken.None);

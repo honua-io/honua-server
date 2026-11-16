@@ -19,15 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Regression tests for honua-server#1619 — on a freshly deployed server with zero
-/// published datasets, catalog discovery endpoints (<c>GET /stac</c>,
-/// <c>GET /rest/services</c>, <c>GET /ogc/features</c>,
-/// <c>GET /ogc/features/collections</c>, and <c>GET /odata</c>) previously returned
-/// HTTP 500 with "No Metadata v2 snapshot has been activated for environment
-/// 'Production'". The correct behaviour is HTTP 200 with a valid empty response so
-/// evaluators who deploy before importing and uptime probes both see a healthy server.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime

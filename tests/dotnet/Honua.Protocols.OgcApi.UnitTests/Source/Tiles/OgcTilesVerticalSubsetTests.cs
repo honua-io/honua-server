@@ -8,14 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
-/// <summary>
-/// Pure-unit guards for the shared elevation/vertical selection parser (#1792 Shape A) as
-/// consumed by the OGC API Tiles adapter. The adapter replaces the previous blanket
-/// <c>subset</c> reject with this parser: a vertical axis (<c>Z</c> / <c>elevation</c> /
-/// <c>height</c>) is accepted and recorded, while any other axis (or a malformed vertical
-/// value) must still be rejected with 400. The latter is the CITE Tiles 16/16
-/// unknown-subset guard. These tests run without a database (no Docker).
-/// </summary>
 [Protocol(TestProtocols.OgcApiTiles)]
 public sealed class OgcTilesVerticalSubsetTests
 {

@@ -72,7 +72,7 @@ internal static class PortalCredentialSourceVersion
             if (canResolve)
             {
                 resolvedPassword = await secretResolver
-                    .ResolveConnectionStringAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
+                    .ResolveSecretFreshAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
             }
         }
 

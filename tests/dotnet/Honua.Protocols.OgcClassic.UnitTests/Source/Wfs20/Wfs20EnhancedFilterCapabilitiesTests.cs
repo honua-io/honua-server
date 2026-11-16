@@ -8,9 +8,6 @@ using System.Xml.Serialization;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Tests for WFS 2.0 filter capabilities advertised by the runtime.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class Wfs20EnhancedFilterCapabilitiesTests
 {

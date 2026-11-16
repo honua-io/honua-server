@@ -15,9 +15,9 @@ using Microsoft.Extensions.Options;
 namespace Honua.Core.Features.Reporting.Services;
 
 // The deterministic narrative is written first, and a model failure or timeout falls back to that text.
-internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
+public sealed class AnalysisReportBuilder
 {
-    private readonly IAnalysisReportTemplateRegistry _templates;
+    private readonly AnalysisReportTemplateRegistry _templates;
     private readonly DeterministicNarrativeProvider _deterministic;
     private readonly INarrativeProvider? _llmProvider;
     private readonly ReportingConfiguration _configuration;
@@ -25,7 +25,7 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
     private readonly ILogger<AnalysisReportBuilder> _logger;
 
     public AnalysisReportBuilder(
-        IAnalysisReportTemplateRegistry templates,
+        AnalysisReportTemplateRegistry templates,
         DeterministicNarrativeProvider deterministic,
         IOptions<ReportingConfiguration> configuration,
         TimeProvider timeProvider,

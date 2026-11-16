@@ -21,10 +21,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.OData.TestHost;
 
-/// <summary>
-/// Test-only OData composition over a provisioned database. It deliberately does
-/// not run migration/startup catalog jobs or expose other protocol endpoints.
-/// </summary>
 public static class ODataTestApplication
 {
     public static WebApplication Build(string[] args, Action<WebApplicationBuilder>? configure = null)
@@ -49,27 +45,7 @@ public static class ODataTestApplication
         builder.Services.AddSingleton<IValidateOptions<LimitsOptions>, LimitsOptionsValidator>();
         builder.Services.AddOptions<CacheOptions>().Bind(builder.Configuration.GetSection(CacheOptions.SectionName));
         builder.Services.AddPostgreSqlServices(builder.Configuration, ServerCoreSchemaMigrations.Manifest);
-        builder.Services.AddSingleton<IGeometryService, GeometryService>();
-        builder.Services.AddScoped<IGeometryValidator>(sp => new WkbGeometryValidator(
-            sp.GetRequiredService<IOptions<LimitsOptions>>(),
-            sp.GetRequiredService<IGeometryTopologyValidator>(),
-            sp.GetRequiredService<ILogger<WkbGeometryValidator>>()));
-        builder.Services.AddValidationServices();
-        builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
-        builder.Services.AddScoped<IRowLevelSecurityFilterSource, RowLevelSecurityFilterSource>();
-        builder.Services.AddScoped<IFieldMaskSource, FieldMaskSource>();
-        builder.Services.AddSingleton<IETagService, ETagService>();
-        builder.Services.AddSingleton<IResponseCache, MemoryResponseCache>();
-        builder.Services.AddSingleton(sp => new OutputCacheInvalidationService(
-            null, sp.GetRequiredService<IResponseCache>(), null,
-            sp.GetRequiredService<IServiceScopeFactory>(), null,
-            sp.GetRequiredService<ILogger<OutputCacheInvalidationService>>()));
-        // Supported node-local production event store/publisher. Streaming transports,
-        // webhooks and background outbox delivery are verified by the full host lanes.
-        builder.Services.AddOptions<FeatureChangeEventOptions>();
-        builder.Services.AddSingleton<IFeatureChangeEventStore, InMemoryFeatureChangeEventStore>();
-        builder.Services.AddSingleton<IFeatureChangeEventPublisher, FeatureChangeEventPublisher>();
-        builder.Services.AddSingleton<FeatureMutationEventService>();
+        Honua.TestKit.Postgres.Hosting.PostgresComponentEventServices.Configure(builder);
         builder.Services.AddApiKeyAuthentication(builder.Configuration);
         builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
         {

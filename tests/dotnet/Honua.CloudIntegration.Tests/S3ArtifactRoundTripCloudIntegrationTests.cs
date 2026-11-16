@@ -9,16 +9,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Free-tier (LocalStack Community) scenario (#2163): proves an S3 artifact round-trip — create
-/// bucket, put object, get object, delete — against a REAL emulated S3 endpoint via the
-/// <see cref="LocalStackFixture"/>'s edge ServiceURL. This exercises the same SDK
-/// ServiceURL-override + path-style seam Honua's <c>AwsS3FileStorage</c> uses to target a custom
-/// endpoint, so the LocalStack Community fixture backs a runnable test rather than sitting unused.
-///
-/// Gated like the kind lifecycle test: when Docker is unavailable the fixture reports
-/// <see cref="LocalStackFixture.Available"/> = false and this test skips (never fails).
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 public sealed class S3ArtifactRoundTripCloudIntegrationTests : IClassFixture<LocalStackFixture>
 {

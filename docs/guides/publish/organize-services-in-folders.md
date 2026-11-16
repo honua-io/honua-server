@@ -10,8 +10,10 @@ The hierarchy is **folder → service → layer**, with one level of folders.
 Services without a folder remain at **Root**.
 
 You need a connected Console environment and permission to administer its services.
-Open **Operate → Services**. If the Folders section reports missing, forbidden,
-or unavailable, resolve that connection or permission problem before continuing.
+Open **Data → Services** and find the **Folders** section (or choose
+**Manage Folders** in the service navigation sidebar). If the Folders section reports
+missing, forbidden, or unavailable, resolve that connection or permission
+problem before continuing.
 
 ## Create a folder
 
@@ -21,15 +23,17 @@ or unavailable, resolve that connection or permission problem before continuing.
    as `Utilities` and protocol names such as `FeatureServer` are reserved.
 3. Optionally enter a **Folder title**, such as `Transport services`. This is
    display text; it does not change the public path.
-4. Choose **Create Folder** and wait for a completed result. An approval-required
-   response is still pending; follow its separate approval channel.
+4. Choose **Create Folder** and wait for the **Saved** result. An approval-required
+   response is still pending; follow its separate approval channel. After any
+   request that does not succeed, the folder actions stay disabled until you
+   choose **Refresh Folders**.
 
 ## Move a service
 
-1. Open the service's settings from **Operate → Services**.
+1. Open the service's settings from **Data → Services**.
 2. In **Service Folder**, choose the **Destination Folder**, or **Root** to
    remove the service from a folder.
-3. Choose **Move Service**. Wait for completion, then refresh the service settings.
+3. Choose **Move Service**. Wait for the **Saved** result, then refresh the service settings.
 
 The move keeps the service identity and its layers. A folder changes the public
 path grouping; access remains controlled per service. Moving a service into a
@@ -38,12 +42,12 @@ See [access control](../secure/access-control.md).
 
 ## Rename or remove a folder
 
-Select the existing folder in **Operate → Services → Folders**. Change the path
+Select the existing folder in **Data → Services → Folders**. Change the path
 name or title and choose **Save Folder**. To clear a title, leave it blank.
 
 To delete a folder, move all its services elsewhere first. Select the folder,
 check **I want to delete this empty Folder**, and choose **Delete empty Folder**.
-Deletion of a nonempty folder is refused.
+Deletion of a nonempty folder is refused with **Conflict**.
 
 ## Verify the result
 
@@ -61,7 +65,8 @@ an existing saved connection with the intended viewer account.
 
 - **The catalog changed or an ETag is missing:** choose **Refresh Folders**,
   review the current destination, and retry only after reading the new state.
-- **The path is reserved or already used:** choose a different path name.
+- **The path is reserved or already used:** choose **Refresh Folders**, then a
+  different path name.
   Historical path reservations can prevent reusing an old name.
 - **Approval is required:** retain the original operation or proposal reference
   and use [human approval](../secure/approve-agent-changes.md). Repeated moves

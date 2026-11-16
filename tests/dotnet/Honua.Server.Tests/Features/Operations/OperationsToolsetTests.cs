@@ -39,12 +39,6 @@ using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperatio
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// In-memory unit coverage for the Honua Operations Toolset de-risking spike: the grounding
-/// catalog lists the <c>service.publish</c> descriptor; the executor wraps the real
-/// <see cref="ILayerPublishingService"/>; the dispatcher consults the policy decision point
-/// and short-circuits the executor on a Deny decision (the guardrail seam).
-/// </summary>
 public sealed class OperationsToolsetTests
 {
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
@@ -296,8 +290,8 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationFactory != null).Should().Be(
                 AdminConnectImportOperationCatalog.Definitions.Count +
                 AdminApiOperationCatalog.Definitions.Count +
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 14 + 4,
-                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and fourteen typed actuators and four AI admission controls remain unique");
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 16 + 4,
+                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and sixteen typed actuators and four AI admission controls remain unique");
     }
 
     [UnitTest]
@@ -322,7 +316,7 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                AdminOperateOperationCatalog.Definitions.Count + 4 + 14 + 4,
+                AdminOperateOperationCatalog.Definitions.Count + 4 + 16 + 4,
                 "each admin operation, legacy operation class, and typed actuator gets one deferred projection");
 
         // Idempotence across repeated composition, previously TryAddEnumerable's job.
@@ -331,7 +325,7 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 14 + 4,
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 16 + 4,
                 "re-registration must not duplicate the legacy adapters even though admin executors are added again");
     }
 
@@ -1712,8 +1706,8 @@ public sealed class OperationsToolsetTests
             Arg.Any<string>(),
             Arg.Is<LayerPublishRequest>(r => r.Schema == "public" && r.Table == "parcels" && r.LayerName == "Parcels"),
             Arg.Any<CancellationToken>());
-        notifications.Received(1).BroadcastResourcesListChanged();
-        notifications.Received(1).BroadcastToolsListChanged();
+        await notifications.Received(1).BroadcastResourcesListChanged();
+        await notifications.Received(1).BroadcastToolsListChanged();
     }
 
     [UnitTest]
@@ -1752,7 +1746,7 @@ public sealed class OperationsToolsetTests
         handle.ResourceIds.Should().NotContainKey("serviceName");
         await publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        notifications.Received(1).BroadcastToolsListChanged();
+        await notifications.Received(1).BroadcastToolsListChanged();
     }
 
     [UnitTest]
@@ -2228,10 +2222,6 @@ public sealed class OperationsToolsetTests
             }
         };
 
-    /// <summary>
-    /// Stub policy decision point that denies every operation, used to prove the dispatcher
-    /// short-circuits the executor even though the production default is pass-through Allow.
-    /// </summary>
     private sealed class DenyAllPolicyDecisionPoint : IOperationPolicyDecisionPoint
     {
         public Task<PolicyDecision> EvaluateAsync(
@@ -2246,10 +2236,6 @@ public sealed class OperationsToolsetTests
             });
     }
 
-    /// <summary>
-    /// Stub decision point that returns a caller-supplied fixed decision, used to prove each
-    /// non-Allow outcome (RequireApproval / DryRunFirst) maps to its handle status.
-    /// </summary>
     private sealed class StubPolicyDecisionPoint(PolicyDecision decision) : IOperationPolicyDecisionPoint
     {
         public Task<PolicyDecision> EvaluateAsync(
@@ -2260,11 +2246,6 @@ public sealed class OperationsToolsetTests
             => Task.FromResult(decision);
     }
 
-    /// <summary>
-    /// Stub decision point that captures the descriptor + context it was evaluated with, used
-    /// to prove the descriptor's policy metadata and the caller's tier/role(s) flow into the
-    /// decision input.
-    /// </summary>
     private sealed class CapturingPolicyDecisionPoint(PolicyDecision decision) : IOperationPolicyDecisionPoint
     {
         public IOperationDescriptor? Descriptor { get; private set; }

@@ -9,14 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Live validation that exercises the AWS ECS/ALB deploy backend against a real
-/// AWS environment provisioned by Terraform. Each test requires the full set of
-/// HONUA_LIVE_ECS_ALB_* environment variables; missing values cause the test to
-/// skip rather than fail. The active path runs the production
-/// <see cref="AwsSdkAlbClient"/> and <see cref="AwsSdkEcsClient"/> against the
-/// configured cluster, listener rule, target groups, and task definition.
-/// </summary>
 public sealed class AwsEcsAlbDeployBackendLiveTests
 {
     private const string RegionEnv = "HONUA_LIVE_ECS_ALB_REGION";
@@ -38,9 +30,10 @@ public sealed class AwsEcsAlbDeployBackendLiveTests
     public async Task ObserveAsync_AgainstProvisionedEcsAlbStack_ReturnsState()
     {
         var operation = BuildOperation();
+        using var alb = new AwsSdkAlbClient();
+        using var ecs = new AwsSdkEcsClient();
         var backend = new AwsEcsAlbDeployBackend(
-            new AwsSdkAlbClient(),
-            new AwsSdkEcsClient(),
+            new AwsEcsAlbDeployClients(alb, ecs),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
         var observation = await backend.ObserveAsync(operation);
@@ -65,9 +58,10 @@ public sealed class AwsEcsAlbDeployBackendLiveTests
     public async Task PlanAsync_AgainstProvisionedEcsAlbStack_IsReadyToSubmit()
     {
         var operation = BuildOperation();
+        using var alb = new AwsSdkAlbClient();
+        using var ecs = new AwsSdkEcsClient();
         var backend = new AwsEcsAlbDeployBackend(
-            new AwsSdkAlbClient(),
-            new AwsSdkEcsClient(),
+            new AwsEcsAlbDeployClients(alb, ecs),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
         var plan = await backend.PlanAsync(operation.Deploy!);

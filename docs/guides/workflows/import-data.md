@@ -155,7 +155,7 @@ Use a fresh isolated destination and record ownership. The staged dataset ingest
 
 The HTTP binding's path is relative to the Admin OpenAPI server base `/api/v1/admin`. The MCP URL-import binding is for an authorized supported URL; it is not a file-upload binding. Compose calls using the selected interface's exact input schema.
 
-Inspect the complete result, including pagination when exposed, representative attributes, geometry bounds, and source identifiers. Invalid input should produce a clear diagnosis or an explicit user decision. Import does not automatically grant access or add the result to a map; continue with [publication](connect-publish-data.md) or [composition](compose-map.md) as requested.
+Inspect the complete result, including pagination when exposed, representative attributes, geometry bounds, and source identifiers. Invalid input should produce a clear diagnosis or an explicit user decision. Import does not automatically grant access or add the result to a map; continue with [publication](connect-publish-data.md) or [Map editing](compose-map.md) as requested.
 
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 

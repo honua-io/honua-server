@@ -18,6 +18,8 @@ internal sealed partial class CdnInvalidationService(
     private readonly IHttpContextAccessor? _httpContextAccessor = coordination?.HttpContextAccessor;
     private readonly IOptionsMonitor<SharedCacheOptions>? _options = coordination?.Options;
     private readonly ILeaseStore? _leaseStore = coordination?.LeaseStore;
+    private readonly ICdnPurgeBudget? _budget = coordination?.Budget;
+    private readonly CdnPurgeReliability? _reliability = coordination?.Reliability;
 
     internal const string ResultHeader = "Honua-Cdn-Invalidation";
 
@@ -46,7 +48,7 @@ internal sealed partial class CdnInvalidationService(
         [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
 
     private readonly Lock _gate = new();
-    private readonly HashSet<string> _pendingEditPaths = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CdnPurgeCause> _pendingEditPaths = new(StringComparer.Ordinal);
     private DateTimeOffset _lastEditInvalidation = DateTimeOffset.MinValue;
     private DateTimeOffset? _windowClosesAt;
 
@@ -65,8 +67,15 @@ internal sealed partial class CdnInvalidationService(
         CancellationToken cancellationToken,
         CdnPurgeCause? cause = null)
     {
-        var result = await SendWithinLimitsAsync([.. paths], cause ?? CauseOfCurrentRequest(), cancellationToken).ConfigureAwait(false);
+        string[] sent = [.. paths];
+        var stated = cause ?? CauseOfCurrentRequest();
+        var result = await SendWithinLimitsAsync(sent, stated, cancellationToken).ConfigureAwait(false);
         ReportOnCurrentResponse(result.Result);
+        foreach (var batch in result.Batches.Where(batch => batch.Result.Outcome is CdnInvalidationOutcome.Submitted))
+        {
+            AfterSubmitted(batch.Paths, stated);
+        }
+
         return result.Result;
     }
 
@@ -77,14 +86,16 @@ internal sealed partial class CdnInvalidationService(
             return Task.CompletedTask;
         }
 
+        NoteEditQueued(paths);
         DateTimeOffset? schedule = null;
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
             var due = _lastEditInvalidation + CurrentCoalescingWindow();
-            if (_windowClosesAt.HasValue || due > now)
+            // Once the task is stopping no window timer will fire in time, so an edit is sent at once.
+            if (!_stopping && (_windowClosesAt.HasValue || due > now))
             {
-                _pendingEditPaths.UnionWith(paths);
+                AddPendingPurges(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits));
                 due = due > now ? due : now;
                 if (_windowClosesAt is { } scheduled && scheduled <= due)
                 {
@@ -117,164 +128,32 @@ internal sealed partial class CdnInvalidationService(
         }
     }
 
-    private async Task InvalidatePendingWhenWindowClosesAsync(DateTimeOffset windowClosesAt)
-    {
-        var delay = windowClosesAt - _timeProvider.GetUtcNow();
-        if (delay > TimeSpan.Zero)
-        {
-            await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
-        }
-
-        string[] paths;
-        lock (_gate)
-        {
-            if (_windowClosesAt != windowClosesAt)
-            {
-                return;
-            }
-
-            paths = [.. _pendingEditPaths];
-            _pendingEditPaths.Clear();
-            _windowClosesAt = null;
-            _lastEditInvalidation = _timeProvider.GetUtcNow();
-        }
-
-        var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), CancellationToken.None)
-            .ConfigureAwait(false);
-        // A busy CDN has already been handed the paths again for the next window.
-        if (result is { Outcome: CdnInvalidationOutcome.Failed })
-        {
-            Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
-        }
-    }
-
-    // An address another task invalidated within the window is retried shortly: that purge may have preceded this edit.
-    private async Task<CdnInvalidationResult?> SendAfterEditAsync(string[] paths, CdnPurgeCause cause, CancellationToken cancellationToken)
-    {
-        string[] claimed;
-        CdnInvalidationResult result;
-        try
-        {
-            claimed = await ClaimAcrossTasksAsync(paths, cancellationToken).ConfigureAwait(false);
-            if (claimed.Length < paths.Length)
-            {
-                DeferToNextWindow(paths.Except(claimed, StringComparer.Ordinal), HeldLeaseRetryDelay());
-            }
-
-            if (claimed.Length == 0)
-            {
-                return null;
-            }
-
-            var batches = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
-            result = batches.Result;
-
-            // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
-            if (batches.BusyPaths.Count > 0)
-            {
-                DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow());
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // The edit request gave up, not the edit: its purge goes out with the next window.
-            DeferToNextWindow(paths, CurrentCoalescingWindow());
-            throw;
-        }
-
-        return result;
-    }
-
-    internal void InvalidateWithNextWindow(IEnumerable<string> paths)
-    {
-        if (CdnConfigured)
-        {
-            DeferToNextWindow(paths, CurrentCoalescingWindow());
-        }
-    }
-
-    private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay)
-    {
-        var due = _timeProvider.GetUtcNow() + delay;
-        lock (_gate)
-        {
-            _pendingEditPaths.UnionWith(paths);
-            if (_windowClosesAt is { } scheduled && scheduled <= due)
-            {
-                return;
-            }
-
-            _windowClosesAt = due;
-            _lastEditInvalidation = _timeProvider.GetUtcNow();
-        }
-
-        _ = InvalidatePendingWhenWindowClosesAsync(due);
-    }
-
-    // One lease per address in the shared database: whichever task takes it sends the purge, and nobody else does until it expires.
-    // A host without that database is one task, and its own window is enough.
-    private async Task<string[]> ClaimAcrossTasksAsync(string[] paths, CancellationToken cancellationToken)
-    {
-        if (_leaseStore is null || paths.Length == 0)
-        {
-            return paths;
-        }
-
-        var lease = CurrentCoalescingWindow() - LeaseMargin;
-        var claims = new bool[paths.Length];
-        await Parallel.ForAsync(
-            0,
-            paths.Length,
-            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentLeaseClaims, CancellationToken = cancellationToken },
-            async (index, token) => claims[index] = await TryClaimAsync(paths[index], lease, token).ConfigureAwait(false))
-            .ConfigureAwait(false);
-        return [.. paths.Where((_, index) => claims[index])];
-    }
-
-    // An unreachable lease store must not leave content stale: purging twice is cheaper than serving the old version.
-    private async Task<bool> TryClaimAsync(string path, TimeSpan lease, CancellationToken cancellationToken)
-    {
-        try
-        {
-            // A normal-window lease must not delay an emergency purge; emergency tasks still coalesce together.
-            var prefix = lease == EmergencyCoalescingWindow - LeaseMargin ? LeaseKeyPrefix + "emergency:" : LeaseKeyPrefix;
-            return await _leaseStore!.TryAcquireAsync(new LeaseClaim(prefix + path, _leaseOwner), lease, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            Log.PurgeLeaseUnavailable(logger, exception, path);
-            return true;
-        }
-    }
-
-    // The store does not say when another task's lease ends, so a held address is retried several times per window.
-    private TimeSpan HeldLeaseRetryDelay() => CurrentCoalescingWindow() / 6;
-
     private TimeSpan CurrentCoalescingWindow()
         => _options?.CurrentValue.Emergency is { } emergency && (emergency.AllPublicLayers || emergency.Layers.Count > 0)
             ? EmergencyCoalescingWindow
             : CoalescingWindow;
 
-    private sealed record BatchInvalidationResult(CdnInvalidationResult Result, IReadOnlyCollection<string> BusyPaths);
+    private sealed record PurgeBatchResult(string[] Paths, CdnInvalidationResult Result);
+
+    private sealed record BatchInvalidationResult(CdnInvalidationResult Result, IReadOnlyList<PurgeBatchResult> Batches);
 
     private async Task<BatchInvalidationResult> SendWithinLimitsAsync(
         string[] paths,
         CdnPurgeCause cause,
         CancellationToken cancellationToken)
     {
-        var busyPaths = new List<string>();
+        var batches = new List<PurgeBatchResult>();
         var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
         var tags = distinctPaths.Where(CdnCacheTags.IsTagInvalidation).ToArray();
         var wildcardPaths = distinctPaths.Where(path => !CdnCacheTags.IsTagInvalidation(path)).ToArray();
         if (wildcardPaths.Length > MaxWildcardPathsPerInvalidation)
         {
-            return new(await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false), busyPaths);
+            return new(await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false), batches);
         }
 
         if (tags.Length <= MaxTagsPerInvalidation)
         {
-            return new(await SendBatchAsync(distinctPaths).ConfigureAwait(false), busyPaths);
+            return new(await SendBatchAsync(distinctPaths).ConfigureAwait(false), batches);
         }
 
         var combined = CdnInvalidationResult.NotConfigured;
@@ -290,16 +169,13 @@ internal sealed partial class CdnInvalidationService(
             combined = CombineBatchResults(combined, result);
         }
 
-        return new(combined, busyPaths);
+        return new(combined, batches);
 
         async Task<CdnInvalidationResult> SendBatchAsync(IReadOnlyCollection<string> batch)
         {
-            var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
-            if (result.Outcome is CdnInvalidationOutcome.Busy)
-            {
-                busyPaths.AddRange(batch);
-            }
-
+            var result = await RefuseWhenEditBudgetSpentAsync(batch, cause, cancellationToken).ConfigureAwait(false)
+                ?? await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
+            batches.Add(new PurgeBatchResult([.. batch], result));
             return result;
         }
     }
@@ -318,6 +194,18 @@ internal sealed partial class CdnInvalidationService(
         if (result.Outcome is CdnInvalidationOutcome.NotConfigured)
         {
             return result;
+        }
+
+        // A result that is still busy has already used its retries: an edit made now would not reach the CDN either. A
+        // stopping task's send skips those retries, so its busy answer says too little to hold off the fleet; an outright
+        // refusal still does.
+        if (result.Failed && !(cause.Kind is CdnPurgeKind.Shutdown && result.Outcome is CdnInvalidationOutcome.Busy))
+        {
+            _reliability?.RecordFailedPurge();
+        }
+        else if (result.Outcome is CdnInvalidationOutcome.Submitted)
+        {
+            _reliability?.RecordDeliveredPurge();
         }
 
         if (logger.IsEnabled(LogLevel.Information))
@@ -339,7 +227,7 @@ internal sealed partial class CdnInvalidationService(
         var outcome = "failed";
         try
         {
-            var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
+            var result = await SendWithRetriesAsync(paths, cause, cancellationToken).ConfigureAwait(false);
             outcome = result.Outcome.ToString().ToLowerInvariant();
             return result;
         }
@@ -357,10 +245,12 @@ internal sealed partial class CdnInvalidationService(
         }
     }
 
-    private async Task<CdnInvalidationResult> SendWithRetriesAsync(IReadOnlyCollection<string> withinBudget, CancellationToken cancellationToken)
+    // A stopping task does not wait out a busy CDN.
+    private async Task<CdnInvalidationResult> SendWithRetriesAsync(
+        IReadOnlyCollection<string> withinBudget, CdnPurgeCause cause, CancellationToken cancellationToken)
     {
         var result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
-        foreach (var delay in BusyRetryDelays)
+        foreach (var delay in cause.Kind is CdnPurgeKind.Shutdown ? Array.Empty<TimeSpan>() : BusyRetryDelays)
         {
             if (result.Outcome is not CdnInvalidationOutcome.Busy)
             {
@@ -387,7 +277,12 @@ internal sealed partial class CdnInvalidationService(
             return;
         }
 
-        response.Headers[ResultHeader] = result.Failed ? "failed" : "submitted";
+        response.Headers[ResultHeader] = result.Outcome switch
+        {
+            CdnInvalidationOutcome.Submitted => "submitted",
+            CdnInvalidationOutcome.BudgetExceeded => "budget",
+            _ => "failed",
+        };
     }
 
     private static partial class Log
@@ -403,6 +298,30 @@ internal sealed partial class CdnInvalidationService(
             Level = LogLevel.Warning,
             Message = "The purge lease store could not be reached; invalidating without coalescing across tasks. path={Path}")]
         public static partial void PurgeLeaseUnavailable(ILogger logger, Exception exception, string path);
+
+        [LoggerMessage(
+            EventId = 10313,
+            Level = LogLevel.Warning,
+            Message = "CDN edit purges are paused for this month; cached edits expire with their lifetime. submitted={Submitted} estimatedSpend={EstimatedSpend} paths={Paths}")]
+        public static partial void PurgeBudgetSpent(ILogger logger, int submitted, string estimatedSpend, string paths);
+
+        [LoggerMessage(
+            EventId = 10314,
+            Level = LogLevel.Warning,
+            Message = "The CDN purge budget could not be read; the edit purge was sent anyway.")]
+        public static partial void PurgeBudgetUnreadable(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 10318,
+            Level = LogLevel.Warning,
+            Message = "Stopped retrying failed CDN edit purges: every purge-backed copy they would remove has expired. paths={Count}")]
+        public static partial void FailedEditPurgeAbandoned(ILogger logger, int count);
+
+        [LoggerMessage(
+            EventId = 10319,
+            Level = LogLevel.Error,
+            Message = "A stopping task could not send its waiting CDN purges; invalidate these before relying on purge-backed lifetimes. count={Count} paths={Paths}")]
+        public static partial void ShutdownPurgesNotSent(ILogger logger, int count, string paths);
 
         // The purge record: which change caused the invalidation, which task sent it, and what the CDN answered.
         [LoggerMessage(
@@ -421,6 +340,18 @@ internal sealed record CdnPurgeCause(string Reason, string ChangeId)
 
     internal const string CoalescedEdits = "coalesced";
 
+    // Set only by the service itself: the change id can come from a client's correlation id, so it never decides how
+    // a purge is handled.
+    internal CdnPurgeKind Kind { get; private init; } = CdnPurgeKind.Change;
+
+    internal CdnPurgeCause AsChange() => this with { Kind = CdnPurgeKind.Change };
+
+    // The repeat of a purge after the settle delay; it is not repeated again.
+    internal CdnPurgeCause AsSettle() => this with { Kind = CdnPurgeKind.Settle };
+
+    // Purges a stopping task sends instead of leaving them to its windows.
+    internal CdnPurgeCause AsShutdown() => this with { Kind = CdnPurgeKind.Shutdown };
+
     internal static CdnPurgeCause Admin(string changeId) => new("admin", changeId);
 
     internal static CdnPurgeCause Edit(string changeId) => new("edit", changeId);
@@ -436,4 +367,11 @@ internal sealed class NoCdnInvalidator : ICdnInvalidator
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default)
         => Task.FromResult(CdnInvalidationResult.NotConfigured);
+}
+
+internal enum CdnPurgeKind
+{
+    Change,
+    Settle,
+    Shutdown,
 }

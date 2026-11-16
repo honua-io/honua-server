@@ -6,7 +6,7 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Services;
 
-public sealed class RasterClassStatisticsAnalyzer : IRasterClassStatisticsAnalyzer
+public sealed class RasterClassStatisticsAnalyzer
 {
     private readonly IRasterStore _rasterStore;
 

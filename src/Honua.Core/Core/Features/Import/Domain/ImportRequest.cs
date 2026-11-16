@@ -11,6 +11,10 @@ public enum ImportLoadMode
     Append = 1,
 
     Upsert = 2,
+
+    // Stage validated, replayable GeoJSON and atomically claim a fresh target.
+    // Other formats require complete reader diagnostics before they can support this mode.
+    CreateOnly = 3,
 }
 
 public sealed class ImportCommitScope
@@ -64,6 +68,9 @@ public sealed record ImportRequest
     public string? TargetSchema { get; init; }
 
     public int? SourceSrid { get; init; }
+
+    // Feature layer to import from a multi-layer source (GeoPackage table name).
+    public string? SourceLayer { get; init; }
 
     public int? DatumTransformationWkid { get; init; }
 

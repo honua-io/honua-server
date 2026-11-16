@@ -40,17 +40,28 @@ jobs:
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 20
     concurrency:
-      # New events supersede older work for the same PR across head updates.
-      # Unidentified completions stay isolated until resolution; they must not
-      # cancel a resolver that can publish for a known PR.
+      # Events for the same PR queue in order instead of cancelling each other,
+      # because a cancelled resolver is a red mark on the PR page. The shed step
+      # below ends a closed subject green with a notice; an open one reconciles
+      # to the live head and queues one attestation. Unidentified completions
+      # stay isolated until resolution.
       group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || github.run_id }}
-      cancel-in-progress: true
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       pull-requests: read
     outputs:
       pr: ${{ steps.target.outputs.result }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Shed superseded review event
         id: stale
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -59,7 +70,7 @@ jobs:
             // A superseded event is shed NEUTRALLY: the step succeeds, records one
             // job-summary line, and leaves `pr` empty so `attest` is never admitted.
             // Closed subjects cannot consume admission; open subjects always
-            // reach the live-head reconciliation and cancellation path.
+            // reach the live-head reconciliation path.
             const shed = async reason => {
               core.notice(`superseded: ${reason}`);
               core.summary.addRaw(`Shed superseded review event: ${reason}`, true);
@@ -98,15 +109,16 @@ jobs:
             // that can no longer merge. Attesting one anyway spends the trusted job
             // to stamp a RED status onto an already-merged commit, because
             // `pull request is not open` is scored as a blocking reason. `reopened`
-            // re-fires this workflow with the pull request open again, and
-            // claude-review.yml already sheds closed subjects the same way.
+            // re-fires this workflow with the pull request open again.
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
             }
-            // Events are unordered: an old head can cancel a newer resolver.
-            // Always reconcile the live head instead of abandoning that replacement.
-            // Live drafts must also reach the attest concurrency group to cancel
-            // active publication, then shed before checkout or status mutation.
+            // Events are unordered: an old-head event can run after a newer one.
+            // Always reconcile the live head instead of trusting the event head.
+            // Live drafts also reach the attest concurrency group, queue behind
+            // any active publication, then shed before checkout or status mutation.
+            // A draft conversion does not stop an active publication; it is
+            // admitted only to keep this trusted workflow's event contract.
 
       - name: Resolve every event to one pull request
         id: target
@@ -144,10 +156,23 @@ jobs:
       # Resolve first so fork workflow_run events (whose pull_requests array is
       # empty) supersede review/comment events under the same PR identity.
       group: review-gate-${{ needs.resolve.outputs.pr }}
-      # The replacement re-reads live review and admission state before acting;
-      # no cancelled helper grants the required Review Gate status.
-      cancel-in-progress: true
+      # Attestations queue in order instead of cancelling red on the PR page.
+      # Each re-reads live review and admission state, so the last one
+      # publishes the current verdict. An attestation whose live review or
+      # admission state changes between its first snapshot and final revalidation fails red;
+      # the queued event behind that change re-attests an open, ready head.
+      # Bursts are not collapsed: each event runs in turn, up to 100 waiting.
+      cancel-in-progress: false
+      queue: max
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Shed superseded review subject
         id: subject
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -182,28 +207,12 @@ jobs:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
-      - id: policy
-        name: Bind the immutable review-first measurement policy
-        if: steps.subject.outputs.superseded != 'true'
-        run: |
-          node scripts/ci/review-first-evidence-ledger.js policy-digest \
-            --root . \
-            --policy-sha '${{ github.workflow_sha }}' \
-            --github-output "${GITHUB_OUTPUT}"
-
       - name: Attest current PR head
         id: attest
         if: steps.subject.outputs.superseded != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          REVIEW_FIRST_POLICY_DIGEST: ${{ steps.policy.outputs.measurement_policy_digest }}
-          REVIEW_FIRST_POLICY_SHA: ${{ steps.policy.outputs.policy_sha }}
-          REVIEW_FIRST_PRODUCER_EVENT: ${{ github.event_name }}
-          REVIEW_FIRST_PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
-          REVIEW_FIRST_PRODUCER_RUN_ID: ${{ github.run_id }}
         with:
           script: |
-            const fs = require('fs');
             const { evaluateCodexEvidence, isAttestingReviewer } = require('./scripts/ci/review-gate-evidence');
             const { fetchPullRequestSnapshot } = require('./scripts/ci/review-gate-snapshot');
             const {
@@ -211,9 +220,6 @@ jobs:
               selectExactAdmissionRun,
               stabilizeReviewFirstEvaluation,
             } = require('./scripts/ci/review-first-dispatch');
-            const {
-              createReviewFirstObservation,
-            } = require('./scripts/ci/review-first-evidence-ledger');
             const prNumber = Number('${{ needs.resolve.outputs.pr }}');
 
             const evaluateCurrentReview = async () => {
@@ -412,7 +418,7 @@ jobs:
 
             // Take the complete review snapshot and canonical admission state
             // together twice. Only two identical joint evaluations may reach
-            // the irreversible receipt/rerun boundary.
+            // the irreversible dispatch boundary.
             let finalState;
             try {
               finalState = await stabilizeReviewFirstEvaluation(async () => {
@@ -440,7 +446,7 @@ jobs:
               await failFinalRevalidation('Final admission snapshot is missing.');
               return;
             }
-            const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
+            const { decision } = finalAdmission;
             if (decision.action === 'block') {
               await reportDecision(decision);
               core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
@@ -452,31 +458,6 @@ jobs:
             }
 
             if (decision.action === 'observe') {
-              const producerRunId = Number(process.env.REVIEW_FIRST_PRODUCER_RUN_ID);
-              const producerRunAttempt = Number(
-                process.env.REVIEW_FIRST_PRODUCER_RUN_ATTEMPT);
-              const observation = createReviewFirstObservation({
-                measurementPolicyDigest: process.env.REVIEW_FIRST_POLICY_DIGEST,
-                policySha: process.env.REVIEW_FIRST_POLICY_SHA,
-                producerRunId,
-                producerRunAttempt,
-                producerEvent: process.env.REVIEW_FIRST_PRODUCER_EVENT,
-                observedAt: new Date().toISOString(),
-                prNumber,
-                head,
-                associatedPullNumbers,
-                runs: runPage.workflow_runs,
-                jobs,
-                decision,
-                reviewRevalidated: true,
-                admissionRevalidated: true,
-              });
-              fs.mkdirSync('review-first-evidence', { recursive: true });
-              fs.writeFileSync(
-                'review-first-evidence/review-first-observation.json',
-                `${JSON.stringify(observation, null, 2)}\n`,
-                'utf8');
-              core.setOutput('receipt_present', 'true');
               await reportDecision(decision);
               return;
             }
@@ -503,12 +484,3 @@ jobs:
               }
               throw error;
             }
-
-      - name: Retain immutable review-first observation
-        if: always() && steps.attest.outputs.receipt_present == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: review-first-observation-v1
-          path: review-first-evidence/review-first-observation.json
-          retention-days: 30
-          if-no-files-found: error

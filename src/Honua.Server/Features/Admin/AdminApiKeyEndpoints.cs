@@ -22,7 +22,8 @@ internal static partial class AdminApiKeyEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "API Keys")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/", HandleListApiKeys)
             .WithDisplayName("List Admin API Keys")

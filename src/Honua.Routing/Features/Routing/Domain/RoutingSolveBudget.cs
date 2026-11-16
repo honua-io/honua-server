@@ -3,17 +3,8 @@
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>
-/// Pair-count budget for network solves whose work is the product of two input
-/// sets (closest facility, OD cost matrix). NAServer translation and the routing
-/// provider both call this so a geoprocessing job cannot bypass the adapter.
-/// </summary>
 public static class RoutingSolveBudget
 {
-    /// <summary>
-    /// Number of ranked pairs a solve will attempt. A positive target keeps at most
-    /// that many partners per left-hand input; otherwise every partner is ranked.
-    /// </summary>
     public static int RankedPairCount(int leftCount, int rightCount, int? targetCount)
     {
         if (leftCount <= 0 || rightCount <= 0)
@@ -27,9 +18,6 @@ public static class RoutingSolveBudget
         return checked(leftCount * ranked);
     }
 
-    /// <summary>
-    /// Rejects a solve whose ranked pair count exceeds <paramref name="maxSolvePairs"/>.
-    /// </summary>
     public static void Ensure(int pairCount, int maxSolvePairs, string operation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
@@ -43,8 +31,4 @@ public static class RoutingSolveBudget
     }
 }
 
-/// <summary>
-/// A network solve asked for more ranked pairs than <see cref="RoutingConfiguration.MaxSolvePairs"/>.
-/// </summary>
-/// <param name="message">The error message.</param>
 public sealed class RoutingSolveBudgetExceededException(string message) : Exception(message);

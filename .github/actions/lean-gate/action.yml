@@ -157,14 +157,6 @@ runs:
       shell: pwsh
       run: scripts/ci/check-markdown-command-policy.ps1
 
-    - name: Validate merge-train timeout policy
-      if: contains(fromJSON('["all","architecture"]'), inputs.test-group)
-      shell: bash
-      run: |
-        scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
-        scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh
-        scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
-
     # Cheap, service-free governance step (~1s): every OpenAPI document Honua
     # advertises must agree with EndpointRegistry, and every deliberate omission
     # from the curated admin bundle must be declared. Runs here, in the required
@@ -333,6 +325,13 @@ runs:
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
         bash scripts/ci/report-generated-file-drift.sh
+
+    - name: Validate operation-capability join against fresh catalog
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
+      shell: bash
+      run: |
+        python3 scripts/ci/generate-operation-capability.test.py
+        python3 scripts/ci/generate-operation-capability.py --check
 
     # Server.Tests compares the admin parity exports with the current contract,
     # so the server groups refresh them as the full regeneration above does.

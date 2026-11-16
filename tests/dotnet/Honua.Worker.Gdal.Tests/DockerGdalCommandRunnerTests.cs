@@ -10,16 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Offline coverage for the opt-in container-exec GDAL command runner
-/// (<see cref="DockerGdalCommandRunner"/>, issue #2180). Docker is NOT available on a
-/// lean CI agent, so these tests verify the load-bearing, correct-by-construction part
-/// of the runner — the exact <c>docker run …</c> argument vector it builds (image ref,
-/// identical-path bind mount, working dir, user, network, entrypoint-override, tool
-/// args) — and that it delegates to the container-runtime seam. The end-to-end run
-/// against a real container is CI/local-Docker-verified (it needs the
-/// <c>honua-worker-etl</c> image and a Docker daemon).
-/// </summary>
 public sealed class DockerGdalCommandRunnerTests
 {
     [UnitTest]
@@ -119,6 +109,7 @@ public sealed class DockerGdalCommandRunnerTests
             Options.Create(new AzureBlobOptions()),
             NullLogger<DockerGdalCommandRunner>.Instance);
 
+        using var trusted = GdalRemoteInputScope.Trust("/vsis3/registered-bucket/input.tif");
         await runner.RunAsync(
             "gdalwarp",
             new[] { "/vsis3/registered-bucket/input.tif", "/scratch/op/out.tif" },
@@ -151,6 +142,7 @@ public sealed class DockerGdalCommandRunnerTests
             Options.Create(new AzureBlobOptions { ConnectionString = connectionString }),
             NullLogger<DockerGdalCommandRunner>.Instance);
 
+        using var trusted = GdalRemoteInputScope.Trust("/vsiaz/registered-container/input.tif");
         await runner.RunAsync(
             "gdalwarp",
             new[] { "/vsiaz/registered-container/input.tif", "/scratch/op/out.tif" },
@@ -184,6 +176,40 @@ public sealed class DockerGdalCommandRunnerTests
             CancellationToken.None);
 
         invoker.Invocations.Single().Arguments.Should().ContainInOrder("--network", "none");
+    }
+
+    [UnitTest]
+    public async Task RunAsync_UndeclaredVsiArgument_KeepsHermeticNetworkAndWithholdsCredentials()
+    {
+        var invoker = new FakeDockerCommandInvoker(_ => new GdalCommandResult { ExitCode = 0 });
+        var runner = new DockerGdalCommandRunner(
+            invoker,
+            Options.Create(new GdalContainerExecutionOptions()),
+            Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options
+            {
+                AccessKeyId = "registered-access-key",
+                SecretAccessKey = "registered-secret",
+                ServiceUrl = "https://object-store.example.test",
+            }),
+            Options.Create(new AzureBlobOptions { ConnectionString = "AccountName=registered;AccountKey=secret" }),
+            NullLogger<DockerGdalCommandRunner>.Instance);
+
+        // A job-supplied value (for example a layer name) that merely contains a
+        // VSI path must not be treated as an executor-declared remote input.
+        await runner.RunAsync(
+            "ogr2ogr",
+            new[] { "/scratch/op/out.gpkg", "/scratch/op/input.gpkg", "/vsis3/other-bucket/x", "/vsiaz/other/x" },
+            "/scratch/op",
+            CancellationToken.None);
+
+        var invocation = invoker.Invocations.Single();
+        invocation.Arguments.Should().ContainInOrder("--network", "none");
+        invocation.Environment!.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        invocation.Environment.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
+        invocation.Environment.Should().NotContainKey("AWS_S3_ENDPOINT");
+        invocation.Environment.Should().NotContainKey("AZURE_STORAGE_CONNECTION_STRING");
+        invocation.Environment["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"].Should().Be(".honua-vsi-blocked");
     }
 
     private sealed class FakeDockerCommandInvoker(Func<IReadOnlyList<string>, GdalCommandResult> behavior)

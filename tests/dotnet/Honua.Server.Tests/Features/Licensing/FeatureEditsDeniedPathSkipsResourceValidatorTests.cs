@@ -13,26 +13,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
-/// <summary>
-/// Regression coverage for honua-server#4640: the flaky trunk red where
-/// <c>ClientCompatSeed_OnServerMigratedDatabase_...</c> intermittently 500'd instead of
-/// returning the graceful 402 refusal on an unlicensed host's <c>addFeatures</c>/<c>applyEdits</c>
-/// call. Root cause — <c>FeatureServerEditsHandler</c>'s constructor pulled in
-/// <see cref="IResourceValidator"/> (and, through it, <c>IMetadataV2GraphProvider</c>) via
-/// minimal-API <c>[FromServices]</c> parameter binding, which resolved unconditionally before the
-/// entitlement gate in the method body ever ran — so a transient DI hiccup in that graph could
-/// leak a raw 500 through the graceful GeoServices refusal, on a request that was always going to
-/// be denied regardless.
-/// </summary>
-/// <remarks>
-/// Rather than trying to reproduce the transient race itself (the original diagnosis could not
-/// reproduce it locally in 9/9 runs — see #4640), this proves the fix's actual mechanism
-/// deterministically: <see cref="IResourceValidator"/> is replaced with an implementation that
-/// throws unconditionally, standing in for "this dependency is broken right now for any reason."
-/// A license-denied FeatureServer edit must still return the graceful 402 body — proving the
-/// entitlement gate runs, and the write pipeline resolves nothing that touches
-/// <see cref="IResourceValidator"/>, before the request is refused.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.ApplyEdits)]
@@ -95,12 +75,6 @@ public sealed class FeatureEditsDeniedPathSkipsResourceValidatorTests : IAsyncLi
             "applyEdits must be refused the same way addFeatures is, before touching IResourceValidator");
     }
 
-    /// <summary>
-    /// Stands in for "this dependency is broken right now for any reason" (a transient DI
-    /// resolution failure, a downstream construction error, etc.). Every member throws
-    /// unconditionally so the test fails loudly if the write pipeline ever calls it on a
-    /// license-denied request.
-    /// </summary>
     private sealed class ThrowingResourceValidator : IResourceValidator
     {
         private static InvalidOperationException Poisoned() =>

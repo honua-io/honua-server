@@ -49,6 +49,10 @@ internal sealed partial class StreamingFileImportService
 
         var existed = await ImportTableExistsAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
         var mode = options.Request.EffectiveLoadMode;
+        if (existed && mode == ImportLoadMode.CreateOnly)
+        {
+            throw new InvalidDataException("Create-only import requires a new target table.");
+        }
         // A replace drops the live table. Prove ownership before resolving geometry:
         // an unowned table may have no geometry column, and that lookup would report
         // a missing identity instead of IMPORT_TARGET_NOT_OWNED. The swap rechecks
@@ -64,11 +68,12 @@ internal sealed partial class StreamingFileImportService
             identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                 connection, transaction, options.Schema, options.Table, "geometry", cancellationToken);
         }
-        if (mode != ImportLoadMode.Replace)
+        if (mode is not (ImportLoadMode.Replace or ImportLoadMode.CreateOnly))
         {
             if (!existed)
             {
                 await EnsureTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction);
+                await MarkImportBookkeepingAsync(transaction, (options.Schema, options.Table), cancellationToken);
                 identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                     connection, transaction, options.Schema, options.Table, "geometry", cancellationToken);
                 await ImportedDatasetSpatialMetadata.WriteAsync(
@@ -91,15 +96,21 @@ internal sealed partial class StreamingFileImportService
         var requestedDatumSelection = ResolveRequestedDatumSelection(options.Request, options.SourceSrid, storageSrid);
         var stagedAppend = mode == ImportLoadMode.Append &&
             await TargetIsImporterOwnedAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
-        if (options.Request.CommitParticipant is not null && mode != ImportLoadMode.Replace && !stagedAppend)
+        if (options.Request.CommitParticipant is not null && mode is not (ImportLoadMode.Replace or ImportLoadMode.CreateOnly) && !stagedAppend)
         {
             // Keep the direct-mode refusal inside preparation so new schema/facts roll back too.
             throw new InvalidDataException(
                 "This import must commit its receipt with the rows. The target is not an importer-owned table.");
         }
-        var loadTable = mode == ImportLoadMode.Replace || stagedAppend
+        var loadTable = mode == ImportLoadMode.CreateOnly
+            ? await CreateFreshStagingAsync(transaction, (options.Schema, storageSrid), cancellationToken)
+            : mode == ImportLoadMode.Replace || stagedAppend
             ? await CreateStagingTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction)
             : options.Table;
+        if (loadTable != options.Table)
+        {
+            await MarkImportBookkeepingAsync(transaction, (options.Schema, loadTable), cancellationToken);
+        }
         await transaction.CommitSafelyAsync(cancellationToken);
         return new ImportTargetPreparation
         {

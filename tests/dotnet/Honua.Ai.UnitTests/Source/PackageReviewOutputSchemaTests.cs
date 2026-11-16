@@ -11,12 +11,6 @@ using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Inspector validates <c>structuredContent</c> against the published
-/// <c>outputSchema</c>. Package review success uses <c>status</c> ready,
-/// warning, or blocked. The error-envelope wrapper must not stamp
-/// <c>status: const error</c> onto that success payload.
-/// </summary>
 public sealed class PackageReviewOutputSchemaTests
 {
     [UnitTest]

@@ -76,7 +76,8 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
                 return result; // Could not compute ETag, return original result
             }
 
-            etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag).ConfigureAwait(false);
+            etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag,
+                (result as IContentTypeHttpResult)?.ContentType ?? "application/json").ConfigureAwait(false);
 
             // Check conditional headers
             var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
@@ -117,7 +118,7 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             return result;
         }
 
-        etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag).ConfigureAwait(false);
+        etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag, "application/json").ConfigureAwait(false);
 
         var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
         var ifMatch = httpContext.Request.Headers["If-Match"].ToString();

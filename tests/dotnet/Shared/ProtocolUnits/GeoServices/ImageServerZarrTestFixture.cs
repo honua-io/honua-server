@@ -7,10 +7,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>Deterministic Zarr objects used by ImageServer multidimensional read tests.</summary>
 internal static class ImageServerZarrTestFixture
 {
-    /// <summary>Builds a 3D (elevation, y, x) Zarr v2 store with a vertical axis manifest.</summary>
     public static Dictionary<string, byte[]> BuildVerticalStore(string root, int levels, int rows, int cols)
     {
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
@@ -48,7 +46,6 @@ internal static class ImageServerZarrTestFixture
     }
 }
 
-/// <summary>Object-store double serving a fixture path-to-bytes map.</summary>
 internal sealed class ImageServerFixtureRangeReader(Dictionary<string, byte[]> objects) : ICloudRangeReader
 {
     public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;

@@ -11,14 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Regression coverage for how a durable conflict records whether the client edit actually landed
-/// (#2430). Getting this wrong is not cosmetic: the flag is the input the resolution planner uses to
-/// decide whether keeping the server needs a write, so a conflict wrongly marked "not applied" lets a
-/// keep-server resolution plan a no-op and mark itself resolved while the client's overwrite is still
-/// committed.
-/// </summary>
-public sealed class ReplicaSyncClientEditAttributionTests
+public sealed partial class ReplicaSyncClientEditAttributionTests
 {
     [UnitTest]
     public async Task ApplyUpload_MixedOutcomeBatch_AttributesClientEditPerEditNotPerLayer()
@@ -525,7 +518,6 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 "the overwrite must bind to state B captured in the durable envelope, not an earlier read");
     }
 
-    /// <summary>Capturer that models A -&gt; B -&gt; A around the envelope read.</summary>
     private sealed class AbaTokenCapturer : IReplicaServerStateCapturer
     {
         public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
@@ -547,7 +539,6 @@ public sealed class ReplicaSyncClientEditAttributionTests
                     t => new ReplicaConflictStateTokenCapture($"token-A-{t.ObjectId}", t.ObjectId)));
     }
 
-    /// <summary>Capturer that reports a token per requested feature, minus any it treats as absent.</summary>
     private sealed class TokenCapturer(params long[] absentObjectIds) : IReplicaServerStateCapturer
     {
         public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
@@ -690,7 +681,6 @@ public sealed class ReplicaSyncClientEditAttributionTests
             "the missing upload outcome must keep operator resolution blocked");
     }
 
-    /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>
     private sealed class EchoClientStateSerializer : IReplicaClientStateSerializer
     {
         public string? Serialize(ReplicaUploadEdit edit) => edit.Payload as string;
@@ -767,15 +757,16 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
     }
 
-    [UnitTest]
-    public async Task ApplyUpload_ForeignEditAfterTheBatch_DoesNotBecomeTheConflictBaseGeneration()
+    [UnitTheory]
+    [InlineData(60)]
+    [InlineData(90)]
+    public async Task ApplyUpload_WithoutOperationEvidence_KeepsThePreBatchConflictBase(long postBatchGeneration)
     {
-        // The change feed collapses to the latest change per object, so a foreign edit landing between
-        // this batch committing and the change-log probe would be read as the generation our own edit
-        // produced. A staleness check starting after it would then never see it, and a later
-        // keepServer would overwrite the foreign state with the older snapshot.
         var foreignEdit = ServerChange(objectId: 42) with { Generation = 90 };
-        var tracker = new RecordingChangeTracker(foreignEdit) { Generations = new Queue<long>([50L, 60L]) };
+        var tracker = new RecordingChangeTracker(foreignEdit)
+        {
+            Generations = new Queue<long>([50L, postBatchGeneration])
+        };
         var repository = new RecordingConflictRepository();
         var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
 
@@ -787,7 +778,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
         repository.DetectionUpdates.Should().ContainSingle()
             .Which.ResolutionBaseGeneration.Should().Be(
-                60, "the base is clamped to the watermark taken immediately after the batch");
+                50, "a later change and a post-commit watermark cannot identify this operation's generation");
     }
 
     [UnitTest]
@@ -834,10 +825,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
     private sealed class RecordingChangeTracker(params FeatureChange[] changes) : IChangeTracker
     {
-        /// <summary>Successive watermark readings; the last value repeats once the queue drains.</summary>
         public Queue<long>? Generations { get; init; }
 
-        /// <summary>One-based watermark read on which the test tracker throws; zero never throws.</summary>
         public int ThrowOnGenerationRead { get; init; }
 
         private long _lastGeneration = 99L;
@@ -881,20 +870,16 @@ public sealed class ReplicaSyncClientEditAttributionTests
         }
     }
 
-    /// <summary>
-    /// Edit applier that reports a layer-wide failure while still attributing the rows that
-    /// committed, mirroring the shared pipeline's best-effort per-row behavior.
-    /// </summary>
     private sealed class PartialFailureEditApplier(
         int[]? committedEditIndexes,
         bool failed,
         int[]? indeterminateEditIndexes = null) : IReplicaEditApplier
     {
-        /// <summary>Preconditions the sync service bound the batch to.</summary>
         public ImmutableArray<FeatureEditPrecondition> Preconditions { get; private set; }
 
-        /// <summary>Edits the sync service actually dispatched.</summary>
         public ImmutableArray<ReplicaUploadEdit> DispatchedEdits { get; private set; }
+
+        public ImmutableArray<ImmutableArray<FeatureOperationEvidence>> OperationEvidence { get; init; }
 
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
@@ -918,7 +903,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
                     : [.. committedEditIndexes],
                 IndeterminateEditIndexes: indeterminateEditIndexes is null
                     ? default
-                    : [.. indeterminateEditIndexes]));
+                    : [.. indeterminateEditIndexes])
+            {
+                OperationEvidence = OperationEvidence
+            });
         }
     }
 

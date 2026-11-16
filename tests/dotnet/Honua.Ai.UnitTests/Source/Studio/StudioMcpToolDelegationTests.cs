@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
@@ -16,15 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Delegation tests for the Studio draft lifecycle and composition MCP tools
-/// (honua-server#3002) against the real <see cref="IStudioPackageLifecycleService"/>
-/// backed by <c>InMemoryStudioPackageStore</c> (mirrors
-/// <c>StudioPackageLifecycleServiceTests</c>'s DI setup). Proves the tools
-/// delegate to — and do not duplicate — the canonical lifecycle service: every
-/// mutation observed through <c>honua_studio_get_draft</c> is the same state
-/// the lifecycle service itself would report.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpToolDelegationTests
 {
@@ -182,7 +174,10 @@ public sealed class StudioMcpToolDelegationTests
             .Should().Be("studio.content.create-publication-request");
 
         var finalDraft = await lifecycleService.GetDraftAsync(draftId);
-        finalDraft.Should().BeEquivalentTo(draftBeforeProposal);
+        finalDraft.Should().BeEquivalentTo(draftBeforeProposal, options => options
+            .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation)
+                .Should().BeTrue("snapshot JSON content must remain unchanged"))
+            .WhenTypeIs<JsonElement>());
 
         var pointers = await store.GetPointersAsync(itemId);
         pointers.Should().NotBeNull();

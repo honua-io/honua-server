@@ -14,15 +14,13 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests that exercise GeoServer import endpoints against a live GeoServer container.
-/// </summary>
-[Collection("Database")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoServerLiveImportIntegrationTests : IAsyncLifetime
@@ -34,6 +32,7 @@ public sealed class GeoServerLiveImportIntegrationTests : IAsyncLifetime
     public GeoServerLiveImportIntegrationTests()
     {
         _fixture = new WebAppFixture()
+            .WithProductionJobSubstrate()
             .WithTestLicense(HonuaEdition.Enterprise)
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configurationBuilder) =>
             {
@@ -48,6 +47,7 @@ public sealed class GeoServerLiveImportIntegrationTests : IAsyncLifetime
     {
         await _geoServer.InitializeAsync();
         await _fixture.InitializeAsync();
+        await _fixture.Postgres.DataSource.ClearJobSubstrateAsync();
         _client = _fixture.Client;
     }
 

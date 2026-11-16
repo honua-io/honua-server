@@ -7,62 +7,12 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Scene.PointCloud;
 
-/// <summary>
-/// Deterministic writer for the Cesium 3D Tiles Point Cloud (<c>.pnts</c>) tile
-/// format (#1201). Emits POSITION and RGB feature-table semantics plus a batch
-/// table carrying the preserved INTENSITY and CLASSIFICATION attributes.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Positions are encoded as <c>Float32</c> XYZ relative to an
-/// <c>RTC_CENTER</c> (the tile's ECEF centroid) so the 32-bit mantissa retains
-/// centimetre precision regardless of the cloud's global ECEF magnitude. RGB is
-/// emitted as <c>UNSIGNED_BYTE</c> per channel. LAS colour lives in 16-bit
-/// fields, but many producers store unscaled 8-bit (0-255) values there. The
-/// 8-bit-vs-16-bit interpretation is decided ONCE per cloud by the caller
-/// (<see cref="PointCloudTilesetBuilder"/> scans every point's channels) and
-/// passed in to every tile via <c>eightBitColor</c>: when true the writer copies
-/// the low byte verbatim (treating the cloud as 8-bit) instead of
-/// <c>&gt;&gt;8</c>'ing genuine-255 values down to black; otherwise it scales true
-/// 16-bit colour to 8-bit via <c>&gt;&gt;8</c>. Deciding dataset-wide (rather than
-/// per tile) means neighbouring tiles, and an interior coarse-LOD tile and its
-/// leaves, always agree on the encoding so no colour seam appears. When the
-/// source has no colour the writer omits the RGB semantic and the client falls
-/// back to a uniform point colour.
-/// </para>
-/// <para>
-/// The byte layout — header, padded feature-table JSON, padded feature-table
-/// binary, padded batch-table JSON, padded batch-table binary — follows the
-/// PNTS spec exactly: every section header and binary body starts AND ends on an
-/// 8-byte boundary, and the whole tile byteLength is 8-aligned. Output is
-/// produced in a fixed property order with deterministic zero padding, so
-/// identical input yields byte-identical output.
-/// </para>
-/// </remarks>
 public static class PntsTileWriter
 {
     private const uint Magic = 0x73746E70; // "pnts" little-endian.
     private const uint Version = 1;
     private const int HeaderLength = 28;
 
-    /// <summary>
-    /// Builds a <c>.pnts</c> tile from the supplied projected points.
-    /// </summary>
-    /// <param name="points">
-    /// Points to write, each carrying an ECEF position and preserved attributes.
-    /// Must be non-empty.
-    /// </param>
-    /// <param name="eightBitColor">
-    /// The dataset-wide colour-depth decision: <see langword="true"/> copies each
-    /// channel's low byte verbatim (8-bit-in-16-bit producers), <see langword="false"/>
-    /// scales true 16-bit colour to 8-bit via <c>&gt;&gt;8</c>. The decision MUST be
-    /// made once for the whole cloud (see
-    /// <see cref="PointCloudTilesetBuilder"/>) and passed identically to every
-    /// tile, otherwise neighbouring tiles — or an interior coarse-LOD tile and
-    /// its leaves — can pick different interpretations and render the same raw
-    /// colour differently, producing a visible seam.
-    /// </param>
-    /// <returns>A deterministic PNTS byte sequence.</returns>
     public static byte[] Build(IReadOnlyList<PntsPoint> points, bool eightBitColor)
     {
         ArgumentNullException.ThrowIfNull(points);
@@ -255,11 +205,6 @@ public static class PntsTileWriter
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Pads a JSON section with trailing spaces so the byte that follows it
-    /// (<paramref name="precedingLength"/> bytes into the tile) lands on an
-    /// 8-byte boundary, per the PNTS spec.
-    /// </summary>
     private static byte[] PadJson(byte[] json, int precedingLength)
     {
         var end = precedingLength + json.Length;
@@ -278,19 +223,6 @@ public static class PntsTileWriter
     }
 }
 
-/// <summary>
-/// A single point ready for PNTS encoding: ECEF position plus preserved
-/// attributes (#1201).
-/// </summary>
-/// <param name="EcefX">ECEF X in meters.</param>
-/// <param name="EcefY">ECEF Y in meters.</param>
-/// <param name="EcefZ">ECEF Z in meters.</param>
-/// <param name="Intensity">Preserved pulse intensity.</param>
-/// <param name="Classification">Preserved ASPRS classification.</param>
-/// <param name="HasColor">True when RGB channels are meaningful.</param>
-/// <param name="Red">16-bit red channel.</param>
-/// <param name="Green">16-bit green channel.</param>
-/// <param name="Blue">16-bit blue channel.</param>
 public readonly record struct PntsPoint(
     double EcefX,
     double EcefY,

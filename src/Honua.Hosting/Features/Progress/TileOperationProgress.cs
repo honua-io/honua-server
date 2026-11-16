@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Core.Features.Tiles.PMTiles;
 
 namespace Honua.Infrastructure.Progress;
@@ -25,6 +26,7 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     public string? TileCompression { get; init; }
     public string? DownloadUrl { get; init; }
     public PMTilesArtifactDescriptor? PublishedArtifact { get; init; }
+    public PublishedPublication? PublishedPublication { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ErrorMessage { get; init; }
@@ -42,6 +44,7 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     {
         "archive" => OperationType.PMTilesArchive,
         "publish" => OperationType.PMTilesPublish,
+        "paired-publish" => OperationType.PMTilesPublish,
         _ => OperationType.TileCache
     };
 

@@ -5,13 +5,18 @@ using Honua.TestKit;
 
 namespace Honua.Db.Postgres.Tests;
 
-/// <summary>
-/// Applies canonical numbered migration SQL to an isolated test schema. Production stores must
-/// never provision these objects; tests that skip DbUp own their schema setup explicitly.
-/// </summary>
 internal static class CoreMigrationTestFixture
 {
     public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema)
+    {
+        await ApplyPreVocabularyMetadataV2Async(fixture, schema);
+        await ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "186_ExpandMetadataV2Vocabulary.sql");
+    }
+
+    public static async Task ApplyPreVocabularyMetadataV2Async(PostgresFixture fixture, string schema)
     {
         await ApplyAsync(
             fixture,
@@ -21,7 +26,14 @@ internal static class CoreMigrationTestFixture
             fixture,
             schema,
             "src", "Honua.Server", "Migrations", "155_CreateMetadataFieldHistory.sql");
+        await ApplyGlobalIdIntegrityAsync(fixture, schema);
     }
+
+    public static Task ApplyGlobalIdIntegrityAsync(PostgresFixture fixture, string schema) =>
+        ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "198_EnforceMetadataGlobalIdUniqueness.sql");
 
     public static Task ApplyRasterLayerStatisticsAsync(PostgresFixture fixture, string schema) =>
         ApplyAsync(

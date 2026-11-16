@@ -17,9 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Verifies that the optional application prefix participates in normal endpoint routing.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class GeoServicesPathBaseTests : IAsyncLifetime
 {

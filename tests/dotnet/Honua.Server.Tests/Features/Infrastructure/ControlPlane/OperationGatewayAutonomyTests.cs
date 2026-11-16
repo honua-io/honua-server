@@ -92,6 +92,11 @@ public sealed class OperationGatewayAutonomyTests
             "operation.auto_executed",
             "operation.auto_verified",
             "operation.auto_applied");
+        auditLog.Events.Should().OnlyContain(item =>
+            item.Actor == "ops-findings-autonomy"
+            && item.ActorAgent == "ops-findings-autonomy");
+        auditLog.Events.Where(item => item.Action.StartsWith("operation.auto_", StringComparison.Ordinal))
+            .Should().OnlyContain(item => item.ActorType == AuditActorType.System);
         outbox.Events.Should().ContainSingle();
         outbox.Events[0].Source.Should().Be(AlertEventSources.Ops);
         outbox.Events[0].ServiceId.Should().Be("ops-autonomy");
@@ -744,10 +749,53 @@ public sealed class OperationGatewayAutonomyTests
             => throw new InvalidOperationException("The wrong-kind executor must never be invoked.");
     }
 
-    private sealed class MultiProposalStore : IOperationProposalStore
+    // The gateway requires a durable batch store for finding-driven proposals. This batch table mirrors the
+    // Postgres upsert: an open batch keeps its reserved key, a completed batch takes the new candidate.
+    private sealed class MultiProposalStore : IOperationProposalStore, IOperationProposalBatchStore
     {
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Batch> _batches = new(StringComparer.Ordinal);
         private readonly Lock _lock = new();
+
+        public Task<string> ReserveBatchAsync(OperationProposalBatchCandidate candidate, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                if (!_batches.TryGetValue(candidate.BatchKey, out var batch) || batch.Completed)
+                {
+                    batch = new Batch(candidate.IdempotencyKey, candidate.ProposalId, Completed: false);
+                }
+
+                _batches[candidate.BatchKey] = batch with { Completed = false };
+                return Task.FromResult(batch.IdempotencyKey);
+            }
+        }
+
+        public Task RetargetOpenBatchAsync(string previousProposalId, string renewedProposalId, CancellationToken cancellationToken = default)
+        {
+            UpdateOpenBatches(previousProposalId, batch => batch with { ProposalId = renewedProposalId });
+            return Task.CompletedTask;
+        }
+
+        public Task CompleteOpenBatchAsync(string proposalId, CancellationToken cancellationToken = default)
+        {
+            UpdateOpenBatches(proposalId, batch => batch with { Completed = true });
+            return Task.CompletedTask;
+        }
+
+        private void UpdateOpenBatches(string proposalId, Func<Batch, Batch> update)
+        {
+            lock (_lock)
+            {
+                foreach (var (key, batch) in _batches.ToList())
+                {
+                    if (!batch.Completed && string.Equals(batch.ProposalId, proposalId, StringComparison.Ordinal))
+                    {
+                        _batches[key] = update(batch);
+                    }
+                }
+            }
+        }
 
         public int Count
         {
@@ -829,5 +877,7 @@ public sealed class OperationGatewayAutonomyTests
             string ownerId,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        private sealed record Batch(string IdempotencyKey, string ProposalId, bool Completed);
     }
 }

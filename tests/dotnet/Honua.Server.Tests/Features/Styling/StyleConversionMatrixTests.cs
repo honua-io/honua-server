@@ -9,9 +9,6 @@ using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Tests for Esri to MapLibre style conversion coverage.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "Styling")]
 [Trait("Feature", "StyleConversion")]

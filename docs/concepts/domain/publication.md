@@ -35,12 +35,10 @@ Publication is a retired object name. The Metadata v2 type `MetadataV2Layer` lin
 A Connection registration exposes no data or credential material. A Style change affects drawing rules, not source features. Resolve the actual object and supported action rather than applying one generic publish operation to every noun.
 
 For Studio publication through MCP, the current saved version supplies the
-version identifier and content hash. An authorized admin publishes in the call
-and receives `Published` with a share URL. Other callers receive
-`AwaitingApproval` and a proposal handle; a separate authorized principal must
-approve before activation. Inspect the returned state rather than treating the
-word “propose” as a guarantee of no immediate effect. A pending proposal is not
-an active publication, and a preview is not a published artifact.[^contract]
+version identifier and content hash. Every MCP caller, administrators included,
+receives `AwaitingApproval` and a proposal handle; a person approves it in
+Console before activation. A pending proposal is not an active publication, and
+a preview is not a published artifact.[^contract]
 
 Activation and [sharing](sharing.md) are related but distinct. “Public” must refer to the effective audience, including access to dependent data; it cannot be inferred from a URL. A Released Map or App can require authentication.
 

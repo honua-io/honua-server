@@ -42,6 +42,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         var deletes = new List<object>();
         // Request slot of each dispatched row, so per-row outcomes map back to the exact uploaded edit
         // rather than to an object id that several edits may share (#2430).
+        var addSlots = new List<int>();
         var updateSlots = new List<int>();
         var deleteSlots = new List<int>();
 
@@ -52,6 +53,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             {
                 case FeatureEditOperationKind.Create when edit.Payload is GeoServicesFeature add:
                     adds.Add(add);
+                    addSlots.Add(slot);
                     break;
                 case FeatureEditOperationKind.Update when edit.Payload is GeoServicesFeature update:
                     updates.Add(update);
@@ -81,6 +83,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             Preconditions = preconditions,
         };
 
+        using var evidenceScope = FeatureOperationEvidenceScope.Begin();
         var editResult = await _editsHandler.HandleApplyEditsAsync(
             serviceId, publicLayerId, request, _editLimits, cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -106,6 +109,12 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             || HasFailure(response.UpdateResults)
             || HasFailure(response.DeleteResults);
 
+        var evidence = ImmutableArray.CreateBuilder<ImmutableArray<FeatureOperationEvidence>>(edits.Length);
+        evidence.Count = edits.Length;
+        AppendOperationEvidence(evidence, response.AddResults, addSlots);
+        AppendOperationEvidence(evidence, response.UpdateResults, updateSlots);
+        AppendOperationEvidence(evidence, response.DeleteResults, deleteSlots);
+
         return new ReplicaLayerApplyResult(
             publicLayerId,
             appliedAdds,
@@ -114,7 +123,10 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             Failed: failed,
             FailureMessage: failed ? "Uploaded replica edits failed to apply." : null,
             CommittedEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: true),
-            IndeterminateEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: false));
+            IndeterminateEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: false))
+        {
+            OperationEvidence = evidence.ToImmutable()
+        };
     }
 
     // With rollbackOnFailure=false an indeterminate row is neither committed nor failed, because recording it as unapplied makes a later keep-server skip an overwrite that may already be in place.
@@ -147,6 +159,25 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
                 {
                     slotsOut.Add(slots[index]);
                 }
+            }
+        }
+    }
+
+    private static void AppendOperationEvidence(
+        ImmutableArray<ImmutableArray<FeatureOperationEvidence>>.Builder evidence,
+        EditResult[]? results,
+        List<int> slots)
+    {
+        if (results is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < Math.Min(results.Length, slots.Count); index++)
+        {
+            if (results[index].Success)
+            {
+                evidence[slots[index]] = results[index].OperationEvidence;
             }
         }
     }

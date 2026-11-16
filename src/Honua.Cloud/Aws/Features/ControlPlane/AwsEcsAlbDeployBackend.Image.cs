@@ -74,9 +74,9 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS checkpoint is incomplete.");
         }
 
-        var service = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
-        var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
-        var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var service = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var health = await AlbClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
         _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var configuredWeight, out _);
         var share = spec.CanaryRamp is { IsValid: true } ramp ? ramp.CurrentStepWeight ?? 100 : configuredWeight ?? 100;
@@ -104,7 +104,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
         if (!weights.MatchesExpectedShare(share))
         {
-            await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+            await AlbClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
                 BuildWeights(target.CanaryTargetGroupArn!, share, target.StableTargetGroupArn!, 100 - share),
                 target.Region, cancellationToken).ConfigureAwait(false);
         }
@@ -129,10 +129,10 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
         try
         {
-            var service = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+            var service = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
             var convergence = EvaluateDeploymentConvergence(service, operation.ProviderOperationId!);
-            var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
-            var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+            var health = await AlbClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+            var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
             var weights = SummarizeAlbWeights(rule, target);
             var previousWeight = ramp.StepWeights[ramp.CurrentStepIndex - 1];
             if (!convergence.IsConverged || service.DesiredCount <= 0 || health.HealthyCount < service.DesiredCount ||
@@ -143,7 +143,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
             if (!weights.MatchesExpectedShare(weight.Value))
             {
-                await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+                await AlbClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, weight.Value, target.StableTargetGroupArn!, 100 - weight.Value),
                     target.Region, cancellationToken).ConfigureAwait(false);
             }
@@ -177,8 +177,8 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("Stable and canary ECS services must be distinct.");
         }
 
-        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
-        var current = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var current = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(stable.TaskDefinitionArn) ||
             !ReleaseImageDigest.IsEcsTaskDefinitionArn(current.TaskDefinitionArn))
         {
@@ -191,8 +191,8 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS image or migration preparation failed; verify provider state.");
         }
 
-        var after = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
-        var stableAfter = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var after = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var stableAfter = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(current.TaskDefinitionArn, after.TaskDefinitionArn, StringComparison.Ordinal) ||
             !string.Equals(stable.TaskDefinitionArn, stableAfter.TaskDefinitionArn, StringComparison.Ordinal))
         {
@@ -212,6 +212,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
+        await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
             ?? throw new InvalidOperationException("Stable ECS service is required.");
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId) ||
@@ -226,8 +227,8 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("Stable and canary ECS services must be distinct.");
         }
 
-        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
-        var current = await ecsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var current = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal) ||
             (!string.Equals(current.TaskDefinitionArn, operation.ObservedState, StringComparison.Ordinal) &&
              !string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal)))
@@ -237,7 +238,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
         // Keep new traffic on stable while the candidate service is updated. Routing is shifted
         // only by observation after ECS has proved the candidate revision is steady.
-        var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
         if (!string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal) &&
             !weights.MatchesExpectedShare(0))
@@ -247,7 +248,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
         if (!string.Equals(current.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
         {
-            await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, target.CanaryService!,
+            await EcsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, target.CanaryService!,
                 operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
         }
 
@@ -272,6 +273,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
             };
         }
 
+        await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         var target = ResolveTarget(spec);
         var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
             ?? throw new InvalidOperationException("Stable ECS service is required.");
@@ -281,13 +283,8 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS checkpoint is incomplete.");
         }
 
-        if (spec.Protection is { } protection && DateTimeOffset.UtcNow > protection.ObservationDeadline.AddMinutes(30))
-        {
-            return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "Stable ECS service handoff exceeded its time limit." };
-        }
-
-        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
-        var rule = await albClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
         if (!string.Equals(stable.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
         {
@@ -301,7 +298,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 throw new InvalidOperationException("Stable ECS service revision changed during handoff.");
             }
 
-            await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
+            await EcsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
             return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Updating the stable service after protection." };
         }
 
@@ -318,13 +315,18 @@ internal sealed partial class AwsEcsAlbDeployBackend
         }
 
         var convergence = EvaluateDeploymentConvergence(stable, operation.ProviderOperationId!);
-        var health = await albClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var health = await AlbClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!convergence.IsConverged || stable.DesiredCount <= 0 || health.HealthyCount < stable.DesiredCount)
         {
+            if (primary?.CreatedAt is { } handoffStartedAt && DateTimeOffset.UtcNow > handoffStartedAt.AddMinutes(30))
+            {
+                return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "Stable ECS service handoff exceeded its time limit." };
+            }
+
             return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Waiting for the stable service to become healthy." };
         }
 
-        await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+        await AlbClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
             BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100), target.Region, cancellationToken).ConfigureAwait(false);
         return new DeployObservation { Status = WorkflowOperationStatus.Succeeded, ProviderOperationId = operation.ProviderOperationId, Message = "Stable service is healthy on the candidate revision." };
     }
@@ -339,7 +341,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("Stable rollback revision is missing.");
         }
 
-        var stable = await ecsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
+        var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
         {
             if (!string.Equals(stable.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
@@ -347,14 +349,14 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 throw new InvalidOperationException("Stable ECS service revision changed during rollback.");
             }
 
-            await ecsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, spec.CurrentRevision!, target.Region, cancellationToken).ConfigureAwait(false);
+            await EcsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, stableName, spec.CurrentRevision!, target.Region, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         var convergence = EvaluateDeploymentConvergence(stable, spec.CurrentRevision!);
-        var health = await albClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+        var health = await AlbClient.DescribeTargetHealthAsync(target.StableTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!convergence.IsConverged || stable.DesiredCount <= 0 || health.HealthyCount < stable.DesiredCount) return;
-        await albClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
+        await AlbClient.UpdateListenerRuleWeightsAsync(target.ListenerRuleArn!,
             BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100), target.Region, cancellationToken).ConfigureAwait(false);
     }
 
@@ -364,7 +366,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
         AwsEcsAlbDeployTarget target,
         CancellationToken cancellationToken)
     {
-        var service = await ecsClient.DescribeServiceAsync(
+        var service = await EcsClient.DescribeServiceAsync(
                 target.Cluster!,
                 target.CanaryService!,
                 target.Region,
@@ -383,7 +385,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
             return new PreparedTaskDefinition(null, migrationFailure);
         }
 
-        var current = await ecsClient.DescribeTaskDefinitionAsync(
+        var current = await EcsClient.DescribeTaskDefinitionAsync(
                 service.TaskDefinitionArn,
                 target.Region,
                 cancellationToken)
@@ -410,7 +412,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 "ECS image convergence refused to register a task definition. The service was not updated."));
         }
 
-        var registeredArn = await ecsClient.RegisterTaskDefinitionAsync(request, target.Region, cancellationToken)
+        var registeredArn = await EcsClient.RegisterTaskDefinitionAsync(request, target.Region, cancellationToken)
             .ConfigureAwait(false);
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(registeredArn))
         {
@@ -441,7 +443,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 "ECS image convergence with aws.ecs.migration_task_definition requires aws.ecs.migration_subnets and aws.ecs.migration_security_groups. The service was not updated.");
         }
 
-        var migrationDefinition = await ecsClient.DescribeTaskDefinitionAsync(
+        var migrationDefinition = await EcsClient.DescribeTaskDefinitionAsync(
                 migrationTask,
                 target.Region,
                 cancellationToken)
@@ -459,9 +461,9 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 "ECS migration task definition could not be cloned. The service was not updated.");
         }
 
-        var registeredArn = await ecsClient.RegisterTaskDefinitionAsync(request, target.Region, cancellationToken)
+        var registeredArn = await EcsClient.RegisterTaskDefinitionAsync(request, target.Region, cancellationToken)
             .ConfigureAwait(false);
-        var taskArn = await ecsClient.RunTaskAsync(
+        var taskArn = await EcsClient.RunTaskAsync(
                 target.Cluster!,
                 registeredArn,
                 subnets,
@@ -479,7 +481,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 await System.Threading.Tasks.Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
 
-            var stopped = await ecsClient.DescribeStoppedTaskAsync(
+            var stopped = await EcsClient.DescribeStoppedTaskAsync(
                     target.Cluster!,
                     taskArn,
                     containerName,
@@ -522,7 +524,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 await System.Threading.Tasks.Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
 
-            last = await ecsClient.DescribeServiceAsync(
+            last = await EcsClient.DescribeServiceAsync(
                     target.Cluster!,
                     target.CanaryService!,
                     target.Region,
@@ -547,7 +549,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
                 continue;
             }
 
-            var ruleState = await albClient.GetListenerRuleWeightsAsync(
+            var ruleState = await AlbClient.GetListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     target.Region,
                     cancellationToken)
@@ -602,7 +604,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
     {
         try
         {
-            await albClient.UpdateListenerRuleWeightsAsync(
+            await AlbClient.UpdateListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     originalRuleState.TargetGroupWeights,
                     target.Region,

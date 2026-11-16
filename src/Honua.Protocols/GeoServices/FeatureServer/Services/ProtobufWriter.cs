@@ -30,6 +30,14 @@ internal ref struct ProtobufWriter
         return result;
     }
 
+    public (byte[] Buffer, int Length) DetachBuffer()
+    {
+        var result = (_buffer, _position);
+        _buffer = Array.Empty<byte>();
+        _position = 0;
+        return result;
+    }
+
     public readonly ReadOnlyMemory<byte> WrittenMemory => _buffer.AsMemory(0, _position);
 
     public void Dispose()
@@ -39,6 +47,13 @@ internal ref struct ProtobufWriter
             ArrayPool<byte>.Shared.Return(_buffer);
             _buffer = Array.Empty<byte>();
         }
+    }
+
+    public void WriteRawBytes(ReadOnlySpan<byte> bytes)
+    {
+        EnsureCapacity(bytes.Length);
+        bytes.CopyTo(_buffer.AsSpan(_position));
+        _position += bytes.Length;
     }
 
     // ── Tag writing ───────────────────────────────────────────

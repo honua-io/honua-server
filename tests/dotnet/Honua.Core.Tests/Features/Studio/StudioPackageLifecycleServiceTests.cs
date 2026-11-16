@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-public sealed class StudioPackageLifecycleServiceTests
+public sealed partial class StudioPackageLifecycleServiceTests
 {
     [UnitTest]
     public async Task CreateDraft_ConcurrentOwners_CannotAttachToAnotherOwnersItem()
@@ -1231,6 +1231,12 @@ public sealed class StudioPackageLifecycleServiceTests
             return null;
         }
 
+        public Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default)
+            => Task.FromResult<StudioDraftRevision?>(null);
+
+        public Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioDraftRevisionSummary>>([]);
+
         public Task<StudioPackageDraft?> UpdateDraftAsync(
             StudioPackageDraft draft,
             CancellationToken cancellationToken = default)
@@ -1353,10 +1359,6 @@ public sealed class StudioPackageLifecycleServiceTests
         }
     }
 
-    /// <summary>
-    /// One bridged item. GetVersion and GetPointers resolve it; Publish records the request
-    /// instead of writing the inner Studio store.
-    /// </summary>
     private sealed class SingleItemFamilyBridge : IStudioFamilyPersistenceBridge
     {
         private StudioContentVersion? _version;

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.EmbedGovernance;
 using Honua.Core.Features.EmbedGovernance.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Domain;
 using Honua.Infrastructure.Authentication;
@@ -32,7 +33,7 @@ internal static partial class EmbedGovernanceEndpoints
         keys.MapPost("/", HandleCreateKey)
             .WithDisplayName("Create Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         keys.MapGet("/{id:guid}", HandleGetKey)
             .WithDisplayName("Get Embed Key")
@@ -41,7 +42,7 @@ internal static partial class EmbedGovernanceEndpoints
         keys.MapPost("/{id:guid}/rotate", HandleRotateKey)
             .WithDisplayName("Rotate Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         keys.MapPost("/{id:guid}/revoke", HandleRevokeKey)
             .WithDisplayName("Revoke Embed Key")
@@ -161,7 +162,7 @@ internal static partial class EmbedGovernanceEndpoints
     }
 
     private static async Task<Results<Ok<ApiResponse<EmbedUsageResponse>>, BadRequest<ApiResponse<object>>>> HandleUsage(
-        [FromServices] IEmbedAnalyticsStore analytics,
+        [FromServices] InMemoryEmbedAnalyticsStore analytics,
         [FromQuery] string? groupBy,
         [FromQuery] string? integrationId,
         [FromQuery] string? tenantId,

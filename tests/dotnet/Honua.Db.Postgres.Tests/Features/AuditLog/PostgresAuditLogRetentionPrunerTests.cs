@@ -15,12 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Integration tests for the configurable audit retention pruner (#509).
-/// Exercises real SQL against an isolated schema with the append-only rules
-/// installed, asserting that pruning removes expired head rows, retains recent
-/// rows, and leaves the tamper-evident hash chain verifiable.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture)
 {
@@ -229,20 +223,7 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
     {
         await fixture.ExecuteAsync($"""
             CREATE TABLE IF NOT EXISTS "{schema}".audit_log (
-                audit_id         BIGSERIAL    PRIMARY KEY,
-                timestamp        TIMESTAMPTZ  NOT NULL,
-                event_type       VARCHAR(32)  NOT NULL,
-                actor            VARCHAR(256) NOT NULL,
-                actor_type       VARCHAR(32)  NOT NULL,
-                resource_type    VARCHAR(64)  NOT NULL,
-                resource_id      VARCHAR(256),
-                action           VARCHAR(128) NOT NULL,
-                outcome          VARCHAR(16)  NOT NULL,
-                correlation_id   VARCHAR(64)  NOT NULL,
-                remote_ip        VARCHAR(64),
-                user_agent       VARCHAR(512),
-                details          TEXT         NOT NULL DEFAULT '',
-                prev_hash        CHAR(64),
+                {AuditLogTestTable.Columns}
                 entry_hash       CHAR(64)
             );
 

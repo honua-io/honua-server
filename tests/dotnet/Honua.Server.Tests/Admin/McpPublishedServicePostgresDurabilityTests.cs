@@ -38,15 +38,9 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Publishes against the production Postgres metadata store, then destroys and
-/// recreates the HTTP host before reading the exact advertised MCP resource.
-/// The usual WebAppFixture substitutes an in-memory metadata graph; this class
-/// restores only the production graph registrations in its isolated host.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
+public sealed partial class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
 {
     private readonly string _environment = $"mcpdur-{Guid.NewGuid():N}";
     private readonly string _serviceName = $"mcpdur_{Guid.NewGuid():N}";

@@ -35,12 +35,30 @@ SOURCES = {
 def run(**overrides: str) -> str:
     sources = dict(SOURCES)
     sources.update(overrides)
-    return MODULE.validate(**sources)
+    mode = MODULE.validate(**sources)
+    MODULE.validate_concurrency(sources["producer"], sources["consumer"])
+    return mode
 
 
 class NormalizationContractTests(unittest.TestCase):
     def test_current_tree_passes(self) -> None:
         self.assertIn(run(), {"observe", "enforce"})
+
+    def test_superseded_heads_cannot_queue_or_share_other_pr_groups(self) -> None:
+        for workflow in ("producer", "consumer"):
+            for old, new in (("cancel-in-progress: true", "cancel-in-progress: false"),
+                             ("cancel-in-progress: true", "cancel-in-progress: true\n  queue: max"),
+                             ("  group: normalization-", "  group: shared-")):
+                with self.subTest(workflow=workflow, mutation=new):
+                    with self.assertRaisesRegex(AssertionError, "cancel superseded"):
+                        run(**{workflow: SOURCES[workflow].replace(old, new.replace("\n  queue:", "\n      queue:") if workflow == "consumer" else new, 1)})
+
+    def test_cancellation_write_scope_cannot_reach_validation(self) -> None:
+        for old, new in (("  validate:\n", "  validate:\n    permissions:\n      actions: write\n"),
+                         ("      pull-requests: read\n", "      pull-requests: write\n")):
+            with self.subTest(mutation=new):
+                with self.assertRaisesRegex(AssertionError, "permission"):
+                    run(consumer=SOURCES["consumer"].replace(old, new, 1))
 
     def test_generator_in_packaging_is_rejected(self) -> None:
         marker = "      - name: Download bounded projection data\n"

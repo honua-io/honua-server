@@ -201,9 +201,6 @@ public sealed class McpPlatformOpsReaderIntegrationTests
     }
 }
 
-/// <summary>
-/// Unit coverage for the server-side MCP platform-ops adapter (#2566).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class McpPlatformOpsReaderTests
 {
@@ -559,7 +556,8 @@ public sealed class McpPlatformOpsReaderTests
             Arg.Is<OperationPolicyContext>(context =>
                 context.AuthorizationOutcome == "admin-policy-authorized" &&
                 !context.ScopeGoverned &&
-                context.PrincipalId == "test:subject:-:ops-agent"),
+                context.PrincipalId == "test:subject:-:ops-agent" &&
+                context.Roles.Contains("agent")),
             Arg.Any<CancellationToken>());
 
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload);

@@ -3,12 +3,6 @@
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Interface-level HTTP-stack smoke coverage for the DuckDB provider (honua-server#2947).
-/// Boots a real ASP.NET Core host with <c>DataSource:Provider=duckdb</c> against a
-/// standalone, file-backed DuckDB database. See <see cref="PrimaryProviderSmokeTestsBase"/>
-/// for the shared assertions.
-/// </summary>
 [Trait("Provider", "DuckDb")]
 public sealed class DuckDbProviderSmokeTests : PrimaryProviderSmokeTestsBase, IClassFixture<DuckDbProviderWebAppFixture>
 {

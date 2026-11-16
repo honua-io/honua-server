@@ -18,8 +18,9 @@ spec.loader.exec_module(runner)
 spawn = subprocess.Popen
 pid_file = pathlib.Path(sys.argv[2])
 signum = int(sys.argv[3])
-def interrupted_spawn(command):
-    child = spawn(command, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def interrupted_spawn(command, **options):
+    assert options.get('start_new_session') is True, options
+    child = spawn(command, **options, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.monotonic() + 5
     while not pid_file.exists():
         if time.monotonic() >= deadline:

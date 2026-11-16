@@ -45,15 +45,15 @@ The core object distinctions are:
 | User language | Resolve to | Do not infer |
 | --- | --- | --- |
 | “data” | [Dataset](dataset.md), its source and storage mode | That it has been imported or published |
-| “layer” | [Published layer](layer.md) or [map drawing layer](map-layer.md) | That deleting one should delete the other |
-| “map” | [Composition](map.md), rendered image, or service | That a browser preview is saved |
-| “project” | The concrete saved resources and their grouping | A universal project API or an invented identifier |
+| “layer” | [Layer](layer.md) or [map drawing layer](map-layer.md) | That deleting one should delete the other |
+| “map” | [Map](map.md), rendered image, or Service | That a browser preview is saved |
+| “project” | The selected Maps, Apps, Services, and Folders | A universal project API or an invented identifier |
 | “publish” | Layer exposure, service configuration, or saved-version activation | Anonymous access |
 | “share” | Audience plus access to artifact and dependencies | That sending a URL grants permission |
 | “run” | A supported [task](task.md), then a particular [job](job.md) | Terminal success from acceptance |
 | “restore” | Reopen a saved version or change an active selection | Atomic reversal of all prior side effects |
 
-Aliases are search associations, not equality assertions. “Near,” “public,” “save,” “source,” and “workspace” remain ambiguous until bound to objects and constraints. A match proposes a concept candidate; it does not resolve the user's intent automatically.
+Aliases are search associations, not equality assertions. “Near,” “public,” “save,” and “source” remain ambiguous until bound to objects and constraints. A match proposes a concept candidate; it does not resolve the user's intent automatically.
 
 ## Workflow contract
 
@@ -72,7 +72,7 @@ Each action declares `id`, `verb`, typed input bindings, typed output slots, `ef
 
 `effectTarget` accepts `source_data`, `derived_artifact`, `map_content`,
 `workspace_content`, `catalog_configuration`, `access_policy`, `deployment`,
-`job_state`, or `observation`. Under the AI workflow profile, source data may only be read: no approval flag or proposed rollback permits feature attribute or geometry mutation. Requests to repair source data end in a QA report, simulation, or recommendation for direct human control. This is the accepted [AI data-editing boundary](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/docs/internal/contributor/adr/0028-ai-data-editing-not-allowed.md).
+`job_state`, or `observation`. The literal `workspace_content` is an existing workflow-profile value for editor content, not a grouping or tenancy object. Under the AI workflow profile, source data may only be read: no approval flag or proposed rollback permits feature attribute or geometry mutation. Requests to repair source data end in a QA report, simulation, or recommendation for direct human control. This is the accepted [AI data-editing boundary](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/docs/internal/contributor/adr/0028-ai-data-editing-not-allowed.md).
 
 The validator requires a `rollback` contract for `create`, `update`, `delete`,
 or `execute` actions targeting `map_content`, `workspace_content`,
@@ -81,7 +81,7 @@ also declare one. Its fields are prior snapshot, revision guard, bounded scope, 
 
 An action's optional `interfaces` list links semantic work to observed contracts. Entries declare `kind` (`http`, `mcp`, `cli`, `spec`, or `sdk`), `operation`, and `contract`, with HTTP method/path or schema references when known. These are relevant bindings, not a mandatory call sequence or an exhaustive tool allowlist. Discover the running tool's input/output schema before composing a call; follow the returned job, proposal, version, and audit identifiers. CLI bindings require an observed command/help contract rather than a guessed spelling.
 
-For example, map composition links to typed Studio layer/style operations; saving links to the saved-version contract; and publication links separately to its governed activation surface. A field called `generation`, `versionId`, `resourceVersion`, or `contentHash` is not interchangeable with the others. Errors and retries follow the selected interface's contract.
+For example, editing a Map links to typed Studio layer/style operations; saving links to the saved-version contract; and activation links separately to its governed activation surface. A field called `generation`, `versionId`, `resourceVersion`, or `contentHash` is not interchangeable with the others. Errors and retries follow the selected interface's contract.
 
 A binding has `name`, `from`, and `concept`. References use `$inputs.name` or `$actions.actionId.outputName`. Concept references are bundle-root Markdown paths. A producer can validate unique names, existing concept nodes, type agreement, dependency order, and cycles. The first profile permits exact concept matches; it does not silently coerce a dataset into a layer or a layer into a map.
 
@@ -115,7 +115,7 @@ still permits approval-gated deployments, including enabled Enterprise licensing
 by default; treat that as an implementation limitation rather than a universal
 authoring step. DevOps work observes deployed state, compares it with desired state, and uses existing plan/apply, policy, probe, and rollback contracts. Publishing crosses whichever concrete operational boundary the selected interface actually enforces; do not move that ceremony into the design loop.
 
-Negative composition examples are part of the semantics: a drawing layer cannot satisfy an input typed as a published layer; a proposed publication cannot be reported as active without observation; an EPSG label change cannot count as coordinate transformation; a map being readable cannot prove its private data is anonymously readable; and a successful source-edit call would violate the AI profile rather than make the workflow valid.
+Invalid workflow examples are part of the semantics: a drawing layer cannot satisfy an input typed as a Layer; a proposed activation cannot be reported as Released without observation; an EPSG label change cannot count as coordinate transformation; a map being readable cannot prove its private data is anonymously readable; and a successful source-edit call would violate the AI profile rather than make the workflow valid.
 
 Start with the [domain index](README.md) and [workflow guides](../../guides/workflows/README.md). Resolve the requested objects and ambiguities, inspect current capabilities, then choose an executable contract. Preserve useful human examples and explanations when producing a smaller agent view.
 

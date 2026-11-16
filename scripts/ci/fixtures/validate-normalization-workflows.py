@@ -47,10 +47,13 @@ def validate_permissions(workflow: str, allowed: set[str], label: str) -> dict:
     jobs = document.get("jobs")
     if not isinstance(jobs, dict):
         raise AssertionError(f"{label} jobs must be a mapping")
-    for job in jobs.values():
+    for name, job in jobs.items():
         if "permissions" not in job:
             continue
         permissions = job["permissions"]
+        if label == "consumer GITHUB_TOKEN" and name == "admit" and permissions == {
+                "actions": "write", "contents": "read", "pull-requests": "read"}:
+            continue
         if not isinstance(permissions, dict) or any(
                 key not in allowed or value != "read" for key, value in permissions.items()):
             raise AssertionError(f"{label} job permission must remain read-only and allowlisted")
@@ -99,8 +102,8 @@ def validate(
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
     require(
         producer,
-        "    types: [opened, synchronize, reopened, ready_for_review, edited]",
-        "producer must observe ready and retargeted heads",
+        "    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]",
+        "producer must observe ready, retargeted and draft-conversion heads",
     )
     require(producer, "  contents: read", "producer contents permission must be read-only")
     require(producer, "  packages: read", "producer package permission must be read-only")
@@ -382,7 +385,31 @@ def validate(
     return mode
 
 
+def validate_concurrency(producer: str, consumer: str) -> None:
+    producer_doc, consumer_doc = yaml.safe_load(producer), yaml.safe_load(consumer)
+    expected = "normalization-producer-${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base.ref.from != null) && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || format('ignored-{0}', github.run_id) }}"
+    if producer_doc.get("concurrency") != {"group": expected, "cancel-in-progress": True}:
+        raise AssertionError("producer must cancel superseded eligible normalization runs within one PR head and isolate other heads")
+    job = consumer_doc["jobs"]["validate"]
+    if "concurrency" in consumer_doc or job.get("concurrency") != {
+        "group": "normalization-consumer-${{ needs.admit.outputs.pr }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}", "cancel-in-progress": True,
+    } or job.get("needs") != "admit" or "needs.admit.outputs.pr != ''" not in job["if"]:
+        raise AssertionError("consumer must cancel superseded runs only across older producer generations")
+    admission = consumer_doc["jobs"]["admit"]
+    checkout, resolver = admission["steps"]
+    if (admission.get("permissions", {}).get("actions") != "write"
+            or "cancelOlderConsumers({github, context, core}, pr)" not in resolver["with"]["script"]):
+        raise AssertionError("consumer cancellation must target only older producer generations")
+    if (admission.get("outputs", {}).get("pr") != "${{ steps.live.outputs.pr }}"
+            or checkout.get("with", {}).get("ref") != "${{ github.event.repository.default_branch }}"
+            or checkout["with"].get("persist-credentials") is not False
+            or "require('./scripts/ci/admit-normalization-consumer')" not in resolver["with"]["script"]):
+        raise AssertionError("consumer admission must resolve live state from trusted policy")
+
+
+
 def main() -> None:
+    validate_concurrency(PRODUCER.read_text(encoding="utf-8"), CONSUMER.read_text(encoding="utf-8"))
     mode = validate(
         PRODUCER.read_text(encoding="utf-8"),
         CONSUMER.read_text(encoding="utf-8"),

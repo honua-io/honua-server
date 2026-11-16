@@ -12,16 +12,11 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the network-dataset registry admin editing endpoints (#1882).
-/// Covers register/list/get/update/delete happy paths, validation rejections (id slug,
-/// edge/vertex identifier, srid, status), duplicate-id conflict, not-found handling, and
-/// the anonymous-access auth gate.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
+public class NetworkDatasetAdminEndpointsTests
+    : IClassFixture<NetworkDatasetAdminEndpointsTests.SharedApplication>, IAsyncLifetime
 {
     private const string AdminPassword = "netds-admin-key";
 
@@ -34,9 +29,15 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public NetworkDatasetAdminEndpointsTests()
+    public NetworkDatasetAdminEndpointsTests(SharedApplication application)
     {
-        _fixture = new WebAppFixture()
+        _fixture = application.Fixture;
+    }
+
+    // Cases register datasets under random ids and assert only on their own rows.
+    public sealed class SharedApplication : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -44,15 +45,23 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
 
     private static string NewId(string suffix) =>
         $"nd-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();

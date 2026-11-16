@@ -17,9 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
-/// <summary>
-/// Integration tests for COG admin endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Cog)]
 [Operation(Operations.CogAdmin)]

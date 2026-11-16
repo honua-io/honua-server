@@ -7,11 +7,6 @@ using NSubstitute;
 
 namespace Honua.TestKit.Helpers;
 
-/// <summary>
-/// Configures <see cref="IExecutionJobStore"/> NSubstitute mocks so that
-/// <see cref="IExecutionJobStore.TrySetAsync"/> delegates to the existing
-/// <see cref="IExecutionJobStore.SetAsync"/> mock and returns <c>true</c>.
-/// </summary>
 public static class JobStoreTestExtensions
 {
     public static IExecutionJobStore WithTrySet(this IExecutionJobStore mock)

@@ -9,7 +9,7 @@ internal static class MetadataV2FieldSemantics
         => type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
     internal static bool SupportsTime(MetadataV2FieldType type)
-        => type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time;
+        => type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time or MetadataV2FieldType.TimestampOffset;
 
     internal static MetadataV2Field? FindField(IReadOnlyList<MetadataV2Field> fields, string name)
     {

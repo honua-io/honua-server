@@ -16,16 +16,13 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Service for importing data from ArcGIS Server services into PostGIS.
-/// </summary>
-internal sealed partial class GeoservicesImportService : IGeoservicesImportService
+internal sealed partial class GeoservicesImportService : IGeoservicesImportService, IGeoservicesImportCommitRecovery
 {
     private readonly GeoServicesRestClient _restClient;
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresSessionLockConnections _sessionLockConnections;
     private readonly ICrsRegistry _crsRegistry;
-    private readonly IGeoServicesConstructCapabilityRegistry _constructCapabilityRegistry;
+    private readonly GeoServicesConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly IAttachmentStore? _attachmentStore;
     private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly GeoservicesLayerPublicationService _layerPublicationService;
@@ -36,7 +33,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         GeoServicesRestClient restClient,
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
-        IGeoServicesConstructCapabilityRegistry constructCapabilityRegistry,
+        GeoServicesConstructCapabilityRegistry constructCapabilityRegistry,
         ILogger<GeoservicesImportService> logger,
         GeoservicesLayerPublicationService layerPublicationService,
         IAttachmentStore? attachmentStore = null,
@@ -63,7 +60,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
-    /// <inheritdoc />
     public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
         GeoservicesDiscoveryRequest request,
         CancellationToken cancellationToken = default)
@@ -76,7 +72,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             request.Credentials);
     }
 
-    /// <inheritdoc />
     public Task<GeoservicesImportResult> ImportLayerAsync(
         GeoservicesImportRequest request,
         CancellationToken cancellationToken = default)
@@ -93,14 +88,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await using var cmd = connection.CreateCommand();
         // Derived like PostgreSQL's own implicit names. A plain "<table>_geom_idx" is truncated to 63
         // bytes, which for a 63-byte table name is the table's own name, so IF NOT EXISTS silently
-        // skipped the index (#4600).
+        // skipped the index.
         cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
     }
 
-    /// <summary>True when a relation (table, index or sequence) with this name exists in the schema.</summary>
     private static async Task<bool> RelationExistsAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -113,13 +107,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         return await cmd.ExecuteScalarAsync(cancellationToken) is true;
     }
 
-    /// <summary>
-    /// Takes the import lease for one target table without waiting. The lease is a session-level
-    /// advisory lock on the import connection, so it outlives the data commit and also covers
-    /// publishing, attachment copy and reconciliation. <see cref="ReleaseTargetImportLockAsync"/> ends
-    /// it, and a dropped connection (a crashed worker) releases it. Returns <c>false</c> when another
-    /// import already holds the lease.
-    /// </summary>
     private static async Task<bool> TryAcquireTargetImportLockAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -132,10 +119,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         return await cmd.ExecuteScalarAsync(cancellationToken) is true;
     }
 
-    /// <summary>
-    /// Ends the lease taken by <see cref="TryAcquireTargetImportLockAsync"/>. Runs after the import
-    /// transaction has committed or rolled back, so the connection is never in an aborted transaction.
-    /// </summary>
     private static async Task ReleaseTargetImportLockAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -150,11 +133,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private static string BuildTargetImportLockKey(string schemaName, string tableName)
         => $"honua.geoservices-import:{SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)}";
 
-    /// <summary>
-    /// Fences writes to the prior target for the rest of the import transaction. EXCLUSIVE mode
-    /// conflicts with INSERT/UPDATE/DELETE but not with SELECT, so readers keep the prior rows while
-    /// an edit waits for the swap instead of committing against a table the swap then discards.
-    /// </summary>
     private static async Task FenceTargetWritesAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -166,14 +144,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>Name prefix of the staging table a replacement import loads into.</summary>
     internal const string StagingTablePrefix = "honua_import_stage_";
 
-    /// <summary>
-    /// Staging table for a replacement import. Derived from the job identity and the target, so two
-    /// concurrent jobs never share one, and short enough that PostgreSQL's derived <c>_pkey</c> and
-    /// <c>_objectid_seq</c> names are never truncated.
-    /// </summary>
     internal static string BuildStagingTableName(string tableName, string jobId)
     {
         var hash = System.Security.Cryptography.SHA256.HashData(
@@ -181,10 +153,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         return StagingTablePrefix + Convert.ToHexStringLower(hash.AsSpan(0, 8));
     }
 
-    /// <summary>
-    /// Replaces the target with the fully loaded staging table inside the import transaction. The
-    /// exclusive lock on the prior target is taken here, at the end of the transfer, not at its start.
-    /// </summary>
     private static async Task SwapStagingIntoTargetAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -258,11 +226,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private string ResolveTargetSchema(string? requestedSchema)
         => _schemaConfiguration.ResolveImportTargetSchema(requestedSchema);
 
-    /// <summary>
-    /// Emits a progress report for an import phase. Shared with
-    /// <see cref="GeoservicesLayerPublicationService"/> so the publish/reconcile phases stay on the
-    /// same ordered progress channel as the discover/insert/index phases.
-    /// </summary>
     internal static void ReportProgress(
         IProgress<GeoservicesImportProgress>? progress,
         string jobId,

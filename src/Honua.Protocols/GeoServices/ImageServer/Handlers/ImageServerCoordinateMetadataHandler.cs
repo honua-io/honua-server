@@ -300,13 +300,13 @@ internal sealed class ImageServerCoordinateMetadataHandler
         points = Array.Empty<MapPoint>();
         error = null;
 
-        var geometries = GetString(values, "geometries");
+        var geometries = ImageServerRequestValues.GetString(values, "geometries");
         if (!string.IsNullOrWhiteSpace(geometries))
         {
             return TryReadGeometriesPayload(geometries, out points, out error);
         }
 
-        var geometry = GetString(values, "geometry");
+        var geometry = ImageServerRequestValues.GetString(values, "geometry");
         if (!string.IsNullOrWhiteSpace(geometry))
         {
             var normalized = NormalizeGeometryInput(geometry);
@@ -391,8 +391,8 @@ internal sealed class ImageServerCoordinateMetadataHandler
     {
         point = default;
         if (element.ValueKind == JsonValueKind.Object &&
-            TryReadNumber(element, "x", out var x) &&
-            TryReadNumber(element, "y", out var y))
+            ImageServerGeometryHelpers.TryReadNumber(element, "x", out var x) &&
+            ImageServerGeometryHelpers.TryReadNumber(element, "y", out var y))
         {
             point = new MapPoint(x, y, TryReadWkid(element) ?? fallbackSrid);
             return true;
@@ -411,9 +411,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
     }
 
     private static int? ReadRequestSpatialReference(IReadOnlyDictionary<string, StringValues> values)
-        => ImageServerGeometryHelpers.TryParseSrid(GetString(values, "spatialReference"))
-           ?? ImageServerGeometryHelpers.TryParseSrid(GetString(values, "sr"))
-           ?? ImageServerGeometryHelpers.TryParseSrid(GetString(values, "inSR"));
+        => ImageServerGeometryHelpers.TryParseSrid(ImageServerRequestValues.GetString(values, "spatialReference"))
+           ?? ImageServerGeometryHelpers.TryParseSrid(ImageServerRequestValues.GetString(values, "sr"))
+           ?? ImageServerGeometryHelpers.TryParseSrid(ImageServerRequestValues.GetString(values, "inSR"));
 
     private static bool TryResolveRasterId(
         IReadOnlyDictionary<string, StringValues> values,
@@ -423,7 +423,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
         rasterId = null;
         error = null;
 
-        var raw = GetString(values, "rasterId");
+        var raw = ImageServerRequestValues.GetString(values, "rasterId");
         if (string.IsNullOrWhiteSpace(raw))
         {
             return true;
@@ -447,7 +447,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
         outSrid = null;
         error = null;
 
-        var raw = GetString(values, "outSR") ?? GetString(values, "outSr");
+        var raw = ImageServerRequestValues.GetString(values, "outSR") ?? ImageServerRequestValues.GetString(values, "outSr");
         if (string.IsNullOrWhiteSpace(raw))
         {
             return true;
@@ -615,14 +615,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
         return trimmed;
     }
 
-    private static bool TryReadNumber(JsonElement element, string property, out double value)
-    {
-        value = 0;
-        return element.TryGetProperty(property, out var propertyValue) &&
-               propertyValue.ValueKind == JsonValueKind.Number &&
-               propertyValue.TryGetDouble(out value);
-    }
-
     private static int? TryReadWkid(JsonElement root)
     {
         if (!root.TryGetProperty("spatialReference", out var spatialReference) ||
@@ -647,9 +639,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
 
         return null;
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 
     private readonly record struct MapPoint(double X, double Y, int? Srid);
 }

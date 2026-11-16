@@ -12,11 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Durable gRPC applyEdits receipts are stored under the scope hash, so the hash for a given
-/// caller, tenant, layer and key must never change: a different hash would re-execute a
-/// committed edit on retry.
-/// </summary>
 public sealed class GrpcApplyEditsIdempotencyScopeTests
 {
     [UnitTheory]

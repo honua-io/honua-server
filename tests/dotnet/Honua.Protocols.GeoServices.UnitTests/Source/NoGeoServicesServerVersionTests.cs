@@ -19,16 +19,6 @@ public sealed class NoGeoServicesServerVersionTests
 {
     private static readonly string[] ForbiddenWireNames = ["currentVersion", "fullVersion"];
 
-    /// <summary>
-    /// Every type registered in a GeoServices source-generated <see cref="JsonSerializerContext"/>,
-    /// paired with the <see cref="JsonTypeInfo"/> production uses to serialize it. The set is DERIVED
-    /// by reflecting over every <see cref="JsonSerializerContext"/> in the GeoServices protocol
-    /// assembly rather than enumerated by hand — an enumerated allowlist is how
-    /// <c>VectorTileServerMetadataResponse</c> escaped this guard (honua-server#2878). Anything a
-    /// context can serialize (service directory, <c>/rest/info</c>, FeatureServer / MapServer /
-    /// ImageServer / GPServer / VersionManagementServer / VectorTileServer metadata, Portal/Sharing
-    /// facades, and any future model) is covered automatically the moment it is registered.
-    /// </summary>
     private static IEnumerable<(string TypeName, JsonTypeInfo TypeInfo)> MetadataResponseTypes()
     {
         // Anchor on a known GeoServices context to locate the production assembly, then discover
@@ -100,11 +90,6 @@ public sealed class NoGeoServicesServerVersionTests
         }
     }
 
-    /// <summary>
-    /// The GeometryServer service descriptor is emitted as a raw JSON string literal rather than a
-    /// typed model, so it cannot be covered by the property-metadata check above. Assert directly on
-    /// the literal that it carries no <c>currentVersion</c>/<c>fullVersion</c> key.
-    /// </summary>
     [UnitTest]
     public void GeometryServerInfo_DoesNotAdvertiseGeoServicesServerVersion()
     {

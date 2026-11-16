@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="FeatureEditBatch"/>, <see cref="FeatureEditOperation"/>,
-/// <see cref="FeatureEditResult"/>, and <see cref="EditOperationResult"/>. These
-/// govern GeoServices applyEdits rollback semantics and per-row reporting —
-/// drift here changes externally visible JSON output (#1144).
-/// </summary>
 public sealed class FeatureEditBatchTests
 {
     private static Feature SampleFeature(long id) => Feature.Create(id, geometry: null);
@@ -202,6 +196,27 @@ public sealed class FeatureEditBatchTests
         result.CreatedCount.Should().Be(0);
         result.CreateResults.Should().ContainSingle()
             .Which.IsCommitOutcomeUnknown.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void FailureWithUnknownCommitOutcome_DiscardsProvisionalOperationEvidence()
+    {
+        var operation = EditOperationResult.Success(7) with
+        {
+            OperationEvidence = [new FeatureOperationEvidence
+            {
+                Generation = 12, LayerId = 3, ObjectId = 7, Operation = FeatureChangeOperation.Insert
+            }]
+        };
+
+        var result = FeatureEditResult.FailureWithUnknownCommitOutcome(
+            createResults: [operation, EditOperationResult.FailureWithUnknownCommitOutcome("Commit not acknowledged.")],
+            updateResults: [operation], deleteResults: [operation]);
+
+        result.CreateResults.Should().OnlyContain(item => item.OperationEvidence.IsDefault);
+        result.UpdateResults.Should().OnlyContain(item => item.OperationEvidence.IsDefault);
+        result.DeleteResults.Should().OnlyContain(item => item.OperationEvidence.IsDefault);
+        result.MayHaveCommitted.Should().BeTrue();
     }
 
     [UnitTest]

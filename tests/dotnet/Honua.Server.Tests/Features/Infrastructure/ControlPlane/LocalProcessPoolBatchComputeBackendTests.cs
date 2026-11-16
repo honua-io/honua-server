@@ -11,11 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Unit coverage for the substrate-neutral single-host local process-pool batch backend (#2460).
-/// Exercises real child processes (via <c>sleep</c>, never a shell) so the launch, observe, cancel,
-/// pool-cap, and lost-process paths are verified without Docker.
-/// </summary>
 public sealed class LocalProcessPoolBatchComputeBackendTests
 {
     private static string SleepPath => File.Exists("/usr/bin/sleep") ? "/usr/bin/sleep" : "/bin/sleep";

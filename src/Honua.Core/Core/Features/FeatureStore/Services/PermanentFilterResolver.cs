@@ -8,19 +8,8 @@ using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.Metadata
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves a layer's metadata-v2 permanent (row-visibility) filter to a
-/// parameterized SQL fragment. Shared across all read-capable feature store
-/// providers so every provider enforces the same row-visibility rules.
-/// </summary>
 internal static class PermanentFilterResolver
 {
-    /// <summary>
-    /// Resolves the permanent filter for <paramref name="layerId"/>, or null when
-    /// the layer has no enforceable filter (or the optional metadata/filter
-    /// services are unavailable). Throws when a saved filter exists but cannot be
-    /// parsed or translated — serving unfiltered rows would leak hidden data.
-    /// </summary>
     public static async Task<SqlFragment?> ResolveAsync(
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
@@ -43,9 +32,6 @@ internal static class PermanentFilterResolver
         return Resolve(resource, filterExpressionService);
     }
 
-    /// <summary>
-    /// Resolves the permanent filter directly from a binding-scoped metadata resource.
-    /// </summary>
     public static SqlFragment? Resolve(
         MetadataV2Object resource,
         IFilterExpressionService? filterExpressionService)
@@ -56,27 +42,13 @@ internal static class PermanentFilterResolver
             return null;
         }
 
-        var v2Filter = resource.PermanentFilter;
-        if (v2Filter == null || string.IsNullOrWhiteSpace(v2Filter.Expression))
+        var expression = ParseSavedExpression(resource, filterExpressionService);
+        if (expression is null)
         {
             return null;
         }
-        if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");
-        }
-        var v2ParseAndNormalize = filterExpressionService.ParseAndNormalize(v2Language, v2Filter.Expression, resource);
-        if (!v2ParseAndNormalize.IsSuccess)
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {v2ParseAndNormalize.ErrorMessage ?? "Invalid filter."}");
-        }
-        if (v2ParseAndNormalize.Expression == null)
-        {
-            return null;
-        }
-        var v2Translation = filterExpressionService.Translate(v2ParseAndNormalize.Expression, resource);
+
+        var v2Translation = filterExpressionService.Translate(expression, resource);
         if (!v2Translation.IsSuccess)
         {
             throw new InvalidOperationException(
@@ -84,6 +56,40 @@ internal static class PermanentFilterResolver
         }
 
         return v2Translation.SqlFilter;
+    }
+
+    public static FilterExpression? ParseSavedExpression(
+        MetadataV2Object resource,
+        IFilterExpressionService? filterExpressionService)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var v2Filter = resource.PermanentFilter;
+        if (v2Filter == null || string.IsNullOrWhiteSpace(v2Filter.Expression))
+        {
+            return null;
+        }
+
+        if (filterExpressionService == null)
+        {
+            throw new InvalidOperationException(
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' cannot be evaluated.");
+        }
+
+        if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
+        {
+            throw new InvalidOperationException(
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");
+        }
+
+        var parsed = filterExpressionService.ParseAndNormalize(v2Language, v2Filter.Expression, resource);
+        if (!parsed.IsSuccess || parsed.Expression == null)
+        {
+            throw new InvalidOperationException(
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid.");
+        }
+
+        return parsed.Expression;
     }
 
     private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)

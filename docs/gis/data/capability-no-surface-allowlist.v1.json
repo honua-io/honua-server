@@ -56,13 +56,6 @@
       "edition": "Pro"
     },
     {
-      "capability": "caching.redis",
-      "reasonCode": "config-flag",
-      "reason": "Redis distributed cache is a deployment configuration setting, not a distinct route.",
-      "category": "Caching",
-      "edition": "Pro"
-    },
-    {
       "capability": "channels.aws-sns",
       "reasonCode": "config-flag",
       "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",

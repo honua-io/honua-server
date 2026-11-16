@@ -8,10 +8,7 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// In-memory Studio package store for tests and local fallback scenarios.
-/// </summary>
-public sealed class InMemoryStudioPackageStore : IStudioPackageStore
+public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
 {
     private const int DefaultListLimit = 25;
     private const int MaxListLimit = 200;
@@ -25,10 +22,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     private readonly Dictionary<Guid, StudioPublicationRequest> _publicationRequests = new();
     private readonly Dictionary<Guid, StudioRollbackRequest> _rollbackRequests = new();
 
-    /// <inheritdoc />
     public StudioPackagePersistenceMode PersistenceMode => StudioPackagePersistenceMode.InMemory;
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft> CreateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -60,23 +55,22 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     UpdatedBy = draft.UpdatedBy,
                     UpdatedAt = draft.UpdatedAt,
                 };
-            _drafts.Add(draft.DraftId, draft);
-            return Task.FromResult(draft);
+            var stored = SnapshotDraft(draft);
+            _drafts.Add(draft.DraftId, stored);
+            return Task.FromResult(SnapshotDraft(stored));
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
             _drafts.TryGetValue(draftId, out var draft);
-            return Task.FromResult(draft);
+            return Task.FromResult(draft is null ? null : SnapshotDraft(draft));
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -95,7 +89,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             EnsurePackageKeyAvailable(draft);
-            var updated = draft with { Generation = existing.Generation + 1 };
+            var updated = SnapshotDraft(draft with { Generation = existing.Generation + 1 });
+            ArchiveDraftRevision(existing);
             _drafts[draft.DraftId] = updated;
             _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt) with
             {
@@ -105,11 +100,10 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 UpdatedBy = draft.UpdatedBy,
                 UpdatedAt = draft.UpdatedAt,
             };
-            return Task.FromResult<StudioPackageDraft?>(updated);
+            return Task.FromResult<StudioPackageDraft?>(SnapshotDraft(updated));
         }
     }
 
-    /// <inheritdoc />
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => DeleteDraftCoreAsync(draftId, null, cancellationToken);
 
@@ -132,10 +126,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             _drafts.Remove(draftId);
+            _draftRevisions.Remove(draftId);
 
             // Cascade-delete an orphan content item: if this was the item's last remaining
             // draft and no version has ever been saved for it, the item has nothing openable
-            // (no draft, no version) and must not surface in content-item enumeration (#3003).
+            // (no draft, no version) and must not surface in content-item enumeration.
             if (_items.TryGetValue(draft.ItemId, out var item) &&
                 item.CurrentVersionId is null &&
                 item.PublishedVersionId is null &&
@@ -149,7 +144,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -157,7 +151,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default) =>
         CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateCheckpointVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -169,7 +162,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         return CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
@@ -199,7 +191,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default)
@@ -273,7 +264,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -284,7 +274,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -295,7 +284,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -314,7 +302,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentItemListResult> ListContentItemsAsync(
         StudioContentItemQuery query,
         CancellationToken cancellationToken = default)
@@ -357,7 +344,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraftListResult> ListDraftsAsync(
         StudioPackageDraftQuery query,
         CancellationToken cancellationToken = default)
@@ -390,7 +376,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 nextCursor = StudioListCursor.Encode(lastKept.UpdatedAt, lastKept.DraftId);
             }
 
-            IReadOnlyList<StudioPackageDraft> items = page;
+            IReadOnlyList<StudioPackageDraft> items = page.Select(SnapshotDraft).ToArray();
             return Task.FromResult(new StudioPackageDraftListResult
             {
                 Items = items,
@@ -474,11 +460,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         return true;
     }
 
-    /// <summary>
-    /// Applies the honua-server#4905 tenant scope to one row. A row with no recorded tenant
-    /// belongs to the deployment default, so it is only enumerable when the caller's scope says
-    /// the request resolved to that default.
-    /// </summary>
     private static bool MatchesTenant(string? recordTenantId, TenantScopeFilter? scope)
     {
         if (scope is null)
@@ -515,7 +496,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 ? StudioContentItemState.Current
                 : StudioContentItemState.Draft;
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
         Guid? expectedCurrentVersionId,
@@ -537,7 +517,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
 
-            // honua-server#3980: the caller validated the proposal against the item's current
+            // The caller validated the proposal against the item's current
             // pointer outside this lock, so re-compare here -- inside the same lock that performs
             // the published-pointer write -- before anything is persisted. A draft saved in the
             // meantime moves current_version_id and must fail the proposal rather than publish a
@@ -593,7 +573,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -612,7 +591,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
         CancellationToken cancellationToken = default)
@@ -642,7 +620,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             .FirstOrDefault();
     }
 
-    /// <inheritdoc />
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -710,7 +687,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     {
         if (_items.TryGetValue(itemId, out var item))
         {
-            // Ownership is set once, at creation, and immutable thereafter (honua-server#3001):
+            // Ownership is set once, at creation, and immutable thereafter:
             // an existing item's owner_id is never overwritten by a later draft/version upsert.
             return item;
         }

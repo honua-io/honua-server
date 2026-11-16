@@ -10,12 +10,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.
-/// Append-only by design (see migration 033): only INSERTs are issued, and
-/// failures are logged and return no receipt. Callers requiring durable audit
-/// evidence must reject or roll back their mutation when no receipt is returned.
-/// </summary>
 internal sealed class PostgresAuditLog : IAuditLog
 {
     // Max field widths must agree with migration 033. Values longer than the
@@ -35,7 +29,7 @@ internal sealed class PostgresAuditLog : IAuditLog
     private const string TruncationMarker = "\u2026";
 
     // Stable, table-scoped key for the transaction advisory lock that serializes
-    // hash-chain construction (#350). Concurrent audit inserts briefly contend on
+    // hash-chain construction. Concurrent audit inserts briefly contend on
     // this lock so the (prev_hash -> entry_hash) chain stays linear; audit volume
     // is low (security-relevant events only) so the contention is negligible.
     private const long HashChainAdvisoryLockKey = 0x484F4E55_41554449L; // "HONUAUDI"
@@ -67,6 +61,7 @@ internal sealed class PostgresAuditLog : IAuditLog
         // is built over exactly what is persisted; the verifier replays the same
         // stored values, so the two hashes must agree.
         var actor = Truncate(auditEvent.Actor, MaxActorLength);
+        var actorAgent = auditEvent.ActorAgent is null ? null : Truncate(auditEvent.ActorAgent, MaxActorLength);
         var resourceType = Truncate(auditEvent.ResourceType, MaxResourceTypeLength);
         var resourceId = auditEvent.ResourceId is null ? null : Truncate(auditEvent.ResourceId, MaxResourceIdLength);
         var action = Truncate(auditEvent.Action, MaxActionLength);
@@ -83,12 +78,12 @@ internal sealed class PostgresAuditLog : IAuditLog
                 timestamp, event_type, actor, actor_type,
                 resource_type, resource_id, action, outcome,
                 correlation_id, remote_ip, user_agent, details,
-                prev_hash, entry_hash
+                prev_hash, entry_hash, actor_agent
             ) VALUES (
                 @timestamp, @event_type, @actor, @actor_type,
                 @resource_type, @resource_id, @action, @outcome,
                 @correlation_id, @remote_ip, @user_agent, @details,
-                @prev_hash, @entry_hash
+                @prev_hash, @entry_hash, @actor_agent
             )
             RETURNING audit_id
             """;
@@ -129,42 +124,33 @@ internal sealed class PostgresAuditLog : IAuditLog
                 }
             }
 
+            var hashInput = new AuditEntryHashInput
+            {
+                PreviousHash = previousHash,
+                Timestamp = auditEvent.Timestamp,
+                EventType = auditEvent.EventType,
+                Actor = actor,
+                ActorType = auditEvent.ActorType,
+                ResourceType = resourceType,
+                ResourceId = resourceId,
+                Action = action,
+                Outcome = auditEvent.Outcome,
+                CorrelationId = correlationId,
+                RemoteIp = remoteIp,
+                UserAgent = userAgent,
+                Details = details,
+                ActorAgent = actorAgent,
+            };
             var entryHash = _chainKey.Length >= AuditChainKeyMaterial.MinimumLength
-                ? AuditEntryHasher.ComputeEntryMac(
-                    _chainKey,
-                    previousHash,
-                    auditEvent.Timestamp,
-                    auditEvent.EventType,
-                    actor,
-                    auditEvent.ActorType,
-                    resourceType,
-                    resourceId,
-                    action,
-                    auditEvent.Outcome,
-                    correlationId,
-                    remoteIp,
-                    userAgent,
-                    details)
-                : AuditEntryHasher.ComputeEntryHash(
-                    previousHash,
-                    auditEvent.Timestamp,
-                    auditEvent.EventType,
-                    actor,
-                    auditEvent.ActorType,
-                    resourceType,
-                    resourceId,
-                    action,
-                    auditEvent.Outcome,
-                    correlationId,
-                    remoteIp,
-                    userAgent,
-                    details);
+                ? AuditEntryHasher.ComputeEntryMac(_chainKey, hashInput)
+                : AuditEntryHasher.ComputeEntryHash(hashInput);
 
             await using (var command = new NpgsqlCommand(sql, connection, transaction))
             {
                 command.Parameters.AddWithValue("@timestamp", auditEvent.Timestamp.UtcDateTime);
                 command.Parameters.AddWithValue("@event_type", auditEvent.EventType.ToString());
                 command.Parameters.AddWithValue("@actor", actor);
+                command.Parameters.AddWithValue("@actor_agent", NpgsqlTypes.NpgsqlDbType.Varchar, (object?)actorAgent ?? DBNull.Value);
                 command.Parameters.AddWithValue("@actor_type", auditEvent.ActorType.ToString());
                 command.Parameters.AddWithValue("@resource_type", resourceType);
                 command.Parameters.AddWithValue("@resource_id", (object?)resourceId ?? DBNull.Value);
@@ -228,10 +214,6 @@ internal sealed class PostgresAuditLog : IAuditLog
         return string.Concat(value.AsSpan(0, contentLength), TruncationMarker);
     }
 
-    /// <summary>
-    /// Drops U+0000 and unpaired UTF-16 surrogates. Valid surrogate pairs are kept.
-    /// Returns the original instance when the value needs no rewrite.
-    /// </summary>
     internal static string SanitizeText(string? value)
     {
         if (string.IsNullOrEmpty(value) || !NeedsSanitize(value))

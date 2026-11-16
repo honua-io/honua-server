@@ -48,7 +48,7 @@ internal static class OperateObservabilityFixtureServiceCollectionExtensions
         }
 
         services.TryAddSingleton(TimeProvider.System);
-        services.AddScoped<IOperateObservabilityFixtureSeeder, OperateObservabilityFixtureSeeder>();
+        services.AddScoped<OperateObservabilityFixtureSeeder>();
 
         var hasJobStore = services.Any(descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
         var hasLogStore = services.Any(descriptor => descriptor.ServiceType == typeof(IExecutionLogStore));

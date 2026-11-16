@@ -5,12 +5,14 @@ using Honua.ControlPlane;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Infrastructure.McpSessions;
 using Honua.Server.Features.Studio.Drafts;
+using Honua.Server.Features.Protocols.Wfs20;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.AspNetCore.DataProtection;
@@ -30,9 +32,14 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
         "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
+        "Honua.Server.Migrations.153_CreateVersionJobsAndTileGenerationCheckpoints.sql",
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
         "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
-        "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql"
+        "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
+        "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
+        "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql",
+        "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql",
+        "Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -51,6 +58,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
 
+    public PostgresExecutionJobStore CreateJobStore() => _jobs.CreateNodeJobStore();
+
     public static async Task<ControlPlaneStateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
     {
         var jobs = await PostgresJobSubstrateHarness.CreateAsync(fixture, testClassName);
@@ -67,14 +76,18 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         => ExecuteAsync(ReadMigration("Honua.Server.Migrations.156_CreateConfigurationDocuments.sql")
             .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
 
+    public Task ReplayRevisionMigrationAsync()
+        => ExecuteAsync(ReadMigration("Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql")
+            .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+
     public string Table(string tableName) => _jobs.Database.Table(tableName);
 
     public Task ExecuteAsync(string sql, params NpgsqlParameter[] parameters) => _jobs.ExecuteAsync(sql, parameters);
 
     public Task<T?> ScalarAsync<T>(string sql, params NpgsqlParameter[] parameters) => _jobs.ScalarAsync<T>(sql, parameters);
 
-    public PostgresOperationProposalStore CreateProposalStore()
-        => new(new ControlPlaneStorage(_jobs.Database, Leases), Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
+    public PostgresOperationProposalStore CreateProposalStore(IControlPlaneRealtimeWriter? realtime = null)
+        => new(new ControlPlaneStorage(_jobs.Database, Leases) { Realtime = realtime }, Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
 
     public PostgresOpsNotificationStore CreateNotificationStore()
         => new(_jobs.Database, Options.Create(Retention));
@@ -85,9 +98,9 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresOperationSecretStore CreateSecretStore(IDataProtectionProvider dataProtectionProvider)
         => new(DataSource, _jobs.Database, dataProtectionProvider);
 
-    public PostgresWorkflowOperationStore CreateWorkflowOperationStore()
+    public PostgresWorkflowOperationStore CreateWorkflowOperationStore(IControlPlaneRealtimeWriter? realtime = null)
         => new(
-            new ControlPlaneStorage(_jobs.Database, Leases),
+            new ControlPlaneStorage(_jobs.Database, Leases) { Realtime = realtime },
             new WorkflowOperationRetention(Options.Create(Retention), Options.Create(new MetadataReleaseOperationOptions())),
             NullLogger<PostgresWorkflowOperationStore>.Instance);
 
@@ -102,6 +115,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
     public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);
+    public JobStoreDatabase Database => _jobs.Database;
     public PostgresOidcProviderStore CreateOidcStore() => new(CreateConfigurationDocuments());
     public PostgresRateLimitPolicyStore CreateRateStore() => new(CreateConfigurationDocuments());
     public PostgresClientCertificateTrustStore CreateTrustStore() => new(CreateConfigurationDocuments());
@@ -110,9 +124,16 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
 
+    public PostgresVersionJobStore CreateVersionJobStore()
+        => new(_jobs.Database, NullLogger<PostgresVersionJobStore>.Instance);
+
+    public PostgresTileCacheGenerationCheckpointStore CreateTileCheckpointStore()
+        => new(_jobs.Database, NullLogger<PostgresTileCacheGenerationCheckpointStore>.Instance);
     public PostgresPackageDraftBacking CreatePackageDraftBacking() => new(_jobs.Database);
 
     public PostgresMcpSessionStore CreateMcpSessionStore() => new(_jobs.Database);
+
+    public PostgresWfsStoredQueryStore CreateWfsStoredQueryStore() => new(_jobs.Database);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)

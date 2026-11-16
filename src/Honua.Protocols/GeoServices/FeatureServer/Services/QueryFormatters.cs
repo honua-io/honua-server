@@ -9,11 +9,11 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.GeoJson;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -22,26 +22,7 @@ using NtsGeometryType = NetTopologySuite.IO.GeometryType;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-internal interface IQueryFormatter
-{
-    ValueTask<(object response, string contentType)> FormatQueryResultAsync(
-        QueryResult<Feature> result,
-        MetadataV2Object resource,
-        string format,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        int? geometryPrecision,
-        double? maxAllowableOffset,
-        string[]? outFields = null,
-        bool suppressObjectId = false,
-        bool returnCentroid = false,
-        int? requestedOutputSrid = null,
-        QuantizationTransform? quantizationTransform = null);
-}
-
-internal sealed class QueryFormatter : IQueryFormatter
+internal sealed class QueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
     private readonly GeoParquetLimits _geoParquetLimits;
@@ -83,7 +64,17 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbf(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, quantizationTransform)),
+                _pbfFormatter.FormatAsPbfStream(result, resource, new PbfStreamEncodingOptions
+                {
+                    ReturnGeometry = returnGeometry,
+                    OutputSrid = outputSrid,
+                    ReturnZ = returnZ,
+                    ReturnM = returnM,
+                    GeometryPrecision = geometryPrecision,
+                    MaxAllowableOffset = maxAllowableOffset,
+                    OutFields = outFields,
+                    QuantizationTransform = quantizationTransform
+                })),
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
@@ -121,20 +112,20 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits effectiveLimits,
         string[]? outFields)
     {
-        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquet(
-            result,
-            resource,
-            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
-            returnGeometry,
-            outputSrid,
-            returnZ,
-            returnM,
-            effectiveLimits,
-            outFields,
-            _logger,
-            _geoParquetLimits);
+        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+            ReturnGeometry = returnGeometry,
+            OutputSrid = outputSrid,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = effectiveLimits,
+            OutFields = outFields,
+            Logger = _logger,
+            EncodingLimits = _geoParquetLimits
+        });
 
-        return (response, contentType);
+        return (Results.Stream(response, contentType), contentType);
     }
 
     private static async Task<(object response, string contentType)> FormatArrowAsync(

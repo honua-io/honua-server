@@ -13,7 +13,7 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-public sealed class ZarrMetadataExtractor : IZarrMetadataReader
+public sealed class ZarrMetadataExtractor
 {
     // Consolidated metadata and CF coordinate manifests routinely exceed 64 KiB.
     // Keep a bounded document ceiling, but do not mistake a provider's partial
@@ -21,6 +21,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
     private const int MaxMetadataBytes = 16 * 1024 * 1024;
     private const int MaxVariables = 64;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public async Task<ZarrStoreMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
         string bucket,

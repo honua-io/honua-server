@@ -17,11 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Console.Publications;
 
-/// <summary>
-/// API integration tests for the public published-route read endpoint: anonymous
-/// visibility enforcement, public-link authorization, embed policy, and generated-app
-/// reopen-by-revision after the active route has moved.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Query)]

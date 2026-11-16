@@ -199,7 +199,8 @@ internal static class GrpcConversionHelpers
         bool includeGeometry = true,
         GeometryLimits? geometryLimits = null,
         string? objectIdFieldName = null,
-        IReadOnlySet<string>? hiddenFields = null)
+        IReadOnlySet<string>? hiddenFields = null,
+        IReadOnlyList<MetadataV2Field>? fields = null)
     {
         var proto = new Proto.Feature { Id = feature.Id };
 
@@ -215,7 +216,8 @@ internal static class GrpcConversionHelpers
                 continue;
             }
 
-            proto.Attributes[key] = ToAttributeValue(value);
+            var field = fields?.FirstOrDefault(field => string.Equals(field.Name, key, StringComparison.OrdinalIgnoreCase));
+            proto.Attributes[key] = ToAttributeValue(value, field?.Type);
         }
 
         if (includeGeometry && feature.Geometry is { Length: > 0 })
@@ -313,8 +315,30 @@ internal static class GrpcConversionHelpers
         return proto;
     }
 
-    private static Proto.AttributeValue ToAttributeValue(object? value)
+    private static Proto.AttributeValue ToAttributeValue(object? value, MetadataV2FieldType? fieldType = null)
     {
+        if (value is not null && fieldType is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset)
+        {
+            try
+            {
+                if (value is string text)
+                {
+                    if (fieldType == MetadataV2FieldType.Decimal)
+                    {
+                        _ = GrpcTypedValues.ExactDecimal(text);
+                        return new Proto.AttributeValue { DecimalValue = text };
+                    }
+                    _ = GrpcTypedValues.ExactTimestampOffset(text);
+                    return new Proto.AttributeValue { TimestampOffsetValue = text };
+                }
+            }
+            catch (Exception exception) when (exception is ArgumentException or UnstorableValueException)
+            {
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, "Stored exact value does not match its declared type."));
+            }
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, "Stored exact value does not match its declared type."));
+        }
+
         var av = new Proto.AttributeValue();
         switch (value)
         {
@@ -407,8 +431,8 @@ internal static class GrpcConversionHelpers
             Proto.AttributeValue.ValueOneofCase.TimeValue
                 => GrpcTypedValues.FormatTime(GrpcTypedValues.ParseTime(value.TimeValue)),
             Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue
-                => GrpcTypedValues.ParseTimestampOffset(value.TimestampOffsetValue),
-            Proto.AttributeValue.ValueOneofCase.DecimalValue => GrpcTypedValues.ParseDecimal(value.DecimalValue),
+                => GrpcTypedValues.ExactTimestampOffset(value.TimestampOffsetValue),
+            Proto.AttributeValue.ValueOneofCase.DecimalValue => GrpcTypedValues.ExactDecimal(value.DecimalValue),
             _ => null
         };
     }
@@ -617,6 +641,8 @@ internal static class GrpcConversionHelpers
             MetadataV2FieldType.DateTime => Proto.FieldType.DateTime,
             MetadataV2FieldType.Date => Proto.FieldType.Date,
             MetadataV2FieldType.Time => Proto.FieldType.Time,
+            MetadataV2FieldType.Decimal => Proto.FieldType.Decimal,
+            MetadataV2FieldType.TimestampOffset => Proto.FieldType.TimestampOffset,
             MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => Proto.FieldType.Geometry,
             MetadataV2FieldType.Json => Proto.FieldType.Json,
             MetadataV2FieldType.Binary => Proto.FieldType.Binary,

@@ -88,8 +88,6 @@ internal static class StartupConfigurationHelpers
     public static void ResolveEnvironmentSecretReferences(ConfigurationManager configuration)
     {
         ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:DefaultConnection");
-        ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:redis");
-        ResolveEnvironmentSecretReference(configuration, "Aspire:StackExchange:Redis:ConnectionString");
         ResolveEnvironmentSecretReference(configuration, "HONUA_ADMIN_PASSWORD");
         ResolveEnvironmentSecretReference(configuration, "Security:ConnectionEncryption:MasterKey");
         ResolveEnvironmentSecretReference(configuration, AuditChainKeyConfigurationKey);
@@ -241,22 +239,6 @@ internal static class StartupConfigurationHelpers
         configuration.AddInMemoryCollection(new Dictionary<string, string?> { [key] = value });
     }
 
-    // The Redis reference is resolved before the client parses it, so the raw reference is never handed to the multiplexer.
-    public static async Task ResolveRedisConnectionSecretReferencesAsync(
-        ConfigurationManager configuration,
-        CancellationToken cancellationToken = default)
-    {
-        const string primaryKey = "ConnectionStrings:redis";
-        const string fallbackKey = "Aspire:StackExchange:Redis:ConnectionString";
-
-        // Match every Redis consumer's null-coalescing precedence: a configured primary value
-        // shadows the Aspire fallback, even when the primary is empty. Resolving the shadowed
-        // fallback could otherwise fail startup for a value the application never reads.
-        var effectiveKey = configuration[primaryKey] is null ? fallbackKey : primaryKey;
-        await ResolveRedisConnectionSecretReferenceAsync(configuration, effectiveKey, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     // A path that already names a file is left alone, so a mounted certificate wins.
     public static async Task EnsureKeyRingCertificateMaterializedAsync(
         ConfigurationManager configuration,
@@ -275,7 +257,10 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        material = await ResolveKeyRingMaterialAsync(material, cancellationToken).ConfigureAwait(false);
+        material = await ResolveKeyRingMaterialAsync(
+            material,
+            OperationSecretKeyRingProtection.CertificateMaterialKey,
+            cancellationToken).ConfigureAwait(false);
         var written = OperationSecretKeyRingProtection.WritePkcs12Material(material);
         SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificatePathKey, written.Path);
         if (!string.IsNullOrEmpty(written.Password))
@@ -287,16 +272,48 @@ internal static class StartupConfigurationHelpers
         }
     }
 
+    // The secret accepts the same env: and Secrets Manager references as the certificate bundle.
+    public static async Task EnsureKeyRingSecretResolvedAsync(
+        ConfigurationManager configuration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var secret = configuration[OperationSecretKeyRingProtection.SecretKey];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            return;
+        }
+
+        string resolved;
+        try
+        {
+            resolved = await ResolveKeyRingMaterialAsync(
+                secret,
+                OperationSecretKeyRingProtection.SecretKey,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not InvalidOperationException and not OperationCanceledException)
+        {
+            // The caller reports InvalidOperationException as a startup refusal; anything else would abort the runtime.
+            throw new InvalidOperationException(
+                $"'{OperationSecretKeyRingProtection.SecretKey}' could not be resolved ({exception.GetType().Name}).");
+        }
+
+        if (!string.Equals(resolved, secret, StringComparison.Ordinal))
+        {
+            SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.SecretKey, resolved);
+        }
+    }
+
     private static async Task<string> ResolveKeyRingMaterialAsync(
         string material,
+        string key,
         CancellationToken cancellationToken)
     {
         // Production validation accepts env/aws/azure references for this key, so an
         // env: reference has to resolve here too - otherwise it would validate and
         // then die in WritePkcs12Material as "not a PKCS#12 bundle".
-        material = SecretReferenceResolver.ResolveEnvironmentReference(
-            material,
-            OperationSecretKeyRingProtection.CertificateMaterialKey) ?? material;
+        material = SecretReferenceResolver.ResolveEnvironmentReference(material, key) ?? material;
 
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
         if (!material.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
@@ -310,83 +327,11 @@ internal static class StartupConfigurationHelpers
         if (string.IsNullOrWhiteSpace(resolved))
         {
             throw new InvalidOperationException(
-                $"'{OperationSecretKeyRingProtection.CertificateMaterialKey}' did not resolve to a certificate.");
+                $"'{key}' did not resolve to a value.");
         }
 
         return resolved;
     }
-
-    private static async Task ResolveRedisConnectionSecretReferenceAsync(
-        ConfigurationManager configuration,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        var value = configuration[key];
-        if (string.IsNullOrWhiteSpace(value) ||
-            !value.StartsWith("aws:secretsmanager:", StringComparison.OrdinalIgnoreCase))
-        {
-            // Not configured, or not a reference style this bootstrap resolver understands: env:
-            // references are already normalized above by ResolveEnvironmentSecretReferences, and a
-            // plain connection string needs no resolution.
-            return;
-        }
-
-        using var lease = BootstrapSecretResolver.Create();
-        var resolver = lease.Resolver;
-
-        await ResolveRedisConnectionSecretReferenceAsync(configuration, key, resolver, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    internal static async Task ResolveRedisConnectionSecretReferenceAsync(
-        ConfigurationManager configuration,
-        string key,
-        Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
-        CancellationToken cancellationToken = default)
-    {
-        var value = configuration[key];
-        string? resolved;
-        try
-        {
-            resolved = await ConnectionStringResolutionHelper
-                .ResolveConnectionStringValueAsync(value, key, resolver, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new InvalidOperationException(
-                $"Failed to resolve the secret-backed connection string for '{key}' from AWS Secrets Manager.",
-                ex);
-        }
-
-        if (!string.Equals(value, resolved, StringComparison.Ordinal))
-        {
-            SetResolvedSecretValue(configuration, key, resolved);
-        }
-    }
-
-    // The development grant is never honored in Production.
-    public static async Task<bool> IsRedisCacheEntitledAsync(
-        IConfiguration configuration,
-        IHostEnvironment environment)
-    {
-        var redisConnectionString = configuration.GetConnectionString("redis")
-            ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-        if (string.IsNullOrWhiteSpace(redisConnectionString))
-        {
-            return false;
-        }
-
-        var snapshot = await LoadBootstrapLicenseSnapshotAsync(configuration, environment).ConfigureAwait(false);
-        return snapshot.HasEntitlement("caching.redis");
-    }
-
-    // caching.output-cache (Pro) is deliberately NOT gated here. The Redis-cache gate has to run
-    // at boot because it decides service registration (IConnectionMultiplexer, the durable job
-    // store), but the output-cache middleware is a pipeline branch, so it is gated per request
-    // against the live license snapshot in Program.cs instead — a boot-time capture would keep
-    // serving cached responses after a Pro license expired at runtime and would ignore a license
-    // applied through ILicenseManager.ApplyLicenseAsync.
 
     // Bootstrap uses the same licence resolvers as the request path, so a secret-only licence is not read as the community edition.
     internal static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(

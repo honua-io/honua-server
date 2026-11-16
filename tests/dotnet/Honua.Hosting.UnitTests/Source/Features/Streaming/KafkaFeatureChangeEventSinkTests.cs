@@ -9,13 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for the Kafka feature-change event sink (#357), verifying the
-/// serialized payload/key/headers, the dead-letter routing on delivery failure,
-/// and the surfaced-failure behaviour when dead-lettering is unavailable. The
-/// sink is exercised against a fake <see cref="IKafkaEventProducer"/> so no live
-/// broker is required.
-/// </summary>
 public sealed class KafkaFeatureChangeEventSinkTests
 {
     private static FeatureChangeEvent SampleEvent(string eventId = "evt-1") => new()

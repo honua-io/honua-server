@@ -81,10 +81,12 @@ internal sealed partial class FeatureQueryBuilder
                     MetadataV2FieldType.BigInteger => $"{expression}::bigint",
                     MetadataV2FieldType.Float => $"{expression}::real",
                     MetadataV2FieldType.Double => $"{expression}::double precision",
+                    MetadataV2FieldType.Decimal => $"{expression}::numeric",
+                    MetadataV2FieldType.TimestampOffset => ExactTemporalSql.Timestamp(expression),
                     MetadataV2FieldType.Boolean => $"{expression}::boolean",
                     MetadataV2FieldType.DateTime => BuildEpochAwareOrderByCast(expression, "timestamptz"),
                     MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(expression, "date"),
-                    MetadataV2FieldType.Time => $"{expression}::time",
+                    MetadataV2FieldType.Time => ExactTemporalSql.Time(expression),
                     MetadataV2FieldType.Uuid => $"{expression}::uuid",
                     _ => expression
                 };
@@ -115,7 +117,7 @@ internal sealed partial class FeatureQueryBuilder
     // exception: when Limit is set but no ORDER BY is appended the database returns an arbitrary
     // heap/plan order, while the next page (which injects ORDER BY objectid because it has an
     // Offset) is drawn from a different ordering, silently skipping and duplicating rows across
-    // the page boundary (#2070). Mirrors the sibling MySQL provider, which has no LIKE carve-out.
+    // the page boundary. Mirrors the sibling MySQL provider, which has no LIKE carve-out.
     private static bool RequiresStablePageOrder(FeatureQuery query)
         => query.Offset.HasValue ||
            query.SpatialFilter.HasValue ||
@@ -188,10 +190,12 @@ internal sealed partial class FeatureQueryBuilder
             MetadataV2FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
             MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
             MetadataV2FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
+            MetadataV2FieldType.Decimal => $"NULLIF({attributeValue}, '')::numeric",
+            MetadataV2FieldType.TimestampOffset => ExactTemporalSql.Timestamp($"NULLIF({attributeValue}, '')"),
             MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
             MetadataV2FieldType.DateTime => BuildEpochAwareOrderByCast(attributeValue, "timestamptz"),
             MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(attributeValue, "date"),
-            MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
+            MetadataV2FieldType.Time => ExactTemporalSql.Time($"NULLIF({attributeValue}, '')"),
             MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
             MetadataV2FieldType.String => attributeValue,
             _ => attributeValue

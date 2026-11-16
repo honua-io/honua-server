@@ -72,7 +72,7 @@ internal sealed partial class GeoservicesImportService
         }
 
         // Classify the source WKT, not the geometry stored after ST_MakeValid. A repaired
-        // polygon remains an inherited source defect or an unrepaired rewrite (#4826).
+        // polygon remains an inherited source defect or an unrepaired rewrite.
         var sourceValidity = hasGeometry
             ? $", CASE WHEN @geom IS NULL THEN NULL ELSE ST_IsValid(ST_GeomFromText(@geom, {targetSrid})) END"
             : string.Empty;
@@ -275,14 +275,6 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Outcome of a single InsertFeaturesAsync batch: insert/fail counters plus a
-    /// mapping from source ObjectId to the BIGSERIAL identifier assigned by the
-    /// imported table. Used to link attachments back to the persisted features.
-    /// <see cref="FirstFailureReason"/> is the redacted reason the batch's first failed row was
-    /// rejected (see <see cref="DescribeFeatureInsertFailure"/>), or <see langword="null"/> when no
-    /// row failed.
-    /// </summary>
     internal readonly record struct InsertFeaturesResult(
         int Inserted,
         int Failed,

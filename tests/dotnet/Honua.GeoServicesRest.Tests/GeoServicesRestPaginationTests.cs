@@ -18,11 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.GeoServicesRest.Tests;
 
-/// <summary>
-/// Regression coverage for #2011: the federated provider must page across the
-/// upstream <c>maxRecordCount</c> via <c>resultOffset</c> instead of surfacing
-/// only the first <c>/query</c> page when <c>exceededTransferLimit</c> is set.
-/// </summary>
 public sealed class GeoServicesRestPaginationTests
 {
     private const int LayerId = 1;
@@ -251,12 +246,6 @@ public sealed class GeoServicesRestPaginationTests
     private static FeatureProviderBinding CreateBinding(GeoServicesRestFeatureStore provider, DataConnection connection)
         => Parcels.CreateBinding(provider, connection);
 
-    /// <summary>
-    /// Fake client that simulates an upstream FeatureServer with a fixed
-    /// <c>maxRecordCount</c>: it honors <c>resultOffset</c>/<c>resultRecordCount</c>
-    /// from the request URL and flags <c>exceededTransferLimit</c> whenever more
-    /// rows remain past the returned page.
-    /// </summary>
     private sealed class PagingGeoServicesRestFeatureClient(int upstreamMaxRecordCount, int totalFeatures) : IGeoServicesRestFeatureClient
     {
         public List<string> QueryRequests { get; } = [];
@@ -415,10 +404,6 @@ public sealed class GeoServicesRestPaginationTests
         }
     }
 
-    /// <summary>
-    /// Fake client whose <c>/query</c> always flags <c>exceededTransferLimit</c> but
-    /// never returns a feature — exercises the infinite-loop guard.
-    /// </summary>
     private sealed class EmptyButFlaggingGeoServicesRestFeatureClient : IGeoServicesRestFeatureClient
     {
         private int _queryCallCount;

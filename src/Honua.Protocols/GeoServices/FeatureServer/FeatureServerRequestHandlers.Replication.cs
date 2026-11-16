@@ -1154,7 +1154,7 @@ internal static partial class FeatureServerEndpoints
             // another upload get a fresh key. An in-flight duplicate is held off by a reservation and gets
             // 409 rather than racing the first attempt. Every upload that committed rows is recorded, a
             // partially failed one included, so a retry never applies committed rows a second time.
-            IReplicaUploadIdempotencyStore? uploadStore = null;
+            DistributedReplicaUploadIdempotencyStore? uploadStore = null;
             ReplicaUploadIdempotencyScope? uploadScope = null;
             string? uploadFingerprint = null;
             string? uploadReservation = null;
@@ -1176,7 +1176,7 @@ internal static partial class FeatureServerEndpoints
                         [IdempotencyCaller.UnbindableCallerMessage]);
                 }
 
-                uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
+                uploadStore = context.RequestServices.GetRequiredService<DistributedReplicaUploadIdempotencyStore>();
                 uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
                 // The replica's stored service id, not the route value: service lookup is case-insensitive,
@@ -1259,7 +1259,7 @@ internal static partial class FeatureServerEndpoints
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
-                var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
+                var syncService = context.RequestServices.GetRequiredService<ReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
                 // The server side of each conflict is snapshotted by the canonical sync service through
@@ -1560,7 +1560,7 @@ internal static partial class FeatureServerEndpoints
 
     // The receipt write is refused when another request owns the key, so an expired reservation cannot overwrite a newer one.
     private static Task RecordReplicaUploadAsync(
-        IReplicaUploadIdempotencyStore? store,
+        DistributedReplicaUploadIdempotencyStore? store,
         ReplicaUploadIdempotencyScope? scope,
         string? reservationToken,
         ReplicaUploadRecord record)
@@ -1570,7 +1570,7 @@ internal static partial class FeatureServerEndpoints
 
     // Release compares and deletes only this request's token, so it cannot discard a recorded upload or another request's reservation.
     private static Task ReleaseReplicaUploadReservationAsync(
-        IReplicaUploadIdempotencyStore? store,
+        DistributedReplicaUploadIdempotencyStore? store,
         ReplicaUploadIdempotencyScope? scope,
         string? reservationToken)
         => store is not null && scope is { } heldScope && reservationToken is not null

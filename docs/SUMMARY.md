@@ -167,6 +167,7 @@
   - [Backup & restore](guides/deploy/backup-and-restore.md)
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
   - [Cache behind a CDN](guides/deploy/cdn-caching.md)
+  - [Track external database edits](guides/deploy/external-edits.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)

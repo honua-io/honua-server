@@ -23,6 +23,7 @@ internal static class McpInputDescriptions
         ("admin.connections.create", "databaseName"), ("admin.connections.create", "username"),
         ("admin.import.upload-object", "sourceUri"), ("admin.import.upload-object", "tableName"),
         ("admin.import.upload-url", "sourceUrl"), ("admin.import.upload-url", "tableName"),
+        ("admin.import.preview", "fileName"), ("admin.import.preview-url", "sourceUrl"),
         ("admin.layer.publish", "layerName"), ("admin.layer.set-enabled", "enabled"),
         ("admin.layer.drawing-info.set", "body"), ("admin.layer.popup-info.set", "body"),
         ("admin.layer.style.import-sld", "body"), ("admin.oauth-scope.define", "scope"),
@@ -32,10 +33,16 @@ internal static class McpInputDescriptions
         ("admin.rls-policy.create", "claimType"), ("admin.role.create", "name"),
         ("admin.role.permissions.set", "permissions"), ("admin.services.protocols.set", "enabledProtocols"),
         ("admin.tenant.create", "tenantId"), ("folder.create", "name"),
+        ("dataset.stage.preview", "intentId"), ("dataset.stage.preview", "schema"),
+        ("dataset.stage.preview", "targetSrid"), ("dataset.stage.preview", "sourceSrid"),
+        ("dataset.stage.import", "intentId"), ("dataset.stage.import", "schema"),
+        ("dataset.stage.import", "targetSrid"), ("dataset.stage.import", "sourceSrid"),
     ];
 
     internal static string Describe(string operationId, string parameter, string description)
     {
+        if (operationId == "admin.import.preview" && parameter == "file")
+            return "Caller-supplied base64-encoded file content. Supply fileName with its original format extension.";
         var source = ReadSource(operationId, parameter);
         if (source is not null) return $"{description} Source: {source}.";
         if (operationId is "admin.layer.display.set" or "admin.layer.spatial.set")
@@ -49,6 +56,16 @@ internal static class McpInputDescriptions
     private static string? ReadSource(string operationId, string parameter)
     {
         if (parameter == "id") return IdentitySource(operationId);
+        if (operationId.StartsWith("dataset.stage.", StringComparison.Ordinal))
+        {
+            return parameter switch
+            {
+                "targetId" or "jobId" or "resultPackageId" or "artifactId" or "referenceSha256"
+                    => "honua_get_job_results (server artifact reference)",
+                "previewFingerprint" => PublishedOperationTool.ProjectName("dataset.stage.preview"),
+                _ => null,
+            };
+        }
         return parameter switch
         {
             "connectionId" => "honua_admin_connections_list",
@@ -61,7 +78,8 @@ internal static class McpInputDescriptions
             "attribute" => "honua_describe_layer (field name)",
             "tenantId" when operationId != "admin.tenant.create" => "honua_admin_tenant_list",
             "scope" when operationId == "admin.oauth-scope.delete" => "honua_admin_oauth_scope_list",
-            "schema" or "table" when operationId == "admin.layer.publish" => "honua_admin_connection_tables_list",
+            "schema" or "table" when operationId is "admin.layer.publish" or "admin.connections.tables.validate"
+                => "honua_admin_connection_tables_list",
             "folderId" or "If-Match" => PublishedOperationTool.ProjectName("folder.list"),
             _ => null
         };

@@ -19,9 +19,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Read-only OGC API Records endpoints backed by Honua catalog metadata.
-/// </summary>
 internal static class OgcRecordsEndpoints
 {
     internal const string CatalogCollectionId = "honua-catalog";
@@ -42,16 +39,10 @@ internal static class OgcRecordsEndpoints
         "f", "bbox", "datetime", "limit", "offset", "q", "ids", "type", "externalIds"
     };
 
-    /// <summary>
-    /// Logging category for OGC API Records endpoints.
-    /// </summary>
     internal sealed class OgcRecordsEndpointsLog
     {
     }
 
-    /// <summary>
-    /// Maps the OGC API Records endpoint family.
-    /// </summary>
     public static IEndpointRouteBuilder MapOgcRecordsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/ogc/records", HandleGetLandingPage)
@@ -625,32 +616,9 @@ internal static class OgcRecordsEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds the free-text haystack the <c>q</c> parameter matches against.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#4425: the shipped coverage document states that <c>q</c> searches "over id,
-    /// title, and description", but the haystack was built from the bare name + description with
-    /// the title omitted and the record's actual (prefixed) id absent — so <c>q=layer:0</c> could
-    /// not find the record whose id is exactly <c>layer:0</c>. The fixture could not detect the
-    /// title half because every seeded title is null, so <c>Title ?? Name</c> collapsed to the same
-    /// string. Both the prefixed public id and the title are included now; a null or duplicate
-    /// segment contributes nothing.
-    /// </remarks>
     private static string BuildSearchText(params string?[] segments)
         => string.Join(' ', segments.Where(segment => !string.IsNullOrWhiteSpace(segment)));
 
-    /// <summary>
-    /// Resolves the record's temporal value from the catalog entry's own timestamps.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#4425: both record factories hard-coded <c>Modified: null</c>, so the
-    /// <c>datetime</c> filter short-circuited before <c>DateTimeFilter.Contains</c> could ever run
-    /// and no query could exclude a record by time — the parameter was accepted, advertised and
-    /// inert. The graph already carries <c>updatedAt</c>/<c>createdAt</c> on every catalog entity;
-    /// this projects them so the declared filter has something to filter on. Records that genuinely
-    /// have no timestamp are still not constrained by <c>datetime</c> (#1988).
-    /// </remarks>
     private static DateTimeOffset? ResolveModified(MetadataV2ObjectMetadata metadata)
         => metadata.UpdatedAt ?? metadata.CreatedAt;
 

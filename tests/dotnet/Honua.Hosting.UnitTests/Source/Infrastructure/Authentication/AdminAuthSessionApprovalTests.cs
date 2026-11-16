@@ -48,18 +48,21 @@ public sealed class AdminAuthSessionApprovalTests
         await read.Should().ThrowAsync<ServiceUnavailableException>();
     }
 
-    [UnitTest]
-    public async Task GetInteractiveSessionForApprovalAsync_IndependentStoreAndRevocation_UsesSharedAuthority()
+    [UnitTheory]
+    [InlineData((int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData((int)AdminAuthSessionOrigin.Builtin)]
+    public async Task GetInteractiveSessionForApprovalAsync_IndependentStoreAndRevocation_UsesSharedAuthority(int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         var shared = new InMemorySecurityTokenStore();
         var first = CreateStore(shared);
         var second = CreateStore(shared);
-        var id = await CreateInteractiveSessionAsync(first);
+        var id = await CreateInteractiveSessionAsync(first, origin);
 
         var session = await second.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None);
 
         session.Should().NotBeNull();
-        session!.Origin.Should().Be(AdminAuthSessionOrigin.InteractiveOidc);
+        session!.Origin.Should().Be(origin);
         await first.RemoveAuthenticatedSessionAsync(id, CancellationToken.None);
         (await second.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None)).Should().BeNull();
     }
@@ -85,7 +88,8 @@ public sealed class AdminAuthSessionApprovalTests
     private static AdminAuthSessionStore CreateStore(ISecurityTokenStore shared) =>
         new(shared, NullLogger<AdminAuthSessionStore>.Instance);
 
-    private static Task<string> CreateInteractiveSessionAsync(AdminAuthSessionStore store) =>
+    private static Task<string> CreateInteractiveSessionAsync(AdminAuthSessionStore store,
+        AdminAuthSessionOrigin origin = AdminAuthSessionOrigin.InteractiveOidc) =>
         store.CreateAuthenticatedSessionAsync(
             new AdminAuthAuthenticatedSession
             {
@@ -94,6 +98,6 @@ public sealed class AdminAuthSessionApprovalTests
                 IdToken = "id-token",
                 Claims = [new() { Type = "sub", Value = "person" }],
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
-                Origin = AdminAuthSessionOrigin.InteractiveOidc
+                Origin = origin
             }, CancellationToken.None);
 }

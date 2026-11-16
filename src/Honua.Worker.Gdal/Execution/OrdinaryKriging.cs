@@ -5,31 +5,19 @@ using System.Globalization;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>Authorized semivariogram model for <c>raster.interpolate-kriging</c>.</summary>
 internal enum VariogramModel
 {
-    /// <summary>Spherical model; reaches the sill exactly at the range.</summary>
     Spherical,
 
-    /// <summary>Exponential model; reaches 95% of the sill at the (practical) range.</summary>
     Exponential,
 
-    /// <summary>Gaussian model; reaches 95% of the sill at the (practical) range.</summary>
     Gaussian
 }
 
-/// <summary>One scattered observation feeding the kriging system.</summary>
 internal readonly record struct KrigingSample(double X, double Y, double Z);
 
-/// <summary>
-/// Isotropic semivariogram γ(h) with a nugget, a total sill and a range.
-/// γ(0) is defined as exactly zero even with a positive nugget, which is what makes
-/// ordinary kriging an EXACT interpolator: a prediction at a sample location
-/// reproduces that sample's value.
-/// </summary>
 internal readonly record struct Variogram(VariogramModel Model, double Nugget, double Sill, double Range)
 {
-    /// <summary>Evaluates the semivariance at lag <paramref name="h"/> (>= 0).</summary>
     public double Evaluate(double h)
     {
         if (h <= 0d)
@@ -50,35 +38,6 @@ internal readonly record struct Variogram(VariogramModel Model, double Nugget, d
     }
 }
 
-/// <summary>
-/// Ordinary kriging over a bounded scattered-point sample, in the DUAL formulation.
-///
-/// <para>
-/// The primal ordinary-kriging system solves, per prediction location, for weights
-/// <c>w</c> under the unbiasedness constraint <c>Σw = 1</c>:
-/// <c>[Γ 1; 1ᵀ 0][w; μ] = [γ₀; 1]</c>, predicting <c>ẑ₀ = zᵀw</c>. Because the bordered
-/// matrix <c>K</c> is symmetric, substituting gives the equivalent DUAL form
-/// <c>[b; m] = K⁻¹[z; 0]</c> with <c>ẑ₀ = bᵀγ₀ + m</c>: one factorization for the whole
-/// grid and O(n) work per cell instead of O(n²). Predictions are identical to the
-/// primal system — only the cost changes — which is what makes a full-grid kriging
-/// surface a bounded job rather than an O(cells·n³) one.
-/// </para>
-///
-/// <para>
-/// Two properties this preserves are used as the executor's analytical oracles:
-/// the estimator is EXACT at sample locations (γ(0)=0), and it reproduces a CONSTANT
-/// field exactly (for equal sample values <c>b = 0</c>, <c>m = c</c>).
-/// </para>
-///
-/// <para>
-/// The kriging (estimation) VARIANCE at a target has no dual shortcut: unlike the
-/// prediction, it needs the PRIMAL weights <c>(w, μ)</c> for that specific target,
-/// <c>σ²(x₀) = wᵀγ₀ + μ</c>, solving <c>K[w; μ] = [γ₀; 1]</c>. The factorization from
-/// <see cref="TrySolve"/> is kept (not just its one dual solution) so each cell reuses
-/// it via forward/back substitution — O(n²) per cell, the standard cost of a pointwise
-/// kriging variance map, still far cheaper than re-factoring per cell.
-/// </para>
-/// </summary>
 internal sealed class OrdinaryKriging
 {
     private readonly KrigingSample[] _samples;
@@ -107,16 +66,8 @@ internal sealed class OrdinaryKriging
         _size = size;
     }
 
-    /// <summary>The fitted (or caller-supplied) semivariogram the solve used.</summary>
     public Variogram Variogram => _variogram;
 
-    /// <summary>
-    /// Factors the dual ordinary-kriging system for <paramref name="samples"/> under
-    /// <paramref name="variogram"/>. Returns <see langword="false"/> with a caller-facing
-    /// <paramref name="failure"/> when the system is singular — which for a valid
-    /// variogram means coincident sample locations, the one input shape that genuinely
-    /// has no unique ordinary-kriging solution.
-    /// </summary>
     public static bool TrySolve(
         IReadOnlyList<KrigingSample> samples,
         Variogram variogram,
@@ -177,16 +128,6 @@ internal sealed class OrdinaryKriging
         return true;
     }
 
-    /// <summary>
-    /// Derives the default semivariogram from the sample set when the caller does not
-    /// pin one: total sill = the sample variance (the a-priori variance the estimator
-    /// should reproduce far from data), practical range = one third of the largest
-    /// pairwise separation (the standard rule of thumb — beyond that lag the empirical
-    /// variogram is estimated from too few pairs to be meaningful), nugget = 0. Every
-    /// component is overridable per submission; the defaults only have to be positive,
-    /// finite and scale-appropriate, because ordinary kriging's exactness at data
-    /// points and its reproduction of a constant field hold for ANY valid variogram.
-    /// </summary>
     public static Variogram FitDefaults(
         IReadOnlyList<KrigingSample> samples,
         VariogramModel model,
@@ -202,17 +143,8 @@ internal sealed class OrdinaryKriging
         return new Variogram(model, resolvedNugget, resolvedSill, resolvedRange);
     }
 
-    /// <summary>Predicts the surface value at (<paramref name="x"/>, <paramref name="y"/>).</summary>
     public double Predict(double x, double y) => PredictWithVariance(x, y).Prediction;
 
-    /// <summary>
-    /// Predicts the surface value AND the ordinary-kriging estimation variance at
-    /// (<paramref name="x"/>, <paramref name="y"/>). The prediction reuses the cached
-    /// dual weights (O(n)); the variance solves the PRIMAL system for this one target
-    /// against the cached factorization (O(n²)) — see the type's remarks. Round-off can
-    /// drive an exactly-zero variance a hair below zero at a sample location; the
-    /// estimator's variance is non-negative by definition, so it is clamped.
-    /// </summary>
     public (double Prediction, double Variance) PredictWithVariance(double x, double y)
     {
         var n = _samples.Length;
@@ -290,21 +222,6 @@ internal sealed class OrdinaryKriging
         return Math.Sqrt((dx * dx) + (dy * dy));
     }
 
-    /// <summary>
-    /// In-place LU decomposition with partial pivoting on the row-major
-    /// <paramref name="size"/>×<paramref name="size"/> system. The bordered kriging
-    /// matrix is symmetric but indefinite, so a Cholesky factorization does not apply;
-    /// partial pivoting is the standard stable choice.
-    ///
-    /// <para>
-    /// Unlike a one-shot Gaussian elimination on an augmented <c>[A|b]</c> system, the
-    /// multiplier below each pivot is STORED (not eliminated to zero) so the
-    /// factorization can be reused for more than one right-hand side via
-    /// <see cref="SolveFactored"/> — once for the dual prediction weights in
-    /// <see cref="TrySolve"/>, and again per grid cell for the primal variance weights
-    /// in <see cref="PredictWithVariance"/>.
-    /// </para>
-    /// </summary>
     private static bool TryFactor(double[] matrix, int size, out int[] pivot)
     {
         pivot = new int[size];
@@ -375,11 +292,6 @@ internal sealed class OrdinaryKriging
         return true;
     }
 
-    /// <summary>
-    /// Solves <c>K x = rhs</c> against the LU factorization <paramref name="factored"/>
-    /// (from <see cref="TryFactor"/>) via forward, then back, substitution. Does not
-    /// mutate <paramref name="factored"/> or <paramref name="rhs"/>.
-    /// </summary>
     private static double[] SolveFactored(double[] factored, int[] pivot, int size, double[] rhs)
     {
         var x = new double[size];
@@ -429,7 +341,6 @@ internal sealed class OrdinaryKriging
         return true;
     }
 
-    /// <summary>Parses an authorized variogram model name, case-insensitively.</summary>
     public static bool TryParseModel(string? value, out VariogramModel model)
     {
         model = VariogramModel.Spherical;
@@ -454,7 +365,6 @@ internal sealed class OrdinaryKriging
         }
     }
 
-    /// <summary>Canonical lowercase name of a model, as the catalog enumerates it.</summary>
     public static string ModelName(VariogramModel model)
         => model.ToString().ToLower(CultureInfo.InvariantCulture);
 }

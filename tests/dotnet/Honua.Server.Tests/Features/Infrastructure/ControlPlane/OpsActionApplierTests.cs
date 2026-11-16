@@ -15,12 +15,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Integration tests for the payload-discriminated ops-action registry behind
-/// <see cref="IAdminConfigChangeApplier"/> (#2561): every registered action executes
-/// for real, is idempotent and audited, and unknown/malformed payloads fail closed
-/// before any side effect.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 // Service-level integration tests over IAdminConfigChangeApplier (no HTTP surface of
@@ -35,6 +29,14 @@ public sealed class OpsActionApplierTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     private IAdminConfigChangeApplier Applier => _fixture.GetService<IAdminConfigChangeApplier>();
+
+    [IntegrationTest]
+    public async Task ApplyAsync_ForbiddenAction_RejectsBeforeExecution()
+    {
+        var apply = () => Applier.ApplyAsync("""{"action":"security.disable"}""");
+
+        await apply.Should().ThrowAsync<OpsActionException>().WithMessage("*blocked*");
+    }
 
     [IntegrationTest]
     public async Task ApplyAsync_RedriveDeadLetters_DrainsSeededBacklogAndAudits()

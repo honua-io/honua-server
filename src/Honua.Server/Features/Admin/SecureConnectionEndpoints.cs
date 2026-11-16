@@ -66,7 +66,8 @@ internal static partial class SecureConnectionEndpoints
 
         group.MapPost("/test", HandleTestDraftConnection)
             .WithDisplayName("Test Secure Connection Draft")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithRouteAgentRule("Tests a connection and changes nothing; the attempt is audited.");
 
         group.MapPut("/{id:guid}", HandleUpdateConnection)
             .WithDisplayName("Update Secure Connection")
@@ -79,12 +80,14 @@ internal static partial class SecureConnectionEndpoints
         // Connection testing and health
         group.MapPost("/{id:guid}/test", HandleTestConnection)
             .WithDisplayName("Test Connection Health")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithRouteAgentRule("Tests a connection and changes nothing; the attempt is audited.");
 
         // Encryption management
         group.MapPost("/encryption/validate", HandleValidateEncryption)
             .WithDisplayName("Validate Encryption Service")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/encryption/rotate-key", HandleRotateEncryptionKey)
             .WithDisplayName("Rotate Encryption Key")
@@ -278,6 +281,7 @@ internal static partial class SecureConnectionEndpoints
     {
         try
         {
+            await Services.ManagedImportConnection.EnsureAsync(context.RequestServices, context.RequestAborted);
             var connections = await registry.GetActiveConnectionsAsync(context.RequestAborted);
 
             var summaries = connections.Select(c => new SecureConnectionSummary

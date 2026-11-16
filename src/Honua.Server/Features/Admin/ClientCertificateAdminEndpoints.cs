@@ -36,6 +36,7 @@ internal static class ClientCertificateAdminEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Security", "Client Certificates")
             .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
             .AddEndpointFilter((invocationContext, next) =>
             {
                 var context = invocationContext.HttpContext;
@@ -118,7 +119,8 @@ internal static class ClientCertificateAdminEndpoints
 
         group.MapPost("/validate", HandleValidateCertificate)
             .WithDisplayName("Validate Client Certificate")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithRouteAgentRule("Changes nothing.");
     }
 
     private static async Task<IResult> HandleListProfiles(

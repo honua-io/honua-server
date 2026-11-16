@@ -8,12 +8,6 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for MCP wire-format models.
-/// All payload types exchanged over the MCP JSON-RPC endpoint must be
-/// declared here so <see cref="System.Text.Json"/> can emit source-generated
-/// serializers without reflection fallback.
-/// </summary>
 [JsonSerializable(typeof(McpJsonRpcRequest))]
 [JsonSerializable(typeof(McpJsonRpcResponse))]
 [JsonSerializable(typeof(List<McpJsonRpcResponse>))]
@@ -141,4 +135,5 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(string))]
 internal sealed partial class McpJsonContext : JsonSerializerContext;

@@ -16,10 +16,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Certification-depth GeoServices protocol mutation scenarios. A new test class instance
-/// creates a new database schema, preventing writes from leaking between cases.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime

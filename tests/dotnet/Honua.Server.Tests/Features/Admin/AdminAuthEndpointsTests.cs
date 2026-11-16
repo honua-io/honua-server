@@ -24,9 +24,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the anonymous admin auth bootstrap and backend-assisted OIDC endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -44,17 +41,26 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
     private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private HttpClient? _client;
 
     public AdminAuthEndpointsTests()
     {
         _fixture = CreateBaseFixture();
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    // Configured OIDC and certificate cases own their app; boot the default app only when used.
+    private async Task<HttpClient> GetClientAsync()
     {
+        if (_client is not null)
+        {
+            return _client;
+        }
+
         await _fixture.InitializeAsync();
         _client = _fixture.CreateClient();
+        return _client;
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -63,7 +69,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_IsAnonymous_Returns200()
     {
-        var response = await _client.GetAsync("/api/v1/admin/auth/config");
+        var client = await GetClientAsync();
+        var response = await client.GetAsync("/api/v1/admin/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
@@ -73,7 +80,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_NoOidcConfigured_ReturnsEmptyProviders()
     {
-        var response = await _client.GetAsync("/api/v1/admin/auth/config");
+        var client = await GetClientAsync();
+        var response = await client.GetAsync("/api/v1/admin/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthConfigResponse);
@@ -216,7 +224,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/logout")]
     public async Task Logout_IsAnonymous_Returns200()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/logout", new object());
+        var client = await GetClientAsync();
+        var response = await client.PostAsJsonAsync("/api/v1/admin/auth/logout", new object());
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -225,7 +234,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
     public async Task CreateAuthorizeUrl_NoOidcConfigured_ReturnsNotFound()
     {
-        var response = await _client.PostAsJsonAsync(
+        var client = await GetClientAsync();
+        var response = await client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/authorize-url",
             new { });
 
@@ -394,7 +404,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
             oidcClient.BaseAddress = new Uri("https://localhost");
-            await SetCsrfHeaderAsync(oidcClient);
+            await BrowserCsrf.SetHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsJsonAsync("/api/v1/admin/auth/logout", new { });
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -419,7 +429,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
     public async Task RequestToken_NoOidcConfigured_ReturnsNotFound()
     {
-        var response = await _client.PostAsJsonAsync(
+        var client = await GetClientAsync();
+        var response = await client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/token",
             new
             {
@@ -546,7 +557,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
     public async Task GetLogoutUrl_NoOidcConfigured_ReturnsNotFound()
     {
-        var response = await _client.GetAsync("/api/v1/admin/auth/providers/azuread/logout-url");
+        var client = await GetClientAsync();
+        var response = await client.GetAsync("/api/v1/admin/auth/providers/azuread/logout-url");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -1021,7 +1033,8 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/bearer")]
     public async Task IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized()
     {
-        var response = await _client.PostAsync("/api/v1/admin/auth/bearer", content: null);
+        var client = await GetClientAsync();
+        var response = await client.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -1043,7 +1056,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
             oidcClient.BaseAddress = new Uri("https://localhost");
             var rejected = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
             rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            await SetCsrfHeaderAsync(oidcClient);
+            await BrowserCsrf.SetHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -1076,7 +1089,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
             sessionClient.BaseAddress = new Uri("https://localhost");
-            await SetCsrfHeaderAsync(sessionClient);
+            await BrowserCsrf.SetHeaderAsync(sessionClient);
             var response = await sessionClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 

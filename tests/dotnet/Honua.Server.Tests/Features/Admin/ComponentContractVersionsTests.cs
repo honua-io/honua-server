@@ -127,6 +127,13 @@ public sealed class ComponentContractVersionsTests
     }
 
     [UnitTest]
+    public void DeclaredPublicationDescriptorVersion_MatchesTheDescriptorTheServerWrites()
+    {
+        ComponentVersionsDeclaration.Embedded.SchemaVersions["publication-descriptor"]
+            .Should().Be(Honua.Core.Features.Publishing.Descriptors.PublicationDescriptor.CurrentVersion);
+    }
+
+    [UnitTest]
     public void DeclaredInspectorPaginationObserverVersion_MatchesTheExportedObserverContract()
     {
         // The certification observer's proof contract is a cross-repository interface consumed by

@@ -216,9 +216,23 @@ internal static class McpWorkflowViewCatalog
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
             + "style and render a map. Use the setup view for Studio authoring and publication. Select the folders view to organize folders or move services.",
-        Revision = "configure.v3",
+        Revision = "configure.v4",
         Stages =
         [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "inspect",
+                Title = "Inspect dataset",
+                Description = "Read supported formats and limits, preview a file or URL, and validate a connection table before publishing.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_formats"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_limits"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_preview"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_preview_url"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connections_tables_validate"),
+                ],
+            },
             new McpWorkflowViewStageDefinition
             {
                 Id = "admin",
@@ -245,13 +259,16 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "connect-import",
                 Title = "Connect and import",
-                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB.",
+                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB; "
+                    + "preview a job artifact, then propose its import into fresh server-owned staging for human approval.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
                     McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_preview"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_import"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -324,8 +341,10 @@ internal static class McpWorkflowViewCatalog
     {
         Name = OperateViewName,
         Title = "Operate",
-        Description = "Read health, findings, events, release status, and deploy operations, then propose one finding.",
-        Revision = "operate.v1",
+        Description =
+            "Read health, findings, events, release status, and deploy operations, then propose one finding, "
+            + "an upgrade, or a rollback.",
+        Revision = "operate.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -342,6 +361,17 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_platform_release_status"),
                     McpWorkflowViewMemberRule.Exact("honua_deploy_operations"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "release",
+                Title = "Propose an upgrade or rollback",
+                Description = "Propose platform release convergence or a rollback. Each proposal waits for approval.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_propose_platform_release_convergence"),
+                    McpWorkflowViewMemberRule.Exact("honua_propose_rollback"),
                 ],
             },
             new McpWorkflowViewStageDefinition

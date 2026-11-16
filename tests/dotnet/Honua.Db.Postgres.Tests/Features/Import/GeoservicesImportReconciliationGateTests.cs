@@ -21,12 +21,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Drives the post-publish reconciliation gate wired into the Geoservices import Validating phase
-/// (issues #1247/#1380). A reconciliation verdict of <c>fail</c> must route the run to
-/// <see cref="GeoservicesImportStatus.NeedsReview"/> and block completion; a faithful import must
-/// reach <see cref="GeoservicesImportStatus.Completed"/>.
-/// </summary>
 [Collection("Database")]
 public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fixture)
 {
@@ -127,11 +121,6 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         }
     }
 
-    /// <summary>
-    /// #4600 AC6: a filtered import is reconciled against the filtered source. The discovery count is
-    /// always unfiltered (<c>where=1=1</c>), so before this fix the count probe compared the 2 imported
-    /// records with all 3 source records and failed a faithful filtered import.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WithWhereClause_ReconcilesAgainstTheFilteredSourceCount()
     {
@@ -386,10 +375,6 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         }
     }
 
-    /// <summary>
-    /// Three source records (OBJECTID 1..3). Unfiltered counts report 3; the <see cref="Filter"/> count
-    /// and query select OBJECTIDs 1 and 2.
-    /// </summary>
     private sealed class FilteredFeatureServerHandler : HttpMessageHandler
     {
         public const string Filter = "OBJECTID<3";

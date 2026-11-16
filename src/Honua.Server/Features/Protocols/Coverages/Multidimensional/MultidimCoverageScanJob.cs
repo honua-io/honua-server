@@ -13,6 +13,8 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Services;
 using Microsoft.Extensions.Logging;
 
+using Honua.Core.Features.Raster.ZarrParser;
+
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
 internal static class MultidimCoverageScanJob
@@ -182,7 +184,7 @@ internal static class MultidimCoverageScanJob
 
     public static async Task RegisterDerivedZarrAsync(
         IZarrStore zarrStore,
-        IZarrMetadataReader zarrMetadataReader,
+        ZarrMetadataExtractor zarrMetadataReader,
         IEnumerable<ICloudRangeReader> rangeReaders,
         MultidimensionalCoverageRegistration registration,
         string zarrRootPath,

@@ -18,7 +18,8 @@ internal static class MetadataReleaseEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Metadata", "Releases")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/environments/{environment}/inventory", HandleGetInventory)
             .WithDisplayName("Get Metadata Semantic Inventory")
@@ -31,7 +32,8 @@ internal static class MetadataReleaseEndpoints
             .WithDisplayName("Query Metadata Environment Bindings")
             .WithSummary("Returns secret-safe binding summaries for semantic ids across environments.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<MetadataEnvironmentBindingsResponse>();
+            .Produces<MetadataEnvironmentBindingsResponse>()
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/release-packages", HandleCreateReleasePackage)
             .WithDisplayName("Create Metadata Release Package")

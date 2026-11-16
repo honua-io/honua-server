@@ -9,10 +9,6 @@ using LibraryGeocodeProvider = Honua.Geocoding.Features.Geocoding.Abstractions.I
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-/// <summary>
-/// Nominatim is registered unless a deployment sets
-/// <c>Geocoding:Providers:Nominatim:Enabled=false</c> (#6601).
-/// </summary>
 public sealed class GeocodingNominatimRegistrationTests
 {
     [UnitTest]

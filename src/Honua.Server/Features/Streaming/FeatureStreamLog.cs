@@ -51,14 +51,6 @@ internal static partial class FeatureStreamLog
         Message = "Feature stream filter validation failed: {Error}")]
     public static partial void FilterValidationFailed(ILogger logger, string error);
 
-    [LoggerMessage(EventId = 5012, Level = LogLevel.Warning,
-        Message = "Feature stream cross-node broadcast is unavailable; live delivery is local-only.")]
-    public static partial void ClusterBroadcastUnavailable(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 5013, Level = LogLevel.Warning,
-        Message = "Feature stream cross-node broadcast failed; live delivery is continuing locally.")]
-    public static partial void ClusterBroadcastFailed(ILogger logger, Exception exception);
-
     [LoggerMessage(EventId = 5014, Level = LogLevel.Debug,
         Message = "Feature stream WebSocket close failed for session {SessionId}")]
     public static partial void WebSocketCloseFailed(ILogger logger, Exception exception, Guid sessionId);
@@ -82,14 +74,6 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5019, Level = LogLevel.Debug,
         Message = "Feature stream session {SessionId} dropped a stale-generation frame for subscription {SubscriptionId} (frameGeneration={FrameGeneration})")]
     public static partial void StaleSubscriptionFrameDropped(ILogger logger, Guid sessionId, string subscriptionId, long frameGeneration);
-
-    [LoggerMessage(EventId = 5020, Level = LogLevel.Warning,
-        Message = "Feature stream cluster-broadcast backlog exceeded {Capacity} entries; dropping oldest payloads (totalDropped={TotalDropped})")]
-    public static partial void ClusterBroadcastBacklogOverflowed(ILogger logger, int capacity, long totalDropped);
-
-    [LoggerMessage(EventId = 5021, Level = LogLevel.Debug,
-        Message = "Feature stream Redis unsubscribe failed during session manager disposal")]
-    public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 5022, Level = LogLevel.Information,
         Message = "Feature stream baseline snapshot emitted for session {SessionId} subscription {SubscriptionId}: reason={Reason}, features={FeatureCount}, baselineCursor={BaselineCursor}, complete={Complete}")]

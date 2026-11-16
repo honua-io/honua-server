@@ -5,49 +5,8 @@ using System.Globalization;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Admission control that bounds the attacker-controlled REQUESTED OUTPUT grid of
-/// the rasterize / interpolate / resample executors BEFORE the GDAL subprocess
-/// spawns (#2782, #2793).
-///
-/// <para>
-/// <c>gdal_rasterize -ts &lt;width&gt; &lt;height&gt;</c> and
-/// <c>gdal_grid -outsize &lt;width&gt; &lt;height&gt;</c> take an explicit output
-/// canvas size straight from caller input. A request can supply a tiny vector input
-/// yet ask for an enormous output raster — GDAL then allocates the
-/// width×height×bands×dtype OUTPUT grid → OOM. <see cref="TryAdmit"/> bounds that
-/// EXPLICIT pixel grid. This is the OUTPUT-side companion to the INPUT
-/// decompression-bomb bound enforced by <see cref="GdalRasterDimensionGuard"/>
-/// (#2766/#2780): both reuse the same <see cref="GdalWorkerOptions"/> width / height /
-/// pixel caps so the output canvas cannot exceed what a legitimate input raster is
-/// allowed to be.
-/// </para>
-///
-/// <para>
-/// The caller-controlled RESOLUTION paths that resolve to <c>-tr</c> (a target cell
-/// size rather than an explicit pixel grid) are bounded by <see cref="TryAdmitResolution"/>
-/// (#2793): the output pixel count = input extent ÷ target cell size, so a tiny cell
-/// size over a wide extent yields billions of output pixels. This covers the
-/// <c>conversion.rasterize</c> <c>cellSize</c> → <c>-tr</c> branch (extent from the
-/// vector payload envelope) and the <c>raster.resample</c>
-/// <see cref="GdalRasterResampleJobExecutor"/> <c>gdalwarp -tr</c> path (extent =
-/// declared input pixel dimensions × ModelPixelScale). Both derive the extent from a
-/// cheap header / payload read, then apply the same width / height / pixel / decoded-byte
-/// caps as <see cref="TryAdmit"/>. When no real extent can be derived (an
-/// un-georeferenced raster or a degenerate/point envelope) the resolution bound admits
-/// and the <see cref="GdalWorkerOptions.ToolTimeout"/> /
-/// <see cref="GdalWorkerOptions.MaxArtifactBytes"/> ceilings remain the backstop.
-/// </para>
-/// </summary>
 internal static class GdalOutputGridGuard
 {
-    /// <summary>
-    /// Admits or rejects an explicitly requested output grid (<paramref name="width"/>
-    /// × <paramref name="height"/>, in pixels) against the configured width / height /
-    /// pixel-count caps. Returns <c>false</c> with a caller-facing
-    /// <paramref name="error"/> when any cap is exceeded, so the executor can fail the
-    /// job with a clear validation message before spawning the GDAL tool.
-    /// </summary>
     public static bool TryAdmit(long width, long height, GdalWorkerOptions options, out string error)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -96,28 +55,6 @@ internal static class GdalOutputGridGuard
         return true;
     }
 
-    /// <summary>
-    /// Admits or rejects a RESOLUTION-derived output grid (#2793). The caller supplies a
-    /// target cell size (the GDAL <c>-tr</c> flag) instead of an explicit pixel grid, so
-    /// the output dimensions are derived as <c>ceil(extent ÷ cellSize)</c> per axis from
-    /// the input extent (the input raster's ground extent for <c>raster.resample</c>; the
-    /// vector payload envelope for <c>conversion.rasterize</c>). The derived width /
-    /// height / pixel-count / decoded-byte footprint is then bounded by the same
-    /// <see cref="GdalWorkerOptions"/> caps <see cref="TryAdmit"/> applies, so a tiny
-    /// cell size over a wide extent is refused BEFORE the GDAL tool spawns and allocates
-    /// the output grid. Returns <c>false</c> with a caller-facing <paramref name="error"/>
-    /// on an over-cap grid.
-    ///
-    /// <para>
-    /// A non-finite or non-positive <paramref name="extentX"/> / <paramref name="extentY"/>
-    /// signals that no real ground extent could be derived (an un-georeferenced raster, or
-    /// a degenerate / single-point envelope): there is nothing to bound on the resolution
-    /// axis, so the grid is admitted and the input-dimension caps plus the
-    /// <see cref="GdalWorkerOptions.ToolTimeout"/> / <see cref="GdalWorkerOptions.MaxArtifactBytes"/>
-    /// ceilings remain the backstop. Cell size is validated positive+finite at the executor
-    /// boundary and re-guarded here defensively.
-    /// </para>
-    /// </summary>
     public static bool TryAdmitResolution(
         double extentX,
         double extentY,
@@ -134,11 +71,6 @@ internal static class GdalOutputGridGuard
             options,
             out error);
 
-    /// <summary>
-    /// Admits a resolution-derived grid using the caller's preserved output pixel footprint.
-    /// Raster resampling keeps the source band count and data type, so its decoded output cannot
-    /// safely use the single-band Float64 estimate used by rasterize/grid operations.
-    /// </summary>
     public static bool TryAdmitResolutionWithFootprint(
         double extentX,
         double extentY,

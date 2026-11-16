@@ -10,9 +10,6 @@ using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// OGC API Processes core metadata endpoints (landing page, conformance).
-/// </summary>
 internal static class CoreEndpoints
 {
     private const string BasePath = "/ogc/processes";
@@ -166,7 +163,4 @@ internal static class CoreEndpoints
 
 }
 
-/// <summary>
-/// Logging category for OGC Processes endpoints.
-/// </summary>
 internal sealed class OgcProcessesEndpointsLog;

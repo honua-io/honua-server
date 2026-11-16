@@ -23,7 +23,10 @@ internal sealed record ServerJobArtifactImportCommand(
     string Table,
     DatasetImportServerJobArtifactReference Reference,
     int TargetSrid,
-    int? SourceSrid);
+    int? SourceSrid)
+{
+    internal ServerJobArtifactStagePreview? StagePreview { get; init; }
+}
 
 internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactImportLedger
 {
@@ -85,7 +88,7 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
     }
 }
 
-internal static class ServerJobArtifactImporter
+internal static partial class ServerJobArtifactImporter
 {
     internal const long MaximumInlineBytes = 16L * 1024 * 1024;
     internal const string ImportFileName = "job-artifact.geojson";
@@ -106,7 +109,8 @@ internal static class ServerJobArtifactImporter
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(services);
         ValidateCommand(command);
-        var fingerprint = Fingerprint(command);
+        ValidatePreviewBinding(command);
+        var fingerprint = ImportFingerprint(command);
         try
         {
             return await ledger.GetOrImportAsync(
@@ -180,6 +184,7 @@ internal static class ServerJobArtifactImporter
                 authorized.Summary.SpatialReference.State,
                 authorized.Summary.SpatialReference.Srid,
                 command.SourceSrid);
+            ValidatePreviewContent(command.StagePreview, authorized.Summary, sourceSrid);
             attempt.Prepare(new ServerJobArtifactImportReceiptPrototype(
                 sourceSrid,
                 command.TargetSrid,
@@ -197,7 +202,7 @@ internal static class ServerJobArtifactImporter
                     SourceSrid = sourceSrid,
                     TargetSrid = command.TargetSrid,
                     OverwriteExisting = false,
-                    LoadMode = ImportLoadMode.Append,
+                    LoadMode = command.StagePreview is null ? ImportLoadMode.Append : ImportLoadMode.CreateOnly,
                     CommitParticipant = attempt.Participant,
                 },
                 cancellationToken).ConfigureAwait(false);

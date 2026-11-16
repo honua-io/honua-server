@@ -861,16 +861,16 @@ internal sealed partial class ODataQueryHandler(
 
         try
         {
-            var (payload, contentType) = ODataGeoParquetExport.FormatPage(
-                queryResult,
-                resource,
-                geometryLimits,
-                outFields,
-                _logger,
-                limitsOptions?.Value?.GeoParquet);
+            var (payload, contentType) = ODataGeoParquetExport.FormatPageStream(queryResult, resource, new ODataGeoParquetStreamOptions
+            {
+                GeometryLimits = geometryLimits,
+                OutFields = outFields,
+                Logger = _logger,
+                EncodingLimits = limitsOptions?.Value?.GeoParquet
+            });
 
             ODataUtilityService.SetODataHeaders(context);
-            return Results.Bytes(payload, contentType);
+            return Results.Stream(payload, contentType);
         }
         catch (GeoParquetLimitExceededException)
         {

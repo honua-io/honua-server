@@ -12,22 +12,11 @@ using NetTopologySuite.IO;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>raster.clip</c> process:
-/// raster clipping to a polygonal boundary geometry, executed via the GDAL
-/// <c>gdalwarp -cutline</c> CLI. Reads a base64 GeoTIFF source and a base64
-/// WKB boundary, writes the boundary to a GeoJSON cutline file (gdalwarp's
-/// <c>-cutline</c> requires an OGR-readable file; it cannot consume inline WKB),
-/// runs the clip in an isolated scratch workspace, and publishes the clipped
-/// GeoTIFF as a canonical data-URI artifact. Runs only inside the GDAL worker
-/// image — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterClipJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterClipJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.clip";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -35,20 +24,13 @@ internal sealed partial class GdalRasterClipJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -126,13 +108,14 @@ internal sealed partial class GdalRasterClipJobExecutor(
             // All three second segments are fixed relative literal filenames, so
             // they can never be rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
             var cutlinePath = Path.Join(workspace, "cutline.geojson");
             var outputPath = Path.Join(workspace, "output.tif");
             var warpedPath = Path.Join(workspace, "warped.tif");
 
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
@@ -222,12 +205,6 @@ internal sealed partial class GdalRasterClipJobExecutor(
     private static bool IsAreaGeometry(Geometry geometry)
         => geometry is Polygon or MultiPolygon;
 
-    /// <summary>
-    /// Encodes the boundary as a single-feature GeoJSON FeatureCollection that
-    /// gdalwarp's <c>-cutline</c> option will accept. The CRS field is emitted
-    /// only when the boundary carries an explicit SRID so we never invent CRS
-    /// metadata that gdalwarp would silently honour.
-    /// </summary>
     internal static string WriteCutlineGeoJson(Geometry boundary)
     {
         var geometryJson = new GeoJsonWriter().Write(boundary);

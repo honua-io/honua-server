@@ -1271,14 +1271,6 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         dataArray.GetBytes(0).ToArray().Should().Equal(rawBytes);
     }
 
-    /// <summary>
-    /// Guards against the dual-switch sync risk: MapToArrowType and BuildAttributeArray
-    /// use independent switch statements over SQL type strings. If they diverge for any type,
-    /// the Parquet write or read will fail because the schema declares one Arrow type but
-    /// the column data uses another.
-    /// Note: The formatter also handles "smallint"/"int2" -> Int16 and "decimal" -> Double
-    /// as defensive branches for raw SQL type overrides.
-    /// </summary>
     [Fact]
     public async Task FormatAsGeoParquet_AllSqlTypes_SchemaAndBuilderTypesAreConsistent()
     {
@@ -1659,12 +1651,6 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .Select(e => e.GetString()).Should().Equal("Point");
     }
 
-    /// <summary>
-    /// honua-server#4747: the shipped server runs with JSON reflection disabled, and the writer
-    /// encoded a non-empty <c>geometry_types</c> with the reflection-based serializer overload, so
-    /// every <c>f=parquet</c> page with a concrete geometry type became a 500 envelope. This runs
-    /// the writer in a child process with the switch off and decodes the file it produced.
-    /// </summary>
     [Fact]
     public async Task FormatAsGeoParquet_WithReflectionDisabled_WritesConcreteGeometryTypesValuesAndMetadata()
     {
@@ -1730,10 +1716,6 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             .Select(element => element.GetString()).Should().Equal("bbox", "xmin");
     }
 
-    /// <summary>
-    /// honua-server#4747: the AOT-safe encoder must keep the ordinal sort and the JSON escaping the
-    /// reflection-based call produced. Expected text is written out by hand, not captured.
-    /// </summary>
     [Fact]
     public void SerializeGeometryTypes_SortsOrdinallyAndEscapesLikeTheDefaultSerializer()
     {
@@ -1755,13 +1737,61 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         Description = "Test Layer"
     };
 
+    [UnitTest]
+    public void FormatAsGeoParquet_FileMetadata_IsWrittenBesideGeoMetadata()
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateLayer(), "objectid", returnGeometry: true, 4326,
+            returnZ: false, returnM: false, new GeometryLimits(),
+            fileMetadata: new Dictionary<string, string> { ["honua:captureId"] = "capture-1" });
+
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload.ToArray()));
+        reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
+        reader.Schema.Metadata.Should().ContainKey("geo");
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FormatAsGeoParquetStream_FileMetadata_IsWrittenForEmptyAndPopulatedResults(bool empty)
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var result = QueryResult<Feature>.Create(empty ? 0 : 1, empty ? [] : [feature]);
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, CreateLayer(), new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = "objectid",
+            ReturnGeometry = true,
+            OutputSrid = 4326,
+            FileMetadata = new Dictionary<string, string> { ["honua:captureId"] = "capture-1" }
+        });
+        using (payload)
+        using (var reader = new ParquetSharp.Arrow.FileReader(payload))
+        {
+            reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
+            reader.Schema.Metadata.Should().ContainKey("geo");
+        }
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_FileMetadataNamedGeo_IsRejected()
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var act = () => GeoParquetFeatureWriter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateLayer(), "objectid", returnGeometry: true, 4326,
+            returnZ: false, returnM: false, new GeometryLimits(),
+            fileMetadata: new Dictionary<string, string> { ["geo"] = "{}" });
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
         => FormatterTestResources.WithoutSpatialSlot(TestLayerMetadata(), fields);
 
-    private static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
+    internal static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 
-    private static MetadataV2Field Field(
+    internal static MetadataV2Field Field(
         string name,
         MetadataV2FieldType type,
         int? length = null,

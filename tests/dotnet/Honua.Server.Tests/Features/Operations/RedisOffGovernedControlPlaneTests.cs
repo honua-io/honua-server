@@ -24,14 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsRedisOff;
 
-/// <summary>
-/// 2026.1 rc.3 J1/S1: a host composed without Redis must still advertise the governed
-/// <c>honua_admin_*</c> catalog and refuse proposal-requiring calls with the typed
-/// capability-unavailable outcome. Before the fix the 20 <see cref="AdminApiOperationCatalog"/>
-/// tools were silently absent on Redis-off cells, because <c>AddOperationsToolset</c> gates their
-/// executors on a registered <see cref="IOperationProposalStore"/> and Program.cs registered one
-/// only inside the Redis block.
-/// </summary>
 public sealed class RedisOffGovernedControlPlaneTests
 {
     [UnitTest]

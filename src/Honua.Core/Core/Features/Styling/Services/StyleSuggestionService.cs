@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Styling.Services;
 
-internal sealed partial class StyleSuggestionService : IStyleSuggestionService
+public sealed partial class StyleSuggestionService
 {
     private const int MaxProfilingFields = 10;
     private const int SampleLimit = 50_000;

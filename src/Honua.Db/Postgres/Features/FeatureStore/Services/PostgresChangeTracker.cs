@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads the change-tracking log from Postgres for incremental replication sync
-/// </summary>
 internal sealed class PostgresChangeTracker : IChangeTracker
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -29,7 +26,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         // transactions that have called nextval but not yet committed. A replica that persisted
         // last_value as its cursor and then selected strictly generation > cursor would skip any
         // lower-generation change that committed after the cursor was read (commit order != gen
-        // order under concurrency), losing it from the replica forever (#2062). Reading the
+        // order under concurrency), losing it from the replica forever. Reading the
         // committed MAX(generation) from honua.feature_changes instead gives a watermark the
         // puller can advance to without skipping an in-flight write; migration 067 takes a
         // generation-allocation advisory lock in the change-tracking triggers so generation order
@@ -42,6 +39,22 @@ internal sealed class PostgresChangeTracker : IChangeTracker
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long gen ? gen : 0;
+    }
+
+    public async Task<bool> HasLayerChangedSinceAsync(long sinceGeneration, int layerId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM honua.feature_changes
+                WHERE generation > $1 AND layer_id = $2)
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, sinceGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Integer, layerId);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is true;
     }
 
     public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(

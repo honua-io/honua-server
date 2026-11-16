@@ -13,13 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for MVT vector tile temporal filtering introduced for ticket #379.
-/// The default test host runs as Pro edition so the time-series tile gate passes;
-/// the gate logic itself is unit-tested separately. Covers ?time= acceptance,
-/// validation of malformed values, and non-regression for tiles requested without
-/// the parameter.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]

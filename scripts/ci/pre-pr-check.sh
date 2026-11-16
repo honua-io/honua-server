@@ -327,7 +327,7 @@ if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" && "${FULL}" != "1" ]]; then
         echo "📋 Selection summary"
         echo "  - Mode: CI-SHELL-ONLY (${changed_count} changed file(s), all doc/CI-script-only)"
         echo "  - Would run: check-instructions-sync, validate-shell-syntax (changed .sh only),"
-        echo "    validate-ci-router, merge-train fixtures — no restore/build/format/test."
+        echo "    validate-ci-router — no restore/build/format/test."
         echo ""
         echo "🔎 Dry run complete — nothing was restored, built, formatted, or tested."
         exit 0
@@ -347,20 +347,6 @@ if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" && "${FULL}" != "1" ]]; then
 
     echo "3. Validating CI workflow and shard routing..."
     scripts/ci/validate-ci-router.sh
-
-    echo "4. Running merge-train mode fixtures..."
-    scripts/ci/merge-train/fixtures/validate-mode.sh
-
-    if grep -qE '^scripts/ci/merge-train/' <<< "${PRE_PR_CHANGED_FILES}"; then
-        echo "5. Running merge-train fixtures..."
-        scripts/ci/merge-train/fixtures/validate-merge-train.sh
-        scripts/ci/merge-train/fixtures/validate-review-admission.sh
-        scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
-        scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh
-        scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
-    else
-        echo "5. Merge-train fixtures not required (surface unchanged)."
-    fi
 
     echo "✅ CI shell-only pre-PR checks passed; managed build/test work was not required."
     exit 0

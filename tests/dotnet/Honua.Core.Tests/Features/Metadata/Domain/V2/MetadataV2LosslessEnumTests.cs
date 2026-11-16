@@ -11,6 +11,20 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
 public sealed class MetadataV2LosslessEnumTests
 {
+    [UnitTheory]
+    [InlineData("decimal", MetadataV2FieldType.Decimal)]
+    [InlineData("timestamp-offset", MetadataV2FieldType.TimestampOffset)]
+    public void ExactFieldTypes_AreKnownAndSurviveMetadataRoundTrip(string token, MetadataV2FieldType expected)
+    {
+        var json = "{\"resources\":[{\"schemaFields\":[{\"name\":\"value\",\"type\":\"" + token + "\"}]}]}";
+        var graph = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        graph.Resources[0].SchemaFields[0].Type.Should().Be(expected);
+        var persisted = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
+        var restored = JsonSerializer.Deserialize(persisted, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        restored.Resources[0].SchemaFields[0].Type.Should().Be(expected);
+        persisted.Should().Contain("\"type\":\"" + token + "\"");
+    }
+
     public static TheoryData<string, string> UnknownTokens()
     {
         var cases = new TheoryData<string, string>();

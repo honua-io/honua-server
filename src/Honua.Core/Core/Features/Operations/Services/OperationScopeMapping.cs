@@ -65,15 +65,30 @@ public static class OperationScopeMapping
                 "admin.services.timeinfo.set" or "admin.services.layer-metadata.set" or
                 "admin.connections.update" or "admin.connections.extents.refresh" or
                 "admin.connections.features.refresh" => OperatorOperation.Update,
-            _ => ResolveLayerConfiguration(request.OperationId),
+            _ => ResolveUnlistedOperation(request.OperationId),
         };
         return operation != default;
+    }
+
+    // Layer configuration landed with the display/spatial tools. Dataset inspection is the
+    // read-only Publish slice (formats, limits, file/URL previews and table validation).
+    private static OperatorOperation ResolveUnlistedOperation(string operationId)
+    {
+        var layer = ResolveLayerConfiguration(operationId);
+        return layer != default ? layer : ResolveDatasetInspection(operationId);
     }
 
     private static OperatorOperation ResolveLayerConfiguration(string operationId) => operationId switch
     {
         "admin.layer.display.get" or "admin.layer.spatial.get" => OperatorOperation.Read,
         "admin.layer.display.set" or "admin.layer.spatial.set" => OperatorOperation.Update,
+        _ => default,
+    };
+
+    private static OperatorOperation ResolveDatasetInspection(string operationId) => operationId switch
+    {
+        "admin.import.formats" or "admin.import.limits" or "admin.import.preview" or
+            "admin.import.preview-url" or "admin.connections.tables.validate" => OperatorOperation.Read,
         _ => default,
     };
 
@@ -102,9 +117,9 @@ public static class OperationScopeMapping
         => ResolveStudioOperation(operationId) != default;
 
     // Every Studio mutation routed through the canonical runtime needs a mapping: the dispatcher
-    // refuses any scope-governed submission it cannot map (#4722), so an unmapped identity made
-    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed
-    // (#3429). The operations mirror StudioAuthorizationService's scope ceiling.
+    // refuses any scope-governed submission it cannot map, so an unmapped identity made
+    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed.
+    // The operations mirror StudioAuthorizationService's scope ceiling.
     private static OperatorOperation ResolveStudioOperation(string operationId)
         => operationId switch
         {
@@ -137,7 +152,8 @@ public static class OperationScopeMapping
 
         // Access-family reads expose key, user, tenant and provider inventories, so a
         // scope-governed bearer needs read authority for them and not merely discover/create.
-        if (operationId.EndsWith(".list", StringComparison.Ordinal) ||
+        if (operationId is "admin.oidc-provider.revisions" or "admin.rate-limit-policy.revisions" ||
+            operationId.EndsWith(".list", StringComparison.Ordinal) ||
             operationId.EndsWith(".get", StringComparison.Ordinal) ||
             operationId.EndsWith(".status", StringComparison.Ordinal) ||
             operationId.EndsWith(".test", StringComparison.Ordinal) ||

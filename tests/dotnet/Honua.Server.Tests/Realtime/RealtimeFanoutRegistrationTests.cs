@@ -161,6 +161,26 @@ public sealed partial class RealtimeFanoutProviderTests
             Microsoft.Extensions.Options.Options.Create(new RealtimeOptions()),
             NullLogger<RealtimeListener>.Instance);
 
+    [UnitTest]
+    public async Task OptionalFanout_HostWithoutDatabase_IsEmptyAndNeverBuildsTheProvider()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection().AddSingleton<IConfiguration>(configuration).AddLogging();
+        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops: false);
+        await using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IOptionalRealtimeFanout>().Provider.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task OptionalFanout_HostWithDatabase_ExposesTheProvider()
+    {
+        await using var provider = BuildServices([], hostsDatabasePollingLoops: false);
+
+        provider.GetRequiredService<IOptionalRealtimeFanout>().Provider
+            .Should().BeSameAs(provider.GetRequiredService<IRealtimeFanoutProvider>());
+    }
+
     private static ServiceProvider BuildServices(
         Dictionary<string, string?> settings,
         bool hostsDatabasePollingLoops,

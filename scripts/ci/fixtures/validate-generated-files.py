@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 from types import SimpleNamespace
 import unittest
 
@@ -41,6 +42,35 @@ def create_fake_pull_api(base):
 
 
 class GeneratedGraphFreshness(unittest.TestCase):
+    def test_docs_inventory_generation_supports_legacy_heads_without_hiding_errors(self):
+        source = (ROOT / '.github/workflows/docs-link-gate.yml').read_text()
+        step = source.split('- name: Regenerate trunk-owned documentation for validation', 1)[1]
+        block = textwrap.dedent(step.split('run: |\n', 1)[1].split('\n      #', 1)[0])
+        for generator, template, broken, expected in (
+                (False, False, False, 0), (True, True, False, 0),
+                (False, True, False, 1), (True, False, False, 1),
+                (True, True, True, 7)):
+            with self.subTest(generator=generator, template=template, broken=broken):
+                with tempfile.TemporaryDirectory() as directory:
+                    repo = Path(directory)
+                    scripts = repo / 'scripts/ci'
+                    scripts.mkdir(parents=True)
+                    if generator:
+                        (scripts / 'generate-workflow-inventory.py').write_text(
+                            'from pathlib import Path\n'
+                            + ('raise SystemExit(7)\n' if broken else
+                               'Path("inventory-ran").touch()\n'))
+                    if template:
+                        (scripts / 'workflow-inventory.template.md').write_text('template')
+                    (scripts / 'generate-capability-concepts.py').write_text(
+                        'from pathlib import Path\nPath("concepts-ran").touch()\n')
+                    result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', block],
+                                            cwd=repo, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    self.assertEqual((repo / 'concepts-ran').exists(), expected == 0)
+                    self.assertEqual((repo / 'inventory-ran').exists(),
+                                     generator and template and not broken)
+
     def test_graph_callers_declare_the_canonical_yaml_reader(self):
         for path, name, command in (
                 ('.github/workflows/generated-files-on-trunk.yml', 'Regenerate repository projections',
@@ -225,6 +255,56 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('verify-admin-operation-parity.py', generator)
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
+
+    def test_operation_join_uses_fresh_catalog_in_required_pr_architecture(self):
+        action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
+        refresh = action.index('- name: Regenerate projections and report advisory drift')
+        join = action.index('- name: Validate operation-capability join against fresh catalog')
+        architecture = action.index('- name: Run .NET Tests (Architecture)')
+        self.assertLess(refresh, join)
+        self.assertLess(join, architecture)
+        refresh_block = action[refresh:join]
+        join_block = action[join:].split('    # Server.Tests', 1)[0]
+        guard = next(line.strip() for line in refresh_block.splitlines() if line.strip().startswith('if:'))
+        self.assertIn(guard, join_block)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.test.py', join_block)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.py --check', join_block)
+        self.assertNotIn('continue-on-error:', join_block)
+        matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
+        for name in ('Test the operation-capability join', 'Drift check operation-capability.v1.json'):
+            block = matrix.split('- name: ' + name, 1)[1].split('- name:', 1)[0]
+            self.assertIn("if: github.event_name != 'pull_request'", block)
+        parity = action.split('- name: Regenerate admin parity exports', 1)[1]
+        self.assertLess(parity.index('generate-admin-operation-parity-exports.sh'),
+                        parity.index('- name: Run .NET Tests (Server Fast Tier)'))
+        emitter = (ROOT / 'scripts/ci/generate-admin-operation-parity-exports.sh').read_text()
+        self.assertIn('AdminParityExports_EmitWhenExplicitlyRequested', emitter)
+
+    def test_trunk_roster_consumers_regenerate_before_the_strict_roster_test(self):
+        # PRs may not commit the roster (check-generated-file-ownership.py), so
+        # every trunk run that executes McpToolRosterDriftTests must project it
+        # first; otherwise each MCP tool merge is red until the nightly writer.
+        ci = (ROOT / '.github/workflows/ci.yml').read_text()
+        name = '- name: Regenerate the MCP roster projection for protocol tests'
+        self.assertIn(name, ci)
+        step = ci[ci.index(name):].split('\n      - name:', 1)[0]
+        self.assertIn("if: matrix.family == 'protocols'", step)
+        self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release --no-build --no-restore',
+                      step)
+        self.assertLess(ci.index('- name: Build missing foundation outputs'), ci.index(name))
+        self.assertLess(ci.index(name), ci.index('- name: Run foundation family tests'))
+        contract = (ROOT / '.github/workflows/mcp-client-contract.yml').read_text()
+        generate = '- name: Generate the roster projection before the strict roster test'
+        self.assertIn(generate, contract)
+        step = contract[contract.index(generate):].split('\n      - name:', 1)[0]
+        self.assertNotIn('if:', step)
+        self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release', step)
+        parity = 'bash scripts/ci/generate-admin-operation-parity-exports.sh --configuration Release'
+        roster = 'bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release'
+        self.assertIn(parity, step)
+        self.assertLess(step.index(parity), step.index(roster))
+        self.assertLess(contract.index(generate),
+                        contract.index('- name: Invoke every advertised tool and audit its inputs and discovery'))
 
     def test_managed_generators_resolve_repository_root_from_another_directory(self):
         with tempfile.TemporaryDirectory() as temp:

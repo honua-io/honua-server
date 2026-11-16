@@ -65,4 +65,113 @@ public sealed partial class BranchVersioningIntegrationTests
         branch.CommonAncestorGeneration.Should().Be(baseline);
         branch.BranchGeneration.Should().Be(baseline);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    public async Task Update_OpenAllocation_IsVisibleAsInProgressBeforeCommit()
+    {
+        await AssertAllocationAssignsTransactionIdBeforeNextvalAsync("honua.track_feature_changes()");
+        await AssertAllocationAssignsTransactionIdBeforeNextvalAsync("honua.track_version_edits()");
+
+        var feature = await CreateFeatureStore().CreateAsync(
+            PointsLayerId, BuildFeature("xid-fence", 1, 1), CancellationToken.None);
+        await using var writer = await OpenSchemaConnectionAsync();
+        await using var transaction = await writer.BeginTransactionAsync();
+        var allocated = await ReadOpenFeatureUpdateAsync(writer, transaction, feature.Id);
+
+        await using var observer = await OpenSchemaConnectionAsync();
+        await AssertOpenAllocationHiddenAsync(observer, allocated);
+        await transaction.CommitAsync();
+        await AssertCommittedAllocationVisibleAsync(observer, allocated);
+    }
+
+    private async Task AssertAllocationAssignsTransactionIdBeforeNextvalAsync(string functionName)
+    {
+        // The assignment has to precede nextval inside the trigger. Observing the transaction id
+        // after the statement returns cannot establish allocation ordering because the change-row
+        // insert also assigns one. The definition order covers that window.
+        const string sql = """
+            SELECT strpos(definition, 'pg_current_xact_id()') AS assigned,
+                   strpos(definition, 'pg_advisory_xact_lock(144047712, 0)') AS locked,
+                   strpos(definition, 'nextval(''honua.sync_generation'')') AS allocated
+            FROM (SELECT pg_get_functiondef(@function::regprocedure) AS definition) AS source
+            """;
+        await using var connection = await OpenSchemaConnectionAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("function", functionName);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        var assigned = reader.GetInt32(0);
+        var locked = reader.GetInt32(1);
+        var allocated = reader.GetInt32(2);
+        assigned.Should().BeGreaterThan(0, $"{functionName} must assign a transaction id");
+        assigned.Should().BeLessThan(locked);
+        locked.Should().BeLessThan(allocated);
+    }
+
+    private readonly record struct AllocatedChange(string TransactionId, long Generation);
+
+    private static async Task<AllocatedChange> ReadOpenFeatureUpdateAsync(
+        NpgsqlConnection writer,
+        NpgsqlTransaction transaction,
+        long featureId)
+    {
+        await using (var update = new NpgsqlCommand("""
+            UPDATE features
+            SET attributes = '{"name":"in-flight"}'::jsonb
+            WHERE objectid = @id
+            """, writer, transaction))
+        {
+            update.Parameters.AddWithValue("id", featureId);
+            (await update.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        const string sql = """
+            SELECT changes.generation, pg_current_xact_id()::text
+            FROM honua.feature_changes AS changes
+            WHERE changes.layer_id = @layer
+              AND changes.objectid = @id
+            ORDER BY changes.generation DESC
+            LIMIT 1
+            """;
+        await using var allocated = new NpgsqlCommand(sql, writer, transaction);
+        allocated.Parameters.AddWithValue("layer", PointsLayerId);
+        allocated.Parameters.AddWithValue("id", featureId);
+        await using var reader = await allocated.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return new AllocatedChange(reader.GetString(1), reader.GetInt64(0));
+    }
+
+    private static async Task AssertOpenAllocationHiddenAsync(NpgsqlConnection observer, AllocatedChange change)
+    {
+        var (status, rowExists) = await ReadAllocationWitnessAsync(observer, change);
+        status.Should().Be("in progress");
+        rowExists.Should().BeFalse();
+    }
+
+    private static async Task AssertCommittedAllocationVisibleAsync(NpgsqlConnection observer, AllocatedChange change)
+    {
+        var (status, rowExists) = await ReadAllocationWitnessAsync(observer, change);
+        status.Should().Be("committed");
+        rowExists.Should().BeTrue();
+    }
+
+    private static async Task<(string Status, bool RowExists)> ReadAllocationWitnessAsync(
+        NpgsqlConnection observer,
+        AllocatedChange change)
+    {
+        const string sql = """
+            SELECT pg_xact_status(CAST(@transaction_id AS xid8))::text,
+                   EXISTS (
+                       SELECT 1
+                       FROM honua.feature_changes
+                       WHERE generation = @generation)
+            """;
+        await using var command = new NpgsqlCommand(sql, observer);
+        command.Parameters.AddWithValue("transaction_id", change.TransactionId);
+        command.Parameters.AddWithValue("generation", change.Generation);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return (reader.GetString(0), reader.GetBoolean(1));
+    }
 }

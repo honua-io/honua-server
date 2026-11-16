@@ -18,12 +18,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Branch-versioning Slice 1 integration tests (#1272 Track B, ADR-0051). Proves the readable/editable
-/// version core against a real PostGIS schema: a version's edits are isolated from DEFAULT, a versioned
-/// read overlays them, the DEFAULT read is unaffected, the ancestor base image is captured on first
-/// touch, and the DEFAULT (null version) read/edit path is byte-identical.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
@@ -64,6 +58,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
             _schema,
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
+        await InitializeReceiptEvidenceSchemaAsync();
 
         // Register the test layer so the feature store resolves its SRID (4326) and stamps written
         // geometries; without it the geography GIST index expression (ST_Transform(...,4326)) rejects

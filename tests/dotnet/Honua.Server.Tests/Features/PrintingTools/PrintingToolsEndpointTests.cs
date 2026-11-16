@@ -12,28 +12,20 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Integration tests for the GeoServices PrintingTools endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.PrintingTools)]
-public sealed class PrintingToolsEndpointTests : IAsyncLifetime
+public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, IDisposable
 {
     private static readonly int[] DefaultOutputSize = [800, 600];
     private static readonly int[] OversizedOutputSize = [10000, 10000];
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public async Task InitializeAsync()
+    public PrintingToolsEndpointTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = fixture.CreateAdminClient();
     }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    public void Dispose() => _client.Dispose();
 
     // --- Service Info ---
 
@@ -685,9 +677,6 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
 
     // --- Helper Methods ---
 
-    /// <summary>
-    /// Creates a minimal web map JSON for testing with a simple extent.
-    /// </summary>
     private static string CreateMinimalWebMapJson()
     {
         return JsonSerializer.Serialize(new

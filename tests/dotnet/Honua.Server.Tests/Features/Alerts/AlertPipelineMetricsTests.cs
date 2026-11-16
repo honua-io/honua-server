@@ -10,12 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Unit coverage for the alert-pipeline OTel instruments. Each test constructs an isolated
-/// <see cref="AlertPipelineMetrics"/> over its own <see cref="TestMeterFactory"/> and filters the
-/// listener to that exact meter instance, so parallel tests never pollute one another's
-/// observations and no shared process-global instrument state is involved (#2802).
-/// </summary>
 public sealed class AlertPipelineMetricsTests
 {
     [UnitTest]
