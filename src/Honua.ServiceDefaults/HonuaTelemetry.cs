@@ -27,13 +27,9 @@ public static class HonuaTelemetry
     // NONE of them declares an OpenTelemetry `unit`, and that omission is load-bearing. The
     // OTel Prometheus exporter derives the exposed series name from BOTH the instrument name and
     // its unit: it maps the unit through the UCUM table and appends it when the name does not
-    // already end in the mapped form. With units declared, these instruments used to be exported
-    // as `honua_geoservices_error_total_errors_total`, `honua_request_error_total_errors_total`
-    // and `honua_serving_request_duration_ms_milliseconds` — names nothing in the platform
-    // referenced, so every SLO ratio divided by an absent series and silently produced no series
-    // at all (an empty PromQL vector never fires an alert). Dropping the unit makes the exported
-    // name identical to the instrument name, which is the name the whole platform already assumes
-    // (see docker/monitoring/grafana/dashboards/honua-serving-overview.json). The unit stays
+    // already end in the mapped form. Omitting the unit keeps each exported name identical
+    // to its instrument name, as required by consumers such as
+    // docker/monitoring/grafana/dashboards/honua-serving-overview.json. The unit stays
     // documented in the instrument name (`_ms`) and description.
     //
     // Do not add a `unit` argument to these three instruments without also updating every

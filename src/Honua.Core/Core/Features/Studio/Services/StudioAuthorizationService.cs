@@ -244,8 +244,8 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         {
             // Baseline tier: ownership (or public-read visibility) alone authorizes the
             // operation. No operator grant is required -- the flag itself is the widening
-            // switch for REQ-002's "non-admin sessions can complete the draft->version flow on
-            // their own items".
+            // switch that lets non-admin sessions complete the draft->version flow on
+            // their own items.
             if (isOwn || (isRead && isPubliclyReadable))
             {
                 return StudioAuthorizationDecision.Allow();
@@ -256,7 +256,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
                 "The caller does not own this Studio resource.");
         }
 
-        // Elevated tier (REQ-003): publish-request and rollback always require a matching
+        // Elevated tier: publish-request and rollback always require a matching
         // StudioDraft operator grant, evaluated through the platform's existing role/grant
         // infrastructure rather than a parallel mechanism -- ownership alone never suffices, and
         // (unlike the baseline tier) a cross-user caller is not rejected before the grant check

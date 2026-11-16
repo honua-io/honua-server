@@ -40,8 +40,6 @@ public static partial class Extensions
         "Honua.Production.Metrics",
         FederationMetrics.MeterName,
         LambdaTelemetry.MeterName,
-        // PA-112: the SensorThings observation-stream slow-consumer drop counter was
-        // tracked in-memory but never exported as an OTel metric.
         "Honua.SensorThings",
         // #4404: the attachment orphan counter exists so an operator can alert on a
         // storage object that outlived its metadata row; without this entry neither the
@@ -59,13 +57,10 @@ public static partial class Extensions
         "Honua.PackageReview",
         "Honua.Routing",
         "Honua.Geocoding",
-        // PA-014 / PA-063: declared ActivitySources that were never registered with the
-        // OTel TracerProvider, so every span they emit was silently dropped.
         "Honua.GeoServer.Import",
         "Honua.Spec.Parse",
         "Honua.Spec.Validation",
         "Honua.Server.Reporting",
-        // PA-160: provider data-access ActivitySources (spans created but dropped).
         "Honua.SqlServer.FeatureStore",
         "Honua.Snowflake.FeatureStore",
         "Honua.Redshift.FeatureStore",
@@ -76,7 +71,6 @@ public static partial class Extensions
         "Honua.Federation",
         "Honua.Core.Edit",
         "Honua.Core.FeatureStore",
-        // PA-108: federated ArcGIS REST provider query span (paging loop).
         "Honua.GeoServicesRest",
         // A3-004 (#5476): replica conflict resolution and the Zarr slice readers declared their
         // own sources but were never subscribed, so their spans were dropped.

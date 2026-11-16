@@ -61,7 +61,7 @@ internal static partial class ExportEndpoints
         var logger = httpContext.RequestServices.GetRequiredService<ILogger<ExportEndpointsLog>>();
 
         // Validate format. Built-in formats (csv/shapefile/gpkg) plus any active, licensed
-        // plugin-contributed output format (issue #2856, ADR-0067) are accepted.
+        // plugin-contributed output format (ADR-0067) are accepted.
         var builtInFormat = BuiltInExportFormats.Resolve(format);
         var isBuiltInFormat = builtInFormat.HasValue;
         var pluginFormatResolved = !isBuiltInFormat

@@ -127,7 +127,7 @@ internal static partial class ServiceCollectionExtensions
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(
             sp => sp.GetRequiredService<QueryConcurrencyGate>());
 
-        // Singleton cache that resolves the connection string / secret exactly once (PA-077).
+        // Singleton cache that resolves the connection string / secret exactly once.
         // Scoped factories must await ResolvedConnectionStringTask instead of calling the
         // blocking ResolveConnectionString helper so that thread-pool threads are never
         // blocked on a cloud secret call (AWS Secrets Manager / Azure Key Vault).
@@ -147,8 +147,7 @@ internal static partial class ServiceCollectionExtensions
         {
             // The NpgsqlDataSource singleton is created at startup (before requests).
             // Block here is acceptable: this is a one-time startup cost on the
-            // dedicated startup thread, not the request thread pool. The singleton
-            // path is noted as lower-priority in PA-077.
+            // dedicated startup thread, not the request thread pool.
             var connectionString = serviceProvider.GetRequiredService<PostgresConnectionStringCache>()
                 .ResolvedConnectionStringTask
                 .GetAwaiter()

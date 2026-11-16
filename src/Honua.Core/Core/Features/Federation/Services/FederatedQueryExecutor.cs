@@ -16,8 +16,6 @@ namespace Honua.Core.Features.Federation.Services;
 
 internal sealed class FederatedQueryExecutor
 {
-    // PA-017: remote federated source calls had metrics and structured logging but no
-    // distributed tracing span, so a slow/failing remote source was invisible in traces.
     private static readonly ActivitySource _activitySource = new("Honua.Federation");
 
     private readonly IFederationQueryPlanner _planner;

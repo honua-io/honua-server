@@ -187,9 +187,7 @@ public sealed class GeoServicesConstructCapabilityRegistry
         },
         new GeoServicesConstructCapabilityDescriptor
         {
-            // #4600: the classifier emitted simple relationships as automated while this descriptor said
-            // manual review for every relationship, so the two disagreed. The descriptor now reads per
-            // relationship: simple classes are automated (relationship apply persists each and reports its
+            // Simple relationship classes are automated (relationship apply persists each and reports its
             // outcome); composite, attributed and many-to-many classes take the fallback.
             ConstructKey = Keys.ResourceRelationships,
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
@@ -304,7 +302,7 @@ public sealed class GeoServicesConstructCapabilityRegistry
             // Projected through OGC API Processes for direct process-id discovery
             // and execution (#2698). CanServe drives the GP lane's
             // IsProjectedThroughOgcApiProcesses verdict; the raster/surface family
-            // is now callable directly at /ogc/processes/processes/{id} exactly as a
+            // is callable directly at /ogc/processes/processes/{id} exactly as a
             // single-step honua-geoprocessing plan wrapper already invoked it — the
             // shared async job/tier/RBAC pipeline is unchanged. The automation tier
             // stays Assisted because full-fidelity execution still requires the
