@@ -1954,12 +1954,16 @@ the retired observer cannot supply it.
 
 The required generated-file ownership check admits protected outputs alongside
 source inputs that force the architecture gate. It compares the candidate's
-validator, policy, PR workflow, classifiers and architecture action with trusted
-trunk blobs. Older branches must adopt the repair before mixing source and
+validator, policy, PR workflow, classifiers, fast-test selector, regeneration
+wrapper and architecture action with trusted trunk blobs. Older branches must
+adopt the repair before mixing source and
 output; changing or removing verification remains blocked. Generated-only PRs
 still require the canonical producer's exact commit/tree artifact proof.
 
-After strict regeneration, the existing architecture job checks every protected
+Before strict regeneration, the existing architecture job removes submitted
+protected outputs so only freshly produced bytes and modes can pass. Unproduced
+additions cannot survive the checkout, and symlink parents fail closed.
+After regeneration, the job checks every protected
 path submitted by the PR against its committed bytes and executable mode. Added
 and deleted outputs are included, and symlinks fail. It requires the PR merge
 checkout and uses its target parent; unreadable Git state fails closed. Output

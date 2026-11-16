@@ -12,11 +12,26 @@ proof = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proof)
 
 
-def mismatches(base, head):
+def supplied_paths(base, head):
     policy = proof.policy_paths(base)
     changed = proof.git('diff', '--no-renames', '--name-only', '-z', base, head).decode().split('\0')[:-1]
-    supplied = [path for path in changed if any(path == root or path.startswith(root + '/') for root in policy)]
-    return [path for path in supplied if not matches_head(head, path)]
+    return [path for path in changed if any(path == root or path.startswith(root + '/') for root in policy)]
+
+
+def prepare(base, head):
+    # Regeneration must establish submitted bytes and modes from absent paths.
+    # In particular, write_text preserves an existing executable bit, and some
+    # generators only prune known extensions rather than arbitrary additions.
+    for path in supplied_paths(base, head):
+        output = Path(path)
+        if any(parent.is_symlink() for parent in output.parents):
+            raise ValueError(f'Generated output has a symlink parent: {path}')
+        if output.exists() or output.is_symlink():
+            output.unlink()
+
+
+def mismatches(base, head):
+    return [path for path in supplied_paths(base, head) if not matches_head(head, path)]
 
 
 def matches_head(head, path):
@@ -39,8 +54,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base', required=True)
     parser.add_argument('--head', default='HEAD')
+    parser.add_argument('--prepare', action='store_true', help='remove submitted outputs before regeneration')
     args = parser.parse_args()
     try:
+        if args.prepare:
+            prepare(args.base, args.head)
+            return
         rejected = mismatches(args.base, args.head)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         parser.exit(1, f'Cannot verify submitted generated files: {error}\n')

@@ -135,6 +135,39 @@ class OwnershipTests(unittest.TestCase):
         Path('docs/generated/new.md').unlink()
         self.assertEqual(submitted.mismatches(self.base, head), ['docs/generated/new.md'])
 
+    def test_preparation_requires_fresh_canonical_output(self):
+        head = self.source_regeneration()
+        submitted.prepare(self.base, head)
+        self.assertFalse(Path('docs/generated/page.md').exists())
+        self.assertEqual(submitted.mismatches(self.base, head), ['docs/generated/page.md'])
+        self.write('docs/generated/page.md', 'canonical\n')
+        self.assertEqual(submitted.mismatches(self.base, head), [])
+
+    def test_unproduced_addition_cannot_survive_regeneration(self):
+        self.write('src/route.cs', 'new source\n')
+        self.write('docs/generated/unproduced.txt', 'not produced\n')
+        head = self.commit()
+        submitted.prepare(self.base, head)
+        self.write('docs/generated/page.md', 'canonical\n')
+        self.assertEqual(submitted.mismatches(self.base, head), ['docs/generated/unproduced.txt'])
+
+    def test_committed_executable_bit_cannot_survive_regeneration(self):
+        self.source_regeneration()
+        Path('docs/generated/page.md').chmod(0o755)
+        head = self.commit()
+        submitted.prepare(self.base, head)
+        self.write('docs/generated/page.md', 'canonical\n')
+        Path('docs/generated/page.md').chmod(0o644)
+        self.assertEqual(submitted.mismatches(self.base, head), ['docs/generated/page.md'])
+
+    def test_preparation_refuses_symlink_parent(self):
+        head = self.source_regeneration()
+        self.git('mv', 'docs/generated', 'docs/original')
+        Path('docs/generated').symlink_to('original', target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'symlink parent'):
+            submitted.prepare(self.base, head)
+        self.assertEqual(Path('docs/original/page.md').read_text(), 'canonical\n')
+
     def test_modes_and_symlinks_cannot_match_regular_generated_bytes(self):
         head = self.source_regeneration()
         path = Path('docs/generated/page.md')

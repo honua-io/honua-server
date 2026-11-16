@@ -109,8 +109,9 @@ scripts/ci/workflow-inventory.template.md for narrative and per-workflow notes. 
 
 > Canonical inventory of every workflow in `.github/workflows/`. File, name and
 > trigger columns are derived from YAML. New workflows appear automatically.
-> Feature PRs edit workflow YAML and the source template; trunk automation
-> publishes this page. Run `python3 scripts/ci/generate-workflow-inventory.py`
+> Feature PRs edit workflow YAML and the source template; submitted projections
+> require canonical verification. Trunk automation also publishes this page.
+> Run `python3 scripts/ci/generate-workflow-inventory.py`
 > to preview it locally before validation.
 
 **Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged

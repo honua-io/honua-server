@@ -13,6 +13,8 @@ spec.loader.exec_module(proof)
 VERIFICATION_INPUTS = (
     '.github/workflows/pr-gate.yml',
     'scripts/ci/docs-only-diff.sh',
+    'scripts/ci/compute-fast-test-selection.py',
+    'scripts/ci/regenerate-generated-files.sh',
     'scripts/ci/classify-generated-output.sh',
     '.github/actions/lean-gate/action.yml',
     'scripts/ci/check-submitted-generated-files.py',
