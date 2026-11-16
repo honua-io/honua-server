@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -15,13 +16,16 @@ internal sealed class PostgresFeatureLockService : IFeatureLockService
     private const string Columns = "lock_id, holder_id, display_name, session_id, tenant_id, principal_name, acquired_at, expires_at, renewed_at";
     private const string FeaturePredicate = "service_name = @service AND layer_id = @layer AND feature_id = @feature";
     private readonly NpgsqlDataSource _dataSource;
-    private readonly string _table;
+    private readonly string _configuredSchema;
+    private readonly ISchemaContext? _schemaContext;
+    private string _table => SchemaSearchPath.QualifyTable("feature_edit_locks", _schemaContext?.CurrentSchema ?? _configuredSchema);
 
-    public PostgresFeatureLockService(NpgsqlDataSource dataSource, string? schemaName = null)
+    public PostgresFeatureLockService(NpgsqlDataSource dataSource, string? schemaName = null, ISchemaContext? schemaContext = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         _dataSource = dataSource;
-        _table = SchemaSearchPath.QualifyTable("feature_edit_locks", string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName);
+        _configuredSchema = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName;
+        _schemaContext = schemaContext;
     }
 
     public ValueTask<FeatureLockClaimResponse> ClaimAsync(
@@ -208,7 +212,9 @@ internal sealed class PostgresFeatureLockService : IFeatureLockService
         => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
     private static bool IsSameHolder(LockHolder existing, LockHolder candidate)
-        => string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal)
+        => (string.IsNullOrWhiteSpace(existing.PrincipalName)
+            || string.Equals(existing.PrincipalName, candidate.PrincipalName, StringComparison.Ordinal))
+           && string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal)
            && ((!string.IsNullOrWhiteSpace(existing.SessionId) || !string.IsNullOrWhiteSpace(candidate.SessionId))
                ? string.Equals(existing.SessionId, candidate.SessionId, StringComparison.Ordinal)
                : (string.IsNullOrWhiteSpace(existing.TenantId) && string.IsNullOrWhiteSpace(candidate.TenantId))

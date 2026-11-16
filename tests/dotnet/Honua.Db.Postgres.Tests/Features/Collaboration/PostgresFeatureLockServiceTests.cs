@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
@@ -96,7 +97,8 @@ public sealed class PostgresFeatureLockServiceTests(PostgresFixture fixture)
         {
             var claim = await first.ClaimAsync(Feature, Alice, Duration, FeatureLockAccessContext.AuthorizedWrite);
             await using var restarted = CreateHost(schema);
-            var locks = restarted.GetRequiredService<IFeatureLockService>();
+            await using var scope = restarted.CreateAsyncScope();
+            var locks = scope.ServiceProvider.GetRequiredService<IFeatureLockService>();
             (await locks.GetActiveLeaseAsync(Feature)).Should().BeEquivalentTo(claim.Lease);
             (await locks.ClaimAsync(Feature, Bob, Duration, FeatureLockAccessContext.AuthorizedWrite))
                 .Status.Should().Be(FeatureLockClaimStatus.HeldByOther);
@@ -121,6 +123,47 @@ public sealed class PostgresFeatureLockServiceTests(PostgresFixture fixture)
         });
     }
 
+    [IntegrationTest]
+    public async Task MutationsAsync_DifferentPrincipal_PreserveOriginalLease()
+    {
+        await WithHostsAsync(async (first, second, _) =>
+        {
+            var owner = Alice with { PrincipalName = "editor-a" };
+            var other = owner with { PrincipalName = "editor-b" };
+            var original = await first.ClaimAsync(Feature, owner, Duration, FeatureLockAccessContext.AuthorizedWrite);
+            (await second.ClaimAsync(Feature, other, Duration, FeatureLockAccessContext.AuthorizedWrite))
+                .Status.Should().Be(FeatureLockClaimStatus.HeldByOther);
+            (await second.RenewAsync(Feature, other, Duration, FeatureLockAccessContext.AuthorizedWrite))
+                .Status.Should().Be(FeatureLockRenewStatus.HeldByOther);
+            (await second.ReleaseAsync(Feature, other, FeatureLockAccessContext.AuthorizedWrite))
+                .Status.Should().Be(FeatureLockReleaseStatus.HeldByOther);
+            (await first.GetActiveLeaseAsync(Feature)).Should().BeEquivalentTo(original.Lease);
+        });
+    }
+
+    [IntegrationTest]
+    public async Task ClaimAsync_ResolvedTenantSchema_IsolatesIdenticalFeatures()
+    {
+        await WithHostsAsync(async (first, _, rootSchema) =>
+        {
+            await WithHostsAsync(async (_, _, tenantSchema) =>
+            {
+                await first.ClaimAsync(Feature, Alice, Duration, FeatureLockAccessContext.AuthorizedWrite);
+                await using var host = CreateHost(rootSchema, tenantSchema);
+                await using var scope = host.CreateAsyncScope();
+                var tenant = scope.ServiceProvider.GetRequiredService<IFeatureLockService>();
+                (await tenant.GetActiveLeaseAsync(Feature)).Should().BeNull();
+                (await tenant.ClaimAsync(Feature, Bob, Duration, FeatureLockAccessContext.AuthorizedWrite))
+                    .Status.Should().Be(FeatureLockClaimStatus.Claimed);
+                (await first.GetActiveLeaseAsync(Feature))!.Holder.Should().Be(Alice);
+                (await tenant.GetActiveLeaseAsync(Feature))!.Holder.Should().Be(Bob);
+                (await tenant.ReleaseAsync(Feature, Bob, FeatureLockAccessContext.AuthorizedWrite))
+                    .Status.Should().Be(FeatureLockReleaseStatus.Released);
+                (await first.GetActiveLeaseAsync(Feature)).Should().NotBeNull();
+            });
+        });
+    }
+
     private async Task WithHostsAsync(Func<IFeatureLockService, IFeatureLockService, string, Task> verify)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresFeatureLockServiceTests));
@@ -133,7 +176,10 @@ public sealed class PostgresFeatureLockServiceTests(PostgresFixture fixture)
             await command.ExecuteNonQueryAsync();
             await using var first = CreateHost(schema);
             await using var second = CreateHost(schema);
-            await verify(first.GetRequiredService<IFeatureLockService>(), second.GetRequiredService<IFeatureLockService>(), schema);
+            await using var firstScope = first.CreateAsyncScope();
+            await using var secondScope = second.CreateAsyncScope();
+            await verify(firstScope.ServiceProvider.GetRequiredService<IFeatureLockService>(),
+                secondScope.ServiceProvider.GetRequiredService<IFeatureLockService>(), schema);
         }
         finally
         {
@@ -141,7 +187,7 @@ public sealed class PostgresFeatureLockServiceTests(PostgresFixture fixture)
         }
     }
 
-    private ServiceProvider CreateHost(string schema)
+    private ServiceProvider CreateHost(string schema, string? tenantSchema = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -150,8 +196,13 @@ public sealed class PostgresFeatureLockServiceTests(PostgresFixture fixture)
         }).Build();
         var services = new ServiceCollection();
         services.AddLogging();
+        if (tenantSchema is not null)
+        {
+            services.AddScoped<ISchemaContext>(_ => new TestSchemaContext(tenantSchema));
+        }
         services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
         services.TryAddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
-        return services.BuildServiceProvider();
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
+    private sealed record TestSchemaContext(string? CurrentSchema) : ISchemaContext;
 }

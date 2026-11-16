@@ -484,10 +484,12 @@ internal static partial class ServiceCollectionExtensions
             new Features.Publishing.PostgresPublishedServiceStore(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
-        services.AddSingleton<IFeatureLockService>(serviceProvider =>
+        services.AddScoped<IFeatureLockService>(serviceProvider =>
             new Features.Collaboration.FeatureLocks.PostgresFeatureLockService(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
-                configuration["Database:Schema"]));
+                configuration["Database:Schema"],
+                serviceProvider.GetService<ISchemaContext>()));
+        services.AddScoped<IFeatureEditGuard, FeatureEditGuard>();
 
         services.AddSingleton<IDeploymentStore>(serviceProvider =>
             new Features.Publishing.PostgresDeploymentStore(
