@@ -626,7 +626,7 @@ internal static class CollectionsEndpoints
         // (forward-compatible with the Phase 2 styleId catalog). The Styles API publishes a
         // stylesheet for every storage-bound feature collection — its stored style or the
         // layer default — so advertise the link exactly then; a link it would not serve must
-        // not be advertised (#4993).
+        // not be advertised.
         if (storageLayerId.HasValue && resource.Type == MetadataV2ObjectType.FeatureDataset)
         {
             var styleId = Uri.EscapeDataString(resource.Metadata.Name);
@@ -902,10 +902,6 @@ internal static partial class CollectionsEndpointLogging
     [LoggerMessage(EventId = 5201, Level = LogLevel.Warning,
         Message = "Invalid collections request received")]
     public static partial void LogInvalidCollectionsRequest(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 5202, Level = LogLevel.Warning,
-        Message = "Invalid collections operation attempted")]
-    public static partial void LogInvalidCollectionsOperation(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 5203, Level = LogLevel.Error,
         Message = "Collections query failed")]

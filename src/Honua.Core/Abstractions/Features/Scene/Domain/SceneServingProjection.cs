@@ -11,7 +11,8 @@ public static class SceneServingProjection
     {
         ArgumentNullException.ThrowIfNull(record);
 
-        return record.IsPublic
+        // A record that says both "public" and "requires authentication" is read as protected.
+        return record.IsPublic && !record.RequiresAuth
             ? null
             : new AccessPolicy
             {

@@ -95,11 +95,6 @@ public sealed class CacheOptions
         return ApplyJitter(DefaultTtl);
     }
 
-    public TimeSpan GetServiceTtlWithJitter()
-    {
-        return ApplyJitter(ServiceTtl);
-    }
-
     public TimeSpan GetLayerTtlWithJitter()
     {
         return ApplyJitter(LayerTtl);

@@ -66,7 +66,7 @@ internal sealed class PlanAnalysisTool : IMcpTool
             .PlanAsync(argument.Intent!, argument.Context, cancellationToken)
             .ConfigureAwait(false);
 
-        // Disclose which planner ran (#2485): "live" plans are compiled from the
+        // Disclose which planner ran: "live" plans are compiled from the
         // intent; "fixture" plans are canned deterministic templates returned when
         // no LLM provider is configured. Sourced from the resolved service seam so
         // it never string-matches an implementation type name.
@@ -75,7 +75,7 @@ internal sealed class PlanAnalysisTool : IMcpTool
         // In fixture (demo) mode the returned plan is not compiled from the caller's
         // intent, so a caller relying on it would dead-end. Hand them an explicit
         // next step: read the process catalog and hand-author a plan, then validate it
-        // — instead of silently treating the demo template as a tailored plan (#2815).
+        // — instead of silently treating the demo template as a tailored plan.
         if (string.Equals(output.Engine, "fixture", StringComparison.Ordinal))
         {
             output.NextSteps ??=

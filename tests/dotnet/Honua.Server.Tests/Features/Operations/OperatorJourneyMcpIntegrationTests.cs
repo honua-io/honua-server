@@ -16,11 +16,7 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-// An admin finishes the closed operator roster through MCP. A caller without the admin grant
-// is permission_denied and creates no connection row. Lane A and Lane B executors compose only
-// when a durable proposal store is registered; the system database provides it before
-// AddOperationsToolset, which is the same host the operator journey runs against.
-[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
+[Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class OperatorJourneyMcpIntegrationTests
 {
@@ -36,7 +32,7 @@ public sealed class OperatorJourneyMcpIntegrationTests
     [Endpoint("POST /mcp")]
     public async Task AdminKey_ConfiguresThroughMcp_AndNonAdminCreatesNoRow()
     {
-        var fixture = new WebAppFixture().WithProductionJobSubstrate()
+        var fixture = PostgresJobHost.Create()
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {
@@ -60,6 +56,7 @@ public sealed class OperatorJourneyMcpIntegrationTests
         await fixture.InitializeAsync();
         try
         {
+            PostgresJobHost.AssertPostgresJobs(fixture);
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
             using var admin = fixture.CreateAdminClient();
             var deniedName = $"denied{suffix}";

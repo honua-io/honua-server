@@ -74,7 +74,7 @@ public static class CorsConfiguration
                     {
                         // AllowAnyHeader covers request headers; exposed response
                         // headers must still be enumerated. Mirror the production
-                        // policy so the PMTiles RangeProxy strategy (#845) works
+                        // policy so the PMTiles RangeProxy strategy works
                         // for cross-origin browser clients in development.
                         policy.WithOrigins(FilterExplicitOrigins(devOrigins))
                               .AllowAnyMethod()
@@ -228,7 +228,7 @@ public static class CorsConfiguration
         // echo with "*" (a wildcard ACAO on the embed policy surface). SetIsOriginAllowed(_ => true)
         // makes the middleware itself echo the request origin and add Vary: Origin. The per-embed-
         // key origin allow-list remains the authoritative gate inside the handler (it returns 403
-        // for origins not approved for the presented key); credentials stay disabled (#1191).
+        // for origins not approved for the presented key); credentials stay disabled.
         policy.SetIsOriginAllowed(_ => true)
               .WithMethods("GET", "POST", "OPTIONS")
               .WithHeaders(ResolveAllowedHeaders(configuration))

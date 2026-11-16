@@ -56,7 +56,7 @@ internal sealed class ReprojectTransformExecutor(
             {
                 // Empty geometries carry no coordinates to transform, but they
                 // still move to the target CRS: stamp toSrid like the non-empty
-                // path instead of leaking the source srid downstream (#2744).
+                // path instead of leaking the source srid downstream.
                 if (geometry.SRID == toSrid)
                 {
                     yield return feature;
@@ -115,7 +115,7 @@ internal sealed class ReprojectTransformExecutor(
                 // Copy the source coordinate to preserve its runtime dimension
                 // (CoordinateZ / CoordinateM / CoordinateZM) and only overwrite the
                 // horizontal ordinates; rebuilding a bare Coordinate would silently
-                // drop Z/M through the transformed sequence (#2744).
+                // drop Z/M through the transformed sequence.
                 var projected = original.Copy();
                 projected.X = x;
                 projected.Y = y;

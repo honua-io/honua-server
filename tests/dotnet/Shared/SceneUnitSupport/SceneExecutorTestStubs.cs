@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 internal sealed class StubFeatureSource : ISceneFeatureSource
 {
     public IReadOnlyList<SceneFeature> Features { get; set; } = Array.Empty<SceneFeature>();
+    public Exception? StreamFailure { get; set; }
     public int StreamInvocationCount { get; private set; }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
@@ -22,6 +23,10 @@ internal sealed class StubFeatureSource : ISceneFeatureSource
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         StreamInvocationCount++;
+        if (StreamFailure is not null)
+        {
+            throw StreamFailure;
+        }
         foreach (var feature in Features)
         {
             cancellationToken.ThrowIfCancellationRequested();

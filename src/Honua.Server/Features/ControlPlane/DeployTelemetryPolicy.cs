@@ -198,7 +198,7 @@ internal sealed record DeployTelemetryPolicy
         ParseInteger(parameters, DeployTelemetrySignalEvaluator.BreachDebounceThresholdParameterKey, 1, MaximumConsecutiveBreaches, errors);
 
         // The synthetic health probe and the golden-query correctness gate are provider-independent
-        // signals (#1849, #2811); both are evaluated alongside the metric gate or, under the explicit
+        // signals; both are evaluated alongside the metric gate or, under the explicit
         // health-only profile, instead of it.
         var healthProbeUrl = Get(parameters, "telemetry.healthz.url");
         var healthSamples = ParseInteger(parameters, "telemetry.healthz.samples", 1, MaximumHealthProbeSamples, errors) ?? 3;
@@ -332,7 +332,7 @@ internal sealed record DeployTelemetryPolicy
                 errors.Add(presetError);
             }
 
-            // Target/revision identity (#4617): while traffic is split between the stable and candidate
+            // Target/revision identity: while traffic is split between the stable and candidate
             // revisions, aggregate metrics blend the stable revision's healthy traffic into the
             // candidate's evidence, so a degraded canary can read as healthy. A split rollout must read
             // candidate-scoped signals. Without a split, all post-exposure traffic is the candidate's.
@@ -362,7 +362,7 @@ internal sealed record DeployTelemetryPolicy
             }
 
             // A sample floor is what distinguishes "healthy" from "no traffic yet": without one, a
-            // zero-traffic error ratio or an empty latency histogram can satisfy the gate (#4617).
+            // zero-traffic error ratio or an empty latency histogram can satisfy the gate.
             if ((!string.IsNullOrWhiteSpace(errorRateQuery) ||
                  !string.IsNullOrWhiteSpace(errorCountQuery) ||
                  !string.IsNullOrWhiteSpace(latencyQuery)) &&
@@ -442,8 +442,8 @@ internal sealed record DeployTelemetryPolicy
             GpBatchPolicyName or "serverless-gp" => (CreateGpBatchPreset(parameters), null),
             "aws-alb-canary" => (CreateAwsAlbCanaryPreset(parameters), null),
             "aws-lambda-canary" => (CreateAwsLambdaCanaryPreset(parameters), null),
-            // An unsupported preset is rejected even alongside explicit query overrides: silently
-            // ignoring the name the operator asked for is exactly the #4617 failure mode.
+            // An unsupported preset is rejected even alongside explicit query overrides rather than
+            // silently ignoring the name the operator asked for.
             _ => (null, $"Deploy telemetry policy '{policyName}' is not supported.")
         };
     }
@@ -451,7 +451,7 @@ internal sealed record DeployTelemetryPolicy
     private static string? GetDefaultPolicyName(DeployOperationSpec spec)
         => spec.TargetKind switch
         {
-            // A canary selector/job means the rollout reads candidate-only traffic (#4617), exactly as
+            // A canary selector/job means the rollout reads candidate-only traffic, exactly as
             // for the cloud canary targets below.
             DeployTargetKind.Kubernetes => HasCanarySignalConfiguration(spec.Parameters) ? "kubernetes-canary" : "kubernetes-honua-http",
             // ECS canary deploys are configured by setting a canary weight via
@@ -551,7 +551,7 @@ internal sealed record DeployTelemetryPolicy
             ConnectionId = string.Empty,
             // A healthy candidate has no 5xx series, and sum() over no series is an empty vector, not 0.
             // Without the "or vector(0)" the ratio is empty for exactly the release that should pass, and
-            // absent evidence never satisfies the gate (#4617). With no traffic at all the denominator is
+            // absent evidence never satisfies the gate. With no traffic at all the denominator is
             // still empty, so the ratio stays absent rather than reading as a healthy 0.
             ErrorRateQuery =
                 $"(sum(rate(honua_http_request_total{WrapSelector(errorSelector)}[5m])) or vector(0)) / clamp_min(sum(rate(honua_http_request_total{metricSelector}[5m])), 0.001)",

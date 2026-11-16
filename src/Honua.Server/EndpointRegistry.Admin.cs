@@ -46,7 +46,7 @@ public static partial class EndpointRegistry
         new("PATCH", "/api/v1/admin/api-keys/{id}/restrictions"),
         new("GET", "/api/v1/admin/api-keys/{id}/effective-permissions"),
 
-        // Embed governance: keys, scoping, policy, analytics, usage (#1191).
+        // Embed governance: keys, scoping, policy, analytics, usage.
         new("GET", "/api/v1/admin/embed/keys"),
         new("POST", "/api/v1/admin/embed/keys"),
         new("GET", "/api/v1/admin/embed/keys/{id}"),
@@ -56,7 +56,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/embed/policy"),
         new("POST", "/api/v1/embed/analytics"),
 
-        // OAuth2 client registry + scope catalogue (ADR-0053 Increment 2, #1888).
+        // OAuth2 client registry + scope catalogue (ADR-0053 Increment 2).
         new("GET", "/api/v1/admin/oauth-clients"),
         new("POST", "/api/v1/admin/oauth-clients"),
         new("GET", "/api/v1/admin/oauth-clients/{id}"),
@@ -90,7 +90,6 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/connections/{id}/layers/enabled"),
         new("GET", "/api/v1/admin/version"),
         new("GET", "/api/v1/admin/capabilities"),
-        // v1 manifest endpoints removed in #1035 cutover (V2 admin UX is tracked under epic #1046).
         new("GET", "/api/v1/admin/metadata/environments/{environment}/inventory"),
         new("POST", "/api/v1/admin/metadata/environment-bindings/query"),
         new("POST", "/api/v1/admin/metadata/release-packages"),
@@ -105,7 +104,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}"),
         new("POST", "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/rollback"),
         new("POST", "/api/v1/admin/metadata/prevalidate"),
-        // GP process releases and bindings (honua-server#6221)
+        // GP process releases and bindings
         new("POST", "/api/v1/admin/gp/process-releases"),
         new("GET", "/api/v1/admin/gp/process-releases"),
         new("GET", "/api/v1/admin/gp/process-releases/{digest}"),
@@ -143,11 +142,11 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/metadata/layers/{storageLayerId}/spatial"),
         new("PUT", "/api/v1/admin/metadata/layers/{storageLayerId}/spatial"),
 
-        // v1 admin named-replica management endpoints (#1167, slice 1)
+        // v1 admin named-replica management endpoints
         new("GET", "/api/v1/admin/services/{serviceId}/replicas"),
         new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}"),
 
-        // v1 admin replica conflict-review endpoints (#1167, slice 2)
+        // v1 admin replica conflict-review endpoints
         new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts"),
         new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}"),
         new("POST", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve"),
@@ -163,7 +162,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/connections/encryption/validate"),
         new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
 
-        // v1 admin client-certificate trust profile endpoints (#1171)
+        // v1 admin client-certificate trust profile endpoints
         new("GET", "/api/v1/admin/security/client-certificates/profiles"),
         new("POST", "/api/v1/admin/security/client-certificates/profiles"),
         new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
@@ -178,12 +177,12 @@ public static partial class EndpointRegistry
         new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}"),
         new("POST", "/api/v1/admin/security/client-certificates/validate"),
 
-        // v1 admin license management endpoints (#511)
+        // v1 admin license management endpoints
         new("GET", "/api/v1/admin/license"),
         new("POST", "/api/v1/admin/license"),
         new("GET", "/api/v1/admin/license/entitlements"),
 
-        // v1 platform admin endpoints (#513)
+        // v1 platform admin endpoints
         new("GET", "/api/v1/admin/license/status"),
         new("GET", "/api/v1/admin/license/features"),
         new("POST", "/api/v1/admin/license/upload"),
@@ -193,12 +192,12 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/cache/invalidate"),
         new("GET", "/api/v1/admin/geocoding/providers"),
 
-        // v1 admin geocoder reference data import (#1263)
+        // v1 admin geocoder reference data import
         new("POST", "/api/v1/admin/geocoding/reference-data/import"),
         new("GET", "/api/v1/admin/geoprocessing/tools/usage-ranking"),
         new("GET", "/api/v1/admin/features"),
 
-        // v1 admin rate limit policy endpoints (#355)
+        // v1 admin rate limit policy endpoints
         new("GET", "/api/v1/admin/rate-limits"),
         new("POST", "/api/v1/admin/rate-limits"),
         new("GET", "/api/v1/admin/rate-limits/{id}"),
@@ -208,7 +207,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/rate-limits/{id}/revisions"),
         new("POST", "/api/v1/admin/rate-limits/{id}/undo"),
 
-        // v1 admin tenant lifecycle endpoints (#2156)
+        // v1 admin tenant lifecycle endpoints
         new("GET", "/api/v1/admin/tenants"),
         new("POST", "/api/v1/admin/tenants"),
         new("GET", "/api/v1/admin/tenants/usage"),
@@ -217,13 +216,13 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/tenants/{tenantId}/resume"),
         new("DELETE", "/api/v1/admin/tenants/{tenantId}"),
 
-        // v1 admin compliance endpoints (#352)
+        // v1 admin compliance endpoints
         new("GET", "/api/v1/admin/compliance/dashboard"),
         new("GET", "/api/v1/admin/compliance/report"),
         new("POST", "/api/v1/admin/compliance/residency/evaluate"),
         new("POST", "/api/v1/admin/compliance/encryption/rotate-key"),
 
-        // v1 admin OIDC provider endpoints (#511)
+        // v1 admin OIDC provider endpoints
         new("GET", "/api/v1/admin/oidc/providers"),
         new("POST", "/api/v1/admin/oidc/providers"),
         new("GET", "/api/v1/admin/oidc/providers/{id}"),
@@ -233,14 +232,14 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/oidc/providers/{id}/revisions"),
         new("POST", "/api/v1/admin/oidc/providers/{id}/undo"),
 
-        // v1 admin user management endpoints (#511)
+        // v1 admin user management endpoints
         new("GET", "/api/v1/admin/users"),
         new("GET", "/api/v1/admin/users/{id}"),
         new("PUT", "/api/v1/admin/users/{id}/roles"),
         new("DELETE", "/api/v1/admin/users/{id}"),
         new("GET", "/api/v1/admin/users/{id}/effective-permissions"),
 
-        // v1 admin role management endpoints (#511)
+        // v1 admin role management endpoints
         new("GET", "/api/v1/admin/roles"),
         new("POST", "/api/v1/admin/roles"),
         new("GET", "/api/v1/admin/roles/{id}"),
@@ -249,13 +248,13 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/roles/{id}/permissions"),
         new("PUT", "/api/v1/admin/roles/{id}/permissions"),
 
-        // v1 admin row-level security (RLS) policy endpoints (#502)
+        // v1 admin row-level security (RLS) policy endpoints
         new("GET", "/api/v1/admin/rls-policies"),
         new("POST", "/api/v1/admin/rls-policies"),
         new("GET", "/api/v1/admin/rls-policies/{id}"),
         new("DELETE", "/api/v1/admin/rls-policies/{id}"),
 
-        // v1 admin field-level security (column masking) policy endpoints (#1940)
+        // v1 admin field-level security (column masking) policy endpoints
         new("GET", "/api/v1/admin/field-mask-policies"),
         new("POST", "/api/v1/admin/field-mask-policies"),
         new("GET", "/api/v1/admin/field-mask-policies/{id}"),

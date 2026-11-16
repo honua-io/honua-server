@@ -59,7 +59,7 @@ internal static class AdminApiKeyPermission
 
         // A key carrying scoped grants is bounded by those grants. A principal with
         // no permission claims (bootstrap password / client cert / dev-bypass) but
-        // the admin role retains full admin authority, preserving legacy behavior.
+        // the admin role retains full admin authority, so those sign-in paths keep working.
         if (!sawPermissionClaim && principal.IsInRole("admin"))
         {
             return AdminAccessLevel.Write;

@@ -30,7 +30,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests
     public async Task CiteStyleClient_TransformGeoJsonInputs_ReachTheCanonicalExecutor()
     {
         var fixture = CreateFixture();
-        await DurableJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -78,7 +78,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests
     public async Task CiteStyleClient_CatalogBuffer_ExecutesQualifiedInputsAndReadsNegotiatedResults()
     {
         var fixture = CreateFixture();
-        await DurableJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -142,7 +142,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests
     public async Task CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues()
     {
         var fixture = CreateFixture();
-        await DurableJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -452,7 +452,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests
     }
 
     private static WebAppFixture CreateFixture()
-        => DurableJobHost.Create()
+        => PostgresJobHost.Create()
             .ConfigureServices(services =>
             {
                 var certificationConfiguration = new ConfigurationBuilder()

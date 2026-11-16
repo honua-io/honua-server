@@ -54,7 +54,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         // skips the alert-fixture slice and still hydrates the rest of the Operate observability
         // surface (jobs, logs, audit, investigation) instead of failing the whole seed with a 500.
         // The Console observability page already renders a disabled/empty state for the gated alert
-        // surface (honua-server#2350).
+        // surface.
         var alertAdminStore = services.GetService<IAlertAdminStore>();
         var alertEventStore = services.GetService<IAlertEventStore>();
         var lifecycleStore = services.GetService<IAlertLifecycleStore>();

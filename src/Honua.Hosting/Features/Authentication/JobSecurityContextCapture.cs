@@ -40,7 +40,7 @@ internal static class JobSecurityContextCapture
         // authority" reason as the scope-governance claims: if a pathological token pushed the
         // marker past the non-role claim budget, the durable snapshot would lose it and a later
         // unresolved revalidation would fall back to the captured roles (fail OPEN) instead of
-        // failing closed. Truncation must never be able to relax a restriction (honua-server#3081).
+        // failing closed. Truncation must never be able to relax a restriction.
         JobSecurityContextClaimTypes.ManagedMembershipMarker,
     };
 
@@ -100,7 +100,7 @@ internal static class JobSecurityContextCapture
 
         // Stamp the managed-membership marker when the source owns this principal's roles. It is
         // budget-exempt (see BudgetExemptClaimTypes) so it is captured here in full and can never
-        // be truncated into a fail-open (honua-server#3081).
+        // be truncated into a fail-open.
         if (membershipManaged &&
             !captured.Any(claim => string.Equals(
                 claim.Type, JobSecurityContextClaimTypes.ManagedMembershipMarker, StringComparison.Ordinal)))
@@ -174,7 +174,7 @@ internal static class JobSecurityContextCapture
         // pathological number of descriptive claims could have had its tenant claim truncated
         // away. Restoring it from the dedicated field keeps the tenant SCOPE on the restored
         // identity, which the deferred-submission lanes authorize against; a tenant-less
-        // identity would widen, not narrow (honua-server#3046 review).
+        // identity would widen, not narrow.
         // The dedicated field is the effective tenant resolved by middleware, while the raw
         // captured claims can still contain the token's original tenant. An accepted
         // X-Honua-Tenant override must win on deferred authorization, so replace both standard
@@ -200,7 +200,7 @@ internal static class JobSecurityContextCapture
         // GP approval resume, workflow firing) read as an ungoverned authenticated principal and
         // bypassed its permission grants. Mirror each marker found under either type onto the
         // restored role claim type. This also covers snapshots written before the fix, and it can
-        // only narrow access: the markers restrict a principal to its grants (honua-server#6101).
+        // only narrow access: the markers restrict a principal to its grants.
         if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
         {
             var governanceMarkers = claims
@@ -252,7 +252,7 @@ internal static class JobSecurityContextCapture
         // and trusting the captured roles would let a revoked or deactivated managed identity keep
         // authorizing deferred work. Fail closed in that case: strip the roles and report an
         // explicit unresolved status. HasRemovedRoles is set so the existing deferred-lane callers
-        // refuse the operation through their role-removal branch unchanged (honua-server#3081).
+        // refuse the operation through their role-removal branch unchanged.
         JobSecurityContextMembershipResult SnapshotFallbackOrFailClosed() =>
             SnapshotIndicatesManagedMembership(context)
                 ? new JobSecurityContextMembershipResult(

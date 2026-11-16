@@ -86,8 +86,7 @@ internal sealed class CreateMapPackageTool : IMcpTool
 
         // Persist before returning: ADR-0076 promises a package "addressable at
         // its honua://map-packages/{id} URI", and MapPackageResource can only
-        // honour that for a deployment-less draft if the draft was recorded
-        // (honua-server#3262).
+        // honour that for a deployment-less draft if the draft was recorded.
         await _draftStore.SaveMapDraftAsync(result.Package, ownerId, cancellationToken).ConfigureAwait(false);
 
         var output = new McpPackageDraftOutput

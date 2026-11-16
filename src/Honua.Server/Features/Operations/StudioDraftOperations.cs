@@ -455,7 +455,7 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
         }
 
-        // honua-server#3980 follow-up: the intent must be rejected HERE, before policy routing.
+        // The intent must be rejected HERE, before policy routing.
         // OperationDispatcher stops after ValidateAsync whenever the decision is not Allow, so an
         // Enterprise policy rule that puts this operation behind approval never reaches
         // CreatePublicationRequestAsync -- the downstream authority on intent validity -- and an
@@ -484,7 +484,7 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         // payload intent falls back to the version envelope, matching actuation.
         var effectiveIntent = payload.Intent ?? version.Envelope.PublicationIntent;
         var effectiveRoute = effectiveIntent?.Route;
-        // honua-server#5825: same skip as StudioPackageLifecycleService. The pointer flag is
+        // Same skip as StudioPackageLifecycleService. The pointer flag is
         // false only when this item resolved through a bridge. A substitute that returns
         // ordinary pointers keeps the default and still rejects a second native owner.
         if (!string.IsNullOrWhiteSpace(effectiveRoute) && pointers.GovernsStudioRoutes)
@@ -543,7 +543,7 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The saved Studio version no longer matches the sealed content hash.");
         }
 
-        // honua-server#3980: ValidateAsync asserted that the item's current pointer equalled
+        // ValidateAsync asserted that the item's current pointer equalled
         // payload.VersionId, so that is the pointer the approval was granted against. Actuation
         // reloads the version but cannot re-check the pointer without reintroducing the same
         // read-then-write window, so the expectation travels into the store, which compares it
@@ -575,9 +575,9 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         };
         if (result.PublicationUrl is { } activeUrl && result.Intent?.Route is { } route)
         {
-            // honua-server#4907: the intent route is the governed key, not a path the host
+            // The intent route is the governed key, not a path the host
             // serves; activeUrl names the resolver that serves the item's Active version there.
-            // honua-server#5825: a bridge-resolved publication does not govern that resolver,
+            // A bridge-resolved publication does not govern that resolver,
             // so PublicationUrl (and therefore these resource ids) stay absent.
             resources["route"] = route;
             resources["activeUrl"] = activeUrl;
@@ -795,7 +795,7 @@ internal sealed class StudioDraftMutationRuntime(
             cancellationToken);
 
     // Publication and rollback move content pointers, so they route as governed actions rather
-    // than draft composition (#4758). A caller-supplied action, such as the agent publication
+    // than draft composition. A caller-supplied action, such as the agent publication
     // proposal, is kept because its floor is at least as strict.
     private static StudioDraftMutationContext GovernedStep(StudioDraftMutationContext context, string action)
         => string.IsNullOrWhiteSpace(context.ActionDiscriminator)

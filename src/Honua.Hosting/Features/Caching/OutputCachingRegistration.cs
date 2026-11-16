@@ -22,7 +22,7 @@ internal static class OutputCachingRegistration
         var ttl = new OutputCacheTtlOptions();
         configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
 
-        // Test isolation (#1851): the integration suite drives one process-wide, schema-routed
+        // Test isolation: the integration suite drives one process-wide, schema-routed
         // server (and several isolated per-fixture hosts) where every test selects its data
         // partition via the X-Honua-Test-Schema header rather than a tenant identifier. The
         // output cache keys on tenant (always "<none>" in tests), format, and route values —
@@ -64,7 +64,7 @@ internal static class OutputCachingRegistration
                 policy.AddPolicy<BypassOutputCacheOnCredentialedRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
                 // A GeoServices error envelope travels as HTTP 200, so the status-code rule
-                // alone would store it and replay a transient fault for the TTL (#4980).
+                // alone would store it and replay a transient fault for the TTL.
                 // Deliberately cached tile refusals are re-admitted by TileOutcomeOutputCachePolicy.
                 policy.AddPolicy<BypassOutputCacheOnErrorEnvelopePolicy>();
                 // A cached HEAD entry replays with Content-Length: 0 (the framework stamps the
@@ -84,7 +84,7 @@ internal static class OutputCachingRegistration
                 // f/Accept. Without an edition fingerprint, anonymous metadata requests that
                 // differ only by license tier collide for the TTL — a cross-tier (and, in
                 // multi-tenant-per-process deployments, cross-tenant) disclosure and the
-                // root cause of the service-directory cache flake (#1983). Add a license
+                // root cause of the service-directory cache flake. Add a license
                 // fingerprint so tiers never share a cache entry.
                 policy.VaryByValue(static context => ResolveLicenseOutputCacheKey(context));
 
@@ -105,7 +105,7 @@ internal static class OutputCachingRegistration
                 policy.Tag("service-metadata", "metadata");
             });
 
-            // Content publication public route reads (#1183). The anonymous-only base
+            // Content publication public route reads. The anonymous-only base
             // policy applies; ContentPublishedRouteCachePolicy disables caching for
             // link/embed reads and tags responses for invalidation on route pointer or
             // policy changes.
@@ -428,7 +428,7 @@ internal static class OutputCachingRegistration
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 // `where` for attribute filtering; `time` for the temporal-animation
-                // contract (#379) so /tiles/...mvt?time=A,B does not collide with the
+                // contract so /tiles/...mvt?time=A,B does not collide with the
                 // unfiltered or other-range cache entries.
                 policy.SetVaryByQuery("where", "time");
                 policy.Tag("mvt-tiles", "tiles");
@@ -642,7 +642,7 @@ internal static class OutputCachingRegistration
                     .Order(StringComparer.OrdinalIgnoreCase));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalKeys)));
     }
-    // Test isolation (#1851): fold the per-test schema header into the output cache key so the
+    // Test isolation: fold the per-test schema header into the output cache key so the
     // schema-routed integration server cannot replay one test's (or license-tier fixture's)
     // cached metadata to a peer running under a different schema. Only wired in when
     // HONUA_TEST_SCHEMA_HEADERS is enabled (test host only); never active in production.

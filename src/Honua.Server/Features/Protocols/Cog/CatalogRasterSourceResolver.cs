@@ -144,7 +144,7 @@ internal sealed class CatalogRasterSourceResolver(
 
         // Bound the projected DECODED grid before minting a descriptor. The worker re-applies
         // its own dimension caps, but a submission-time refusal keeps hostile headers from ever
-        // producing a durable job record (#3090). Probe dimensions are trusted because every
+        // producing a durable job record. Probe dimensions are trusted because every
         // probe range was pinned to the same immutable ETag captured above.
         var dimensions = probe.Dimensions;
         var maxDecodedBytes = options.Value.MaxDecodedRasterBytes;

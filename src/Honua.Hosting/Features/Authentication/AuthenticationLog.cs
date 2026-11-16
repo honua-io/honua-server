@@ -60,12 +60,6 @@ internal static partial class AuthenticationLog
     public static partial void ApiKeyAuthenticationSuccessful(ILogger logger);
 
     [LoggerMessage(
-        EventId = 4106,
-        Level = LogLevel.Warning,
-        Message = "SECURITY WARNING: Development auth bypass is active because no HONUA_ADMIN_PASSWORD is configured. All admin endpoints are accessible without authentication. Set HONUA_ADMIN_PASSWORD to require API key authentication.")]
-    public static partial void DevelopmentEnvironmentAuthBypass(ILogger logger);
-
-    [LoggerMessage(
         EventId = 4107,
         Level = LogLevel.Error,
         Message = "Failed to resolve admin password from secret provider")]
@@ -88,18 +82,6 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Debug,
         Message = "Invalid HTTP Basic authorization header supplied")]
     public static partial void InvalidBasicAuthorizationHeader(ILogger logger);
-
-    [LoggerMessage(
-        EventId = 4112,
-        Level = LogLevel.Warning,
-        Message = "HONUA_DEV_AUTH set but bypass not active because {Reason}")]
-    public static partial void DevelopmentBypassRejected(ILogger logger, string reason);
-
-    [LoggerMessage(
-        EventId = 4113,
-        Level = LogLevel.Error,
-        Message = "SECURITY: HONUA_DEV_AUTH=true detected in Production environment. Refusing to start.")]
-    public static partial void DevelopmentBypassInProductionFatal(ILogger logger);
 
     [LoggerMessage(
         EventId = 4114,

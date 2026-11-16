@@ -684,10 +684,10 @@ internal sealed class ImageServerCatalogQueryHandler
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         }
 
-        // Fail-secure field masking (#2159): drop masked attributes AFTER the
-        // outFields projection so a masked column is absent regardless of whether the
-        // caller explicitly requested it (matching the FeatureServer jsonb-key masking
-        // semantics from #2108).
+        // Fail-secure field masking: drop masked attributes AFTER the outFields
+        // projection so a masked column is absent regardless of whether the caller
+        // explicitly requested it (matching the FeatureServer jsonb-key masking
+        // semantics).
         if (!maskedFields.IsDefaultOrEmpty)
         {
             foreach (var masked in maskedFields)
@@ -726,7 +726,7 @@ internal sealed class ImageServerCatalogQueryHandler
         ImmutableArray<string> maskedFields = default)
     {
         // Drop masked fields from the advertised schema so the response field set
-        // matches the masked attribute set (#2159).
+        // matches the masked attribute set.
         var fields = ImageServerCatalogFields.Schema(maskedFields);
         if (outFields is not { Count: > 0 })
         {

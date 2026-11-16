@@ -68,7 +68,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         var leading = false;
 
         // The checkpoint read stays inside the loop. A database blip at startup must
-        // retry here instead of escaping ExecuteAsync and stopping the host (#6190).
+        // retry here instead of escaping ExecuteAsync and stopping the host.
         _isRunning = true;
         try
         {

@@ -164,8 +164,7 @@ internal static partial class WmsRequestHandlers
         // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
         // Resolve each layer defensively: a single layer whose temporal column cannot be
         // aggregated (e.g. data stored in an encoding the cast cannot parse) must not 500
-        // the whole GetCapabilities document — skip its TIME dimension and keep the rest
-        // (honua-server#1911).
+        // the whole GetCapabilities document — skip its TIME dimension and keep the rest.
         var tasks = temporalLayers.Select(layer =>
             ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, cancellationToken));
 
@@ -295,7 +294,7 @@ internal static partial class WmsRequestHandlers
         // a zero-length duration, which is not a valid resolution. ArcGIS Pro rejects the
         // dimension outright and reports the layer as not time-enabled, while QGIS
         // tolerates it - so the spelling alone decided whether a client saw the time
-        // dimension at all. See honua-server#5172.
+        // dimension at all.
         var extent = $"{min}/{max}/{ContinuousTemporalResolution}";
 
         if (isWms111)

@@ -80,7 +80,7 @@ internal sealed class ImageServerLegendHandler
             // When a renderingRule supplies a Colormap, the legend reflects that colormap so
             // it matches the rendered image; otherwise fall back to the default class breaks.
             // The renderingRule arrives via the query string on GET and via the merged
-            // form/query values on POST (#1900); callers pass the resolved value in.
+            // form/query values on POST; callers pass the resolved value in.
             var renderingRuleValue = renderingRule ?? context.Request.Query["renderingRule"].ToString();
             LegendEntry[] swatches;
             var legendType = "Stretched";

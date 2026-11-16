@@ -43,8 +43,8 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
         registration.GetServices<IProcessExecutor>().Should().Contain(e => e.ProcessIds.Contains("pcloud.translate"));
 
         var image = Environment.GetEnvironmentVariable("HONUA_WORKER_IMAGE")!;
-        var fixture = DurableJobHost.Create();
-        await DurableJobHost.StartAsync(fixture);
+        var fixture = PostgresJobHost.Create();
+        await PostgresJobHost.StartAsync(fixture);
         await using var nativeWorker = new ContainerBuilder()
             .WithImage(image)
             .WithExtraHost(DockerHostAlias, "host-gateway")

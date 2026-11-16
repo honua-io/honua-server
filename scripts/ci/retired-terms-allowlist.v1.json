@@ -884,12 +884,6 @@
       "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
     },
     {
-      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
-      "rule": "layer-type",
-      "line": "                    PublicationType = MetadataV2LayerType.OgcCollection,",
-      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
-    },
-    {
       "path": "tests/dotnet/Honua.Core.Tests/Features/Portal/PortalItemProjectorTests.cs",
       "rule": "layer-type",
       "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
