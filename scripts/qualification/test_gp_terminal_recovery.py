@@ -18,7 +18,7 @@ class TerminalRecoveryTests(unittest.TestCase):
     def run_shell(self, script, **environment):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-c", script], cwd=directory,
-                                    env={**os.environ, **environment}, capture_output=True,
+                                    env={**os.environ, "repo_root": str(ROOT), **environment}, capture_output=True,
                                     text=True, check=False)
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
 

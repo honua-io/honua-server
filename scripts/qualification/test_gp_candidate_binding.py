@@ -35,12 +35,16 @@ def terminal_recovery_evidence(job, sha, size, committed_sha=None):
                         PRODUCER.read_text(), re.S)
     if program is None:
         raise AssertionError("gp-terminal-recovery.sh evidence program not found")
-    before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 4, "attemptCount": 1,
+    before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 5, "attemptCount": 1,
+              "updatedAt": "2026-11-16T12:00:00Z", "completedAt": "2026-11-16T12:00:00Z",
+              "claimedAt": "2026-11-16T11:55:00.123456Z",
               "artifactReferences": [committed_descriptor(job, committed_sha or sha, size)]}
     fence = {"operationId": job, "barrier": "terminal-committed-registration-pending",
              "postgres_command_tag": "UPDATE 1", "postgres_transaction_status": "I",
-             "reply_forwarded": False, "workerId": "worker-1", "terminal_record": before}
-    package = {"resultPackageId": f"{job}:v4", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
+             "reply_forwarded": False, "workerId": "worker-1", "terminal_record": {**before, "version": 4,
+                 "updatedAt": "2026-11-16T11:59:00Z", "completedAt": "2026-11-16T11:59:59Z",
+                 "claimedAt": "2026-11-16T13:55:00.123456+02:00"}}
+    package = {"resultPackageId": f"{job}:v5", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
                "metadata": {"raster.output.checksum": "sha256:" + sha, "raster.output.sizeBytes": str(size)}}]}
     with tempfile.TemporaryDirectory() as temp:
         files = {}
@@ -194,8 +198,10 @@ class CandidateBindingTests(unittest.TestCase):
             "legacy-receipt": lambda p, s: (p["fence"].pop("postgres_command_tag"),
                                              p["fence"].__setitem__("unexpected_reply", ":1")),
             "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
+            "other-worker": lambda p, s: p["fence"].__setitem__("workerId", "worker-2"),
+            "changed-claim": lambda p, s: p["fence"]["terminal_record"].__setitem__("claimedAt", "2026-11-16T11:54:00Z"),
             "fence-record": lambda p, s: p["fence"]["terminal_record"].__setitem__("version", 5),
-            "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 5),
+            "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 6),
             "not-terminal": lambda p, s: (p["terminal_before"].__setitem__("status", 2),
                                           p["terminal_final"].__setitem__("status", 2),
                                           p["fence"]["terminal_record"].__setitem__("status", 2)),

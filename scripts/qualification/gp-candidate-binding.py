@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from gp_terminal_record import verify_committed_record
+
 
 def candidate(path):
     raw = path.read_bytes()
@@ -91,7 +93,7 @@ def verify_terminal_recovery(scenario, proof):
     if (fence["barrier"] != "terminal-committed-registration-pending" or fence["operationId"] != job
             or fence["reply_forwarded"] is not False or fence.get("postgres_command_tag") != "UPDATE 1"
             or fence.get("postgres_transaction_status") != "I"
-            or fence.get("terminal_record") != before
+            or fence.get("workerId") != before.get("claimedBy")
             or proof["submitted_job"] != job or scenario["job"]["terminal_state"] != "successful"
             or before.get("status") not in (3, "succeeded") or len(before.get("artifactReferences") or []) != 1
             or final != before
@@ -99,6 +101,7 @@ def verify_terminal_recovery(scenario, proof):
             or proof["result_package_before"] != 0 or proof["result_package_before_read"] != 0
             or proof["result_package_after"] != 1):
         raise ValueError("terminal crash did not precede result registration or the terminal record changed")
+    verify_committed_record(fence["terminal_record"], before)
     if (not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha) or scenario["output"]["sha256"] != sha
             or type(size) is not int or size <= 1024 or scenario["output"]["bytes"] != size
             or not isinstance(artifacts, list) or len(artifacts) != 1

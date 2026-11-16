@@ -2,8 +2,10 @@
 # Sourced at the actual terminal-CAS acknowledgement fence by gp-store-crash.sh.
 # The caller retains failure isolation and restores its topology after this case.
 terminal_assert_fence() {
-  python3 - "$job" "$before_record" "$ready" <<'PY'
-import datetime, json, sys
+  python3 - "$job" "$before_record" "$ready" "$repo_root/scripts/qualification" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[4])
+from gp_terminal_record import verify_committed_record
 job, before, receipt = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])
 assert receipt["operationId"] == job == before["operationId"]
 assert receipt["barrier"] == "terminal-committed-registration-pending"
@@ -12,31 +14,7 @@ assert receipt["postgres_transaction_status"] == "I" and receipt["reply_forwarde
 assert receipt["workerId"] == before["claimedBy"]
 assert before["status"] in (3, "succeeded") and len(before["artifactReferences"]) == 1
 
-def normalize(value, key=""):
-    if isinstance(value, dict):
-        return {name: normalize(child, name) for name, child in value.items()}
-    if isinstance(value, list):
-        return [normalize(child) for child in value]
-    if isinstance(value, str) and key.endswith("At"):
-        stamp = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-        assert stamp.tzinfo is not None
-        return stamp.astimezone(datetime.timezone.utc).isoformat(timespec="microseconds")
-    return value
-
-submitted, persisted = normalize(receipt["terminal_record"]), normalize(before)
-assert submitted["version"] + 1 == persisted["version"]
-submitted["version"] = persisted["version"]
-# The native CAS increments version and stamps changed timestamps with now().
-# Every remaining field must match; subsequent stability checks compare the
-# complete persisted baseline without discarding or rewriting any fields.
-assert persisted["updatedAt"] is not None
-submitted["updatedAt"] = persisted["updatedAt"]
-for field in ("claimedAt", "lastHeartbeatAt", "completedAt"):
-    if submitted.get(field) != persisted.get(field):
-        assert submitted.get(field) is not None
-        assert persisted[field] == persisted["updatedAt"]
-        submitted[field] = persisted[field]
-assert submitted == persisted
+verify_committed_record(receipt["terminal_record"], before)
 PY
 }
 
