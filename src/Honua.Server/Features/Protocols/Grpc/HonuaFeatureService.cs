@@ -747,16 +747,17 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
 
             mergedUpdates.Add(MergePartialUpdate(update, stored));
-            // Masked reads store the full-row token before fields are removed.
-            // Attach that token so a concurrent writer fails the update. An unmasked
-            // read has no token; hashing the caller-visible snapshot would not match
-            // the row the writer locks.
-            if (stored.ReadStateToken is { Length: > 0 } token && guarded.Add(stored.Id))
+            // Bind validation to the snapshot the writer will lock. Providers with
+            // projections supply the raw token; ordinary reads hash the complete row.
+            if (guarded.Add(stored.Id))
             {
                 preconditions.Add(new FeatureEditPrecondition
                 {
                     ObjectId = stored.Id,
-                    ExpectedStateToken = token
+                    ExpectedStateToken = FeatureStateToken.FromReadSnapshot(stored),
+                    MaskedFields = stored.EditValidationAttributes is { } full
+                        ? full.Keys.Except(stored.Attributes.Keys, StringComparer.OrdinalIgnoreCase).ToImmutableArray()
+                        : ImmutableArray<string>.Empty
                 });
             }
         }

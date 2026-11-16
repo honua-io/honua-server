@@ -193,6 +193,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return feature with
         {
             ReadStateToken = FeatureStateToken.Compute(feature),
+            EditValidationAttributes = feature.Attributes,
             Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masked.Contains))
         };
     }

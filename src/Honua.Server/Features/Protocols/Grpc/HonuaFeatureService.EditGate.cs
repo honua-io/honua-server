@@ -39,6 +39,10 @@ internal sealed partial class HonuaFeatureService
         IReadOnlyDictionary<long, Feature> storedRows)
     {
         ValidateUniqueUpdateTargets(batch);
+        storedRows = storedRows.ToDictionary(static pair => pair.Key, static pair => pair.Value with
+        {
+            Attributes = pair.Value.EditValidationAttributes ?? pair.Value.Attributes
+        });
 
         var httpContext = call.Context.GetHttpContext();
         var hooks = httpContext.RequestServices?.GetService<IFeatureEditHooks>() ?? NoOpFeatureEditHooks.Instance;

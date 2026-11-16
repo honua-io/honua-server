@@ -78,9 +78,10 @@ never by parsing the message.
   failure removes rows from a gRPC call without `rollback_on_failure`, hooks number the remaining
   rows of each kind from zero, and gRPC after-hooks receive the submitted values of a partial
   update, not the merged row.
-- A gRPC partial update is checked against the row as read before the write. A concurrent change
-  to another field of the same contingent group between that read and the write is not
-  re-validated; GeoServices `applyEdits` re-validates only for a single update without other edits.
+- A gRPC partial update is checked against the complete stored snapshot, including masked
+  attributes used only inside validation. The writer checks that snapshot's state token under
+  its row lock, so a concurrent change fails the update rather than combining stale validations.
+  Repeated update targets in one batch are rejected before hooks or writes.
 - An OGC API Features edit fails as a whole when one row is rejected. A gRPC `ApplyEdits` call
   with `rollback_on_failure` fails with `INVALID_ARGUMENT`; without it, only the rejected rows
   report a failure and the other rows are written. An idempotent replay returns the stored
