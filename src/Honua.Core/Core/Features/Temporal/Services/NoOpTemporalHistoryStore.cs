@@ -11,10 +11,7 @@ public sealed class NoOpTemporalHistoryStore : ITemporalHistoryStore
     private static readonly IReadOnlyList<TemporalChangeRecord> Empty = Array.Empty<TemporalChangeRecord>();
 
     public Task<IReadOnlyList<TemporalChangeRecord>> GetFeatureRevisionsAsync(
-        int storageLayerId,
-        long objectId,
-        long afterGeneration,
-        int limit,
+        TemporalFeatureRevisionQuery query,
         CancellationToken cancellationToken = default)
         => Task.FromResult(Empty);
 

@@ -19,10 +19,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Cloud;
 
-/// <summary>
-/// Validates real cloud deployments after infrastructure provisioning completes.
-/// These tests are intended to run against a live environment after Terraform apply.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class CloudDeploymentValidationTests
 {
@@ -111,8 +107,7 @@ public sealed class CloudDeploymentValidationTests
         else
         {
             var platform = Environment.GetEnvironmentVariable(PlatformEnv);
-            if (string.Equals(platform, "aws-lambda", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(platform, "azure-functions", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(platform, "aws-lambda", StringComparison.OrdinalIgnoreCase))
             {
                 root.GetProperty("deploymentMode").GetString().Should().Be("SingleInstance");
             }

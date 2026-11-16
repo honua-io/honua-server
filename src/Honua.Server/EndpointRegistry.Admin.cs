@@ -122,6 +122,9 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/promote"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/rollback"),
         new("POST", "/api/v1/admin/platform-release/converge"),
+        new("GET", "/api/v1/admin/agent-authority"),
+        new("PUT", "/api/v1/admin/agent-authority"),
+        new("DELETE", "/api/v1/admin/agent-authority"),
         new("GET", "/api/v1/admin/proposals"),
         new("GET", "/api/v1/admin/proposals/{id}"),
         new("GET", "/api/v1/admin/proposals/{id}/approval-review"),
@@ -202,6 +205,8 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/rate-limits/{id}"),
         new("DELETE", "/api/v1/admin/rate-limits/{id}"),
         new("GET", "/api/v1/admin/rate-limits/status"),
+        new("GET", "/api/v1/admin/rate-limits/{id}/revisions"),
+        new("POST", "/api/v1/admin/rate-limits/{id}/undo"),
 
         // v1 admin tenant lifecycle endpoints (#2156)
         new("GET", "/api/v1/admin/tenants"),
@@ -225,6 +230,8 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/oidc/providers/{id}"),
         new("DELETE", "/api/v1/admin/oidc/providers/{id}"),
         new("POST", "/api/v1/admin/oidc/providers/{id}/test"),
+        new("GET", "/api/v1/admin/oidc/providers/{id}/revisions"),
+        new("POST", "/api/v1/admin/oidc/providers/{id}/undo"),
 
         // v1 admin user management endpoints (#511)
         new("GET", "/api/v1/admin/users"),

@@ -414,13 +414,6 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertEqual(attest["cancel-in-progress"], "false")
         self.assertEqual(attest["queue"], "max")
 
-    def test_trusted_observers_keep_current_draft_refusal(self):
-        observer = workflow("server-test-prebuild-observe.yml")
-        parity = workflow("server-test-prebuild-parity.yml")
-        self.assertIn("if (resolved.pullRequest.draft)", job_scripts(observer["jobs"]["plan"]))
-        self.assertIn("if (pr.draft)", job_scripts(parity["jobs"]["plan"]))
-        self.assertEqual(observer["jobs"]["producer"]["concurrency"]["cancel-in-progress"], "true")
-
     def test_new_concurrency_preserves_independent_non_pr_runs(self):
         names = ("availability-evidence-contract.yml", "capacity-evidence-contract.yml",
                  "close-external-prs.yml", "gp-customcode-runtime.yml", "gp-lifecycle-qualification.yml",

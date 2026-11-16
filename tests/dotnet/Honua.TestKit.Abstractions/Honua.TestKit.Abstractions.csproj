@@ -6,6 +6,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\..\src\Honua.Server\EndpointRegistry*.cs" LinkBase="Registry" />
+    <Compile Include="..\..\..\src\Honua.Server\OperationRegistry.cs" LinkBase="Registry" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.abstractions" />
   </ItemGroup>

@@ -11,17 +11,11 @@ using Gen = FsCheck.Fluent.Gen;
 
 namespace Honua.Core.Tests.Features.Tiles;
 
-/// <summary>
-/// Property-based tests for tile math operations ensuring mathematical correctness.
-/// </summary>
 public class TileMathPropertyTests
 {
     private const double WebMercatorExtent = 20037508.342789244;
     private const double ExtentTolerance = 1e-6;
 
-    /// <summary>
-    /// Validates that tile bounds stay within the Web Mercator extent.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ValidTileCoordinateArbs) })]
     public bool TileBoundsStayWithinExtent(TileCoordinate tile)
@@ -43,9 +37,6 @@ public class TileMathPropertyTests
         return true;
     }
 
-    /// <summary>
-    /// Validates that adjacent tiles share boundaries.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ValidTileCoordinateArbs) })]
     public bool AdjacentTilesTouch(TileCoordinate tile)
@@ -64,9 +55,6 @@ public class TileMathPropertyTests
         return true;
     }
 
-    /// <summary>
-    /// Validates that valid tile coordinates are accepted.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ValidTileCoordinateArbs) })]
     public bool ValidateTileCoordinatesAcceptsValidValues(TileCoordinate tile)
@@ -75,9 +63,6 @@ public class TileMathPropertyTests
         return true;
     }
 
-    /// <summary>
-    /// Validates that invalid tile coordinates are rejected.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(InvalidTileCoordinateArbs) })]
     public bool ValidateTileCoordinatesRejectsInvalidValues(TileCoordinate tile)
@@ -86,9 +71,6 @@ public class TileMathPropertyTests
         return true;
     }
 
-    /// <summary>
-    /// Validates that simplification tolerance does not increase with zoom.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ZoomLevelArbs) })]
     public bool SimplificationToleranceIsNonIncreasing(int zoomA, int zoomB)

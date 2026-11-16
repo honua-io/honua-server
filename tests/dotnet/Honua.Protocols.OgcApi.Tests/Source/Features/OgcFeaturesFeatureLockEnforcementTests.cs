@@ -20,27 +20,18 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Proves a collaborative-editing lease is binding on the OGC API Features write
-/// surface — PUT, merge-PATCH, DELETE and the transaction batch (honua-server#4402).
-/// </summary>
-/// <remarks>
-/// The lease is claimed in the <c>("test", 0, objectId)</c> namespace: the service
-/// <em>name</em> and layer id. The FeatureServer publication of this same row lives on a
-/// different graph service row (<c>svc-test-feature</c>) that shares that name, so the
-/// lease taken here is the same lease a GeoServices client would take —
-/// <see cref="Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease"/> proves
-/// one lease blocks both protocols rather than each protocol having a private namespace.
-/// </remarks>
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database")]
 public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
 {
-    private const int TestLayerId = 0;
-    private const string ServiceName = "test";
-    private const string Holder = "alice";
+    internal const int TestLayerId = 0;
+    internal const string ServiceName = "test";
+    internal const string Holder = "alice";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // Test hosts share one system schema, so leases in the shared store would block other classes' edits of the
+    // same object ids. These cases are about one host; the two-host case below has a lease schema of its own.
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        .ReplaceService<IFeatureLockService>(new InMemoryFeatureLockService());
 
     public async Task InitializeAsync()
     {
@@ -178,7 +169,7 @@ public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
     private Task<string?> ReadStoredNameAsync(long objectId)
         => _fixture.ReadStoredFeatureNameAsync(TestLayerId, objectId);
 
-    private static StringContent ReplacementBody(long objectId, string name)
+    internal static StringContent ReplacementBody(long objectId, string name)
     {
         var feature = new GeoJsonFeature
         {

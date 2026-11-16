@@ -9,11 +9,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditLogIntegrityVerifier"/> (#350).
-/// Replays the tamper-evident hash chain stored by <see cref="PostgresAuditLog"/>
-/// and reports the first divergence.
-/// </summary>
 internal sealed class PostgresAuditLogIntegrityVerifier : IAuditLogIntegrityVerifier
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

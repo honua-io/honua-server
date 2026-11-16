@@ -7,13 +7,18 @@ using Honua.TestKit.Seeding;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Helper methods for seeding server integration test data.
-/// </summary>
 public static class ServerTestData
 {
     private static readonly string[] _fixtureAttachmentMigrations =
-        ["002_CreateAttachmentsTable.sql", "125_AddImportedAttachmentIdentity.sql"];
+    [
+        "002_CreateAttachmentsTable.sql",
+        "125_AddImportedAttachmentIdentity.sql",
+        "181_CreateAttachmentUploadSessions.sql",
+        "182_CreateAttachmentNativeMetadata.sql",
+        "204_CreateAttachmentUploadCleanupLedger.sql",
+        "205_AddAttachmentPublicationScope.sql",
+        "206_CreateAttachmentCleanupRetries.sql",
+    ];
 
     private static readonly string[] _rasterSchemaMigrations =
     [
@@ -21,9 +26,6 @@ public static class ServerTestData
         "Honua.Postgres.Migrations.007_AddRasterSecondBandAlpha.sql",
     ];
 
-    /// <summary>
-    /// Seeds the fixture and applies the production cache provenance DDL to its fixed raster schema.
-    /// </summary>
     public static async Task SeedAsync(PostgresFixture fixture, string schemaName)
     {
         await fixture.ApplySeedAsync(ResolveSeedPath(), schemaName).ConfigureAwait(false);
@@ -46,11 +48,6 @@ public static class ServerTestData
         }).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Provisions the production-owned attachment tables in the fixture schema.
-    /// YAML catalog SQL targets literal honua tables, while feature rows and their
-    /// transactional attachment cleanup belong to the isolated fixture schema.
-    /// </summary>
     internal static Task EnsureFixtureAttachmentsAsync(PostgresFixture fixture, string schemaName)
     {
         var quotedSchema = SchemaSearchPath.ValidateAndQuote(schemaName);

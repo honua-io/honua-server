@@ -46,7 +46,7 @@ internal sealed partial class GeoservicesImportService
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
                 // Point. Carry the optional Z so elevation-enabled ArcGIS REST
-                // points round-trip instead of being silently flattened to 2D (#1981).
+                // points round-trip instead of being silently flattened to 2D.
                 double? z = geometry.TryGetProperty("z", out var zElement)
                     && zElement.ValueKind == JsonValueKind.Number
                     ? zElement.GetDouble()
@@ -62,7 +62,7 @@ internal sealed partial class GeoservicesImportService
             {
                 // Polygon. Carry the optional Z (coord[2]) through ring extraction,
                 // closing, classification, and orientation so elevation-enabled
-                // ArcGIS REST polygons round-trip instead of flattening to 2-D (#1981).
+                // ArcGIS REST polygons round-trip instead of flattening to 2-D.
                 // The ring math (signed area, point-in-ring, orientation) reads only
                 // X/Y (indices 0/1), so longer coordinate arrays pass through intact.
                 // GeoJSON consumers interpret a third ordinate as Z, so retain M only
@@ -88,7 +88,7 @@ internal sealed partial class GeoservicesImportService
             if (geometry.TryGetProperty("paths", out var paths))
             {
                 // Polyline. Carry the optional Z (coord[2]) so elevation-enabled
-                // ArcGIS REST lines round-trip instead of flattening to 2D (#1981).
+                // ArcGIS REST lines round-trip instead of flattening to 2D.
                 var coordinates = paths.EnumerateArray()
                     .Select(path => path.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
@@ -116,7 +116,7 @@ internal sealed partial class GeoservicesImportService
             if (geometry.TryGetProperty("points", out var points))
             {
                 // Multipoint. Carry the optional Z (coord[2]) so elevation-enabled
-                // ArcGIS REST multipoints round-trip instead of flattening to 2D (#1981).
+                // ArcGIS REST multipoints round-trip instead of flattening to 2D.
                 var coordinates = points.EnumerateArray()
                     .Where(p => p.GetArrayLength() >= 2)
                     .Select(coord => ExtractDimensions(coord, coordsCarryZ, coordsCarryM))
@@ -140,11 +140,6 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Converts Esri JSON to WKT for PostGIS insertion. WKT carries an explicit M or
-    /// ZM marker, which avoids GeoJSON's ambiguity where a third ordinate is normally
-    /// interpreted as Z even when ArcGIS declared it to be an M measure.
-    /// </summary>
     internal static string? ConvertEsriGeometryToWkt(JsonElement geometry, bool hasZ, bool hasM)
     {
         var geoJson = ConvertEsriGeometryToGeoJsonWithLayerDimensions(geometry, hasZ, hasM);
@@ -283,12 +278,6 @@ internal sealed partial class GeoservicesImportService
             writer.WriteEndObject();
         });
 
-    /// <summary>
-    /// Projects an Esri coordinate array to <c>[x, y]</c> or <c>[x, y, z]</c>,
-    /// preserving the optional Z ordinate (index 2) when present and finite.
-    /// When <paramref name="carryZ"/> is <c>false</c> the third ordinate is an M
-    /// (measure) value rather than Z and is not promoted to GeoJSON Z (#1981).
-    /// </summary>
     private static double[] ExtractDimensions(JsonElement coord, bool carryZ, bool carryM)
     {
         var x = coord[0].GetDouble();
@@ -309,10 +298,6 @@ internal sealed partial class GeoservicesImportService
     private static double[][] ReadCurvePath(JsonElement path)
         => CurveGeometryConverter.Densify(path.EnumerateArray().ToArray());
 
-    /// <summary>
-    /// Writes a single GeoJSON coordinate, emitting the Z ordinate when the
-    /// source coordinate carries one (length &gt;= 3).
-    /// </summary>
     private static void WriteCoordinate(Utf8JsonWriter writer, double[] coord)
     {
         writer.WriteStartArray();
@@ -494,7 +479,7 @@ internal sealed partial class GeoservicesImportService
     private static double[][] ReverseRing(double[][] ring)
     {
         // Preserve each vertex verbatim (including any Z) while reversing winding,
-        // so polygon orientation fixes don't drop the elevation ordinate (#1981).
+        // so polygon orientation fixes don't drop the elevation ordinate.
         var reversed = ring.Reverse().ToArray();
         return EnsureClosedRing(reversed);
     }

@@ -3,9 +3,6 @@
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Builds raster projection and resizing expressions that preserve the requested grid.
-/// </summary>
 internal static class RasterProjectionSql
 {
     // Unlike the geometry overload, ST_Transform(raster, its_own_srid) is not an

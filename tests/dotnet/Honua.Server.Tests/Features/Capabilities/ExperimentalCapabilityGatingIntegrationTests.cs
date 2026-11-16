@@ -15,44 +15,11 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
-/// capabilities the T10 flip (#2346) gated OFF the first-release surface
-/// (<c>versioning.branch</c> and — since #2958 — <c>security.mtls</c> again;
-/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>sync.offline</c>
-/// are Preview and are checked in the same opt-in path) must be
-/// genuinely <b>absent</b> from every served surface end-to-end when experimental is
-/// disabled (the production default), and become present/served the moment a customer
-/// opts one in via <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and
-/// B3 (#2335)
-/// opened at the registry/composition layer by asserting the posture at the wire:
-/// <list type="bullet">
-///   <item><description>
-///     the registry-derived capability manifest (<c>GET /api/v1/capabilities/manifest</c>)
-///     omits the experimental capability ids while disabled and includes exactly the
-///     opted-in one;
-///   </description></item>
-///   <item><description>
-///     the gated VMS and client-certificate route groups
-///     (<c>/rest/services/{id}/VersionManagementServer</c>,
-///     <c>/api/v1/admin/security/client-certificates/*</c>) short-circuit with
-///     <c>404 honua:capability-experimental-disabled</c> while disabled. Preview
-///     alerts are likewise asserted absent until explicitly opted in.
-///   </description></item>
-/// </list>
-/// The Test environment turns experimental ON globally (appsettings.Test.json), which is
-/// why the existing temporal/alerts/streaming suites prove the served (enabled) path; these
-/// tests override that switch OFF to prove the absent (default) posture the flip introduced.
-/// No experimental capability projects onto the <c>/mcp</c> tool/resource roster (every
-/// <c>protocol.mcp.*</c> descriptor is Implemented), so the <c>/mcp</c> catalog carries none
-/// of them by construction — asserted by <c>McpRegistryCompositionTests</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
 public sealed class ExperimentalCapabilityGatingIntegrationTests
 {
-    /// <summary>The built-experimental manifest capability ids the T10 flip (#2346) gates off.</summary>
     private static readonly string[] ExperimentalCapabilityIds =
     [
         "serve.3d-tiles-scene",

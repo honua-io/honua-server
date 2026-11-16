@@ -9,15 +9,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Recurrence guard for #2805: every metric a deterministic ops-findings rule READS must have a real
-/// production WRITER. The <c>db-bounded-admission-pressure</c> rule previously read
-/// <see cref="ConnectionPoolMetrics"/> counters (pool utilization, acquisition timeouts/failures) that had
-/// no production caller — <c>UpdatePoolSize</c>/<c>RecordConnectionTimeout</c>/
-/// <c>RecordConnectionAcquisitionFailure</c> were dead — so the finding could never fire during a real
-/// exhaustion. These structural assertions fail if the pressure signal is ever reverted to a source with no
-/// writer, so a read-without-writer regression is caught at build time rather than in production silence.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class OpsFindingsProductionWriterTests
 {

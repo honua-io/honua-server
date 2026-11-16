@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -9,8 +10,11 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
+using Honua.Core.Features.AnalysisContent;
+using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Security.Domain;
@@ -30,28 +34,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Regression proof for honua-server#4905: in the shipped multi-tenancy posture
-/// (<c>MultiTenancy:Enabled=true</c>, <c>SchemaRouting:Enabled=false</c>, so every tenant shares
-/// one set of <c>studio_*</c> tables) a tenant-scoped administrator of one tenant could
-/// enumerate, read and propose publication for another tenant's Studio content, because the
-/// <c>admin</c> role bypassed the ownership check and nothing else bound the content to a tenant.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The tokens are deliberately issuer-bearing and carry a <c>tid</c> claim, exactly as the
-/// honua-sdk-js#1426 governed-lifecycle replay's did: that is what makes
-/// <c>TenantContextMiddleware</c> resolve a real per-request tenant. <c>admin</c> is not one of
-/// the default <c>MultiTenancy:MultiTenantAdminRoles</c>, so both principals are tenant-scoped
-/// administrators and must stay inside their own tenant.
-/// </para>
-/// <para>
-/// Nothing here injects an authorization decision: both callers are genuine bearer principals
-/// authenticated by the running host, the generic operator gate is admitted so the assertions
-/// isolate the tenant boundary rather than an operator-grant denial, and every assertion is an
-/// HTTP/MCP response from the real Studio lifecycle endpoints over the durable Postgres store.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
@@ -283,10 +265,6 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
             .Which.PublishedVersionId.Should().Be(seeded.VersionId);
     }
 
-    /// <summary>
-    /// Creates a draft and saves it as an immutable version as tenant A, through the real REST
-    /// lifecycle endpoints, so the content records tenant A exactly as production would.
-    /// </summary>
     private async Task<SeededContent> SeedTenantAContentAsync()
     {
         var packageKey = $"tenant-isolation-{Guid.NewGuid():N}";
@@ -340,11 +318,90 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
             current.Generation);
     }
 
-    /// <summary>
-    /// Asserts the honua-server#4905 refusal shape: <c>404 Not Found</c> (never <c>403</c>, which
-    /// would confirm that another tenant's id exists) carrying the machine-readable
-    /// <c>studio_authorization/cross_tenant_denied</c> code.
-    /// </summary>
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
+    public async Task BridgedAnalysisPackage_KeepsItsTenant_AndIsHiddenFromAnotherTenant()
+    {
+        var version = await SaveTenantAAnalysisPackageAsync();
+
+        // The saved item lives in the native analysis store; it must still read as tenant A's.
+        (await _tenantA.GetAsync($"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}"))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the creating tenant reads its own bridged analysis package");
+        (await ListContentItemIdsAsync(_tenantA)).Should().Contain(version.ItemId);
+
+        await AssertCrossTenantNotFoundAsync(
+            _tenantB.GetAsync($"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}"));
+        (await ListContentItemIdsAsync(_tenantB)).Should().NotContain(version.ItemId);
+    }
+
+    private async Task<StudioContentVersion> SaveTenantAAnalysisPackageAsync()
+    {
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(
+            CreateAnalysisPackageContent(),
+            AnalysisContentJsonContext.Default.AnalysisPackageContent));
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/studio/package-drafts")
+        {
+            Content = JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = $"tenant-analysis-{Guid.NewGuid():N}",
+                    WorkspaceId = "studio",
+                    Envelope = new StudioPackageEnvelope
+                    {
+                        Family = StudioPackageFamily.Analysis,
+                        SchemaVersion = "1.0",
+                        Format = "honua.analysis-content.v1",
+                        Body = body.RootElement.Clone(),
+                    },
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest),
+        };
+        var createResponse = await _tenantA.SendAsync(create);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, await createResponse.Content.ReadAsStringAsync());
+        var draft = await ReadAsync<StudioPackageDraft>(createResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        using var save = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions")
+        {
+            Content = new StringContent("{}", Encoding.UTF8, JsonMediaType),
+        };
+        var saveResponse = await _tenantA.SendAsync(save);
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created, await saveResponse.Content.ReadAsStringAsync());
+        return await ReadAsync<StudioContentVersion>(saveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+    }
+
+    private static AnalysisPackageContent CreateAnalysisPackageContent() => new()
+    {
+        Intent = new AnalysisIntent
+        {
+            IntentId = "intent-tenant",
+            Goal = "buffer incidents",
+            RequestedOutputs = [ArtifactKind.FeatureLayer],
+        },
+        Plan = new AnalysisPlan
+        {
+            PlanId = "plan-tenant",
+            IntentId = "intent-tenant",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "query-1",
+                    Kind = AnalysisPlanStepKind.QueryFeatures,
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture),
+                    },
+                },
+            ],
+            Outputs = [ArtifactKind.FeatureLayer],
+        },
+        RequestedArtifacts = [ArtifactKind.FeatureLayer],
+        SpatialReferenceId = 4326,
+    };
+
     private static async Task AssertCrossTenantNotFoundAsync(Task<HttpResponseMessage> pending)
     {
         using var response = await pending.ConfigureAwait(false);

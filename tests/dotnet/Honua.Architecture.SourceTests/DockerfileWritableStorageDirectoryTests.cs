@@ -7,21 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the demo-render contract (honua-server#2311): a runtime image built for a
-/// read-only root filesystem (<c>security.read-only-root="true"</c>) makes every path that
-/// is not explicitly provisioned (or volume-mounted by the deployment) read-only, so every
-/// directory the default configuration writes to at runtime MUST be provisioned as a
-/// writable runtime directory in that image's Dockerfile. When the two file-storage
-/// directories were omitted, inline map-image responses (<c>f=image</c>, which stream bytes
-/// directly) still worked while every <c>href</c>/<c>f=json</c> export response — MapServer
-/// <c>export</c>, ImageServer <c>exportImage</c> — failed with a 500, because persisting the
-/// rendered image to <c>TemporaryFiles:StorageDirectory</c> threw on the read-only path.
-/// This test discovers every Dockerfile in the repository that declares the read-only-root
-/// label and keeps its provisioned writable directories in sync with the default storage
-/// directories declared in appsettings.json, so the regression cannot recur silently in any
-/// read-only-root image (the container Dockerfile and docker/Dockerfile.aot today).
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class DockerfileWritableStorageDirectoryTests
 {
@@ -71,12 +56,6 @@ public sealed class DockerfileWritableStorageDirectoryTests
         }
     }
 
-    /// <summary>
-    /// Finds every Dockerfile in the repository that declares the read-only-root security
-    /// label. Scans the repo root and the docker/ directory (where all runtime image
-    /// definitions live) rather than hardcoding file names, so a new read-only-root image
-    /// is covered automatically.
-    /// </summary>
     private static List<string> DiscoverReadOnlyRootDockerfiles(string repositoryRoot)
     {
         var candidates = new List<string>();

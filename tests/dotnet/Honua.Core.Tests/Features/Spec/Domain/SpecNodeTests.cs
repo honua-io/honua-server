@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Spec.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="ReferenceNode"/> canonical rendering and the
-/// <see cref="LiteralNode"/> record. <c>ReferenceNode.Canonical</c> shows up
-/// in diagnostic messages and canonical JSON output, so spelling rules must
-/// stay pinned (#1144).
-/// </summary>
 public sealed class SpecNodeTests
 {
     private static SourceSpan Span() => new(1, 1, 0, 0);

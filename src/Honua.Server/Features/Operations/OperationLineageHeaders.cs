@@ -89,6 +89,17 @@ internal readonly record struct OperationLineageAttestation(
     string? ProposalId,
     OperationLoopbackAdmission? Admission);
 
+// Set on a request that carried a valid one-use attestation: the operations gateway dispatched
+// it after the operation policy decided.
+internal sealed class AttestedOperationLineage
+{
+    internal static readonly AttestedOperationLineage Instance = new();
+
+    private AttestedOperationLineage()
+    {
+    }
+}
+
 internal sealed record OperationLoopbackAdmission(
     Guid CredentialId, string Method, string Path, string? TenantId)
 {
@@ -107,6 +118,7 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
     {
         var token = context.Request.Headers[OperationLineageHeaders.Attestation].ToString();
         context.Features.Set<OperationLoopbackAdmission>(null);
+        context.Features.Set<AttestedOperationLineage>(null);
 
         context.Request.Headers.Remove(OperationLineageHeaders.Attestation);
         context.Request.Headers.Remove(OperationLineageHeaders.OperationInstanceId);
@@ -115,6 +127,7 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
 
         if (!StringValues.IsNullOrEmpty(token) && store.TryConsume(token, out var lineage))
         {
+            context.Features.Set(AttestedOperationLineage.Instance);
             Add(context, OperationLineageHeaders.OperationInstanceId, lineage.OperationInstanceId);
             Add(context, OperationLineageHeaders.AuditId, lineage.AuditId);
             Add(context, OperationLineageHeaders.ProposalId, lineage.ProposalId);

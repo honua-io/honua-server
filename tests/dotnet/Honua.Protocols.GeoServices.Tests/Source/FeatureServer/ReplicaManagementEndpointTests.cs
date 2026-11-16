@@ -19,10 +19,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the admin/operator named-replica management API (#1167, slice 1):
-/// list + detail of durable named replicas behind <c>RequireAdminAuthorization</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
@@ -261,11 +257,6 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Mints an API key whose grants are genuinely scoped, so the principal authenticates but
-    /// never receives the <c>admin</c> role. Without this the admin-only replica routes had no
-    /// 403 evidence at all — only anonymous 401 (honua-server#4405).
-    /// </summary>
     private static async Task<HttpClient> CreateAuthenticatedNonAdminClientAsync(
         WebAppFixture fixture,
         string keyName)

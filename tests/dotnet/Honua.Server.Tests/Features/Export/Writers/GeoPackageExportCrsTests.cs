@@ -12,14 +12,6 @@ using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
 
-/// <summary>
-/// Reads the CRS metadata out of an exported GeoPackage (honua-server#4419). The repository's
-/// strongest export round trip — <see cref="GeoPackageAttributeRoundtripTests"/> — passes an SRID
-/// in and never reads it back, and <c>Geometry.EqualsExact</c> does not compare SRID, so
-/// <c>gpkg_spatial_ref_sys</c>, <c>gpkg_contents.srs_id</c>, <c>gpkg_geometry_columns.srs_id</c>
-/// and the per-blob SRID header were all uncovered: a GeoPackage exported with the wrong (or no)
-/// CRS passed everything.
-/// </summary>
 public sealed class GeoPackageExportCrsTests
 {
     [Theory]
@@ -64,10 +56,6 @@ public sealed class GeoPackageExportCrsTests
         }
     }
 
-    /// <summary>
-    /// The mandatory reserved rows: OGC 12-128r16 requires <c>gpkg_spatial_ref_sys</c> to contain
-    /// srs_id -1 and 0 in every GeoPackage regardless of the layer's own CRS.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_AlwaysSeedsTheReservedUndefinedSrsRows()
     {

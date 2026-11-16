@@ -119,6 +119,7 @@ Give an agent its own key with the `agent` grant, never the bootstrap admin pass
 
 - An access-policy change, a staged dataset import or a publish (`honua_admin_services_access_policy_set`, `honua_op_dataset_stage_import`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
 - The administrator exemption from approval does not apply, even when the key also carries `admin` or `admin:write`. A direct admin REST call to change an access policy or publish a layer is refused with `type: "urn:honua:approval-required"`, and the message says how to submit the change for approval.
+- Any other change made by calling a REST route directly that is under `/api/v1/admin` or `/api/v1/console`, or that requires administrator authority (`POST`, `PUT`, `PATCH` or `DELETE`), is refused the same way, with policy `operator.agent.admin-route`. Make the change through `POST /api/v1/operations/{operationId}/submit` or the matching MCP tool, which runs it or files a proposal as the operation policy decides; if no operation covers the change, ask a person. Reads are not affected. The exceptions are routes that apply their own agent rule, such as creating or editing a Console content item the agent keeps personal, and routes that change nothing, such as connection tests, validation and preview calls, source discovery and scans, and the permission check `POST /api/v1/console/actions/check`. Deleting a Console content item, commenting on a shared map, running a published workflow, and writes that require administrator authority outside the admin API (SensorThings writes, field collection sync, spec apply, OGC style changes, temporal rollback, enrichment dataset changes) are made by a person.
 - A Studio publication an agent requests is a proposal too, even when the caller is an administrator.
 - Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes, and publishing, republishing or rolling back Console content publications or changing their sharing.
 - The key cannot create, rotate or revoke API keys, so it cannot mint itself a key without the `agent` grant.
@@ -145,9 +146,10 @@ This rule is built in and applies whether or not `Operations:Policy` is enabled 
 ### Verify
 
 The [quickstart](../../get-started/quickstart.md) publishes the server on
-`http://localhost:18080` (`HONUA_HTTP_PORT`). Handshake methods are open, so
-this check sends no API key. Use the published MCP Python client to initialize
-the session and list tools:
+`http://localhost:18080` (`HONUA_HTTP_PORT`). The handshake is open, but an
+anonymous `tools/list` returns an empty array, so this check sends an API key.
+Set `HONUA_API_KEY` to the key your agent uses, then use the published MCP
+Python client to initialize the session and list tools:
 
 ```bash
 python3 -m pip install 'mcp==2.1.1'
@@ -156,12 +158,16 @@ python3 -m pip install 'mcp==2.1.1'
 ```bash
 python3 - <<'PY'
 import asyncio
+import os
 
 from mcp import ClientSessionGroup
 from mcp.client.session_group import StreamableHttpParameters
 
 async def discover():
-    server = StreamableHttpParameters(url="http://localhost:18080/mcp")
+    server = StreamableHttpParameters(
+        url="http://localhost:18080/mcp",
+        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
+    )
     async with ClientSessionGroup() as group:
         session = await group.connect_to_server(server)
         listed = await session.list_tools()
@@ -174,7 +180,7 @@ asyncio.run(discover())
 PY
 ```
 
-The response lists the `honua_*` tools this deployment advertises, with JSON Schema input definitions. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
+The script prints the `honua_*` tools in the server's default workflow view (12 discovery tools on a quickstart) and exits non-zero when none is listed, which is what a missing or unknown key produces. Each tool carries a JSON Schema input definition. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
 
@@ -228,7 +234,7 @@ Read-only ops tools give an agent the same operational posture a human sees in C
 - `honua_operate_events` — fused Operate timeline events.
 - `honua_supported_operation_kinds` — the live catalog of operation classes that can actually be routed.
 
-Mutating control-plane requests use schema-closed proposal tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Each creates a proposal and returns its id; a separate authorized principal approves it in the Console inbox or with the Admin CLI. MCP does not approve its own proposals and does not accept opaque execution payloads. The full observe → diagnose → propose → approve loop is in [Operating Honua](../operate/README.md).
+Mutating control-plane requests use schema-closed proposal tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. The `operate` view lists `honua_propose_finding`, `honua_propose_rollback` and `honua_propose_platform_release_convergence`. `honua_propose_deploy_plan` and `honua_propose_deploy_operation` are in no workflow view: they appear only in the paginated `full` catalog (`{"method":"tools/list","params":{"view":"full"}}`, following `nextCursor` until it is absent), so an agent that selects only named views does not see them. Each creates a proposal and returns its id; a separate authorized principal approves it in the Console inbox or with the Admin CLI. MCP does not approve its own proposals and does not accept opaque execution payloads. The full observe → diagnose → propose → approve loop is in [Operating Honua](../operate/README.md).
 
 To upgrade the platform, an agent reads `honua_platform_release_status` and `GET /api/v1/admin/deploy/preflight`, then calls `honua_propose_platform_release_convergence` with an optional `targetVersion` (for example `2026.1-rc.3`; `honua-` and `v` prefixes and a `.0` patch are normalized). If the server's declared release differs, the tool returns `outcome: "rejected"` with `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned` instead of a proposal; a tenant-bound key still gets `platform_admin_required` first. After a separate principal approves, `honua_propose_rollback` is the way back. The server never resolves a version to an image: version-to-digest resolution lives in the signed release lock, which the provisioning executor writes into `ControlPlane__PlatformRelease__*`. See [Agent-driven upgrade over MCP](../deploy/upgrade-and-rollback.md#agent-driven-upgrade-over-mcp).
 

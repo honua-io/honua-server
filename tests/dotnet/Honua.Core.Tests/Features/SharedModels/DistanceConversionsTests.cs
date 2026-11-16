@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Unit coverage for <see cref="DistanceConversions"/>. The numeric factors
-/// and the SRID classification matter for distance-based queries — drift
-/// changes answers returned to clients (#1144).
-/// </summary>
 public sealed class DistanceConversionsTests
 {
     private const double Tolerance = 1e-9;

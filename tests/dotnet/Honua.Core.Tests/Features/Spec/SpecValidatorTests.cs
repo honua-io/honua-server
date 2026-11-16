@@ -10,12 +10,6 @@ using Honua.Core.Features.Spec.Validation;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Unit tests for <see cref="SpecValidator"/> — covers every diagnostic code
-/// from the ticket 788 acceptance list (unknown refs, type mismatches,
-/// missing required params, unknown operators, CRS warnings, grammar
-/// version incompatibility, plus the catalog-unavailable fallback).
-/// </summary>
 public sealed class SpecValidatorTests
 {
     private static readonly SpecParser _parser = new();

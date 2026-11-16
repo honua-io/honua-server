@@ -15,13 +15,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
-/// <summary>
-/// Endpoint-level integration tests for the data-enrichment API (#374). The
-/// fixture registers an enrichment dataset that points at the seed join layer
-/// (layer 1) so the spatial-join enrichment runs against a real PostGIS database,
-/// and runs as Pro edition so the entitlement gate passes (the gate denial path is
-/// covered separately).
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
@@ -315,12 +308,6 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies the synchronous over-limit guard (#2282): when the source selection
-/// exceeds the configured analytics input cap, the sync endpoint returns 413 and
-/// points callers at the async batch path. Configures a cap of 1 so the seed layer
-/// trips the guard.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class DataEnrichmentSyncLimitTests : IAsyncLifetime

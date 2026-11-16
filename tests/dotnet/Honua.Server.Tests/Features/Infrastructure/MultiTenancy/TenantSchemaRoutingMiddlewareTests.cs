@@ -22,12 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Integration tests for <see cref="Honua.Infrastructure.MultiTenancy.TenantSchemaRoutingMiddleware"/>
-/// (issue #346). Proves schema-per-tenant isolation (tenant A cannot observe tenant B's schema),
-/// that the default single-tenant pipeline is unchanged when routing is disabled, and that the
-/// usage-metering counter increments per request.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public class TenantSchemaRoutingMiddlewareTests
 {

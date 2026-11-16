@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -19,19 +20,31 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class OperationHumanApprovalReplayTests
 {
     [UnitTheory]
-    [InlineData("unchanged", true)]
-    [InlineData("scope", false)]
-    [InlineData("actor", false)]
-    [InlineData("plan", false)]
-    [InlineData("instance", false)]
-    [InlineData("initiation", false)]
-    [InlineData("missing-proof", false)]
-    [InlineData("pending", false)]
-    [InlineData("version", false)]
-    public async Task VerifyAsync_ApprovedExecution_RequiresItsExactDurableHumanEvidence(string change, bool expected)
+    [InlineData("unchanged", true, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("unchanged", true, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("scope", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("scope", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("actor", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("actor", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("plan", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("plan", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("instance", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("instance", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("initiation", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("initiation", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("missing-proof", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("missing-proof", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("pending", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("pending", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("channel", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("channel", false, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("version", false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("version", false, (int)AdminAuthSessionOrigin.Builtin)]
+    public async Task VerifyAsync_ApprovedExecution_RequiresItsExactDurableHumanEvidence(string change, bool expected, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         var proposal = OperationHumanApprovalTestHost.Proposal(CanonicalSecurityActor.Resolve(human.Principal)!.ActorId);
         proposal = proposal with { Audit = proposal.Audit with { OperationInstanceId = "approved-instance" } };
         host.ReviewRequest(human);
@@ -53,6 +66,7 @@ public sealed class OperationHumanApprovalReplayTests
             "instance" => proposal with { Audit = proposal.Audit with { OperationInstanceId = "another-instance" } },
             "initiation" => proposal with { Initiation = proposal.Initiation! with { Channel = OperationInitiationChannel.Mcp } },
             "missing-proof" => proposal with { HumanApproval = null },
+            "channel" => proposal with { HumanApproval = approval with { Channel = "unknown" } },
             "pending" => proposal with { Status = OperationProposalStatus.AwaitingApproval },
             "version" => proposal with { Version = approval.ProposalVersion },
             _ => proposal,

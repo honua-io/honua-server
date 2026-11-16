@@ -64,22 +64,22 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /api/v1/admin/connections/{id}/tables/validate")]
     public async Task PublishImportedCsv_DefaultFields_ExposesSourceIdWithoutInternalColumns()
     {
-        const string source = "id,name,lon,lat\n100,a,-157,21\n200,b,-156,21";
+        const string source = "id,name,lon,lat\n001,a,-157,21\n1,b,-156,21";
         await ImportAndPublishAttributesAsync(source, [], "attributes.csv");
         await AssertImportedBookkeepingSelectionAsync();
-        using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("source_id=100", "id ASC"));
+        using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("source_id='001'", "id ASC"));
         var attributes = rest.RootElement.GetProperty("features").EnumerateArray()
             .Should().ContainSingle().Subject.GetProperty("attributes");
-        attributes.GetProperty("source_id").GetInt64().Should().Be(100);
+        attributes.GetProperty("source_id").GetString().Should().Be("001");
         attributes.GetProperty("name").GetString().Should().Be("a");
         attributes.TryGetProperty("properties", out _).Should().BeFalse();
         attributes.TryGetProperty("created_at", out _).Should().BeFalse();
 
         using var ogc = JsonDocument.Parse(await ReadOgcItemsAsync(
-            $"filter={Uri.EscapeDataString("source_id = 100")}"));
+            $"filter={Uri.EscapeDataString("source_id = '001'")}"));
         var properties = ogc.RootElement.GetProperty("features").EnumerateArray()
             .Should().ContainSingle().Subject.GetProperty("properties");
-        properties.GetProperty("source_id").GetInt64().Should().Be(100);
+        properties.GetProperty("source_id").GetString().Should().Be("001");
         properties.GetProperty("name").GetString().Should().Be("a");
         properties.TryGetProperty("properties", out _).Should().BeFalse();
         properties.TryGetProperty("created_at", out _).Should().BeFalse();

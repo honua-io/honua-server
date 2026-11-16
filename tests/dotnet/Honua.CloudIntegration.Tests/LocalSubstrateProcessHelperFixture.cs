@@ -9,33 +9,16 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Compiles a tiny, dependency-free managed child binary the GP process-pool lane launches through
-/// <see cref="Honua.ControlPlane.LocalProcessPoolBatchComputeBackend"/>. The binary self-selects its
-/// behaviour from arguments (<c>--sleep N</c>, <c>--exit CODE</c>, <c>--env-out PATH</c>) so a single
-/// portable executable covers the run-to-completion, non-zero-exit, cancellation, pool-saturation, and
-/// <c>HONUA_*</c> environment-contract scenarios — with no shell and no OS-specific coreutil.
-/// </summary>
-/// <remarks>
-/// The binary is invoked as <c>dotnet &lt;helper.dll&gt; …</c>. The <c>dotnet</c> muxer is resolved by
-/// ABSOLUTE path (from <c>DOTNET_ROOT</c> or the running shared-framework directory) so the child spawn
-/// bypasses any PATH shim and works identically in CI and locally. When the muxer cannot be resolved the
-/// fixture reports <see cref="Available"/> = false and the dependent tests skip.
-/// </remarks>
 public sealed class LocalSubstrateProcessHelperFixture : IAsyncLifetime
 {
     private string? _workDir;
 
-    /// <summary>True when the helper compiled and a runnable <c>dotnet</c> muxer was resolved.</summary>
     public bool Available { get; private set; }
 
-    /// <summary>Absolute path to the <c>dotnet</c> muxer used to launch the helper.</summary>
     public string DotnetMuxerPath { get; private set; } = string.Empty;
 
-    /// <summary>Absolute path to the compiled helper assembly.</summary>
     public string HelperDllPath { get; private set; } = string.Empty;
 
-    /// <inheritdoc />
     public Task InitializeAsync()
     {
         try
@@ -64,7 +47,6 @@ public sealed class LocalSubstrateProcessHelperFixture : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task DisposeAsync()
     {
         if (_workDir is not null && Directory.Exists(_workDir))

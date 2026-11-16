@@ -52,7 +52,7 @@ internal sealed class ImageServerAnalyzeHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (!IsSupportedFormat(GetString(values, "f")))
+            if (!IsSupportedFormat(ImageServerRequestValues.GetString(values, "f")))
             {
                 ImageServerLog.InvalidAnalyzeParameters(_logger, layerId, "Unsupported format");
                 return StandardErrorHelpers.CreateBadRequest(
@@ -60,7 +60,7 @@ internal sealed class ImageServerAnalyzeHandler
                     "Only JSON format is supported. Use f=json or f=pjson.");
             }
 
-            var chainJson = GetString(values, "renderingRule") ?? GetString(values, "rasterFunction");
+            var chainJson = ImageServerRequestValues.GetString(values, "renderingRule") ?? ImageServerRequestValues.GetString(values, "rasterFunction");
             if (string.IsNullOrWhiteSpace(chainJson))
             {
                 ImageServerLog.InvalidAnalyzeParameters(_logger, layerId, "Missing renderingRule");
@@ -127,7 +127,4 @@ internal sealed class ImageServerAnalyzeHandler
         => string.IsNullOrWhiteSpace(format) ||
            string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

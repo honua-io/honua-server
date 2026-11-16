@@ -46,7 +46,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // Request-scoped schema mode covers per-test schema headers and tenant schema routing (#346).
+        // Request-scoped schema mode covers per-test schema headers and tenant schema routing.
         _schemaHeadersEnabled = RequestScopedSchemaConfiguration.IsEnabled(configuration);
         _connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
         // Preserve the configured default schema so named secure connections get the
@@ -54,15 +54,15 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // ServiceCollectionExtensions.AddPostgreSqlServices — both call
         // PostgresDataSourceFactory.Create with this value, so the schema is applied via
         // the same RDS-Proxy-safe mechanism (physical-connection initializer SET, or the
-        // libpq `options` startup parameter under multiplexing/schema-header modes —
-        // honua-server#1638). Without this, background/service callers (where
-        // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
-        // search_path and miss schema-qualified tables (honua-server#2949).
+        // libpq `options` startup parameter under multiplexing/schema-header modes).
+        // Without this, background/service callers (where ISchemaContext.CurrentSchema
+        // is null) fall back to the PostgreSQL default search_path and miss
+        // schema-qualified tables.
         _defaultSchema = configuration["Database:Schema"];
         // Named and bound pools always SET their session settings per connection (see below).
         // Behind RDS Proxy that pins the proxy session, and a frozen Lambda never prunes its
         // pool, so on Lambda these pools are unpooled: each logical close ends the pinned
-        // session (honua-server#6760).
+        // session.
         _releaseSessionOnClose = ControlPlaneEventHandlerHost.IsLambda(configuration);
         _createDataSource = createDataSource;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -92,13 +92,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
     public NpgsqlDataSource GetOrCreate(string connectionString)
         => GetOrCreate(connectionString, connectionString);
 
-    /// <summary>
-    /// Gets (or creates) the pooled data source for a logical connection. When the
-    /// resolved connection string for that logical connection changes — e.g. the
-    /// secrets-manager password rotated — the stale data source is disposed so its
-    /// pooled connections are released instead of accumulating per rotation and
-    /// eventually exhausting server-side connection slots.
-    /// </summary>
     public NpgsqlDataSource GetOrCreate(string connectionName, string connectionString)
     {
         ValidateArguments(connectionName, connectionString);
@@ -108,11 +101,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         }
     }
 
-    /// <summary>
-    /// Pins a pool through its connection lifetime, including an in-flight open.
-    /// Rotation and shutdown retire pinned pools; disposal waits for the last pin.
-    /// Multiplexed logical connections need their source until the lease is returned.
-    /// </summary>
     public Acquisition Acquire(string connectionName, string connectionString, bool preservePrimarySchema = true)
     {
         ValidateArguments(connectionName, connectionString);
@@ -155,7 +143,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // common limits/timeouts without inheriting the primary database's schema.
         // Named pools always apply the session settings per connection, even with
         // Database:SessionSettings:Mode=role-defaults: their role can differ from the
-        // DefaultConnection role the startup check verifies (honua-server#5870).
+        // DefaultConnection role the startup check verifies.
         var dataSource = _createDataSource?.Invoke(connectionString) ?? (preservePrimarySchema
             ? PostgresDataSourceFactory.Create(
                 connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema,
@@ -194,10 +182,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         }
     }
 
-    /// <summary>
-    /// Retires only this registered connection's local named and bound pools.
-    /// Existing pins survive; other instances and late opens are bounded by idle pruning.
-    /// </summary>
     public void RetireConnection(Guid connectionId, string connectionName)
     {
         List<NpgsqlDataSource> retired = [];
@@ -276,10 +260,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         }
     }
 
-    /// <summary>
-    /// Stops future maintenance and retires cached entries. An already-running sweep
-    /// retains ownership of its detached batch; asynchronous host disposal waits for it.
-    /// </summary>
     public void Dispose()
     {
         var retired = DetachForDisposal();

@@ -9,11 +9,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Geometries;
 
-/// <summary>
-/// Verifies that the shared secondary-emitter winding helper rewrites polygon rings to the
-/// RFC 7946 / ISO 19107 right-hand rule (exterior CCW, holes CW) so clockwise-exterior stored
-/// geometry — common via Esri applyEdits and shapefile imports — is emitted correctly (#2745).
-/// </summary>
 public sealed class RingWindingNormalizerTests
 {
     private static readonly GeometryFactory _factory =

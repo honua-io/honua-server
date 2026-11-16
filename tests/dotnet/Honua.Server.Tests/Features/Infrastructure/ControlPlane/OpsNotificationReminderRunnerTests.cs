@@ -315,14 +315,15 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var original = (await store.ListDueAsync(clock.Now, 100)).Single();
         var findings = CreateFindings();
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        var posture = failedSelfCheck ? await FailedSelfCheckPostureAsync(clock) : EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
+            EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+            EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
+            EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)]);
         findings.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(new OpsFindingsEvaluation
         {
             EvaluatedAt = clock.Now,
             Findings = [],
-            Posture = failedSelfCheck ? await FailedSelfCheckPostureAsync(clock) : EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
-                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
-                EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
-                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)])
+            Posture = posture
         });
         var notifications = CreateNotifications(Substitute.For<IAlertOutboxWriter>(), new AlertOptions());
         OpsNotificationReminderRunner Runner(IOpsFindingsEvidenceSource source) => new(store, source,

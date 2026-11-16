@@ -19,15 +19,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Integration tests for the ArcGIS-compatible <c>/sharing/rest/oauth2</c> named-user
-/// bridge (#1242). The interactive authorize/callback leg requires a live OIDC
-/// provider, so these tests drive the load-bearing minting path directly: a verified
-/// authorization code (or refresh token) is seeded into the shared cache-backed store
-/// and exchanged through the real <c>oauth2/token</c> endpoint, which mints the
-/// access token via <c>IPortalTokenIssuer</c>. The authorize endpoint is covered for
-/// its not-configured (404) gate.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]

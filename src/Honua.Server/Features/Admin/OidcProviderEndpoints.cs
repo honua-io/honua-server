@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Asp.Versioning.Builder;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -94,6 +95,21 @@ internal static partial class OidcProviderEndpoints
         group.MapPost("/{id:guid}/test", HandleTestProvider)
             .WithDisplayName("Test OIDC Provider Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        MapProviderHistory(group);
+    }
+
+    private static void MapProviderHistory(IVersionedEndpointRouteBuilder group)
+    {
+        group.MapGet("/{id:guid}/revisions", HandleListProviderRevisions)
+            .WithDisplayName("List OIDC Provider Revisions")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapPost("/{id:guid}/undo", HandleUndoProviderChange)
+            .WithDisplayName("Undo OIDC Provider Change")
+            .RequireAdminCredentialManagementAuthorization()
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }
 
     // The create route is marked in endpoint metadata because a trailing-slash test path still matches and a path-suffix check would classify it as a create.
@@ -151,6 +167,17 @@ internal static partial class OidcProviderEndpoints
             context,
             FeatureCatalog.OidcAuthenticationKey,
             "OIDC authentication");
+
+    private static Task<Results<Ok<ApiResponse<IReadOnlyList<SettingsRevisionResponse>>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
+        HandleListProviderRevisions(Guid id, HttpContext context)
+        => SettingsRevisionHandlers.ListAsync(ProviderDocument(id), context);
+
+    // Undo never re-creates a deleted provider: a create must pass the multi-provider entitlement gate.
+    private static Task<Results<Ok<ApiResponse<SettingsRevisionResponse>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
+        HandleUndoProviderChange(Guid id, UndoSettingsChangeRequest request, HttpContext context)
+        => SettingsRevisionHandlers.UndoAsync(new(ProviderDocument(id), DeletedDocumentUndo.Refuse), request, context);
+
+    private static ConfigurationDocumentKey ProviderDocument(Guid id) => new(PostgresOidcProviderStore.DocumentKind, id.ToString("D"));
 
     private static OidcProviderResponse ToResponse(OidcProviderConfiguration p) => new()
     {

@@ -3,9 +3,6 @@
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
 
-/// <summary>
-/// Source-generated log messages for Zarr-backed OGC API Coverages serving (#1590).
-/// </summary>
 internal static partial class ZarrCoverageLog
 {
     [LoggerMessage(EventId = 575230, Level = LogLevel.Information, Message = "Zarr coverage served: collection={CollectionId}, variable={Variable}, bytes={ByteCount}")]

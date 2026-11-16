@@ -5,57 +5,8 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.Generation;
 
-/// <summary>
-/// Deterministic quadtree spatial partitioner for the 3D Tiles generation
-/// pipeline (#1200). Splits an ordered, homogeneous feature set into a
-/// hierarchy of tiles with bounding volumes and a per-level geometric error,
-/// enabling progressive LOD streaming for city-scale datasets.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The partitioner assigns every feature to a leaf by recursively subdividing
-/// the dataset's geographic envelope into four equal lon/lat quadrants
-/// (NW, NE, SW, SE) until either a leaf holds at most
-/// <see cref="SceneLodOptions.MaxFeaturesPerTile"/> features or the tree reaches
-/// <see cref="SceneLodOptions.MaxDepth"/>. Feature-to-quadrant assignment uses
-/// each feature's geometric centroid so a feature lands in exactly one leaf.
-/// </para>
-/// <para>
-/// Refinement is "REPLACE": every interior node carries a thinned representative
-/// sample of the features beneath it (a coarse LOD), and the geometric error
-/// strictly decreases from root to leaf so a 3D Tiles client refines as the
-/// camera approaches. Sampling is a deterministic stride over the
-/// primary-key-ordered features, so the output is byte-stable across runs given
-/// identical input.
-/// </para>
-/// <para>
-/// The partition is purely combinatorial — it does not project coordinates or
-/// build GLB content. The executor walks the resulting <see cref="SceneTileTree"/>,
-/// builds one GLB per node from <see cref="SceneTileNode.Features"/>, and emits a
-/// matching <c>tileset.json</c> tree via <see cref="TilesetDocumentWriter"/>.
-/// </para>
-/// </remarks>
 public static class SceneQuadtreePartitioner
 {
-    /// <summary>
-    /// Partitions the supplied features into a quadtree LOD hierarchy.
-    /// </summary>
-    /// <param name="features">
-    /// Ordered, homogeneous-geometry features. Ordering (typically by primary
-    /// key) is the determinism contract; the partitioner never reorders within
-    /// a leaf.
-    /// </param>
-    /// <param name="boundsDegrees">
-    /// Dataset envelope in WGS-84 degrees: [west, south, east, north]. Must
-    /// enclose every feature centroid.
-    /// </param>
-    /// <param name="rootGeometricError">
-    /// Geometric error (meters) declared on the root tile — typically the
-    /// dataset's bounding-diagonal length. Child errors are derived by halving
-    /// at each level so error decreases monotonically with depth.
-    /// </param>
-    /// <param name="options">Partitioning thresholds.</param>
-    /// <returns>A deterministic <see cref="SceneTileTree"/>.</returns>
     public static SceneTileTree Partition(
         IReadOnlyList<SceneFeature> features,
         double[] boundsDegrees,
@@ -200,22 +151,6 @@ public static class SceneQuadtreePartitioner
             children);
     }
 
-    /// <summary>
-    /// Geometric error for a leaf tile. A childless tile's geometric error is the
-    /// error introduced when its (non-existent) children are not rendered, so for
-    /// a non-root leaf that is 0.0: a positive value would tell a 3D Tiles client
-    /// that finer detail still exists and screen-space-error refinement would
-    /// never converge at the deepest LOD.
-    /// <para>
-    /// The root tile is the exception: even when the whole dataset fits one leaf
-    /// (root is also a leaf), the root must carry its floored, positive root
-    /// geometric error. A zero root error gives the root a zero screen-space error
-    /// and can leave a client never scheduling the root tile, defeating root SSE
-    /// refinement. This mirrors the point-cloud builder
-    /// (PointCloudTilesetBuilder.MakeLeaf), which deliberately keeps the floored
-    /// root error on a root-leaf.
-    /// </para>
-    /// </summary>
     private static double LeafGeometricError(int depth, double inheritedGeometricError)
         => depth == 0 ? inheritedGeometricError : 0.0;
 

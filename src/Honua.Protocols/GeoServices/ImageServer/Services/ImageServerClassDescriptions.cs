@@ -149,13 +149,13 @@ internal static class ImageServerClassDescriptions
         int? resolvedSrid = null;
         foreach (var element in geometryElements)
         {
-            if (!TryReadGeometry(element, out var geometry, out var geometryError))
+            if (!ImageServerEsriPolygonReader.TryRead(element, "training geometry", out var geometry, out var geometryError))
             {
                 error = geometryError;
                 return false;
             }
 
-            resolvedSrid ??= ReadWkid(element);
+            resolvedSrid ??= ImageServerGeometryHelpers.ReadWkid(element);
             geometries.Add(geometry);
         }
 
@@ -163,135 +163,5 @@ internal static class ImageServerClassDescriptions
         srid = resolvedSrid ?? defaultSrid;
         wkb = WkbWriter.Write(clip);
         return true;
-    }
-
-    private static bool TryReadGeometry(JsonElement geometry, out Geometry result, out string? error)
-    {
-        result = null!;
-        error = null;
-        var factory = new GeometryFactory();
-
-        // Envelope form.
-        if (TryReadNumber(geometry, "xmin", out var xmin) &&
-            TryReadNumber(geometry, "ymin", out var ymin) &&
-            TryReadNumber(geometry, "xmax", out var xmax) &&
-            TryReadNumber(geometry, "ymax", out var ymax))
-        {
-            var envelope = new Envelope(Math.Min(xmin, xmax), Math.Max(xmin, xmax), Math.Min(ymin, ymax), Math.Max(ymin, ymax));
-            result = factory.ToGeometry(envelope);
-            return true;
-        }
-
-        // Polygon form (rings). The first ring is the exterior shell; subsequent rings are treated
-        // as holes (the common single-part Esri polygon). Multi-part exterior rings beyond the
-        // first are not decomposed — a documented limitation for training AOIs.
-        if (geometry.TryGetProperty("rings", out var ringsElement) && ringsElement.ValueKind == JsonValueKind.Array)
-        {
-            var rings = new List<LinearRing>();
-            foreach (var ringElement in ringsElement.EnumerateArray())
-            {
-                if (!TryReadRing(ringElement, factory, out var ring, out var ringError))
-                {
-                    error = ringError;
-                    return false;
-                }
-
-                rings.Add(ring);
-            }
-
-            if (rings.Count == 0)
-            {
-                error = "polygon geometry must contain at least one ring.";
-                return false;
-            }
-
-            var holes = rings.Count > 1 ? rings.Skip(1).ToArray() : null;
-            result = factory.CreatePolygon(rings[0], holes);
-            return true;
-        }
-
-        error = "training geometry must be an Esri polygon (rings) or envelope (xmin/ymin/xmax/ymax).";
-        return false;
-    }
-
-    private static bool TryReadRing(JsonElement ringElement, GeometryFactory factory, out LinearRing ring, out string? error)
-    {
-        ring = null!;
-        error = null;
-
-        if (ringElement.ValueKind != JsonValueKind.Array)
-        {
-            error = "each polygon ring must be an array of coordinate pairs.";
-            return false;
-        }
-
-        var coordinates = new List<Coordinate>(ringElement.GetArrayLength());
-        foreach (var pair in ringElement.EnumerateArray())
-        {
-            if (pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() < 2 ||
-                pair[0].ValueKind != JsonValueKind.Number || pair[1].ValueKind != JsonValueKind.Number)
-            {
-                error = "each polygon vertex must be a [x, y] number pair.";
-                return false;
-            }
-
-            coordinates.Add(new Coordinate(pair[0].GetDouble(), pair[1].GetDouble()));
-        }
-
-        // Esri rings are closed; defensively close an open ring so NTS accepts it.
-        if (coordinates.Count >= 3 && !coordinates[0].Equals2D(coordinates[^1]))
-        {
-            coordinates.Add(coordinates[0].Copy());
-        }
-
-        if (coordinates.Count < 4)
-        {
-            error = "each polygon ring must have at least three distinct vertices.";
-            return false;
-        }
-
-        try
-        {
-            ring = factory.CreateLinearRing(coordinates.ToArray());
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            error = "polygon ring is not a valid closed ring.";
-            return false;
-        }
-    }
-
-    private static bool TryReadNumber(JsonElement element, string property, out double value)
-    {
-        value = 0;
-        if (element.TryGetProperty(property, out var prop) && prop.ValueKind == JsonValueKind.Number)
-        {
-            return prop.TryGetDouble(out value);
-        }
-
-        return false;
-    }
-
-    private static int? ReadWkid(JsonElement geometry)
-    {
-        if (!geometry.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (sr.TryGetProperty("latestWkid", out var latest) &&
-            latest.ValueKind == JsonValueKind.Number && latest.TryGetInt32(out var latestWkid))
-        {
-            return latestWkid;
-        }
-
-        if (sr.TryGetProperty("wkid", out var wkid) &&
-            wkid.ValueKind == JsonValueKind.Number && wkid.TryGetInt32(out var wkidValue))
-        {
-            return wkidValue;
-        }
-
-        return null;
     }
 }

@@ -19,17 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Pins honua-server#4454: a grounded <c>process.selection</c> candidate is what a
-/// caller places into an <see cref="AnalysisPlan"/> step and submits to the job
-/// runtime, so <see cref="GroundingService"/> must restrict the pool it hands the
-/// engine to score to processes <see cref="ProcessExecutionEligibility.IsJobCallable"/>
-/// accepts — never a protocol-only or workflow-only operation
-/// <see cref="DirectSubmitPlanValidator"/> is guaranteed to refuse. Assertions are
-/// pinned against <see cref="ProcessDefinition.SupportedEntryPoints"/> rather than a
-/// hard-coded process-id list, so the contract tracks the catalog rather than a
-/// snapshot of it.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class GroundingProcessEntryPointFilterTests
 {
@@ -85,13 +74,6 @@ public sealed class GroundingProcessEntryPointFilterTests
         scoredPool!.Should().OnlyContain(p => ProcessExecutionEligibility.IsJobCallable(p));
     }
 
-    /// <summary>
-    /// Uses the real <see cref="DeterministicGroundingEngine"/> and the process's own
-    /// title as the goal, which pre-fix scored the process as the top (or only)
-    /// candidate because a title self-match is the strongest possible signal. Proves
-    /// the exclusion holds through the full ranking pipeline, not just the pool handed
-    /// to the engine.
-    /// </summary>
     public static TheoryData<string> NonJobCallableProcessIds()
     {
         var data = new TheoryData<string>();

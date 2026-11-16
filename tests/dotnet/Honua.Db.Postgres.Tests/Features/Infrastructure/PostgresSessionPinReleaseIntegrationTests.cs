@@ -9,11 +9,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Behind RDS Proxy a session <c>SET</c> pins the proxy session for its lifetime. On Lambda the
-/// named and bound pools are built unpooled, so closing a connection ends the pinned session
-/// while the session settings still apply to every open (honua-server#6760).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresSessionPinReleaseIntegrationTests(PostgresFixture fixture)
 {

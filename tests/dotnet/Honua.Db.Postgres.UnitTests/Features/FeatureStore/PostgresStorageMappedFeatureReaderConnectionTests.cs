@@ -14,14 +14,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Connection-resolution behavior for the storage-mapped reader. Regression coverage for
-/// the single-DB / default-connection deployment (demo.honua.io): a layer bound to an
-/// empty/placeholder data connection must fall back to the default database connection
-/// (the same source render + OGC reads use) instead of failing the FeatureServer query,
-/// while a layer bound to a real (decryptable) connection still uses that source, and a
-/// genuinely unresolvable binding still fails loudly.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresStorageMappedFeatureReaderConnectionTests
 {

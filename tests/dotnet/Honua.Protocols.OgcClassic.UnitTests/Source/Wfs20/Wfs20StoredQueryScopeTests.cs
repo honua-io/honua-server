@@ -16,16 +16,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Regression tests for BH3-009: <c>ManagedStoredQueries</c> was a process-global
-/// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey, TValue}"/> with no
-/// service or tenant scoping. Stored queries created on Service A were fully visible and
-/// operable from Service B, enabling information disclosure, sabotage (cross-service delete),
-/// and DoS via global slot exhaustion.
-///
-/// After the fix the dictionary is keyed by a composite (serviceScope, queryId) tuple derived
-/// from the request's tenant context, so queries created in one scope are invisible in another.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20StoredQueryScopeTests
 {
@@ -35,11 +25,6 @@ public sealed class Wfs20StoredQueryScopeTests
 
     // ─── BH3-009 regression ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// A stored query created by tenant A must not be drop-able from tenant B's context.
-    /// Before the fix <see cref="Wfs20Handler.HandleDropStoredQueryAsync"/> accepted any query ID
-    /// regardless of which service (tenant) created it.
-    /// </summary>
     [UnitTest]
     public async Task HandleDropStoredQuery_QueryFromOtherScope_ReturnsInvalidParameterValue()
     {
@@ -66,11 +51,6 @@ public sealed class Wfs20StoredQueryScopeTests
             "owner tenant must be able to drop its own stored query");
     }
 
-    /// <summary>
-    /// A stored query created under <c>tenant-a</c> must not appear in a
-    /// <c>DescribeStoredQueries</c> request that targets a non-existent query by that ID
-    /// under <c>tenant-b</c>'s scope — the response must be an error, not the definition.
-    /// </summary>
     [UnitTest]
     public async Task HandleCreateStoredQuery_TwoScopesReuseQueryId_BothSucceed()
     {
@@ -194,10 +174,6 @@ public sealed class Wfs20StoredQueryScopeTests
         context.Items[Wfs20DispatcherEndpoint.ParsedXmlDocumentItemKey] = XDocument.Parse(xml);
     }
 
-    /// <summary>
-    /// Executes an <see cref="IResult"/> against a temporary <see cref="DefaultHttpContext"/>
-    /// and asserts that the response body XML contains <paramref name="expectedContains"/>.
-    /// </summary>
     private static async Task AssertXmlResultStatusAsync(
         DefaultHttpContext originalContext,
         IResult result,
@@ -233,9 +209,6 @@ public sealed class Wfs20StoredQueryScopeTests
         return (httpContext.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
-    /// <summary>
-    /// Simple <see cref="ITenantContext"/> that returns a fixed tenant ID.
-    /// </summary>
     private sealed class FixedTenantContext(string tenantId) : ITenantContext
     {
         public string? TenantId { get; } = tenantId;

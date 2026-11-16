@@ -23,13 +23,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies the dispatcher-level telemetry the MCP operator surface emits for
-/// paths that never reach a concrete tool or resource handler: activity
-/// enrichment for <c>initialize</c> / <c>tools/list</c> / <c>resources/list</c>
-/// / <c>resources/templates/list</c>, and counter samples for the anonymous
-/// <c>tools/call</c> and <c>resources/read</c> auth short-circuits.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 [Collection("McpTelemetry")]
 public sealed class McpDispatcherTelemetryTests
@@ -266,12 +259,6 @@ public sealed class McpDispatcherTelemetryTests
         response.Result!.Value.GetRawText().Should().Be("{}");
     }
 
-    /// <summary>
-    /// Subscribes a <see cref="MeterListener"/> to <paramref name="instrumentName"/>
-    /// that appends matching measurements to <paramref name="samples"/>. Callers
-    /// must keep the listener alive with <c>using</c> so tests in parallel do
-    /// not cross-contaminate.
-    /// </summary>
     private static MeterListener CreateListener(
         string instrumentName,
         Func<KeyValuePair<string, object?>[], bool> filter,

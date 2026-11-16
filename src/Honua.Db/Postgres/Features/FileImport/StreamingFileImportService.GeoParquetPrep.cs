@@ -16,10 +16,6 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
-    /// <summary>
-    /// Outcome of GeoParquet pre-import validation: either a successful prep with the
-    /// buffered scratch and detected SRID, or a populated error message for early failure.
-    /// </summary>
     private readonly record struct GeoParquetPrepResult(
         GeoParquetScratch? Scratch,
         Stream? Stream,
@@ -28,11 +24,6 @@ internal sealed partial class StreamingFileImportService
         string? ErrorMessage,
         double? CoordinateEpoch = null);
 
-    /// <summary>
-    /// Buffers and validates a GeoParquet source: extracts metadata, enforces row-group
-    /// caps and WKB-encoding requirements. Returns ErrorMessage when validation fails so
-    /// the orchestrator can short-circuit with a uniform failure result.
-    /// </summary>
     private async Task<GeoParquetPrepResult> PrepareGeoParquetImportAsync(
         Stream fileStream,
         string jobId,

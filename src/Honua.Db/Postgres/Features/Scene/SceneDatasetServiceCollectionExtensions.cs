@@ -9,10 +9,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Db.Postgres.Features.Scene;
 
-/// <summary>
-/// DI registration helper for the Postgres-backed scene dataset registry
-/// introduced in #844.
-/// </summary>
 internal static class SceneDatasetServiceCollectionExtensions
 {
     public static IServiceCollection AddPostgresSceneRegistry(this IServiceCollection services, IConfiguration configuration)

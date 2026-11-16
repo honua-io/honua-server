@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Core.Features.Edit;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Services;
@@ -54,6 +55,7 @@ internal static class GrpcServiceCollectionExtensions
         });
 
         services.TryAddSingleton<GrpcExceptionInterceptor>();
+        services.TryAddSingleton<IFeatureEditHooks>(NoOpFeatureEditHooks.Instance);
         services.TryAddSingleton<GrpcApplyEditsReceipts>(sp =>
             new GrpcApplyEditsReceipts(
                 sp.GetService<NpgsqlDataSource>() is { } dataSource

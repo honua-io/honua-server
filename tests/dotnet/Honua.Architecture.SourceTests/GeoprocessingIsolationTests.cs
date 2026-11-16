@@ -6,18 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the Honua.Geoprocessing isolation contract: the geoprocessing
-/// subsystem is carved out of Honua.Server so the remaining Phase 1 protocol
-/// extractions (OgcApi.Processes, GeoServices/GPServer) can be split without
-/// transitively pulling Geoprocessing through Honua.Server. The carve only
-/// holds if Honua.Geoprocessing itself does not back-reference Honua.Server.
-/// </summary>
-/// <remarks>
-/// Pinning the ProjectReference closure at the csproj layer (rather than
-/// scanning IL) catches the policy violation at PR time even before the
-/// downstream protocol extractions land.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class GeoprocessingIsolationTests
 {

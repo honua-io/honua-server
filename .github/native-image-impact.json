@@ -1,7 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schema": "honua.ci.native-image-impact-policy/v1",
-  "mode": "observe",
   "roots": {
     "serving": "src/Honua.Server/Honua.Server.csproj",
     "worker": "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
@@ -44,10 +43,6 @@
     ],
     "lambda": [
       "docker/Dockerfile.lambda.aot"
-    ],
-    "functions": [
-      "docker/Dockerfile.functions.aot",
-      "docker/cloud/azure-functions/**"
     ]
   },
   "worker_native_patterns": [
@@ -84,10 +79,6 @@
       ],
       "lambda": [
         "docker/Dockerfile.lambda.aot"
-      ],
-      "functions": [
-        "docker/Dockerfile.functions.aot",
-        "docker/cloud/azure-functions/**"
       ]
     },
     "serving_patterns": [
@@ -96,8 +87,6 @@
       "Dockerfile",
       "docker/Dockerfile.aot",
       "docker/Dockerfile.lambda.aot",
-      "docker/Dockerfile.functions.aot",
-      "docker/cloud/azure-functions/**",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",

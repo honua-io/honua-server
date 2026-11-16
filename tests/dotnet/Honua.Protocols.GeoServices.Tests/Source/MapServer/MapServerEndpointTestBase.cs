@@ -20,16 +20,13 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>Shared lifecycle and data helpers for the partitioned MapServer endpoint suites.</summary>
 public abstract class MapServerEndpointTestBase : IAsyncLifetime
 {
     protected WebAppFixture Fixture { get; } = new();
     private string? _generateKmlServiceName;
 
-    /// <inheritdoc />
     public async Task InitializeAsync() => await Fixture.InitializeAsync();
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         try
@@ -143,14 +140,14 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
         // #2020: route the global honua.services/layers/service_layers/layer_fields seed through
         // the schema-mutation advisory lock (combined statement also seeds the per-schema features).
         await Fixture.Postgres.ApplyGlobalSeedSqlAsync(sql, schema);
-        await SeedGenerateKmlMetadataV2GraphAsync(serviceName);
+        SeedGenerateKmlMetadataV2Graph(serviceName);
         return serviceName;
     }
 
-    private async Task SeedGenerateKmlMetadataV2GraphAsync(string serviceName)
+    private void SeedGenerateKmlMetadataV2Graph(string serviceName)
     {
         var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
         var serviceId = $"svc-{serviceName}-map";
 
         var resources = snapshot.Graph.Resources.ToList();
@@ -178,7 +175,7 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
                 })
                 .ToArray(),
             Publications = publications,
-        });
+        }, schema: Fixture.CurrentSchema);
     }
 
     private static void AddGenerateKmlLayer(

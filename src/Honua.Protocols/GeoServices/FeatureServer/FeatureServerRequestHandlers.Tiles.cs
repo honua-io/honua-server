@@ -183,7 +183,7 @@ internal static partial class FeatureServerEndpoints
                 x,
                 y,
                 z,
-                query,
+                await VectorTileQuery.ForLayerAsync(context, resource, query).ConfigureAwait(false),
                 tileOptions,
                 tileLimits,
                 cancellationToken,

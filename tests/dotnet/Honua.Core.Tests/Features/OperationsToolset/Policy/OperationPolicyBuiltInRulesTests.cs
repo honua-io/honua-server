@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.OperationsToolset.Policy;
 
-/// <summary>
-/// Owner decision 10 (2026-10-10): in Production the typed operation policy appends two
-/// code-declared rules after the operator rules — full administrators and administrative keys
-/// execute directly — and everyone else falls through to the fail-closed default.
-/// </summary>
 public sealed class OperationPolicyBuiltInRulesTests
 {
     private const string PublishOperationId = "service.publish";

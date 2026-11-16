@@ -37,7 +37,7 @@ public static class OgcCoverageMigrationEvidencePackBuilder
 
         var resolvedOptions = options ?? new OgcCoverageMigrationEvidencePackBuilderOptions();
 
-        var redactedInventory = inputs.Inventory with { Source = RedactSource(inputs.Inventory.Source) };
+        var redactedInventory = inputs.Inventory with { Source = MigrationSourceUrls.RedactSource(inputs.Inventory.Source) };
 
         var channels = BuildChannels(inputs);
         var styleDiagnostics = BuildAggregateStyleDiagnostics(inputs);
@@ -47,7 +47,7 @@ public static class OgcCoverageMigrationEvidencePackBuilder
         var bundle = new OgcCoverageMigrationEvidencePackBundle
         {
             SourceKind = inputs.Inventory.SourceKind,
-            Source = RedactSource(inputs.Inventory.Source),
+            Source = MigrationSourceUrls.RedactSource(inputs.Inventory.Source),
             CoverageScope = coverageScope,
             Summary = summary,
             Channels = channels,
@@ -271,43 +271,7 @@ public static class OgcCoverageMigrationEvidencePackBuilder
 
     private static MigrationManifestArtifact RedactManifest(MigrationManifestArtifact manifest)
     {
-        return manifest with { Source = RedactSource(manifest.Source) };
-    }
-
-    private static MigrationSourceIdentity RedactSource(MigrationSourceIdentity source)
-    {
-        return new MigrationSourceIdentity
-        {
-            DisplayName = source.DisplayName,
-            BaseUrl = RedactUrl(source.BaseUrl),
-            Product = source.Product,
-            Version = source.Version,
-            Build = source.Build,
-            ServiceType = source.ServiceType
-        };
-    }
-
-    private static string RedactUrl(string baseUrl)
-    {
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return baseUrl;
-        }
-
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        {
-            return baseUrl;
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
+        return manifest with { Source = MigrationSourceUrls.RedactSource(manifest.Source) };
     }
 
     private sealed class MigrationCoverageStyleDiagnosticEqualityComparer

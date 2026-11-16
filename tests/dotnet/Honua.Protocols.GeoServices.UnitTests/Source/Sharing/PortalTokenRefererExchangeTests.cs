@@ -20,10 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// A federated token exchange that supplies <c>referer</c> but omits <c>client</c>
-/// binds the new token to that referer instead of inheriting the presented binding.
-/// </summary>
 public sealed class PortalTokenRefererExchangeTests
 {
     [UnitTest]

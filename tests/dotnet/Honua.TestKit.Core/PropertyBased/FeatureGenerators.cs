@@ -13,14 +13,8 @@ using Gen = FsCheck.Fluent.Gen;
 
 namespace Honua.TestKit.PropertyBased;
 
-/// <summary>
-/// Property-based generators for feature data to ensure comprehensive testing.
-/// </summary>
 public static class FeatureGenerators
 {
-    /// <summary>
-    /// Generates realistic feature data with various geometry types and attribute combinations.
-    /// </summary>
     public static Arbitrary<Feature> RealisticFeature() =>
         Arb.From(
             from id in Gen.Choose(1, 1000000)
@@ -28,9 +22,6 @@ public static class FeatureGenerators
             from attributes in AttributeVariants().Generator
             select Feature.Create(id, geometry, attributes));
 
-    /// <summary>
-    /// Generates features with edge case scenarios.
-    /// </summary>
     public static Arbitrary<Feature> EdgeCaseFeature() =>
         Arb.From(
             from id in Gen.OneOf(
@@ -42,9 +33,6 @@ public static class FeatureGenerators
             from attributes in EdgeCaseAttributes().Generator
             select Feature.Create(id, geometry, attributes));
 
-    /// <summary>
-    /// Generates various geometry types for comprehensive testing.
-    /// </summary>
     public static Arbitrary<byte[]?> GeometryVariants() =>
         Arb.From(Gen.OneOf<byte[]?>(
             // Null geometry
@@ -60,9 +48,6 @@ public static class FeatureGenerators
             // Polygon geometries
             GeometryGenerators.SimplePolygon().Generator.Select(p => (byte[]?)ToWkb(p))));
 
-    /// <summary>
-    /// Generates edge case geometries including boundary conditions and invalid scenarios.
-    /// </summary>
     public static Arbitrary<byte[]?> EdgeCaseGeometry() =>
         Arb.From(Gen.OneOf<byte[]?>(
             // Null
@@ -78,18 +63,12 @@ public static class FeatureGenerators
             from coord in GeometryGenerators.ValidCoordinate().Generator
             select (byte[]?)ToWkb(CreateDegenerateLineString(coord))));
 
-    /// <summary>
-    /// Generates realistic attribute dictionaries.
-    /// </summary>
     public static Arbitrary<ImmutableDictionary<string, object?>> AttributeVariants() =>
         Arb.From(
             from count in Gen.Choose(1, 10)
             from attrs in Gen.ListOf(AttributePair().Generator, count)
             select ToImmutableAttributes(attrs));
 
-    /// <summary>
-    /// Generates edge case attributes including various data types and edge values.
-    /// </summary>
     public static Arbitrary<ImmutableDictionary<string, object?>> EdgeCaseAttributes() =>
         Arb.From(Gen.OneOf<ImmutableDictionary<string, object?>>(
             // Empty attributes
@@ -103,18 +82,12 @@ public static class FeatureGenerators
             from attrs in Gen.ListOf(AttributePair().Generator, count)
             select ToImmutableAttributes(attrs.Select(kv => new KeyValuePair<string, object?>(kv.Key + Guid.NewGuid(), kv.Value)))));
 
-    /// <summary>
-    /// Generates key-value pairs for attributes.
-    /// </summary>
     private static Arbitrary<KeyValuePair<string, object?>> AttributePair() =>
         Arb.From(
             from key in AttributeKey().Generator
             from value in AttributeValue().Generator
             select new KeyValuePair<string, object?>(key, value));
 
-    /// <summary>
-    /// Generates valid attribute keys.
-    /// </summary>
     private static Arbitrary<string> AttributeKey() =>
         Arb.From(Gen.OneOf(
             Gen.Elements("name", "description", "status", "category", "created_at", "updated_at"),
@@ -122,9 +95,6 @@ public static class FeatureGenerators
             from chars in Gen.ArrayOf(Gen.Elements("abcdefghijklmnopqrstuvwxyz_0123456789".ToCharArray()), length)
             select new string(chars)));
 
-    /// <summary>
-    /// Generates various attribute value types.
-    /// </summary>
     private static Arbitrary<object?> AttributeValue() =>
         Arb.From(Gen.OneOf(
             // Common types
@@ -144,9 +114,6 @@ public static class FeatureGenerators
             // Nested objects (JSON)
             Gen.Constant<object?>(new { nested = "value", count = 42 })));
 
-    /// <summary>
-    /// Generates edge case values including boundary conditions and problematic inputs.
-    /// </summary>
     private static Arbitrary<object?> EdgeCaseValue() =>
         Arb.From(Gen.OneOf(
             // Null and empty

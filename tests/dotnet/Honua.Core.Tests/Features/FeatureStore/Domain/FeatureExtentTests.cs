@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="FeatureExtent"/>. The struct carries computed
-/// width/height/center properties and a bidirectional bridge to the unified
-/// <see cref="BoundingBox"/> type; round-tripping must not lose data (#1144).
-/// </summary>
 public sealed class FeatureExtentTests
 {
     [UnitTest]

@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Unit tests for <see cref="StartupDatabaseResilience"/> — the degraded-start classifier and
-/// backoff used to keep a serverless host alive when the database is unavailable at boot (#1632).
-/// </summary>
 public sealed class StartupDatabaseResilienceTests
 {
     [UnitTest]

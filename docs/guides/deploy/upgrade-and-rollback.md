@@ -60,19 +60,22 @@ restore its matching pre-upgrade backup if that recovery is necessary.
 The pre-rc.2 exceptions are pinned by exact name and SHA-256 in
 `eng/schema/schema-release-boundary.v1.json`: `142_CreateAiFinancialAccounting.sql`,
 `144_RenameGeoServicesRestSourceKind.sql`, and `145_ProtectImportDependencies.sql`.
-These immutable scripts establish the boundary; they do not authorize future
-incompatible migrations. CODEOWNERS designates the founder as the reviewer for boundary changes.
+The same boundary also pins `183_RemoveUnusedFeatureIndexes.sql` for the reviewed
+rc.2 index removal. These exact pins do not authorize other incompatible migrations. CODEOWNERS designates the founder as the reviewer for boundary changes.
 
 The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
 Every migration, including each newly added script, must also be hash-pinned in
-`eng/schema/schema-migration-hashes.v1.json`; extend that ledger when adding an
-expand migration. Keep existing hashes and script names immutable. A new ledger
-entry does not extend the frozen reader baseline or exempt a script from contract
-checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
+`eng/schema/migration-hashes/<migration-path>.sha256`, mirroring the SQL path
+from the repository root (for example,
+`eng/schema/migration-hashes/src/Honua.Server/Migrations/146_AddX.sql.sha256`).
+Add a new pin file alongside each new expand migration; existing pin files do not
+need editing. Keep existing hashes and script names immutable. A new pin does not
+extend the frozen reader baseline or exempt a script from contract checks. Hashes
+are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
 contract by the reader fails CI unless its exact name and hash match the release boundary.
-Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
-by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
+Every migration above the baseline (server 145, raster 008), except an exact
+release-boundary pin, must declare `expand` and be accepted by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
 Redesign incompatible changes as additive migrations with compatible application
 reads and writes; defer removals until an explicitly approved future release boundary.
 
@@ -83,15 +86,18 @@ broader checks use their exact frozen name and hash as the review record; their 
 is never rewritten to add annotations. They still require contract-apply approval
 when pending against a nonempty migration journal. Fresh installs remain unaffected.
 
-Reader compatibility and contract-apply approval are separate checks. The reader
-recognizes one reviewed removal of eight optional feature indexes, pinned by its
-normalized SQL hash and the numbered `RemoveUnusedFeatureIndexes.sql` basename.
-Its canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
-does not run as a migration. The removal remains contract-classified for upgrade
-approval, while a reader containing this review can verify its forward declaration.
-Other names or changed SQL remain refused. Deploy the prepared reader before
-introducing the separate removal migration, then prove rollback with that reader's
-published image. Readers predating this review still refuse the removal.
+Reader compatibility and contract-apply approval are separate checks. Migration
+`183_RemoveUnusedFeatureIndexes.sql` removes eight optional feature indexes and
+is classified as a contract migration. Its exact name and normalized SQL hash are
+pinned in the release boundary; changed SQL or another script name has no exemption.
+The canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
+does not itself run as a migration. Applying the migration to an existing database
+requires contract-apply approval, including the exact migration hash in the Compose
+allowlist. The current image must pass feature import, edit and read checks after
+applying it. Older readers must refuse the contract declaration with
+`schema_reader_incompatible`; that refusal is the expected N-1 compatibility result,
+not proof of a successful application rollback. Recovery to an unsupported image
+older than rc.2 requires its matching pre-upgrade database backup.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and
@@ -179,6 +185,19 @@ unsupported: restore the pre-upgrade database backup and its matching applicatio
 image. Rollbacks to rc.2 or later retain the supported application-only path. Do not
 remove the migration journal entry or reintroduce cascading replacement to bypass
 that boundary.
+
+### Optional feature indexes removed in rc.2
+
+`183_RemoveUnusedFeatureIndexes.sql` drops eight `features` indexes that no
+generated query uses. It is a reviewed contract migration: a fresh install never
+builds those indexes, and an existing database applies the drop only with its
+one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce. When you upgrade an rc.1
+database, stop the rc.1 server, run migrate-only with the rc.2 image (it exits `5`
+and names `183_RemoveUnusedFeatureIndexes.sql`), review it, re-run with the nonce,
+then start rc.2; see [Deploy with Docker Compose — Upgrade &
+Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify the
+migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
+database backup.
 
 ### Configuration binding correction
 
@@ -359,7 +378,7 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
 | `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all server deployments in one call |
 
-Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
+Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), plus GitOps passthrough variants. `AzureContainerApps` and `AzureFunctions` are not target kinds: the server refuses to start while a `ControlPlane__DeployTargets__*__TargetKind` entry names one, so remove such entries before upgrading. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
 ### Converge the whole platform release in one call
 
@@ -474,7 +493,7 @@ A rollout does not auto-promote (cut over to the new revision) until its **promo
 
 | Gate (`deployment.promotion_gate`) | Default for | What must pass to promote | Telemetry backend required? |
 |---|---|---|---|
-| `telemetry` | all cloud backends (ECS/ALB, Lambda, ACA, Functions, Argo Rollouts) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
+| `telemetry` | all cloud backends (ECS/ALB, Lambda, Argo Rollouts) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
 | `health` | `honua-yarp-rolling` (self-hosted rolling, on-prem/air-gapped) | The backend's own health gate. The rolling backend health-probes the new standby replica locally and cuts over once it is healthy. A metrics gate is optional; if `telemetry.connection` is also set its rollback signals and waits still apply. | No. |
 | `manual` | — (opt-in) | Nothing automatic. The rollout bakes and holds until an operator calls the promote endpoint. | No. |
 
@@ -523,7 +542,7 @@ helm rollback honua --namespace honua
 kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 ```
 
-For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
+For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back). Single-instance Docker: restart the previous image tag.
 
 For an RDS-backed cell using the product restore executor, configure the cell's authorized
 database security group IDs in `ControlPlane:Restore:RdsSecurityGroupIds`, alongside its

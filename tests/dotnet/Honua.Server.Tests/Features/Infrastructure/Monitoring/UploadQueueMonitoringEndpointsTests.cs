@@ -13,9 +13,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Integration tests for upload queue monitoring endpoints.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class UploadQueueMonitoringEndpointsTests
 {

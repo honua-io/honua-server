@@ -8,11 +8,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Tests.Features.GeometryService;
 
-/// <summary>
-/// Proves GeometryServer Web Mercator clamping follows the geographic SRID classifier
-/// rather than a literal EPSG:4326 check. The projected Y is the spherical mercator
-/// image of the clamped latitude.
-/// </summary>
 public sealed class PostgresGeometryWebMercatorClampTests
 {
     private const double WebMercatorMaxAbsoluteLatitudeDegrees = 85.0511287798066;

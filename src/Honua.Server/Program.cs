@@ -68,7 +68,6 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.RateLimiting;
-using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Styling;
 using Honua.Infrastructure.Validation;
@@ -98,7 +97,6 @@ using Npgsql;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
-using StackExchange.Redis;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
@@ -127,7 +125,7 @@ await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configurati
 // Migrate-only mode (honua-server#6470): HONUA_MIGRATE_ONLY=true applies the database migrations
 // through the same runner and MigrationSafety gates as serving startup, prints one JSON summary to
 // standard output and exits with a typed code. It composes its own minimal service graph and never
-// builds this web host, so no listener, hosted service, Redis, licence or admin credential is
+// builds this web host, so no listener, hosted service, licence or admin credential is
 // involved. Unset (the default, including every Lambda init), the switch is a no-op.
 if (Honua.Server.Hosting.MigrateOnly.MigrateOnlyMode.Resolve(builder.Configuration) !=
     Honua.Server.Hosting.MigrateOnly.MigrateOnlyRequest.NotRequested)
@@ -151,7 +149,7 @@ Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configurati
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
 // backend launched for one execution job (HONUA_OPERATION_ID et al.) is composed as a single-job
 // execution worker, narrowed just before Build() below. Without it the worker booted as a full
-// server and, once Redis was connected, its execution-job reconciler re-dispatched the shared
+// server and its execution-job reconciler re-dispatched the shared
 // queued jobs to AWS Batch from inside the worker (e2e-cloud-aws run 38048901509, EventId 9046).
 var hostComposition = HostCompositionSelection.Resolve(builder.Configuration);
 
@@ -160,19 +158,13 @@ StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, buil
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
-// Validate the declared paid deployment before registering or starting any data workers,
-// including deployments without Redis (whose cache probe otherwise skips license bootstrap).
+// Validate the declared paid deployment before registering or starting any data workers.
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
 // Start the license hosted service before any workload execution or reconciliation service.
 builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // Per-instance identity (Honua-Instance response header, admin status) lets the release harness
 // prove a cross-replica read behind an ALB or Lambda alias.
 builder.Services.AddServerInstanceIdentity();
-// Resolve aws:secretsmanager: Redis connection-string references before anything below reads
-// ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
-// WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
-// composite the way the Postgres DefaultConnection path does (honua-server#3011).
-await StartupConfigurationHelpers.ResolveRedisConnectionSecretReferencesAsync(builder.Configuration);
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var registerInfrastructureInTestEnvironment =
     builder.Configuration.GetValue<bool>("HONUA_REGISTER_TEST_INFRASTRUCTURE") ||
@@ -210,7 +202,6 @@ if (operateObservabilityFixtureEnabled &&
 var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
-var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !isTestEnvironment;
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key and audit-chain key before their direct consumers can mistake the reference text for key
@@ -246,11 +237,6 @@ builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-var redisConnectionString = builder.Configuration.GetConnectionString("redis")
-    ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
-var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
-    builder.Configuration,
-    builder.Environment);
 var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
@@ -262,58 +248,12 @@ builder.Services.Configure<JobDurabilityOptions>(
 // manifest name the remediation that applies.
 builder.Services.Configure<DurableJobSubstrateOptions>(
     options => options.SystemDatabaseConfigured = systemDatabaseConfigured);
-var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
-    redisConnectionString,
-    redisCacheEntitled,
-    requiresDurableDistributedEvents);
-ConnectionMultiplexer? connectedRedis = null;
 
 var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
 var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
 if (tracingSection.Exists() || tracingEnabled)
 {
     builder.AddTelemetryDefaults();
-}
-
-if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
-{
-    var requireRedisAtStartup = requiresDurableDistributedEvents;
-    try
-    {
-        var redisOptions = ConfigurationOptions.Parse(redisInfrastructureConnectionString, ignoreUnknown: true);
-        redisOptions.AllowAdmin = true;
-        redisOptions.AbortOnConnectFail = false;
-        redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
-        redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
-
-        connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
-        builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
-
-        if (!connectedRedis.IsConnected)
-        {
-            if (requireRedisAtStartup)
-            {
-                throw new InvalidOperationException(
-                    "Redis durable coordination is required in this environment, but the Redis multiplexer did not establish an active startup connection.");
-            }
-
-            using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
-            ProgramLog.RedisStartupConnectionInactive(startupLoggerFactory.CreateLogger<Program>());
-        }
-    }
-    catch (Exception ex)
-    {
-        if (requireRedisAtStartup)
-        {
-            throw new InvalidOperationException(
-                "Redis durable coordination is required in this environment, but startup could not establish the Redis multiplexer.",
-                ex);
-        }
-
-        using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
-        ProgramLog.RedisStartupConnectionFailed(startupLoggerFactory.CreateLogger<Program>(), ex);
-        // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
-    }
 }
 
 if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
@@ -337,13 +277,15 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a database reader or backup cannot carry both halves. Lambda
-    // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
-    System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
+    // certificate, or a random secret where no certificate can be made, is mandatory so a database
+    // reader or backup cannot carry both halves. Lambda cannot mount the file, so a Secrets Manager
+    // bundle is written to a private temp file first.
+    OperationKeyRingProtector keyRingProtector;
     try
     {
         await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
-        keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+        await StartupConfigurationHelpers.EnsureKeyRingSecretResolvedAsync(builder.Configuration);
+        keyRingProtector = OperationSecretKeyRingProtection.ResolveProtector(builder.Configuration);
     }
     catch (System.Security.Cryptography.CryptographicException ex)
     {
@@ -356,17 +298,23 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     }
     catch (InvalidOperationException ex)
     {
-        // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
+        // A missing or unreadable certificate, or a short secret, is an operator error. Left unhandled it aborts the
         // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
         // (honua-server#6500). Report it and leave with a plain exit status.
         Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
         return;
     }
 
-    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
-        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    if (keyRingProtector.Certificate is { } keyRingCertificate)
+    {
+        builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+            new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    }
 
-    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
+    keyRing.ProtectKeysWith(keyRingProtector);
+    builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+        .Configure<PostgresDataProtectionKeyRepository>((_, keyRepository) =>
+            keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector));
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
@@ -611,7 +559,7 @@ if (hostHasSystemDatabase)
 
             // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
             // route auto-safe remediation findings back through the operation gateway. It is
-            // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
+            // only hosted with a system database; hosts without one stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
             if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
             {
@@ -662,8 +610,8 @@ else
 {
     // No system database: compose the fail-closed proposal placeholder so the
     // governed admin catalogs (AddOperationsToolset gates them on a proposal store) still
-    // register and advertise their honua_admin_* tools. Without it the full MCP catalog silently
-    // lost exactly the 20 AdminApiOperationCatalog tools on Redis-off cells (2026.1 rc.3, J1/S1).
+    // register and advertise their honua_admin_* tools; without it the MCP catalog would omit the
+    // AdminApiOperationCatalog tools on hosts without a system database.
     // IOperationGateway is deliberately NOT registered: approval-gated calls then refuse through
     // the existing typed capability-unavailable paths (approval bridge, ProposalEndpoints,
     // McpPlatformOpsReader), and direct-execute operations run unchanged. The durable runtime
@@ -673,13 +621,13 @@ else
 }
 
 // The control-plane Lambda event route (POST /events) is mapped whenever
-// HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
+// HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, so what it resolves is registered on
 // every host. Ticks whose store is absent refuse with a typed 503 that names the missing
 // dependency instead of a 500.
 builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
-// boundary, not per-endpoint. Safe to register regardless of Redis availability.
+// boundary, not per-endpoint. Safe to register on every host.
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IProposalNotifier,
     Honua.Server.Features.Admin.ProposalNotifier>();
 // Real admin-config applier: the payload-discriminated ops-action registry (#2561).
@@ -738,6 +686,9 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+builder.Services.AddScoped<Honua.Infrastructure.Attachments.AttachmentUploadContentVerifier>();
+builder.Services.AddScoped<Honua.Core.Features.Attachments.Abstractions.IAttachmentUploadPublisher,
+    Honua.Infrastructure.Attachments.AttachmentUploadPublisher>();
 
 // Federated-query planning and source configuration (#341).
 // Experimental gate (PA-001): federated query is off by default. Set
@@ -891,47 +842,22 @@ builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IOAuthClientSt
 if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
 {
     builder.Services.AddHostedService<Honua.Infrastructure.Hosting.LambdaHostStopExitGuard>();
-
-    // A thawed sandbox can find its Redis sockets dead; re-validate them before the first
-    // request after an idle gap so no Redis read path fails on the teardown (#6753).
-    Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
-// Embed governance (#1191): authoritative embed key issuance/scoping, policy
-// evaluation, rate accounting, and redacted analytics ingestion. In-memory stores.
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
-    new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
+// Embed analytics ingestion is redacted, and the usage report reads a bounded buffer in this task's memory.
 builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
-// Console metadata v2 content + RBAC baseline (#1162). Persistent store lands in #1163.
-builder.Services.AddSingleton<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>(sp =>
-    new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
-        sp.GetService<TimeProvider>() ?? TimeProvider.System));
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>());
+// Console content, share, open-data and embed-key state: in the system database when there is one,
+// otherwise in the memory of the single task.
+builder.Services.AddConsoleStateStores();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
-// Console Share access: public-link + embed state (#1215). In-memory store
-// shares the persistent-store follow-on (#1163); validator depends on the
-// content + share stores to walk the provenance closure.
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleShareStore>(sp =>
-    new Honua.Server.Features.Console.Services.InMemoryConsoleShareStore(
-        sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
-// Console open-data DCAT + STAC publication state (#1214). In-memory store shares
-// the persistent-store follow-on (#1163) with the content/share stores.
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleOpenDataStore>(sp =>
-    new Honua.Server.Features.Console.Services.InMemoryConsoleOpenDataStore(
-        sp.GetService<TimeProvider>() ?? TimeProvider.System));
-// Process-local stores are not durable and are not shared across replicas (SRV-AUTH-002).
-// The session bootstrap reports that, and startup fails when a replica count above 1 is configured.
-builder.Services.AddSingleton(Honua.Core.Features.Console.Domain.ConsolePersistenceNotice.InMemory);
-builder.Services.AddHostedService<Honua.Server.Features.Console.ConsoleInMemoryStoreStartupGuard>();
 // Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
@@ -1276,10 +1202,6 @@ app.UseControlPlaneLambdaConnectionRelease(builder.Configuration);
 // Stamp Honua-Instance on every response, including ones short-circuited below (host
 // validation, HTTPS redirection, auth), so callers can tell which replica answered.
 app.UseServerInstanceHeader();
-
-// Lambda only: probe Redis after an idle gap (a possible freeze) ahead of authentication and
-// every other Redis reader, so a connection torn down on thaw fails the probe, not the request (#6753).
-Honua.Infrastructure.Redis.RedisThawProbeExtensions.UseRedisThawProbe(app);
 
 if (forwardedHeadersEnabled)
 {
@@ -1689,6 +1611,10 @@ app.UseWhen(
     });
 #endif
 
+// An agent changes admin and Console state only through the operations API or MCP. Runs after
+// the lineage attestation and the audit log, so a refusal is audited.
+app.UseMiddleware<Honua.Server.Features.Admin.AgentRouteAdmissionMiddleware>();
+
 // Runs after every credential type is hydrated and before tenant and schema resolution.
 app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
@@ -1922,6 +1848,7 @@ app.MapFeatureOverviewEndpoints();
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
+app.MapAgentAuthorityEndpoints();
 
 // Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
 // the per-tenant billing usage export. Admin-authorized.
@@ -2003,7 +1930,8 @@ app.MapServerFeatureEndpoints();
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
-    .RequireAdminAuthorization();
+    .RequireAdminAuthorization()
+    .WithRouteAgentRule("/PlanSpec", "Changes nothing.");
 if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "scene.catalog"))
 {
     app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
@@ -2101,8 +2029,8 @@ app.Run();
 
 // Composition Root: RegisterInfrastructureServices, ConfigureLimits, ConfigureTileOptions,
 // ConfigureCaching now live in Startup/InfrastructureCompositionRoot.cs.
-// ConfigureForwardedHeaders, ResolveEnvironmentSecretReferences, IsRedisCacheEntitledAsync,
-// AddSecurityConfiguration, RegisterConfigurationValidators now live in
+// ConfigureForwardedHeaders, ResolveEnvironmentSecretReferences, AddSecurityConfiguration,
+// RegisterConfigurationValidators now live in
 // Startup/StartupConfigurationHelpers.cs. The hosted-Blazor static-asset helpers + filter
 // data source live in Startup/HostedBlazorAssetHelpers.cs.
 

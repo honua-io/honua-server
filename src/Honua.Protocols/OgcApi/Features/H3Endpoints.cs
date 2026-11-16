@@ -24,16 +24,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// OGC API Features extension for H3 hexagonal grid aggregation
-/// </summary>
 internal static class H3Endpoints
 {
     private const string OgcFeaturesProtocolName = "OgcFeatures";
 
-    /// <summary>
-    /// Maps H3 aggregation endpoint for OGC API Features collections
-    /// </summary>
     public static IEndpointRouteBuilder MapH3Endpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/ogc/features/collections/{collectionId}/h3", HandleGetH3)

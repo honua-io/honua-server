@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Console;
 using Honua.Core.Features.Console.Domain;
 
@@ -29,10 +30,13 @@ internal sealed class ConsoleInMemoryStoreStartupGuard : IHostedService
             return Task.CompletedTask;
         }
 
-        var replicas = ConsoleStoreReplicaPolicy.ResolveExpectedReplicas(
-            _configuration[ConsoleStoreReplicaPolicy.ConsoleExpectedReplicaCountKey],
-            _configuration[ConsoleStoreReplicaPolicy.DeploymentReplicaCountKey],
-            _configuration[ConsoleStoreReplicaPolicy.ServerReplicasKey]);
+        // The deployment's task count includes an autoscaling ceiling, so a stack that may grow past one task refuses.
+        var replicas = Math.Max(
+            ConsoleStoreReplicaPolicy.ResolveExpectedReplicas(
+                _configuration[ConsoleStoreReplicaPolicy.ConsoleExpectedReplicaCountKey],
+                _configuration[ConsoleStoreReplicaPolicy.DeploymentReplicaCountKey],
+                _configuration[ConsoleStoreReplicaPolicy.ServerReplicasKey]),
+            DeploymentTaskCount.Resolve(_configuration));
         ConsoleEndpointsLog.InMemoryConsoleStores(_logger, replicas);
         ConsoleStoreReplicaPolicy.EnsureSingleReplicaWhenNotDurable(durable: false, replicas);
         return Task.CompletedTask;

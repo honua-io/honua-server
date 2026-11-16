@@ -14,9 +14,6 @@ internal static class NetworkAddressValidator
         CancellationToken cancellationToken)
         => (await ValidateAndResolveAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false)).IsDisallowed;
 
-    /// <summary>
-    /// Returns whether the URI's host is disallowed and, when it is allowed, the addresses it resolved to.
-    /// </summary>
     internal static async Task<(bool IsDisallowed, IPAddress[] ResolvedAddresses)> ValidateAndResolveAsync(
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,

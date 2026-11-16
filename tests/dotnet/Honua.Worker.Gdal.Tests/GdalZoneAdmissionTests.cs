@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalZoneAdmission"/> — the zonal-statistics zone
-/// count / vertex bound (#2766). Each zone drives its own gdalwarp + gdalinfo
-/// subprocess pair, so an unbounded zone FeatureCollection is a cumulative-work
-/// DoS; this guard rejects an over-cap payload before the loop runs.
-/// </summary>
 public sealed class GdalZoneAdmissionTests
 {
     private static readonly GeometryFactory Factory = new();

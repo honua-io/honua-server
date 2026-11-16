@@ -9,9 +9,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
-/// <summary>
-/// Unit tests for file upload security validation.
-/// </summary>
 public class FileUploadSecurityTests
 {
     private readonly ITestOutputHelper _output;

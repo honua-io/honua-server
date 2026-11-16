@@ -204,20 +204,10 @@ internal sealed partial class Wfs20Handler
         }
 
         var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(candidates.Count);
+        var declaredNamespaces = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var candidate in candidates.OrderBy(static candidate => candidate.Publication.Metadata.Id, StringComparer.Ordinal))
         {
-            var resourceName = GetResourceFeatureTypeName(candidate.Resource);
-            var localName = XmlConvert.EncodeLocalName(candidate.Publication.Metadata.Id);
-            descriptors.Add(new WfsFeatureTypeDescriptor(
-                candidate.Resource,
-                candidate.Publication,
-                candidate.Service,
-                candidate.StorageLayerId,
-                $"{GetFeatureNamespacePrefix(resourceName)}:{localName}",
-                localName,
-                GetFeatureNamespacePrefix(resourceName),
-                GetFeatureNamespaceUri(resourceName),
-                snapshot));
+            descriptors.Add(CreateFeatureTypeDescriptor(candidate, snapshot, declaredNamespaces));
         }
 
         return descriptors.ToImmutable();
@@ -227,34 +217,74 @@ internal sealed partial class Wfs20Handler
     // A storage layer published through several WFS-enabled services (the compat svc-*-ogc and
     // svc-*-feature pair) would otherwise be listed once per publication under the same title, which
     // OWSLib rejects as ambiguous. Only discovery listings collapse; explicit typenames and RESOURCEID
-    // requests still resolve every publication.
+    // requests still resolve every publication. Publishing also writes a STAC collection publication
+    // beside the feature publication; it is listed only when the layer has no other publication,
+    // because it does not carry the layer's declared edit capabilities.
     private static ImmutableArray<WfsFeatureTypeDescriptor> SelectAdvertisedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes)
         => publishedTypes
             .OrderBy(static featureType => featureType.StorageLayerId)
+            .ThenBy(static featureType => featureType.Publication.PublicationType == MetadataV2LayerType.StacCollection)
             .ThenBy(static featureType => featureType.Publication.LayerIndex ?? int.MaxValue)
             .ThenBy(static featureType => featureType.Publication.Metadata.Id, StringComparer.Ordinal)
             .DistinctBy(static featureType => featureType.StorageLayerId)
             .ToImmutableArray();
 
 
-    private static string GetFeatureNamespacePrefix(string layerName)
-        => layerName switch
+    private static WfsFeatureTypeDescriptor CreateFeatureTypeDescriptor(
+        (int StorageLayerId, MetadataV2Object Resource, MetadataV2Layer Publication, MetadataV2Service Service) candidate,
+        MetadataV2GraphSnapshot snapshot,
+        Dictionary<string, string> claimedNamespaces)
+    {
+        var declared = WfsDeclaredEncoding.Read(candidate.Resource);
+        if (declared.NamespacePrefix is { } declaredPrefix &&
+            !TryClaimNamespacePrefix(claimedNamespaces, declaredPrefix, declared.NamespaceUri!))
         {
-            "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "cdf",
-            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "cgf",
-            _ => FeatureNamespacePrefix
-        };
+            // One prefix names one namespace in a document: the first declaration keeps it
+            // and a conflicting one falls back to the server namespace.
+            declared = declared.WithoutNamespace();
+        }
 
-
-    private static string GetFeatureNamespaceUri(string layerName)
-        => layerName switch
+        var namespacePrefix = declared.NamespacePrefix ?? FeatureNamespacePrefix;
+        var localName = XmlConvert.EncodeLocalName(candidate.Publication.Metadata.Id);
+        return new WfsFeatureTypeDescriptor(
+            candidate.Resource,
+            candidate.Publication,
+            candidate.Service,
+            candidate.StorageLayerId,
+            $"{namespacePrefix}:{localName}",
+            localName,
+            namespacePrefix,
+            declared.NamespaceUri ?? FeatureNamespaceUri,
+            snapshot)
         {
-            "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "http://www.opengis.net/cite/data",
-            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "http://www.opengis.net/cite/geometry",
-            _ => FeatureNamespaceUri
+            Declared = declared
         };
+    }
 
+    // A prefix names one namespace and a namespace has one prefix; the server prefix and
+    // namespace cannot be declared.
+    private static bool TryClaimNamespacePrefix(Dictionary<string, string> claimed, string prefix, string uri)
+    {
+        if (string.Equals(prefix, FeatureNamespacePrefix, StringComparison.Ordinal) ||
+            string.Equals(uri, FeatureNamespaceUri, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (claimed.TryGetValue(prefix, out var claimedUri))
+        {
+            return string.Equals(claimedUri, uri, StringComparison.Ordinal);
+        }
+
+        if (claimed.ContainsValue(uri))
+        {
+            return false;
+        }
+
+        claimed.Add(prefix, uri);
+        return true;
+    }
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,

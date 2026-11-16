@@ -99,6 +99,10 @@ public sealed record AnalysisContentItem
 
     public string? OwnerId { get; init; }
 
+    // Tenant that owns the item, stamped once at creation; null means the deployment's default tenant.
+    [JsonIgnore]
+    public string? TenantId { get; init; }
+
     public string Visibility { get; init; } = "organization";
 
     public required int CurrentVersion { get; init; }

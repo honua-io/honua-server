@@ -10,11 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Integration tests for the OGC SensorThings API (STA v1.1) Phase 2 ingest endpoints
-/// (#1747): REST/bulk observation creation and datastream creation. Ingested observations
-/// must be visible through the Phase 1 read API, proving the ingest → store → read loop.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime

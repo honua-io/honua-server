@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-/// <summary>
-/// Unit coverage for <see cref="EditProcessor"/> create-operation validation,
-/// specifically the per-field required-attribute check introduced by BH2-014.
-/// </summary>
 public sealed class EditProcessorCreateValidationTests
 {
     private static EditProcessor CreateProcessor() => new(NullLogger<EditProcessor>.Instance);

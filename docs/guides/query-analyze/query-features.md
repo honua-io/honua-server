@@ -46,13 +46,13 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
    CQL2 and FeatureServer also take real geometries, and OData supports `geo.distance` and `geo.intersects` in `$filter` (see [CQL2 and filtering](../../reference/cql2-and-filtering.md)).
 
-3. Page through large results with `--limit` (the table output notes when more rows are available):
+3. Limit the first response with `--limit` (the table output notes when more rows are available):
 
    ```bash
    honua query "my_service/$LAYER_ID" --limit 100
    ```
 
-   OGC responses include `next` links — follow those instead of computing offsets yourself when possible.
+   The default table output ends with `(more available; raise --limit)` when the server has more rows; `--format json` shows the FeatureServer `exceededTransferLimit` flag, and GeoJSON output omits it. The CLI has no page-offset option. Increasing `--limit` requests a larger first page, subject to server limits. For complete results, use a protocol client to page with FeatureServer `resultOffset`, or follow OGC `next` links.
 
 4. Select only the properties you need with repeated `--fields`:
 
@@ -62,11 +62,13 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
    In protocol clients, `sortby` takes comma-separated fields with an optional `-` prefix for descending; `orderByFields` takes `field ASC|DESC`.
 
-5. Count without fetching when you only need a number:
+5. Count an attribute-filtered result without fetching its features:
 
    ```bash
    honua query "my_service/$LAYER_ID" --where "population > 10000" --count
    ```
+
+   In CLI 0.4.0, `--count` applies `--where` but ignores `--bbox`. For spatial counts, use a protocol client with the same spatial filter and FeatureServer `returnCountOnly=true`, or inspect OGC `numberMatched`.
 
 ## Verify
 
@@ -85,7 +87,7 @@ Expected (trimmed): a GeoJSON FeatureCollection with at most one feature. The CL
 ## Troubleshoot
 
 - **400 `Unknown query parameter`** — each endpoint validates its parameter set strictly; check spelling (`filter-lang`, not `filterLang`; `resultRecordCount`, not `count`).
-- **400 on `filter`** — CQL2 syntax error; the response names the offending token. Property names are case-sensitive — check `GET /ogc/features/collections/{collectionId}/queryables`.
+- **400 on `filter`** — a CQL2 syntax error returns "Failed to parse CQL2 expression" without pointing at the position, so check operators and quoting by hand; an unknown property returns "Unknown field '…' in filter expression". Property names are case-sensitive — check `GET /ogc/features/collections/{collectionId}/queryables`.
 - **Empty results with a spatial filter** — coordinates are lon,lat order for `bbox` and WKT; FeatureServer envelopes need `inSR` when not in the layer's SRID.
 - **FeatureServer returns fewer rows than expected** — server page limits apply; the response sets `exceededTransferLimit: true` when truncated, so keep paging.
 - **OData 404 on `/odata/Layers(...)`** — the path value is the numeric layer id, not the collection name. See [troubleshooting](../deploy/troubleshooting.md).

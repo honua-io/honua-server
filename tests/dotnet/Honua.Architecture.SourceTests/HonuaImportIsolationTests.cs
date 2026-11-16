@@ -6,20 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the Honua.Import isolation contract: the carved-out data-ingest /
-/// migration HTTP surface (Migration endpoints + job managers, file-import
-/// upload plumbing, raster-import endpoints) must never take a ProjectReference
-/// on Honua.Server, directly or transitively. Server references Import, never
-/// the reverse.
-/// </summary>
-/// <remarks>
-/// The provider-agnostic ingest <em>domain</em> (REST source clients,
-/// abstractions, evidence model) deliberately stays in Honua.Core because the
-/// storage providers consume it and must not pull this module's ASP.NET
-/// surface; the NTS file-format readers stay in Honua.Geometry for the same
-/// reason. This guard pins the upper (HTTP) half of that split.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class HonuaImportIsolationTests
 {

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -17,14 +18,14 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
          "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
         """;
 
-    private readonly WebAppFixture _fixture = StudioMcpTestFixture.Create();
+    private readonly WebAppFixture _fixture = StudioMcpFixtures.CreateCompositionFixture();
 
     private StudioMcpHttpClient _mcp = null!;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _mcp = new StudioMcpHttpClient(await HumanApprovedOperation.CreateProposerClientAsync(_fixture));
+        _mcp = new StudioMcpHttpClient(_fixture.Client);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -39,7 +40,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
         var (draftId, generation) = await CreateStyledMapDraftAsync();
         var restyled = MapSpec.Replace("\"source\":\"parcels\"", "\"source\":\"parcels\",\"paint\":{\"fill-color\":\"#112233\"}", StringComparison.Ordinal);
 
-        await _mcp.CallApprovedToolAsync(_fixture,
+        await _mcp.CallToolAsync(
             "honua_studio_set_map_style",
             "{\"draftId\":\"" + draftId + "\",\"generation\":" + generation + ",\"mapSpec\":" + restyled + "}");
 
@@ -71,10 +72,6 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
 
     private async Task<(Guid DraftId, long Generation)> CreateStyledMapDraftAsync()
     {
-        var created = await _mcp.CallApprovedToolAsync(_fixture,
-            "honua_studio_create_draft",
-            """{"packageKey":"parcels-style-map","family":"map","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
         var body = """
             {"mapPackageId":"parcels-style-map","format":"honua_map_package.v1",
              "layers":[{"id":"parcels","sourceId":"parcels","visible":true,"styleRef":"honua-inline:parcels"}],
@@ -82,10 +79,8 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
              "mapSpec":
             """ + MapSpec + "}";
 
-        var seeded = await _mcp.CallApprovedToolAsync(_fixture,
-            "honua_studio_update_draft",
-            "{\"draftId\":\"" + draftId + "\",\"generation\":" + created.GetProperty("generation").GetInt64()
-            + ",\"packageKey\":\"parcels-style-map\",\"schemaVersion\":\"1.0\",\"body\":" + body + "}");
-        return (draftId, seeded.GetProperty("generation").GetInt64());
+        using var parsed = JsonDocument.Parse(body);
+        var seeded = await StudioMcpFixtures.SeedMapDraftAsync(_fixture, "parcels-style-map", parsed.RootElement.Clone());
+        return (seeded.DraftId, seeded.Generation);
     }
 }

@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.PointCloud;
 
-/// <summary>
-/// End-to-end unit tests for the LAS -> 3D Tiles point-cloud pipeline (#1201).
-/// </summary>
 public sealed class PointCloudTilesetBuilderTests
 {
     // Treat the LAS X/Y as longitude/latitude degrees directly (a geographic

@@ -15,12 +15,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Service-level tests for <see cref="OgcWcsImportService"/> (issue #1030 slice 3).
-/// Exercises the WCS happy-path against captured GetCoverage responses, the
-/// non-GeoTIFF format downgrade, and error propagation from the underlying
-/// coverage import pipeline.
-/// </summary>
 public sealed class OgcWcsImportServiceTests
 {
     private const string ServiceUrl = "https://example.com/geoserver/wcs";
@@ -387,10 +381,6 @@ public sealed class OgcWcsImportServiceTests
             }
         };
 
-    /// <summary>
-    /// Builds a minimal GeoTIFF response body. WCS 2.x servers return image/tiff
-    /// directly from GetCoverage; we mimic that shape with the canonical TIFF magic.
-    /// </summary>
     private static HttpResponseMessage CreateGeoTiffResponse()
     {
         // II*\0 = little-endian TIFF magic. Padding bytes simulate the coverage body.

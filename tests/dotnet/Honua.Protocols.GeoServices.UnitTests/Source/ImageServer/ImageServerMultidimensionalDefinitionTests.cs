@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerMultidimensionalDefinition"/> request parsing (#1869).
-/// Validates shape parsing; per-slice pixel resolution remains deferred (the handler surfaces a
-/// 501 for any supplied definition).
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMultidimensionalDefinitionTests
 {

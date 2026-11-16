@@ -29,11 +29,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// API-surface integration tests for the console approval REST API and the shared
-/// operation gateway (#1693/#1694/#1695). The guardrail ladder is stubbed so each
-/// tier can be exercised deterministically without an Enterprise license.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
@@ -463,6 +458,25 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
         resolved.HumanApproval.PlanHash.Should().Be(proposal.SealedPlanHash);
         resolved.ResolvedBy.Should().Be(resolved.HumanApproval.ActorId);
         resolved.ResolvedBy.Should().Be(proposal.RequestedBy);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_PasswordBrowserSession_ExecutesOnceWithPasswordEvidence()
+    {
+        using var human = await HumanApprovalHttpClient.AuthenticateWithPasswordAsync(_fixture, AdminPassword);
+        var proposal = await SeedProposalAsync(requestedBy: human.ActorId);
+
+        using var response = await human.ApproveAsync(proposal.ProposalId);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _executor.ExecutionCount.Should().Be(1);
+        var resolved = await _proposalStore.GetAsync(proposal.ProposalId);
+        resolved!.HumanApproval.Should().NotBeNull();
+        resolved.HumanApproval!.Channel.Should().Be(OperationHumanApprovalEvidence.InteractivePasswordChannel);
+        resolved.HumanApproval.PlanHash.Should().Be(proposal.SealedPlanHash);
+        resolved.HumanApproval.ActorId.Should().Be(human.ActorId);
+        resolved.ResolvedBy.Should().Be(human.ActorId);
     }
 
     [IntegrationTest]
