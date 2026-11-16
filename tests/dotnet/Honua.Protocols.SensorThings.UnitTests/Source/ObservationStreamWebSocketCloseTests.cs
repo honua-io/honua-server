@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 public sealed class ObservationStreamWebSocketCloseTests
 {
-    [UnitFact]
+    [UnitTest]
     public async Task PolicyClose_BeforePeerReply_PreservesReceiveUntilHandshakeCompletes()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
