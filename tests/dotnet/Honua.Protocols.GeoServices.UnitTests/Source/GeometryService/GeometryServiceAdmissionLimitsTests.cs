@@ -94,11 +94,23 @@ public sealed class GeometryServiceAdmissionLimitsTests
         limit.MaxRequestBodySize.Should().Be(500);
     }
 
-    [UnitTheory]
-    [InlineData(400, true)]
-    [InlineData(600, false)]
+    [UnitTest]
     [Operation(Operations.Infrastructure)]
-    public async Task Filter_CallerNotSignedIn_FormAlreadyRead_IsMeasuredByItsFields(int valueLength, bool admitted)
+    public async Task Filter_PreviouslyReadForm_WithinShare_IsAdmitted()
+    {
+        var ran = await RunPreviouslyReadFormAsync(400);
+        ran.Should().BeTrue("the form fields fit within the 500-byte share");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    public async Task Filter_PreviouslyReadForm_AboveShare_IsRefused()
+    {
+        var ran = await RunPreviouslyReadFormAsync(600);
+        ran.Should().BeFalse("the form fields exceed the 500-byte share");
+    }
+
+    private static async Task<bool> RunPreviouslyReadFormAsync(int valueLength)
     {
         var context = GeometryServiceTestContexts.Create(NotSignedIn, "POST", Admission());
         context.Features.Set<IHttpMaxRequestBodySizeFeature>(new BodySizeLimit { IsReadOnly = true });
@@ -115,7 +127,7 @@ public sealed class GeometryServiceAdmissionLimitsTests
                 return ValueTask.FromResult<object?>(null);
             });
 
-        ran.Should().Be(admitted, "a form an earlier step read is measured by its fields against the 500-byte share");
+        return ran;
     }
 
     [UnitTest]
