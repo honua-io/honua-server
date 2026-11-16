@@ -1236,16 +1236,23 @@ classes in a `Database` collection that previously had no definition, so nothing
 held the reference-counted shared default host between cases. Each assembly now
 defines that collection with a collection-scoped default `WebAppFixture`, so
 default-configuration cases reuse the shared host instead of rebuilding it. The
-definition keeps default parallelization. Each case still creates its own
-`WebAppFixture` and schema; classes with private configuration keep their hosts.
+definition keeps default parallelization, so scheduling is unchanged. Existing
+per-case and per-class fixtures and their schemas are unchanged; classes with
+private configuration keep their hosts. The WMTS advertised-resource case now also
+clears any unconsumed graph activation, which could otherwise reach a later case.
+The collection fixture starts the shared host even when a filter selects only
+private-host classes, which costs one startup in that case.
 
-A build-host run of the three complete projects on trunk 47eb3bc9ba passed every
-case with no skips: OGC classic 592, STAC 149 and OData 512. Per-case fixture time
-in the affected default-host classes fell from 2.1 to 3.5 seconds in full run
-43709972683 to 0.1 to 0.5 seconds, even on the loaded build host, while private-host
-classes stayed near 3.4 seconds. Across those 18 classes this removes about 639
-seconds (10.7 runner-minutes) of fixture time per full run. Full CI job savings are
-unmeasured.
+With this change on trunk 47eb3bc9ba, build-host runs of the three complete
+projects passed every case with no skips: OGC classic 592 (19m15s VSTest), STAC
+149 (5m29s) and OData 512 (36m27s). The unchanged OGC classic project did not
+finish within 111 minutes of execution on the same, heavily loaded host, so no
+paired whole-project time is claimed. As an estimate from unpaired data, per-case
+fixture time in the affected default-host classes was 2.1 to 3.5 seconds in full
+run 43709972683 and 0.1 to 0.5 seconds in the build-host run, while private-host
+classes stayed near 3.4 seconds; across those 18 classes that is about 639
+seconds (10.7 runner-minutes) of fixture time per full run. Full CI job savings
+are unmeasured.
 All cases remain in their existing shards on selected PR runs and twice-daily
 full trunk runs. This changes no runner count, required check name, required
 aggregate dependency, workflow or shard definition.
