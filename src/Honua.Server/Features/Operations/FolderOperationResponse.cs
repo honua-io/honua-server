@@ -12,9 +12,10 @@ using OperatorAccessDecision = Honua.Core.Features.Security.Abstractions.AccessD
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Projects application outcomes into the existing operation result contract.</summary>
-internal sealed record FolderOperationResponse(int Status, string Payload, string? Etag = null, string? Location = null)
+internal sealed record FolderOperationResponse(int Status, string Payload, string? Etag = null)
 {
+    internal string? Location { get; init; }
+
     internal Dictionary<string, string> Details()
     {
         var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = Payload };
@@ -33,8 +34,10 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
         var folder = saved.Graph.Folders.Single(item => item.Metadata.Id == mutation.Folder!.Metadata.Id);
         var payload = JsonSerializer.Serialize(ApiResponse<MetadataV2Folder>.CreateSuccess(folder),
             FolderJsonContext.Default.ApiResponseMetadataV2Folder);
-        return new(mutation.Status, payload, saved.Etag,
-            mutation.Status == 201 ? $"{pathBase}/api/v1/admin/folders/{folder.Metadata.Id}" : null);
+        return new(mutation.Status, payload, saved.Etag)
+        {
+            Location = mutation.Status == 201 ? $"{pathBase}/api/v1/admin/folders/{folder.Metadata.Id}" : null
+        };
     }
 
     private static FolderOperationResponse Failure(FolderExecutionFailure failure) => failure switch

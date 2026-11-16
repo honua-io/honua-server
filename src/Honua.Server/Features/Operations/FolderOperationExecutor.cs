@@ -8,7 +8,6 @@ using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Runs folder mutations at the shared application boundary without transport credentials.</summary>
 internal sealed class FolderOperationExecutor(
     AdminApiOperationCatalog.Definition definition, IServiceProvider services, IHttpContextAccessor accessor) : IOperationExecutor
 {

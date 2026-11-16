@@ -32,51 +32,15 @@ internal static class FolderMutationService
             replay = await AuthorizeReplayAsync(execution, tenant, cancellationToken).ConfigureAwait(false);
             if (replay is null) return new(null, null, new FolderExecutionFailure.Replay());
         }
-        var operatorPrincipal = replay?.OperatorPrincipal ?? principal;
-        var gate = services.GetRequiredService<OperatorApprovalGate>();
-        var request = new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Catalog, Operation = OperatorOperation.Publish
-        };
-        var access = await gate.CheckAuthorizationAsync(operatorPrincipal, request, cancellationToken).ConfigureAwait(false);
-        if (!access.IsAllowed) return new(null, null, new FolderExecutionFailure.Authorization(access));
-        var approval = gate.CheckApproval(operatorPrincipal, request);
-        if (approval.IsRequired) return new(null, null, new FolderExecutionFailure.Approval(approval));
+        var operatorFailure = await AuthorizeOperatorAsync(replay?.OperatorPrincipal ?? principal, services, cancellationToken).ConfigureAwait(false);
+        if (operatorFailure is not null) return new(null, null, operatorFailure);
         if (string.IsNullOrWhiteSpace(execution.ExpectedEtag))
             return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.MissingPrecondition));
         var store = services.GetService<IMetadataV2GraphStore>();
         if (store is null) return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.ReadOnlyCatalog));
         try
         {
-            var requester = principal;
-            if (replay is not null)
-            {
-                var currentRequester = await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false);
-                if (currentRequester is null) return new(null, null, new FolderExecutionFailure.Replay());
-                requester = currentRequester;
-            }
-            var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (snapshot.Etag != execution.ExpectedEtag)
-                return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.SnapshotChanged));
-            var mutation = execution.Command.Apply(snapshot.Graph, folderTenant);
-            var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
-            {
-                Original = snapshot.Graph, Mutation = mutation, Services = services,
-                OperatorPrincipal = operatorPrincipal, FolderTenant = folderTenant,
-                RequesterAccess = new ServiceAccessContext
-                {
-                    Services = services, Principal = requester,
-                    TenantId = tenant, Operation = AuthorizationOperation.Admin,
-                    RequestCache = replay is null ? execution.RequestCache : null
-                }
-            }, cancellationToken).ConfigureAwait(false);
-            if (authorization.Failure is not null)
-                return new(null, mutation, new FolderExecutionFailure.AffectedServices(authorization));
-            var saved = await store.SaveAsync(mutation.Graph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-            var logger = services.GetService<ILoggerFactory>()?.CreateLogger("FolderMutations")
-                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
-            FolderAuditLog.Mutated(logger, execution.Command.OperationId, saved.Graph.Revision);
-            return new(saved, mutation, null, authorization);
+            return await ApplyAndSaveAsync(execution, replay, cancellationToken).ConfigureAwait(false);
         }
         catch (ServiceUnavailableException)
         {
@@ -88,6 +52,59 @@ internal static class FolderMutationService
             return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.From(exception)));
         }
     }
+    private static async Task<FolderExecutionFailure?> AuthorizeOperatorAsync(
+        ClaimsPrincipal principal, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var gate = services.GetRequiredService<OperatorApprovalGate>();
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog, Operation = OperatorOperation.Publish
+        };
+        var access = await gate.CheckAuthorizationAsync(principal, request, cancellationToken).ConfigureAwait(false);
+        if (!access.IsAllowed) return new FolderExecutionFailure.Authorization(access);
+        var approval = gate.CheckApproval(principal, request);
+        return approval.IsRequired ? new FolderExecutionFailure.Approval(approval) : null;
+    }
+
+    private static async Task<FolderExecutionResult> ApplyAndSaveAsync(
+        FolderMutationExecution execution, FolderReplayAuthority? replay, CancellationToken cancellationToken)
+    {
+        var services = execution.Services;
+        var tenant = services.GetService<ITenantContext>()?.TenantId;
+        var folderTenant = execution.Namespace is null ? null : MetadataV2ServicePaths.NormalizeTenant(tenant);
+        var operatorPrincipal = replay?.OperatorPrincipal ?? execution.Principal;
+        var store = services.GetRequiredService<IMetadataV2GraphStore>();
+        var requester = execution.Principal;
+        if (replay is not null)
+        {
+            var currentRequester = await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false);
+            if (currentRequester is null) return new(null, null, new FolderExecutionFailure.Replay());
+            requester = currentRequester;
+        }
+        var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot.Etag != execution.ExpectedEtag)
+            return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.SnapshotChanged));
+        var mutation = execution.Command.Apply(snapshot.Graph, folderTenant);
+        var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
+        {
+            Original = snapshot.Graph, Mutation = mutation, Services = services,
+            OperatorPrincipal = operatorPrincipal, FolderTenant = folderTenant,
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = services, Principal = requester,
+                TenantId = tenant, Operation = AuthorizationOperation.Admin,
+                RequestCache = replay is null ? execution.RequestCache : null
+            }
+        }, cancellationToken).ConfigureAwait(false);
+        if (authorization.Failure is not null)
+            return new(null, mutation, new FolderExecutionFailure.AffectedServices(authorization));
+        var saved = await store.SaveAsync(mutation.Graph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+        var logger = services.GetService<ILoggerFactory>()?.CreateLogger("FolderMutations")
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        FolderAuditLog.Mutated(logger, execution.Command.OperationId, saved.Graph.Revision);
+        return new(saved, mutation, null) { Authorization = authorization };
+    }
+
     private static async Task<FolderReplayAuthority?> AuthorizeReplayAsync(
         FolderMutationExecution execution, string? tenant, CancellationToken cancellationToken)
     {
@@ -130,7 +147,10 @@ internal sealed record FolderMutationExecution
 }
 
 internal sealed record FolderExecutionResult(MetadataV2GraphSnapshot? Saved, FolderMutation? Mutation,
-    FolderExecutionFailure? Failure, FolderAuthorizationResult? Authorization = null);
+    FolderExecutionFailure? Failure)
+{
+    internal FolderAuthorizationResult? Authorization { get; init; }
+}
 
 internal abstract record FolderExecutionFailure
 {
