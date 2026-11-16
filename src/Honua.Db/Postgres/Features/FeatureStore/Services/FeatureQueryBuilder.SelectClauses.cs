@@ -214,6 +214,7 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         var projectedFields = new List<string>(requestedOutFields.Length);
+        string? storedIdProjection = null;
         var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var fieldName in requestedOutFields)
@@ -256,15 +257,30 @@ internal sealed partial class FeatureQueryBuilder
             var valueExpression = isDistinctObjectId
                 ? DatabaseSchema.ObjectIdColumn
                 : $"{DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text";
-            projectedFields.Add($"${fieldParamIndex}::text, {valueExpression}");
+            if (isStoredId)
+            {
+                // An absent key must remain absent so serializers can fall back to the
+                // physical identifier; an explicitly stored JSON null still wins.
+                storedIdProjection = $"CASE WHEN {DatabaseSchema.AttributesColumn} ? ${fieldParamIndex}::text " +
+                    $"THEN jsonb_build_object(${fieldParamIndex}::text, {valueExpression}) ELSE '{{}}'::jsonb END";
+            }
+            else
+            {
+                projectedFields.Add($"${fieldParamIndex}::text, {valueExpression}");
+            }
         }
 
-        if (projectedFields.Count == 0)
+        if (projectedFields.Count == 0 && storedIdProjection is null)
         {
             return "NULL";
         }
 
-        return $"jsonb_build_object({string.Join(", ", projectedFields)})::text";
+        var attributesProjection = projectedFields.Count == 0
+            ? "'{}'::jsonb"
+            : $"jsonb_build_object({string.Join(", ", projectedFields)})";
+        return storedIdProjection is null
+            ? $"{attributesProjection}::text"
+            : $"({attributesProjection} || {storedIdProjection})::text";
     }
 
     private static HashSet<string> ResolveMaskedFields(FeatureQuery query)

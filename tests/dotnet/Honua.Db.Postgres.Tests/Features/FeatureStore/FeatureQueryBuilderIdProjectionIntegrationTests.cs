@@ -24,25 +24,39 @@ public sealed class FeatureQueryBuilderIdProjectionIntegrationTests(PostgresFixt
     [InlineData(QueryPlan.Standard)]
     [InlineData(QueryPlan.Optimized)]
     public Task BuildSelectQuery_WithStoredIdAttribute_PreservesValue(QueryPlan plan) =>
-        AssertSelectedAttributesAsync(plan, ["secret"], attributes =>
+        AssertSelectedAttributesAsync(plan, new(["secret"]), attributes =>
             attributes.GetProperty("id").GetInt32().Should().Be(42));
 
     [IntegrationTheory]
     [InlineData(QueryPlan.Standard)]
     [InlineData(QueryPlan.Optimized)]
-    public Task BuildSelectQuery_WithMaskedIdAttribute_ExcludesValue(QueryPlan plan) =>
-        AssertSelectedAttributesAsync(plan, ["id", "secret"], attributes =>
+    public Task BuildSelectQuery_WithMissingIdAttribute_PreservesAbsence(QueryPlan plan) =>
+        AssertSelectedAttributesAsync(plan, new(["secret"], """{"name":"bravo","secret":"hidden"}"""), attributes =>
             attributes.TryGetProperty("id", out _).Should().BeFalse());
 
-    private async Task AssertSelectedAttributesAsync(QueryPlan plan, ImmutableArray<string> maskedFields, Action<JsonElement> assertId)
+    [IntegrationTheory]
+    [InlineData(QueryPlan.Standard)]
+    [InlineData(QueryPlan.Optimized)]
+    public Task BuildSelectQuery_WithNullIdAttribute_PreservesNull(QueryPlan plan) =>
+        AssertSelectedAttributesAsync(plan, new(["secret"], """{"id":null,"name":"bravo","secret":"hidden"}"""), attributes =>
+            attributes.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null));
+
+    [IntegrationTheory]
+    [InlineData(QueryPlan.Standard)]
+    [InlineData(QueryPlan.Optimized)]
+    public Task BuildSelectQuery_WithMaskedIdAttribute_ExcludesValue(QueryPlan plan) =>
+        AssertSelectedAttributesAsync(plan, new(["id", "secret"]), attributes =>
+            attributes.TryGetProperty("id", out _).Should().BeFalse());
+
+    private async Task AssertSelectedAttributesAsync(QueryPlan plan, ProjectionFixture projection, Action<JsonElement> assertId)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(FeatureQueryBuilderIdProjectionIntegrationTests));
         try
         {
-            await SeedFeatureAsync(schema);
+            await SeedFeatureAsync(schema, projection.AttributesJson);
             var pool = new DefaultObjectPoolProvider().Create(new StringBuilderPooledObjectPolicy());
             var builder = new FeatureQueryBuilder(pool, new GeometryProcessor(), schema);
-            var query = new FeatureQuery { OutFields = ["id", "name", "secret"], EnforcedMaskedFields = maskedFields };
+            var query = new FeatureQuery { OutFields = ["id", "name", "secret"], EnforcedMaskedFields = projection.MaskedFields };
             var result = plan == QueryPlan.Optimized
                 ? builder.BuildOptimizedSelectQuery(1, query)
                 : builder.BuildSelectQuery(1, query);
@@ -70,11 +84,15 @@ public sealed class FeatureQueryBuilderIdProjectionIntegrationTests(PostgresFixt
         }
     }
 
-    private Task SeedFeatureAsync(string schema) => fixture.ExecuteAsync($$"""
+    private sealed record ProjectionFixture(
+        ImmutableArray<string> MaskedFields,
+        string AttributesJson = """{"id":42,"name":"bravo","secret":"hidden"}""");
+
+    private Task SeedFeatureAsync(string schema, string attributesJson) => fixture.ExecuteAsync($$"""
         CREATE TABLE {{schema}}.features (
             objectid bigint PRIMARY KEY, layer_id integer NOT NULL,
             geometry geometry(Point,4326), attributes jsonb);
         INSERT INTO {{schema}}.features VALUES
-            (7, 1, ST_SetSRID(ST_MakePoint(1,2),4326), '{"id":42,"name":"bravo","secret":"hidden"}');
+            (7, 1, ST_SetSRID(ST_MakePoint(1,2),4326), '{{attributesJson}}');
         """);
 }
