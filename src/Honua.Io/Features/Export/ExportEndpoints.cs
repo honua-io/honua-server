@@ -164,7 +164,7 @@ internal static partial class ExportEndpoints
 
         // Async path for large exports. Restricted to built-in formats: the durable export-job
         // pipeline dispatches the built-in writers by format string, so a plugin-contributed format
-        // (issue #2856) is streamed synchronously below regardless of size. Plugin writers are
+        // is streamed synchronously below regardless of size. Plugin writers are
         // streaming (O(1) memory) like the built-ins, so this stays bounded.
         if (count > AsyncThreshold && isBuiltInFormat)
         {
@@ -242,7 +242,7 @@ internal static partial class ExportEndpoints
 
         try
         {
-            // CSV is dispatched through the IFeatureOutputFormat contract (issue #2856): the built-in
+            // CSV is dispatched through the IFeatureOutputFormat contract: the built-in
             // CsvOutputFormat implements the same seam a plugin format does, keeping the extension
             // point load-bearing. Shapefile/GeoPackage keep their bespoke (CRS/.prj, temp-file)
             // handling. A non-built-in token resolves to a licensed plugin format.

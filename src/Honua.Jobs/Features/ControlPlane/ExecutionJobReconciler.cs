@@ -185,7 +185,7 @@ internal sealed partial class ExecutionJobReconciler(
         {
             // A Redis or database timeout while observing says nothing about the job. A running
             // worker keeps heartbeating, and stamping the record terminal Failed here makes that
-            // worker lose its lease and cancel a healthy attempt (honua-server#6507). Leave the
+            // worker lose its lease and cancel a healthy attempt. Leave the
             // record as it is and let the next sweep observe it again.
             reconcileOutcome = "transient_error";
             Log.ExecutionJobReconciliationDeferred(logger, operationId, ex.GetType().Name);
