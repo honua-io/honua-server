@@ -9,6 +9,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Features.Console;
 using Honua.TestKit;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
@@ -54,7 +55,13 @@ internal static class TwoHostFeatureHarness
                     builder.UseSetting(key, value);
                 }
             })
-            .OverrideConfiguration(configuration);
+            .OverrideConfiguration(configuration)
+            .ConfigureServices(services =>
+            {
+                // These hosts exercise the feature relay and never access Console stores.
+                var guard = services.Single(descriptor => descriptor.ImplementationType == typeof(ConsoleInMemoryStoreStartupGuard));
+                services.Remove(guard);
+            });
     }
 
     public static void EnableEditing(WebAppFixture task)

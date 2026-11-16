@@ -8,6 +8,7 @@ using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Console;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -90,6 +91,12 @@ public sealed class ProcessLocalAdminStoreGuardEndpointTests
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                // Keep the rate-limit store endpoint test independent of Console persistence startup.
+                var guard = services.Single(descriptor => descriptor.ImplementationType == typeof(ConsoleInMemoryStoreStartupGuard));
+                services.Remove(guard);
             });
         if (processLocal)
         {

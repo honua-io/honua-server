@@ -4,6 +4,7 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Console;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -55,12 +56,37 @@ public sealed class MultiNodeWithoutRedisStartupTests
     }
 
     [IntegrationTest]
+    public async Task Host_MultiNodeWithInMemoryConsoleStores_RefusesStartup()
+    {
+        var fixture = new WebAppFixture()
+            .WithProductionJobSubstrate()
+            .OverrideConfiguration(_multiNodeSettings);
+        try
+        {
+            Func<Task> start = () => fixture.InitializeAsync();
+
+            await start.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*Console*process-local*single replica*");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /healthz/live")]
     public async Task Host_MultiNodeWithObjectStorageAndNoRedis_StartsAndAnswersLiveness()
     {
         var fixture = new WebAppFixture()
             .WithProductionJobSubstrate()
-            .OverrideConfiguration(_multiNodeSettings);
+            .OverrideConfiguration(_multiNodeSettings)
+            .ConfigureServices(services =>
+            {
+                // This test exercises Redis-free liveness; Console persistence has a separate startup test.
+                var guard = services.Single(descriptor => descriptor.ImplementationType == typeof(ConsoleInMemoryStoreStartupGuard));
+                services.Remove(guard);
+            });
         await fixture.InitializeAsync();
         try
         {
