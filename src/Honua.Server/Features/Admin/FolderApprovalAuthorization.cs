@@ -158,17 +158,7 @@ internal static class FolderApprovalAuthorization
         var namespaced = parameters.TryGetValue("namespace", out var selection) && selection is not null;
         var tenant = namespaced ? MetadataV2ServicePaths.NormalizeTenant(tenantId) : null;
         if (!LayerPublicationNamespace.IsValid(selection) || (namespaced && tenant is null)) throw new FolderProposalRefusal(FreshProposalRequired);
-        var folder = new FolderRequest { Name = parameters.GetValueOrDefault("name") };
-        if (parameters.TryGetValue("title", out var title)) folder.Title = title;
-        return request.OperationId switch
-        {
-            "folder.create" => FolderMutation.Create(graph, folder, tenant),
-            "folder.update" => FolderMutation.Update(graph, parameters["id"]!, folder, tenant),
-            "folder.delete" => FolderMutation.Delete(graph, parameters["id"]!, tenant),
-            "service.move" => FolderMutation.Move(graph, request.ServiceName!,
-                parameters.TryGetValue("folderId", out var id) ? new MetadataV2FolderSelection(id) : default, tenant),
-            _ => throw new FolderProposalRefusal(FreshProposalRequired)
-        };
+        return FolderMutationCommand.FromRequest(request).Apply(graph, tenant);
     }
 
     private static async Task WriteCredentialPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,

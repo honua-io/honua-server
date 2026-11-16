@@ -48,18 +48,20 @@ internal static class FolderEndpoints
     }
 
     private static Task<IResult> Create(FolderRequest request, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Create(graph, request, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Create(request.Name,
+            request.TitleSpecified ? new FolderTitleChange(request.Title) : default));
 
     private static Task<IResult> Update(string id, FolderRequest request, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Update(graph, id, request, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Update(id, request.Name,
+            request.TitleSpecified ? new FolderTitleChange(request.Title) : default));
 
     private static Task<IResult> Delete(string id, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Delete(graph, id, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Delete(id));
 
     private static Task<IResult> Move(string serviceName, MoveServiceRequest request, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Move(graph, serviceName, request.FolderId, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Move(serviceName, request.FolderId));
 
-    private static async Task<IResult> Mutate(HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation)
+    private static async Task<IResult> Mutate(HttpContext context, FolderMutationCommand command)
     {
         var scopeError = ValidateScope(context);
         if (scopeError is not null) return scopeError;
@@ -72,7 +74,7 @@ internal static class FolderEndpoints
             return FolderMutationFailure.ReadOnlyCatalog.ToResult();
         try
         {
-            return await CommitMutationAsync(context, mutation, store).ConfigureAwait(false);
+            return await CommitMutationAsync(context, command, store).ConfigureAwait(false);
         }
         catch (Exception exception) when (FolderMutationFailure.Handles(exception))
         {
@@ -81,17 +83,19 @@ internal static class FolderEndpoints
     }
 
     private static async Task<IResult> CommitMutationAsync(
-        HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
+        HttpContext context, FolderMutationCommand command, IMetadataV2GraphStore store)
     {
         var operation = context.GetEndpoint()?.Metadata.GetMetadata<AdminApiOperationCatalog.Definition>()
             ?? throw new InvalidOperationException("Folder mutation is missing its operation definition.");
+        if (operation.OperationId != command.OperationId)
+            throw new InvalidOperationException("Folder mutation does not match its operation definition.");
         if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
             !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
             return FolderMutationFailure.SnapshotChanged.ToResult();
-        var changed = mutation(snapshot.Graph);
+        var changed = command.Apply(snapshot.Graph, Tenant(context));
         var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
         if (denial is not null) return denial;
         var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
