@@ -308,6 +308,7 @@ def parameter_types(params: str) -> str:
         equals = text.find("=")
         if equals >= 0:
             text = text[:equals]
+        text = re.sub(r"\s*\[([,\s]*)\]", lambda match: "[" + "," * match[1].count(",") + "]", text)
         tokens = [token for token in text.split() if token not in {"out", "ref", "in", "params", "this", "scoped"}]
         if len(tokens) >= 2:
             types.append(" ".join(tokens[:-1]))
@@ -539,11 +540,16 @@ internal sealed class Short
 
 
 def static_helper_array_self_test(scalar_method: Method) -> str | None:
-    for array_type in ("string[]", "string[,]", "string[][]"):
+    for array_type in ("string[]", "string[,]", "string[][]", "string []", "string[ , ]", "string [] []"):
         array_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", f"Trim({array_type} value)")
         array, _ = extract_methods("src/Array.cs", array_sample)
-        if array[0].types != array_type or is_pair(scalar_method, array[0]):
+        canonical_type = array_type.replace(" ", "")
+        if array[0].types != canonical_type or is_pair(scalar_method, array[0]):
             return "self-test: array parameter ranks were lost or paired with a scalar"
+        canonical_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", f"Trim({canonical_type} value)")
+        canonical, _ = extract_methods("src/Canonical.cs", canonical_sample)
+        if not is_pair(array[0], canonical[0]):
+            return "self-test: whitespace in array ranks prevented exact-copy matching"
         if array[0].endpoint(disambiguate=False) != "src/Array.cs::Trim(string)":
             return "array parameter ranks changed persisted baseline identifiers"
     if parameter_types("[NotNull] [Other] string[] value") != "string[]":
