@@ -166,12 +166,11 @@ public sealed partial class FeatureEditGateTests
     }
 
     [UnitTheory]
-    [InlineData("range", false)]
-    [InlineData("range", true)]
-    [InlineData("null", false)]
-    [InlineData("type", false)]
-    [InlineData("length", false)]
-    public async Task AttributeRules_InvalidCalculatedValue_RejectsItsRowBeforeHooks(string invalid, bool rollback)
+    [InlineData("range")]
+    [InlineData("null")]
+    [InlineData("type")]
+    [InlineData("length")]
+    public async Task AttributeRules_InvalidCalculatedValue_RejectsItsRowBeforeHooks(string invalid)
     {
         var field = new MetadataV2Field
         {
@@ -197,7 +196,7 @@ public sealed partial class FeatureEditGateTests
             SchemaFields = [field], ContingentValueGroups = [],
         };
         var batch = FeatureEditBatch.Create(creates:
-        [Row("bad", "S") with { Attributes = Row("bad", "S").Attributes.Add("n", 6) }], rollbackOnFailure: rollback);
+        [Row("bad", "S") with { Attributes = Row("bad", "S").Attributes.Add("n", 6) }]);
         var check = new FeatureEditCheck(resource, Scope, batch);
         var prepared = FeatureEditGate.ApplyAttributeRules(check);
         var hooks = new RejectingHooks("none");
@@ -209,6 +208,28 @@ public sealed partial class FeatureEditGateTests
 
         rejected.Should().ContainSingle().Which.Index.Should().Be(0);
         prepared.Batch.Creates[0].Attributes["size"].Should().Be("S");
+        hooks.Seen.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task AttributeRules_InvalidCalculation_RollbackSkipsHooksForValidRowsToo()
+    {
+        var resource = Rules(CalculateSize() with { ScriptExpression = "$feature.name" }) with
+        {
+            SchemaFields = [new() { Name = "size", Type = MetadataV2FieldType.String, Length = 1 }],
+            ContingentValueGroups = [],
+        };
+        var check = new FeatureEditCheck(resource, Scope,
+            FeatureEditBatch.Create(creates: [Row("invalid", "S"), Row("S", "S")], rollbackOnFailure: true));
+        var prepared = FeatureEditGate.ApplyAttributeRules(check);
+        var hooks = new RejectingHooks("none");
+
+        var rejected = await FeatureEditGate.CheckAsync(hooks, check with
+        {
+            Batch = prepared.Batch, Rejections = prepared.Rejections,
+        }, CancellationToken.None);
+
+        rejected.Should().ContainSingle().Which.Index.Should().Be(0);
         hooks.Seen.Should().BeEmpty();
     }
 

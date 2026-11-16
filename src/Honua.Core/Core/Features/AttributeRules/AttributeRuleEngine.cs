@@ -78,11 +78,8 @@ public static class AttributeRuleEngine
                             continue;
                         }
 
-                        // Identity is assigned before preparation and must match responses and
-                        // durable replay receipts. Calculations cannot replace it on any event.
-                        if (rule.FieldName.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
+                        if (RejectIdentityCalculation(resource, rule, ref violations))
                         {
-                            (violations ??= []).Add(new(rule.Name, "Calculation rules cannot write the global ID field."));
                             break;
                         }
 
@@ -153,6 +150,18 @@ public static class AttributeRuleEngine
         {
             CalculatedFields = (IReadOnlyList<string>?)calculatedFields ?? [],
         };
+    }
+
+    private static bool RejectIdentityCalculation(
+        MetadataV2Object resource, MetadataV2AttributeRule rule, ref List<AttributeRuleViolation>? violations)
+    {
+        if (!rule.FieldName!.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        // Identity must match the response and durable replay receipt on every edit event.
+        (violations ??= []).Add(new(rule.Name, "Calculation rules cannot write the global ID field."));
+        return true;
     }
 
     private static void AddViolation(ref List<AttributeRuleViolation>? violations, MetadataV2AttributeRule rule)

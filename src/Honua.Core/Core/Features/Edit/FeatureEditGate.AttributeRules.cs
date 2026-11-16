@@ -4,6 +4,8 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation;
 
 namespace Honua.Core.Features.Edit;
 
@@ -42,11 +44,7 @@ public static partial class FeatureEditGate
             }
             else if (row.Feature is { } feature && result.CalculatedFields.Count > 0)
             {
-                var calculated = result.CalculatedFields.Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(field => field, field => result.Attributes[field], StringComparer.OrdinalIgnoreCase);
-                // These are server-derived writes, so editable-on-update does not apply. All
-                // declared type, domain, length and nullability constraints still apply.
-                var validation = FeatureAttributeValidator.Validate(check.Resource, calculated);
+                var validation = ValidateCalculatedFields(check.Resource, result);
                 if (!validation.IsValid)
                 {
                     rejected.Add(new(row.Kind, row.Index, validation.ErrorMessage!));
@@ -57,6 +55,15 @@ public static partial class FeatureEditGate
         }
 
         return new(ReplaceCalculatedFeatures(check.Batch, replacements), rejected);
+    }
+
+    private static ValidationResult<ImmutableDictionary<string, object?>> ValidateCalculatedFields(
+        MetadataV2Object resource, AttributeRuleApplicationResult result)
+    {
+        var calculated = result.CalculatedFields.Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(field => field, field => result.Attributes[field], StringComparer.OrdinalIgnoreCase);
+        // Server-derived writes may target non-editable fields, but still obey their schema.
+        return FeatureAttributeValidator.Validate(resource, calculated);
     }
 
     // Rules read one guarded snapshot per target, so an earlier operation must not change the
