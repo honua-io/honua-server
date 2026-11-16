@@ -32,35 +32,12 @@ internal sealed partial class FeatureQueryBuilder
             var fieldExpr = GetFieldExpression(dateBin.BinField);
             var timestampExpr = BuildEpochAwareTemporalExpression(fieldExpr, MetadataV2FieldType.DateTime);
 
-            sql.Append("SELECT ");
-
-            // Build the boundary expression based on bin type
-            if (dateBin.IsCalendarBin)
+            var boundary = DateBinBoundarySql.Build(dateBin, timestampExpr, origin =>
             {
-                var truncUnit = MapCalendarUnitToPostgres(dateBin.CalendarUnit!);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"date_trunc('{truncUnit}', {timestampExpr}) AS \"boundary\"");
-            }
-            else if (dateBin.FixedInterval.HasValue)
-            {
-                var intervalStr = FormatInterval(dateBin.FixedInterval.Value);
-                if (dateBin.FixedIntervalOrigin.HasValue)
-                {
-                    sql.Append(CultureInfo.InvariantCulture,
-                        $"date_bin('{intervalStr}'::interval, {timestampExpr}, ${paramIndex}::timestamptz) AS \"boundary\"");
-                    parameters.Add(dateBin.FixedIntervalOrigin.Value);
-                    paramIndex++;
-                }
-                else
-                {
-                    sql.Append(CultureInfo.InvariantCulture,
-                        $"date_bin('{intervalStr}'::interval, {timestampExpr}, '1970-01-01T00:00:00Z'::timestamptz) AS \"boundary\"");
-                }
-            }
-            else
-            {
-                throw new ArgumentException("DateBinDefinition must specify either CalendarUnit or FixedInterval.", nameof(dateBin));
-            }
+                parameters.Add(origin);
+                return $"${paramIndex++}";
+            });
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT {boundary} AS \"boundary\"");
 
             // Add optional statistics columns
             if (dateBin.OutStatistics.HasValue && !dateBin.OutStatistics.Value.IsDefaultOrEmpty)
@@ -104,50 +81,4 @@ internal sealed partial class FeatureQueryBuilder
             _stringBuilderPool.Return(sql);
         }
     }
-
-    private static string MapCalendarUnitToPostgres(string unit)
-    {
-        return unit.ToLowerInvariant() switch
-        {
-            "year" => "year",
-            "quarter" => "quarter",
-            "month" => "month",
-            "week" => "week",
-            "day" => "day",
-            "hour" => "hour",
-            "minute" => "minute",
-            "second" => "second",
-            _ => "month" // Default to month
-        };
-    }
-
-    // TimeSpan.TotalDays/TotalHours/TotalMinutes are computed by dividing Ticks by a
-    // constant, which can leave a whole-unit duration a few ULPs away from its exact
-    // integer value. Compare within a tolerance instead of exact float equality so a
-    // duration like "7 days" reliably formats as whole days rather than falling through
-    // to a fractional/seconds representation.
-    private const double WholeUnitTolerance = 1e-9;
-
-    private static string FormatInterval(TimeSpan interval)
-    {
-        if (interval.TotalDays >= 1 && IsWholeUnit(interval.TotalDays))
-        {
-            return FormattableString.Invariant($"{(int)interval.TotalDays} days");
-        }
-
-        if (interval.TotalHours >= 1 && IsWholeUnit(interval.TotalHours))
-        {
-            return FormattableString.Invariant($"{(int)interval.TotalHours} hours");
-        }
-
-        if (interval.TotalMinutes >= 1 && IsWholeUnit(interval.TotalMinutes))
-        {
-            return FormattableString.Invariant($"{(int)interval.TotalMinutes} minutes");
-        }
-
-        return FormattableString.Invariant($"{(int)interval.TotalSeconds} seconds");
-    }
-
-    private static bool IsWholeUnit(double value)
-        => Math.Abs(value - Math.Floor(value)) < WholeUnitTolerance;
 }

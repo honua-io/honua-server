@@ -166,84 +166,11 @@ Two consequences for this observer:
 
 ### Promotion gates
 
-Routing authority stays with the existing workflows until at least 20 distinct
-PR observations satisfy the machine-readable cohort policy in
-`.github/impact-routing-promotion.json`. The report-only Impact Routing Evidence
-Ledger selects only the producer's current attempt and rejects missing or
-ambiguous artifacts, duplicate head identities, and missing receipts; receipts
-pinning a superseded policy generation are excluded from the cohort rather than
-failed (#3343). It queries the authoritative Serving Image Boundary and GDAL
-Worker Image histories and counts an impacted head only when every required
-image run at that exact head SHA, on that exact workflow, from a
-`pull_request` event, completed successfully. A run's own `head_sha` is the
-run-invariant binding; the `pull_requests` array on a workflow run is a LIVE
-projection of the pull request and can only be trusted to say that a run belongs
-to a *different* PR. Successful observer shells are never evidence by
-themselves.
-
-The ledger still requires positive impacted cohorts and a demonstrated savings
-cohort; twenty unrelated negative observations cannot authorize promotion. The
-savings gate is satisfied by **either** mechanism, and the ledger always says
-which one:
-
-- gates `serving_savings_sample_ready` / `worker_savings_sample_ready` are the
-  OR that promotion reads;
-- `signals` reports each mechanism separately
-  (`serving_narrowing_ready`, `serving_reuse_ready`, `worker_avoidance_ready`,
-  `worker_reuse_ready`);
-- `savings_mechanism` names what the sample actually substantiated
-  (`narrowing`, `avoidance`, `exact-input-build-reuse`, or nothing).
-
-A reuse-only sample authorizes reviewing build-evidence reuse and **not** the
-path router, which this document has already graded at zero savings. A reviewer
-must read `savings_mechanism` before promoting anything.
-
-A serving head is narrowed only when the candidate selects fewer variants than
-the receipt's replayed legacy per-variant decision, so a Lambda-only change that
-selects Lambda in both policies does not count as savings.
-
-Before the narrowing mechanism is enforced, failure injection must still prove
-that project-graph changes, conditional providers, external embedded resources,
-Dockerfiles, `.dockerignore`, and `.trivyignore` all fail safe. Before the reuse
-mechanism is enforced, the reuse key must be shown to cover every input the
-image build reads; the digest is derived from the same closure and pattern
-predicates as the routing decision (`image_input_selection`), so an input can
-only leave the digest by also leaving the decision.
-
-Changing either classifier or `.github/native-image-impact.json` changes the
-semantic `policy_generation_sha256`, which invalidates every outstanding receipt
-by design. The generation manifest contains the PR Gate classifier, native-image
-classifier, and native routing-policy blobs: the inputs that can change a
-routing decision.
-
-That reset is **cohort drift, not receipt loss**, and the ledger says so (#3343).
-Workflow, observer, and trusted-resolver blob SHAs remain pinned in each receipt
-as provenance. The PR Gate workflow, observers, and resolver define the generation
-because they can alter routing or collection semantics. Serving/worker workflow
-action-version, timeout, step-name, and comment edits do not discard an otherwise
-valid cohort. This is fail-closed: the native classifier parses the authoritative
-serving/worker workflow trigger paths and serving variant case arms and validates
-them against `.github/native-image-impact.json` before emitting evidence. A
-routing-relevant workflow edit requires a matching routing-policy edit, which
-changes the generation; drift fails the observer instead of silently retaining
-the old generation. Receipts pinning a previous semantic generation stop being
-countable and are reported under
-`policy_generation_superseded_receipts`. Reporting them as *integrity* failures
-made the ledger red on routine repository maintenance and gave every
-`observe`→`enforce` promotion gate an unusable signal; see
-`impact-routing-evidence.md`, "What the ledger calls a failure".
-
-The retained-ledger trend reports generation resets, resets per week, and the
-largest docs-only/native sample reached within one generation. Those numbers
-make the configured 20/20 cohort's reachability explicit.
-
-The promotion policy and ledger contracts are
-`honua.impact-routing-promotion-policy/v3` and
-`honua.impact-routing-evidence-ledger/v4`: v4 resets retained promotion samples
-after candidate-only routes stopped being countable without execution evidence;
-v2 added required reuse minimums and
-renamed the savings gates, and v3 added the receipt-loss budget, the indexing
-grace window, and the consecutive-green promotion streak.
+The Impact Routing Evidence Ledger that counted observer receipts toward
+promotion was retired under #7880, after both impact observers were disabled
+on 9 November 2026 and no new receipts could reach its seven-day bar. Routing
+authority stays with the existing workflows. Promoting native-image reuse needs
+a new receipt audit first.
 
 ### Enforcement proposal (unchanged in shape, redirected in mechanism)
 
