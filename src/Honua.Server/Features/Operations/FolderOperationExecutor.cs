@@ -22,8 +22,13 @@ internal sealed class FolderOperationExecutor(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
-        var instance = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
-        var correlation = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
+        var response = await ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
+        return CreateHandle(response, context, now);
+    }
+
+    private async Task<FolderOperationResponse> ExecuteAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
         FolderOperationResponse response;
         if (request.OperationId != OperationId || request.DryRun)
             response = FolderOperationResponse.Problem(400, "The folder operation identity or execution mode is invalid.");
@@ -47,10 +52,16 @@ internal sealed class FolderOperationExecutor(
             }, cancellationToken).ConfigureAwait(false);
             response = FolderOperationResponse.From(execution, current?.Request.PathBase.Value);
         }
+        return response;
+    }
+
+    private OperationHandle CreateHandle(FolderOperationResponse response, OperationPolicyContext context, DateTimeOffset now)
+    {
         var success = response.Status is >= 200 and < 300;
         return new OperationHandle
         {
-            OperationInstanceId = instance, OperationId = OperationId, CorrelationId = correlation,
+            OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+            OperationId = OperationId, CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
             CreatedAt = now, UpdatedAt = now,
             Status = success ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
             Reason = success ? null : $"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).",
