@@ -73,6 +73,14 @@ never by parsing the message.
   scope (skipped with a logged warning), never failing the edit. Full Arcade parity is a non-goal.
 - Contingent values and plugin edit hooks run on GeoServices `applyEdits`, OGC API Features and
   gRPC `ApplyEdits`. WFS-T transactions and OData writes do not run them yet.
+- On OGC API Features and gRPC, a hook sees the row an update produces and, on delete, the stored
+  row where the request read it (every OGC delete, and gRPC deletes). When a contingent-value
+  failure removes rows from a gRPC call without `rollback_on_failure`, hooks number the remaining
+  rows of each kind from zero, and gRPC after-hooks receive the submitted values of a partial
+  update, not the merged row.
+- A gRPC partial update is checked against the row as read before the write. A concurrent change
+  to another field of the same contingent group between that read and the write is not
+  re-validated; GeoServices `applyEdits` re-validates only for a single update without other edits.
 - An OGC API Features edit fails as a whole when one row is rejected. A gRPC `ApplyEdits` call
   with `rollback_on_failure` fails with `INVALID_ARGUMENT`; without it, only the rejected rows
   report a failure and the other rows are written. An idempotent replay returns the stored

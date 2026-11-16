@@ -30,6 +30,9 @@ internal readonly record struct OgcFeaturesBatchEditOperation
     public Feature? Feature { get; init; }
 
     public long? ObjectId { get; init; }
+
+    // The row as read before a delete, so a delete hook can judge it.
+    public Feature? StoredFeature { get; init; }
 }
 
 /// <summary>

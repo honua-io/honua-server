@@ -199,7 +199,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                                     _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
                                 },
                                 Feature = operation.Feature,
-                                ObjectId = operation.ObjectId
+                                ObjectId = operation.ObjectId,
+                                StoredFeature = operation.StoredFeature
                             })
                             .ToImmutableArray()
                     },
@@ -1205,8 +1206,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return result;
     }
 
+    // A rule or plugin rejection is never "not found", whatever its wording.
     private static bool IsNotFound(EditOperationResult result)
-        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+        => result.ErrorCode != FeatureEditGate.RejectedErrorCode &&
+           !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
            result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -1514,7 +1517,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             OperationKind: BatchOperationKind.Delete,
             Operation: operation,
             Feature: null,
-            ObjectId: objectId));
+            ObjectId: objectId)
+        {
+            StoredFeature = resolvedFeature.Feature
+        });
     }
 
     private async Task<PreparedBatchPlan> PrepareBatchOperationsAsync(
@@ -2237,6 +2243,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         // Create operations (no existing row) and is irrelevant for Delete (the
         // outbox payload always defaults to GeometryChanged=false on deletes).
         public bool ExistingHadGeometry { get; init; }
+
+        // The row a delete resolved during prepare, so a delete hook can judge it.
+        public Feature? StoredFeature { get; init; }
     }
 
     private sealed record PreparedBatchValidationResult(

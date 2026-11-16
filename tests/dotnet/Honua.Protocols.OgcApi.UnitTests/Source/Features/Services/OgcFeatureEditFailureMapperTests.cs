@@ -31,6 +31,18 @@ public sealed class OgcFeatureEditFailureMapperTests
     }
 
     [UnitTest]
+    public void MapDeleteFailure_RejectionWordedAsNotFound_StaysAClientError()
+    {
+        var result = Honua.Protocols.Ogc.Api.Features.OgcFeaturesCrudHandler.MapDeleteFailure(
+            new DefaultHttpContext(),
+            EditOperationResult.Failure("Parent asset not found.", Honua.Core.Features.Edit.FeatureEditGate.RejectedErrorCode, 42),
+            "42");
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
     public void ToResult_ConflictMessage_ReturnsConflict()
     {
         var context = new DefaultHttpContext();

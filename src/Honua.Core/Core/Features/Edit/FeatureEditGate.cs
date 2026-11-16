@@ -136,6 +136,11 @@ public static class FeatureEditGate
             {
                 results[kind].Add(sources[kind][next[kind]++]);
             }
+            else if (!sources[kind].IsDefaultOrEmpty)
+            {
+                // Keep every later row at its request position when a writer reports fewer rows than it was given.
+                results[kind].Add(EditOperationResult.Failure("The edit result for this row is missing.", 500, row.ObjectId));
+            }
         }
 
         return written with

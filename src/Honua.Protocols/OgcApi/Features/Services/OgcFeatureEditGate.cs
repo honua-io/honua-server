@@ -66,10 +66,27 @@ internal static class OgcFeatureEditGate
             LayerName = target.Resource.Metadata.Name,
             UserName = target.Context.User?.Identity?.Name,
             TraceId = target.Context.TraceIdentifier,
-            StoredRows = target.Request is { StoredFeature: { } stored, ObjectId: { } objectId }
-                ? new Dictionary<long, Feature> { [objectId] = stored }
-                : null,
+            StoredRows = StoredRows(target.Request),
         };
+
+    private static Dictionary<long, Feature>? StoredRows(OgcFeaturesEditRequest request)
+    {
+        var stored = new Dictionary<long, Feature>();
+        if (request is { StoredFeature: { } single, ObjectId: { } objectId })
+        {
+            stored[objectId] = single;
+        }
+
+        foreach (var operation in request.BatchOperations.IsDefault ? [] : request.BatchOperations)
+        {
+            if (operation is { StoredFeature: { } row, ObjectId: { } id })
+            {
+                stored[id] = row;
+            }
+        }
+
+        return stored.Count == 0 ? null : stored;
+    }
 
     private static IReadOnlyList<FeatureEditHookRejection> Safe(IReadOnlyList<FeatureEditHookRejection> rejections)
         => [.. rejections.Select(static rejection => rejection with

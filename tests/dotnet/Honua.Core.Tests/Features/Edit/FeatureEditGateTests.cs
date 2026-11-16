@@ -110,6 +110,17 @@ public sealed class FeatureEditGateTests
     }
 
     [UnitTest]
+    public void WithRejectedRows_ShortWriterResult_KeepsLaterRowsAtTheirPositions()
+    {
+        var batch = FeatureEditBatch.Create(creates: [Row("a", "S"), Row("b", "S"), Row("c", "S")]);
+        var written = FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(10)]);
+
+        var merged = FeatureEditGate.WithRejectedRows(written, batch, [new(FeatureEditOperationKind.Create, 0, "no a")]);
+
+        merged.CreateResults.Select(static result => result.IsSuccess).Should().Equal(false, true, false);
+    }
+
+    [UnitTest]
     public void WithoutRejected_OrderedOperations_DropsTheRowFromBothShapes()
     {
         var create = Row("a", "S");

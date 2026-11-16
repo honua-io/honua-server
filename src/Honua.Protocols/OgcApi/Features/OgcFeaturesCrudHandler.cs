@@ -489,8 +489,10 @@ internal sealed partial class OgcFeaturesCrudHandler(
             : StandardErrorHelpers.CreateInternalServerError(context, deleteResult.ErrorMessage ?? "An error occurred while deleting the feature.");
     }
 
+    // A rule or plugin rejection is never "not found", whatever its wording.
     private static bool IsNotFound(EditOperationResult result)
-        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+        => result.ErrorCode != FeatureEditGate.RejectedErrorCode &&
+           !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
            result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     private static partial class Log

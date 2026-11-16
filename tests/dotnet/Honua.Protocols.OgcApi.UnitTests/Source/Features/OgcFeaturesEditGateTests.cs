@@ -113,6 +113,34 @@ public sealed class OgcFeaturesEditGateTests
     }
 
     [UnitTest]
+    public async Task BatchDelete_ShowsTheHookTheStoredRow()
+    {
+        var hooks = new RecordingHooks { Reject = FeatureEditOperationKind.Delete };
+        var writer = new CountingWriter();
+        var request = new OgcFeaturesEditRequest
+        {
+            Operation = OgcFeaturesEditOperation.Batch,
+            RollbackOnFailure = true,
+            BatchOperations =
+            [
+                new OgcFeaturesBatchEditOperation
+                {
+                    Operation = OgcFeaturesEditOperation.Delete,
+                    ObjectId = 42,
+                    StoredFeature = Row(42, "red", "S"),
+                },
+            ],
+        };
+
+        var result = await CreateHandlers(writer).Transaction.ExecuteEditAsync(Context(hooks), 7, Resource(), request, CancellationToken.None);
+
+        writer.ApplyCount.Should().Be(0);
+        hooks.Scopes.Should().ContainSingle().Which.StoredRows.Should().ContainKey(42);
+        var row = result.DeleteResults.Should().ContainSingle().Subject;
+        OgcFeatureEditFailureMapper.DetermineStatus(row).Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
     public async Task BatchWithOneInvalidRow_FailsTheWholeBatch()
     {
         var request = new OgcFeaturesEditRequest
