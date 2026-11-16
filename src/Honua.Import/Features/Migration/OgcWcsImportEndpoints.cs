@@ -17,16 +17,8 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// API endpoints for legacy OGC Web Coverage Service (WCS 1.x / 2.x) coverage
-/// imports. Issue #1030 slice 3 — the WCS counterpart to slice 2's
-/// OGC API Coverages import surface.
-/// </summary>
 internal static partial class OgcWcsImportEndpoints
 {
-    /// <summary>
-    /// Map OGC WCS import endpoints onto the web application with formal API versioning.
-    /// </summary>
     public static void MapOgcWcsImportEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/ogc-wcs")
@@ -162,7 +154,6 @@ internal static partial class OgcWcsImportEndpoints
     private static ILogger<OgcWcsImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<OgcWcsImportEndpointsLog>>();
 
-    /// <summary>Log category marker for OGC WCS import endpoint operations.</summary>
     internal sealed class OgcWcsImportEndpointsLog;
 
     private static partial class Log
@@ -172,69 +163,29 @@ internal static partial class OgcWcsImportEndpoints
     }
 }
 
-/// <summary>
-/// API request payload for legacy WCS coverage import operations.
-/// </summary>
 internal sealed record OgcWcsImportApiRequest
 {
-    /// <summary>
-    /// Source WCS service URL.
-    /// </summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>
-    /// Optional WCS protocol version (e.g. <c>1.1.1</c>, <c>2.0.1</c>).
-    /// </summary>
     public string? Version { get; init; }
 
-    /// <summary>
-    /// Requested output format. Defaults to <c>image/tiff</c>; other formats are
-    /// classified as manual-review.
-    /// </summary>
     public string? OutputFormat { get; init; }
 
-    /// <summary>
-    /// Slice-1 migration inventory artifact identifying the coverages to plan or import.
-    /// </summary>
     public MigrationSourceInventoryArtifact? Inventory { get; init; }
 
-    /// <summary>
-    /// Optional explicit coverage selection. When omitted every coverage in the inventory is processed.
-    /// </summary>
     public string[]? CoverageSelection { get; init; }
 
-    /// <summary>
-    /// Optional per-coverage import targets keyed by source coverage name or resource id.
-    /// </summary>
     public IReadOnlyDictionary<string, OgcCoverageImportTarget>? Targets { get; init; }
 
-    /// <summary>
-    /// Optional dry-run preview flag. Defaults to <c>true</c>.
-    /// </summary>
     public bool? DryRun { get; init; }
 
-    /// <summary>
-    /// Apply-mode opt-in. Required (alongside <c>dryRun=false</c>) to mutate raster store state.
-    /// </summary>
     public bool? ApplyMode { get; init; }
 
-    /// <summary>
-    /// Optional target service name used when computing manifest identities.
-    /// </summary>
     public string? TargetServiceName { get; init; }
 
-    /// <summary>
-    /// Optional HTTP basic-auth username for protected WCS endpoints.
-    /// </summary>
     public string? Username { get; init; }
 
-    /// <summary>
-    /// Optional HTTP basic-auth password for protected WCS endpoints.
-    /// </summary>
     public string? Password { get; init; }
 
-    /// <summary>
-    /// Optional per-request timeout in seconds.
-    /// </summary>
     public int? TimeoutSeconds { get; init; }
 }

@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Honua.Infrastructure.Models;
+using Honua.Server.Tests.Features.Console;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -45,7 +46,8 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+            })
+            .UseProcessLocalConsoleState();
     }
 
     public async Task InitializeAsync()
