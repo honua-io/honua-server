@@ -344,7 +344,7 @@ internal static partial class FeatureStreamEndpoints
             // after connect via subscribe frames) are also covered by the durable-store
             // sweep — without this, a non-admin session opened with no query filters
             // (addDefaultSubscription:false) would have no recovery path for cross-node
-            // events that the broadcast/Redis pub/sub fan-out missed. The default
+            // events that the PostgreSQL event-log relay missed. The default
             // subscription path stays gated on addDefaultSubscription so its writer-side
             // cursor fence remains the single source of truth for that subscription.
             onPoll: async (cursor, ct) =>

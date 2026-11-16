@@ -212,6 +212,13 @@ to the current identity. Cookie-authenticated writes, bearer issuance, and logou
 require that token in the `X-Honua-CSRF` header. Logout removes the server-side
 session as well as the browser cookie.
 
+An explicit API key or bearer is validated independently when a browser session
+cookie is also present. Successful explicit authentication does not require the
+session's CSRF token for API operations, including gRPC-Web calls. Session sign-in,
+bearer issuance, logout, and provider authorization still enforce browser CSRF
+protection when they use the session. Invalid explicit credentials do not fall
+back to the browser session.
+
 Password sign-in requires HTTPS and accepts the configured administrator password,
 not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
 server-held state and an authorization code with PKCE; provider credentials and

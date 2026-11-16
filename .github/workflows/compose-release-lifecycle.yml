@@ -26,6 +26,7 @@ on:
       - 'scripts/docker/*quickstart*.py'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'
       - 'scripts/docker/*readiness_diagnostics.py'
+      - 'scripts/docker/*compose_contract_migrations.py'
       - 'scripts/docker/*lifecycle*approval*.py'
       - 'scripts/docker/lifecycle_identity_provider.py'
       - 'scripts/docker/test_operating_skills.py'
@@ -58,6 +59,9 @@ jobs:
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_readiness_diagnostics.py' -v
       - name: Verify proposal lifecycle polling
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_release_lifecycle_polling.py' -v
+      - name: Verify manual contract migration approval
+        if: ${{ hashFiles('scripts/docker/test_compose_contract_migrations.py') != '' }}
+        run: python3 -m unittest discover -s scripts/docker -p 'test_compose_contract_migrations.py' -v
       - name: Verify interactive lifecycle approval contract
         run: python3 -m unittest discover -s scripts/docker -p 'test_lifecycle_human_approval.py' -v
       - name: Verify operating skill package bytes and checksums

@@ -27,11 +27,13 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
 ## Steps
 
-1. Ask an attribute question — "population over 10000". The `<service>/<layer>` reference uses the numeric layer id:
+1. Ask an attribute question — "population over 10000". The `<service>/<layer>` reference uses the numeric layer id that `honua layers <service>` lists. Layer ids are deployment-wide rather than per-service positions, so the `1` below is only a placeholder. The later steps reuse `LAYER_ID`:
 
    ```bash
-   honua query my_service/0 --where "population > 10000"
-   honua query my_service/0 --where "population > 10000" --format geojson
+   honua layers my_service
+   LAYER_ID=1  # replace with an id from the list
+   honua query "my_service/$LAYER_ID" --where "population > 10000"
+   honua query "my_service/$LAYER_ID" --where "population > 10000" --format geojson
    ```
 
    Use the API explorer for the equivalent OGC API Features request, or the `@honua/sdk-js` OData source for its `$filter` equivalent.
@@ -39,15 +41,15 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 2. Filter spatially with a bounding box (lon,lat order: `minLon,minLat,maxLon,maxLat`):
 
    ```bash
-   honua query my_service/0 --bbox -122.5,37.7,-122.3,37.8 --format geojson
+   honua query "my_service/$LAYER_ID" --bbox -122.5,37.7,-122.3,37.8 --format geojson
    ```
 
    CQL2 and FeatureServer also take real geometries, and OData supports `geo.distance` and `geo.intersects` in `$filter` (see [CQL2 and filtering](../../reference/cql2-and-filtering.md)).
 
-3. Page through large results with `--limit` (the response notes when more rows are available):
+3. Page through large results with `--limit` (the table output notes when more rows are available):
 
    ```bash
-   honua query my_service/0 --limit 100
+   honua query "my_service/$LAYER_ID" --limit 100
    ```
 
    OGC responses include `next` links — follow those instead of computing offsets yourself when possible.
@@ -55,7 +57,7 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 4. Select only the properties you need with repeated `--fields`:
 
    ```bash
-   honua query my_service/0 --fields name --fields population
+   honua query "my_service/$LAYER_ID" --fields name --fields population
    ```
 
    In protocol clients, `sortby` takes comma-separated fields with an optional `-` prefix for descending; `orderByFields` takes `field ASC|DESC`.
@@ -63,20 +65,21 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 5. Count without fetching when you only need a number:
 
    ```bash
-   honua query my_service/0 --where "population > 10000" --count
+   honua query "my_service/$LAYER_ID" --where "population > 10000" --count
    ```
 
 ## Verify
 
 ```bash
-honua query my_service/0 --limit 1 --format geojson
+LAYER_ID=1  # replace with an id from `honua layers my_service`
+honua query "my_service/$LAYER_ID" --limit 1 --format geojson
 ```
 
-Expected (trimmed): a GeoJSON FeatureCollection with `numberMatched` and paging links.
+Expected (trimmed): a GeoJSON FeatureCollection with at most one feature. The CLI prints only `type` and `features` (no `numberMatched` or `links`); for a total, run the same query with `--count`, and for `numberMatched` and `next` links, request the OGC API Features items endpoint.
 
 ```json
-{ "type": "FeatureCollection", "features": [ { "type": "Feature" } ],
-  "numberMatched": 1234, "links": [ { "rel": "next" } ] }
+{ "type": "FeatureCollection",
+  "features": [ { "type": "Feature", "geometry": { }, "properties": { } } ] }
 ```
 
 ## Troubleshoot
