@@ -3,6 +3,7 @@
 
 using System.Data.Common;
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -41,7 +42,14 @@ internal sealed class PostgreSqlTableDiscoveryService(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync(cancellationToken);
+            try
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is DbException or TimeoutException or System.Security.Authentication.AuthenticationException)
+            {
+                throw new ServiceUnavailableException("The database connection could not be opened.", ex);
+            }
 
             return await DiscoverPostGisTablesCoreAsync(connection, cancellationToken);
         }
