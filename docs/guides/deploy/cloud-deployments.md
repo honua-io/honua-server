@@ -125,16 +125,16 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 - Health checks: ALB target group on `/healthz/ready`; container health on `/healthz/live`.
 - Inject secrets via ECS task-definition `secrets` from Secrets Manager or SSM Parameter Store.
 - Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file.
-- Behind CloudFront with a VPC origin to an internal ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, and trust it only from the VPC:
+- Behind CloudFront to an ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, set the ALB's `routing.http.xff_header_processing.mode` attribute to `preserve`, and trust forwarded headers only from the VPC. The ALB must be reachable only through CloudFront: an internal ALB behind a CloudFront VPC origin, or a security group that admits only the `com.amazonaws.global.cloudfront.origin-facing` prefix list. Otherwise a caller that reaches the ALB directly chooses its own client address:
 
   ```bash
   ForwardedHeaders__Enabled=true
-  ForwardedHeaders__ForwardLimit=2
+  ForwardedHeaders__ForwardLimit=1
   ForwardedHeaders__ProtoHeaderName=CloudFront-Forwarded-Proto
   ForwardedHeaders__KnownNetworks__0=10.0.0.0/16   # the VPC CIDR; ALB node addresses change
   ```
 
-  The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
+  The limit is one hop. CloudFront appends the viewer address to `X-Forwarded-For`, and with `preserve` the ALB passes that header on unchanged, so the last entry is the viewer and the immediate peer is the ALB inside the VPC. The server takes that last entry and ignores any addresses the viewer sent itself. With the ALB's default `append` mode the ALB adds the address CloudFront connected from. For a public ALB that is a CloudFront origin-facing address outside the VPC range, so the server would report CloudFront as the client; `preserve` with one hop works for public and VPC-origin ALBs alike.
 
   Do not forward the viewer's `X-Forwarded-Host` in the origin request policy: neither CloudFront nor the ALB overwrites it, and the server applies it from a trusted hop. Set `Public__BaseUrl` (and `HostValidation__AllowedHosts__<n>` if you list hosts) to the distribution's host.
 
