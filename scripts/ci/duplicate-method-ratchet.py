@@ -344,6 +344,9 @@ def match_signature(header: str) -> tuple[str, str, bool] | None:
             left = left[:cut].rstrip()
     if not left:
         return None
+    # A field initializer ("Map = new Dictionary<...>(...) { ... }") is not a method declaration.
+    if "=" in left[left.rfind("]") + 1 :]:
+        return None
     parts = left.split()
     name = parts[-1]
     if not name.isidentifier() or name in KEYWORDS:
@@ -555,6 +558,16 @@ def static_helper_self_test(long_method: Method) -> str | None:
     region, _ = extract_methods("src/G.cs", region_sample)
     if [method.name for method in region] != ["Trim"]:
         return "self-test: a preprocessor line made an instance method static"
+    initializer = "\n".join(f'            ["k{index}"] = "v",' for index in range(10))
+    field_sample = STATIC_HELPER_SAMPLE.replace(
+        "    private string Label",
+        "    private static readonly IReadOnlyDictionary<string, string> Map =\n"
+        f"        new Dictionary<string, string>(StringComparer.Ordinal)\n        {{\n{initializer}\n        }};\n\n"
+        "    private string Label",
+    )
+    field, _ = extract_methods("src/H.cs", field_sample)
+    if [method.name for method in field] != ["Trim"]:
+        return "self-test: a static field initializer was taken for a static helper"
     return None
 
 
