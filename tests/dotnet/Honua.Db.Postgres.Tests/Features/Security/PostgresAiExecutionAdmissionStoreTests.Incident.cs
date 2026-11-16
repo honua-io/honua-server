@@ -86,15 +86,18 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         (await CountAttemptsAsync()).Should().Be(0);
     }
 
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Incident_PriorPeriodDebtAndObservationRefresh_DoNotResetAllowance(bool settled)
+    [IntegrationTest]
+    public Task Incident_PriorPeriodSettledDebt_DoesNotResetAllowance() => AssertPriorPeriodDebtAsync("settled");
+
+    [IntegrationTest]
+    public Task Incident_PriorPeriodUnsettledDebt_DoesNotResetAllowance() => AssertPriorPeriodDebtAsync("reserved");
+
+    private async Task AssertPriorPeriodDebtAsync(string debtState)
     {
         var (policy, episode) = await InitializeIncidentAsync();
         var store = Store();
         var grant = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
-        if (settled)
+        if (debtState == "settled")
         {
             (await store.CommitFinancialSendAsync(grant, default)).Should().BeTrue();
             (await store.SettleFinancialAsync(grant,
@@ -162,34 +165,41 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         (await CountAttemptsAsync()).Should().Be(0);
     }
 
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Incident_Rebinding_OnlyNewEpisodeGetsNewAllowance(bool newEpisode)
+    [IntegrationTest]
+    public Task Incident_RebindingSameEpisode_PreservesAllowance() => AssertRebindingAsync("same");
+
+    [IntegrationTest]
+    public Task Incident_RebindingNewEpisode_GetsNewAllowance() => AssertRebindingAsync("new");
+
+    private async Task AssertRebindingAsync(string episodeIdentity)
     {
         var (policy, episode) = await InitializeIncidentAsync();
         var store = Store();
         var first = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
         await store.ReleaseAsync(first, default);
-        var next = newEpisode ? Guid.NewGuid() : episode;
+        var next = episodeIdentity == "new" ? Guid.NewGuid() : episode;
         var replacement = await RebindIncidentAsync(policy, next);
 
         var decision = await Store().TryAcquireAsync(FinancialContext("different-agent"), Guid.NewGuid(), Frozen(replacement), default);
 
-        decision.Granted.Should().Be(newEpisode);
-        if (!newEpisode) decision.Code.Should().Be("financial_incident_exceeded");
+        decision.Granted.Should().Be(episodeIdentity == "new");
+        if (episodeIdentity == "same") decision.Code.Should().Be("financial_incident_exceeded");
         (await FinancialChargeAsync(first.AttemptId)).Should().Be((15L, 15L, "reserved"), "rebinding must preserve deployment and actor debt");
-        (await CountAttemptsAsync()).Should().Be(newEpisode ? 2 : 1);
+        (await CountAttemptsAsync()).Should().Be(episodeIdentity == "new" ? 2 : 1);
     }
 
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Incident_LegacyReservationWriter_CannotOmitBindingOrExceedCap(bool omitBinding)
+    [IntegrationTest]
+    public Task Incident_LegacyReservationWriter_CannotOmitBinding() => AssertLegacyWriterRejectedAsync(
+        ", 'incident_authority', NULL, 'incident_episode', NULL, 'incident_version', NULL",
+        "Trusted incident workflow binding is required");
+
+    [IntegrationTest]
+    public Task Incident_LegacyReservationWriter_CannotExceedCap() => AssertLegacyWriterRejectedAsync("", "Incident spend cap reached");
+
+    private async Task AssertLegacyWriterRejectedAsync(string identity, string expectedMessage)
     {
         var (policy, _) = await InitializeIncidentAsync();
         (await Store().TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Granted.Should().BeTrue();
-        var identity = omitBinding ? ", 'incident_authority', NULL, 'incident_episode', NULL, 'incident_version', NULL" : "";
         var write = async () => await ExecuteAsync($$"""
             INSERT INTO "{{_schema}}".ai_financial_invocations
             SELECT (jsonb_populate_record(NULL::"{{_schema}}".ai_financial_invocations,
@@ -200,7 +210,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         var failure = (await write.Should().ThrowAsync<PostgresException>()).Which;
 
         failure.SqlState.Should().Be("23514");
-        failure.MessageText.Should().Be(omitBinding ? "Trusted incident workflow binding is required" : "Incident spend cap reached");
+        failure.MessageText.Should().Be(expectedMessage);
         (await CountAttemptsAsync()).Should().Be(1);
     }
 
