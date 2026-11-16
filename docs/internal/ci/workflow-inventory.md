@@ -778,10 +778,6 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
-### Shard filter evaluation
-
-The shard coverage guard and affected-shard selector reuse parsed filter syntax in a bounded, process-local cache keyed by the complete filter text. Method-level evaluation, malformed-filter rejection, ownership checks, and mutation fixtures remain in place. Workflow triggers, jobs, runner counts, and required-check dependencies are unchanged.
-
 ### Spec endpoint application lifetime
 
 `SpecEndpointsTests` retains one application for validation, planning, and
