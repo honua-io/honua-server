@@ -42,14 +42,16 @@ internal static class AdminAuthEndpoints
                 AdminOidcCallbackEndpoint endpoint, IHttpClientFactory clients) => endpoint.HandleAsync(context, clients))
             .WithDisplayName("Complete Browser Administrator Sign In")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache());
 
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/auth")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin Auth")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache());
 
         _ = group.MapGet("/config", HandleGetAuthConfig)
             .WithDisplayName("Get Admin Auth Configuration")
