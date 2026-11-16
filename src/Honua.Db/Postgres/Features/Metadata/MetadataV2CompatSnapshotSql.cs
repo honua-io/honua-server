@@ -123,15 +123,18 @@ internal static class MetadataV2CompatSnapshotSql
                             ))
                         ELSE NULL
                     END AS layer_temporal,
-                    -- Declared WMS/WMTS dimensions carried through from v1 layer metadata
-                    -- into the v2 resource extensions, where the WMS and WMTS handlers
-                    -- read them. Only object-valued keys are carried, so a layer without
-                    -- them keeps an empty extensions object.
+                    -- Declared WMS/WMTS dimensions and the declared WFS encoding carried
+                    -- through from v1 layer metadata into the v2 resource extensions, where
+                    -- the WMS, WMTS and WFS handlers read them. Only object-valued keys are
+                    -- carried, so a layer without them keeps an empty extensions object.
                     (CASE WHEN jsonb_typeof(l.metadata -> 'wms') = 'object'
                           THEN jsonb_build_object('wms', l.metadata -> 'wms')
                           ELSE '{}'::jsonb END
                      || CASE WHEN jsonb_typeof(l.metadata -> 'wmts') = 'object'
                              THEN jsonb_build_object('wmts', l.metadata -> 'wmts')
+                             ELSE '{}'::jsonb END
+                     || CASE WHEN jsonb_typeof(l.metadata -> 'wfs') = 'object'
+                             THEN jsonb_build_object('wfs', l.metadata -> 'wfs')
                              ELSE '{}'::jsonb END) AS layer_extensions,
                     l.srid,
                     CASE WHEN l.extent IS NOT NULL THEN jsonb_build_object(

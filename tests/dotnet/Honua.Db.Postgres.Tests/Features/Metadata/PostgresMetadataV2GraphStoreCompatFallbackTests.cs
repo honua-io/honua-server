@@ -439,7 +439,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
-    public async Task GetCurrentAsync_LayerMetadataWmsAndWmtsObjects_AreCarriedIntoResourceExtensions()
+    public async Task GetCurrentAsync_LayerMetadataProtocolObjects_AreCarriedIntoResourceExtensions()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
@@ -453,7 +453,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 )
                 VALUES
                     (0, 'Declared', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE,
-                     '{"wms":{"dimensions":[{"name":"elevation","units":"m","extent":"0/10/1"}]},"wmts":{"queryable":false} }'::jsonb),
+                     '{"wms":{"dimensions":[{"name":"elevation","units":"m","extent":"0/10/1"}]},"wmts":{"queryable":false},"wfs":{"namespace":{"prefix":"ex","uri":"https://example.test/x"} } }'::jsonb),
                     (1, 'Plain', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, '{"wms":"not-an-object"}'::jsonb),
                     (2, 'NoMetadata', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, NULL);
                 """);
@@ -462,7 +462,8 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
 
             var resources = (await store.GetCurrentAsync()).Graph.Resources.ToDictionary(r => r.Metadata.Id, r => r.Extensions);
 
-            resources["res-layer-0"].Keys.Should().BeEquivalentTo("wms", "wmts");
+            resources["res-layer-0"].Keys.Should().BeEquivalentTo("wms", "wmts", "wfs");
+            resources["res-layer-0"]["wfs"].GetProperty("namespace").GetProperty("prefix").GetString().Should().Be("ex");
             resources["res-layer-0"]["wms"].GetProperty("dimensions")[0].GetProperty("extent").GetString().Should().Be("0/10/1");
             resources["res-layer-0"]["wmts"].GetProperty("queryable").GetBoolean().Should().BeFalse();
             resources["res-layer-1"].Should().BeEmpty();

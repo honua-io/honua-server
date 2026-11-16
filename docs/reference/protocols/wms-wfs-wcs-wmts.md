@@ -296,6 +296,61 @@ Rules to know:
 A layer in the legacy layer catalog takes the same `wms` and `wmts` objects as
 top-level keys of its layer `metadata` JSON.
 
+## Declaring a WFS application schema
+
+By default every WFS feature type is in the server namespace
+(`honua`, `http://honua.io/wfs`) and its schema is generated from the layer's
+fields. A layer that must follow an application schema defined elsewhere
+declares that under `extensions.wfs` on its catalog resource.
+
+```json
+{
+  "extensions": {
+    "wfs": {
+      "namespace": { "prefix": "ex", "uri": "https://example.org/schemas/roads" },
+      "legacyEncoding": {
+        "omitNullProperties": true,
+        "geometryAfterAttributes": true,
+        "hiddenFields": ["objectid"],
+        "gmlFields": ["pointProperty"],
+        "wfs10Schema": "<?xml version=\"1.0\"?><xsd:schema ...>...</xsd:schema>",
+        "wfs10BoundedBy": { "srsName": "EPSG:32615", "coordinates": "500000,500000 500100,500100" }
+      }
+    }
+  }
+}
+```
+
+| Key | Effect |
+| --- | --- |
+| `namespace.prefix`, `namespace.uri` | The XML namespace of the feature type in WFS 1.0, 1.1 and 2.0. Both are required. |
+| `legacyEncoding.omitNullProperties` | WFS 1.0 and 1.1 leave out a nullable property that has no value. |
+| `legacyEncoding.geometryAfterAttributes` | WFS 1.0 and 1.1 write the geometry after the attributes instead of before them. |
+| `legacyEncoding.hiddenFields` | Fields that WFS 1.0 and 1.1 do not write. |
+| `legacyEncoding.gmlFields` | Fields that WFS 1.0 and 1.1 write in the GML namespace, such as `gml:pointProperty`. |
+| `legacyEncoding.wfs10Schema` | The schema document that WFS 1.0 DescribeFeatureType returns for the feature type. |
+| `legacyEncoding.wfs10BoundedBy` | A fixed `gml:boundedBy` box that WFS 1.0 writes on every feature. |
+
+Rules to know:
+
+- The server does not check the declaration against the data or against the
+  schema document. You are responsible for keeping them consistent.
+- A prefix must be a valid XML name. The prefixes `honua`, `xml`, `xmlns`,
+  `xsi`, `xsd`, `xs`, `xlink`, `wfs`, `gml`, `ogc`, `ows` and `fes` cannot be
+  declared. A namespace with an unusable prefix or a URI that is not absolute
+  is ignored, and the feature type stays in the server namespace.
+- A prefix names one namespace. When two layers declare the same prefix with
+  different URIs, the first keeps it and the other stays in the server
+  namespace.
+- A WFS 1.0 DescribeFeatureType response is one schema document. When a request
+  selects feature types with different declared documents, the server returns
+  the one whose namespace URI sorts first.
+- Malformed metadata never fails a request. A member with the wrong type is
+  ignored.
+
+A layer in the legacy layer catalog takes the same `wfs` object as a top-level
+key of its layer `metadata` JSON.
+
 ## Conformance
 
 The published classic-service profiles pass in full: WMS 1.1.1/1.3 (126/126 and 213/213), WFS 1.0/1.1/2.0 `basic` (162/162, 39/39 and 167/167), the separate WFS 2.0 Transactional profile (25/25), WCS 2.0 (82/82), and WMTS 1.0 (60/60). The passing counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status and receipt: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).

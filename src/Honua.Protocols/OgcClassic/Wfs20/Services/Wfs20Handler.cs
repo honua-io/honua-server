@@ -1944,7 +1944,11 @@ internal sealed partial class Wfs20Handler
         string LocalName,
         string NamespacePrefix,
         string NamespaceUri,
-        MetadataV2GraphSnapshot Snapshot);
+        MetadataV2GraphSnapshot Snapshot)
+    {
+        // The encoding the deployer declared for the resource under extensions.wfs.
+        public WfsDeclaredEncoding Declared { get; init; } = WfsDeclaredEncoding.None;
+    }
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,

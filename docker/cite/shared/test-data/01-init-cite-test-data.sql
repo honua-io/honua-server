@@ -106,6 +106,198 @@ ON CONFLICT (layer_id) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     enabled = EXCLUDED.enabled;
 
+-- The WFS 1.0/1.1 fixture feature types follow the application schemas the conformance suite
+-- publishes (cite/data and cite/geometry). The server reads the namespace and encoding from
+-- layer metadata under "wfs"; it does not know these layers by name.
+CREATE TEMPORARY TABLE cite_wfs10_schema (namespace TEXT PRIMARY KEY, document TEXT NOT NULL) ON COMMIT DROP;
+INSERT INTO cite_wfs10_schema (namespace, document)
+VALUES
+    ('cdf', $xsd$<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema targetNamespace="http://www.opengis.net/cite/data" xmlns:gml="http://www.opengis.net/gml" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cdf="http://www.opengis.net/cite/data" elementFormDefault="qualified" attributeFormDefault="unqualified" version="0.2">
+  <xsd:import namespace="http://www.opengis.net/gml" schemaLocation="http://schemas.opengis.net/gml/2.1.2/feature.xsd"/>
+  <xsd:element name="Deletes" type="cdf:TransactionFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Inserts" type="cdf:TransactionFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Updates" type="cdf:TransactionFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Other" type="cdf:OtherFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Fifteen" type="cdf:EmptyFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Seven" type="cdf:EmptyFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Nulls" type="cdf:NullFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Locks" type="cdf:LockFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:complexType name="TransactionFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="id" type="xsd:string" minOccurs="0"/>
+          <xsd:element ref="gml:pointProperty"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="OtherFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+          <xsd:element name="string1" type="xsd:string"/>
+          <xsd:element name="string2" type="xsd:string" minOccurs="0"/>
+          <xsd:element name="integers" type="xsd:integer" minOccurs="0"/>
+          <xsd:element name="dates" type="xsd:date" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="EmptyFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:pointProperty"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="NullFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="integers" type="xsd:integer" minOccurs="0"/>
+          <xsd:element name="dates" type="xsd:date" minOccurs="0"/>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="LockFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="id" type="xsd:string"/>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+</xsd:schema>$xsd$),
+    ('cgf', $xsd$<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema targetNamespace="http://www.opengis.net/cite/geometry" xmlns:gml="http://www.opengis.net/gml" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cgf="http://www.opengis.net/cite/geometry" elementFormDefault="qualified" attributeFormDefault="unqualified" version="0.1">
+  <xsd:import namespace="http://www.opengis.net/gml" schemaLocation="http://schemas.opengis.net/gml/2.1.2/feature.xsd"/>
+  <xsd:element name="id" type="xsd:string"/>
+  <xsd:element name="_SimpleFeature" type="cgf:AbstractSimpleFeatureType" abstract="true" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Points" type="cgf:PointFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="Lines" type="cgf:LineStringFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="Polygons" type="cgf:PolygonFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="MPoints" type="cgf:MultiPointFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="MLines" type="cgf:MultiLineStringFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="MPolygons" type="cgf:MultiPolygonFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:complexType name="AbstractSimpleFeatureType" abstract="true">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="cgf:id"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="PointFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="LineStringFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:lineStringProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="PolygonFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:polygonProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="MultiPointFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:multiPointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="MultiLineStringFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:multiLineStringProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="MultiPolygonFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:multiPolygonProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+</xsd:schema>$xsd$);
+
+UPDATE honua.layers
+SET metadata = metadata || jsonb_build_object('wfs', jsonb_build_object(
+        'namespace', jsonb_build_object('prefix', 'cdf', 'uri', 'http://www.opengis.net/cite/data'),
+        'legacyEncoding', jsonb_build_object(
+            'omitNullProperties', TRUE,
+            'geometryAfterAttributes', FALSE,
+            'hiddenFields', jsonb_build_array('objectid', 'name'),
+            'gmlFields', jsonb_build_array('pointProperty', 'lineStringProperty', 'polygonProperty', 'multiPointProperty', 'multiLineStringProperty', 'multiPolygonProperty'),
+            'wfs10Schema', (SELECT document FROM cite_wfs10_schema WHERE namespace = 'cdf'),
+            'wfs10BoundedBy', jsonb_build_object('srsName', 'EPSG:32615', 'coordinates', '500000,500000 500100,500100'))))
+WHERE layer_id IN (10);
+
+UPDATE honua.layers
+SET metadata = metadata || jsonb_build_object('wfs', jsonb_build_object(
+        'namespace', jsonb_build_object('prefix', 'cdf', 'uri', 'http://www.opengis.net/cite/data'),
+        'legacyEncoding', jsonb_build_object(
+            'omitNullProperties', TRUE,
+            'geometryAfterAttributes', FALSE,
+            'hiddenFields', jsonb_build_array('objectid', 'name'),
+            'gmlFields', jsonb_build_array('pointProperty', 'lineStringProperty', 'polygonProperty', 'multiPointProperty', 'multiLineStringProperty', 'multiPolygonProperty'),
+            'wfs10Schema', (SELECT document FROM cite_wfs10_schema WHERE namespace = 'cdf'))))
+WHERE layer_id IN (11, 12);
+
+UPDATE honua.layers
+SET metadata = metadata || jsonb_build_object('wfs', jsonb_build_object(
+        'namespace', jsonb_build_object('prefix', 'cdf', 'uri', 'http://www.opengis.net/cite/data'),
+        'legacyEncoding', jsonb_build_object(
+            'omitNullProperties', TRUE,
+            'geometryAfterAttributes', TRUE,
+            'hiddenFields', jsonb_build_array('objectid', 'name'),
+            'gmlFields', jsonb_build_array('pointProperty', 'lineStringProperty', 'polygonProperty', 'multiPointProperty', 'multiLineStringProperty', 'multiPolygonProperty'),
+            'wfs10Schema', (SELECT document FROM cite_wfs10_schema WHERE namespace = 'cdf'))))
+WHERE layer_id IN (13, 14);
+
+UPDATE honua.layers
+SET metadata = metadata || jsonb_build_object('wfs', jsonb_build_object(
+        'namespace', jsonb_build_object('prefix', 'cgf', 'uri', 'http://www.opengis.net/cite/geometry'),
+        'legacyEncoding', jsonb_build_object(
+            'omitNullProperties', TRUE,
+            'geometryAfterAttributes', TRUE,
+            'hiddenFields', jsonb_build_array('objectid', 'name'),
+            'gmlFields', jsonb_build_array('pointProperty', 'lineStringProperty', 'polygonProperty', 'multiPointProperty', 'multiLineStringProperty', 'multiPolygonProperty'),
+            'wfs10Schema', (SELECT document FROM cite_wfs10_schema WHERE namespace = 'cgf'))))
+WHERE layer_id IN (20, 21, 22, 23, 24, 25);
+
 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES
     ('cite', 1, 0),
