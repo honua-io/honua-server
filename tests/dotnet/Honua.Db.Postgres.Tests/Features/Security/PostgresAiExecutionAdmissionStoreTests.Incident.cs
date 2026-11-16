@@ -264,7 +264,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
 
     private async Task ApplyIncidentMigrationAsync()
     {
-        var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "208_CreateAiIncidentSpend.sql"));
+        var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "213_CreateAiIncidentSpend.sql"));
         await ExecuteAsync(migration.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal));
     }
 
