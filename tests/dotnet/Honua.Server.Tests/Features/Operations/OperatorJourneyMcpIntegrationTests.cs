@@ -207,7 +207,8 @@ public sealed class OperatorJourneyMcpIntegrationTests
         using var filePreviewBody = ResponseJson(filePreview);
         filePreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
 
-        await AssertMalformedPreviewRefusedAsync(admin);
+        await AssertMalformedPreviewRefusedAsync(admin, "{not-json");
+        await AssertMalformedPreviewRefusedAsync(admin, "{\"type\":\"FeatureCollecti");
 
         var urlPreview = await CallOkAsync(admin, "honua_admin_import_preview_url", new
         {
@@ -228,11 +229,11 @@ public sealed class OperatorJourneyMcpIntegrationTests
         validatedBody.RootElement.GetProperty("data").GetProperty("table").GetString().Should().Be(table);
     }
 
-    private static async Task AssertMalformedPreviewRefusedAsync(HttpClient admin)
+    private static async Task AssertMalformedPreviewRefusedAsync(HttpClient admin, string json)
     {
         var malformed = await CallAsync(admin, "honua_admin_import_preview", new
         {
-            file = Convert.ToBase64String(Encoding.UTF8.GetBytes("{not-json")),
+            file = Convert.ToBase64String(Encoding.UTF8.GetBytes(json)),
             fileName = "invalid.geojson",
         });
         var malformedResult = malformed.GetProperty("result");

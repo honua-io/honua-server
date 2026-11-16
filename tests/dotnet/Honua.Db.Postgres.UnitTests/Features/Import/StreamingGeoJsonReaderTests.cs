@@ -176,6 +176,51 @@ public sealed class StreamingGeoJsonReaderTests
         stream.Position.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("{\"type\":\"FeatureCollecti", 1)]
+    [InlineData("{\"type\":\"FeatureCollecti", 7)]
+    [InlineData("{", 7)]
+    [InlineData("{\"type\":", 7)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[", 7)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"value\":1", 7)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadFeaturesAsync_TruncatedDocument_RejectsAtEndOfStream(string json, int chunkSize)
+    {
+        await using var stream = new EofGuardedStream(Encoding.UTF8.GetBytes(json), chunkSize);
+        var reader = new StreamingGeoJsonReader();
+
+        var act = async () =>
+        {
+            await foreach (var _ in reader.ReadFeaturesAsync(stream))
+            {
+            }
+        };
+
+        await act.Should().ThrowAsync<JsonException>();
+    }
+
+    private sealed class EofGuardedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
+    {
+        private int _endOfStreamReads;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_endOfStreamReads > 0)
+            {
+                throw new InvalidOperationException("The reader requested more data after end of stream.");
+            }
+
+            var read = await base.ReadAsync(buffer[..Math.Min(chunkSize, buffer.Length)], cancellationToken);
+            if (read == 0)
+            {
+                _endOfStreamReads++;
+            }
+
+            return read;
+        }
+    }
+
     private sealed class FragmentedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
     {
         public int BytesRead { get; private set; }
