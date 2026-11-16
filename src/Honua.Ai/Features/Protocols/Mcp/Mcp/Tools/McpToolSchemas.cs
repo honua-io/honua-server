@@ -329,7 +329,7 @@ internal static class McpToolSchemas
             "data": {
               "type": "string",
               "minLength": 1,
-              "description": "Caller-supplied. The dataset content, inline. Capped at 4 MB; import larger files from a URL with honua_admin_import_upload_url."
+              "description": "Caller-supplied. The dataset content, inline. Capped at 4 MB."
             },
             "datasetName": {
               "type": "string",
