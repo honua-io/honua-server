@@ -291,8 +291,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
-        // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
-        // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
+        // gRPC ApplyEdits is an open-protocol edit surface and remains Community.
+        // Geometry and attributes go through FeatureMutationValidator before the write.
 
         var editBatch = ToEditBatch(request);
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
@@ -357,8 +357,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
         // target MUST be pre-resolved through the RLS-enforced reader and fail closed when a
         // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
-        // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
-        // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
+        // hides from them by supplying its objectid. Adds carry no objectid and are
+        // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards.
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
         var visibleTargets = await EnsureEditTargetsVisibleAsync(
@@ -370,7 +370,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
 
         // The same owner policy the REST edit protocols apply. A gRPC editor must not
-        // update or delete another principal's row, and inserts stamp the owner (#6357).
+        // update or delete another principal's row, and inserts stamp the owner.
         var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext);
         var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
             _featureReader,
@@ -1044,7 +1044,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             Offset = pagination.Offset,
             // Streaming pages the full result set itself, and ids-only responses carry no
             // exceeded_transfer_limit signal, so neither may inherit the default page size when the
-            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded (#6112).
+            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded.
             Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
@@ -1184,7 +1184,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static void EnsureAggregationNotRequested(Proto.QueryFeaturesRequest request)
     {
-        // #5465: geospatial.v1 defines no aggregate result shape. QueryFeaturesResponse and
+        // The geospatial.v1 contract defines no aggregate result shape. QueryFeaturesResponse and
         // FeaturePage carry the layer's attribute field definitions and feature rows only, so
         // answering out_statistics/group_by would either invent an unpublished response shape
         // or silently return ordinary features. Refuse until the contract defines one.
@@ -1357,7 +1357,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     {
         var httpContext = context.GetHttpContext();
 
-        // Per-operation RBAC grants are consulted first (#1376) via the shared
+        // Per-operation RBAC grants are consulted first via the shared
         // seam; the coarse AccessPolicy read evaluation is the no-grant fallback.
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             httpContext,

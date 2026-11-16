@@ -41,7 +41,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         var updates = new List<GeoServicesFeature>();
         var deletes = new List<object>();
         // Request slot of each dispatched row, so per-row outcomes map back to the exact uploaded edit
-        // rather than to an object id that several edits may share (#2430).
+        // rather than to an object id that several edits may share.
         var addSlots = new List<int>();
         var updateSlots = new List<int>();
         var deleteSlots = new List<int>();

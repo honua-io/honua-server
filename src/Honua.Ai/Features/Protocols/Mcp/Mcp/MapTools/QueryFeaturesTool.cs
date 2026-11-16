@@ -88,10 +88,10 @@ internal sealed class QueryFeaturesTool : IMcpTool
         // Detect a likely bbox/CRS mismatch (e.g. Web-Mercator ordinates under the geographic
         // default bboxSrid=4326, or a bbox entirely outside the layer's known extent) BEFORE
         // running the query so a 0-result response can explain the probable cause rather than
-        // silently returning nothing (#2808).
+        // silently returning nothing.
         var bboxWarnings = BuildBboxCrsWarnings(argument.Bbox, argument.BboxSrid, layer);
 
-        // Publisher-hidden fields are not part of the public schema (#6118): default
+        // Publisher-hidden fields are not part of the public schema: default
         // projection lists only visible attributes, an explicit outFields name is
         // refused, and where is translated against the public schema so a hidden
         // column cannot be filtered.

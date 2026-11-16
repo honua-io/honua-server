@@ -84,8 +84,8 @@ internal static class CollaborationCheckpointEndpoints
         // A distributed deployment routes an append and its checkpoint to arbitrary nodes, but
         // a process-local op log only replays operations accepted by THIS node — a replay here
         // could silently omit accepted edits and mint an incomplete immutable version. Fail
-        // closed with an honest error until the op log is backed by a replica-shared store
-        // (honua-server#2999); do not fake durability.
+        // closed with an honest error until the op log is backed by a replica-shared store;
+        // do not fake durability.
         if (!operationLog.CanProveReplayContinuity)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(

@@ -24,12 +24,12 @@ internal static class ControlPlaneIamDefaults
         services.TryAddSingleton<IOidcProviderStore, InMemoryOidcProviderStore>();
 
         // The in-memory user store backs both the admin IUserStore surface and the SCIM
-        // provisioning surface (IScimUserStore, #510). Register the concrete singleton once
+        // provisioning surface (IScimUserStore). Register the concrete singleton once
         // and project all three contracts onto the SAME instance so SCIM-provisioned users
         // are visible to the admin endpoints and group->role sync mutates a single record set.
         // These are no-database/test defaults only: on Postgres profiles the durable
         // PostgresUserStore / PostgresScimGroupStore registered earlier by
-        // AddPostgreSqlServices win (#3141), making managed-identity membership shared
+        // AddPostgreSqlServices win, making managed-identity membership shared
         // across replicas and restarts.
         services.TryAddSingleton<InMemoryUserStore>();
         services.TryAddSingleton<IUserStore>(static sp => sp.GetRequiredService<InMemoryUserStore>());

@@ -659,7 +659,7 @@ internal static class WmtsRequestHandlers
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
 
         // Resolve the optional elevation/vertical selection from the validated `elevation`
-        // dimension and record it on the render descriptor. Shape A (#1792): recorded only —
+        // dimension and record it on the render descriptor. Shape A: recorded only —
         // the render itself does not yet apply the vertical slice (deferred Shape B).
         var verticalSelection = ResolveWmtsLayerVerticalSelection(layer, query);
         var renderDescriptors = new RenderLayerDescriptor[]
@@ -791,7 +791,7 @@ internal static class WmtsRequestHandlers
         }
 
         // Resolve the requested gridset to a protocol-neutral GridGeometry so the pixel->world
-        // math is driven by the registry (#1873) rather than hardcoded WebMercator constants.
+        // math is driven by the registry rather than hardcoded WebMercator constants.
         // Built-in WebMercatorQuad geometry is seeded from the same extent/formulas as the
         // legacy inline math, so WebMercatorQuad behaviour stays byte-identical (the CITE guard);
         // WorldCRS84Quad and operator-defined custom gridsets are now resolved end-to-end too.
@@ -1748,8 +1748,7 @@ internal static class WmtsRequestHandlers
         }
 
         // A single layer whose temporal column cannot be aggregated must not 500 the
-        // whole GetCapabilities document — skip its TIME dimension and keep the rest
-        // (honua-server#1911).
+        // whole GetCapabilities document — skip its TIME dimension and keep the rest.
         var tasks = temporalLayers.Select(layer =>
             ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
 

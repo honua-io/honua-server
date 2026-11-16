@@ -17,21 +17,21 @@ public static partial class EndpointRegistry
         // Data export
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export"),
 
-        // COG admin endpoints (#519)
+        // COG admin endpoints
         new("POST", "/api/v1/admin/cloud-rasters"),
         new("GET", "/api/v1/admin/cloud-rasters"),
         new("GET", "/api/v1/admin/cloud-rasters/{id}"),
         new("DELETE", "/api/v1/admin/cloud-rasters/{id}"),
         new("POST", "/api/v1/admin/cloud-rasters/{id}/refresh"),
 
-        // Zarr admin endpoints (#1009)
+        // Zarr admin endpoints
         new("POST", "/api/v1/admin/zarr-stores"),
         new("GET", "/api/v1/admin/zarr-stores"),
         new("GET", "/api/v1/admin/zarr-stores/{id}"),
         new("DELETE", "/api/v1/admin/zarr-stores/{id}"),
         new("POST", "/api/v1/admin/zarr-stores/{id}/refresh"),
 
-        // Datacube tile rendering (#1835): Zarr coverage slice -> PNG map tile
+        // Datacube tile rendering: Zarr coverage slice -> PNG map tile
         new("GET", "/api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}"),
 
         // STAC (SpatioTemporal Asset Catalog)
@@ -47,7 +47,7 @@ public static partial class EndpointRegistry
         new("GET", "/stac/search"),
         new("POST", "/stac/search"),
 
-        // OGC SensorThings API (STA v1.1) read surface (#1747)
+        // OGC SensorThings API (STA v1.1) read surface
         new("GET", "/sta/v1.1"),
         new("GET", "/sta/v1.1/Locations"),
         new("GET", "/sta/v1.1/Locations({id})"),
@@ -105,7 +105,7 @@ public static partial class EndpointRegistry
         new("GET", "/sta/v1.1/Datastreams({id})/ObservedProperty"),
         new("GET", "/sta/v1.1/Observations({id})/Datastream"),
 
-        // OGC SensorThings API (STA v1.1) Phase 2 ingest + Phase 3 streaming (#1747)
+        // OGC SensorThings API (STA v1.1) Phase 2 ingest + Phase 3 streaming
         new("POST", "/sta/v1.1/Observations"),
         new("POST", "/sta/v1.1/Datastreams({id})/Observations"),
         new("POST", "/sta/v1.1/Datastreams"),
@@ -116,26 +116,26 @@ public static partial class EndpointRegistry
         new("PATCH", "/sta/v1.1/{**resourcePath}"),
         new("DELETE", "/sta/v1.1/{**resourcePath}"),
 
-        // MCP operator surface (#728) — JSON-RPC dispatch over a single route.
-        // Streamable-HTTP transport (#1954) adds the SSE GET stream and the
+        // MCP operator surface — JSON-RPC dispatch over a single route.
+        // Streamable-HTTP transport adds the SSE GET stream and the
         // session-termination DELETE alongside the POST dispatcher.
         new("POST", "/v1/grounding/spec/mutate"),
         new("POST", "/v1/grounding/spec/summarize"),
         new("POST", "/mcp"),
         new("GET", "/mcp"),
         new("DELETE", "/mcp"),
-        // RFC 9728 protected-resource metadata for the /mcp resource (#2849). Mapped
+        // RFC 9728 protected-resource metadata for the /mcp resource. Mapped
         // only when an OIDC authority is configured; absent otherwise.
         new("GET", "/.well-known/oauth-protected-resource/mcp"),
 
-        // Spec plan / apply engine (#789).
+        // Spec plan / apply engine.
         new("POST", "/v1/spec/validate"),
         new("POST", "/v1/spec/plan"),
         new("POST", "/v1/spec/apply"),
         new("POST", "/v1/spec/cancel"),
         new("GET", "/v1/spec/artifact/{hash}"),
 
-        // Analysis content HTTP surface (#1182, #1237).
+        // Analysis content HTTP surface.
         new("POST", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items/{itemId}"),
@@ -150,11 +150,11 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/analysis/jobs/{jobId}/logs"),
         new("GET", "/api/v1/analysis/jobs/{jobId}/failure"),
 
-        // Analysis report HTTP surface (#801).
+        // Analysis report HTTP surface.
         new("GET", "/api/v1/analysis/reports/{jobId}"),
         new("GET", "/api/v1/analysis/reports/{jobId}/render"),
 
-        // Cloud-optimized HDF5 / NetCDF4 multidimensional coverage admin endpoints (#1010).
+        // Cloud-optimized HDF5 / NetCDF4 multidimensional coverage admin endpoints.
         new("POST", "/api/v1/admin/multidim-coverages"),
         new("GET", "/api/v1/admin/multidim-coverages"),
         new("GET", "/api/v1/admin/multidim-coverages/{id}"),
@@ -162,7 +162,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/multidim-coverages/{id}/refresh"),
         new("GET", "/api/v1/admin/multidim-coverages/jobs/{jobId}"),
 
-        // Federated-query source configuration and query-plan inspection (#341).
+        // Federated-query source configuration and query-plan inspection.
         new("GET", "/api/v1/admin/federation/sources"),
         new("GET", "/api/v1/admin/federation/sources/{id}/plan"),
     ];

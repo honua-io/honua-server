@@ -45,7 +45,7 @@ internal sealed partial class AdminOperationApprovalBridge(
         {
             if (!UnavailableOperationProposalStore.IsDurable(services.GetService<IOperationProposalStore>()))
             {
-                // Redis-off host (honua-server#5733): the operation record may live in the volatile
+                // Redis-off host: the operation record may live in the volatile
                 // Development/Test store, but the proposal/approval control plane was never
                 // composed. Refuse with the same typed capability-unavailable receipt the rest of
                 // the Redis-off surface emits, instead of a non-durable failure every adapter

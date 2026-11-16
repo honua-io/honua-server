@@ -246,7 +246,7 @@ internal static partial class FeatureStreamEndpoints
             MaxSnapshotScanRows = options.MaxSnapshotScanRows,
             MaxSnapshotBytes = options.MaxSnapshotBytes,
             // The mutable release version and the immutable deployment revision are separate
-            // fields: evidence bound to a deployment must reference the revision (#3038).
+            // fields: evidence bound to a deployment must reference the revision.
             ServerVersion = deploymentIdentity.ReleaseVersion,
             DeploymentRevision = deploymentIdentity.Revision,
             DeploymentRevisionSource = deploymentIdentity.RevisionSource,

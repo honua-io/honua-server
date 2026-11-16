@@ -27,7 +27,7 @@ internal static partial class CollaborationSessionStreamEndpoint
         HttpContext context)
     {
         // One canonical session/log key per draft regardless of the GUID textual form in the
-        // route (honua-server#2999): sessions, appends, replay, and checkpoints must all agree.
+        // route: sessions, appends, replay, and checkpoints must all agree.
         mapId = SavedMapCollaborationMapId.Normalize(mapId);
 
         if (!context.WebSockets.IsWebSocketRequest)
@@ -535,8 +535,8 @@ internal static partial class CollaborationSessionStreamEndpoint
         // anyway fanned the update out to same-replica participants only, so an older or
         // nonconforming client saw topology-dependent partial presence — local collaborators
         // moving, remote ones frozen — rather than the disabled behaviour it was told to expect.
-        // Partial presence is worse than none: it looks like the feature working
-        // (honua-server#2999/#3074). Heartbeat stays ungated; it is session liveness, not
+        // Partial presence is worse than none: it looks like the feature working.
+        // Heartbeat stays ungated; it is session liveness, not
         // presence, and dropping it would expire live sessions.
         try
         {

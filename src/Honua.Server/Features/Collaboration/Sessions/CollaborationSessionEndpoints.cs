@@ -30,7 +30,7 @@ internal static class CollaborationSessionEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
-        // Explicit session end for REST-joined sessions (#2999, REQ-001). WebSocket sessions end
+        // Explicit session end for REST-joined sessions (REQ-001). WebSocket sessions end
         // on disconnect; the prune sweep reclaims anything that never says goodbye.
         group.MapPost("/leave", HandleLeave)
             .WithDisplayName("Leave Saved Map Collaboration Session")
@@ -39,7 +39,7 @@ internal static class CollaborationSessionEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
-        // Authenticated WebSocket v1-envelope stream (#971/#2999). The join is authorized through
+        // Authenticated WebSocket v1-envelope stream. The join is authorized through
         // the Studio-lifecycle-backed authorizer before the upgrade, so an unauthorized client
         // receives a typed 401/403 rather than an opaque socket close.
         group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
@@ -73,7 +73,7 @@ internal static class CollaborationSessionEndpoints
 
         var result = await sessions.JoinAsync(
                 // One canonical session/log key per draft regardless of the GUID textual form in
-                // the route (honua-server#2999): sessions, appends, replay, and checkpoints agree.
+                // the route: sessions, appends, replay, and checkpoints agree.
                 SavedMapCollaborationMapId.Normalize(mapId),
                 request,
                 context.User,

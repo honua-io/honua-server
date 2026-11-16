@@ -39,7 +39,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // Workspace lifecycle (ticket #725)
+        // Workspace lifecycle
         services
             .AddOptions<WorkspaceOptions>()
             .Bind(configuration.GetSection(WorkspaceOptions.SectionName))
@@ -71,16 +71,16 @@ internal static class GeoprocessingServiceCollectionExtensions
             }
         }
 
-        // Built-in process catalog (ticket #735)
+        // Built-in process catalog
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IExecutionJobRetryGuard, CustomCodeArtifactRetryGuard>());
 
         // Exposes the canonical plan validator's presence-based (including conditional)
         // input requirements so translation/migration tooling cannot certify a mapping
-        // the submit path would reject (#2145).
+        // the submit path would reject.
         services.TryAddSingleton<IProcessConditionalInputProbe, ProcessConditionalInputProbe>();
 
-        // Usage-ranked GP tool tiering telemetry (#2144). Real, queryable,
+        // Usage-ranked GP tool tiering telemetry. Real, queryable,
         // process-local store the dispatcher records into and an admin view ranks.
         services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();
 
@@ -89,7 +89,7 @@ internal static class GeoprocessingServiceCollectionExtensions
             services.TryAddSingleton<IGeoprocessingResultPackageStore, PostgresGeoprocessingResultPackageStore>();
         }
 
-        // Execution admission controls (ticket #739) — rate, concurrency, cost, backpressure
+        // Execution admission controls — rate, concurrency, cost, backpressure
         services
             .AddOptions<ExecutionAdmissionOptions>()
             .Bind(configuration.GetSection(ExecutionAdmissionOptions.SectionName))
@@ -120,14 +120,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
         services.TryAddSingleton<ICustomCodeArtifactIngestor, CustomCodeArtifactIngestor>();
-        // Process release bindings (honua-server#6221): in-process store unless the host registers
+        // Process release bindings: in-process store unless the host registers
         // the durable one; the admission resolver and environment facts bind to whichever is live.
         services.TryAddSingleton<ProcessRelease.IGpProcessReleaseStore, ProcessRelease.InMemoryGpProcessReleaseStore>();
         services.TryAddSingleton<ProcessRelease.GpProcessReleaseAdmission>();
         services.TryAddSingleton<ProcessRelease.GpProcessReleaseEnvironmentResolver>();
         services.TryAddSingleton<GeoprocessingJobArtifactService>();
 
-        // Referenced raster outputs (#3089): opt-in staged output store, the
+        // Referenced raster outputs: opt-in staged output store, the
         // idempotent post-success COG-catalog registrar, and the orphan sweeper that
         // reconciles staged-but-unpublished and expired staging. The sweeper follows
         // the WorkspaceCleanup dual-mode pattern: its idempotent tick handler is
@@ -148,16 +148,16 @@ internal static class GeoprocessingServiceCollectionExtensions
             }
         }
 
-        // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
+        // Shared geoprocessing job service — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
         services.TryAddSingleton<IGeoprocessingJobTerminalService, GeoprocessingJobTerminalService>();
         services.TryAddSingleton<IGeoprocessingFeatureStreamReader, GeoprocessingFeatureStreamReader>();
 
-        // Workflow orchestration substrate (#724) — exposes geoprocessing as the
+        // Workflow orchestration substrate — exposes geoprocessing as the
         // canonical job executor consumed by the orchestration engine.
         services.TryAddSingleton<IWorkflowJobExecutor, GeoprocessingWorkflowJobExecutor>();
 
-        // Executor guardrails (ticket #1031): per-job artifact size ceiling and
+        // Executor guardrails: per-job artifact size ceiling and
         // result retention TTL. Bound from configuration with safe defaults so
         // the production executor can run without explicit operator setup.
         services
@@ -178,17 +178,17 @@ internal static class GeoprocessingServiceCollectionExtensions
         //  - geometry.* deterministic single-feature / aggregate vector ops
         //    (buffer/clip/intersect/project/area/union/centroid/length/
         //     convex-hull/dissolve/simplify/snap), plus the catalog-honesty
-        //    reconciliation of geometry.make-valid + geometry.difference (#1185);
+        //    reconciliation of geometry.make-valid + geometry.difference;
         //  - analytics.*-managed NTS counterparts to the PostGIS-protocol analytics
-        //    paths (spatial-join/cluster/buffer-aggregate/density, #1260);
+        //    paths: spatial-join, cluster, buffer-aggregate and density;
         //  - transform.* / source.* / sink.* GeoETL executors (feat/geoetl-baseline
         //    reconciled onto the #1185 add-a-capability contract), including the
         //    relational attribute-join / aggregate / pivot / unpivot transforms and
         //    transform.computed-field op=expression (feat/etl-expression-and-joins);
-        //  - import.dataset durable import orchestration (#1630).
+        //  - import.dataset durable import orchestration.
         AddProcessExecutors(services);
 
-        // Imagery/ML inference delegation (#2241): imagery.classify submits the
+        // Imagery/ML inference delegation: imagery.classify submits the
         // source raster + a model reference to a configured cloud endpoint and
         // lands the result as a GP artifact. DELIBERATELY DORMANT when
         // unconfigured — no startup validation, no eager probe; an unconfigured
@@ -245,7 +245,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
-        // Headless single-process runner (GP Devkit, #2123): invokes one managed
+        // Headless single-process runner (GP Devkit): invokes one managed
         // IProcessExecutor directly with no Redis/queue/job-store, reusing the same
         // executor instances registered above. Consumed by the dev `honua gp` CLI.
         services.TryAddSingleton(sp =>
@@ -308,29 +308,29 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<ManagedClusterExecutor>(services);
         Register<ManagedBufferAggregateExecutor>(services);
         Register<ManagedDensityExecutor>(services);
-        // Spatial-statistics tool pack (#2142): Hot Spot Analysis (Getis-Ord Gi*).
+        // Spatial-statistics tool pack: Hot Spot Analysis (Getis-Ord Gi*).
         Register<ManagedHotSpotExecutor>(services);
-        // Layer-aware, layer-SOURCED managed ops (#2322, #2325): the job-executable
+        // Layer-aware, layer-SOURCED managed ops: the job-executable
         // counterparts of the layer-scoped PostGIS analytics/generalization/conversion
         // ops. Each streams a Honua catalog layer through source.honua-layer and runs a
         // managed NetTopologySuite op in one dispatched job, so the per-operation OGC
-        // API - Processes projections (#1382) that advertise a layerId input reach a
+        // API - Processes projections that advertise a layerId input reach a
         // terminal SUCCEEDED state instead of being refused at dispatch.
         Register<LayerBufferAggregateExecutor>(services);
         Register<LayerFeatureProjectExecutor>(services);
         Register<CopyFeaturesExecutor>(services);
         Register<LayerDissolveExecutor>(services);
         Register<LayerSimplifyExecutor>(services);
-        // Two-layer analytics.spatial-join (#2322): resolves BOTH the target layerId and
+        // Two-layer analytics.spatial-join: resolves BOTH the target layerId and
         // the joinLayerId through source.honua-layer and enriches each target feature
         // with matched join attributes/aggregates in one dispatched job.
         Register<LayerSpatialJoinExecutor>(services);
-        // Async batch enrichment (#2283): the job-executable counterpart of
+        // Async batch enrichment: the job-executable counterpart of
         // POST /api/enrich — resolves a managed enrichment dataset by id and joins
         // a layer-backed or staged inline target set against the dataset's layer
         // through the shared spatial-join computation.
         Register<EnrichmentJobExecutor>(services);
-        // Layer-aware overlay tool pack (#2206, #2139).
+        // Layer-aware overlay tool pack.
         Register<OverlayClipExecutor>(services);
         Register<OverlayIntersectExecutor>(services);
         Register<OverlayUnionExecutor>(services);
@@ -338,10 +338,10 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<OverlayMergeExecutor>(services);
         Register<OverlaySplitExecutor>(services);
         Register<DataManagementAppendExecutor>(services);
-        // Proximity tool pack (#2139).
+        // Proximity tool pack.
         Register<ProximityNearExecutor>(services);
         Register<ProximityNearTableExecutor>(services);
-        // Statistics/summarization tool pack (#2140).
+        // Statistics/summarization tool pack.
         Register<StatisticsSummarizeExecutor>(services);
         Register<StatisticsFrequencyExecutor>(services);
         Register<StatisticsCalculateExecutor>(services);
@@ -369,7 +369,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         // sink.honua-layer loads into a named catalog layer through the optional
         // IHonuaLayerSink capability. The executor is always registered so the catalog
         // advertises the node and can fail it closed with a clear message; the capability
-        // it depends on is registered only when the catalog database is present (#2210).
+        // it depends on is registered only when the catalog database is present.
         Register<HonuaLayerSinkExecutor>(services);
         Register<ImportDatasetJobExecutor>(services);
     }

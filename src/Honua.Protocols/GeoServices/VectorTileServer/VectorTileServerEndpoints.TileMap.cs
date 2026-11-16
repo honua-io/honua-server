@@ -1,10 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// honua-server#1781: VectorTileServer tileMap (sparse tile-availability index). The service
+// VectorTileServer tileMap (sparse tile-availability index). The service
 // descriptor advertises "tilemap" as its tileMap pointer; ArcGIS clients call this route to
 // learn which tiles in a block exist before requesting them. This file fills the foundation
-// 501 stub (#1777) WITHOUT editing the shared VectorTileServerEndpoints.cs; the route
+// 501 stub WITHOUT editing the shared VectorTileServerEndpoints.cs; the route
 // registration stays here.
 
 using System.Diagnostics;

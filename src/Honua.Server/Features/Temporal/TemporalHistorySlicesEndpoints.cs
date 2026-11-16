@@ -24,7 +24,7 @@ internal static partial class TemporalHistorySlicesEndpoints
         const string basePath = "/api/v{version:apiVersion}/temporal/services/{serviceId}/layers/{layerId:int}";
 
         // Diff: distinct diff-read permission (slice 2).
-        // T10 (#2346): temporal/data-history is built-experimental — gate every
+        // T10: temporal/data-history is built-experimental — gate every
         // temporal group with a 404 short-circuit when it is experimental-disabled.
         var diffGroup = endpoints.MapGroup(basePath)
             .WithCapabilityGate("temporal.filtering")

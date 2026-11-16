@@ -76,7 +76,7 @@ public static class GpCli
         // Managed geometry/analytics/transform/source/sink executors.
         services.AddGeoprocessing(configuration);
         // Native GDAL executors (Redis-free seam: options + CLI runner + executors only).
-        // In container mode (--real-worker, #2180) each native gdal.* step runs inside
+        // In container mode (--real-worker) each native gdal.* step runs inside
         // the real honua-worker-etl image so gp run/plan is a true dry-run of the
         // native submit path; the managed executor set and the durable spec are
         // unchanged — only the GDAL command runner differs.

@@ -60,7 +60,7 @@ internal sealed partial class Wfs20Handler
 
         try
         {
-            // WFS-T transactions are Community (#1591): open-protocol feature edits carry no
+            // WFS-T transactions are Community: open-protocol feature edits carry no
             // entitlement gate. The Pro editing gate applies only to the FeatureServer surface.
             var document = await ReadTransactionDocumentAsync(context.Request, cancellationToken).ConfigureAwait(false);
             var root = document.Root;
@@ -1598,7 +1598,7 @@ internal sealed partial class Wfs20Handler
         if (!string.IsNullOrWhiteSpace(srsNameValue))
         {
             // An srsName that is present but unparseable/unsupported is a transaction failure
-            // (OGC exception), not a silent fall back to the layer CRS (#2737). A missing srsName
+            // (OGC exception), not a silent fall back to the layer CRS. A missing srsName
             // keeps the correct feature-type-CRS default below.
             if (!SpatialReferenceHelpers.TryParseCrsDefinition(srsNameValue, out crsDefinition))
             {

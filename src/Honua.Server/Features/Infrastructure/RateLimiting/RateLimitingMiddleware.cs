@@ -204,7 +204,7 @@ internal sealed partial class RateLimitingMiddleware
             var subjectResult = CheckRateLimitMemory(rateLimitKey, subjectLimit);
 
             // When an endpoint declares an explicit per-endpoint limit, additionally meter a
-            // counter partitioned by the endpoint's policy scope (issue #2779) so that limit meters
+            // counter partitioned by the endpoint's policy scope so that limit meters
             // only that endpoint's traffic — high-volume traffic to one endpoint must not drain
             // another endpoint's allowance for the same subject. The request passes only if BOTH
             // the shared subject ceiling and the endpoint counter are under limit, and both have

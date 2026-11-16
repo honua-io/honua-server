@@ -155,7 +155,7 @@ internal sealed partial class TileOperationExecutionCore
         var warningList = new List<string>();
         var phase = warmMode ? "Warming tiles" : "Seeding tiles";
 
-        // Metatiling (#1837): render tiles in aligned N×N metatile blocks per pass so neighbouring
+        // Metatiling: render tiles in aligned N×N metatile blocks per pass so neighbouring
         // tiles are produced together. With MetatileFactor=1 this degenerates to one tile per block
         // (the original per-tile order). The provider still renders one tile at a time, but the
         // block-coherent iteration amortizes setup and keeps adjacent tiles' caches warm together.
@@ -164,7 +164,7 @@ internal sealed partial class TileOperationExecutionCore
             _tileOptions.MetatileFactor);
 
         // Flatten (layer, metatile) into a single deterministic block ordering so a durable
-        // generation cursor (issue #2661) resumes exactly where a prior attempt stopped. The order
+        // generation cursor resumes exactly where a prior attempt stopped. The order
         // is stable across attempts: ascending layer id order, then the deterministic metatile
         // block order MetatileGrouping.Group produces.
         var orderedBlocks = new List<(int LayerId, Metatile Block)>(layerIds.Count * metatiles.Count);

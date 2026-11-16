@@ -9,8 +9,7 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminMetadataLayerEndpoints =>
     [
-        // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
-        // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
+        // The layer-style, fields, filter and validation endpoints below serve v1 layer ids.
         new("GET", "/api/v1/admin/metadata/layers/{storageLayerId}/discovery"),
         new("PUT", "/api/v1/admin/metadata/layers/{storageLayerId}/discovery"),
         new("GET", "/api/v1/admin/services/{serviceName}/discovery"),

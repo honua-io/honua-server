@@ -75,7 +75,7 @@ internal sealed class GeoprocessingJobAuthorizer
         if (!inherits)
         {
             // Record managed provenance while the submitter is resolvable, so a deferred approval
-            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            // resume on a replica that cannot re-resolve them fails closed.
             var membershipManaged = await JobSecurityContextCapture
                 .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
                 .ConfigureAwait(false);
@@ -177,7 +177,7 @@ internal sealed class GeoprocessingJobAuthorizer
         {
             // Carry the actual denied operation into both the structured security log and the
             // surfaced exception message so a mutating-process denial is distinguishable from a
-            // baseline Execute denial rather than reading as a generic "Execute" 403 (#2798).
+            // baseline Execute denial rather than reading as a generic "Execute" 403.
             GeoprocessingServiceLog.AuthorizationDenied(_logger, request.ResourceType.ToString(), request.Operation.ToString());
             throw new GeoprocessingAuthorizationException(
                 decision.RequiresAuthentication,
@@ -189,7 +189,7 @@ internal sealed class GeoprocessingJobAuthorizer
                 AuthorizationDenialReason.InsufficientGrant);
         }
 
-        // OAuth 2.1 scope narrowing (honua-server#2851). The grant model above decides what the
+        // OAuth 2.1 scope narrowing. The grant model above decides what the
         // principal MAY do; when the caller authenticated with a bearer token, its scopes can
         // only narrow that — never widen it. Non-OAuth principals (X-API-Key, interactive,
         // dev-bypass) are not scope-governed and pass through untouched. A scope denial is a

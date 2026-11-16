@@ -52,8 +52,8 @@ internal static class SavedMapOperationEndpoints
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         HttpContext context)
     {
-        // One canonical log key per draft regardless of the GUID textual form in the route
-        // (honua-server#2999): appends, replay, sessions, and checkpoints must all agree.
+        // One canonical log key per draft regardless of the GUID textual form in the route:
+        // appends, replay, sessions, and checkpoints must all agree.
         mapId = SavedMapCollaborationMapId.Normalize(mapId);
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
         if (authorizationError is not null)
@@ -235,7 +235,7 @@ internal static class SavedMapOperationEndpoints
             SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationReplayApiResponse);
     }
 
-    // Fail-closed per-map capability check shared with the session transport (#971/#972): a
+    // Fail-closed per-map capability check shared with the session transport: a
     // generally authenticated principal must still be permitted on THIS saved map before its
     // edits enter the durable op-log. Reusing the join authorizer keeps presence and durable
     // edits on a single identity/RBAC seam. The middleware-level RequireAuthorization already
