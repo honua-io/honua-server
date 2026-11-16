@@ -1300,3 +1300,21 @@ Full CI job savings are unmeasured.
 All cases remain in the Scene I3S Resources 2 shard on selected PR runs and
 twice-daily full trunk runs. This changes no runner count, required check name,
 required aggregate dependency, workflow or shard definition.
+
+### Spatial analytics REST host lifetime
+
+`SpatialAnalyticsRestTests` builds its Pro-licensed application once per class
+through a `ReadOnlyProHost` class fixture. The clusters, density, buffer-aggregate
+and spatial-join query cases only read, so they use that host's client; the three
+cases that seed extra rows still build, seed and dispose a private Pro host.
+Assertions and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 0afc7ba8ba passed the same 47 cases
+with no skips. VSTest execution fell from 4m41s to 20s, saving 261 seconds (4.35
+runner-minutes), and the TRX interval from 302.5 to 41.5 seconds, with one test
+process each. Full run 43709972683 spent 174 seconds of per-case fixture time in
+this class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Analytics Studio Export and
+Reporting shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow or shard
+definition.
