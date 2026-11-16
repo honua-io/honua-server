@@ -84,7 +84,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/published/{*route}")]
     public async Task AdminKey_ProposePublication_RequiresHumanBeforePublishingActiveRoute()
     {
-        using var admin = _fixture.CreateAdminClient();
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
         var route = $"/maps/admin-{Guid.NewGuid():N}";
 
         var (proposed, itemId) = await ProposeAsync(admin, route, "public");

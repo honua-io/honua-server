@@ -74,7 +74,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             // Execute 082 unchanged: production keeps the canonical promotion family in honua.
             await _fixture.Postgres.ExecuteAsync(sql);
         }
-        _client = _fixture.CreateAdminClient();
+        _client = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
     }
 
     public async Task DisposeAsync()

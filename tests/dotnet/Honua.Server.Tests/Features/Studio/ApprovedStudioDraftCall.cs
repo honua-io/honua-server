@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,15 @@ namespace Honua.Server.Tests.Features.Studio;
 
 internal static class ApprovedStudioDraftCall
 {
+    public static async Task<HttpClient> CreateProposerAsync(WebAppFixture fixture)
+    {
+        using var scope = fixture.Services.CreateScope();
+        var issued = await scope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            $"studio-setup-{Guid.NewGuid():N}", ["admin:read", "admin:write"],
+            DateTimeOffset.UtcNow.AddHours(1), "studio-test", CancellationToken.None);
+        return fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", issued.Key));
+    }
+
     public static async Task<JsonElement?> CompleteAsync(JsonElement response, string tool,
         (WebAppFixture Fixture, AdminAuthEndpointsTests.StubHttpClientFactory IdentityProvider, string? Tenant) context)
     {
