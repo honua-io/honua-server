@@ -12,7 +12,7 @@ internal static class CollaborationSessionEndpoints
 {
     public static void MapCollaborationSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/sessions")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/maps/{mapId}/collaboration/sessions")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Saved Maps", "Collaboration")

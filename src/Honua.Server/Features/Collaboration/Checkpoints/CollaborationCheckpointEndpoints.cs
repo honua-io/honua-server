@@ -22,7 +22,7 @@ internal static class CollaborationCheckpointEndpoints
 
     public static void MapCollaborationCheckpointEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/checkpoints")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/maps/{mapId}/collaboration/checkpoints")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Saved Maps", "Collaboration")

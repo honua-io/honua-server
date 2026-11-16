@@ -295,7 +295,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // Geometry and attributes go through FeatureMutationValidator before the write.
 
         var editBatch = ToEditBatch(request);
-        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+        await EnsureWriteAccessAsync(context, layer, editBatch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
         // Dropped before the storability check, so a forged value of any wire type is ignored.
@@ -1266,48 +1266,54 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
-        MetadataV2Service service,
-        MetadataV2Object resource,
+        GrpcLayerContext layer,
         FeatureEditBatch editBatch)
     {
-        var httpContext = context.GetHttpContext();
-
         // Match the REST ApplyEdits seam: conversion first establishes the bounded
         // set of requested edit kinds, then every present kind must independently
         // pass the canonical resource data-editor gate before reads, outbox
         // resolution, or writes begin.
         if (!editBatch.Creates.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Insert).ConfigureAwait(false);
         }
 
         if (!editBatch.Updates.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
         }
 
         if (!editBatch.Deletes.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Delete).ConfigureAwait(false);
         }
 
         // Preserve the prior authorization ceiling for an empty no-op request.
         if (editBatch.Creates.IsEmpty && editBatch.Updates.IsEmpty && editBatch.Deletes.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
         }
+    }
 
-        async Task EnsureOperationAccessAsync(AuthorizationOperation operation)
-        {
-            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                httpContext,
-                resource,
-                service,
-                operation,
-                context.CancellationToken).ConfigureAwait(false);
+    private static async Task EnsureOperationAccessAsync(
+        ServerCallContext context, GrpcLayerContext layer, AuthorizationOperation operation)
+    {
+        var httpContext = context.GetHttpContext();
 
-            ThrowIfAccessDenied(decision);
-        }
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            httpContext,
+            layer.Resource,
+            layer.Service,
+            operation,
+            context.CancellationToken).ConfigureAwait(false);
+
+        ThrowIfAccessDenied(decision);
+
+        var canonicalDecision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
+            httpContext,
+            (new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot), operation),
+            context.CancellationToken).ConfigureAwait(false);
+        ThrowIfAccessDenied(canonicalDecision);
     }
 
     // An edit kind the publication omits is rejected.

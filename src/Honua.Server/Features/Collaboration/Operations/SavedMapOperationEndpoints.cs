@@ -17,7 +17,7 @@ internal static class SavedMapOperationEndpoints
 
     public static void MapSavedMapOperationEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/operations")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/maps/{mapId}/collaboration/operations")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Saved Maps", "Collaboration")
