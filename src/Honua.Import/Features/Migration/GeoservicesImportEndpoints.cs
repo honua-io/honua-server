@@ -42,7 +42,8 @@ internal static partial class GeoservicesImportEndpoints
         // Discover layers from an ArcGIS service URL
         _ = group.MapPost("/discover", HandleDiscoverService)
             .WithName("DiscoverGeoservicesService")
-            .WithSummary("Discover available layers from an ArcGIS Server service URL");
+            .WithSummary("Discover available layers from an ArcGIS Server service URL")
+            .WithRouteAgentRule("Reads a source service and changes nothing.");
 
         // Start a background import job
         _ = group.MapPost("/start", HandleStartImport)

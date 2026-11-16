@@ -51,7 +51,8 @@ internal static partial class TemporalHistorySlicesEndpoints
 
         _ = readGroup.MapPost("/rollback/plan", HandleRollbackPlanAsync)
             .WithName("PlanTemporalRollback")
-            .WithSummary("Plan a governed rollback to a target checkpoint (slice 5 of #1166).");
+            .WithSummary("Plan a governed rollback to a target checkpoint (slice 5 of #1166).")
+            .WithRouteAgentRule("Changes nothing.");
 
         // Rollback execution: distinct rollback-execution permission (slice 5).
         var rollbackGroup = endpoints.MapGroup(basePath)

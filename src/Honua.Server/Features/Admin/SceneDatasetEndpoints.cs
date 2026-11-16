@@ -39,7 +39,7 @@ internal static partial class SceneDatasetEndpoints
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/", HandleRegisterScene)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("RegisterSceneDataset")
             .WithSummary("Register a new scene dataset.")
             .Accepts<RegisterSceneDatasetRequest>("application/json")
@@ -48,7 +48,7 @@ internal static partial class SceneDatasetEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         _ = group.MapPut("/{id:guid}", HandleUpdateScene)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("UpdateSceneDataset")
             .WithSummary("Update mutable fields of a scene dataset.")
             .Accepts<UpdateSceneDatasetRequest>("application/json")

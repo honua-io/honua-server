@@ -43,7 +43,8 @@ internal static partial class MigrationScannerEndpoints
 
         _ = group.MapPost("/scan", HandleScanSource)
             .WithName("ScanMigrationSource")
-            .WithSummary("Scan a supported migration source and return a deterministic inventory artifact");
+            .WithSummary("Scan a supported migration source and return a deterministic inventory artifact")
+            .WithRouteAgentRule("Reads a source service and changes nothing.");
     }
 
     private static async Task HandleScanSource(HttpContext context)

@@ -42,7 +42,8 @@ internal static partial class GeoServerImportEndpoints
         // Discover GeoServer service configuration
         _ = group.MapPost("/discover", HandleDiscoverService)
             .WithName("DiscoverGeoServerService")
-            .WithSummary("Discover GeoServer configuration and assess migration compatibility");
+            .WithSummary("Discover GeoServer configuration and assess migration compatibility")
+            .WithRouteAgentRule("Reads a source service and changes nothing.");
 
         // Start a background import job
         _ = group.MapPost("/start", HandleStartImport)

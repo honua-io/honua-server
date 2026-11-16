@@ -53,7 +53,7 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<object>>(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .AddEndpointFilter(AgentApprovalFilter.Publish);
+            .AddAgentApprovalFilter(AgentApprovalFilter.Publish);
 
         group.MapGet("/jobs/{jobId}", HandleGetLayerPublishJob)
             .WithDisplayName("Get Layer Publish Job")
@@ -64,17 +64,17 @@ internal static class LayerPublishingEndpoints
         group.MapPut("/{storageLayerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddEndpointFilter(AgentApprovalFilter.LayerState);
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerState);
 
         group.MapPut("/enabled", HandleSetServiceLayersEnabled)
             .WithDisplayName("Set Service Layers Enabled")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddEndpointFilter(AgentApprovalFilter.LayerState);
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerState);
 
         group.MapPost("/extents/refresh", HandleRefreshLayerExtents)
             .WithDisplayName("Refresh Layer Extents")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.LayerState)
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerState)
             .Produces<ApiResponse<LayerExtentRefreshResult>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -84,7 +84,7 @@ internal static class LayerPublishingEndpoints
         group.MapPost("/{storageLayerId:int}/features/refresh", HandleRefreshLayerFeatures)
             .WithDisplayName("Refresh Layer Feature Snapshot")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.LayerState)
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerState)
             .Produces<ApiResponse<MaterializedFeatureRefreshResult>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -104,7 +104,8 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithRouteAgentRule("Changes nothing.");
     }
 
     private static async Task<Results<Ok<ApiResponse<PublishedLayerPage>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>

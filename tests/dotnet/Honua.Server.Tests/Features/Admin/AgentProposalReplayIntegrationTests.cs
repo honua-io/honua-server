@@ -26,6 +26,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -183,6 +184,35 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         {
             await RemovePublishedLayerAsync(connectionId, table, service);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task ConnectionCreate_AgentKeyThroughTheOperationsApi_ReachesTheAdminRouteOverLoopback()
+    {
+        using var agent = await CreateCallerAsync("agent-key-rest");
+
+        // Connection create runs directly for an agent. Without a password or secret reference the
+        // connection handler refuses it, which shows the dispatched request reached the handler.
+        using var response = await agent.PostAsJsonAsync("/api/v1/operations/admin.connections.create/submit", new
+        {
+            parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["name"] = $"agent-direct-{Guid.NewGuid():N}",
+                ["host"] = "127.0.0.1",
+                ["port"] = "5432",
+                ["databaseName"] = "honua",
+                ["username"] = "honua",
+                ["sslRequired"] = "false",
+                ["sslMode"] = "Disable",
+            },
+        });
+
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().NotContain(AgentRouteAdmissionMiddleware.PolicyRef, "a gateway dispatch carries a verified operation lineage");
+        payload.Should().Contain("HTTP 400", "the connection handler answered the dispatched request");
     }
 
     private Task CreatePointTableAsync(string table) => _fixture.Postgres.ExecuteDdlUnderLockAsync($"""

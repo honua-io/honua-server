@@ -44,14 +44,16 @@ internal static class SpecEndpoints
             .WithName("SpecValidate")
             .WithDescription("Parses and validates spec DSL or canonical JSON, returning structured diagnostics and optional canonical JSON.")
             .Produces<SpecValidateResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/plan", HandlePlanAsync)
             .WithDisplayName("Spec Plan")
             .WithName("SpecPlan")
             .WithDescription("Compiles a canonical spec document into a plan containing the DAG, per-node cost estimates, and structured warnings.")
             .Produces<SpecPlanResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/apply", HandleApplyAsync)
             .WithDisplayName("Spec Apply")

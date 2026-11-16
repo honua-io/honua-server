@@ -50,7 +50,7 @@ internal static class ConsoleOpenDataEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/stac/publish", HandlePublishStac)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithDisplayName("Publish Console Open-Data to STAC")
             .WithSummary("Publishes (or re-publishes/updates) the item to the STAC catalog. Requires open-data eligibility and a DCAT-valid page.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));

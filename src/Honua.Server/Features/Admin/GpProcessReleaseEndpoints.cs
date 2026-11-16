@@ -25,7 +25,7 @@ public static class GpProcessReleaseEndpoints
 
         group.MapPost("", HandlePublishRelease)
             .WithDisplayName("Publish GP Process Release")
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Accepts<string>("application/json")
             .Produces<GpProcessReleaseResponse>(StatusCodes.Status201Created)
@@ -49,7 +49,7 @@ public static class GpProcessReleaseEndpoints
 
         group.MapPost("/bindings/{process}/activate", HandleActivateBinding)
             .WithDisplayName("Activate GP Process Release")
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<GpProcessBindingResponse>()
             .Produces<GpProcessBindingRefusedResponse>(StatusCodes.Status409Conflict)

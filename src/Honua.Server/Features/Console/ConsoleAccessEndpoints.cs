@@ -59,11 +59,11 @@ internal static class ConsoleAccessEndpoints
         group.MapGet("/roles", HandleGetRoles);
         group.MapGet("/members", HandleGetMembers);
         group.MapPost("/roles", HandleCreateRole)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
         group.MapPut("/roles/{roleId:guid}", HandleUpdateRole)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
         group.MapDelete("/roles/{roleId:guid}", HandleDeleteRole)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
         group.MapGet("/roles/audit", HandleGetRoleAudit);
     }
 

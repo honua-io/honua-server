@@ -112,7 +112,8 @@ internal static class SharingOAuth2Endpoints
             .Produces<OAuth2IntrospectionResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .WithRouteAgentRule("Changes nothing.");
 
         return endpoints;
     }

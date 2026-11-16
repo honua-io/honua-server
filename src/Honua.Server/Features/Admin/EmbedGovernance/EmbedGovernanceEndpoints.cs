@@ -33,7 +33,7 @@ internal static partial class EmbedGovernanceEndpoints
         keys.MapPost("/", HandleCreateKey)
             .WithDisplayName("Create Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         keys.MapGet("/{id:guid}", HandleGetKey)
             .WithDisplayName("Get Embed Key")
@@ -42,7 +42,7 @@ internal static partial class EmbedGovernanceEndpoints
         keys.MapPost("/{id:guid}/rotate", HandleRotateKey)
             .WithDisplayName("Rotate Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         keys.MapPost("/{id:guid}/revoke", HandleRevokeKey)
             .WithDisplayName("Revoke Embed Key")

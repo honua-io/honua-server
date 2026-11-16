@@ -375,7 +375,7 @@ public sealed class McpIngestDatasetToolTests
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_IngestOversizeInlineData_ReturnsInvalidArgumentPointingAtRestUpload()
+    public async Task ToolsCall_IngestOversizeInlineData_ReturnsInvalidArgumentPointingAtUrlImport()
     {
         var oversize = new string('x', IngestDatasetTool.MaxInlineDataBytes + 1);
         var response = await DispatchAsync(
@@ -385,7 +385,7 @@ public sealed class McpIngestDatasetToolTests
         var structured = AssertToolFailed(response);
         structured.GetProperty("code").GetString().Should().Be("invalid_argument");
         structured.GetProperty("message").GetString().Should()
-            .Contain("/api/v1/admin/import/upload").And.Contain("inline cap");
+            .Contain("honua_admin_import_upload_url").And.Contain("inline cap");
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -508,7 +508,7 @@ public sealed class McpIngestDatasetToolTests
             .Contain("header row").And
             .Contain("lon/lat").And
             .Contain("EPSG:4326").And
-            .Contain("/api/v1/admin/import/upload");
+            .Contain("honua_admin_import_upload_url");
         descriptor.OutputSchema.Should().NotBeNull();
         descriptor.Annotations!.ReadOnlyHint.Should().BeFalse();
         descriptor.Annotations.DestructiveHint.Should().BeFalse();

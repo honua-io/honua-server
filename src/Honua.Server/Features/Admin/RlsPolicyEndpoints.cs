@@ -49,7 +49,7 @@ internal static partial class RlsPolicyEndpoints
         group.MapPost("/", HandleCreatePolicy)
             .WithDisplayName("Create RLS Policy")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/{id:guid}", HandleGetPolicy)
             .WithDisplayName("Get RLS Policy")
@@ -58,7 +58,7 @@ internal static partial class RlsPolicyEndpoints
         group.MapDelete("/{id:guid}", HandleDeletePolicy)
             .WithDisplayName("Delete RLS Policy")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static RlsPolicyResponse ToResponse(RlsPolicy p) => new()

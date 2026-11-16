@@ -51,11 +51,13 @@ internal static partial class AnalysisContentEndpoints
 
         _ = content.MapPost("/items/{itemId}/versions/{contentVersion:int}/estimate", HandleEstimateAsync)
             .WithName("EstimateAnalysisPackageVersion")
-            .WithSummary("Compute a server-side runtime and cost estimate for an analysis-package version.");
+            .WithSummary("Compute a server-side runtime and cost estimate for an analysis-package version.")
+            .WithRouteAgentRule("Changes nothing.");
 
         _ = content.MapPost("/items/{itemId}/versions/{contentVersion:int}/preview", HandlePreviewAsync)
             .WithName("PreviewSavedQueryVersion")
-            .WithSummary("Preview a saved-query version through the canonical feature-query pipeline.");
+            .WithSummary("Preview a saved-query version through the canonical feature-query pipeline.")
+            .WithRouteAgentRule("Changes nothing.");
 
         _ = content.MapPost("/items/{itemId}/versions/{contentVersion:int}/runs", HandleRunAsync)
             .WithName("RunAnalysisPackageVersion")
