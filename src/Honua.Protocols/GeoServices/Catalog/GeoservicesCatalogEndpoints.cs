@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
@@ -1188,12 +1189,26 @@ internal static class GeoservicesCatalogEndpoints
             return false;
         }
 
-        var scenes = await registration.ListAsync(includeInactive: false, cancellationToken).ConfigureAwait(false);
-        if (scenes.Count == 0)
+        var registered = await registration.ListAsync(includeInactive: false, cancellationToken).ConfigureAwait(false);
+
+        // The directory names a scene only for a caller its SceneServer would serve.
+        var scenes = registered
+            .Where(scene => SceneReadAccess.IsReadable(context, SceneServingProjection.ToAccessPolicy(scene)))
+            .ToArray();
+        if (scenes.Length == 0)
         {
             return false;
         }
 
+        AddSceneServerEntries(entries, scenes, baseUrl);
+        return true;
+    }
+
+    private static void AddSceneServerEntries(
+        List<ServiceDirectoryEntry> entries,
+        IEnumerable<SceneDatasetRecord> scenes,
+        string baseUrl)
+    {
         foreach (var scene in scenes)
         {
             var escapedSceneId = Uri.EscapeDataString(scene.Id);
@@ -1206,7 +1221,6 @@ internal static class GeoservicesCatalogEndpoints
             });
         }
 
-        return true;
     }
 
     private readonly record struct ImageServerProbeRequest(
