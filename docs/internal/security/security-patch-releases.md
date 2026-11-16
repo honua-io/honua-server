@@ -27,7 +27,9 @@ The release rescan never writes advisory ids, package names or digests into a pu
   and files nothing. Set the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of
   that tracker). The
   report job then opens one issue per release, platform and advisory with the package, fixed
-  version and due date, and skips findings that already have an open issue. Before reading
+  version and due date. Existing open issues are retained; escalation from HIGH to CRITICAL
+  tightens the deadline to first detection plus 7 days (or preserves an earlier deadline)
+  without replacing human notes. Before reading
   findings, it checks the destination repository's visibility through the API. A public
   destination or failed visibility lookup fails the job before any issue is read or written;
   correct the destination or token access, then rerun the report.
