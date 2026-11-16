@@ -22,21 +22,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState GlobalSharedState = new();
     private readonly PostgresSharedState SharedState;
-    private static readonly string[] SharedStoreMigrations =
-        ["031_CreateMetadataV2Snapshot.sql", "113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
-            "141_CreateImportedDatasetSpatialMetadata.sql", "147_CreateJobSubstrate.sql",
-            "148_CreateControlPlaneState.sql", "149_CreateSecurityState.sql",
-            "150_CreateOAuthClientsAndOperationProgress.sql", "153_CreateVersionJobsAndTileGenerationCheckpoints.sql",
-            "154_CreatePackageDraftsAndMcpSessions.sql", "155_CreateAgentWorkspaceIdentities.sql",
-            "156_CreateConfigurationDocuments.sql", "158_CreateRealtimeEventLog.sql", "161_CreateOpsNotificationSchedules.sql",
-            "166_CreateSourceWatermarks.sql", "167_CreateWorkflowStores.sql",
-            "174_CreateOperationProposalBatches.sql", "192_CreateWfsStoredQueries.sql",
-            "201_CreateEmbedKeyUsage.sql"];
-
-    // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
-    // functions, not this script. The importer calls these after every committed load.
-    private static readonly string[] SharedImportFunctionMigrations =
-        ["070_AddImportLoadModes.sql", "143_PromoteImportTypedColumns.sql"];
 
     internal sealed class PostgresSharedState
     {
@@ -160,10 +145,8 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
                         // so registered providers have their required tables.
                         var assembly = typeof(PostgresFixture).Assembly;
                         // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
-                        foreach (var filename in SharedStoreMigrations.Concat(SharedImportFunctionMigrations))
+                        foreach (var migration in PostgresFixtureMigrations.Discover())
                         {
-                            var migration = assembly.GetManifestResourceNames().Single(name =>
-                                name.EndsWith(filename, StringComparison.Ordinal));
                             await using var sql = assembly.GetManifestResourceStream(migration)!;
                             using var reader = new StreamReader(sql);
                             var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))

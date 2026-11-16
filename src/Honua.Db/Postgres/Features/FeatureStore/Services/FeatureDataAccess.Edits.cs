@@ -152,9 +152,10 @@ internal sealed partial class FeatureDataAccess
             }, cancellationToken).ConfigureAwait(false);
         }
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await RunRowMutationAtomicallyAsync(connection, null, WriteAsync, cancellationToken,
+        var mutation = await RunRowMutationAtomicallyAsync(connection, null, WriteAsync, cancellationToken,
             requireTransaction: policy.RowFilter is not null || feature.PreserveOmittedMaskedAttributes ||
                 feature.PreserveOmittedGeometry || !feature.PreservedAttributeNames.IsDefaultOrEmpty).ConfigureAwait(false);
+        return mutation.Value;
     }
 
     public Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
@@ -693,7 +694,7 @@ internal sealed partial class FeatureDataAccess
         RowSecurityContext Row, (SqlFragment? Filter, OwnerEditGuard? Owner) Policy,
         Dictionary<long, FeatureEditPrecondition>? Preconditions);
 
-    private async Task<Feature> ApplyBatchUpdateAsync(
+    private async Task<RowMutationResult<Feature>> ApplyBatchUpdateAsync(
         Feature feature, BatchUpdateExecution execution, CancellationToken cancellationToken)
     {
         var (row, policy, preconditions) = execution;
@@ -714,7 +715,7 @@ internal sealed partial class FeatureDataAccess
                 !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry || policy.Filter is not null).ConfigureAwait(false);
         if (hasPrecondition)
         {
-            preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
+            preconditions![updated.Value.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated.Value) };
         }
         return updated;
     }
@@ -1239,10 +1240,11 @@ internal sealed partial class FeatureDataAccess
                             },
                             cancellationToken,
                             requireTransaction: writeCheck is not null).ConfigureAwait(false);
-                        createdIds.Add(created.Id);
-                        createResults.Add(EditOperationResult.Success(
-                            created.Id,
-                            feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                        createdIds.Add(created.Value.Id);
+                        var createdResult = EditOperationResult.Success(
+                            created.Value.Id,
+                            feature.Attributes.GetValueOrDefault("globalId")?.ToString());
+                        createResults.Add(createdResult with { OperationEvidence = created.Evidence });
                         return true;
                     }
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
@@ -1266,9 +1268,10 @@ internal sealed partial class FeatureDataAccess
                         var updated = await ApplyBatchUpdateAsync(feature,
                             new(new(connection, transaction, new(_tableName, layerId, (null, feature.Id))),
                                 (writeCheck, OwnerEditGuard.Find(ownerGuards, feature.Id)), preconditions), cancellationToken).ConfigureAwait(false);
-                        updateResults.Add(EditOperationResult.Success(
-                            updated.Id,
-                            feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                        var updatedResult = EditOperationResult.Success(
+                            updated.Value.Id,
+                            feature.Attributes.GetValueOrDefault("globalId")?.ToString());
+                        updateResults.Add(updatedResult with { OperationEvidence = updated.Evidence });
                         return true;
                     }
                     catch (FeatureEditPreconditionFailedException ex)
@@ -1320,14 +1323,14 @@ internal sealed partial class FeatureDataAccess
                             },
                             cancellationToken,
                             requireTransaction: hasPrecondition || writeCheck is not null || _attachmentCleanup is not null).ConfigureAwait(false);
-                        if (deleted.Deleted)
+                        if (deleted.Value.Deleted)
                         {
                             if (transaction is null)
                             {
-                                await ReleaseCommittedAttachmentBlobsAsync(deleted.AttachmentBlobs).ConfigureAwait(false);
+                                await ReleaseCommittedAttachmentBlobsAsync(deleted.Value.AttachmentBlobs).ConfigureAwait(false);
                             }
 
-                            deleteResults.Add(EditOperationResult.Success(objectId));
+                            deleteResults.Add(EditOperationResult.Success(objectId) with { OperationEvidence = deleted.Evidence });
                             return true;
                         }
 
@@ -1499,15 +1502,21 @@ internal sealed partial class FeatureDataAccess
                     throw new InvalidOperationException("The idempotency receipt must use the edit transaction.");
                 }
 
-                return PostgresGrpcApplyEditsReceipt.TryWriteAsync(
-                    connection,
-                    transaction,
-                    _grpcEditReceiptTable,
-                    scope,
-                    payload,
-                    expiresAt,
-                    _queryTimeoutSeconds,
-                    token);
+                return PostgresGrpcApplyEditsReceipt.TryWriteWithEvidenceAsync(
+                    new PostgresGrpcApplyEditsReceipt.EvidenceContext
+                    {
+                        Connection = connection,
+                        Transaction = transaction,
+                        Table = _grpcEditReceiptTable,
+                        TimeoutSeconds = _queryTimeoutSeconds
+                    },
+                    new PostgresGrpcApplyEditsReceipt.EvidencePublication
+                    {
+                        Scope = scope,
+                        Payload = payload,
+                        Result = result,
+                        ExpiresAt = expiresAt
+                    }, token);
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -1968,7 +1977,7 @@ internal sealed partial class FeatureDataAccess
         // A row-level security write check (#6103) does too: each row is re-selected with the
         // caller's predicate and rolled back when it falls outside it, which the autocommit
         // bulk INSERT cannot do.
-        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null &&
+        if (transaction == null && features.Length > 1 && !outboxActive && !FeatureOperationEvidenceScope.IsActive && ReplicaUploadOriginScope.Current is null &&
             writeCheck is null)
         {
             return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
@@ -2035,8 +2044,8 @@ internal sealed partial class FeatureDataAccess
                     },
                     cancellationToken,
                     requireTransaction: writeCheck is not null).ConfigureAwait(false);
-                createdIds.Add(created.Id);
-                results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                createdIds.Add(created.Value.Id);
+                results.Add(EditOperationResult.Success(created.Value.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = created.Evidence });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -2271,7 +2280,7 @@ internal sealed partial class FeatureDataAccess
                     new(new(connection, transaction, new(_tableName, layerId, (null, feature.Id))),
                         (writeCheck, OwnerEditGuard.Find(ownerGuards, feature.Id)), preconditions), cancellationToken).ConfigureAwait(false);
                 updatedCount++;
-                results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                results.Add(EditOperationResult.Success(updated.Value.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = updated.Evidence });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -2363,17 +2372,17 @@ internal sealed partial class FeatureDataAccess
                     },
                     cancellationToken,
                     requireTransaction: hasPrecondition || writeCheck is not null || _attachmentCleanup is not null).ConfigureAwait(false);
-                if (deleted.Deleted)
+                if (deleted.Value.Deleted)
                 {
                     if (transaction is null)
                     {
                         // rollbackOnFailure is false: this row already committed. Remove its
                         // blobs now so a later failed edit cannot leave them behind (#6137).
-                        await ReleaseCommittedAttachmentBlobsAsync(deleted.AttachmentBlobs).ConfigureAwait(false);
+                        await ReleaseCommittedAttachmentBlobsAsync(deleted.Value.AttachmentBlobs).ConfigureAwait(false);
                     }
 
                     deletedCount++;
-                    results.Add(EditOperationResult.Success(featureId));
+                    results.Add(EditOperationResult.Success(featureId) with { OperationEvidence = deleted.Evidence });
                 }
                 else
                 {
@@ -2467,7 +2476,7 @@ internal sealed partial class FeatureDataAccess
     /// the row mutation always share a transaction even on the otherwise-autocommit path;
     /// the row lock would be released immediately without one.
     /// </summary>
-    private async Task<TResult> RunRowMutationAtomicallyAsync<TResult>(
+    private async Task<RowMutationResult<TResult>> RunRowMutationAtomicallyAsync<TResult>(
         NpgsqlConnection connection,
         NpgsqlTransaction? batchTransaction,
         Func<NpgsqlConnection, NpgsqlTransaction?, CancellationToken, Task<TResult>> mutateAndAppendOutbox,
@@ -2475,13 +2484,13 @@ internal sealed partial class FeatureDataAccess
         bool requireTransaction = false)
     {
         var origin = ReplicaUploadOriginScope.Current;
-        if (batchTransaction is not null || (origin is null && !requireTransaction && !TryUseTransactionalOutbox(out _)))
+        if (batchTransaction is not null || (origin is null && !requireTransaction && !FeatureOperationEvidenceScope.IsActive && !TryUseTransactionalOutbox(out _)))
         {
             if (origin is not null)
             {
                 await SetReplicaUploadOriginAsync(connection, batchTransaction!, origin, cancellationToken).ConfigureAwait(false);
             }
-            return await mutateAndAppendOutbox(connection, batchTransaction, cancellationToken).ConfigureAwait(false);
+            return await ExecuteEvidenceMutationAsync(new(connection, batchTransaction), mutateAndAppendOutbox, cancellationToken).ConfigureAwait(false);
         }
 
         await using var rowTransaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
@@ -2489,8 +2498,8 @@ internal sealed partial class FeatureDataAccess
         {
             await SetReplicaUploadOriginAsync(connection, rowTransaction, origin, cancellationToken).ConfigureAwait(false);
         }
-        var result = await mutateAndAppendOutbox(connection, (NpgsqlTransaction)rowTransaction, cancellationToken).ConfigureAwait(false);
-        await rowTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        var result = await ExecuteEvidenceMutationAsync(new(connection, rowTransaction), mutateAndAppendOutbox, cancellationToken).ConfigureAwait(false);
+        await CommitEditTransactionAsync(rowTransaction, cancellationToken).ConfigureAwait(false);
         return result;
     }
 

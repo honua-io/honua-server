@@ -8,7 +8,7 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-public sealed class ZarrSubsetReader : IZarrSubsetReader
+public sealed class ZarrSubsetReader
 {
     private const int MaxChunksPerRequest = 4096;
     private const long MaxBytesPerRequest = 256L * 1024L * 1024L; // 256 MiB
@@ -16,6 +16,7 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
     // independent from a bounded compressed-read allowance.
     private const long MaxCompressedChunkBytes = MaxBytesPerRequest + (1L * 1024L * 1024L);
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public async Task<ZarrSubsetResult> ReadSubsetAsync(
         ICloudRangeReader reader,
         string bucket,
