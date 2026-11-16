@@ -65,11 +65,11 @@ public sealed class GlobalAdminDataAuthorizationTests : IAsyncLifetime
     [InlineData("GET", "/api/v1/analysis/artifacts/test")]
     [InlineData("GET", "/api/v1/analysis/jobs/test/logs")]
     [InlineData("GET", "/api/v1/analysis/jobs/test/failure")]
-    [InlineData("POST", "/hubs/admin/negotiate?negotiateVersion=1")]
+    [InlineData("GET", "/api/v1/admin/live")]
     [Endpoint("GET /api/v1/admin/feature-events/replay")]
     [Endpoint("GET /api/v1/admin/observability/audit")]
     [Endpoint("POST /api/v1/analysis/content/items")]
-    [Endpoint("POST /hubs/admin/negotiate")]
+    [Endpoint("GET /api/v1/admin/live")]
     public async Task GlobalAdministration_TenantAdministrator_IsForbidden(string method, string path)
     {
         using var client = CreateClient("admin", "tenant-a");
@@ -83,14 +83,19 @@ public sealed class GlobalAdminDataAuthorizationTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("admin,platform_admin", "tenant-a")]
     [InlineData("admin", null)]
-    [Endpoint("POST /hubs/admin/negotiate")]
-    public async Task AdminHub_PlatformOrUnboundAdministrator_CanConnect(string roles, string? tenant)
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task AdminLive_PlatformOrUnboundAdministrator_CanOpen(string roles, string? tenant)
     {
         using var client = CreateClient(roles, tenant);
-
-        using var response = await client.PostAsync("/hubs/admin/negotiate?negotiateVersion=1", null);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // Headers are enough: the handler keeps the SSE body open until the client leaves.
+        using var response = await client.GetAsync(
+            "/api/v1/admin/live",
+            HttpCompletionOption.ResponseHeadersRead,
+            timeout.Token);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
     }
 
     private HttpClient CreateClient(string roles, string? tenant) => _fixture.CreateClient(client =>

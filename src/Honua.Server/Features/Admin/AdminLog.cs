@@ -139,12 +139,6 @@ internal static partial class AdminLog
         Message = "Cache health check failed")]
     public static partial void CacheHealthCheckFailed(ILogger logger, Exception ex);
 
-    [LoggerMessage(
-        EventId = 4604,
-        Level = LogLevel.Warning,
-        Message = "Failed to retrieve Redis server info for cache health response")]
-    public static partial void RedisInfoRetrievalFailed(ILogger logger, Exception ex);
-
     // Streaming operations (4610-4619)
 
     [LoggerMessage(

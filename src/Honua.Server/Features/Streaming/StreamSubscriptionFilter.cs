@@ -7,7 +7,7 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
 
-internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
+internal sealed class StreamSubscriptionFilter
 {
     private static readonly IReadOnlyDictionary<string, JsonElement> EmptyProperties =
         new Dictionary<string, JsonElement>(0, StringComparer.Ordinal);
