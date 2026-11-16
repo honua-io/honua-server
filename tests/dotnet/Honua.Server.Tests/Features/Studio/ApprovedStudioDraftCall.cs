@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -40,6 +42,19 @@ internal static class ApprovedStudioDraftCall
         instance.Result!.Details.Should().ContainKey("payload");
         var payload = instance.Result.Details["payload"];
         using var document = JsonDocument.Parse(verb == "save_version" ? $"{{\"version\":{payload}}}" : payload);
+        return document.RootElement.Clone();
+    }
+
+    public static async Task<JsonElement> RpcAsync(HttpClient client, string body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue("application/json") } },
+        };
+        using var response = await client.SendAsync(request);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var document = JsonDocument.Parse(payload);
         return document.RootElement.Clone();
     }
 

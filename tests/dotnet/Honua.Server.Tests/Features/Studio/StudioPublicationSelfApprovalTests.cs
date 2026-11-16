@@ -40,7 +40,6 @@ namespace Honua.Server.Tests.Features.Studio;
 [Protocol(TestProtocols.Admin)]
 public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 {
-    private const string JsonMediaType = "application/json";
     private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
     private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-publication-self-approval-signing-key-at-least-32-chars";
@@ -334,25 +333,12 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
     private async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
     {
-        var response = await RpcAsync(
+        var response = await ApprovedStudioDraftCall.RpcAsync(
             client,
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
         var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant));
         if (completed is { } value) return value;
         return ApprovedStudioDraftCall.ReadResult(response, toolName);
-    }
-
-    private static async Task<JsonElement> RpcAsync(HttpClient client, string body)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue(JsonMediaType) } },
-        };
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement.Clone();
     }
 
     private static string CreateToken(string subject, bool administrator = false)
