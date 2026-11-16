@@ -27,6 +27,10 @@ internal sealed class PostgresFeatureChangeLog(
 
     private readonly string _changes = database.Table("feature_changes");
     private readonly string _outbox = database.Table("feature_change_outbox");
+
+    // The committed horizon (migration 213). Cursor reads stop at it, so a later release that
+    // narrows the writer lock can hold back a generation whose lower neighbour has not committed.
+    private readonly string _horizon = database.Table("feature_change_read_horizon") + "()";
     private readonly Lock _windowGate = new();
     private (long Head, long Oldest, DateTimeOffset ReadAt)? _cachedOldest;
 
@@ -40,7 +44,7 @@ internal sealed class PostgresFeatureChangeLog(
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
-                await using var command = new NpgsqlCommand($"SELECT COALESCE(max(generation), 0) FROM {_changes}", connection);
+                await using var command = new NpgsqlCommand($"SELECT {_horizon}", connection);
                 return (long)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
             StatementRepeat.SafeToRepeat,
@@ -192,9 +196,15 @@ internal sealed class PostgresFeatureChangeLog(
             """;
     }
 
-    private static string BuildFilters(FeatureChangeLogQuery query)
+    private string BuildFilters(FeatureChangeLogQuery query)
     {
         var filters = new List<string> { "changes.generation > @after", "changes.version_id IS NULL" };
+        if (query.EventId is null)
+        {
+            // An event-id lookup advances no cursor, so only cursor reads stop at the horizon.
+            filters.Add($"changes.generation <= {_horizon}");
+        }
+
         if (query.From is not null)
         {
             filters.Add("changes.changed_at >= @from");

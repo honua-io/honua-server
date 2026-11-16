@@ -2,11 +2,16 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Infrastructure.Abstractions;
+using Honua.Server.Features.Realtime;
+using Honua.Server.Features.Streaming;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Realtime;
 
@@ -39,6 +44,7 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
     public async Task ReadHorizon_ReplacedBody_IsWhatTrackerAndVersionCreationUse()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734302);
+        var before = await layer.HeadAsync();
         await layer.InsertAsync("""{"name":"published"}""");
         var published = await layer.HeadAsync();
         await layer.InsertAsync("""{"name":"not yet published"}""");
@@ -56,6 +62,12 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
                 new CreateVersionRequest($"horizon_{Guid.NewGuid():N}", "sde", VersionAccess.Public));
             version.CommonAncestorGeneration.Should().Be(published);
             version.BranchGeneration.Should().Be(published);
+
+            var log = CreateLog();
+            (await log.ReadHeadAsync(CancellationToken.None)).Should().Be(published);
+            var changes = await log.ReadAsync(
+                new FeatureChangeLogQuery(before, null, null, [layer.LayerId], 10), CancellationToken.None);
+            changes.Select(change => change.Cursor).Should().Equal(published);
         }
         finally
         {
@@ -64,6 +76,12 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
     }
 
     private PostgresChangeTracker CreateTracker() => new(Connections());
+
+    private PostgresFeatureChangeLog CreateLog()
+        => new(
+            new JobStoreDatabase(database.DataSource),
+            new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())),
+            TimeProvider.System);
 
     private TestDatabaseConnectionProvider Connections() => new(database.DataSource);
 
