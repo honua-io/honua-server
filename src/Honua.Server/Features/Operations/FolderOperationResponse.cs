@@ -82,16 +82,17 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
     private static FolderOperationResponse HttpProblem(int status, string detail)
     {
         var problem = TypedResults.Problem(statusCode: status, detail: detail).ProblemDetails;
-        return Problem(status, detail, problem.Type!, problem.Title!);
+        return Problem(status, detail, problem.Type, problem.Title ??
+            Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(status));
     }
 
-    private static FolderOperationResponse Problem(int status, string detail, string type, string title)
+    private static FolderOperationResponse Problem(int status, string detail, string? type, string title)
     {
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            writer.WriteString("type", type);
+            if (type is not null) writer.WriteString("type", type);
             writer.WriteString("title", title);
             writer.WriteNumber("status", status);
             writer.WriteString("detail", detail);
