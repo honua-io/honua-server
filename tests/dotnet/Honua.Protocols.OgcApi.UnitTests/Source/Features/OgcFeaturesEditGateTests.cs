@@ -30,7 +30,7 @@ using NSubstitute;
 namespace Honua.Protocols.OgcApi.UnitTests.Features;
 
 // OGC API Features item and batch edits run the contingent-value check and the plugin edit hooks.
-public sealed class OgcFeaturesEditGateTests
+public sealed partial class OgcFeaturesEditGateTests
 {
     [UnitTest]
     public async Task ContingentViolation_OnCreateReplaceAndMergedPatch_IsRejectedBeforeTheWrite()

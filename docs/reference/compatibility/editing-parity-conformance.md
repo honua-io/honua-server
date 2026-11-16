@@ -78,10 +78,12 @@ never by parsing the message.
   failure removes rows from a gRPC call without `rollback_on_failure`, hooks number the remaining
   rows of each kind from zero, and gRPC after-hooks receive the submitted values of a partial
   update, not the merged row.
-- A gRPC partial update is checked against the complete stored snapshot, including masked
-  attributes used only inside validation. The writer checks that snapshot's state token under
-  its row lock, so a concurrent change fails the update rather than combining stale validations.
-  Repeated update targets in one batch are rejected before hooks or writes.
+- OGC updates that preserve omitted fields and gRPC partial updates are checked against the
+  complete stored snapshot, including masked attributes used only inside validation. OGC PUT
+  preserves omitted protected fields while removing omitted editable fields. The writer checks
+  the snapshot state token under its row lock, so a concurrent change fails the update rather
+  than combining stale validations. Repeated gRPC update targets in one batch are rejected
+  before hooks or writes.
 - An OGC API Features edit fails as a whole when one row is rejected. A gRPC `ApplyEdits` call
   with `rollback_on_failure` fails with `INVALID_ARGUMENT`; without it, only the rejected rows
   report a failure and the other rows are written. An idempotent replay returns the stored

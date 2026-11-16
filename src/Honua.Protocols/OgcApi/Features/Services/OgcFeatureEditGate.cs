@@ -15,7 +15,7 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 // OGC API Features edits pass the owner policy, then the same contingent-value and plugin checks as
 // GeoServices applyEdits. PATCH validation restores masked values internally without adding them
 // to the submitted batch or returning them to the caller.
-internal static class OgcFeatureEditGate
+internal static partial class OgcFeatureEditGate
 {
     // LayerId is the storage layer the write goes to; hooks are told the published layer in Request.
     internal readonly record struct Target(HttpContext Context, MetadataV2Object Resource, OgcFeaturesEditRequest Request)
@@ -43,77 +43,24 @@ internal static class OgcFeatureEditGate
             return (batch, OwnerEditPolicyFieldAccess.DeniedEditResult(batch, prepared.DenialReason ?? "Edit not permitted."));
         }
 
-        var effectiveRows = await ReadEffectiveUpdatesAsync(target, prepared.Batch, cancellationToken).ConfigureAwait(false);
-        if (effectiveRows is null)
+        var effective = await ReadEffectiveUpdatesAsync(target, prepared.Batch, cancellationToken).ConfigureAwait(false);
+        if (effective is null)
         {
             return (prepared.Batch, OwnerEditPolicyFieldAccess.DeniedEditResult(prepared.Batch, "Edit not permitted."));
         }
 
+        var checkedBatch = effective.Value.Batch;
+        var effectiveRows = effective.Value.Rows;
         var rejections = await FeatureEditGate.CheckAsync(
             ResolveHooks(target.Context),
-            new FeatureEditCheck(target.Resource, Scope(target), prepared.Batch)
+            new FeatureEditCheck(target.Resource, Scope(target), checkedBatch)
             {
                 EffectiveAttributes = row => row.Kind == FeatureEditOperationKind.Update && effectiveRows.TryGetValue(row.ObjectId ?? 0, out var attributes)
                     ? attributes
                     : row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty,
             },
             cancellationToken).ConfigureAwait(false);
-        return (prepared.Batch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(prepared.Batch, Safe(rejections)));
-    }
-
-    private static async Task<Dictionary<long, IReadOnlyDictionary<string, object?>>?> ReadEffectiveUpdatesAsync(
-        Target target,
-        FeatureEditBatch batch,
-        CancellationToken cancellationToken)
-    {
-        var updates = FeatureEditRows.Enumerate(batch)
-            .Where(static row => row.Kind == FeatureEditOperationKind.Update && row.Feature is { PreserveOmittedMaskedAttributes: true })
-            .Select(static row => row.Feature!.Value)
-            .ToArray();
-        var effective = new Dictionary<long, IReadOnlyDictionary<string, object?>>();
-        if (updates.Length == 0)
-        {
-            return effective;
-        }
-
-        var ids = updates.Select(static row => row.Id).Distinct().ToImmutableArray();
-        var page = await target.Reader.QueryAsync(target.LayerId, new FeatureQuery
-        {
-            ObjectIds = ids,
-            OutFields = ["*"],
-            Limit = ids.Length,
-            // Restore hidden attributes for validation only; retain the enforced row filter.
-            EnforcedMaskedFields = ImmutableArray<string>.Empty,
-            VersionContext = batch.VersionContext,
-        }, cancellationToken).ConfigureAwait(false);
-        var stored = page.Items.IsDefaultOrEmpty ? new Dictionary<long, Feature>() : page.Items.ToDictionary(static row => row.Id);
-        foreach (var update in updates)
-        {
-            if (!stored.TryGetValue(update.Id, out var snapshot))
-            {
-                return null;
-            }
-
-            effective[update.Id] = MergeEffectiveAttributes(update, snapshot);
-        }
-
-        return effective;
-    }
-
-    private static IReadOnlyDictionary<string, object?> MergeEffectiveAttributes(Feature update, Feature snapshot)
-    {
-        var attributes = new Dictionary<string, object?>(snapshot.Attributes, StringComparer.OrdinalIgnoreCase);
-        foreach (var name in update.ExplicitAttributeRemovals.IsDefault ? [] : update.ExplicitAttributeRemovals)
-        {
-            attributes.Remove(name);
-        }
-
-        foreach (var (name, value) in update.Attributes)
-        {
-            attributes[name] = value;
-        }
-
-        return attributes;
+        return (checkedBatch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(checkedBatch, Safe(rejections)));
     }
 
     internal static Task RunAfterAsync(Target target, FeatureEditBatch batch, FeatureEditResult result)
