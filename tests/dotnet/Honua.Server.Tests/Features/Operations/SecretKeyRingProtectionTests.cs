@@ -64,11 +64,11 @@ public sealed class SecretKeyRingProtectionTests
         var repository = new MemoryKeyRepository();
         _ = Protect(repository, new(null, written), "approved-secret");
 
-        var action = () => SecretKeyRingCipher.EnsureReadable(repository.Elements, configured);
+        var action = () => SecretKeyRingCipher.EnsureReadable(repository.Elements, new(null, configured));
 
         action.Should().Throw<InvalidOperationException>()
             .Which.Message.Should().Contain(written.Fingerprint).And.Contain(configured.Fingerprint);
-        SecretKeyRingCipher.EnsureReadable(repository.Elements, written);
+        SecretKeyRingCipher.EnsureReadable(repository.Elements, new(null, written));
     }
 
     [UnitTest]
@@ -80,10 +80,56 @@ public sealed class SecretKeyRingProtectionTests
         var secretRing = new MemoryKeyRepository();
         _ = Protect(secretRing, new(null, SecretKeyRingMaterial.Parse(NewSecret())), "wrapped-by-secret");
 
-        var action = () => SecretKeyRingCipher.EnsureReadable(secretRing.Elements, material: null);
+        var action = () => SecretKeyRingCipher.EnsureReadable(secretRing.Elements, new(certificate, null));
 
         action.Should().Throw<InvalidOperationException>().WithMessage("*configured none*");
-        SecretKeyRingCipher.EnsureReadable(certificateRing.Elements, material: null);
+        SecretKeyRingCipher.EnsureReadable(certificateRing.Elements, new(certificate, null));
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EnsureReadable_WhenTheCertificateWasRemoved_RefusesWithoutChangingTheRing(bool legacy)
+    {
+        using var certificate = CreateCertificate();
+        var secret = SecretKeyRingMaterial.Parse(NewSecret());
+        var repository = new MemoryKeyRepository();
+        string payload;
+        if (legacy)
+        {
+            var services = new ServiceCollection();
+            services.AddDataProtection()
+                .SetApplicationName("Honua.Server")
+                .AddKeyManagementOptions(options => options.XmlRepository = repository)
+                .ProtectKeysWithCertificate(certificate);
+            using var provider = services.BuildServiceProvider();
+            payload = provider.GetDataProtector(Purpose).Protect("wrapped-by-certificate");
+        }
+        else
+        {
+            payload = Protect(repository, new(certificate, null), "wrapped-by-certificate");
+        }
+
+        var before = repository.Elements.Select(element => element.ToString()).ToArray();
+        var action = () => SecretKeyRingCipher.EnsureReadable(repository.Elements, new(null, secret));
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Retain*certificate*private key*does not rewrap*");
+        repository.Elements.Select(element => element.ToString()).Should().Equal(before);
+        SecretKeyRingCipher.EnsureReadable(repository.Elements, new(certificate, secret));
+        Unprotect(repository, new(certificate, secret), payload).Should().Be("wrapped-by-certificate");
+    }
+
+    [UnitTest]
+    public void EnsureReadable_WithSecretOnly_AcceptsEmptyAndSecretWrappedRings()
+    {
+        var secret = SecretKeyRingMaterial.Parse(NewSecret());
+        var repository = new MemoryKeyRepository();
+        SecretKeyRingCipher.EnsureReadable(repository.Elements, new(null, secret));
+        var payload = Protect(repository, new(null, secret), "wrapped-by-secret");
+
+        SecretKeyRingCipher.EnsureReadable(repository.Elements, new(null, secret));
+        Unprotect(repository, new(null, secret), payload).Should().Be("wrapped-by-secret");
     }
 
     [UnitTest]

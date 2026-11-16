@@ -200,12 +200,24 @@ internal static class SecretKeyRingCipher
         }
     }
 
-    // DataProtection treats a key it cannot decrypt as absent and mints a new one, so a changed secret is refused before the ring is used.
-    public static void EnsureReadable(IEnumerable<XElement> elements, SecretKeyRingMaterial? material)
+    // DataProtection treats a key it cannot decrypt as absent and mints a new one, so missing protectors are refused before the ring is used.
+    public static void EnsureReadable(IEnumerable<XElement> elements, OperationKeyRingProtector protector)
     {
         ArgumentNullException.ThrowIfNull(elements);
-        var configured = material?.Fingerprint;
-        var foreign = elements
+        var ring = elements.ToArray();
+        XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
+        if (protector.Certificate is null && ring
+            .SelectMany(static element => element.Descendants())
+            .Where(element => element.Name == "encryptedSecret" || element.Name == dataProtection + "encryptedSecret")
+            .Any(static element => element.Element(_namespace + "key") is null))
+        {
+            throw new InvalidOperationException(
+                "The key ring holds certificate-wrapped keys. Retain the key-ring certificate and its private key "
+                + "while those keys remain; configuring KeyRingSecret does not rewrap existing keys.");
+        }
+
+        var configured = protector.Secret?.Fingerprint;
+        var foreign = ring
             .SelectMany(static element => element.Descendants(_namespace + "fingerprint"))
             .Select(static fingerprint => fingerprint.Value)
             .FirstOrDefault(fingerprint => !string.Equals(fingerprint, configured, StringComparison.OrdinalIgnoreCase));

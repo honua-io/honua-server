@@ -374,7 +374,7 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     keyRing.ProtectKeysWith(keyRingProtector);
     builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
         .Configure<PostgresDataProtectionKeyRepository>((_, keyRepository) =>
-            keyRepository.EnsureSecretWrappedKeysAreReadable(keyRingProtector.Secret));
+            keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector));
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.

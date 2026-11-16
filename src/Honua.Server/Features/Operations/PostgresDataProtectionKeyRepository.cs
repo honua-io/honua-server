@@ -43,6 +43,6 @@ internal sealed class PostgresDataProtectionKeyRepository(
     public void EnsureAllElementsAreProtected()
         => DataProtectionKeyElementProtection.EnsureAllProtected(GetAllElements());
 
-    public void EnsureSecretWrappedKeysAreReadable(SecretKeyRingMaterial? material)
-        => SecretKeyRingCipher.EnsureReadable(GetAllElements(), material);
+    public void EnsureWrappedKeysAreReadable(OperationKeyRingProtector protector)
+        => SecretKeyRingCipher.EnsureReadable(GetAllElements(), protector);
 }
