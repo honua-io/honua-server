@@ -246,18 +246,8 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
         var serialized = JsonSerializer.Serialize(
             payload,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
-        return new OperationGatewayRequest
-        {
-            OperationInstanceId = context.OperationInstanceId,
-            OperationId = OperationId,
-            Kind = definition.OperationClass,
-            RequestedBy = context.PrincipalId,
-            Reason = decision.Reason,
-            CorrelationId = context.CorrelationId,
-            ExecutionPayload = serialized,
-            Plan = AdminOperationReview.Create(descriptor, request, context, definition.Method.Method,
-                definition.Path, definition.SideEffect == OperationSideEffectClass.DestroysState ? ProposalRiskLevel.High : ProposalRiskLevel.Medium, serialized)
-        };
+        return AdminOperationApprovalRequest.Create(definition,
+            new(descriptor, request, context) { Decision = decision }, serialized);
     }
 
     public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)

@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security;
+using Honua.Core.Features.Guardrails.Domain;
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -42,6 +44,58 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
     private HumanApprovalHttpClient _approver = null!;
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
     private IOperationProposalStore _proposals = null!;
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ServiceMove_ApprovedReplay_RevalidatesCurrentRequesterServiceRoles()
+    {
+        var initial = await SnapshotAsync();
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
+        var before = await RestrictServiceToCurrentRequesterRoleAsync();
+        var destination = before.Graph.Folders.Single().Metadata.Id;
+        var payload = new AdminApiOperationApprovalPayload
+        {
+            OperationId = "service.move", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            ServiceName = "test", Parameters = new() { ["folderId"] = destination, ["If-Match"] = before.Etag }
+        };
+        await WithRequesterContextAsync(payload, async context =>
+        {
+            var accepted = await CreateRequesterProposalAsync(context, new()
+            {
+                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId, RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                Plan = new OperationProposalPlan
+                {
+                    Summary = "Move service using current requester membership",
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            });
+            accepted.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, accepted.Message);
+            await ApproveAsync(accepted.ProposalId!);
+            var completed = (await _proposals.GetAsync(accepted.ProposalId!))!;
+            completed.Status.Should().Be(OperationProposalStatus.Succeeded, completed.ResolutionReason);
+        }, "folder-requester");
+        (await SnapshotAsync()).Graph.Services.Where(service => service.Metadata.Name == "test")
+            .Should().OnlyContain(service => service.FolderId == destination);
+    }
+
+    private async Task<MetadataV2GraphSnapshot> RestrictServiceToCurrentRequesterRoleAsync()
+    {
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+            var current = await store.GetCurrentAsync();
+            return await store.SaveAsync(current.Graph with
+            {
+                Services = current.Graph.Services.Select(service => service.Metadata.Name == "test"
+                    ? service with { AccessPolicy = new AccessPolicy
+                    {
+                        AllowedRoles = ["original-membership"], AllowedWriteRoles = ["original-membership"]
+                    } } : service).ToArray()
+            }, current.Etag);
+        }
+    }
 
     public async Task InitializeAsync()
     {

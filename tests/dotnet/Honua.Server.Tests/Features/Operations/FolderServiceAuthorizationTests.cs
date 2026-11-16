@@ -67,20 +67,7 @@ public sealed class FolderServiceAuthorizationTests
     {
         var roleStore = Substitute.For<IRoleStore>();
         var evaluatedUsers = new List<string>();
-        roleStore.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var userId = call.ArgAt<string>(0);
-                evaluatedUsers.Add(userId);
-                return Task.FromResult(new EffectivePermissions
-                {
-                    UserId = userId,
-                    Roles = call.ArgAt<IReadOnlyList<string>>(1),
-                    Permissions = userId == "operator"
-                        ? [new PermissionGrant { Service = "survey", Layer = "*", Operation = "admin" }]
-                        : []
-                });
-            });
+        RecordEffectivePermissions(roleStore, evaluatedUsers);
         var evaluator = Substitute.For<IAccessPolicyEvaluator>();
         evaluator.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<AccessPolicy?>(), Arg.Any<AccessPolicy?>(), AccessScope.Write)
             .Returns(call => call.ArgAt<ClaimsPrincipal>(0).FindFirstValue(ClaimTypes.NameIdentifier) == "operator"
@@ -127,13 +114,7 @@ public sealed class FolderServiceAuthorizationTests
         await using var services = new ServiceCollection().AddSingleton(policyEvaluator)
             .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
                 NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
-        var graph = new MetadataV2Graph
-        {
-            Services = [
-                new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "map", Name = "survey" }, AccessPolicy = first },
-                new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "feature", Name = "survey" }, AccessPolicy = last }
-            ]
-        };
+        var graph = CreateFacetGraph(first, last);
 
         var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
         {
@@ -171,13 +152,7 @@ public sealed class FolderServiceAuthorizationTests
         await using var services = new ServiceCollection().AddSingleton(policyEvaluator)
             .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
                 NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
-        var graph = new MetadataV2Graph
-        {
-            Services = [new MetadataV2Service
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "survey", Tenant = "tenant-a" }
-            }]
-        };
+        var graph = CreateTenantGraph();
 
         var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
         {
@@ -205,6 +180,46 @@ public sealed class FolderServiceAuthorizationTests
         }
         policyEvaluator.DidNotReceive().Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<AccessPolicy?>(),
             Arg.Any<AccessPolicy?>(), Arg.Any<AccessScope>());
+    }
+
+    private static void RecordEffectivePermissions(IRoleStore roleStore, List<string> evaluatedUsers)
+    {
+        roleStore.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var userId = call.ArgAt<string>(0);
+                evaluatedUsers.Add(userId);
+                return Task.FromResult(new EffectivePermissions
+                {
+                    UserId = userId,
+                    Roles = call.ArgAt<IReadOnlyList<string>>(1),
+                    Permissions = userId == "operator"
+                        ? [new PermissionGrant { Service = "survey", Layer = "*", Operation = "admin" }]
+                        : []
+                });
+            });
+    }
+
+    private static MetadataV2Graph CreateFacetGraph(AccessPolicy first, AccessPolicy last)
+    {
+        return new MetadataV2Graph
+        {
+            Services = [
+                new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "map", Name = "survey" }, AccessPolicy = first },
+                new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "feature", Name = "survey" }, AccessPolicy = last }
+            ]
+        };
+    }
+
+    private static MetadataV2Graph CreateTenantGraph()
+    {
+        return new MetadataV2Graph
+        {
+            Services = [new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "survey", Tenant = "tenant-a" }
+            }]
+        };
     }
 
     private static ClaimsPrincipal Principal(string name)

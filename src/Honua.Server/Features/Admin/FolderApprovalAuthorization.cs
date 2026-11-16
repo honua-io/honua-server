@@ -43,6 +43,47 @@ internal static class FolderApprovalAuthorization
     internal static async Task<OperationProposalPlan> PrepareAsync(
         OperationGatewayRequest operation, OperationProposalPlan plan, HttpContext? context, CancellationToken cancellationToken)
     {
+        var (actor, request) = ReadRequesterRequest(operation, plan, context);
+        var authenticatedContext = context!;
+        var snapshot = await ReadAuthorizedSnapshotAsync(authenticatedContext, request, cancellationToken).ConfigureAwait(false);
+        var mutation = BuildMutation(snapshot.Graph, request, operation.TenantId);
+        var authorization = new FolderRequesterAuthorization
+        {
+            RequesterId = actor.ActorId,
+            SubjectId = actor.SubjectId,
+            SubjectIssuer = actor.SubjectIssuer,
+            OperationId = operation.OperationId!,
+            SnapshotEtag = snapshot.Etag,
+            PolicyRevision = string.Empty,
+            ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
+            ExpiresAt = await EvidenceExpiryAsync(authenticatedContext).ConfigureAwait(false)
+        };
+        var revision = (await PolicyRevisionAsync(new(authenticatedContext.RequestServices, authorization, authenticatedContext.User), cancellationToken).ConfigureAwait(false)).Revision;
+        var authorizationContext = new FolderAuthorizationContext
+        {
+            Original = snapshot.Graph,
+            Mutation = mutation,
+            Services = authenticatedContext.RequestServices,
+            OperatorPrincipal = authenticatedContext.User,
+            FolderTenant = request.Parameters.TryGetValue("namespace", out var selectedNamespace) && selectedNamespace is not null ? MetadataV2ServicePaths.NormalizeTenant(operation.TenantId) : null,
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = authenticatedContext.RequestServices,
+                Principal = authenticatedContext.User,
+                TenantId = TenantScopeHelpers.ResolveRequestTenantId(authenticatedContext),
+                Operation = AuthorizationOperation.Admin
+            }
+        };
+        if ((await FolderServiceAuthorization.EvaluateAsync(authorizationContext, cancellationToken).ConfigureAwait(false)).Failure is not null)
+            throw new FolderProposalRefusal("The requester does not have access to every affected service.");
+        if (revision != (await PolicyRevisionAsync(new(authenticatedContext.RequestServices, authorization, authenticatedContext.User), cancellationToken).ConfigureAwait(false)).Revision)
+            throw new FolderProposalRefusal(FreshProposalRequired);
+        return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
+    }
+
+    private static (CanonicalSecurityActorIdentity Actor, OperationRequest Request) ReadRequesterRequest(
+        OperationGatewayRequest operation, OperationProposalPlan plan, HttpContext? context)
+    {
         if (context?.User.Identity?.IsAuthenticated != true)
             throw new FolderProposalRefusal("Folder proposals require an active authenticated requester; background callers cannot create them.");
         var actor = CanonicalSecurityActor.Resolve(context.User);
@@ -58,7 +99,12 @@ internal static class FolderApprovalAuthorization
         }
         if (replay.SchemaName != context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema)
             throw new FolderProposalRefusal("The folder proposal schema does not match the authenticated request.");
-        var request = replay.Request;
+        return (actor, replay.Request);
+    }
+
+    private static async Task<MetadataV2GraphSnapshot> ReadAuthorizedSnapshotAsync(
+        HttpContext context, OperationRequest request, CancellationToken cancellationToken)
+    {
         var store = context.RequestServices.GetService<IMetadataV2GraphStore>()
             ?? throw new FolderProposalRefusal(FolderMutationFailure.ReadOnlyCatalog.Detail, OperationGatewayOutcome.Failed);
         var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -69,39 +115,7 @@ internal static class FolderApprovalAuthorization
         if (await context.RequestServices.GetRequiredService<OperatorApprovalGate>().EvaluateAuthorizationAsync(context,
             OperatorResourceType.Catalog, OperatorOperation.Publish).ConfigureAwait(false) is not null)
             throw new FolderProposalRefusal("The requester does not have permission to change the folder catalog.");
-        var mutation = BuildMutation(snapshot.Graph, request, operation.TenantId);
-        var authorization = new FolderRequesterAuthorization
-        {
-            RequesterId = actor.ActorId,
-            SubjectId = actor.SubjectId,
-            SubjectIssuer = actor.SubjectIssuer,
-            OperationId = operation.OperationId!,
-            SnapshotEtag = snapshot.Etag,
-            PolicyRevision = string.Empty,
-            ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
-            ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
-        };
-        var revision = (await PolicyRevisionAsync(new(context.RequestServices, authorization, context.User), cancellationToken).ConfigureAwait(false)).Revision;
-        var authorizationContext = new FolderAuthorizationContext
-        {
-            Original = snapshot.Graph,
-            Mutation = mutation,
-            Services = context.RequestServices,
-            OperatorPrincipal = context.User,
-            FolderTenant = request.Parameters.TryGetValue("namespace", out var selectedNamespace) && selectedNamespace is not null ? MetadataV2ServicePaths.NormalizeTenant(operation.TenantId) : null,
-            RequesterAccess = new ServiceAccessContext
-            {
-                Services = context.RequestServices,
-                Principal = context.User,
-                TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
-                Operation = AuthorizationOperation.Admin
-            }
-        };
-        if ((await FolderServiceAuthorization.EvaluateAsync(authorizationContext, cancellationToken).ConfigureAwait(false)).Failure is not null)
-            throw new FolderProposalRefusal("The requester does not have access to every affected service.");
-        if (revision != (await PolicyRevisionAsync(new(context.RequestServices, authorization, context.User), cancellationToken).ConfigureAwait(false)).Revision)
-            throw new FolderProposalRefusal(FreshProposalRequired);
-        return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
+        return snapshot;
     }
 
     private static async Task<DateTimeOffset> EvidenceExpiryAsync(HttpContext context)
