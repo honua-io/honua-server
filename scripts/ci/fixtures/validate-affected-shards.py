@@ -94,14 +94,9 @@ def select_offline(
     cap: int = 6,
 ) -> dict[str, Any]:
     """Exercise the pure selection with a supplied router answer."""
-    return selector.select(
-        config=config,
-        changed_files=changed_files,
-        descriptor=descriptor,
-        affected_projects=projects,
-        cap=cap,
-        test_class_hits=selector.count_test_class_hits(REPO_ROOT, config, changed_files),
-    )
+    inputs = selector.SelectionInputs(descriptor, projects, cap,
+                                      selector.count_test_class_hits(REPO_ROOT, config, changed_files))
+    return selector.select(config, changed_files, inputs)
 
 
 def router(
@@ -290,8 +285,8 @@ def check_explicit_source_priority(config: dict[str, Any]) -> None:
         selected = select_offline(unmarked, changed, descriptor=descriptor, cap=1)
         if selected["shards"] != [competitor["name"]]:
             raise FixtureError("unmarked source override changed priority")
-    selected = selector.select(config=probe, changed_files=changed, descriptor=descriptor,
-                               affected_projects=None, cap=1, test_class_hits={competitor["name"]: 1})
+    signals = selector.SelectionInputs(descriptor, None, 1, {competitor["name"]: 1})
+    selected = selector.select(probe, changed, signals)
     if selected["shards"] != [competitor["name"]]:
         raise FixtureError("source priority displaced changed-test ownership")
     descriptor["shards"] = [competitor["name"]]
