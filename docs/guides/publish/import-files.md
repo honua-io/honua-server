@@ -151,14 +151,14 @@ and the published layer's primary identifier can be different fields.
 | Format | Extension | Notes |
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
-| Esri JSON | `.esrijson` | An ArcGIS feature set (attributes and Esri geometry). CRS read from `spatialReference.wkid`; without it, `sourceSrid` is required. |
+| Esri JSON | `.esrijson` | An ArcGIS feature set (attributes and Esri geometry). CRS read from `spatialReference` (`latestWkid`, then `wkid`); without it, `sourceSrid` is required. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. A definition whose datum is not recognised is not matched; supply `sourceSrid`. |
 | GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | GML | `.gml` | Supply `sourceSrid` when the import reports `import.source_srid_required`. |
-| WKT | `.wkt` | No embedded CRS; `sourceSrid` is required. |
-| WKB | `.wkb` | One or more concatenated Well-Known Binary geometries, without attributes. No embedded CRS; `sourceSrid` is required. |
+| WKT | `.wkt` | Plain WKT carries no CRS, so `sourceSrid` is required; an EWKT `SRID=<n>;` prefix is read. |
+| WKB | `.wkb` | One or more concatenated Well-Known Binary geometries, without attributes. The import does not read a CRS from the file; `sourceSrid` is required. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. The delimiter (comma, semicolon, tab or pipe) is detected; in a semicolon-separated file, decimal-comma coordinates such as `11,575490` are read as decimals. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
@@ -196,7 +196,7 @@ When the server cannot detect a source CRS and no `sourceSrid` was supplied, the
 - **`Unsupported file format`** or **`File extension '…' is not allowed`** (preview) — the extension is not in your build's `GET /formats` list; convert to a supported format.
 - **`Multipart import request is invalid.`** (upload) — the upload endpoint gives this one answer for a raw `.shp`, an unsupported extension and a malformed form. Run the same file through `POST /api/v1/admin/import/preview` to see which it is.
 - **Import fails with `import.source_srid_required`** — the file carries no CRS information, or its projected `.prj` matches no EPSG CRS (or several); re-run with `sourceSrid` set to the EPSG code of the source data.
-- **A GeoJSON feature has `"geometry": null`** — the feature is imported without geometry and the result's `validationErrors` array carries an `import.geometry_missing` entry with the feature's 1-based `featureIndex`; `warnings` stays empty. A feature with no `geometry` member at all is still rejected.
+- **A GeoJSON feature has `"geometry": null`** — the feature is imported without geometry and the result's `validationErrors` array carries an `import.geometry_missing` entry with the feature's 1-based `featureIndex`; nothing is added to `warnings`. A feature with no `geometry` member at all is still rejected.
 - **`Background import service not available` (503)** — the file exceeds the synchronous size limit (or `forceBackground` was set) and this host has no runner for background imports: a Lambda host without a durable job store and a batch workload, or a host without an import job service. Check `GET /api/v1/admin/import/limits` and the `import.background` capability in `GET /api/v1/capabilities/manifest`; its `reasonCode` is `durable-runner-required` or `shared-file-storage-required`.
 - **FileGDB import succeeds but data looks incomplete** — check the `warnings` array; advanced geodatabase constructs are not preserved.
 
