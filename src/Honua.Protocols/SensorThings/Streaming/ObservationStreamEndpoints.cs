@@ -8,15 +8,12 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
@@ -58,13 +55,7 @@ internal static class ObservationStreamEndpoints
         [FromServices] ObservationStreamSessionManager sessionManager,
         [FromServices] ObservationStreamScope scope)
     {
-        var tenant = context.RequestServices.GetService<ITenantContext>();
-        // Multi-tenant mode admits non-admins only on a claim-resolved tenant. Single-tenant
-        // mode resolves every authenticated request to the deployment tenant (Source=Default).
-        var tenancyEnabled = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
-        var resolvedScope = tenant?.Source == TenantContextSource.Claim
-            || (!tenancyEnabled && tenant?.Source == TenantContextSource.Default);
-        if (!context.User.IsInRole("admin") && (string.IsNullOrWhiteSpace(scope.TenantId) || !resolvedScope))
+        if (!SensorThingsTenantScope.IsResolved(context))
         {
             return StandardErrorHelpers.CreateForbidden(context,
                 "Observation subscriptions require a resolved tenant scope.");
