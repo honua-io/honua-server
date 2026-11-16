@@ -202,6 +202,12 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, 
         ValidateArgumentNames(arguments);
 
         var dryRun = ReadBool(arguments, "dryRun");
+        if (dryRun && !_descriptor.Policy.SupportsDryRun)
+        {
+            return McpToolHelpers.ErrorResult(new GeoprocessingValidationException(
+                $"Operation '{_descriptor.OperationId}' does not support dry-run execution."));
+        }
+
         // Supported previews use normal dispatch so configured preview restrictions
         // still apply. Only mutations are submitted as approval proposals.
         var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
