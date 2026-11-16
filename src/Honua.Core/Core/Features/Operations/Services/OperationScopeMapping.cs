@@ -118,8 +118,8 @@ public static class OperationScopeMapping
 
     // Every Studio mutation routed through the canonical runtime needs a mapping: the dispatcher
     // refuses any scope-governed submission it cannot map, so an unmapped identity made
-    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed
-    //. The operations mirror StudioAuthorizationService's scope ceiling.
+    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed.
+    // The operations mirror StudioAuthorizationService's scope ceiling.
     private static OperatorOperation ResolveStudioOperation(string operationId)
         => operationId switch
         {

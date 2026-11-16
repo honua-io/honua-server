@@ -486,8 +486,8 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
-        // Register the Postgres-backed durable managed-user + SCIM provisioning stores
-        //. Durable storage wins over the in-memory defaults registered later in
+        // Register the Postgres-backed durable managed-user + SCIM provisioning stores.
+        // Durable storage wins over the in-memory defaults registered later in
         // Program.cs (ControlPlaneIamDefaults uses TryAdd), so managed-identity membership
         // — SCIM provisioning, role assignment, deactivation — survives restart and is
         // shared across scaled nodes; ManagedUserPrincipalMembershipSource misses become
@@ -517,8 +517,8 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
-        // Register Postgres-backed field-level security (column masking) policy store
-        //. Backs IFieldMaskPolicyStore so per-layer attribute-masking policies are
+        // Register Postgres-backed field-level security (column masking) policy store.
+        // Backs IFieldMaskPolicyStore so per-layer attribute-masking policies are
         // durable and shared across scaled nodes; resolved per-request and dropped from
         // query output at the shared projection seam.
         services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskPolicyStore>(serviceProvider =>

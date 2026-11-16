@@ -5,8 +5,8 @@
 //
 // A layer published with LayerStorageMode.Managed copies its source rows into the shared
 // managed `features` table and binds every protocol to that table, so the managed feature
-// writer and the serving readers use one storage and an accepted edit reads back
-//. Source-backed layers keep reading their live source table and stay
+// writer and the serving readers use one storage and an accepted edit reads back.
+// Source-backed layers keep reading their live source table and stay
 // read-only, because the managed writer cannot write through them. This
 // partial holds the storage descriptor, the managed field projection and the publish-time
 // capability contract that ties edit tokens to managed storage.

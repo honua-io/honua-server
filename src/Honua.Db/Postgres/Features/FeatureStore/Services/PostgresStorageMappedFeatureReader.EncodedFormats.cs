@@ -10,8 +10,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-// FlatGeobuf / Geobuf output for source-backed (provider-routed) PostGIS layers
-//. The canonical PostgresFeatureStoreRefactored reader implements
+// FlatGeobuf / Geobuf output for source-backed (provider-routed) PostGIS layers.
+// The canonical PostgresFeatureStoreRefactored reader implements
 // both markers against the shared 'features' table; this storage-mapped reader is the
 // production read path for any layer compiled through the Metadata v2 compat snapshot,
 // and previously threw NotSupportedException for FlatGeobuf and lacked the Geobuf

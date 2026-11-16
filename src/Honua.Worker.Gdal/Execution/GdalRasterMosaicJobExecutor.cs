@@ -271,8 +271,8 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             }
 
             // Refuse a content-sniffed VRT/service-XML indirection blob or an embedded
-            // /vsi reference before it is ever staged to scratch and opened by gdalwarp
-            //. This executor decodes sources inline rather than through the
+            // /vsi reference before it is ever staged to scratch and opened by gdalwarp.
+            // This executor decodes sources inline rather than through the
             // shared GdalJobInputReader chokepoint, so the guard must be applied here too.
             if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
             {

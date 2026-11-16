@@ -318,8 +318,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
 
             // Native mTLS (client-certificate) authentication is a built-experimental
             // capability, gated OFF by default: an always-on client-certificate scheme/RBAC
-            // layer interposes on every admin request regardless of bearer-token validity (a
-            // fully valid JWT could get a 403 from the cert layer in a host that never
+            // layer would interpose on every admin request regardless of bearer-token validity
+            // (a fully valid JWT could get a 403 from the cert layer in a host that never
             // configured mTLS). The auth-layer wiring (scheme registration, admin/ops-read
             // policy scheme lists, and the enforcement middleware) reads this same flag
             // directly — see ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled.

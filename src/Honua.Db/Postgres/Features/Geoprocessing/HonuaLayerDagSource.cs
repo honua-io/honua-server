@@ -47,8 +47,8 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
             throw new InvalidOperationException("source.honua-layer requires a layerId.");
         }
 
-        // Fail closed on a background read that cannot be constrained to its submitter
-        //. This connector is THE seam every layer-sourced geoprocessing
+        // Fail closed on a background read that cannot be constrained to its submitter.
+        // This connector is THE seam every layer-sourced geoprocessing
         // process reads a catalog layer through, so the guard covers the whole family
         // (analytics.*, generalization.*, conversion.feature-project, enrichment, and the
         // source.honua-layer connector itself) without any per-executor opt-in.

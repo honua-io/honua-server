@@ -208,8 +208,8 @@ internal sealed partial class GdalRasterizeJobExecutor(
                 return false;
             }
             // Bound the attacker-controlled OUTPUT grid before gdal_rasterize allocates
-            // a width×height output raster, closing the output-allocation OOM vector
-            //. Reuses the same caps the input dimension guard applies.
+            // a width×height output raster, closing the output-allocation OOM vector.
+            // Reuses the same caps the input dimension guard applies.
             if (!GdalOutputGridGuard.TryAdmit(width, height, options, out failure))
             {
                 return false;

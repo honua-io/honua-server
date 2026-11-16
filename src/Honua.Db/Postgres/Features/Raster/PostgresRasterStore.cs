@@ -2266,8 +2266,8 @@ internal sealed class PostgresRasterStore : IRasterStore
                 extraParams, cancellationToken).ConfigureAwait(false);
         }
 
-        // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule
-        //: seamline clips, nadir/attribute projections and the ordered union are shared.
+        // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule:
+        // seamline clips, nadir/attribute projections and the ordered union are shared.
         var mosaicSource = BuildMosaicSourceSelect("raster", ordering, attributeSort);
         // The contributor probe uses the same point as the merged sample. Mixed raster SRIDs
         // transform onto each aligned raster; a uniform SRID reuses the merged sample point.
@@ -4895,8 +4895,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         RasterMosaicAttributeSort? attributeSort = null)
         // Every mosaic query in this store unions the rows of its `source` CTE. Layers may mix
-        // native resolutions or grid origins, so each input is put on one shared grid first
-        //; aligned inputs pass through unchanged.
+        // native resolutions or grid origins, so each input is put on one shared grid first;
+        // aligned inputs pass through unchanged.
         => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
 
     private static async Task<byte[]> ReadExportDataAsync(DbDataReader reader, int dataOrdinal, CancellationToken cancellationToken)

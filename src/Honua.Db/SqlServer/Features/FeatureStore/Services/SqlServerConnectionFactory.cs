@@ -42,8 +42,8 @@ internal sealed class SqlServerConnectionFactory : ISqlServerConnectionFactory
         // DataConnection.ConnectionString, or static SqlServerOptions.ConnectionString, none of
         // which is guaranteed to carry Encrypt=true. This is the live production query path for
         // every SQL Server feature read, so re-parse and force TLS the same way
-        // SqlServerConnectionDriver.TestConnectionAsync does for the admin health-probe path
-        //: per the MVP deferrals, secure connections are "encrypted or secret references
+        // SqlServerConnectionDriver.TestConnectionAsync does for the admin health-probe path:
+        // per the MVP deferrals, secure connections are "encrypted or secret references
         // only" (never unencrypted).
         var encryptedConnectionString = SqlServerConnectionSecurity.RequireEncryption(connectionString);
         var connection = new SqlConnection(encryptedConnectionString);

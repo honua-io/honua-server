@@ -172,8 +172,8 @@ internal sealed partial class FeatureQueryBuilder
                 return FormattableString.Invariant(
                     $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Intersects({targetGeometryExpression}, {joinGeometryExpression})");
 
-            // Operand order is fixed by the canonical enum member names
-            // — the join geometry is the subject of
+            // Operand order is fixed by the canonical enum member names —
+            // the join geometry is the subject of
             // JoinContainsTarget, the target geometry the subject of
             // TargetContainsJoin. The `&&` bounding-box pre-filter is symmetric,
             // so it stays in target-then-join order for both.
