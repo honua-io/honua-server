@@ -196,7 +196,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     [InlineData("expand", true)]
     [InlineData("opted-out", false)]
     [InlineData("contract", false)]
-    [InlineData("reviewed-index-removal", true)]
+    [InlineData("reviewed-index-removal", false)]
     public async Task CanonicalRunner_RollbackAcrossNewerDeclaredMigration_StartsOnlyWhenItVerifiesExpand(
         string kind, bool rollbackStarts)
     {
@@ -239,8 +239,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         };
         if (kind == "reviewed-index-removal")
         {
-            // 183 applies the same reviewed script during the canonical upgrade.
+            // The current image supports feature writes after applying the contract migration.
             await AssertReviewedFeatureIndexesAsync(connection, removed: true);
+            await AssertFeatureReadWriteAfterIndexRemovalAsync(connection);
         }
 
         command.CommandText = sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@script, now());";
@@ -277,10 +278,6 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         if (rollbackStarts)
         {
             await skippedMigrationsStartup.Should().NotThrowAsync();
-            if (kind == "reviewed-index-removal")
-            {
-                await AssertFeatureReadWriteAfterIndexRemovalAsync(connection);
-            }
         }
         else
         {
@@ -304,7 +301,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             WHERE layer_id = 990775 AND objectid = 99077501;
             """;
         (await command.ExecuteScalarAsync()).Should().Be("after",
-            "the prepared reader must retain feature import, edit and query behavior after removing optional indexes");
+            "the current reader must retain feature import, edit and query behavior after removing optional indexes");
     }
 
     [IntegrationTheory]
