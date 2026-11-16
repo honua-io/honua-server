@@ -383,15 +383,20 @@ internal sealed partial class JobExecutionService(
         if (job.CancellationRequestedAt.HasValue)
         {
             Log.JobCancelledByOperator(logger, operationId);
-            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
-                "Cancelled by operator (durable signal).", CancellationToken.None).ConfigureAwait(false);
+            await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Cancelled,
+                "Cancelled by operator (durable signal)."), CancellationToken.None).ConfigureAwait(false);
             cancellationTokens.Remove(operationId, workerId);
             return;
         }
 
+        if (await TryRecoverPendingOutcomeAsync(job, workerId, stoppingToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
         // Transition to Running. Use CAS to prevent overwriting a concurrent
         // cancel signal or terminal write that landed after the re-read above.
-        var now = DateTimeOffset.UtcNow;
         var running = job with
         {
             Status = ExecutionJobStatus.Running,
@@ -570,8 +575,8 @@ internal sealed partial class JobExecutionService(
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Execution timed out.");
                 Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
-                await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                    $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
+                await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Failed,
+                    $"Execution timed out after {timeoutPolicy.MaxDuration}."), CancellationToken.None)
                     .ConfigureAwait(false);
                 return;
             }
@@ -588,8 +593,8 @@ internal sealed partial class JobExecutionService(
                 if (Volatile.Read(ref _drainDeadlineExpired) != 0)
                 {
                     activity?.SetStatus(ActivityStatusCode.Error, DrainDeadlineFailureMessage);
-                    await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                        DrainDeadlineFailureMessage, CancellationToken.None).ConfigureAwait(false);
+                    await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Failed,
+                        DrainDeadlineFailureMessage), CancellationToken.None).ConfigureAwait(false);
                 }
                 else
                 {
@@ -681,8 +686,8 @@ internal sealed partial class JobExecutionService(
         catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
-            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                "license expired", CancellationToken.None).ConfigureAwait(false);
+            await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Failed,
+                "license expired"), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (stoppingToken.IsCancellationRequested &&
             Volatile.Read(ref _drainDeadlineExpired) != 0 && !timeoutCts.IsCancellationRequested && ex is not OutOfMemoryException)
@@ -691,8 +696,8 @@ internal sealed partial class JobExecutionService(
             // into another dispatch on the replacement revision.
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Error, DrainDeadlineFailureMessage);
-            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                DrainDeadlineFailureMessage, CancellationToken.None).ConfigureAwait(false);
+            await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Failed,
+                DrainDeadlineFailureMessage), CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -704,8 +709,8 @@ internal sealed partial class JobExecutionService(
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Execution timed out.");
                 Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
-                await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                    $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
+                await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Failed,
+                    $"Execution timed out after {timeoutPolicy.MaxDuration}."), CancellationToken.None)
                     .ConfigureAwait(false);
             }
             else
@@ -725,8 +730,8 @@ internal sealed partial class JobExecutionService(
             activity?.SetStatus(ActivityStatusCode.Error, "Execution timed out.");
             Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
             // Timeout — terminal failure, do not retry.
-            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
+            await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Failed,
+                $"Execution timed out after {timeoutPolicy.MaxDuration}."), CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (partitionLeaseLostCts.IsCancellationRequested)
@@ -748,8 +753,8 @@ internal sealed partial class JobExecutionService(
             activity?.SetStatus(ActivityStatusCode.Error, "Cancelled by operator.");
             Log.JobCancelledByOperator(logger, operationId);
             // Operator cancellation — terminal cancelled state.
-            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
-                "Cancelled by operator.", CancellationToken.None).ConfigureAwait(false);
+            await TerminateJobAsync(new(operationId, workerId, ExecutionJobStatus.Cancelled,
+                "Cancelled by operator."), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1033,90 +1038,6 @@ internal sealed partial class JobExecutionService(
         return (final, effectiveStatus);
     }
 
-    internal const string CommittedCancellationWarning = "Cancellation requested after sink data committed; committed-effect receipts are retained.";
-
-    private async Task TerminateJobAsync(
-        string operationId,
-        string workerId,
-        ExecutionJobStatus terminalStatus,
-        string reason,
-        CancellationToken cancellationToken)
-    {
-        var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            return;
-        }
-
-        var lateExpiredSuccess = reason == "license expired" && job.Status == ExecutionJobStatus.Succeeded &&
-            string.Equals(job.ClaimedBy, workerId, StringComparison.Ordinal);
-        if (IsTerminalOrNotOwnedBy(job, workerId) && !lateExpiredSuccess)
-        {
-            Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
-            return;
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        var terminal = job with
-        {
-            Status = terminalStatus,
-            UpdatedAt = now,
-            CompletedAt = now,
-            ErrorMessage = terminalStatus == ExecutionJobStatus.Cancelled && job.CommittedEffectReferences.Count > 0
-                ? CommittedCancellationWarning : reason,
-            Warnings = terminalStatus == ExecutionJobStatus.Cancelled && job.CommittedEffectReferences.Count > 0
-                ? [.. job.Warnings, CommittedCancellationWarning] : job.Warnings,
-            ArtifactReferences = reason switch
-            {
-                "license expired" => [],
-                DrainDeadlineFailureMessage => job.CommittedEffectReferences,
-                _ => job.ArtifactReferences
-            },
-            CommittedEffectReferences = reason == "license expired" ? [] : job.CommittedEffectReferences,
-            PercentComplete = reason is "license expired" or DrainDeadlineFailureMessage ? null : job.PercentComplete,
-            CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled
-                ? job.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
-                : "Failed"
-        };
-
-        if (!await jobStore.TrySetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            Log.TerminalStateSkipped(logger, operationId, "CAS conflict on terminate");
-            cancellationTokens.Remove(operationId, workerId);
-            return;
-        }
-
-        ControlPlaneTelemetry.RecordExecutionTransition(job, terminal);
-
-        cancellationTokens.Remove(operationId, workerId);
-
-        // Both catches below are deliberately broad — see FinalizeJobAsync above for the
-        // same best-effort cleanup rationale.
-        try
-        {
-            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.QueueRemovalFailed(logger, operationId, ex);
-        }
-
-        if (logStore != null)
-        {
-            try
-            {
-                await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.LogRetentionFailed(logger, operationId, ex);
-            }
-        }
-
-        await NotifyTerminalAsync(terminal, cancellationToken).ConfigureAwait(false);
-        Log.JobExecutionCompleted(logger, operationId, terminalStatus.ToString());
-    }
-
     private async Task AbandonJobAsync(
         ExecutionJobRecord job,
         string workerId,
@@ -1140,6 +1061,10 @@ internal sealed partial class JobExecutionService(
         if (current.CancellationRequestedAt.HasValue)
         {
             Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
+            if (await TryRecoverOutcomeAsync(current, workerId, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
 
             var cancelNow = DateTimeOffset.UtcNow;
             var cancelled = current with
@@ -1233,8 +1158,8 @@ internal sealed partial class JobExecutionService(
             if (latestBeforeRequeue.CancellationRequestedAt.HasValue)
             {
                 Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
-                await TerminateJobAsync(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
-                    "Cancelled by operator (durable signal honoured during abandon).", cancellationToken).ConfigureAwait(false);
+                await TerminateJobAsync(new(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
+                    "Cancelled by operator (durable signal honoured during abandon)."), cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -1294,8 +1219,13 @@ internal sealed partial class JobExecutionService(
             if (latestBeforeFail.CancellationRequestedAt.HasValue)
             {
                 Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
-                await TerminateJobAsync(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
-                    "Cancelled by operator (durable signal honoured during abandon).", cancellationToken).ConfigureAwait(false);
+                await TerminateJobAsync(new(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
+                    "Cancelled by operator (durable signal honoured during abandon)."), cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (await TryRecoverOutcomeAsync(latestBeforeFail, workerId, cancellationToken).ConfigureAwait(false))
+            {
                 return;
             }
 

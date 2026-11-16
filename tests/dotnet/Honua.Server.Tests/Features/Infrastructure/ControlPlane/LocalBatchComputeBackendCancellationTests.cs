@@ -19,10 +19,47 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class LocalBatchComputeBackendCancellationTests
 {
     [UnitTheory]
-    [InlineData(OperationStatus.Completed)]
-    [InlineData(OperationStatus.Cancelled)]
-    [InlineData(OperationStatus.Failed)]
-    public async Task ObserveAsync_ExportProgressCannotFinalizeDurableWorkerAttempt(OperationStatus status)
+    [InlineData(0, ExecutionJobStatus.Cancelled)]
+    [InlineData(1, ExecutionJobStatus.Queued)]
+    public async Task CancelAsync_AttemptedImport_LeavesReceiptRecoveryQueued(int attempts, ExecutionJobStatus expected)
+    {
+        var backend = new LocalBatchComputeBackend(Substitute.For<IUniversalProgressStore>(), []);
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "import-recovery",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            AttemptCount = attempts,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.GeoservicesImport,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "import"
+            }
+        };
+
+        var observation = await backend.CancelAsync(job);
+
+        Assert.Equal(expected, observation.Status);
+    }
+
+    [UnitTheory]
+    [InlineData(ExecutionJobKind.Export, OperationStatus.Completed)]
+    [InlineData(ExecutionJobKind.Export, OperationStatus.Cancelled)]
+    [InlineData(ExecutionJobKind.Export, OperationStatus.Failed)]
+    [InlineData(ExecutionJobKind.TileCache, OperationStatus.Completed)]
+    [InlineData(ExecutionJobKind.TileCache, OperationStatus.Cancelled)]
+    [InlineData(ExecutionJobKind.TileCache, OperationStatus.Failed)]
+    [InlineData(ExecutionJobKind.GeoservicesImport, OperationStatus.Completed)]
+    [InlineData(ExecutionJobKind.GeoservicesImport, OperationStatus.Cancelled)]
+    [InlineData(ExecutionJobKind.GeoservicesImport, OperationStatus.Failed)]
+    [InlineData(ExecutionJobKind.GeoServerImport, OperationStatus.Completed)]
+    [InlineData(ExecutionJobKind.GeoServerImport, OperationStatus.Cancelled)]
+    [InlineData(ExecutionJobKind.GeoServerImport, OperationStatus.Failed)]
+    public async Task ObserveAsync_ProgressCannotFinalizeDurableWorkerAttempt(ExecutionJobKind kind, OperationStatus status)
     {
         var progressStore = Substitute.For<IUniversalProgressStore>();
         progressStore.GetProgressAsync("export-race", Arg.Any<CancellationToken>())
@@ -39,7 +76,7 @@ public sealed class LocalBatchComputeBackendCancellationTests
             CancellationRequestedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.Export,
+                Kind = kind,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "local",
                 WorkloadName = "export"

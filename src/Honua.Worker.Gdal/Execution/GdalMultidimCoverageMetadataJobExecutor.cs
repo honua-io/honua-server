@@ -112,6 +112,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            using var sourceScope = GdalRemoteInputScope.Trust(vsiPath);
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running gdalmdiminfo", cancellationToken).ConfigureAwait(false);
 
@@ -163,6 +164,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             // userfaultfd is available, and Docker's default seccomp blocks it.
             string? zarrRootPath = DeriveZarrRootPath(objectKey);
             var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath);
+            using var derivedStoreScope = GdalRemoteInputScope.Trust(vsiOut);
             var convertResult = await RunConvertAsync(runner, context, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
             if (convertResult is not { Succeeded: true })
             {
@@ -358,7 +360,9 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
             // A 3D+ Zarr, or a store with several arrays, opens as a subdataset list.
             // The root document has no geotransform; the data array does.
-            foreach (var subdataset in SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson))
+            var subdatasets = SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson);
+            using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdatasets, zarrPath);
+            foreach (var subdataset in subdatasets)
             {
                 last = await RunInfoAsync(
                     runner, context, subdataset, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
@@ -631,8 +635,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
     private static bool IsUsableSubdatasetName(string name, string zarrPath)
         => name.Length is > 0 and <= 2048 &&
-           name.StartsWith("ZARR:", StringComparison.Ordinal) &&
-           name.Contains(zarrPath, StringComparison.Ordinal) &&
+           name.StartsWith($"ZARR:\"{zarrPath}\":", StringComparison.Ordinal) &&
            name.AsSpan().IndexOfAny('\r', '\n', '\0') < 0;
 
     private static HashSet<string> ReadMdimDataArrayNames(string mdimJson)

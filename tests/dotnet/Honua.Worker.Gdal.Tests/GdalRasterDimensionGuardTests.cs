@@ -83,9 +83,15 @@ public sealed class GdalRasterDimensionGuardTests
         var contour = GdalRasterDriverAllowlist.Prefix("gdal_contour", ["in.tif", "out.geojson"], options);
         contour.Should().Equal("in.tif", "out.geojson");
 
-        var multidim = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
-        multidim.Should().NotContain("-if");
-        multidim.Should().Contain("/vsis3/bucket/coverage.nc");
+        var undeclared = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
+        undeclared.Should().ContainInOrder("-if", "GTiff");
+
+        using (GdalRemoteInputScope.Trust("/vsis3/bucket/coverage.nc"))
+        {
+            var multidim = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
+            multidim.Should().NotContain("-if");
+            multidim.Should().Contain("/vsis3/bucket/coverage.nc");
+        }
 
         var viewshed = GdalRasterDriverAllowlist.Prefix("gdal_viewshed", ["dem.tif", "out.tif"], options);
         viewshed.Should().Equal("dem.tif", "out.tif");

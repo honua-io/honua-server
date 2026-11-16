@@ -36,9 +36,16 @@ env:
   LOCK_SIGNER: https://github.com/honua-io/honua-release/.github/workflows/nightly-certification.yml@refs/heads/trunk
 
 jobs:
+  # Same condition as the publishing job; the shared job then compares the ref exactly.
+  authorize-publish:
+    if: github.ref == 'refs/heads/trunk' && github.repository == 'honua-io/honua-server'
+    uses: ./.github/workflows/publish-authorization.yml
+
   move:
+    needs: authorize-publish
     if: github.ref == 'refs/heads/trunk' && github.repository == 'honua-io/honua-server'
     runs-on: ubuntu-24.04
+    environment: publish-images
     timeout-minutes: 15
     permissions:
       contents: read

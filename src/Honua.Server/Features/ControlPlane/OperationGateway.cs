@@ -69,7 +69,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        request = request with { TenantId = ResolveTenantId(request.TenantId) };
+        request = ResolveRequestIdentity(request);
         var actionDiscriminator = request.ActionDiscriminator
             ?? (request.Kind == OperationClass.AdminConfigChange
                 ? TryReadActionDiscriminator(request.ExecutionPayload)
@@ -99,6 +99,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     CorrelationId = request.CorrelationId,
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                    Roles = request.RequestedByAgent is null ? [] : ["agent"],
                     AuthorizationOutcome = "gateway-authorized",
                     RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
@@ -327,7 +328,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             var previousTenantSource = tenantContext?.Source ?? TenantContextSource.Anonymous;
             var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
             var previousSchema = schemaContext?.CurrentSchema;
-            tenantContext?.Set(replay?.TenantId, TenantContextSource.Claim);
+            var replayTenantId = replay is null ? proposal.TenantId : replay.TenantId;
+            tenantContext?.Set(replayTenantId, TenantContextSource.Claim);
             if (schemaContext is not null)
             {
                 schemaContext.CurrentSchema = replay?.SchemaName;
@@ -345,6 +347,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 }
                 else
                 {
+                    var replayRoles = await ReplayRolesAsync(proposal, cancellationToken).ConfigureAwait(false);
                     canonicalDispatchStarted = true;
                     handle = await invoker.SubmitAsync(
                         replay?.Request ?? new OperationRequest
@@ -356,8 +359,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                         {
                             OperationInstanceId = proposal.Audit.OperationInstanceId,
                             CorrelationId = proposal.Audit.CorrelationId,
-                            PrincipalId = proposal.RequestedBy,
-                            TenantId = replay?.TenantId,
+                            PrincipalId = proposal.RequestedBy ?? proposal.RequestedByAgent,
+                            Roles = replayRoles,
+                            TenantId = replayTenantId,
                             SchemaName = replay?.SchemaName,
                             AuthorizationOutcome = "approved",
                             ApprovedProposalId = proposal.ProposalId,
@@ -397,13 +401,10 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (OperationCanceledException)
         {
-            await CompensateClaimedProposalAsync(
+            await CancelClaimedProposalAsync(
                     proposal,
                     approvedBy,
-                    OperationProposalStatus.Cancelled,
-                    "Approved replay was cancelled before actuation began; no side effect occurred.",
-                    "operation.cancelled",
-                    AuditOutcome.Failure)
+                    canonicalDispatchStarted ? null : OperationHandleStatus.Cancelled)
                 .ConfigureAwait(false);
             throw;
         }
@@ -464,6 +465,17 @@ internal sealed partial class OperationGateway : IOperationGateway
                 cancellationToken)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string[]> ReplayRolesAsync(OperationProposal proposal, CancellationToken cancellationToken)
+    {
+        if (proposal.RequestedByAgent is not null) return ["agent"];
+        if (!OperationProposerApiKeyAuthority.IsApiKeyActor(proposal.RequestedBy)) return [];
+        if (_proposerKeyAuthority is null)
+            throw new InvalidOperationException(OperationProposerApiKeyAuthority.Refusal);
+        var current = await _proposerKeyAuthority.GetCurrentRecordAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
+        return current.Permissions.Any(permission => string.Equals(permission.Trim(), "agent", StringComparison.OrdinalIgnoreCase))
+            ? ["agent"] : [];
     }
 
     private async Task ValidateCurrentProposerAsync(string? actor, CancellationToken cancellationToken)
@@ -580,6 +592,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     CorrelationId = request.CorrelationId,
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                    Roles = request.RequestedByAgent is null ? [] : ["agent"],
                     AuthorizationOutcome = "autonomy-authorized",
                     RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
@@ -620,7 +633,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
-        request = request with { TenantId = ResolveTenantId(request.TenantId) };
+        request = ResolveRequestIdentity(request);
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
@@ -703,6 +716,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                         IdempotencyKey = request.IdempotencyKey,
                         TenantId = request.TenantId,
                         PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                        Roles = request.RequestedByAgent is null ? [] : ["agent"],
                         AuthorizationOutcome = "gateway-authorized",
                         RootProvisioningOperationId = request.RootProvisioningOperationId,
                     },
@@ -1114,25 +1128,29 @@ internal sealed partial class OperationGateway : IOperationGateway
             "The proposal changed while approval was being claimed. Reopen its review before approving again.");
     }
 
-    private async Task CompensateClaimedProposalAsync(
+    private async Task CancelClaimedProposalAsync(
         OperationProposal proposal,
         string actor,
-        OperationProposalStatus status,
-        string reason,
-        string auditAction,
-        AuditOutcome auditOutcome)
+        OperationHandleStatus? canonicalResolution)
     {
         var now = DateTimeOffset.UtcNow;
         var resolved = proposal with
         {
-            Status = status,
+            Status = OperationProposalStatus.Cancelled,
             ResolvedBy = actor,
             ResolvedAt = now,
             UpdatedAt = now,
-            ResolutionReason = reason,
+            ResolutionReason = canonicalResolution is null
+                ? "Approved replay was cancelled after canonical dispatch began."
+                : "Approved replay was cancelled before actuation began; no side effect occurred.",
         };
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, CancellationToken.None).ConfigureAwait(false);
-        await WriteAuditAsync(resolved, auditAction, actor, auditOutcome, CancellationToken.None)
+        if (canonicalResolution is { } canonicalStatus)
+        {
+            await PersistCanonicalResolutionAsync(resolved, canonicalStatus, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        await WriteAuditAsync(resolved, "operation.cancelled", actor, AuditOutcome.Failure, CancellationToken.None)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, CancellationToken.None).ConfigureAwait(false);
     }
@@ -1165,6 +1183,17 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
 
         return null;
+    }
+
+    private OperationGatewayRequest ResolveRequestIdentity(OperationGatewayRequest request)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
+        var resolved = request with { TenantId = ResolveTenantId(request.TenantId) };
+        if (context?.User.Identity?.IsAuthenticated != true || !Honua.Infrastructure.Authentication.AgentPrincipal.IsAgentRequest(context))
+            return resolved;
+        var actor = AuditContextResolver.ResolveCanonicalActor(context).Actor;
+        return resolved with { RequestedBy = actor, RequestedByAgent = actor };
     }
 
     private string? ResolveTenantId(string? suppliedTenantId)
@@ -1657,7 +1686,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Timestamp = DateTimeOffset.UtcNow,
                 EventType = AuditEventType.AdminAction,
                 Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
-                ActorType = AuditActorType.UserId,
+                ActorType = string.IsNullOrWhiteSpace(actor) ? AuditActorType.Anonymous : AuditActorType.UserId,
+                ActorAgent = action == "operation.proposed" ? proposal.RequestedByAgent : null,
                 ResourceType = "operation_proposal",
                 ResourceId = proposal.ProposalId,
                 Action = action,
@@ -1683,7 +1713,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             ? AuditActorType.System
             : request.RequestedBy is null
                 ? AuditActorType.Anonymous
-            : AuditActorType.UserId;
+                : AuditActorType.UserId;
         await auditLog.RecordAsync(
             new AuditEvent
             {
@@ -1691,6 +1721,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 EventType = AuditEventType.AdminAction,
                 Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
                 ActorType = actorType,
+                ActorAgent = request.RequestedByAgent,
                 ResourceType = "operation_autonomy",
                 ResourceId = request.AutonomyContext?.FindingId ?? request.IdempotencyKey ?? request.Kind.ToString(),
                 Action = action,

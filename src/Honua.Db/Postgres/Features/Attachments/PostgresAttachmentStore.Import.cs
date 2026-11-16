@@ -254,16 +254,7 @@ internal sealed partial class PostgresAttachmentStore
         {
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(CancellationToken.None).ConfigureAwait(false);
             var tables = await ResolveTablesAsync(connection, null, true, CancellationToken.None).ConfigureAwait(false);
-            var pending = new List<(string Path, long FeatureId)>();
-            await using (var command = new NpgsqlCommand($"SELECT storage_path, feature_id FROM {tables.Cleanup} WHERE layer_id = $1", connection))
-            {
-                command.Parameters.AddWithValue(layerId);
-                await using var reader = await command.ExecuteReaderAsync(CancellationToken.None).ConfigureAwait(false);
-                while (await reader.ReadAsync(CancellationToken.None).ConfigureAwait(false))
-                {
-                    pending.Add((reader.GetString(0), reader.GetInt64(1)));
-                }
-            }
+            var pending = await ReadPendingCleanupAsync(connection, tables.Cleanup, layerId).ConfigureAwait(false);
 
             foreach (var item in pending)
             {
@@ -274,15 +265,22 @@ internal sealed partial class PostgresAttachmentStore
                     var isReferenced = await referenced.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false) is true;
                     if (!isReferenced)
                     {
-                        await RequireFileStorage().DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false);
+                        var storage = RequireFileStorage();
+                        var deleted = await storage.DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false);
+                        if (!deleted && await storage.ExistsAsync(item.Path, CancellationToken.None).ConfigureAwait(false))
+                        {
+                            throw new IOException("Attachment object deletion did not complete.");
+                        }
                     }
 
                     await using var remove = new NpgsqlCommand($"DELETE FROM {tables.Cleanup} WHERE storage_path = $1", connection);
                     remove.Parameters.AddWithValue(item.Path);
                     await remove.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+                    await ClearCleanupRetryAsync(connection, tables.Cleanup, item.Path).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
+                    await ScheduleCleanupRetryAsync(connection, tables.Cleanup, item.Path).ConfigureAwait(false);
                     await RecordOrphanAsync(item.Path, layerId, item.FeatureId, AttachmentOrphanKind.UndeletedObject,
                         $"Imported attachment cleanup queued for retry ({ex.GetType().Name}).").ConfigureAwait(false);
                 }

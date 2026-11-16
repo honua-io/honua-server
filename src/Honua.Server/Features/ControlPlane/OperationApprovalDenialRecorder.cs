@@ -4,6 +4,7 @@
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.ControlPlane;
 
@@ -57,6 +58,7 @@ internal static class OperationApprovalDenialRecorder
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+            var context = scope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             if (!audit.IsPersisted) throw new ServiceUnavailableException(UnavailableMessage);
             var receipt = await audit.RecordAsync(new AuditEvent
             {
@@ -64,6 +66,7 @@ internal static class OperationApprovalDenialRecorder
                 EventType = AuditEventType.AdminAction,
                 Actor = actor,
                 ActorType = AuditActorType.UserId,
+                ActorAgent = context is null ? null : AuditContextResolver.ResolveAgent(context),
                 ResourceType = "operation_proposal",
                 ResourceId = proposal.ProposalId,
                 Action = "operation.approval_denied",
