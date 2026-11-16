@@ -80,6 +80,21 @@ test('admission failure without a receipt is never promoted', () => {
   assert.equal(evaluate({ jobs: [failedJob] }).action, 'block');
 });
 
+test('observe mode accepts completed eager verification without an admission receipt', () => {
+  for (const conclusion of ['success', 'failure']) {
+    const decision = evaluate({
+      mode: 'observe',
+      runs: [run({ conclusion })],
+      jobs: [job({ conclusion, steps: [
+        { name: 'Setup .NET', conclusion: 'success' },
+        { name: 'Lean gate (build + fast unit/architecture smoke)', conclusion },
+      ] })],
+    });
+    assert.equal(decision.action, 'observe');
+    assert.equal(decision.runId, 100);
+  }
+});
+
 test('secondary proof-image downloads during admission fail closed', () => {
   const badJob = job();
   badJob.steps.find(step => step.name === 'Prepare secondary Testcontainers proof images').conclusion = 'success';

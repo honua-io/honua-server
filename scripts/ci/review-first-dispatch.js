@@ -138,17 +138,17 @@ function evaluateReviewFirstDispatch({
     };
   }
   const job = gateJobs[0];
-  const receipts = stepByName(job, ADMISSION_RECEIPT_STEP);
-  if (receipts.length !== 1 || receipts[0].conclusion !== 'success') {
-    return { action: 'block', reason: 'admission receipt is missing or unsuccessful', runId };
-  }
-
   if (mode === 'observe') {
     return {
       action: 'observe',
       reason: 'exact-head review would release expensive verification in enforce mode',
       runId,
     };
+  }
+
+  const receipts = stepByName(job, ADMISSION_RECEIPT_STEP);
+  if (receipts.length !== 1 || receipts[0].conclusion !== 'success') {
+    return { action: 'block', reason: 'admission receipt is missing or unsuccessful', runId };
   }
 
   if (run.conclusion !== 'failure' || job.conclusion !== 'failure') {
