@@ -8,8 +8,16 @@ namespace Honua.Db.Postgres.Features.Security.Admission;
 
 internal sealed partial class PostgresAiExecutionAdmissionStore
 {
-    private sealed record MonthlyActorReservation(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
-        AiExecutionContext Context, AiFinancialPolicy Policy, DateTimeOffset Now, long Tokens, long Money);
+    private sealed record MonthlyActorReservation
+    {
+        public required NpgsqlConnection Connection { get; init; }
+        public required NpgsqlTransaction Transaction { get; init; }
+        public required AiExecutionContext Context { get; init; }
+        public required AiFinancialPolicy Policy { get; init; }
+        public required DateTimeOffset Now { get; init; }
+        public required long Tokens { get; init; }
+        public required long Money { get; init; }
+    }
 
     private async Task<bool> ExceedsMonthlyActorAsync(MonthlyActorReservation reservation, CancellationToken cancellationToken)
     {
