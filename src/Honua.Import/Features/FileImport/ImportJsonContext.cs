@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -189,6 +190,8 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
 [JsonSerializable(typeof(object))]
+// Nested GeoJSON and GeoParquet attributes reach the preview response as JsonElement values.
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(sbyte))]
 [JsonSerializable(typeof(short))]
