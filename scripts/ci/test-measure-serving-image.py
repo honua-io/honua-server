@@ -38,10 +38,11 @@ class ServingImageMeasurementTests(unittest.TestCase):
                 archive.addfile(member, io.BytesIO(payload))
         return path, config['digest'], layer['size']
 
-    def run_published_gate(self, directory, files, deps, size=100):
+    def run_published_gate(self, directory, files, deps, size=100, stage='ga'):
         with patch('sys.argv', ['measure-serving-image.py', 'registry/server@sha256:' + 'a' * 64,
                                '--published', '--profile', 'postgis', '--verify-jit-boundary',
-                               '--default-image', '--output', str(Path(directory) / 'report.json')]), \
+                               '--default-image', '--release-stage', stage,
+                               '--output', str(Path(directory) / 'report.json')]), \
              patch.object(self.measurement, 'inspect_image', return_value={'Id': 'sha256:' + 'b' * 64, 'Size': size}), \
              patch.object(self.measurement, 'measure_registry_image', return_value={'compressed_layer_bytes': 50}), \
              patch.object(self.measurement, 'exported_files', return_value=(files, deps)):
@@ -66,6 +67,27 @@ class ServingImageMeasurementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, '220000000'):
                 self.run_published_gate(directory, files, {'targets': {}}, size=220_000_001)
+
+    def test_published_rc_gate_records_budget_and_accepts_exact_limit(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        with tempfile.TemporaryDirectory() as directory:
+            self.run_published_gate(directory, files, {'targets': {}}, size=370_000_000, stage='rc')
+            report = json.loads((Path(directory) / 'report.json').read_text())
+            self.assertEqual(report['release_stage'], 'rc')
+            self.assertEqual(report['size_budget_bytes'], 370_000_000)
+
+    def test_published_rc_gate_rejects_overrun_and_retains_evidence(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, '370000000'):
+                self.run_published_gate(directory, files, {'targets': {}}, size=370_000_001, stage='rc')
+            report = json.loads((Path(directory) / 'report.json').read_text())
+            self.assertEqual(report['bytes'], 370_000_001)
+
+    def test_rc_budget_does_not_relax_ga_budget(self):
+        self.measurement.verify_size(370_000_000, 'postgis', 'rc')
+        with self.assertRaisesRegex(ValueError, '220000000'):
+            self.measurement.verify_size(370_000_000, 'postgis', 'ga')
 
     def test_published_gate_accepts_store_free_jit_image(self):
         files = {name: 1 for name in self.measurement.FORMAT_FILES}

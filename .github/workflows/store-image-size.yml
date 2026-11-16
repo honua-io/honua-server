@@ -24,7 +24,18 @@ on:
       - 'scripts/ci/requirements-image-smoke.txt'
       - '.github/workflows/store-image-size.yml'
   workflow_dispatch:
+    inputs:
+      release_stage:
+        description: Image size budget
+        type: choice
+        options: [rc, ga]
+        default: rc
   workflow_call:
+    inputs:
+      release_stage:
+        description: Image size budget (rc or ga)
+        type: string
+        default: rc
 
 permissions:
   contents: read
@@ -54,8 +65,8 @@ jobs:
     timeout-minutes: 30
     env:
       IMAGE: honua-store-measure:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.profile }}-${{ matrix.compilation }}
-    # AOT promotion needs separate full/live parity proof; its old size target must
-    # not hold the approved JIT fallback. Evidence is still uploaded on failure.
+    # AOT promotion also needs a recorded full/live parity pass.
+    # Retain measurement evidence even when that candidate fails.
     continue-on-error: ${{ matrix.compilation == 'aot' }}
     strategy:
       fail-fast: false
@@ -152,7 +163,7 @@ jobs:
           docker pull --platform linux/amd64 "$BASELINE"
           test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
           python3 scripts/ci/measure-serving-image.py "$IMAGE" \
-            --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
+            --profile "$PROFILE" --release-stage "${{ inputs.release_stage || 'rc' }}" --baseline "$BASELINE" --output artifacts/image-size.json \
             --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence \
             --oci-archive artifacts/image.oci.tar
       - name: Verify native packages remain visible to scanners

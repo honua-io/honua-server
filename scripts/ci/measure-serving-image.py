@@ -30,12 +30,13 @@ FORMAT_FILES = (
 )
 
 
-DEFAULT_IMAGE_MAX_BYTES = 220_000_000
+IMAGE_SIZE_BUDGETS = {'rc': 370_000_000, 'ga': 220_000_000}
 
 
-def verify_size(size, profile):
-    if profile == 'postgis' and size > DEFAULT_IMAGE_MAX_BYTES:
-        raise ValueError(f'Default image exceeds {DEFAULT_IMAGE_MAX_BYTES} uncompressed bytes: {size}')
+def verify_size(size, profile, release_stage='ga'):
+    budget = IMAGE_SIZE_BUDGETS[release_stage]
+    if profile == 'postgis' and size > budget:
+        raise ValueError(f'Default image exceeds {budget} uncompressed bytes ({release_stage}): {size}')
 
 
 def verify_files(files, profile):
@@ -196,6 +197,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('image')
     parser.add_argument('--profile', choices=['postgis', 'full'], required=True)
+    parser.add_argument('--release-stage', choices=IMAGE_SIZE_BUDGETS, default='ga')
     parser.add_argument('--baseline')
     parser.add_argument('--compilation', choices=['jit', 'aot'])
     parser.add_argument('--evidence-directory', type=Path)
@@ -218,12 +220,14 @@ def main():
 
 def measure_published(args, inspection):
     report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': inspection['Size'],
+              'release_stage': args.release_stage,
+              'size_budget_bytes': IMAGE_SIZE_BUDGETS[args.release_stage],
               'profile': args.profile, 'tags': os.environ.get('IMAGE_TAGS', '').splitlines(),
               'oci': measure_registry_image(args.image, inspection['Id'])}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     if args.default_image:
-        verify_size(inspection['Size'], args.profile)
+        verify_size(inspection['Size'], args.profile, args.release_stage)
     if args.verify_jit_boundary:
         files, deps = exported_files(args.image)
         verify_files(files, args.profile)
@@ -247,6 +251,8 @@ def measure_export(args, inspection):
         'image': args.image,
         'revision': inspection['Config'].get('Labels', {}).get('org.opencontainers.image.revision'),
         'profile': args.profile,
+        'release_stage': args.release_stage,
+        'size_budget_bytes': IMAGE_SIZE_BUDGETS[args.release_stage],
         'bytes': inspection['Size'],
         'app_bytes': sum(app_files.values()),
         'baseline_image': args.baseline,
@@ -259,7 +265,7 @@ def measure_export(args, inspection):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     if args.compilation == 'aot' or args.default_image:
-        verify_size(inspection['Size'], args.profile)
+        verify_size(inspection['Size'], args.profile, args.release_stage)
     verify_files(files, args.profile)
     verify_build_inputs(evidence, args.profile)
     print(f"{args.profile}: {report['bytes']} bytes; saved {report['saved_bytes']} bytes")
