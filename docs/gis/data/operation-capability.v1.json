@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 525,
+    "operationCount": 524,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 431,
+      "admin-api": 430,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 24
     },
     "perCapability": {
-      "admin.control-plane": 312,
+      "admin.control-plane": 311,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -3086,16 +3086,6 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-operations-cache-invalidate"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
-      "path": "/api/v1/admin/operations/cache/redis",
-      "operationId": "getOperationsCacheRedisMetrics",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-operations-cache-redis"
     },
     {
       "spec": "admin-api",
