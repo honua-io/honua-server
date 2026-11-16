@@ -28,6 +28,7 @@ public class SceneGenerationEndpointsTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
+    private readonly string _outputRoot = Path.Join(Path.GetTempPath(), $"scene-output-{Guid.NewGuid():N}");
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -40,6 +41,7 @@ public class SceneGenerationEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("SceneGeneration:OutputRoot", _outputRoot);
             });
     }
 
@@ -49,7 +51,36 @@ public class SceneGenerationEndpointsTests : IAsyncLifetime
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        await _fixture.DisposeAsync();
+        if (File.Exists(_outputRoot))
+        {
+            File.Delete(_outputRoot);
+        }
+        if (Directory.Exists(_outputRoot))
+        {
+            Directory.Delete(_outputRoot, recursive: true);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/generate")]
+    public async Task Generate_UnwritableOutput_Returns500WithSafeOperatorAction()
+    {
+        await File.WriteAllTextAsync(_outputRoot, "blocks-directory-creation");
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/scenes/generate",
+            new GenerateSceneRequest { LayerId = 9, SceneId = $"blocked-{Guid.NewGuid():N}" },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("SCENE_OUTPUT_UNWRITABLE", body);
+        Assert.Contains("SceneGeneration:OutputRoot", body);
+        Assert.DoesNotContain(_outputRoot, body);
+        Assert.DoesNotContain("retry", body, StringComparison.OrdinalIgnoreCase);
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes/generate")]

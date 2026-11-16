@@ -23,6 +23,24 @@ from test_console_quickstart import ConsoleLifecycleTests  # noqa: F401
 
 
 class ComposeQuickstartTests(QuickstartFixture, unittest.TestCase):
+    def test_packaged_scene_output_uses_writable_persistent_storage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Packaged Compose must render scene storage')
+            services = json.loads(result.stdout)['services']
+            for name in ('honua', 'compose-manager'):
+                with self.subTest(service=name):
+                    honua = services[name]
+                    output = Path(honua['environment']['SceneGeneration__OutputRoot'])
+                    self.assertTrue(honua['read_only'])
+                    storage = next(volume for volume in honua['volumes']
+                                   if volume.get('target') == '/var/lib/honua/storage')
+                    self.assertEqual(storage['type'], 'volume')
+                    self.assertFalse(storage.get('read_only', False))
+                    self.assertTrue(output.is_relative_to(storage['target']))
+
     def test_package_includes_default_offline_datum_grid_build_context(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
