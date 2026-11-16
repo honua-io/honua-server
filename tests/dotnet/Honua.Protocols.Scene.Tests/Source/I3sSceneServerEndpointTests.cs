@@ -120,7 +120,7 @@ public sealed class I3sSceneServerEndpointTests : IClassFixture<I3sSceneServerEn
                     services.AddSingleton<ILicenseEntitlementService>(licenseService);
                     services.AddSingleton<ILicenseStatusProvider>(licenseService);
                     // Test-only protocol-shape provider: this certifies the
-                    // deferred #1810 binary contract and must not be read as
+                    // deferred binary contract and must not be read as
                     // evidence that a production host can render I3S.
                     services.AddSingleton<ISceneNodeGeometryProvider, StubSceneNodeGeometryProvider>();
                 });
@@ -139,10 +139,8 @@ public sealed class I3sSceneServerEndpointTests : IClassFixture<I3sSceneServerEn
             await RegisterBuildingSceneAsync();
         }
 
-        /// <summary>
-        /// Registers a database-backed Building scene so the I3S layerType mapping
-        /// (#1812) is exercised: the descriptor must advertise <c>Building</c>.
-        /// </summary>
+        // A database-backed Building scene exercises the I3S layerType mapping:
+        // the descriptor must advertise Building.
         private async Task RegisterBuildingSceneAsync()
         {
             var registration = Enterprise.GetService<ISceneRegistrationService>();
@@ -163,12 +161,9 @@ public sealed class I3sSceneServerEndpointTests : IClassFixture<I3sSceneServerEn
             });
         }
 
-        /// <summary>
-        /// Registers a database-backed scene with a persisted extent so the
-        /// registration branch of <c>ResolveExtentAsync</c> populates the I3S
-        /// <c>fullExtent</c>. The scene is public so the descriptor is reachable
-        /// without auth.
-        /// </summary>
+        // A database-backed scene with a persisted extent lets the registration branch
+        // of ResolveExtentAsync populate the I3S fullExtent. It is public so the
+        // descriptor is reachable without auth.
         private async Task RegisterExtentSceneAsync()
         {
             var registration = Enterprise.GetService<ISceneRegistrationService>();
