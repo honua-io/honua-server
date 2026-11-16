@@ -8,16 +8,16 @@ namespace Honua.Protocols.OgcApi.Tests;
 // Parallelism note:
 //
 // The classes in this assembly drive the database-backed server through a per-class
-// `new WebAppFixture()` (IAsyncLifetime), not a shared collection fixture — the
-// `[Collection("Database")]` attribute they historically carried only serialized them.
+// `new WebAppFixture()` (IAsyncLifetime). Collection names control serialization;
+// they do not provide a shared collection fixture.
 // xUnit parallelizes ACROSS collections, so splitting the single Database collection
 // into shard-aligned collections lets the OGC API Maps and Tiles shard run its
 // Maps / Tiles / Coverages / Processes / Records classes concurrently.
 //
-// Per-test isolation is unchanged and real: each WebAppFixture gets its own PostgreSQL
+// Per-test isolation: each WebAppFixture gets its own PostgreSQL
 // schema and the shared in-memory server is schema-routed per request. The metadata-v2
 // graph singleton is partitioned by schema in TestMetadataV2GraphProvider, so concurrent
-// metadata mutations across schemas no longer collide.
+// metadata mutations are isolated across schemas.
 //
 // These collections intentionally declare no ICollectionFixture — the fixture is
 // per-class — so they exist only to give xUnit distinct, parallelizable collection names.

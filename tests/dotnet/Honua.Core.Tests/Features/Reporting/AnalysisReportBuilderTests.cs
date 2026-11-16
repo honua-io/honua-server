@@ -402,8 +402,8 @@ public sealed class AnalysisReportBuilderTests
 
     private static AnalysisResultPackage BuildLargeGenericPackage(int rowCount)
     {
-        // Generic-template path with rowCount artifacts and assumptions so we
-        // can exercise MaxTableRows values above the historical 200-row clamp.
+        // Include rowCount artifacts and assumptions to exercise MaxTableRows
+        // values above 200.
         var artifacts = Enumerable
             .Range(0, rowCount)
             .Select(i => new ArtifactRef

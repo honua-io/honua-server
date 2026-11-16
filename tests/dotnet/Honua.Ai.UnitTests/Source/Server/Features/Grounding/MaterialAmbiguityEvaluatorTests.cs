@@ -379,11 +379,9 @@ public sealed class MaterialAmbiguityEvaluatorTests
     [UnitTest]
     public void Evaluate_PublishWithNoResolvableSource_SurfacesPublishSourceFreeText()
     {
-        // Finding #2 regression: when PublishData has no ExplicitInputs and
-        // no high-confidence dataset lead, the evaluator must ask for the
-        // source. Without this, answering publish.target on a follow-up turn
-        // leaves draftIntent.publishing == null with no clarification — a
-        // terminal dead state.
+        // When PublishData has no ExplicitInputs and no high-confidence dataset lead,
+        // ask for the source. Answering publish.target on a follow-up turn must not
+        // leave draftIntent.publishing null without a clarification.
         var classification = new WorkflowFamilyClassification
         {
             Value = WorkflowFamily.PublishData,

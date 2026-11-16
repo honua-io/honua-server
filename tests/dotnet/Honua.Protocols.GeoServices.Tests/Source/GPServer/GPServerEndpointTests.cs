@@ -2639,10 +2639,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             CancellationToken cancellationToken = default)
             => throw exception;
 
-        // Audit-C1: IResourceValidator V2 methods are now abstract on the interface,
-        // so this throwing test stub must satisfy them explicitly. Only the
-        // ValidateServiceV2Async path is exercised by these tests; the rest forward
-        // the same simulated failure for completeness.
+        // Only ValidateServiceV2Async is exercised here; the other validator methods
+        // forward the same simulated failure.
         public Task<ResourceValidationResult<MetadataV2Object>> ValidateStorageLayerV2Async(
             int storageLayerId, CancellationToken cancellationToken = default) => throw exception;
 

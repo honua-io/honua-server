@@ -113,8 +113,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
             ApplyMode = true,
             ImportStyles = false,
             AutoPublishLayers = true,
-            // No WorkspaceNames filter => historical "all workspaces" behavior must
-            // be preserved so this scoping change is backwards compatible.
+            // Without a WorkspaceNames filter, import all workspaces.
             RequestTimeoutSeconds = 5
         };
 

@@ -52,7 +52,7 @@ public sealed class GeographicSridClassifierTests
     [UnitTest]
     public void IsGeographicSrid_NullSrid_TreatedAsGeographic()
     {
-        // The default assumed CRS is WGS 84; a null SRID keeps the historical BoundingBox convention.
+        // The default assumed CRS is WGS 84; a null SRID keeps the BoundingBox convention.
         GeographicSridClassifier.IsGeographicSrid((int?)null).Should().BeTrue();
     }
 

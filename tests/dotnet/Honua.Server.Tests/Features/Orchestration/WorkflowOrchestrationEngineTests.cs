@@ -476,10 +476,8 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.Equal(WorkflowRunStatus.Failed, final!.Status);
         Assert.NotNull(final.ErrorMessage);
 
-        // Sibling-path regression: the previous implementation left step states Pending,
-        // which kept the run in the active reconcile set forever and blocked the persist-
-        // time terminal telemetry gate. Step states must also be terminal so the run
-        // leaves the active set exactly once.
+        // Sibling step states must become terminal so the run leaves the active
+        // reconcile set exactly once and passes the persist-time terminal telemetry gate.
         Assert.All(final.StepStates, s => Assert.True(
             s.Status is WorkflowStepStatus.Cancelled
                 or WorkflowStepStatus.Failed

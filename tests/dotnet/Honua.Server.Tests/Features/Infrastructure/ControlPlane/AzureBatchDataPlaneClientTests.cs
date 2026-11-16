@@ -218,8 +218,8 @@ public sealed class AzureBatchDataPlaneClientTests
     public async Task CreateJobAsync_DeletesFreshJobWhenTaskTokenAcquisitionFails()
     {
         // A credential that succeeds for job POST but fails for task POST must trigger
-        // partial-submit cleanup. Fail only credential call #2 so cleanup DELETE
-        // (call #3) can mint a token and reach the HTTP layer.
+        // partial-submit cleanup. Fail only the second credential call so cleanup DELETE
+        // (the third call) can mint a token and reach the HTTP layer.
         var capturedPaths = new List<string>();
         var handler = new QueuedHttpMessageHandler(capturedPaths)
             .Enqueue(HttpStatusCode.Created, string.Empty)

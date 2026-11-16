@@ -11,12 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Oracle.Tests;
 
-// Audit platform-20261006 outcomes:
-// SRV-DB-008 -> fixed; a no-op where plus an integral IN list is applied to the primary key,
-// a proved where translation is reparsed, and every other where+SqlFilter pair fails closed.
-// SRV-DB-010 -> fixed; BuildSelectQuery_SRV_DB_010_EwkbIsNormalizedAndSridAssigned.
-// SRV-AUTH-008 -> fixed; OracleConnectionDriverTests.BuildConnectionString_SRV_AUTH_008_*.
-// SRV-DB-018 -> fixed; MySqlFeatureQueryBuilderTests.BuildExtentQuery_SRV_DB_018_*.
 
 public class OracleFeatureQueryBuilderTests
 {

@@ -68,10 +68,6 @@ public sealed class WebAppFixture : IAsyncLifetime
     // WebAppFixturePostgresWiringMixin owns the geocoding URL and encryption material
     // next to the configuration helpers that consume them.
 
-    // Audit-A2: the default GeoServices drawingInfo, V2 graph factories, and per-layer
-    // schema/spatial/temporal helpers historically lived inline as ~770 LOC of static
-    // helpers. They are pure functions over layer ids and seed-file names — no fixture
-    // state — and now live on Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.
 
     public const string SharedAdminPassword = "test-admin-password";
 
@@ -161,9 +157,8 @@ public sealed class WebAppFixture : IAsyncLifetime
         // fixture's tests run.
         _factory = ConfiguredWebApplicationFactory.Create(builder =>
             {
-                // Audit-A2: host settings, app configuration, and PostgreSQL test
-                // services wiring all live on WebAppFixturePostgresWiringMixin so the
-                // isolated and shared bootstrap paths stay in lockstep.
+                // Host settings and PostgreSQL wiring share a mixin so isolated and shared
+                // bootstrap paths stay in lockstep.
                 Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
 
                 _configureWebHost?.Invoke(builder);
@@ -347,8 +342,6 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private async Task InitializeSharedAsync()
     {
-        // Audit-A2: the process-wide shared-server lifecycle (semaphore + refcount +
-        // factory/Postgres construction) lives on WebAppFixtureSharedBootstrapMixin.
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
         _hasSharedReference = true;

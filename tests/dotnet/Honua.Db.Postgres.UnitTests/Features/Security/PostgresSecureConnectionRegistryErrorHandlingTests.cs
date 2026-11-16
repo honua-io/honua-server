@@ -21,10 +21,8 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
     [Fact]
     public async Task GetActiveConnectionsAsync_InterfaceWrapper_PropagatesUnderlyingException()
     {
-        // Regression: previous implementation used ContinueWith + .Result inside the
-        // interface adapter, which wraps faults in AggregateException and risks
-        // sync-over-async deadlocks under thread-pool starvation. We expect the
-        // underlying exception type to bubble up unchanged.
+        // Propagate the underlying exception unchanged, without AggregateException
+        // wrapping or sync-over-async waits in the interface adapter.
         var expected = new InvalidOperationException("primary database unavailable");
         var provider = new ThrowingPrimaryDatabaseConnectionProvider(expected);
         using var dataSources = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());

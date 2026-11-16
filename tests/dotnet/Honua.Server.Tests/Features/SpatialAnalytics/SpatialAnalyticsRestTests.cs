@@ -1156,7 +1156,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(404);
     }
 
-    // ---------- Fix #1: TryBuildFeatureQuery shared filter parameters ----------
+    // ---------- TryBuildFeatureQuery shared filter parameters ----------
     // These tests cover the extended filter parsing (objectIds / time / geometry /
     // spatialRel) added so the analytics endpoints honour the same FeatureQuery
     // shape as the rest of FeatureServer. Each test exercises one filter dimension
@@ -1324,7 +1324,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         doc.RootElement.GetProperty("metadata").GetProperty("operation").GetString().Should().Be("density");
     }
 
-    // ---------- Fix #3: aggregated paths report InputTruncated correctly ----------
+    // ---------- aggregated paths report InputTruncated correctly ----------
     // These tests verify the SQL builder emits "_inputCount" and the handler
     // strips it from the response payload. Triggering an actual truncation
     // requires >MaxInputFeatures (≥1000) seeded features, which is impractical
@@ -1437,7 +1437,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         root.GetProperty("metadata").GetProperty("inputTruncated").GetBoolean().Should().BeFalse();
     }
 
-    // ---------- Fix #4: cluster and spatial-join geometries are EPSG:4326 ----------
+    // ---------- cluster and spatial-join geometries are EPSG:4326 ----------
     // Per `application/geo+json` (RFC 7946), the response must be in WGS 84
     // unless an alternate CRS is negotiated. The cluster (per-feature + hull)
     // and spatial-join SQL builders now wrap the emitted geometry with

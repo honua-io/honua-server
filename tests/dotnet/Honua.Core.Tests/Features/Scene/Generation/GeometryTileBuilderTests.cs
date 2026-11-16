@@ -311,11 +311,8 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_StringMetadataFromNumericValue_IsCultureInvariant()
     {
-        // Regression for the culture-dependent STRING formatting (#5): a numeric
-        // value routed to a STRING column must be formatted with the invariant
-        // culture so the GLB stays byte-identical across locales. Under de-DE a
-        // naive double.ToString() would emit "1234,5"; the builder must emit
-        // "1234.5".
+        // Numeric values routed to a STRING column use invariant formatting so the GLB
+        // stays byte-identical across locales: 1234.5 must remain "1234.5" under de-DE.
         var features = new[]
         {
             new SceneFeature
@@ -444,10 +441,8 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_Int64Column_FractionalDoubleEmitsCoercionWarning()
     {
-        // The doc contract says fractional values are non-integral and must
-        // emit the coercion warning. The previous implementation only
-        // counted out-of-range values, so a fractional in-range double like
-        // 12.5 was silently truncated.
+        // Fractional values are non-integral and must emit the coercion warning,
+        // including an in-range double such as 12.5.
         var features = NumericFeaturePair(
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = 12.5 },
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = 99.75 });
@@ -475,9 +470,8 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_Int64Column_DecimalMaxValueClampsWithoutThrowing()
     {
-        // (long)decimal.MaxValue is a CHECKED cast in C# and throws
-        // OverflowException; the previous implementation would crash the
-        // generation rather than emitting the documented non-fatal warning.
+        // Casting decimal.MaxValue to long is checked in C# and throws
+        // OverflowException; report it as a non-fatal coercion warning.
         var features = NumericFeaturePair(
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = decimal.MaxValue },
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = decimal.MinValue });
