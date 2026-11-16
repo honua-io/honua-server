@@ -44,6 +44,21 @@ certified operations.
 | Message size | 16 MiB send/receive default; `Grpc:MaxReceiveMessageSize` / `Grpc:MaxSendMessageSize` to override. |
 | Streaming page size | `Grpc:StreamBatchSize` (default 1000 features per message). |
 
+## Browser authentication
+
+Same-origin gRPC-Web clients can authenticate with the Console's browser session
+over HTTPS. Obtain a fresh token from `GET /api/v1/admin/auth/csrf` after sign-in
+and send it in `X-Honua-CSRF` on each gRPC-Web request, including read RPCs that use
+HTTP POST. Keep the token in memory. Missing or invalid CSRF protection returns
+gRPC status `7` (`PermissionDenied`) with a `grpc-message` explaining the required
+header.
+
+Clients using an explicit API key or bearer validate that credential independently
+of any ambient session cookie. Successful explicit authentication reaches the RPC
+without a session CSRF token; invalid credentials do not fall back to the cookie.
+See [browser administrator sessions](../../guides/secure/authentication.md#browser-administrator-sessions)
+for session lifecycle and CSRF requirements.
+
 ## Services (geospatial.v1)
 
 | Service | RPCs | Purpose |
