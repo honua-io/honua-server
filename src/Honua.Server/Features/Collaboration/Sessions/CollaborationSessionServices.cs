@@ -40,8 +40,7 @@ internal static class CollaborationSessionServices
 
         // Deployment topology drives the collaboration fail-closed rules; it is deliberately an
         // operator declaration (Deployment:Mode / Collaboration:MultiReplica) rather than an
-        // inference from Redis presence, since a single instance commonly uses Redis for
-        // cache/jobs and must keep full live co-editing.
+        // inference from backing-store presence: a single instance must keep full live co-editing.
         services.TryAddSingleton<SavedMapCollaborationTopology>();
         // The advertised session capabilities must match what the endpoints will accept: when
         // edits fail closed, the stream advertises operations/replay as unavailable. Computed on
