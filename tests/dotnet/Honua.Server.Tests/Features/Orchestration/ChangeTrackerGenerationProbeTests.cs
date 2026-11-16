@@ -81,8 +81,12 @@ public sealed class ChangeTrackerGenerationProbeTests
                 .Where(generation => generation > sinceGeneration && generation <= throughGeneration)
                 .Select(generation => new FeatureChange
                 {
-                    ChangeId = generation, Generation = generation, LayerId = 10, ObjectId = generation,
-                    Operation = FeatureChangeOperation.Delete, ChangedAt = DateTimeOffset.UtcNow
+                    ChangeId = generation,
+                    Generation = generation,
+                    LayerId = 10,
+                    ObjectId = generation,
+                    Operation = FeatureChangeOperation.Delete,
+                    ChangedAt = DateTimeOffset.UtcNow
                 }).ToArray();
             return Task.FromResult(changes);
         }
