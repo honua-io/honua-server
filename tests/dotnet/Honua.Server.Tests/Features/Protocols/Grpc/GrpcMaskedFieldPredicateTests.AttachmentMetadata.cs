@@ -17,54 +17,69 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcMaskedFieldPredicateTests
 {
+    public sealed record AttachmentPolicyCase
+    {
+        public string Declared { get; init; } = "Update,Delete";
+        public string Role { get; init; } = "admin";
+        public bool CanModify { get; init; } = true;
+        public bool Attachments { get; init; } = true;
+        public bool Upload { get; init; }
+        public bool Delete { get; init; }
+    }
+
+    public static TheoryData<AttachmentPolicyCase> AttachmentPolicyCases() =>
+    [
+        new() { Declared = "Update", Upload = true },
+        new() { Declared = "Delete", Delete = true },
+        new() { Declared = "Query" },
+        new() { Role = "reader" },
+        new() { CanModify = false },
+        new() { Attachments = false },
+        new() { Upload = true, Delete = true }
+    ];
+
     [UnitTheory]
-    [InlineData("Update", "admin", true, true, true, false)]
-    [InlineData("Delete", "admin", true, true, false, true)]
-    [InlineData("Query", "admin", true, true, false, false)]
-    [InlineData("Update,Delete", "reader", true, true, false, false)]
-    [InlineData("Update,Delete", "admin", false, true, false, false)]
-    [InlineData("Update,Delete", "admin", true, false, false, false)]
-    [InlineData("Update,Delete", "admin", true, true, true, true)]
+    [MemberData(nameof(AttachmentPolicyCases))]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeLayer")]
     public async Task DescribeLayer_AttachmentPolicy_ProjectsEffectiveOperations(
-        string declared, string role, bool canModify, bool attachments, bool upload, bool delete)
+        AttachmentPolicyCase policy)
     {
         var triple = CreateTriple();
         triple = triple with
         {
-            Publication = triple.Publication with { Capabilities = declared.Split(',') },
-            Resource = triple.Resource with { Editing = new() { CanModify = canModify, SupportsAttachments = attachments } }
+            Publication = triple.Publication with { Capabilities = policy.Declared.Split(',') },
+            Resource = triple.Resource with { Editing = new() { CanModify = policy.CanModify, SupportsAttachments = policy.Attachments } }
         };
         _resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(triple));
         using var context = CreateCallContext();
         ((HttpContext)context.UserState["__HttpContext"]).User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "reader"), new Claim(ClaimTypes.Role, role)], "Test"));
+            [new Claim(ClaimTypes.Name, "reader"), new Claim(ClaimTypes.Role, policy.Role)], "Test"));
 
         var layer = (await _sut.DescribeLayer(new() { ServiceId = "test", LayerId = 0 }, context)).Layer;
 
         layer.Capabilities.ListAttachments.Should().BeTrue();
-        layer.Capabilities.UploadAttachments.Should().Be(upload);
-        layer.Capabilities.DeleteAttachments.Should().Be(delete);
+        layer.Capabilities.UploadAttachments.Should().Be(policy.Upload);
+        layer.Capabilities.DeleteAttachments.Should().Be(policy.Delete);
         layer.Capabilities.Update.Should().BeFalse("attachment storage does not require a feature writer");
         AssertNoRead();
     }
 
     [UnitTheory]
-    [InlineData(524288, 2097152, 524288, 524288)]
-    [InlineData(8388608, 2097152, 2097152, 1048576)]
+    [InlineData(524288, 524288, 524288)]
+    [InlineData(8388608, 2097152, 1048576)]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeLayer")]
     public async Task DescribeLayer_ConfiguredAttachmentLimits_ProjectsEffectiveUploadBounds(
-        long uploadBytes, long attachmentBytes, long fileBytes, long unaryBytes)
+        long uploadBytes, long fileBytes, long unaryBytes)
     {
         var limits = new LimitsOptions
         {
             MaxUploadSizeBytes = uploadBytes,
             Attachments = new()
             {
-                MaxAttachmentSize = attachmentBytes, MaxAttachmentsPerFeature = 3,
+                MaxAttachmentSize = 2097152, MaxAttachmentsPerFeature = 3,
                 MaxTotalAttachmentSize = 9000000, AllowedMimeTypes = " image/*, ,application/pdf,text/plain "
             }
         };
@@ -83,13 +98,13 @@ public sealed partial class GrpcMaskedFieldPredicateTests
     }
 
     [UnitTheory]
-    [InlineData(0, true)]
-    [InlineData(1, false)]
-    [InlineData(2, true)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeService")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeService")]
     public async Task DescribeService_AttachmentEditingOnVisibleOrHiddenLayer_AggregatesOnlyVisibleCapabilities(
-        int editingLayer, bool expected)
+        int editingLayer)
     {
         var graph = ServiceMetadataSnapshot(1).Graph;
         var resources = graph.Resources.Select((resource, index) => resource with
@@ -104,8 +119,8 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         var service = (await _sut.DescribeService(new() { ServiceId = "test", PageSize = 1 }, context)).Service;
 
         service.Capabilities.ListAttachments.Should().BeTrue();
-        service.Capabilities.UploadAttachments.Should().Be(expected);
-        service.Capabilities.DeleteAttachments.Should().Be(expected);
+        service.Capabilities.UploadAttachments.Should().Be(editingLayer is 0 or 2);
+        service.Capabilities.DeleteAttachments.Should().Be(editingLayer is 0 or 2);
         AssertNoRead();
     }
 }
