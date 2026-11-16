@@ -24,13 +24,4 @@ public static class MemoryPool
         ByteArray.Return(array, clearArray);
     }
 
-    public static double[] RentDoubleArray(int minimumLength)
-    {
-        return DoubleArray.Rent(minimumLength);
-    }
-
-    public static void ReturnDoubleArray(double[] array, bool clearArray = false)
-    {
-        DoubleArray.Return(array, clearArray);
-    }
 }
