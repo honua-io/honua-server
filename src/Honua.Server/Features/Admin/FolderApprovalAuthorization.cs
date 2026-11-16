@@ -81,7 +81,7 @@ internal static class FolderApprovalAuthorization
             ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
             ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
         };
-        var revision = (await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false)).Revision;
+        var revision = (await PolicyRevisionAsync(new(context.RequestServices, authorization, context.User), cancellationToken).ConfigureAwait(false)).Revision;
         var authorizationContext = new FolderAuthorizationContext
         {
             Original = snapshot.Graph,
@@ -99,7 +99,7 @@ internal static class FolderApprovalAuthorization
         };
         if ((await FolderServiceAuthorization.EvaluateAsync(authorizationContext, cancellationToken).ConfigureAwait(false)).Failure is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
-        if (revision != (await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false)).Revision)
+        if (revision != (await PolicyRevisionAsync(new(context.RequestServices, authorization, context.User), cancellationToken).ConfigureAwait(false)).Revision)
             throw new FolderProposalRefusal(FreshProposalRequired);
         return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
     }
@@ -137,7 +137,7 @@ internal static class FolderApprovalAuthorization
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
                 replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag) return null;
-            var policy = await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false);
+            var policy = await PolicyRevisionAsync(new(services, authorization, null), cancellationToken).ConfigureAwait(false);
             if (authorization.PolicyRevision != policy.Revision) return null;
             var affected = BuildMutation(snapshot.Graph, replay.Request, proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
@@ -167,9 +167,11 @@ internal static class FolderApprovalAuthorization
         return FolderMutationCommand.FromRequest(request).Apply(graph, tenant);
     }
 
-    private static async Task<ClaimsPrincipal> WriteCredentialPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
-        string requesterId, CancellationToken cancellationToken)
+    private static async Task<ClaimsPrincipal> WriteCredentialPolicyAsync(
+        Utf8JsonWriter writer, PolicyReadContext context, CancellationToken cancellationToken)
     {
+        var services = context.Services;
+        var requesterId = context.Authorization.RequesterId;
         var authority = new OperationProposerApiKeyAuthority(services.GetRequiredService<TimeProvider>(), services.GetService<IAdminApiKeyStore>());
         AdminApiKeyRecord key;
         try { key = await authority.GetCurrentRecordAsync(requesterId, cancellationToken).ConfigureAwait(false); }
@@ -198,9 +200,12 @@ internal static class FolderApprovalAuthorization
         return new ClaimsPrincipal(identity);
     }
 
-    private static async Task<ClaimsPrincipal?> WriteMembershipPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
-        FolderRequesterAuthorization authorization, ClaimsPrincipal? requester, CancellationToken cancellationToken)
+    private static async Task<ClaimsPrincipal?> WriteMembershipPolicyAsync(
+        Utf8JsonWriter writer, PolicyReadContext context, CancellationToken cancellationToken)
     {
+        var authorization = context.Authorization;
+        var requester = context.Requester;
+        var services = context.Services;
         writer.WriteStartArray();
         writer.WriteStringValue(authorization.SubjectId);
         writer.WriteStringValue(authorization.SubjectIssuer);
@@ -213,14 +218,7 @@ internal static class FolderApprovalAuthorization
         if (membership is not null)
         {
             if (!membership.IsActive) throw new FolderProposalRefusal(FreshProposalRequired);
-            if (requester is not null)
-            {
-                var current = await ManagedMembershipRevalidation.ApplyAsync(requester,
-                    new CapturedMembershipSource(membership), cancellationToken).ConfigureAwait(false);
-                if (current.Identity?.IsAuthenticated != true ||
-                    CanonicalSecurityActor.ResolveAuthorityFingerprint(current) != CanonicalSecurityActor.ResolveAuthorityFingerprint(requester))
-                    throw new FolderProposalRefusal(FreshProposalRequired);
-            }
+            await ValidateMembershipAsync(requester, membership, cancellationToken).ConfigureAwait(false);
             foreach (var role in membership.Roles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
         }
         writer.WriteEndArray();
@@ -236,6 +234,17 @@ internal static class FolderApprovalAuthorization
         return new ClaimsPrincipal(identity);
     }
 
+    private static async Task ValidateMembershipAsync(
+        ClaimsPrincipal? requester, PrincipalMembership membership, CancellationToken cancellationToken)
+    {
+        if (requester is null) return;
+        var current = await ManagedMembershipRevalidation.ApplyAsync(requester,
+            new CapturedMembershipSource(membership), cancellationToken).ConfigureAwait(false);
+        if (current.Identity?.IsAuthenticated != true ||
+            CanonicalSecurityActor.ResolveAuthorityFingerprint(current) != CanonicalSecurityActor.ResolveAuthorityFingerprint(requester))
+            throw new FolderProposalRefusal(FreshProposalRequired);
+    }
+
     // A second lookup could authorize a different membership snapshot than the one sealed.
     private sealed class CapturedMembershipSource(PrincipalMembership membership) : IPrincipalMembershipSource
     {
@@ -249,9 +258,14 @@ internal static class FolderApprovalAuthorization
     // Replay uses the authority read for this revision, never a second lookup or the approver's claims.
     private sealed record CurrentPolicy(string Revision, ClaimsPrincipal Requester);
 
-    private static async Task<CurrentPolicy> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization,
-        ClaimsPrincipal? requester, CancellationToken cancellationToken)
+    private sealed record PolicyReadContext(
+        IServiceProvider Services, FolderRequesterAuthorization Authorization, ClaimsPrincipal? Requester);
+
+    private static async Task<CurrentPolicy> PolicyRevisionAsync(
+        PolicyReadContext context, CancellationToken cancellationToken)
     {
+        var services = context.Services;
+        var authorization = context.Authorization;
         using var bytes = new MemoryStream();
         ClaimsPrincipal? currentRequester = null;
         using (var writer = new Utf8JsonWriter(bytes))
@@ -265,37 +279,42 @@ internal static class FolderApprovalAuthorization
             foreach (var role in options.DataEditorRoles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
             writer.WriteEndArray();
             if (OperationProposerApiKeyAuthority.IsApiKeyActor(authorization.RequesterId))
-                currentRequester = await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
+                currentRequester = await WriteCredentialPolicyAsync(writer, context, cancellationToken).ConfigureAwait(false);
             writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcAuthenticationKey));
             writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcClaimsMappingKey));
-            var member = await WriteMembershipPolicyAsync(writer, services, authorization, requester, cancellationToken).ConfigureAwait(false);
+            var member = await WriteMembershipPolicyAsync(writer, context, cancellationToken).ConfigureAwait(false);
             currentRequester ??= member;
-            var store = services.GetService<IRoleStore>();
-            writer.WriteBooleanValue(store is not null);
-            if (store is not null)
-            {
-                foreach (var role in (await store.ListRolesAsync(cancellationToken).ConfigureAwait(false)).OrderBy(role => role.RoleId))
-                {
-                    writer.WriteStartArray();
-                    writer.WriteStringValue(role.RoleId);
-                    writer.WriteStringValue(role.Name);
-                    foreach (var grant in (await store.GetPermissionsAsync(role.RoleId, cancellationToken).ConfigureAwait(false))
-                        .OrderBy(grant => grant.Service, StringComparer.Ordinal).ThenBy(grant => grant.Layer, StringComparer.Ordinal).ThenBy(grant => grant.Operation, StringComparer.Ordinal))
-                    {
-                        writer.WriteStartArray();
-                        writer.WriteStringValue(grant.Service);
-                        writer.WriteStringValue(grant.Layer);
-                        writer.WriteStringValue(grant.Operation);
-                        writer.WriteEndArray();
-                    }
-                    writer.WriteEndArray();
-                }
-            }
+            await WriteRolePolicyAsync(writer, services, cancellationToken).ConfigureAwait(false);
             writer.WriteEndArray();
         }
         return new(Convert.ToHexString(SHA256.HashData(bytes.ToArray())), currentRequester ??
             new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, authorization.RequesterId)], "FolderRequester")));
     }
+
+    private static async Task WriteRolePolicyAsync(
+        Utf8JsonWriter writer, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var store = services.GetService<IRoleStore>();
+        writer.WriteBooleanValue(store is not null);
+        if (store is null) return;
+        foreach (var role in (await store.ListRolesAsync(cancellationToken).ConfigureAwait(false)).OrderBy(role => role.RoleId))
+        {
+            writer.WriteStartArray();
+            writer.WriteStringValue(role.RoleId);
+            writer.WriteStringValue(role.Name);
+            foreach (var grant in (await store.GetPermissionsAsync(role.RoleId, cancellationToken).ConfigureAwait(false))
+                .OrderBy(grant => grant.Service, StringComparer.Ordinal).ThenBy(grant => grant.Layer, StringComparer.Ordinal).ThenBy(grant => grant.Operation, StringComparer.Ordinal))
+            {
+                writer.WriteStartArray();
+                writer.WriteStringValue(grant.Service);
+                writer.WriteStringValue(grant.Layer);
+                writer.WriteStringValue(grant.Operation);
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+        }
+    }
+
 }
 
 internal sealed class FolderProposalRefusal(string message, OperationGatewayOutcome outcome = OperationGatewayOutcome.Blocked) : Exception(message)
