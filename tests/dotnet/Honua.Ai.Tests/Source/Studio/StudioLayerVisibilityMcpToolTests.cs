@@ -196,14 +196,12 @@ public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
 
     private async Task<(Guid DraftId, long Generation)> CreateMapDraftWithParcelsLayerAsync()
     {
-        var created = await CallToolAsync(
-            "honua_studio_create_draft",
-            """{"packageKey":"parcels-visibility-map","family":"map","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
+        var created = await StudioMcpFixtures.SeedMapDraftAsync(_fixture, "parcels-visibility-map");
+        var draftId = created.DraftId;
 
         var withParcels = await CallToolAsync(
             "honua_studio_add_layer",
-            $$"""{"draftId":"{{draftId}}","generation":{{created.GetProperty("generation").GetInt64()}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"} }""");
+            $$"""{"draftId":"{{draftId}}","generation":{{created.Generation}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"} }""");
         var withZoning = await CallToolAsync(
             "honua_studio_add_layer",
             $$"""{"draftId":"{{draftId}}","generation":{{withParcels.GetProperty("generation").GetInt64()}},"layer":{"id":"zoning","type":"fill"} }""");
