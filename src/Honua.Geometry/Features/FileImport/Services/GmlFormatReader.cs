@@ -14,53 +14,19 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming GML (Geography Markup Language) format reader.
-/// Parses GML 2.x and GML 3.x feature collections into NTS features
-/// using XmlReader for memory-efficient processing.
-/// Supports common simple-feature geometry types: Point, LineString, Polygon,
-/// MultiPoint, MultiLineString, MultiPolygon, MultiSurface, MultiCurve, and
-/// MultiGeometry. Properties are read from non-geometry child elements.
-/// <para>
-/// AXIS ORDER (#2745): coordinates are swapped from the declared authority axis order into the
-/// internal easting/northing (X=lon, Y=lat) storage order when — and only when — the geometry's
-/// <c>srsName</c> uses an authority form that carries axis order (a <c>urn:ogc:def:crs:EPSG:…</c>
-/// URN or an <c>http://www.opengis.net/def/crs/EPSG/…</c> URI) AND the CRS is geographic
-/// (lat/lon per <see cref="GeographicSridClassifier"/>). The legacy short form <c>EPSG:4326</c>,
-/// the <c>…/gml/srs/epsg.xml#4326</c> URL, and every <c>CRS84</c> spelling are treated as
-/// long/lat and pass through unswapped — matching the common ogr/QGIS default and GDAL's
-/// <c>SWAP_COORDINATES=AUTO</c> behavior. Projected CRSs are never swapped.
-/// </para>
-/// </summary>
 internal static class GmlFormatReader
 {
-    /// <summary>
-    /// GML 3 namespace URI.
-    /// </summary>
     internal const string GmlNs3 = "http://www.opengis.net/gml";
 
-    /// <summary>
-    /// GML 3.2 namespace URI.
-    /// </summary>
     internal const string GmlNs32 = "http://www.opengis.net/gml/3.2";
 
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
 
-    /// <summary>
-    /// The spatial reference resolved for a GML element: its EPSG SRID (if known) and whether its
-    /// ordinates are in an authority (lat/lon) axis order that must be swapped to the internal
-    /// easting/northing (X=lon, Y=lat) storage order. Threaded from the enclosing element so a
-    /// geometry without its own <c>srsName</c> inherits the collection/parent CRS and axis order.
-    /// </summary>
     private readonly record struct GmlSrs(int? Srid, bool SwapAxes)
     {
         public static readonly GmlSrs None = new(null, false);
     }
 
-    /// <summary>
-    /// Resolves the effective SRS for an element from its <c>srsName</c> attribute, inheriting the
-    /// enclosing element's SRS when the attribute is absent or cannot be parsed to an EPSG code.
-    /// </summary>
     private static GmlSrs ResolveElementSrs(string? srsName, GmlSrs inherited)
     {
         if (string.IsNullOrWhiteSpace(srsName))
@@ -77,21 +43,9 @@ internal static class GmlFormatReader
         return new GmlSrs(srid, RequiresAxisSwap(srsName, srid.Value));
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when ordinates declared under <paramref name="srsName"/> for
-    /// EPSG code <paramref name="srid"/> are written in authority (lat/lon) order and therefore must
-    /// be swapped into internal easting/northing order: the srsName must use an axis-order-carrying
-    /// authority form (URN or OGC CRS URI) and the CRS must be geographic.
-    /// </summary>
     private static bool RequiresAxisSwap(string srsName, int srid)
         => UsesAuthorityAxisOrder(srsName) && GeographicSridClassifier.IsGeographicSrid(srid);
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the <c>srsName</c> form carries the authority's axis
-    /// order — a <c>urn:ogc:def:crs:…</c> URN or an <c>http(s)://www.opengis.net/def/crs/…</c> URI.
-    /// The legacy short form (<c>EPSG:4326</c>), the <c>…/gml/srs/epsg.xml#4326</c> URL, and every
-    /// <c>CRS84</c> spelling are long/lat and return <see langword="false"/>.
-    /// </summary>
     private static bool UsesAuthorityAxisOrder(string srsName)
     {
         var s = srsName.Trim();
@@ -118,10 +72,6 @@ internal static class GmlFormatReader
         }
     }
 
-    /// <summary>
-    /// Tries to detect the CRS SRS name embedded in the top-level FeatureCollection element.
-    /// Returns <see langword="null"/> if no srsName is found or it cannot be parsed to an EPSG code.
-    /// </summary>
     internal static async Task<int?> TryDetectSridAsync(Stream stream, CancellationToken cancellationToken)
         => (await InspectCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
 
@@ -154,11 +104,6 @@ internal static class GmlFormatReader
         return ImportCoordinateSystem.FromDetection(null, ImportCrsProvenance.Unknown);
     }
 
-    /// <summary>
-    /// Streams features from a GML file using XmlReader for memory efficiency.
-    /// Recognises <c>featureMember</c> / <c>member</c> / <c>featureMembers</c>
-    /// wrapper patterns from both GML 2 and GML 3/3.2.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -859,12 +804,6 @@ internal static class GmlFormatReader
     // Coordinate parsers
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Parses a GML <c>pos</c> element value (a single position).
-    /// Supports 2D and 3D coordinates in axis-order as written (typically lon/lat or lat/lon
-    /// depending on the producing system). The coordinate order is passed through as-is;
-    /// reprojection happens in the import pipeline.
-    /// </summary>
     private static Coordinate? ParsePos(string posText)
     {
         var parts = posText.Trim().Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
@@ -888,18 +827,6 @@ internal static class GmlFormatReader
         return new Coordinate(x, y);
     }
 
-    /// <summary>
-    /// Parses a GML <c>posList</c> or GML 2 <c>coordinates</c> element value
-    /// into an array of coordinates.
-    /// <para>
-    /// GML 3 <c>posList</c>: space-separated flat ordinate list with implicit srsDimension
-    /// (defaults to 2). Values assumed to be grouped as x y [z] x y [z] …
-    /// </para>
-    /// <para>
-    /// GML 2 <c>coordinates</c>: comma-delimited tuples separated by space/newline
-    /// in the form "x,y[,z] x,y[,z] …".
-    /// </para>
-    /// </summary>
     private static Coordinate[] ParsePosList(string text)
     {
         var trimmed = text.Trim();
@@ -997,11 +924,6 @@ internal static class GmlFormatReader
     // SRS / namespace helpers
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Parses an SRS name attribute (e.g. <c>urn:ogc:def:crs:EPSG::4326</c>,
-    /// <c>EPSG:4326</c>, <c>http://www.opengis.net/gml/srs/epsg.xml#4326</c>,
-    /// <c>urn:ogc:def:crs:OGC:1.3:CRS84</c>) into an integer EPSG SRID.
-    /// </summary>
     internal static int? ParseSrsNameToSrid(string? srsName)
     {
         if (string.IsNullOrWhiteSpace(srsName))

@@ -16,63 +16,19 @@ using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 
 namespace Honua.Scene.Grpc;
 
-/// <summary>
-/// gRPC <c>TileService</c> implementation (honua-server#1194 / #1195). Serves
-/// 3D Tiles payloads for a hosted scene from its on-disk tileset, addressing
-/// nodes by the deterministic ids assigned by <see cref="SceneTileCatalog"/>.
-/// <see cref="GetTile"/> fetches one node; <see cref="StreamTiles"/> delivers a
-/// scene progressively, filtered by level of detail, geometric error, and
-/// spatial extent.
-/// </summary>
 internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServiceBase
 {
-    /// <summary>
-    /// Maximum number of distinct tileset catalogs held in-process. A modest cap
-    /// keeps the footprint flat across many scenes; on overflow the cache is
-    /// cleared and repopulated lazily.
-    /// </summary>
     private const int CatalogCacheCapacity = 64;
 
-    /// <summary>
-    /// Default gRPC send-message limit assumed when no explicit
-    /// <c>Grpc:MaxSendMessageSize</c> is configured — matches the default set by
-    /// <c>AddHonuaGrpc</c>. Used to derive the effective per-tile content cap so
-    /// the <see cref="FileInfo"/> pre-check rejects tiles that the gRPC layer would
-    /// reject anyway, rather than buffering them in full only to fail at send time.
-    /// </summary>
     private const int DefaultGrpcSendMessageSize = 16 * 1024 * 1024;
 
-    /// <summary>
-    /// Absolute hard ceiling on a single tile content payload (256 MiB). The
-    /// effective per-request cap is the minimum of this value and the configured
-    /// <c>Grpc:MaxSendMessageSize</c> (see <see cref="_maxTileContentBytes"/>). A
-    /// unary <see cref="GetTile"/> response — and each <see cref="StreamTiles"/>
-    /// tile — is fully materialized in memory (read into a managed array, then
-    /// copied again by <see cref="ByteString.CopyFrom(byte[])"/>), so an oversized
-    /// or corrupted on-disk tile would otherwise drive an unbounded ~2x allocation
-    /// spike before failing at the gRPC send layer.
-    /// </summary>
     private const long AbsoluteMaxTileContentBytes = 256L * 1024 * 1024;
 
-    /// <summary>
-    /// In-process catalog cache keyed by resolved tileset path. Each value pins
-    /// the last-write-time it was built from so a tileset rewrite invalidates the
-    /// entry (see <see cref="LoadCatalogAsync"/>). Static so it is shared across
-    /// the transient gRPC service instances the DI container creates per call.
-    /// </summary>
     private static readonly ConcurrentDictionary<string, SceneTileCatalogCacheEntry> CatalogCache = new(StringComparer.Ordinal);
 
     private readonly ISceneDatasetRegistry _registry;
     private readonly ILogger<HonuaTileGrpcService> _logger;
 
-    /// <summary>
-    /// Effective per-tile content ceiling: the minimum of
-    /// <see cref="AbsoluteMaxTileContentBytes"/> and the configured
-    /// <c>Grpc:MaxSendMessageSize</c>. Kept in an instance field because gRPC
-    /// service instances are scoped/transient and reading from injected
-    /// <see cref="IConfiguration"/> at construction is cheaper than an Options
-    /// wrapper for a single scalar.
-    /// </summary>
     private readonly long _maxTileContentBytes;
 
     public HonuaTileGrpcService(
@@ -129,18 +85,6 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         return new Proto.GetTileResponse { Tile = tile };
     }
 
-    /// <summary>
-    /// Streams a scene's tiles, filtered by level of detail, geometric error, and
-    /// spatial extent.
-    /// </summary>
-    /// <remarks>
-    /// Intentional contract divergence: the proto documents
-    /// <c>max_geometric_error = 0</c> as "server default", but Honua applies no
-    /// server-side default cap. A value of <c>0</c> (the default for an unset
-    /// field) therefore means "unbounded" — no geometric-error filtering — exactly
-    /// like <c>max_lod = 0</c> means "all LODs". Callers that want a cap must send
-    /// an explicit positive <c>max_geometric_error</c>.
-    /// </remarks>
     public override async Task StreamTiles(
         Proto.StreamTilesRequest request,
         IServerStreamWriter<Proto.Tile> responseStream,
@@ -201,32 +145,6 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         activity?.SetTag(SceneGrpcTelemetry.TileBytesTag, streamedBytes);
     }
 
-    /// <summary>
-    /// Reads a node's content payload from disk and wraps it in a
-    /// <see cref="Proto.Tile"/>, inferring the content type from the uri
-    /// extension.
-    /// </summary>
-    /// <param name="entry">The tile catalog entry to serve.</param>
-    /// <param name="assetRoot">Scene asset root directory.</param>
-    /// <param name="maxContentBytes">
-    /// Effective ceiling on the tile payload (bytes). The caller derives this
-    /// from the configured <c>Grpc:MaxSendMessageSize</c> so the
-    /// <see cref="FileInfo"/> pre-check matches the actual gRPC send budget and
-    /// rejects tiles that would fail at send time before reading them.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <remarks>
-    /// External sub-tileset contract: a node whose content uri is an external
-    /// <c>.json</c> sub-tileset is streamed as OPAQUE bytes with
-    /// <see cref="Proto.TileContentType.Unspecified"/> (the extension is not
-    /// glb/b3dm/i3dm/pnts). This slice does NOT expand external tilesets
-    /// server-side; it serves the referenced <c>.json</c> verbatim and the client
-    /// is responsible for parsing it and following its nested content/children.
-    /// The deterministic node ids assigned by <see cref="SceneTileCatalog"/> are
-    /// confined to a single tileset document, so an external tileset's nodes are
-    /// only addressable after the client re-issues requests against that
-    /// expanded tree (a tracked follow-up if server-side expansion is needed).
-    /// </remarks>
     private static async Task<Proto.Tile> BuildTileAsync(SceneTileEntry entry, string assetRoot, long maxContentBytes, CancellationToken cancellationToken)
     {
         var tile = new Proto.Tile
@@ -306,20 +224,6 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         return new SceneLocation(scene.AssetRoot, scene.TilesetFileName, scene.AccessPolicy);
     }
 
-    /// <summary>
-    /// Returns the flattened, addressable node catalog for a scene's tileset.
-    /// </summary>
-    /// <remarks>
-    /// The parsed catalog is cached in-process keyed by (resolved tileset path +
-    /// last-write-time) so a client fetching N nodes does not re-read, re-parse,
-    /// and re-walk the whole tileset N times — GetTile previously paid that full
-    /// cost per node. The catalog is a pure, deterministic projection of an
-    /// immutable on-disk document (<see cref="SceneTileCatalog.Build"/>), so it is
-    /// safe to share across calls; a write to <c>tileset.json</c> bumps the
-    /// last-write-time and invalidates the entry. The cache is bounded
-    /// (<see cref="CatalogCacheCapacity"/>) and falls back to a fresh build on
-    /// eviction, so it never grows unbounded across many scenes.
-    /// </remarks>
     private static async Task<SceneTileCatalogCacheEntry> LoadCatalogAsync(SceneLocation location, CancellationToken cancellationToken)
     {
         if (!TryResolveAssetFile(location.AssetRoot, location.TilesetFileName, out var tilesetPath))
@@ -383,21 +287,6 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         return document;
     }
 
-    /// <summary>
-    /// Canonicalizes an asset-relative path under the scene's asset root and
-    /// rejects anything that escapes the root or hints at traversal. Delegates
-    /// to the shared <see cref="SceneAssetResolver"/> so the gRPC path enforces
-    /// the exact same path-safety contract (percent-encoded traversal, null
-    /// bytes, drive-letter/UNC prefixes, collapsed segments, and symlink /
-    /// reparse-point redirection) as the HTTP/I3S scene asset endpoints.
-    /// </summary>
-    /// <remarks>
-    /// The <paramref name="assetRoot"/> is already canonicalized by
-    /// <see cref="ISceneDatasetRegistry.FindAsync"/> (which applies the same
-    /// absolute/trimmed normalization the dataset registries use), so this method
-    /// does not re-canonicalize it; <see cref="SceneAssetResolver"/> tolerates any
-    /// root shape regardless.
-    /// </remarks>
     private static bool TryResolveAssetFile(string assetRoot, string relativePath, out string fullPath)
     {
         if (SceneAssetResolver.TryResolve(assetRoot, relativePath, out var resolved, out _))
@@ -412,12 +301,6 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
 
     private readonly record struct SceneLocation(string AssetRoot, string TilesetFileName, AccessPolicy? AccessPolicy);
 
-    /// <summary>
-    /// Cached projection of a single tileset document: the ordered (root-first)
-    /// entry list used by <see cref="StreamTiles"/> plus a node-id index used by
-    /// <see cref="GetTile"/>, pinned to the <paramref name="LastWriteUtc"/> the
-    /// source <c>tileset.json</c> carried when it was built.
-    /// </summary>
     private sealed record SceneTileCatalogCacheEntry(
         IReadOnlyList<SceneTileEntry> Entries,
         IReadOnlyDictionary<string, SceneTileEntry> ById,

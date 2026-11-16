@@ -79,8 +79,11 @@ public sealed class DatabaseMigrationSafetyTests
         var sql = File.ReadAllText(Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql")) + suffix;
         var scripts = new Dictionary<string, string> { [name] = sql };
         var pins = new MigrationPins(new(), new() { [name] = MigrationHash(sql) },
-            new() { [Path.GetFileName(name)] = MigrationHash(File.ReadAllText(
-                Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql"))) });
+            new()
+            {
+                [Path.GetFileName(name)] = MigrationHash(File.ReadAllText(
+                    Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql")))
+            });
 
         MigrationSafetyClassifier.Classify(name, sql).IsBreaking.Should().BeTrue();
         RollingUpgradeViolations(scripts, pins).Any().Should().Be(!accepted);

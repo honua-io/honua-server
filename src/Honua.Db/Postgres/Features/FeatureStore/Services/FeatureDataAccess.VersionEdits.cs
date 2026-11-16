@@ -27,11 +27,6 @@ internal sealed partial class FeatureDataAccess
 
     private const string VersionEditsTableName = "honua.version_edits";
 
-    /// <summary>
-    /// Applies an edit batch against a branch version overlay. Always transactional so the GUC
-    /// (<c>SET LOCAL honua.gdb_version</c>) and the overlay upserts commit atomically. DEFAULT batches do
-    /// not reach here (see <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>).
-    /// </summary>
     private async Task<FeatureEditResult> ApplyVersionedEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -448,12 +443,6 @@ internal sealed partial class FeatureDataAccess
         return (effective, VersionEditsTableName, versionId);
     }
 
-    /// <summary>
-    /// Upserts a branch overlay row for an existing (layer_id, objectid). On the version's FIRST touch the
-    /// then-current DEFAULT base image is snapshotted into base_geometry/base_attributes; subsequent
-    /// touches keep the captured base. Returns the number of affected overlay rows; 0 when neither a
-    /// DEFAULT row nor a prior overlay row exists (the target feature does not exist for the version).
-    /// </summary>
     private async Task<int> UpsertOverlayRowAsync(
         int layerId,
         Guid versionId,

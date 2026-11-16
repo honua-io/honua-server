@@ -42,7 +42,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
 
             if (_leases.TryGetValue(feature, out var existing))
             {
-                if (IsSameHolder(existing.Holder, holder))
+                if (existing.Holder.Admits(holder))
                 {
                     var renewed = RenewLease(existing, holder, leaseDuration, now);
                     _leases[feature] = renewed;
@@ -93,7 +93,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
                 return ValueTask.FromResult(new FeatureLockRenewResponse(FeatureLockRenewStatus.NotFound));
             }
 
-            if (!IsSameHolder(existing.Holder, holder))
+            if (!existing.Holder.Admits(holder))
             {
                 return ValueTask.FromResult(new FeatureLockRenewResponse(
                     FeatureLockRenewStatus.HeldByOther,
@@ -134,7 +134,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
                 return ValueTask.FromResult(new FeatureLockReleaseResponse(FeatureLockReleaseStatus.NotFound, feature));
             }
 
-            if (!IsSameHolder(existing.Holder, holder))
+            if (!existing.Holder.Admits(holder))
             {
                 return ValueTask.FromResult(new FeatureLockReleaseResponse(
                     FeatureLockReleaseStatus.HeldByOther,
@@ -210,33 +210,13 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
         DateTimeOffset now)
         => existing with
         {
-            Holder = holder,
+            Holder = existing.Holder.RenewedBy(holder),
             RenewedAt = now,
             ExpiresAt = now.Add(leaseDuration)
         };
 
     private static bool HasWriteAccess(FeatureLockAccessContext access)
         => access.IsAuthorized && access.CanWrite;
-
-    private static bool IsSameHolder(LockHolder existing, LockHolder candidate)
-    {
-        if (!string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(existing.SessionId) || !string.IsNullOrWhiteSpace(candidate.SessionId))
-        {
-            return string.Equals(existing.SessionId, candidate.SessionId, StringComparison.Ordinal);
-        }
-
-        if (!string.IsNullOrWhiteSpace(existing.TenantId) || !string.IsNullOrWhiteSpace(candidate.TenantId))
-        {
-            return string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal);
-        }
-
-        return true;
-    }
 
     private static void ValidateLeaseDuration(TimeSpan leaseDuration)
     {

@@ -8,9 +8,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Tiles.Models;
 
-/// <summary>
-/// Response payload for a tilesets list.
-/// </summary>
 public sealed record TileSetsList : ICollectionResponse<TileSetItem>
 {
     [JsonPropertyName("tilesets")]
@@ -25,9 +22,6 @@ public sealed record TileSetsList : ICollectionResponse<TileSetItem>
     IPaginationMetadata? ICollectionResponse<TileSetItem>.Pagination => null;
 }
 
-/// <summary>
-/// Summary metadata for a tileset entry.
-/// </summary>
 public sealed record TileSetItem
 {
     [JsonPropertyName("title")]
@@ -52,9 +46,6 @@ public sealed record TileSetItem
     public required ImmutableArray<Link> Links { get; init; }
 }
 
-/// <summary>
-/// Detailed tileset metadata response.
-/// </summary>
 public sealed record TileSet
 {
     [JsonPropertyName("title")]
@@ -85,9 +76,6 @@ public sealed record TileSet
     public ImmutableArray<string>? MediaTypes { get; init; }
 }
 
-/// <summary>
-/// Limits for a tile matrix within a tileset.
-/// </summary>
 public sealed record TileMatrixSetLimit
 {
     [JsonPropertyName("tileMatrix")]
@@ -106,9 +94,6 @@ public sealed record TileMatrixSetLimit
     public int MaxTileCol { get; init; }
 }
 
-/// <summary>
-/// Response payload for a tile matrix sets list.
-/// </summary>
 public sealed record TileMatrixSetsList : ICollectionResponse<TileMatrixSetItem>
 {
     [JsonPropertyName("tileMatrixSets")]
@@ -123,9 +108,6 @@ public sealed record TileMatrixSetsList : ICollectionResponse<TileMatrixSetItem>
     IPaginationMetadata? ICollectionResponse<TileMatrixSetItem>.Pagination => null;
 }
 
-/// <summary>
-/// Summary metadata for a tile matrix set entry.
-/// </summary>
 public sealed record TileMatrixSetItem
 {
     [JsonPropertyName("id")]
@@ -144,9 +126,6 @@ public sealed record TileMatrixSetItem
     public required ImmutableArray<Link> Links { get; init; }
 }
 
-/// <summary>
-/// Full tile matrix set definition response.
-/// </summary>
 public sealed record TileMatrixSetDefinition
 {
     [JsonPropertyName("id")]
@@ -168,9 +147,6 @@ public sealed record TileMatrixSetDefinition
     public required ImmutableArray<TileMatrix> TileMatrices { get; init; }
 }
 
-/// <summary>
-/// Tile matrix definition within a tile matrix set.
-/// </summary>
 public sealed record TileMatrix
 {
     [JsonPropertyName("id")]

@@ -13,17 +13,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Reader for Esri JSON feature sets (the ArcGIS <c>FeatureSet</c> shape). Each feature carries an
-/// <c>attributes</c> object and an Esri geometry (<c>x</c>/<c>y</c>, <c>points</c>, <c>paths</c>, or
-/// <c>rings</c>). This lets Esri-shaped payloads import correctly instead of being silently
-/// misinterpreted as GeoJSON (honua-server#2352).
-/// </summary>
 internal static class GeoServicesJsonFormatReader
 {
-    /// <summary>
-    /// Streams features parsed from an Esri JSON feature set.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -72,11 +63,6 @@ internal static class GeoServicesJsonFormatReader
         }
     }
 
-    /// <summary>
-    /// Reads the feature set's spatial reference well-known id (<c>spatialReference.wkid</c> or
-    /// <c>latestWkid</c>) so the import pipeline can assign the source CRS. Returns
-    /// <see langword="null"/> when the document has no usable spatial reference.
-    /// </summary>
     internal static async Task<int?> TryDetectSridAsync(Stream stream, CancellationToken cancellationToken)
         => (await InspectCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
 
@@ -122,14 +108,6 @@ internal static class GeoServicesJsonFormatReader
         return null;
     }
 
-    /// <summary>
-    /// Maps Esri-only well-known ids that have no matching row in PostGIS <c>spatial_ref_sys</c> to
-    /// their EPSG equivalents so the source CRS validates. ArcGIS commonly emits <c>wkid</c> alone
-    /// (no <c>latestWkid</c>) with the legacy Web Mercator aliases, which are EPSG:3857; passing them
-    /// through verbatim would fail import SRID validation. Routed through the canonical
-    /// <see cref="SpatialReferenceExtensions.NormalizeWebMercatorSrid(int)"/> (#2732) so the alias set
-    /// stays unified; codes that already correspond to a registered EPSG entry are returned unchanged.
-    /// </summary>
     private static int NormalizeWkid(int wkid) => SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid);
 
     private static NtsGeometry? ParseGeometry(JsonElement geometry, GeometryFactory factory)

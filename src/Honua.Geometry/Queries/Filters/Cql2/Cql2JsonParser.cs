@@ -11,9 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Queries.Filters.Cql2;
 
-/// <summary>
-/// Parses CQL2-JSON filter expressions into the shared AST representation.
-/// </summary>
 public sealed class Cql2JsonParser
 {
     // Per-parse recursion counter so that deeply nested CQL2-JSON documents
@@ -40,12 +37,6 @@ public sealed class Cql2JsonParser
         @"^urn:ogc:def:crs:OGC:(?:1\.3:|:)?CRS84$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// Parses a CQL2-JSON filter expression into a <see cref="FilterExpression"/> AST.
-    /// </summary>
-    /// <param name="cql2Json">CQL2-JSON string payload.</param>
-    /// <returns>Parsed filter expression.</returns>
-    /// <exception cref="ArgumentException">Thrown when the JSON is invalid or unsupported.</exception>
     public FilterExpression Parse(string cql2Json)
     {
         if (string.IsNullOrWhiteSpace(cql2Json))

@@ -6,10 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 
-/// <summary>
-/// Handler for OGC API - Maps conformance operations.
-/// Provides conformance class declarations for OGC Maps standards compliance.
-/// </summary>
 internal sealed class OgcMapsConformanceHandler
 {
     private readonly ILogger<OgcMapsConformanceHandler> _logger;
@@ -19,9 +15,6 @@ internal sealed class OgcMapsConformanceHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets the conformance classes that this server implements for OGC API - Maps.
-    /// </summary>
     public Task<OgcMapsConformance> GetConformanceAsync(CancellationToken cancellationToken = default)
     {
         OgcMapsLog.ConformanceRequested(_logger);

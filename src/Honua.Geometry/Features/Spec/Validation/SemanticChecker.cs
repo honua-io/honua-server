@@ -7,11 +7,6 @@ using Honua.Core.Features.Spec.Operators;
 
 namespace Honua.Core.Features.Spec.Validation;
 
-/// <summary>
-/// Third validator pass — semantic guards that depend on the other passes
-/// having succeeded. Enforces projected-CRS rules on distance/area literals,
-/// grammar-version compatibility, and operator-capability drift.
-/// </summary>
 internal sealed class SemanticChecker
 {
     private static readonly FrozenSet<string> _geographicCrs =
@@ -22,19 +17,14 @@ internal sealed class SemanticChecker
     private readonly IOperatorCatalog _operators;
     private readonly List<SpecDiagnostic> _diagnostics = [];
 
-    /// <summary>
-    /// Creates a semantic checker.
-    /// </summary>
     public SemanticChecker(SpecDocument document, IOperatorCatalog operators)
     {
         _document = document;
         _operators = operators;
     }
 
-    /// <summary>Diagnostics produced by <see cref="Check"/>.</summary>
     public IReadOnlyList<SpecDiagnostic> Diagnostics => _diagnostics;
 
-    /// <summary>Runs the semantic-level checks.</summary>
     public void Check()
     {
         _diagnostics.Clear();

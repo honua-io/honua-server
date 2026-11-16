@@ -10,12 +10,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Console.Collaboration;
 
-/// <summary>
-/// Durable Postgres-backed Studio map collaboration store (#1278, slice 1):
-/// feature-pinned comment threads + activity feed. Thread mutations append a
-/// matching activity event in the same transaction so the feed stays a faithful
-/// projection of collaboration history.
-/// </summary>
 internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborationStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

@@ -10,28 +10,6 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.Generation;
 
-/// <summary>
-/// Produces a deterministic GLB (binary glTF 2.0) blob containing the
-/// projected geometry and per-feature attribute metadata for one tile of
-/// the v1 3D Tiles generation pipeline.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The writer materializes a single mesh primitive whose mode is dictated by
-/// the homogeneous geometry kind of the input features (POINTS for points,
-/// LINES for line strings, TRIANGLES for polygons / extruded prisms). Vertex
-/// positions are encoded in ECEF meters (EPSG:4978) so CesiumJS can place the
-/// geometry on the ellipsoid without further client-side transforms.
-/// </para>
-/// <para>
-/// Per-vertex feature ids and the per-feature attribute table are emitted
-/// through the <c>EXT_mesh_features</c> and <c>EXT_structural_metadata</c>
-/// glTF extensions so identify flows can attribute hits back to the source
-/// feature row. The metadata table is serialized in a stable column order
-/// (input order), which combined with deterministic vertex traversal gives
-/// byte-identical output across runs against the same source data.
-/// </para>
-/// </remarks>
 public static class GeometryTileBuilder
 {
     private const int GlbHeaderLength = 12;
@@ -39,37 +17,10 @@ public static class GeometryTileBuilder
     private const uint GlbMagic = 0x46546C67; // "glTF"
     private const uint GlbVersion = 2;
 
-    /// <summary>
-    /// Largest feature count whose per-feature integer id is representable
-    /// exactly as a 32-bit float (2^24). The <c>_FEATURE_ID_0</c> accessor and
-    /// the COLOR_0 baking carry the per-vertex feature index through a float
-    /// buffer; beyond this ceiling distinct ids would alias, corrupting both the
-    /// structural-metadata attribution and the symbology lookup. Production tile
-    /// caps sit far below this, but the guard makes the limit explicit rather
-    /// than implicit so an uncapped caller fails loudly instead of silently.
-    /// </summary>
     private const int MaxExactFloatFeatureCount = 1 << 24;
     private const uint JsonChunkType = 0x4E4F534A; // "JSON"
     private const uint BinChunkType = 0x004E4942; // "BIN\0"
 
-    /// <summary>
-    /// Builds a single-primitive GLB tile from the supplied features.
-    /// </summary>
-    /// <param name="features">Ordered, homogeneous-geometry features. Must be non-empty.</param>
-    /// <param name="metadataAttributes">Ordered list of attribute schema definitions to emit.</param>
-    /// <param name="extrusion">Optional extrusion that converts polygons into vertical prisms.</param>
-    /// <param name="generatorTag">Optional generator label (omitted when null/empty).</param>
-    /// <param name="warnings">Optional sink for non-fatal coercion warnings (e.g., int64 → int32 clamping).</param>
-    /// <param name="perFeatureSymbology">
-    /// Optional resolved per-feature symbology, indexed parallel to
-    /// <paramref name="features"/>. When supplied, the builder bakes the
-    /// resolved RGBA color into a normalized <c>COLOR_0</c> vertex attribute and
-    /// switches the primitive material to a metallic-roughness material with a
-    /// neutral <c>baseColorFactor</c> so per-vertex colors multiply through.
-    /// When null the builder emits the legacy single double-sided white
-    /// material with no vertex colors.
-    /// </param>
-    /// <returns>A deterministic GLB byte sequence.</returns>
     public static byte[] BuildGlb(
         IReadOnlyList<SceneFeature> features,
         IReadOnlyList<SceneAttributeSchema> metadataAttributes,
@@ -426,11 +377,6 @@ public static class GeometryTileBuilder
         return bytes;
     }
 
-    /// <summary>
-    /// Computes the RTC centroid (arithmetic mean of the double-precision ECEF
-    /// vertex positions). Returned as a double[3] so it can be emitted verbatim
-    /// as the glTF node <c>translation</c> without a lossy float cast.
-    /// </summary>
     private static double[] ComputeCentroid(List<double> positions, int vertexCount)
     {
         double cx = 0, cy = 0, cz = 0;
@@ -443,12 +389,6 @@ public static class GeometryTileBuilder
         return new[] { cx / vertexCount, cy / vertexCount, cz / vertexCount };
     }
 
-    /// <summary>
-    /// Subtracts the RTC centroid from each double-precision position and casts
-    /// to float32. Recentering before the cast keeps the magnitudes small so the
-    /// float mantissa retains sub-centimeter precision; the absolute position is
-    /// reconstructed client-side as <c>translation + position</c>.
-    /// </summary>
     private static float[] RecenterToFloat(List<double> positions, double[] translation)
     {
         var result = new float[positions.Count];
@@ -820,21 +760,14 @@ public static class GeometryTileBuilder
     }
 }
 
-/// <summary>
-/// Schema entry for one attribute column emitted into the GLB metadata table.
-/// </summary>
 public sealed record SceneAttributeSchema
 {
-    /// <summary>Property id surfaced in EXT_structural_metadata (sanitized field name).</summary>
     public required string PropertyId { get; init; }
 
-    /// <summary>Field name as it appears on the source feature.</summary>
     public required string FieldName { get; init; }
 
-    /// <summary>Schema-level type (e.g. SCALAR, STRING).</summary>
     public required string SchemaType { get; init; }
 
-    /// <summary>Schema component type (e.g. FLOAT32, INT32). Empty for STRING.</summary>
     public string SchemaComponentType { get; init; } = string.Empty;
 }
 
@@ -872,11 +805,6 @@ internal sealed class SceneMetadataColumn
     public byte[]? StringOffsetBytes { get; init; }
     public int? StringOffsetBufferView { get; set; }
 
-    /// <summary>
-    /// Required bufferView byteOffset alignment for the values bytes.
-    /// EXT_structural_metadata mandates alignment equal to the component
-    /// byte length (8 for INT64/UINT64, 4 for INT32/FLOAT32, 1 for STRING).
-    /// </summary>
     public int ByteAlignment { get; init; } = 4;
 
     public static SceneMetadataColumn Build(

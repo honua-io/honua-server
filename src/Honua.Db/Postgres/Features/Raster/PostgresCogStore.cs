@@ -13,10 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// PostgreSQL-based COG catalog store.
-/// Persists COG registrations and cached metadata.
-/// </summary>
 internal sealed class PostgresCogStore : ICogStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -33,7 +29,6 @@ internal sealed class PostgresCogStore : ICogStore
         _tableName = SchemaSearchPath.QualifyTable("cloud_raster_catalog", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<CogRegistration?> GetAsync(long id, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -58,7 +53,6 @@ internal sealed class PostgresCogStore : ICogStore
         return ReadRegistration(reader);
     }
 
-    /// <inheritdoc />
     public async Task<CogRegistration> RegisterAsync(CogRegistrationRequest request, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -103,7 +97,6 @@ internal sealed class PostgresCogStore : ICogStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> UnregisterAsync(long id, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -115,7 +108,6 @@ internal sealed class PostgresCogStore : ICogStore
         return rows > 0;
     }
 
-    /// <inheritdoc />
     public async Task<CogRegistration[]> ListByLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -142,7 +134,6 @@ internal sealed class PostgresCogStore : ICogStore
         return results.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task UpdateMetadataAsync(long id, CogMetadata metadata, byte[]? ifdCache, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

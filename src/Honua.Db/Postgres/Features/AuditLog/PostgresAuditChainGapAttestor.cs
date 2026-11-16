@@ -9,12 +9,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditChainGapAttestor"/>. It reads the gap's
-/// boundaries from <c>honua.audit_log</c>, refuses anything that is not a single
-/// downgrade gap at the verifier's first failure, and appends the declaration through
-/// <see cref="IAuditLog"/> so it is chained and keyed like any other row.
-/// </summary>
 internal sealed class PostgresAuditChainGapAttestor : IAuditChainGapAttestor
 {
     private const int MaxReasonLength = 512;

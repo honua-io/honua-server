@@ -7,23 +7,13 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Scene.Grpc;
 
-/// <summary>
-/// Pure mapping helpers between the server's scene/elevation domain types and
-/// the canonical <c>geospatial.v1</c> gRPC messages. Kept free of I/O so the
-/// projection can be unit-tested in isolation from the service hosts.
-/// </summary>
 internal static class SceneGrpcMapping
 {
     internal const string ThreeDimensionalTilesCapability = "3d-tiles";
     private const int Wgs84 = 4326;
 
-    /// <summary>Meters per degree of latitude, used to derive a default camera standoff.</summary>
     private const double MetersPerDegree = 111_320d;
 
-    /// <summary>
-    /// Projects a registered (database-backed) scene record into the gRPC
-    /// <see cref="Proto.SceneMetadata"/> contract.
-    /// </summary>
     public static Proto.SceneMetadata ToSceneMetadata(SceneDatasetRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -49,10 +39,6 @@ internal static class SceneGrpcMapping
         return metadata;
     }
 
-    /// <summary>
-    /// Projects a configuration-backed scene (no persisted extent) into the
-    /// gRPC <see cref="Proto.SceneMetadata"/> contract.
-    /// </summary>
     public static Proto.SceneMetadata ToSceneMetadata(SceneDataset scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -71,12 +57,6 @@ internal static class SceneGrpcMapping
         return metadata;
     }
 
-    /// <summary>
-    /// Maps a 2D scene extent to the 3D gRPC envelope. Height bounds are left
-    /// at zero because the persisted scene extent is horizontal-only; callers
-    /// that need true vertical bounds read them from the tileset bounding
-    /// volume served by the gRPC <c>TileService</c>.
-    /// </summary>
     public static Proto.Extent3D ToExtent3D(SceneExtent extent)
     {
         ArgumentNullException.ThrowIfNull(extent);
@@ -96,11 +76,6 @@ internal static class SceneGrpcMapping
         };
     }
 
-    /// <summary>
-    /// Derives a suggested initial camera centered over the extent, standing
-    /// off at a height scaled to the larger horizontal span so the whole scene
-    /// is comfortably framed.
-    /// </summary>
     public static Proto.Camera ToInitialCamera(SceneExtent extent)
     {
         ArgumentNullException.ThrowIfNull(extent);
@@ -123,7 +98,6 @@ internal static class SceneGrpcMapping
         };
     }
 
-    /// <summary>Formats a raster merge strategy back to its canonical rule string.</summary>
     public static string FormatMergeStrategy(RasterMergeStrategy strategy) => strategy switch
     {
         RasterMergeStrategy.Oldest => "oldest",
@@ -133,7 +107,6 @@ internal static class SceneGrpcMapping
         _ => "newest",
     };
 
-    /// <summary>Maps a point elevation result into the gRPC response.</summary>
     public static Proto.GetElevationResponse ToElevationResponse(
         ElevationPointResult result,
         RasterMergeStrategy mergeStrategy)
@@ -158,7 +131,6 @@ internal static class SceneGrpcMapping
         return response;
     }
 
-    /// <summary>Maps a profile elevation result into the gRPC response.</summary>
     public static Proto.GetElevationProfileResponse ToElevationProfileResponse(
         ElevationProfileResult result,
         RasterMergeStrategy mergeStrategy)
