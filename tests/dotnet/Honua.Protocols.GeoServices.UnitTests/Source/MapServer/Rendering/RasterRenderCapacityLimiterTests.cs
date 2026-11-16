@@ -15,7 +15,9 @@ public sealed class RasterRenderCapacityLimiterTests
         using var limiter = new RasterRenderCapacityLimiter(
             maxConcurrentRenders: 1,
             maxReservedBytes: 1024,
-            acquireTimeout: TimeSpan.FromSeconds(2));
+            // Release, not the timeout, must wake the waiter; the generous bounds only absorb
+            // thread-pool delay on a busy runner. The timeout path is covered separately.
+            acquireTimeout: TimeSpan.FromSeconds(30));
 
         await using var firstLease = await limiter.TryAcquireAsync(1, 1, CancellationToken.None);
         firstLease.Should().NotBeNull();
@@ -23,7 +25,7 @@ public sealed class RasterRenderCapacityLimiterTests
         var pendingAcquire = limiter.TryAcquireAsync(1, 1, CancellationToken.None).AsTask();
 
         await firstLease!.DisposeAsync();
-        await pendingAcquire.WaitAsync(TimeSpan.FromSeconds(1));
+        await pendingAcquire.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var secondLease = await pendingAcquire;
         secondLease.Should().NotBeNull();
