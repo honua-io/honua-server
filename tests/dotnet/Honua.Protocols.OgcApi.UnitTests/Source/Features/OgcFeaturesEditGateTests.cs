@@ -189,7 +189,7 @@ public sealed partial class OgcFeaturesEditGateTests
             result.IsSuccess.Should().Be(color == "red", "the stored masked size is S, not null");
             writer.ApplyCount.Should().Be(color == "red" ? 1 : 0);
             await reader.Received(1).QueryAsync(7, Arg.Is<FeatureQuery>(query =>
-                query.EnforcedMaskedFields.HasValue && query.EnforcedMaskedFields.Value.IsEmpty &&
+                !query.OutFields.HasValue && query.EnforcedMaskedFields.HasValue && query.EnforcedMaskedFields.Value.IsEmpty &&
                 query.EnforcedSqlFilter == null), Arg.Any<CancellationToken>());
             if (color == "red")
             {

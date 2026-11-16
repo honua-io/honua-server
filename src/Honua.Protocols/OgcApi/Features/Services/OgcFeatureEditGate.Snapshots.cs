@@ -51,7 +51,6 @@ internal static partial class OgcFeatureEditGate
         => target.Reader.QueryAsync(target.LayerId, new FeatureQuery
         {
             ObjectIds = query.Ids,
-            OutFields = ["*"],
             Limit = query.Ids.Length,
             // Restore hidden attributes for validation only; retain the enforced row filter.
             EnforcedMaskedFields = ImmutableArray<string>.Empty,
@@ -81,7 +80,7 @@ internal static partial class OgcFeatureEditGate
         });
     }
 
-    private static IReadOnlyDictionary<string, object?> MergeEffectiveAttributes(Feature update, Feature snapshot)
+    private static Dictionary<string, object?> MergeEffectiveAttributes(Feature update, Feature snapshot)
     {
         var attributes = new Dictionary<string, object?>(update.Attributes, StringComparer.OrdinalIgnoreCase);
         var preserved = update.PreservedAttributeNames.IsDefaultOrEmpty
