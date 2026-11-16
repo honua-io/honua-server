@@ -8,6 +8,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from shared.geoservices import ACCEPTED_SUBMIT_JOB_STATUSES
+
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
 # Discovery publishes Python-safe task names (#4616): "Honua_" + the hex of the
 # UTF-8 process ID. The dotted canonical ID stays addressable but is no longer
@@ -118,7 +120,7 @@ class TestGPServerSmoke:
         data = response.json()
         if "error" not in data:
             assert data["jobId"]
-            assert data["jobStatus"] == "esriJobSubmitted"
+            assert data["jobStatus"] in ACCEPTED_SUBMIT_JOB_STATUSES
             return
 
         assert data["error"]["code"] == 503

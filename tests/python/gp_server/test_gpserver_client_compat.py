@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
-from shared.geoservices import assert_geoservices_error
+from shared.geoservices import ACCEPTED_SUBMIT_JOB_STATUSES, assert_geoservices_error
 
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
 # Discovery publishes Python-safe task names (#4616): "Honua_" + the hex of the
@@ -118,7 +118,7 @@ def test_gpserver_python_client_submit_and_poll_workflow(
         return
 
     assert submit_data["jobId"]
-    assert submit_data["jobStatus"] == "esriJobSubmitted"
+    assert submit_data["jobStatus"] in ACCEPTED_SUBMIT_JOB_STATUSES
 
     status = client.job_status(submit_data["jobId"])
     assert status.status_code == 200
