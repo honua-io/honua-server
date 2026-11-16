@@ -71,9 +71,9 @@ internal sealed partial class CdnInvalidationService(
         var stated = cause ?? CauseOfCurrentRequest();
         var result = await SendWithinLimitsAsync(sent, stated, cancellationToken).ConfigureAwait(false);
         ReportOnCurrentResponse(result.Result);
-        if (result.Result.Outcome is CdnInvalidationOutcome.Submitted)
+        foreach (var batch in result.Batches.Where(batch => batch.Result.Outcome is CdnInvalidationOutcome.Submitted))
         {
-            AfterSubmitted(sent, stated);
+            AfterSubmitted(batch.Paths, stated);
         }
 
         return result.Result;
@@ -133,25 +133,27 @@ internal sealed partial class CdnInvalidationService(
             ? EmergencyCoalescingWindow
             : CoalescingWindow;
 
-    private sealed record BatchInvalidationResult(CdnInvalidationResult Result, IReadOnlyCollection<string> BusyPaths);
+    private sealed record PurgeBatchResult(string[] Paths, CdnInvalidationResult Result);
+
+    private sealed record BatchInvalidationResult(CdnInvalidationResult Result, IReadOnlyList<PurgeBatchResult> Batches);
 
     private async Task<BatchInvalidationResult> SendWithinLimitsAsync(
         string[] paths,
         CdnPurgeCause cause,
         CancellationToken cancellationToken)
     {
-        var busyPaths = new List<string>();
+        var batches = new List<PurgeBatchResult>();
         var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
         var tags = distinctPaths.Where(CdnCacheTags.IsTagInvalidation).ToArray();
         var wildcardPaths = distinctPaths.Where(path => !CdnCacheTags.IsTagInvalidation(path)).ToArray();
         if (wildcardPaths.Length > MaxWildcardPathsPerInvalidation)
         {
-            return new(await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false), busyPaths);
+            return new(await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false), batches);
         }
 
         if (tags.Length <= MaxTagsPerInvalidation)
         {
-            return new(await SendBatchAsync(distinctPaths).ConfigureAwait(false), busyPaths);
+            return new(await SendBatchAsync(distinctPaths).ConfigureAwait(false), batches);
         }
 
         var combined = CdnInvalidationResult.NotConfigured;
@@ -167,21 +169,13 @@ internal sealed partial class CdnInvalidationService(
             combined = CombineBatchResults(combined, result);
         }
 
-        return new(combined, busyPaths);
+        return new(combined, batches);
 
         async Task<CdnInvalidationResult> SendBatchAsync(IReadOnlyCollection<string> batch)
         {
-            if (await RefuseWhenEditBudgetSpentAsync(batch, cause, cancellationToken).ConfigureAwait(false) is { } refused)
-            {
-                return refused;
-            }
-
-            var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
-            if (result.Outcome is CdnInvalidationOutcome.Busy)
-            {
-                busyPaths.AddRange(batch);
-            }
-
+            var result = await RefuseWhenEditBudgetSpentAsync(batch, cause, cancellationToken).ConfigureAwait(false)
+                ?? await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
+            batches.Add(new PurgeBatchResult([.. batch], result));
             return result;
         }
     }

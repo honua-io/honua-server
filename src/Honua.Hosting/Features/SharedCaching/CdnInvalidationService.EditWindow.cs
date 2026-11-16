@@ -65,13 +65,17 @@ internal sealed partial class CdnInvalidationService
             var batches = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
             result = batches.Result;
 
-            // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
-            if (batches.BusyPaths.Count > 0)
+            // Handle each submission independently: an unsent batch must not suppress another batch's settle repeat.
+            foreach (var batch in batches.Batches)
             {
-                DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow(), cause);
-            }
+                if (batch.Result.Outcome is CdnInvalidationOutcome.Busy)
+                {
+                    // This task holds the leases, so no other task will send these paths before the next window.
+                    DeferToNextWindow(batch.Paths, CurrentCoalescingWindow(), cause);
+                }
 
-            AfterEditPurge(claimed, result, cause);
+                AfterEditPurge(batch.Paths, batch.Result, cause);
+            }
         }
         catch (OperationCanceledException)
         {
