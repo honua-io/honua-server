@@ -8,9 +8,6 @@ using Honua.Core.Features.Studio.Services.Bridging;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// Default package-family registry for the Studio lifecycle.
-/// </summary>
 public sealed class StudioPackageFamilyRegistry
 {
     private const int DefaultMaxPackageBytes = 1_048_576;
@@ -32,14 +29,6 @@ public sealed class StudioPackageFamilyRegistry
     private readonly IStudioPackageStore _store;
     private readonly Dictionary<StudioPackageFamily, IStudioFamilyPersistenceBridge> _bridges;
 
-    /// <summary>
-    /// Initializes a new family registry.
-    /// </summary>
-    /// <param name="store">The Studio package store.</param>
-    /// <param name="bridgeCatalog">
-    /// Optional family persistence bridges (ADR-0069, honua-server#3004). Bridged families
-    /// advertise their native format, operation set, and bridge limitations.
-    /// </param>
     public StudioPackageFamilyRegistry(
         IStudioPackageStore store,
         StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
@@ -50,7 +39,6 @@ public sealed class StudioPackageFamilyRegistry
             .ToDictionary(static bridge => bridge.Family);
     }
 
-    /// <inheritdoc />
     public StudioPackageFamilyCapabilities GetCapabilities()
     {
         var durable = _store.PersistenceMode == StudioPackagePersistenceMode.Durable;
@@ -74,7 +62,6 @@ public sealed class StudioPackageFamilyRegistry
         };
     }
 
-    /// <inheritdoc />
     public StudioPackageFamilyDescriptor? GetDescriptor(StudioPackageFamily family)
         => GetCapabilities().Families.FirstOrDefault(descriptor => descriptor.Family == family);
 

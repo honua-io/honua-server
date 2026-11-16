@@ -5,17 +5,8 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>
-/// Centralised validation for network-dataset editing (#1882). The dataset id and the
-/// edge/vertex table names are interpolated into the pgRouting edges-SQL string (which
-/// cannot bind those positions), so they must be constrained to safe identifiers
-/// <em>before</em> they are persisted or resolved. Keeping the rules here means the
-/// read path (<c>NetworkDatasetRegistry</c>) and the admin editing surface share one
-/// definition of "safe".
-/// </summary>
 public static partial class NetworkDatasetValidation
 {
-    /// <summary>The set of accepted lifecycle statuses.</summary>
     public static readonly IReadOnlySet<string> AllowedStatuses =
         new HashSet<string>(StringComparer.Ordinal) { "active", "building", "disabled" };
 
@@ -39,10 +30,6 @@ public static partial class NetworkDatasetValidation
     [GeneratedRegex(@"^[a-z][a-z0-9_-]*$", RegexOptions.CultureInvariant)]
     private static partial Regex TravelProfilePattern();
 
-    /// <summary>
-    /// Validates a network-dataset id.
-    /// </summary>
-    /// <returns><c>true</c> when valid; otherwise <c>false</c> with <paramref name="error"/> set.</returns>
     public static bool TryValidateId(string? id, out string error)
     {
         if (string.IsNullOrWhiteSpace(id))
@@ -67,9 +54,6 @@ public static partial class NetworkDatasetValidation
         return true;
     }
 
-    /// <summary>
-    /// Validates a network-dataset display name.
-    /// </summary>
     public static bool TryValidateName(string? name, out string error)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -88,10 +72,6 @@ public static partial class NetworkDatasetValidation
         return true;
     }
 
-    /// <summary>
-    /// Validates a schema-qualified table identifier that will be interpolated into the
-    /// pgRouting edges-SQL string.
-    /// </summary>
     public static bool TryValidateTableIdentifier(string? identifier, string role, out string error)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -116,33 +96,21 @@ public static partial class NetworkDatasetValidation
         return true;
     }
 
-    /// <summary>
-    /// Returns whether a table identifier is a safe schema-qualified identifier. Used by
-    /// the read path to reject a registry row before interpolating its table names.
-    /// </summary>
     public static bool IsValidTableIdentifier(string? identifier)
         => !string.IsNullOrWhiteSpace(identifier)
             && identifier.Length <= MaxIdentifierLength
             && SqlIdentifierPattern().IsMatch(identifier);
 
-    /// <summary>Returns whether a profile name is safe and stable for public matching.</summary>
     public static bool IsValidTravelProfileName(string? name)
         => !string.IsNullOrWhiteSpace(name)
             && name.Length <= MaxIdentifierLength
             && TravelProfilePattern().IsMatch(name);
 
-    /// <summary>
-    /// Returns whether an edge-column identifier is safe to interpolate into the
-    /// pgRouting edges SQL. Qualified names are deliberately rejected here.
-    /// </summary>
     public static bool IsValidColumnIdentifier(string? identifier)
         => !string.IsNullOrWhiteSpace(identifier)
             && identifier.Length <= MaxIdentifierLength
             && SqlColumnPattern().IsMatch(identifier);
 
-    /// <summary>
-    /// Validates an SRID.
-    /// </summary>
     public static bool TryValidateSrid(int srid, out string error)
     {
         // PostGIS spatial_ref_sys SRIDs are positive; 0 is the "unknown" sentinel that
@@ -157,9 +125,6 @@ public static partial class NetworkDatasetValidation
         return true;
     }
 
-    /// <summary>
-    /// Validates a lifecycle status.
-    /// </summary>
     public static bool TryValidateStatus(string? status, out string error)
     {
         if (string.IsNullOrWhiteSpace(status) || !AllowedStatuses.Contains(status))
@@ -172,9 +137,6 @@ public static partial class NetworkDatasetValidation
         return true;
     }
 
-    /// <summary>
-    /// Validates an optional description.
-    /// </summary>
     public static bool TryValidateDescription(string? description, out string error)
     {
         if (description is not null && description.Length > MaxDescriptionLength)

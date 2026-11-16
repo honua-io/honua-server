@@ -7,11 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// Uses Npgsql's connection-string parser for aliases, quoting and effective
-/// defaults, then compares only database identity. Session and transport
-/// settings such as Application Name and SSL Mode are not database identity.
-/// </summary>
 internal sealed class PostgresCatalogConnectionIdentityMatcher : ICatalogConnectionIdentityMatcher
 {
     public bool IsMatch(string provider, string catalogConnectionString, string registeredConnectionString)

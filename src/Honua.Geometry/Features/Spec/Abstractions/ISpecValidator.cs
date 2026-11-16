@@ -5,17 +5,7 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Abstractions;
 
-/// <summary>
-/// Orchestrates the resolve → type-check → semantic-check passes over a
-/// parsed <see cref="SpecDocument"/>, returning the accumulated diagnostics.
-/// </summary>
 public interface ISpecValidator
 {
-    /// <summary>
-    /// Validates <paramref name="document"/> against <paramref name="catalog"/>.
-    /// </summary>
-    /// <param name="document">Parsed AST (typically from <see cref="ISpecParser"/>).</param>
-    /// <param name="catalog">Catalog snapshot used to resolve external refs.</param>
-    /// <returns>Validation result (diagnostics + summary).</returns>
     SpecValidationResult Validate(SpecDocument document, ISpecCatalogSnapshot? catalog = null);
 }

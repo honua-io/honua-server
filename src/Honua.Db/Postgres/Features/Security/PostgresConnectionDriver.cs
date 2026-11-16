@@ -12,10 +12,6 @@ using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHea
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// PostgreSQL/PostGIS <see cref="IConnectionDriver"/>: builds an Npgsql connection string and probes health
-/// with a real <see cref="NpgsqlConnection"/> + <c>SELECT 1</c>.
-/// </summary>
 internal sealed partial class PostgresConnectionDriver : IConnectionDriver
 {
     private readonly ILogger<PostgresConnectionDriver> _logger;
@@ -87,10 +83,8 @@ internal sealed partial class PostgresConnectionDriver : IConnectionDriver
     };
 }
 
-/// <summary>DI helper that registers the PostgreSQL connection driver.</summary>
 public static class PostgresConnectionDriverServiceCollectionExtensions
 {
-    /// <summary>Registers the PostgreSQL/PostGIS <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
     public static IServiceCollection AddPostgresConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

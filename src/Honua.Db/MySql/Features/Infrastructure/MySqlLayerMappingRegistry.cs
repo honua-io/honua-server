@@ -5,10 +5,6 @@ using System.Collections.Frozen;
 
 namespace Honua.Db.MySql.Features.Infrastructure;
 
-/// <summary>
-/// Thread-safe registry of MySQL/MariaDB layer mappings, keyed by layer ID.
-/// Built once at startup from <see cref="MySqlOptions"/> and shared across all scoped services.
-/// </summary>
 internal sealed class MySqlLayerMappingRegistry
 {
     private readonly FrozenDictionary<int, MySqlLayerMapping> _mappings;
@@ -19,21 +15,15 @@ internal sealed class MySqlLayerMappingRegistry
         _mappings = mappings.ToFrozenDictionary(m => m.LayerId);
     }
 
-    /// <summary>Gets the mapping for a given layer ID, or null if not configured.</summary>
     public MySqlLayerMapping? GetMapping(int layerId)
         => _mappings.TryGetValue(layerId, out var mapping) ? mapping : null;
 
-    /// <summary>
-    /// Gets the mapping for a given layer ID. Throws when the layer is not configured.
-    /// </summary>
     public MySqlLayerMapping GetRequiredMapping(int layerId)
         => _mappings.TryGetValue(layerId, out var mapping)
             ? mapping
             : throw new KeyNotFoundException($"No MySQL/MariaDB layer mapping found for layer {layerId}.");
 
-    /// <summary>All configured layer IDs.</summary>
     public IEnumerable<int> LayerIds => _mappings.Keys;
 
-    /// <summary>All configured layer mappings.</summary>
     public IEnumerable<MySqlLayerMapping> Mappings => _mappings.Values;
 }

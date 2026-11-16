@@ -14,20 +14,10 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Styling;
 
-/// <summary>
-/// PostgreSQL implementation of field profiling for style suggestions.
-/// </summary>
 internal sealed partial class PostgresFieldProfilingService : IFieldProfilingService
 {
     private const int MaxSampleValues = 20;
 
-    /// <summary>
-    /// PostgreSQL JSONB type name for native numeric values.  Used with
-    /// <c>jsonb_typeof()</c> to restrict numeric aggregates and value queries
-    /// to values whose JSONB type matches what <c>ST_AsMVT</c> will expose as
-    /// a native number on the tile — keeping profiling and the MapLibre
-    /// <c>typeof == "number"</c> guard in agreement.
-    /// </summary>
     private const string JsonbNumberType = "'number'";
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -44,7 +34,6 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
         _featuresTable = DatabaseSchema.GetFeaturesTableName(schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<FieldProfile>> ProfileFieldsAsync(
         int layerId,
         IReadOnlyList<MetadataV2Field> fields,
@@ -70,7 +59,6 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
         return profiles;
     }
 
-    /// <inheritdoc />
     public async Task<double[]> GetNumericValuesAsync(
         int layerId,
         string fieldName,

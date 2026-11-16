@@ -6,11 +6,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Identity;
 
-/// <summary>
-/// Serializes changes to a managed user's durable role projection with SCIM group
-/// membership changes for the same identity. An advisory lock is used instead of a row
-/// lock because SCIM groups may reference users before they are provisioned.
-/// </summary>
 internal static class PostgresUserIdentityLock
 {
     private const string AcquireSql =

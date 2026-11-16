@@ -8,18 +8,8 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Deterministic, database-free routing provider used by unit tests and when
-/// <c>Routing:Provider=mock</c>. Routes are straight lines between the first and
-/// last stop; service areas are coarse buffered circles per break. Geometry is
-/// emitted as valid GeoJSON so callers can exercise the full pipeline without a
-/// pgRouting topology.
-/// </summary>
 internal sealed class MockRoutingProvider : IRoutingProvider
 {
-    /// <summary>
-    /// Mock provider name constant.
-    /// </summary>
     public const string ProviderName = "mock";
 
     // Approximate meters per degree of latitude; used for coarse length and
@@ -30,10 +20,8 @@ internal sealed class MockRoutingProvider : IRoutingProvider
     // straight-line length: ~50 km/h.
     private const double MetersPerMinute = 50_000.0 / 60.0;
 
-    /// <inheritdoc />
     public string Name => ProviderName;
 
-    /// <inheritdoc />
     public RoutingProviderCapabilities Capabilities { get; } = new(
         SupportsRoute: true,
         SupportsServiceArea: true,
@@ -60,7 +48,6 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         ],
     };
 
-    /// <inheritdoc />
     public Task<RouteSolveResult> SolveRouteAsync(
         RouteSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -91,7 +78,6 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         return Task.FromResult(new RouteSolveResult(geometry, lengthMeters, timeMinutes, directions));
     }
 
-    /// <inheritdoc />
     public Task<ServiceAreaSolveResult> SolveServiceAreaAsync(
         ServiceAreaSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -132,7 +118,6 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         return Task.FromResult(new ServiceAreaSolveResult(polygons));
     }
 
-    /// <inheritdoc />
     public Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
         ClosestFacilitySolveRequest request,
         CancellationToken cancellationToken = default)
@@ -176,7 +161,6 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         return Task.FromResult(new ClosestFacilitySolveResult(routes));
     }
 
-    /// <inheritdoc />
     public Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
         OdCostMatrixSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -227,7 +211,6 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         return Task.FromResult(new OdCostMatrixSolveResult(lines));
     }
 
-    /// <inheritdoc />
     public Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
         LocationAllocationSolveRequest request,
         CancellationToken cancellationToken = default)
