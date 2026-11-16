@@ -191,7 +191,7 @@ def report(verdicts, expected_keys, today):
         for finding in v["blockingFindings"]:
             days = DEADLINE_DAYS.get(finding["Severity"], 30)
             findings.append({**finding, "release": v["release"], "image": v["image"],
-                             "platform": v["platform"],
+                             "platform": v["platform"], "firstDetected": today.isoformat(),
                              "dueBy": (today + datetime.timedelta(days=days)).isoformat()})
     suppressed = sum(len(v["suppressedFindings"]) for v in verdicts)
     # The public summary carries counts only: never vulnerability ids, packages or images.

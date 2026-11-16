@@ -162,6 +162,7 @@ class Verdicts(unittest.TestCase):
                           "vexSuppressedFindings": 0}, public)
         self.assertNotIn("CVE", json.dumps(public))
         self.assertEqual(["2026-12-08", "2026-12-31"], [f["dueBy"] for f in private["findings"]])
+        self.assertEqual(["2026-12-01", "2026-12-01"], [f["firstDetected"] for f in private["findings"]])
         self.assertEqual([ri.scan_key(other)], private["missingScans"])
 
 
