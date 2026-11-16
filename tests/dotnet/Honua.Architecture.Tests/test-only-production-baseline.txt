@@ -27,7 +27,6 @@ src/Honua.Core/Core/Features/Raster/Services/RasterCatalogQueryEvaluator.cs
 src/Honua.Geoprocessing/Core/Features/Geoprocessing/ProcessMigrationEvidenceClassifier.cs
 src/Honua.Hosting/Features/Caching/MemoryResponseCache.cs
 src/Honua.Hosting/Features/Events/ChangeLogOnlyFeatureChangeEventPublisher.cs
-src/Honua.Hosting/Features/Events/RedisLeaseCoordinator.cs
 src/Honua.Hosting/Features/Rendering/MapLibreExpressionParser.cs
 src/Honua.Scene/Conversion/I3sAttributeSchemaBuilder.cs
 src/Honua.Scene/Conversion/I3sSceneLayerReader.cs
