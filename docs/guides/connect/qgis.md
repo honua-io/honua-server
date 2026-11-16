@@ -19,7 +19,7 @@ Add Honua layers to a QGIS project over OGC API Features, WMS/WMTS, or WFS, then
 4. Click **Connect**. QGIS reads the landing page and lists the published collections.
 5. Select a collection and click **Add**. The features load onto the map canvas.
 
-> Collection ids are currently the numeric layer ids (for example `0`).
+> Collection ids are currently the numeric layer ids shown in the collection list (for example `1`). They are deployment-wide, not zero-based or renumbered per service.
 
 ### Option B — WMS or WMTS (rendered maps and cached tiles)
 
@@ -29,7 +29,7 @@ Honua serves WMS 1.1.1/1.3 and WMTS 1.0 per service at `/ogc/services/{serviceId
 2. Enter a name and the URL for your service, for example `http://localhost:8080/ogc/services/my-service/wms` (or the `/wmts` URL for tiles), then click **OK**.
 3. Click **Connect**, select a layer (WMS) or tile layer (WMTS), and click **Add**.
 
-WMTS currently serves the WebMercatorQuad tile matrix set only.
+WMTS advertises the built-in WebMercatorQuad and WorldCRS84Quad tile matrix sets, plus any custom tile matrix sets the operator configures.
 
 ### Option C — WFS 2.0 (legacy clients)
 
@@ -56,8 +56,8 @@ In QGIS, the layer should draw on the canvas and the attribute table should list
 ## Troubleshoot
 
 - **Connection refused** — the server is not running or port 8080 is blocked. Open `http://localhost:8080/healthz/ready` and expect `Ready`. See [troubleshooting](../deploy/troubleshooting.md).
-- **No collections listed** — no layers are published yet, or the layer's protocols exclude OGC API Features. Re-check [publish layers](../publish/publish-layers.md).
-- **401/403 when connecting** — your deployment requires auth. Add credentials under **Authentication** in the QGIS connection dialog (API key header or Basic, matching your server config).
+- **No collections listed** — no layers are published yet, the layer's protocols exclude OGC API Features, or the connection has no credentials. Collection and feature-type lists include only the layers the caller can read, so a deployment that requires authentication returns an empty list, not `401`, to an anonymous connection. Add credentials (below) and reconnect; otherwise re-check [publish layers](../publish/publish-layers.md).
+- **401/403 when connecting or adding a layer** — your deployment requires auth. Add credentials under **Authentication** in the QGIS connection dialog (API key header or Basic, matching your server config).
 - **WMS/WMTS connection fails with 404** — the URL must include a service id: `/ogc/services/{serviceId}/wms`, not `/wms`.
 - **Layer draws in the wrong place** — check the layer CRS; Honua serves EPSG:4326 by default and QGIS reprojects to the project CRS.
 
