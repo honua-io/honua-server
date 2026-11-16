@@ -71,7 +71,7 @@ public class SceneGenerationEndpointsTests : IAsyncLifetime
         await File.WriteAllTextAsync(_outputRoot, "blocks-directory-creation");
         var response = await _client.PostAsJsonAsync(
             "/api/v1/admin/scenes/generate",
-            new GenerateSceneRequest { LayerId = 9, SceneId = $"blocked-{Guid.NewGuid():N}" },
+            new GenerateSceneRequest { LayerId = 1, SceneId = $"blocked-{Guid.NewGuid():N}" },
             _jsonOptions);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
