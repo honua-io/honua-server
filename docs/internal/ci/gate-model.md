@@ -2106,7 +2106,10 @@ This removes repeated setup rather than dividing the suite across new runners.
 
 The existing Core and Cloud Contracts 1 filter still owns the endpoint cases.
 The existing Core and Cloud Contracts 4 catch-all owns the new geometry-only
-class. Both run in the current selected PR and full trunk shard mechanisms;
+class. All thirteen geometry cases carry Fast-tier unit attributes, so the
+existing foundation Fast filter also executes them. The three moved theory
+signatures are removed from the legacy untiered baseline. Both classes run
+in the current selected PR and full trunk shard mechanisms;
 no shard definition, workflow, required check or aggregate dependency changes.
 The authored workflow inventory template carries this explanation; the canonical
 inventory producer publishes its generated projection.

@@ -22,7 +22,7 @@ public sealed class SpatialCorrectnessUnitTests
 
     #region GEOGRAPHIC RANGE VALIDATION (Primary Target)
 
-    [Theory]
+    [UnitTheory]
     [InlineData("179,-10,-179,10", BoundingBoxValidity.Valid)]    // Crosses antimeridian (valid Pacific)
     [InlineData("170,-5,-170,5", BoundingBoxValidity.Valid)]      // Crosses antimeridian (valid Pacific)
     [InlineData("-200,-10,200,10", BoundingBoxValidity.Invalid)]   // Outside longitude range (invalid)
@@ -53,7 +53,7 @@ public sealed class SpatialCorrectnessUnitTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("-180,-90,180,90", BoundingBoxValidity.Valid)]    // Full world extent (valid)
     [InlineData("-180,-90.1,180,90", BoundingBoxValidity.Invalid)] // South of South Pole (invalid)
     [InlineData("-180,-90,180,90.1", BoundingBoxValidity.Invalid)] // North of North Pole (invalid)
@@ -97,7 +97,7 @@ public sealed class SpatialCorrectnessUnitTests
         // Critical: Antimeridian coordinates don't break WKB encoding
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(-180, -90, 180, 90)]     // Full world extent
     [InlineData(179.999, -5, -179.999, 5)] // Near antimeridian
     [InlineData(0, 85.05, 1, 85.051)]   // Near Web Mercator limit
