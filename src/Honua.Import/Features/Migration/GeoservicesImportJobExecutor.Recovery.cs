@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -20,6 +21,8 @@ internal sealed partial class GeoservicesImportJobExecutor
             return null;
         }
 
+        // Recovery reads the committed table under the same whole-table scope as ExecuteAsync.
+        using var systemReads = JobSecurityScope.BeginSystem();
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         using var progress = new ImportJobProgressController<GeoservicesImportProgress>(job.OperationId,

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -51,6 +52,9 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         var request = _jobManager.ReadRequest(job);
         var stopwatch = Stopwatch.StartNew();
         Log.JobStarted(_logger, jobId);
+        // A configuration import is an admin operation: it reads and publishes the whole catalog,
+        // not the submitter's row-level-security view.
+        using var systemReads = JobSecurityScope.BeginSystem();
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         using var progress = new ImportJobProgressController<GeoServerImportProgress>(jobId,

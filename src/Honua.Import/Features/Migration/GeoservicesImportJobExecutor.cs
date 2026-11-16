@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -48,6 +49,9 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
 
         var jobId = job.OperationId;
         Log.JobStarted(_logger, jobId);
+        // An import is an admin operation over the whole target table: its publication and
+        // reconciliation reads must see every row, not the submitter's row-level-security view.
+        using var systemReads = JobSecurityScope.BeginSystem();
         var request = _jobManager.ReadRequest(job);
         if (request is null)
         {
