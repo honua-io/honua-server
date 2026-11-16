@@ -10,6 +10,7 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Realtime;
 
+[Collection("FeatureChangePrefix")]
 [Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixture database)
