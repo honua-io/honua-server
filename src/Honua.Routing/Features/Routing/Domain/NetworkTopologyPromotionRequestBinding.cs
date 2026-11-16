@@ -6,14 +6,8 @@ using System.Text;
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>
-/// Binds a promotion or rollback idempotency key to the request that first used it.
-/// </summary>
 internal static class NetworkTopologyPromotionRequestBinding
 {
-    /// <summary>
-    /// SHA-256 hex of <c>kind|targetGeneration|expectedActiveGeneration|expectedActiveRowVersion</c>.
-    /// </summary>
     public static string Compute(
         NetworkTopologyPromotionKind kind,
         long targetGeneration,
@@ -24,11 +18,6 @@ internal static class NetworkTopologyPromotionRequestBinding
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Accepts a stored row when it is the same request. A legacy row with no hash replays only
-    /// when the kind and generations match. Any other reuse throws
-    /// <see cref="NetworkTopologyPromotionRejection.IdempotencyKeyReused"/>.
-    /// </summary>
     public static void EnsureCompatible(
         NetworkTopologyPromotionRecord existing,
         NetworkTopologyPromotionKind kind,

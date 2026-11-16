@@ -95,12 +95,8 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
                 "Specify either a generation cursor or a timestamp cursor, not both.");
         }
 
-        // Slice 1 keys exclusively on the change-tracker generation sequence (IChangeTracker exposes
-        // GetCurrentGenerationAsync/GetChangesSinceAsync(generation, ...) only — there is no
-        // timestamp -> generation index). Rather than silently treating a timestamp as generation 0
-        // (which would return the full change feed for any timestamp, including future ones), reject
-        // timestamp cursors with a clear 400. Resolving a timestamp to the generation in effect at
-        // that point is tracked as a #1166 follow-up.
+        // There is no timestamp-to-generation index. Reject timestamp cursors instead of
+        // treating them as generation zero and returning the full change feed.
         if (request.Timestamp is not null)
         {
             throw new TemporalValidationException(
@@ -148,7 +144,9 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
         }
 
         var changes = await _changeTracker
-            .GetChangesSinceAsync(resolvedGeneration, [storageLayerId], cancellationToken)
+            .GetChangesInWindowAsync(
+                resolvedGeneration, currentGeneration, [storageLayerId],
+                excludeOriginReplicaId: null, cancellationToken)
             .ConfigureAwait(false);
 
         var limit = request.Limit ?? DefaultLimit;

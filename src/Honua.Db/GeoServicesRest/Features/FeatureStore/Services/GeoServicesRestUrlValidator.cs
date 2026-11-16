@@ -10,15 +10,6 @@ internal static class GeoServicesRestUrlValidator
     private const string InvalidServiceRootUrlMessage =
         "ArcGIS service URL must target a service root URL (FeatureServer or MapServer).";
 
-    /// <summary>
-    /// Normalizes a configured service URL into the canonical service root form,
-    /// stripping query/fragment and any trailing slash.
-    /// </summary>
-    /// <param name="url">Configured ArcGIS service URL.</param>
-    /// <returns>Canonical FeatureServer/MapServer service URL (no trailing slash).</returns>
-    /// <exception cref="ArgumentException">Thrown when the URL is malformed,
-    /// non-HTTPS, contains embedded credentials, targets a loopback host, or
-    /// does not point at a FeatureServer/MapServer service root.</exception>
     public static string NormalizeServiceRootUrl(string url)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);

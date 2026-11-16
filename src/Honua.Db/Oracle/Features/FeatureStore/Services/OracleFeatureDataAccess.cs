@@ -14,11 +14,6 @@ using Oracle.ManagedDataAccess.Types;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-/// <summary>
-/// Executes Oracle feature queries built by <see cref="OracleFeatureQueryBuilder"/>. All
-/// commands are parameterized and double-quoted by the builder; this layer is responsible
-/// for opening a pooled <see cref="OracleConnection"/>, materializing rows, and emitting telemetry.
-/// </summary>
 internal sealed class OracleFeatureDataAccess
 {
     private static readonly ActivitySource _activitySource = new("Honua.Oracle.FeatureStore");
@@ -248,13 +243,6 @@ internal sealed class OracleFeatureDataAccess
         return DecodeWkbValue(raw, ordinal);
     }
 
-    /// <summary>
-    /// Decodes a raw column value returned by <see cref="OracleDataReader.GetValue"/> at a
-    /// WKB geometry ordinal. Handles the two expected ODP.NET surface types (byte array and
-    /// OracleBlob) plus the null sentinel (DBNull). Throws for any other type so that driver
-    /// upgrades or unexpected server-side conversion failures surface immediately rather than
-    /// silently dropping geometry for the row.
-    /// </summary>
     internal static byte[]? DecodeWkbValue(object raw, int ordinal)
         => raw switch
         {

@@ -28,6 +28,7 @@ public sealed class KeyRingCertificateRefusalExitTests
         "HONUA_DB_DEGRADED_START",
         "Operations__SecretChannel__KeyRingCertificatePath",
         "Operations__SecretChannel__KeyRingCertificatePkcs12",
+        "Operations__SecretChannel__KeyRingSecret",
     ];
 
     [IntegrationTest]
@@ -37,6 +38,7 @@ public sealed class KeyRingCertificateRefusalExitTests
         var output = await RunRefusedBootAsync(certificatePath: null);
         output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePath");
         output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePkcs12");
+        output.Should().Contain("Operations:SecretChannel:KeyRingSecret");
     }
 
     [IntegrationTest]

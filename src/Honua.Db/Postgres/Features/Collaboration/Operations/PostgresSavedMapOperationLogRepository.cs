@@ -11,10 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Collaboration.Operations;
 
-/// <summary>
-/// Restart-durable saved-map operation log whose checkpoint cursor is persisted beside the
-/// per-map cursor head.
-/// </summary>
 internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperationLogRepository
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -49,19 +45,14 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
         _operationsTable = SchemaSearchPath.QualifyTable("saved_map_operations", schemaName);
     }
 
-    /// <inheritdoc />
     public bool SupportsReplicaSharedReplay => true;
 
-    /// <inheritdoc />
     public bool SupportsRestartDurableReplay => true;
 
-    /// <inheritdoc />
     public bool SupportsRestartDurableCheckpointCursors => true;
 
-    /// <inheritdoc />
     public bool SupportsRestartDurableCheckpointing => true;
 
-    /// <inheritdoc />
     public async Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default)
@@ -213,20 +204,17 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
         exception.ConstraintName is "uq_saved_map_operations_operation_id"
             or "uq_saved_map_operations_idempotency_key";
 
-    /// <inheritdoc />
     public Task<SavedMapOperationReplayResult> ReplayAsync(
         SavedMapId mapId,
         SavedMapOperationCursor sinceCursor,
         CancellationToken cancellationToken = default) =>
         ReplayCoreAsync(mapId, sinceCursor, useCheckpointCursor: false, cancellationToken);
 
-    /// <inheritdoc />
     public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
         SavedMapId mapId,
         CancellationToken cancellationToken = default) =>
         ReplayCoreAsync(mapId, SavedMapOperationCursor.Empty, useCheckpointCursor: true, cancellationToken);
 
-    /// <inheritdoc />
     public async Task RecordCheckpointAsync(
         SavedMapId mapId,
         SavedMapOperationCursor checkpointCursor,
