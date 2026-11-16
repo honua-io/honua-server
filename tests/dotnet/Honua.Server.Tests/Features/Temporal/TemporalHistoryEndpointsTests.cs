@@ -17,14 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Temporal;
 
-/// <summary>
-/// Integration tests for slice 1 of the temporal data history API (honua-server#1166):
-/// capability discovery and as-of read. The Metadata v2 graph is overridden with a layer that
-/// declares a temporal column (history-capable) and a layer that does not (unsupported), and the
-/// change tracker is replaced with a deterministic fake so as-of reads are reproducible. This
-/// exercises the real <c>TemporalHistoryService</c>, the admin endpoint, the temporal-history
-/// authorization policy, and AOT JSON serialization end-to-end.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

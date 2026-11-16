@@ -11,10 +11,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Verifies SensorThings write-surface authorization defaults and the explicit
-/// anonymous-write escape hatch.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsWriteAuthorizationTests : IAsyncLifetime
@@ -59,9 +55,6 @@ public sealed class SensorThingsWriteAuthorizationTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies the intentionally loud anonymous-write opt-in for SensorThings ingest.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsAnonymousWriteOptInTests : IAsyncLifetime

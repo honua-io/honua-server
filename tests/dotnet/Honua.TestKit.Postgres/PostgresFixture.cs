@@ -11,11 +11,6 @@ using Xunit;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Shared PostgreSQL + PostGIS fixture for integration tests.
-/// Uses Testcontainers to manage container lifecycle.
-/// Supports schema-based test isolation for parallel execution.
-/// </summary>
 public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
 {
     // Fixtures share process-wide state by default; _sharedLock serializes lifecycle mutations.
@@ -68,7 +63,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     {
     }
 
-    /// <summary>Optionally bounds the owned Postgres container for local component tests.</summary>
     internal PostgresFixture(bool boundedResources, PostgresSharedState? sharedState = null)
     {
         _boundedResources = boundedResources;
@@ -196,12 +190,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         }
     }
 
-    /// <summary>
-    /// Creates an isolated schema for a test.
-    /// Schema names are unique per test class to support parallel execution.
-    /// </summary>
-    /// <param name="testClassName">Name of the test class (for schema naming)</param>
-    /// <returns>Schema name to use for the test</returns>
     public async Task<string> CreateIsolatedSchemaAsync(string testClassName)
     {
         return await CreateIsolatedSchemaInternalAsync(testClassName, applySeed: true).ConfigureAwait(false);
@@ -231,21 +219,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         return schemaName;
     }
 
-    /// <summary>
-    /// Creates an isolated, uniquely-named PostgreSQL database with the standard
-    /// Honua spatial extensions enabled, and returns a connection string scoped to it.
-    /// </summary>
-    /// <remarks>
-    /// Schema-based isolation (<see cref="CreateIsolatedSchemaAsync"/>) only isolates
-    /// objects that resolve through <c>search_path</c>. Test setup that writes to a
-    /// hard-coded schema (for example DbUp migrations and seeds targeting the literal
-    /// <c>honua</c>/<c>honua_data</c> schemas) is NOT protected by per-test schemas and
-    /// will collide with parallel collections sharing the same database. Such tests must
-    /// use a dedicated database so their fixed-name schemas, catalog DDL locks, and data
-    /// are fully private.
-    /// </remarks>
-    /// <param name="testClassName">Name of the test class (for database naming).</param>
-    /// <returns>A connection string scoped to the freshly created database.</returns>
     public async Task<string> CreateIsolatedDatabaseAsync(string testClassName)
     {
         var databaseName = CreateIsolatedIdentifier(testClassName);
@@ -293,10 +266,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         return databaseConnectionString;
     }
 
-    /// <summary>
-    /// Drops an isolated database created by <see cref="CreateIsolatedDatabaseAsync"/>.
-    /// </summary>
-    /// <param name="databaseName">The name of the database to drop.</param>
     public async Task DropDatabaseAsync(string databaseName)
     {
         Exception? lastTransient = null;
@@ -355,20 +324,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             lastTransient);
     }
 
-    /// <summary>
-    /// Drops an isolated schema created for a test.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#1568 follow-up (#2020): <c>DROP SCHEMA ... CASCADE</c> takes
-    /// <c>ACCESS EXCLUSIVE</c> locks on every dependent object and churns the global
-    /// <c>pg_catalog</c> (<c>pg_class</c>/<c>pg_namespace</c>/<c>pg_depend</c>). When this
-    /// universal teardown runs concurrently with another collection's locked seed/migration
-    /// (which also mutate the catalog while holding the schema-mutation advisory lock), the
-    /// two acquire catalog locks in interleaved order and deadlock (<c>40P01</c>). #1968
-    /// serialized the DDL <em>setup</em> paths but left teardown a non-participant, so it
-    /// kept racing the catalog. Serialize the drop on the same advisory lock so it orders
-    /// behind in-flight schema mutation instead of deadlocking it.
-    /// </remarks>
     public async Task DropSchemaAsync(string schemaName)
     {
         Exception? lastTransient = null;
@@ -404,20 +359,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             lastTransient);
     }
 
-    /// <summary>
-    /// Creates a fresh schema under the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/>
-    /// advisory lock, with the same <c>40P01</c>/<c>40001</c> retry as the rest of the schema-mutation
-    /// surface. Use this instead of a raw <c>CREATE SCHEMA</c> for any test-owned schema so namespace
-    /// DDL serializes with the locked teardown/seed paths rather than racing the shared catalog.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#1568 residual: a bare <c>CREATE SCHEMA</c> (per-test isolation or a test's own
-    /// <c>ExecuteAsync("CREATE SCHEMA ...")</c>) takes catalog locks on <c>pg_namespace</c>/<c>pg_class</c>
-    /// that interleave with another collection's locked <c>DROP SCHEMA ... CASCADE</c> and deadlock.
-    /// Routing creation through the same advisory lock as the drop removes that residual cycle.
-    /// </remarks>
-    /// <param name="schemaName">The schema to create (must be a valid identifier).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task CreateSchemaUnderLockAsync(string schemaName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(schemaName);
@@ -436,16 +377,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     Task IIsolatedSchemaFixture.ExecuteDdlUnderLockAsync(string sql, string? schemaName)
         => ExecuteDdlUnderLockAsync(sql, schemaName, CancellationToken.None);
 
-    /// <summary>
-    /// Executes a schema/catalog-mutating raw DDL statement (e.g. <c>DROP TABLE public.*</c>) under the
-    /// shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock with
-    /// <c>40P01</c>/<c>40001</c> retry. Use for test cleanup DDL that touches the process-shared
-    /// <c>public</c>/<c>honua</c> namespaces so it serializes with the locked schema-mutation surface
-    /// instead of racing a concurrent collection's <c>DROP SCHEMA ... CASCADE</c> on the catalog.
-    /// </summary>
-    /// <param name="sql">The DDL to apply.</param>
-    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the DDL.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sql);
@@ -461,9 +392,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             cancellationToken);
     }
 
-    /// <summary>
-    /// Get a connection configured for a specific schema.
-    /// </summary>
     public async Task<NpgsqlConnection> GetConnectionAsync(string? schemaName = null)
     {
         var conn = await DataSource.OpenConnectionAsync();
@@ -478,9 +406,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         return conn;
     }
 
-    /// <summary>
-    /// Execute raw SQL for test setup in a specific schema.
-    /// </summary>
     public async Task ExecuteAsync(string sql, string? schemaName = null)
     {
         await using var conn = await GetConnectionAsync(schemaName);
@@ -489,19 +414,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         await cmd.ExecuteNonQueryAsync();
     }
 
-    /// <summary>
-    /// Runs a schema-mutating action (e.g. a raw DbUp upgrade) while holding the session-level
-    /// Postgres advisory lock shared with <see cref="Seeding.SeedRunner"/>, retrying on a
-    /// transient <c>40P01</c> deadlock / <c>40001</c> serialization failure.
-    /// </summary>
-    /// <remarks>
-    /// DbUp DDL (the <c>schema_versions</c> journal, <c>CREATE TABLE/INDEX</c>, extensions) takes
-    /// locks on the global <c>pg_catalog</c>, which per-test schema isolation does not protect.
-    /// Serializing every schema-mutating setup path on one advisory lock removes the catalog-level
-    /// lock-ordering deadlocks that flake parallel integration runs (honua-server#1568).
-    /// </remarks>
-    /// <param name="action">The schema-mutating work to run while the lock is held.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task RunUnderSchemaMutationLockAsync(Func<Task> action, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -571,50 +483,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         }
     }
 
-    /// <summary>
-    /// Applies a raw SQL seed/setup script that mutates the literal, process-global
-    /// <c>honua</c>/<c>honua_data</c> schemas (e.g. <c>CREATE SCHEMA IF NOT EXISTS honua</c>,
-    /// <c>ALTER TABLE honua.layers ...</c>, <c>INSERT INTO honua.scene_datasets ...</c>) while
-    /// holding the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock,
-    /// optionally scoping the connection's <c>search_path</c> to <paramref name="schemaName"/>.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#1568 (signature 2 — <c>40P01: deadlock detected</c>): the
-    /// <c>mobile-offline-demo-v1.sql</c> and <c>base-schema.sql</c> seeds run idempotent DDL
-    /// (<c>CREATE TABLE/INDEX</c>, repeated <c>ALTER TABLE ... ADD COLUMN IF NOT EXISTS</c>) and
-    /// inserts against the literal, schema-qualified <c>honua</c> tables. Those tables are NOT
-    /// scoped by the per-test <c>search_path</c> isolation, so several <c>[Collection("Database")]</c>
-    /// tests applying the seed in parallel take <c>ACCESS EXCLUSIVE</c> catalog/table locks on the
-    /// same global <c>honua.layers</c>/<c>honua.services</c>/<c>honua.scene_datasets</c> objects in
-    /// interleaved order and deadlock. <see cref="Seeding.SeedRunner"/> already serializes its YAML
-    /// seeds on this advisory lock; raw <c>.sql</c> seed application must use the same lock so all
-    /// global-schema mutation serializes on one ordering rather than racing the catalog.
-    /// </remarks>
-    /// <param name="sql">The raw seed/setup SQL to apply.</param>
-    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
         => ApplyGlobalSeedSqlAsync(sql, configureCommand: null, schemaName, cancellationToken);
 
-    /// <summary>
-    /// Parameterized overload of <see cref="ApplyGlobalSeedSqlAsync(string, string?, CancellationToken)"/>.
-    /// Applies a global-<c>honua</c>-schema-mutating statement under the shared
-    /// <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock (with
-    /// <c>40P01</c>/<c>40001</c> retry), letting the caller bind <see cref="NpgsqlParameter"/>s
-    /// via <paramref name="configureCommand"/>.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#1568 follow-up (#2020): in-test <c>UPDATE/INSERT/DELETE</c> helpers and
-    /// <c>finally</c>/<c>DisposeAsync</c> cleanups that mutate literal <c>honua.*</c> tables
-    /// frequently need parameters, so they were written against raw
-    /// <c>GetConnectionAsync()+CreateCommand()</c> and bypassed the advisory lock entirely —
-    /// the exact non-participant pattern that keeps deadlocking the catalog under parallel
-    /// collections. This overload gives those paths a locked, parameterizable route.
-    /// </remarks>
-    /// <param name="sql">The raw seed/setup SQL to apply.</param>
-    /// <param name="configureCommand">Optional callback to bind parameters / tune the command.</param>
-    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task ApplyGlobalSeedSqlAsync(
         string sql,
         Action<NpgsqlCommand>? configureCommand,
@@ -635,27 +506,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             cancellationToken);
     }
 
-    /// <summary>
-    /// Runs the full embedded DbUp migration set against <paramref name="schemaName"/> while holding
-    /// the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock, retrying on a
-    /// transient <c>40P01</c>/<c>40001</c>.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#1568 follow-up: <c>001_CreateHonuaSchema.sql</c> runs <c>CREATE SCHEMA IF NOT
-    /// EXISTS honua; CREATE TABLE honua.services/layers ...</c> against the literal, process-global
-    /// <c>honua</c> schema, which the per-test <c>search_path</c> isolation does NOT scope. Tests that
-    /// run the embedded migration set directly via <c>DeployChanges...PerformUpgrade()</c> must take
-    /// this same advisory lock; otherwise they are non-participants that race every locked seeder's
-    /// <c>ACCESS EXCLUSIVE</c> catalog/table locks on the same global <c>honua.*</c> objects and
-    /// deadlock the parallel <c>[Collection("Database")]</c> run. The original #1568 fix routed
-    /// <c>DatabaseMigrationTests</c> and the raw <c>.sql</c> seeds through the lock but left the
-    /// <c>BranchVersioning*</c> upgrades unguarded — this helper closes that gap.
-    /// </remarks>
-    /// <param name="schemaName">Isolated schema to deploy into (also the journal/search-path schema).</param>
-    /// <param name="connectionString">Base connection string; its <c>SearchPath</c> is set to the schema.</param>
-    /// <param name="migrationsAssembly">Assembly whose embedded <c>.sql</c> scripts are deployed.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The DbUp upgrade result.</returns>
     public async Task<DbUp.Engine.DatabaseUpgradeResult> RunEmbeddedMigrationsUnderLockAsync(
         string schemaName,
         string connectionString,
@@ -690,19 +540,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         return result;
     }
 
-    /// <summary>
-    /// Provisions a dedicated database from canonical provider/application migrations and
-    /// the OData seed. The caller must drop the returned database before disposing this fixture.
-    /// This is test provisioning, never a substitute for production startup migration gates.
-    /// </summary>
     public Task<string> ProvisionODataDatabaseAsync(string seedPath)
         => ProvisionDatabaseAsync(seedPath);
 
-    /// <summary>
-    /// Provisions a dedicated database from canonical provider/application migrations and
-    /// the supplied seed. The caller must drop the returned database before disposing this fixture.
-    /// This is test provisioning, never a substitute for production startup migration gates.
-    /// </summary>
     public async Task<string> ProvisionDatabaseAsync(string seedPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(seedPath);
@@ -753,10 +593,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     private static bool IsTransientLockFailure(PostgresException ex)
         => ex.SqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
 
-    /// <summary>
-    /// Clean up test data in the public schema (legacy method).
-    /// Prefer schema-based isolation for parallel execution.
-    /// </summary>
     public async Task ResetAsync()
     {
         await ExecuteAsync("""
@@ -783,12 +619,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         return $"test_{prefix}_{Guid.NewGuid():N}".ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Decides whether <see cref="InitializeAsync"/> must start a Testcontainer-managed
-    /// PostgreSQL instance. It must not when a CI-provided sidecar connection string
-    /// (<see cref="ExternalConnectionStringEnv"/>) is already available, so tests reuse
-    /// that sidecar instead of paying redundant container-image/startup cost.
-    /// </summary>
     internal static bool ShouldStartContainer([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? externalConnectionString)
         => string.IsNullOrWhiteSpace(externalConnectionString);
 

@@ -19,18 +19,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 5: a failed replacement must retain the old target. These run
-/// against real PostGIS: the prior target is seeded with known rows, the import is pointed at it with
-/// <c>OverwriteExisting</c>, and the surviving rows are read back from the database. The seeded rows
-/// are the oracle — nothing here is derived from the importer's own output.
-/// </summary>
-/// <remarks>
-/// The source layer declares <c>code</c> as a length-3 string, so the importer creates a
-/// <c>VARCHAR(3)</c> column and a source record carrying a longer value genuinely fails to insert.
-/// Before #4600 the importer committed the replacement anyway: the complete prior dataset was
-/// dropped and the target held only the records that happened to load.
-/// </remarks>
 [Collection("Database")]
 public sealed partial class GeoservicesImportReplacementTests(PostgresFixture fixture)
 {
@@ -135,11 +123,6 @@ public sealed partial class GeoservicesImportReplacementTests(PostgresFixture fi
         }
     }
 
-    /// <summary>
-    /// Positive control: when every source record loads, the replacement is committed and the prior
-    /// rows are gone. Without this the retention assertion above could pass merely because the
-    /// importer never replaced anything.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_ReplacingExistingTargetWhenEveryRecordLoads_ReplacesPriorTarget()
     {
@@ -162,11 +145,6 @@ public sealed partial class GeoservicesImportReplacementTests(PostgresFixture fi
         }
     }
 
-    /// <summary>
-    /// Boundary: the refusal protects an existing dataset. A first import has no prior target, so the
-    /// records that loaded are kept and the run is routed to review by the fidelity verdict (#4661),
-    /// matching the file-import replace behavior from #4006.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_FirstImportWhenARecordFailsToLoad_KeepsLoadedRecordsAndRoutesToReview()
     {
@@ -191,11 +169,6 @@ public sealed partial class GeoservicesImportReplacementTests(PostgresFixture fi
         }
     }
 
-    /// <summary>
-    /// Cancellation contract: a replacement cancelled part way through the transfer surfaces as a
-    /// cancellation and leaves the prior target untouched. The source serves object-id windows of one
-    /// record, and the job is cancelled while the second window is being fetched.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_ReplacingExistingTargetWhenCancelledMidTransfer_RetainsPriorTargetAndSurfacesCancellation()
     {
@@ -298,11 +271,6 @@ public sealed partial class GeoservicesImportReplacementTests(PostgresFixture fi
         return codes.ToArray();
     }
 
-    /// <summary>
-    /// ArcGIS FeatureServer mock serving one point layer whose records carry the supplied
-    /// <c>code</c> values, with OBJECTIDs 1..n. Serves offset pages or object-id windows depending
-    /// on <see cref="SupportsPagination"/>.
-    /// </summary>
     private sealed class ReplacementFeatureServerHandler(string[] codes) : HttpMessageHandler
     {
         public bool SupportsPagination { get; init; } = true;

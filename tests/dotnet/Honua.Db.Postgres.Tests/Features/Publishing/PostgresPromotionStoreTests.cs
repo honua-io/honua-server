@@ -18,9 +18,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Publishing;
 
-/// <summary>
-/// Durable Postgres proof for the MCP promotion resource stores (#2482).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
 {

@@ -17,9 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for ReadinessCheckService - validates separated health check orchestration logic
-/// </summary>
 [Protocol(TestProtocols.Health)]
 public sealed class ReadinessCheckServiceTests
 {
@@ -440,11 +437,6 @@ public sealed class ReadinessCheckServiceTests
         result.IsReady.Should().BeTrue();
     }
 
-    /// <summary>
-    /// honua-release run 40746787170: on AWS Lambda a degraded (schema-floor) probe runs one
-    /// bounded recovery attempt itself, so a cold start before the migration task ran turns ready
-    /// once the schema is current instead of answering 503 schema-floor for the instance's life.
-    /// </summary>
     [UnitTheory]
     [Operation(Operations.HealthCheck)]
     [InlineData(true, true)]
@@ -550,9 +542,6 @@ public sealed class ReadinessCheckServiceTests
     }
 }
 
-/// <summary>
-/// Mock database health checker that always returns healthy
-/// </summary>
 internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
@@ -570,9 +559,6 @@ internal sealed class DelayedHealthyDatabaseChecker(TimeSpan delay) : IDatabaseH
     }
 }
 
-/// <summary>
-/// Mock database health checker that always returns unhealthy
-/// </summary>
 internal sealed class MockUnhealthyDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
@@ -581,9 +567,6 @@ internal sealed class MockUnhealthyDatabaseChecker : IDatabaseHealthChecker
     }
 }
 
-/// <summary>
-/// Mock database health checker that throws an exception
-/// </summary>
 internal sealed class MockExceptionDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
@@ -592,9 +575,6 @@ internal sealed class MockExceptionDatabaseChecker : IDatabaseHealthChecker
     }
 }
 
-/// <summary>
-/// Mock database health checker that respects cancellation tokens
-/// </summary>
 internal sealed class MockCancellationDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
@@ -635,10 +615,6 @@ internal sealed class DelayedFeatureChangeEventStoreHealth(bool canPersistEvents
     public bool IsUsingInMemoryFallback => false;
 }
 
-/// <summary>
-/// Simple mock logger for testing
-/// </summary>
-/// <typeparam name="T">Category type</typeparam>
 internal sealed class MockLogger<T> : ILogger<T>
 {
     public List<LogCall> LogCalls { get; } = [];
@@ -664,22 +640,12 @@ internal sealed class MockLogger<T> : ILogger<T>
     }
 }
 
-/// <summary>
-/// Represents a captured log call
-/// </summary>
-/// <param name="LogLevel">The log level</param>
-/// <param name="EventId">The event ID</param>
-/// <param name="Message">The formatted message</param>
-/// <param name="Exception">The exception, if any</param>
 internal sealed record LogCall(
     LogLevel LogLevel,
     EventId EventId,
     string Message,
     Exception? Exception);
 
-/// <summary>
-/// Mock cache health checker for testing
-/// </summary>
 internal sealed class MockCacheHealthChecker : ICacheHealthChecker
 {
     private readonly bool _healthy;

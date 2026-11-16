@@ -9,17 +9,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Entitlement-gate tests for the SAML and SCIM identity surfaces (#2978). Both previously
-/// shipped ungated in every edition — catalog drift from ADR-0024, whose Identity
-/// Governance tier places SAML and SCIM at Enterprise (<c>identity.saml</c> /
-/// <c>identity.scim</c>), while Pro covers single-provider OIDC only. These tests prove
-/// the gate in both directions — 402 with the standard
-/// entitlement problem detail when unlicensed, and normal endpoint behavior once the
-/// required edition is granted. The SAML/SCIM machinery itself is covered by
-/// <see cref="SamlBridgeEndpointsTests"/> / <see cref="ScimProvisioningEndpointsTests"/>,
-/// which run with the entitlement granted.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]

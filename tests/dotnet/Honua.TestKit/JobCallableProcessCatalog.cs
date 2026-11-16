@@ -6,28 +6,21 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Wraps a process catalog and makes selected definitions async-job-callable so tests can
-/// reach a downstream concern without weakening the production catalog classification.
-/// </summary>
 public sealed class JobCallableProcessCatalog(
     IProcessCatalog inner,
     params string[] processIds) : IProcessCatalog
 {
     private readonly HashSet<string> _processIds = processIds.ToHashSet(StringComparer.Ordinal);
 
-    /// <inheritdoc />
     public ProcessDefinition? GetProcess(string processId)
     {
         var definition = inner.GetProcess(processId);
         return definition is null ? null : Override(definition);
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<ProcessDefinition> ListProcesses()
         => [.. inner.ListProcesses().Select(Override)];
 
-    /// <inheritdoc />
     public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category)
         => [.. inner.GetProcessesByCategory(category).Select(Override)];
 

@@ -13,10 +13,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Native ImageServer catalog SOAP filters are checked against real PostGIS rows,
-/// independently of the protocol's filter evaluator and REST query response.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerNativeCatalogTests : IAsyncLifetime

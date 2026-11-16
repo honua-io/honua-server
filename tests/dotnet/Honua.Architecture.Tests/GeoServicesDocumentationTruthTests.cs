@@ -5,7 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>Guards customer-facing GeoServices claims that must match the wire contract.</summary>
 public sealed class GeoServicesDocumentationTruthTests
 {
     [ArchitectureTest]

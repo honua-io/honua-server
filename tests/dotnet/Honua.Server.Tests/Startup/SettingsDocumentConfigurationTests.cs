@@ -12,10 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Owner decision 6: one <c>aws:secretsmanager:</c> settings document expands into configuration
-/// below the environment, so Lambda settings can leave the 4 KB function environment.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class SettingsDocumentConfigurationTests

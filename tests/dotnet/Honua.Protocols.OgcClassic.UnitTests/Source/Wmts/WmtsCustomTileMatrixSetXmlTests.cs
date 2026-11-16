@@ -8,11 +8,6 @@ using Honua.Protocols.Ogc.Classic.Wmts;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Unit coverage for the operator-defined custom tile matrix set emission in WMTS
-/// GetCapabilities. These tests pin the shape of the additive custom-grid XML, including
-/// CRS-identifier-specific TopLeftCorner axis order and round-trip coordinate precision.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class WmtsCustomTileMatrixSetXmlTests
 {

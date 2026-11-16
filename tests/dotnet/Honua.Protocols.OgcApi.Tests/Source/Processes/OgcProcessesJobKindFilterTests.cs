@@ -15,12 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Verifies that OGC API Processes job routes reject jobs whose
-/// <see cref="ExecutionJobKind"/> is not <see cref="ExecutionJobKind.Geoprocessing"/>.
-/// Non-geoprocessing jobs must return 404 (no-such-job) so the adapter
-/// never exposes or mislabels jobs from other execution slices.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobKindFilterTests : IClassFixture<OgcProcessesJobKindFilterTestsFixture>
@@ -81,14 +75,6 @@ public sealed class OgcProcessesJobKindFilterTests : IClassFixture<OgcProcessesJ
     }
 }
 
-/// <summary>
-/// Per-class wrapper that owns a single <see cref="WebAppFixture"/> with the
-/// non-geoprocessing/geoprocessing job store substitute registered once, shared
-/// across all tests in <see cref="OgcProcessesJobKindFilterTests"/> via
-/// <see cref="IClassFixture{T}"/>. All mock setups are fixed (no per-test
-/// reconfiguration) and every test only reads fixed job ids, so the shared
-/// fixture is safe.
-/// </summary>
 public sealed class OgcProcessesJobKindFilterTestsFixture : IAsyncLifetime
 {
     private const string EtlJobId = "etl-job-001";

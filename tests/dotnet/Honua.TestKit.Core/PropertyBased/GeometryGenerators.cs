@@ -10,26 +10,16 @@ using Gen = FsCheck.Fluent.Gen;
 
 namespace Honua.TestKit.PropertyBased;
 
-/// <summary>
-/// Property-based test generators for geometric data.
-/// Ensures comprehensive testing of spatial operations with valid and edge case geometries.
-/// </summary>
 public static class GeometryGenerators
 {
     private const int CoordinateScale = 1000;
 
-    /// <summary>
-    /// Generates valid WGS84 coordinates within reasonable bounds.
-    /// </summary>
     public static Arbitrary<Coordinate> ValidCoordinate() =>
         Arb.From(
             from lon in Gen.Choose(-180 * CoordinateScale, 180 * CoordinateScale).Select(ToDegrees)
             from lat in Gen.Choose(-90 * CoordinateScale, 90 * CoordinateScale).Select(ToDegrees)
             select new Coordinate(lon, lat));
 
-    /// <summary>
-    /// Generates coordinates near boundaries to test edge cases.
-    /// </summary>
     public static Arbitrary<Coordinate> BoundaryCoordinate() =>
         Arb.From(
             Gen.OneOf(
@@ -44,9 +34,6 @@ public static class GeometryGenerators
                 from lat in Gen.Choose(89900, 90000).Select(ToDegrees)
                 select new Coordinate(lon, lat)));
 
-    /// <summary>
-    /// Generates invalid coordinates to test error handling.
-    /// </summary>
     public static Arbitrary<Coordinate> InvalidCoordinate() =>
         Arb.From(
             Gen.OneOf(
@@ -57,9 +44,6 @@ public static class GeometryGenerators
                 Gen.Constant(new Coordinate(181, 0)),
                 Gen.Constant(new Coordinate(0, 91))));
 
-    /// <summary>
-    /// Generates simple polygon geometries for testing.
-    /// </summary>
     public static Arbitrary<Polygon> SimplePolygon() =>
         Arb.From(
             from centerX in Gen.Choose(-179 * CoordinateScale, 179 * CoordinateScale).Select(ToDegrees)
@@ -75,9 +59,6 @@ public static class GeometryGenerators
             }
             select GeometryHelper.CreatePolygon(coords));
 
-    /// <summary>
-    /// Generates bounding box coordinates for spatial queries.
-    /// </summary>
     public static Arbitrary<(double MinX, double MinY, double MaxX, double MaxY)> BoundingBox() =>
         Arb.From(
             from minXInt in Gen.Choose(-180 * CoordinateScale, 179 * CoordinateScale)
@@ -88,9 +69,6 @@ public static class GeometryGenerators
             let minY = ToDegrees(minYInt)
             select (minX, minY, ToDegrees(minXInt + widthInt), ToDegrees(minYInt + heightInt)));
 
-    /// <summary>
-    /// Generates malformed bounding boxes for error testing.
-    /// </summary>
     public static Arbitrary<(double MinX, double MinY, double MaxX, double MaxY)> InvalidBoundingBox() =>
         Arb.From(
             Gen.OneOf(
@@ -108,9 +86,6 @@ public static class GeometryGenerators
     private static double ToDegrees(int value) => value / (double)CoordinateScale;
 }
 
-/// <summary>
-/// Helper class for creating geometric objects safely.
-/// </summary>
 internal static class GeometryHelper
 {
     private static readonly GeometryFactory _factory = new(new PrecisionModel(), 4326);

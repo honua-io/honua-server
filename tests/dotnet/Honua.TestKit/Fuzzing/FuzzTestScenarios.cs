@@ -6,14 +6,8 @@ using System.Text;
 
 namespace Honua.TestKit.Fuzzing;
 
-/// <summary>
-/// Fuzzing test scenarios for discovering edge cases and vulnerabilities.
-/// </summary>
 public static class FuzzTestScenarios
 {
-    /// <summary>
-    /// Fuzzes CQL2 filter expressions with random mutations.
-    /// </summary>
     public static async Task<FuzzTestResult> FuzzCql2FilterExpressions(
         HttpClient client,
         string endpoint,
@@ -78,9 +72,6 @@ public static class FuzzTestScenarios
         };
     }
 
-    /// <summary>
-    /// Fuzzes JSON input payloads with structure mutations.
-    /// </summary>
     public static async Task<FuzzTestResult> FuzzJsonPayloads(
         HttpClient client,
         string endpoint,
@@ -139,9 +130,6 @@ public static class FuzzTestScenarios
         };
     }
 
-    /// <summary>
-    /// Fuzzes URL parameters with random values and structures.
-    /// </summary>
     public static async Task<FuzzTestResult> FuzzUrlParameters(
         HttpClient client,
         string baseEndpoint,
@@ -205,9 +193,6 @@ public static class FuzzTestScenarios
         };
     }
 
-    /// <summary>
-    /// Fuzzes HTTP headers with various values and encodings.
-    /// </summary>
     public static async Task<FuzzTestResult> FuzzHttpHeaders(
         HttpClient client,
         string endpoint,

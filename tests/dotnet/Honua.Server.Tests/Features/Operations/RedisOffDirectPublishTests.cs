@@ -30,15 +30,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsRedisOff;
 
-/// <summary>
-/// Owner decision 20 (2026-10-10): on a Production host composed without Redis, a direct
-/// <c>service.publish</c> that the operation policy allows executes without the Redis-backed
-/// operation-instance store, because no governed proposal is involved. The handle still carries
-/// the canonical evidence the terminal journey checks (<c>operationId</c>,
-/// <c>operationInstanceId</c>, <c>correlationId</c>, <c>auditId</c>) and is marked non-durable.
-/// Proposal-based paths keep the typed <c>missingDependency=redis</c> refusal. Evidence:
-/// honua-release run 38066103745, aws-serverless/redis-off journey stage 3.
-/// </summary>
 public sealed class RedisOffDirectPublishTests
 {
     private const string AdminRole = "admin";

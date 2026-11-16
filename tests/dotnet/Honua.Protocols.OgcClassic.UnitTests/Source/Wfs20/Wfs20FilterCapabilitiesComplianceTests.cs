@@ -5,9 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Tests that WFS 2.0 FilterCapabilities advertise the capabilities implemented by the runtime.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class Wfs20FilterCapabilitiesComplianceTests
 {

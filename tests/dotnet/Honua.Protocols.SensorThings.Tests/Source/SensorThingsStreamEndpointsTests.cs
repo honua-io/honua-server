@@ -15,10 +15,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Integration tests for the OGC SensorThings API (STA v1.1) Phase 3 real-time observation
-/// stream (#1747): the SSE transport handshake and live push of a newly-ingested observation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
@@ -208,10 +204,6 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
         return JsonDocument.Parse(payload.ToArray());
     }
 
-    /// <summary>
-    /// Reads SSE lines until a line containing <paramref name="marker"/> is seen, then returns
-    /// the marker line plus the following data line. Heartbeats are skipped.
-    /// </summary>
     private static async Task<string> ReadUntilAsync(StreamReader reader, string marker, CancellationToken cancellationToken)
     {
         string? cursor = null;

@@ -5,11 +5,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
 
-/// <summary>
-/// Tests for the platform-release <c>targetVersion</c> comparison rule (rc.3 fix unit S3): the
-/// <c>honua-</c> tag prefix, a <c>v</c> prefix, surrounding whitespace, case, and a zero patch are
-/// normalized; everything else stays a distinct release.
-/// </summary>
 public sealed class PlatformReleaseVersionTests
 {
     [Trait("Tier", "Fast")]

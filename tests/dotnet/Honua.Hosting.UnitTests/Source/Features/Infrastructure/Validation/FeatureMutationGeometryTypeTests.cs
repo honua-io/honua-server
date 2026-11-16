@@ -13,10 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// #6108: the shared <see cref="FeatureMutationValidator"/> enforces the layer's declared
-/// geometry type on the post-repair geometry for every protocol adapter.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Protocol(TestProtocols.Wfs20)]

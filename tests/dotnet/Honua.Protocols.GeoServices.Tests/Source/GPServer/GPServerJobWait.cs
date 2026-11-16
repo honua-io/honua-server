@@ -24,14 +24,10 @@ internal static class GPServerJobWait
     // HTTP timeout for one request: one tolerated stall plus headroom.
     public static readonly TimeSpan RequestTimeout = StallTolerance + TimeSpan.FromSeconds(15);
 
-    /// <summary>Budget for a job to reach a terminal status: one tolerated stall plus six idle claim polls.</summary>
     public static readonly TimeSpan JobBudget = StallTolerance + (JobExecutionService.PollInterval * 6);
 
     private static readonly TimeSpan PollDelay = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>
-    /// Polls a GeoServices REST job-status URL until the job is terminal and returns the terminal body.
-    /// </summary>
     public static async Task<JsonDocument> UntilRestTerminalAsync(
         HttpClient client,
         string statusUrl,
@@ -63,9 +59,6 @@ internal static class GPServerJobWait
         throw await TimedOutAsync(jobId, lastObserved, jobStore, budget);
     }
 
-    /// <summary>
-    /// Polls a GeoServices REST job-status URL until the job is terminal and asserts it succeeded.
-    /// </summary>
     public static async Task<JsonDocument> UntilRestSucceededAsync(
         HttpClient client,
         string statusUrl,
@@ -78,9 +71,6 @@ internal static class GPServerJobWait
         return terminal;
     }
 
-    /// <summary>
-    /// Polls a SOAP <c>GetJobStatus</c> reader until the job is terminal and asserts it succeeded.
-    /// </summary>
     public static async Task UntilSoapSucceededAsync(
         Func<Task<string>> readStatus,
         string jobId,

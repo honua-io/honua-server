@@ -13,15 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
-/// <summary>
-/// Regression tests for honua-server#1412 — the Metadata v2 cutover (~2026-05-18) made
-/// every protocol that resolves through <see cref="PostgresMetadataV2GraphStore"/> require
-/// an activated v2 snapshot, which regressed OGC API Features <c>/collections</c> (and the
-/// collection-detail/items paths) to HTTP 500 on any deployment whose only catalog data is
-/// the legacy V1 catalog (<c>honua.services</c> / <c>honua.layers</c>). The store now
-/// synthesizes a compat snapshot from the V1 catalog when no v2 snapshot is activated, and
-/// still serves the activated snapshot when one exists.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixture fixture)
 {

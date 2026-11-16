@@ -9,12 +9,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// Unit tests for the static WCS 2.0 request-CRS resolver. These exercise the
-/// advertise/validate agreement (OGC 11-053r1) without a database by substituting
-/// the transformable CRS set directly, mirroring the bounded set the handler builds
-/// from the CRS registry at runtime.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class Wcs20RequestCrsValidationTests
 {

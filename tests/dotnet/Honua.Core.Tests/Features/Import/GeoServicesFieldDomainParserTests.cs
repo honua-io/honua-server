@@ -8,11 +8,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Unit coverage for the shared Esri domain parser (honua-server#1255). The parser is
-/// the single source of truth for coded-value/range capture and the 100-entry cap, so
-/// the import inventory and the publish-path field builder agree on cap semantics.
-/// </summary>
 public sealed class GeoServicesFieldDomainParserTests
 {
     [Trait("Tier", "Fast")]

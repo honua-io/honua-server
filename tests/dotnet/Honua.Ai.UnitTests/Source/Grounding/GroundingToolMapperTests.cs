@@ -14,12 +14,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp.Grounding;
 
-/// <summary>
-/// Unit tests for <see cref="GroundingToolMapper"/>. Pin the wire↔domain
-/// translations for both grounding-tool arguments and the grounding output.
-/// The MCP error mapper depends on <see cref="GeoprocessingValidationException"/>
-/// being thrown for invalid shapes, so each failure mode is asserted here.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class GroundingToolMapperTests
 {

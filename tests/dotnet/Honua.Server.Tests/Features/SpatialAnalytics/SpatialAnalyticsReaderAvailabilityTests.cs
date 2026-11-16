@@ -16,13 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// Unit tests for <see cref="SpatialAnalyticsRequestHandlers.TryGetAnalyticsReader"/>,
-/// the gate that converts a missing <see cref="ISpatialAnalyticsReader"/> registration
-/// into a contract-compliant HTTP 501 instead of leaking an <c>InvalidOperationException</c>
-/// through to HTTP 500. This matters on the DuckDB read-only provider which maps the
-/// analytics routes alongside the rest of FeatureServer but does not ship a backend.
-/// </summary>
 [Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsReaderAvailabilityTests
 {

@@ -11,13 +11,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Unit tests for <see cref="SamlAssertionValidator"/> (#508): a valid signed assertion is
-/// accepted and its attributes mapped, while forged/unsigned/expired/wrong-audience assertions
-/// are rejected. The signed fixtures are produced by the in-box <c>SignedXml</c> reference
-/// implementation, so these tests also prove the AOT-safe Exclusive-C14N verifier interoperates
-/// with a standard signer.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class SamlAssertionValidatorTests
 {

@@ -7,14 +7,6 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Sample.UtilityValidationPlugin;
 
-/// <summary>
-/// Phase-2 reference plugin (issue #1562). A single type that exercises the new extension points:
-/// per-attribute validation (<see cref="IFieldValidator"/>), a query-time computed field
-/// (<see cref="IComputedFieldProvider"/>), and a long-running background task
-/// (<see cref="IPluginBackgroundService"/>). It declares a dependency on the feature-level
-/// <c>utility-validation</c> plugin and requests the <see cref="PluginCapability.BackgroundExecution"/>
-/// capability required to host its background service.
-/// </summary>
 [Plugin("utility-audit", "1.1.0",
     Description = "Field rules, a computed field, and an audit background service for utility assets.",
     Capabilities = PluginCapability.BackgroundExecution,
@@ -24,13 +16,10 @@ public sealed class UtilityAuditPlugin : IFieldValidator, IComputedFieldProvider
 {
     private const double WarningVoltageThreshold = 25_000d;
 
-    /// <inheritdoc />
     string IFieldValidator.FieldName => "Voltage";
 
-    /// <inheritdoc />
     string IComputedFieldProvider.FieldName => "VoltageClass";
 
-    /// <inheritdoc />
     public ValueTask<PluginValidationResult> ValidateFieldAsync(
         object? value,
         Feature feature,
@@ -45,7 +34,6 @@ public sealed class UtilityAuditPlugin : IFieldValidator, IComputedFieldProvider
         return ValueTask.FromResult(PluginValidationResult.Success());
     }
 
-    /// <inheritdoc />
     public ValueTask<object?> ComputeAsync(
         Feature feature,
         ComputedFieldContext context,
@@ -60,7 +48,6 @@ public sealed class UtilityAuditPlugin : IFieldValidator, IComputedFieldProvider
         return ValueTask.FromResult<object?>(voltageClass);
     }
 
-    /// <inheritdoc />
     public async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // A trivial heartbeat loop standing in for periodic audit/bookkeeping work. It observes

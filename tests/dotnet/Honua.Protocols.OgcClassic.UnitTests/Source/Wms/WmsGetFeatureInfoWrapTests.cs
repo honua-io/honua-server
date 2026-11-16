@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Unit coverage for the wrap-aware GetFeatureInfo pixel-to-map math (#2739).
-/// </summary>
 public sealed class WmsGetFeatureInfoWrapTests
 {
     [UnitTest]

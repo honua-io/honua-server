@@ -147,12 +147,6 @@ public sealed class DistributedReplicaStoreTests
         }));
     }
 
-    /// <summary>
-    /// The contended case: many writers and removers on <em>one</em> replica id. The store must
-    /// stay internally consistent — every read returns either the fully-written record or
-    /// nothing, never a torn one — exactly one <c>RemoveAsync</c> may report success, and the
-    /// key must be absent once the storm settles (honua-server#4405).
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ExtractChanges)]
     public async Task SetGetRemove_ContendingOnOneReplicaId_StaysConsistentAndRemovesExactlyOnce()

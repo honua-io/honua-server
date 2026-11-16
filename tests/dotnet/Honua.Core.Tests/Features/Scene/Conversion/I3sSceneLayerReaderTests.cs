@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
-/// <summary>
-/// Unit tests for the I3S scene-layer descriptor reader (#1268).
-/// </summary>
 public sealed class I3sSceneLayerReaderTests
 {
     private const string SampleSceneLayerJson = """

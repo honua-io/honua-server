@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterMosaicJobExecutor"/>: multi-input
-/// gdalwarp argument projection, the first/last overlap-operator ordering, source
-/// list parsing guards, and the canonical data-URI artifact contract.
-/// </summary>
 public sealed class GdalRasterMosaicExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-mosaic-test";

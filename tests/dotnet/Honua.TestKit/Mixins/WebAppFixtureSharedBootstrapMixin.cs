@@ -8,22 +8,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.TestKit.Mixins;
 
-/// <summary>
-/// Audit-A2 mixin: the shared-server bootstrap that <see cref="WebAppFixture"/>
-/// historically inlined as ~85 LOC of <c>InitializeSharedAsync</c> plus a ~35-LOC
-/// shared-state teardown branch in <c>DisposeAsync</c>. The shared server is process-wide
-/// static state — exactly one <see cref="WebApplicationFactory{TEntryPoint}"/> and one
-/// <see cref="PostgresFixture"/> serve every WebAppFixture that didn't request a
-/// custom service configuration — so its lifecycle is naturally a static-state owner
-/// and lives here.
-/// </summary>
-/// <remarks>
-/// Per structural-audit-2026-05 (group A2), this is the sixth slice of the WebAppFixture
-/// mixin split. Behaviour is byte-identical — the shared semaphore, refcount, and
-/// initialised-flag move 1:1 onto this mixin. The WebAppFixture instance still owns its
-/// own _currentSchema, _serviceScope, and Client; only the truly process-wide
-/// shared-server resources moved.
-/// </remarks>
 internal static class WebAppFixtureSharedBootstrapMixin
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
@@ -32,26 +16,12 @@ internal static class WebAppFixtureSharedBootstrapMixin
     private static int _sharedRefCount;
     private static bool _sharedInitialized;
 
-    /// <summary>
-    /// Returns the currently-initialised shared factory, or throws if the shared
-    /// bootstrap hasn't run yet. Used by per-fixture client/scope creation.
-    /// </summary>
     internal static WebApplicationFactory<Program> Factory
         => _sharedFactory ?? throw new InvalidOperationException("Shared web factory not initialized.");
 
-    /// <summary>
-    /// Returns the currently-initialised shared <see cref="PostgresFixture"/>, or throws
-    /// if the shared bootstrap hasn't run yet. Used by the WebAppFixture's
-    /// <c>Postgres</c> accessor when running in shared mode.
-    /// </summary>
     internal static PostgresFixture Postgres
         => _sharedPostgres ?? throw new InvalidOperationException("Shared Postgres fixture not initialized.");
 
-    /// <summary>
-    /// Reference-counted bootstrap of the process-wide shared server + postgres. The
-    /// first caller spins up the factory and connects it to a fresh
-    /// <see cref="PostgresFixture"/>; every subsequent caller just bumps the refcount.
-    /// </summary>
     internal static async Task EnsureInitializedAsync(
         string sharedAdminPassword,
         Func<string, string, WebApplicationFactory<Program>>? buildFactory = null)
@@ -91,11 +61,6 @@ internal static class WebAppFixtureSharedBootstrapMixin
         }
     }
 
-    /// <summary>
-    /// Reference-counted teardown of the shared server + postgres. The last caller
-    /// flushes the factory and the Postgres fixture; every other caller just decrements
-    /// the refcount.
-    /// </summary>
     internal static async Task ReleaseAsync()
     {
         await _sharedLock.WaitAsync();

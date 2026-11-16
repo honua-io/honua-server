@@ -11,10 +11,6 @@ using ParquetDataColumn = Parquet.Data.DataColumn;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Shared factory for creating in-memory GeoParquet test files.
-/// Eliminates duplication across preview and integration test classes.
-/// </summary>
 public static class GeoParquetTestFactory
 {
     private static readonly string[] PointGeometryTypes = ["Point"];
@@ -24,30 +20,17 @@ public static class GeoParquetTestFactory
     private static readonly string?[] SingleValue = ["test_value"];
     private static readonly byte[]?[] NullGeometryData = [null];
 
-    /// <summary>
-    /// How the CRS is encoded in the GeoParquet "geo" metadata.
-    /// </summary>
     public enum CrsStyle
     {
-        /// <summary>PROJJSON format: id.authority = "EPSG", id.code = 4326 (GeoParquet 1.1.0 spec)</summary>
         ProjJson,
-        /// <summary>GeoJSON-style: properties.name = "EPSG:4326"</summary>
         PropertiesName,
-        /// <summary>No "crs" key — defaults to OGC:CRS84 per spec</summary>
         Omitted,
-        /// <summary>PROJJSON format: id.authority = "OGC", id.code = "CRS84"</summary>
         OgcCrs84ProjJson,
-        /// <summary>GeoJSON-style: properties.name = "OGC:CRS84"</summary>
         OgcCrs84PropertiesName,
-        /// <summary>Explicit JSON null — "no CRS associated with this data" per GeoParquet 1.1.0 spec</summary>
         ExplicitNull,
-        /// <summary>PROJJSON format with string code: id.authority = "EPSG", id.code = "4326"</summary>
         ProjJsonStringCode
     }
 
-    /// <summary>
-    /// Create a standard GeoParquet file with configurable encoding, CRS, and row count.
-    /// </summary>
     public static async Task<MemoryStream> CreateStreamAsync(
         string encoding = "WKB",
         CrsStyle crs = CrsStyle.ProjJson,
@@ -137,9 +120,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with a secondary geometry column.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithSecondaryGeometryAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -182,9 +162,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with a nested StructField column.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithNestedColumnAsync(CrsStyle crs = CrsStyle.ProjJson)
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -227,10 +204,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with TimeOnly and byte[] attribute columns.
-    /// Exercises the Parquet types that tripped the import/preview JSON context gap.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithTimeAndBinaryColumnsAsync(CrsStyle crs = CrsStyle.ProjJson)
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -273,11 +246,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with an INT16 (short) attribute column.
-    /// Exercises Parquet integer widths narrower than Int32 that require
-    /// explicit JsonSerializable metadata for AOT serialization.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithInt16ColumnAsync(CrsStyle crs = CrsStyle.ProjJson)
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -317,9 +285,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a Parquet file with malformed "geo" metadata JSON.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithMalformedMetadataAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -344,10 +309,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a Parquet file with structurally invalid "geo" metadata
-    /// (valid JSON but wrong value types, e.g. numeric primary_column).
-    /// </summary>
     public static async Task<MemoryStream> CreateWithWrongShapedMetadataAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -378,9 +339,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with valid "geo" JSON but no "primary_column" field.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithMissingPrimaryColumnAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -417,9 +375,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with valid "geo" JSON but no "columns" field.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithMissingColumnsFieldAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -449,9 +404,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a plain Parquet file without any "geo" metadata key.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithoutGeoMetadataAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -471,10 +423,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file with a raw CRS object for testing edge-case CRS values
-    /// (e.g. decimal EPSG codes, out-of-range codes).
-    /// </summary>
     public static async Task<MemoryStream> CreateWithCustomCrsAsync(Dictionary<string, object?> crsObject)
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -512,10 +460,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file where the "geo" metadata's primary_column names a column
-    /// that does not exist in the Parquet schema.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithMismatchedPrimaryColumnAsync()
     {
         var objectIdField = new DataField<long?>("objectid");
@@ -553,11 +497,6 @@ public static class GeoParquetTestFactory
         return stream;
     }
 
-    /// <summary>
-    /// Create a GeoParquet file where "geo.columns" exists but does not contain
-    /// the declared "primary_column". The Parquet schema DOES have the geometry column,
-    /// so the mismatch is purely in the geo metadata.
-    /// </summary>
     public static async Task<MemoryStream> CreateWithPrimaryColumnMissingFromGeoColumnsAsync()
     {
         var objectIdField = new DataField<long?>("objectid");

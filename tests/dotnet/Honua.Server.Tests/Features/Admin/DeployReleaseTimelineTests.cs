@@ -21,11 +21,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// End-to-end coverage for the workflow-transition seam (#2562): deploy lifecycle transitions raised
-/// through <see cref="IWorkflowOperationTransitionListener"/> surface as <c>Release</c> events on the
-/// Operate timeline and are filterable via the existing observability events endpoint.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

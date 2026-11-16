@@ -19,14 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Tool tests for <c>honua_studio_add_control</c> / <c>honua_studio_remove_control</c>
-/// — Honua's reference implementation of the geospatial-mcp <c>composition</c>-profile
-/// tools <c>add_control</c>/<c>remove_control</c> (ADR-0031). Mirrors
-/// <c>StudioInteractionMcpToolTests</c>: happy paths run against the real
-/// <see cref="IStudioPackageLifecycleService"/> backed by <c>InMemoryStudioPackageStore</c>,
-/// and the typed-error paths use a substituted lifecycle service.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioControlMcpToolTests
 {
@@ -437,11 +429,6 @@ public sealed class StudioControlMcpToolTests
         };
     }
 
-    /// <summary>
-    /// A real (in-memory-store-backed) map draft pre-composed with the <c>parcels</c> layer
-    /// and <c>area-chart</c> widget the control fixtures bind against, plus the generation
-    /// bookkeeping each optimistic-concurrency call needs.
-    /// </summary>
     private sealed class StudioDraftHarness
     {
         private readonly IStudioPackageLifecycleService _lifecycle;

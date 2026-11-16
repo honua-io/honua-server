@@ -16,13 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// API surface integration tests for the read-only ImageServer raster metadata child
-/// resources (statistics, histograms, rasterAttributeTable, rasterFunctionInfos). Each
-/// test drives the real route through <see cref="WebAppFixture"/> per ADR-0011 API
-/// surface coverage. Endpoint coverage is consolidated onto a small number of methods
-/// (multiple <c>[Endpoint]</c> attributes per method) to keep the fixture-init count low.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerRasterMetadataTests : IClassFixture<ImageServerRasterMetadataTests.RasterMetadataFixture>
@@ -32,10 +25,6 @@ public class ImageServerRasterMetadataTests : IClassFixture<ImageServerRasterMet
 
     public ImageServerRasterMetadataTests(RasterMetadataFixture fixture) => _fixture = fixture.App;
 
-    /// <summary>
-    /// Keeps the real host and its constructor-injected raster store alive for read-only
-    /// metadata cases instead of rebuilding the application for every request case.
-    /// </summary>
     public sealed class RasterMetadataFixture : IAsyncLifetime
     {
         public WebAppFixture App { get; } = new WebAppFixture()

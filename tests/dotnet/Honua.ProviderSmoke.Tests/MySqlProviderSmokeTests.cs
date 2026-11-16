@@ -6,24 +6,6 @@ using System.Text.Json;
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Interface-level HTTP-stack smoke coverage for the MySql/MariaDB provider
-/// (honua-server#2947). Boots a real ASP.NET Core host with
-/// <c>DataSource:Provider=mysql</c> against a Testcontainers <c>mysql:8</c> instance. See
-/// <see cref="PrimaryProviderSmokeTestsBase"/> for the shared read assertions, including
-/// the bbox and raster-tile cases that were skipped here until the honua-server#2965
-/// EWKB/plain-WKB converter fix landed.
-/// </summary>
-/// <remarks>
-/// MySQL/MariaDB is a read/query-only provider by design (docs/reference/configuration/
-/// data-sources): <c>MySqlFeatureStore.Writer</c> is <see langword="null"/>, its
-/// capabilities are <c>FeatureProviderCapabilities.ReadOnlyMySql</c>, and DI registers a
-/// <c>ReadOnlyFeatureWriter</c> that rejects every write with
-/// <see cref="NotSupportedException"/>. The edit round-trip test here therefore proves the
-/// documented rejection posture — a clean 405 MethodNotAllowed through the shared
-/// exception mapping (Esri-style: HTTP 200 with an <c>error.code</c> body), never the
-/// generic 500 — and that a rejected edit batch leaves the seeded data untouched.
-/// </remarks>
 [Trait("Provider", "MySql")]
 public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, IClassFixture<MySqlProviderWebAppFixture>
 {

@@ -18,9 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-2 <c>geometry.project</c> executor.
-/// </summary>
 public sealed class GeometryProjectJobExecutorTests
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"; // POINT(0 0)

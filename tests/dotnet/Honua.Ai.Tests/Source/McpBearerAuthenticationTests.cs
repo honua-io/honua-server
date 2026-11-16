@@ -19,22 +19,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for OAuth 2.1 resource-server acceptance of
-/// <c>Authorization: Bearer</c> tokens on the <c>/mcp</c> transport
-/// (honua-server#2850). Exercised through the full ASP.NET Core pipeline with a
-/// configured OIDC authority (a symmetric-key generic provider, so tokens are
-/// minted and validated in-process without a live IdP) and the dev-auth bypass
-/// disabled, so authentication is decided purely by the presented credential.
-/// </summary>
-/// <remarks>
-/// The suite proves the three behaviours the acceptance criteria require: a valid
-/// token authenticates the caller (observed through the session principal binding,
-/// which only rejects a *different* identity), a presented-but-invalid token is
-/// rejected with HTTP 401 plus the RFC 9728 <c>WWW-Authenticate</c> challenge and an
-/// MCP-structured error, and an unauthenticated request keeps its prior anonymous
-/// handshake — the change is additive.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
@@ -1124,10 +1108,6 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Runs an <c>initialize</c> with the supplied bearer and returns the issued
-    /// session id.
-    /// </summary>
     private static async Task<string> OpenSessionAsync(HttpClient client, string bearer)
     {
         using var initialize = BuildInitialize(bearer);
@@ -1136,10 +1116,6 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
         return response.Headers.GetValues("Mcp-Session-Id").Single();
     }
 
-    /// <summary>
-    /// Sends a JSON-RPC request on a session and returns its <c>result</c>, failing with the
-    /// response body when the transport or the session refused it.
-    /// </summary>
     private static async Task<JsonElement> AssertSessionRequestSucceedsAsync(
         HttpClient client,
         string body,
@@ -1191,10 +1167,6 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
         return request;
     }
 
-    /// <summary>
-    /// Fixture whose MCP sessions go idle almost immediately, so transport-level
-    /// expiry is observable without a long-running test.
-    /// </summary>
     private static WebAppFixture CreateShortIdleSessionFixture()
         => new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -1217,10 +1189,6 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
                 builder.UseSetting("Mcp:SessionIdleTimeout", "00:00:01");
             });
 
-    /// <summary>
-    /// Fixture that keeps the production default token replay protection on, so every
-    /// validated bearer is single-use outside the MCP session it is bound to (#4909).
-    /// </summary>
     internal static WebAppFixture CreateReplayProtectedFixture()
         => new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")

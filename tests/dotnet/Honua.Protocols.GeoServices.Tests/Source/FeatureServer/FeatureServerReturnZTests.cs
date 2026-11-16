@@ -15,11 +15,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for FeatureServer 3D (Z) query support (#1877 Part A): a Z value written through
-/// applyEdits must survive storage and be emitted on the query geometry when <c>returnZ=true</c>, and
-/// must be absent when <c>returnZ</c> is omitted. Validates the extended-WKB read path round-trip.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReturnZTests : IAsyncLifetime

@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
-/// <summary>
-/// Tests for the CSP violation report endpoint.
-/// Verifies proper handling of CSP violation reports sent by browsers.
-/// </summary>
 [Collection("Database")]
 [Trait("Category", "Integration")]
 [Trait("Component", "Security")]

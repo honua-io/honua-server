@@ -9,20 +9,6 @@ using Xunit;
 
 namespace Honua.LoadTests;
 
-/// <summary>
-/// PR-tier smoke tests for the real NBomber load scenarios that ship under
-/// <c>./Scenarios/</c> (<see cref="StacSearchLoadScenario"/>,
-/// <see cref="TilesLoadScenario"/>, <see cref="FeaturesPaginationLoadScenario"/>,
-/// and <see cref="LoadScenarioSettings"/>). Each fact instantiates a scenario
-/// and asserts it produces a valid, configured <see cref="ScenarioProps"/> with
-/// at least one load simulation, so a broken or removed scenario fails the PR
-/// build instead of silently disappearing.
-///
-/// These are NOT the full load runs — the actual high-throughput executions
-/// are gated behind <c>Tier=Slow</c> and only run in the nightly load-soak
-/// workflow. The presence and shape of the scenarios themselves is what this
-/// PR-tier suite guards.
-/// </summary>
 public sealed class LoadTestsSmokeTests
 {
     [UnitTest]
@@ -85,15 +71,6 @@ public sealed class LoadTestsSmokeTests
             Program.KnownScenarios.OrderBy(static name => name, StringComparer.Ordinal));
     }
 
-    /// <summary>
-    /// The soak profile is the one the frozen 2026.1 capacity lock names
-    /// (honua-release <c>certification/capacity-envelope.v1.json</c>: <c>soak.profile</c>,
-    /// <c>soak.minimumSteadyStateSeconds</c>, <c>supportedEnvelope.concurrentVirtualUsers</c>).
-    /// A published capacity receipt claims that envelope, so drifting these numbers would make the
-    /// receipt claim concurrency the run never drove, or a steady state shorter than the lock's
-    /// minimum. The lock is frozen and lives in another repository; this test is the local guard
-    /// that the profile still matches it.
-    /// </summary>
     [UnitTest]
     public void SoakProfile_MatchesFrozenCapacityEnvelope()
     {
@@ -106,9 +83,7 @@ public sealed class LoadTestsSmokeTests
         Assert.Equal(LoadTestProfile.Soak, LoadTestProfile.FromName("soak"));
     }
 
-    /// <summary><c>supportedEnvelope.concurrentVirtualUsers</c> in the frozen 2026.1 lock.</summary>
     private const int LockedConcurrentVirtualUsers = 170;
 
-    /// <summary><c>soak.minimumSteadyStateSeconds</c> in the frozen 2026.1 lock.</summary>
     private const int LockedMinimumSteadyStateSeconds = 3600;
 }

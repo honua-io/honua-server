@@ -10,9 +10,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Endpoint coverage for WMS GetLegendGraphic (#2855).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class WmsGetLegendGraphicTests : IAsyncLifetime

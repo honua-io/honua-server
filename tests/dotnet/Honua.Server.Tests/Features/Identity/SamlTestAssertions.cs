@@ -10,22 +10,13 @@ using System.Xml;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Builds SAML 2.0 Response/Assertion XML signed with the in-box <see cref="SignedXml"/>
-/// reference implementation. This is the independent oracle for the server's hand-rolled,
-/// AOT-safe verifier (#508): if the server accepts what Microsoft's signer produced, the
-/// canonicalization and signature paths are interoperable. Test-only — no shipped project
-/// references <c>System.Security.Cryptography.Xml</c>.
-/// </summary>
 internal static class SamlTestAssertions
 {
     public const string Issuer = "https://idp.example.com/metadata";
     public const string Audience = "https://honua.example.com/sp";
 
-    /// <summary>Assertion consumer service URL the fixtures and the SP options agree on.</summary>
     public const string AcsUrl = Audience + "/saml/acs";
 
-    /// <summary>Creates a self-signed RSA certificate to act as the IdP signing certificate.</summary>
     public static X509Certificate2 CreateSigningCertificate()
     {
         using var rsa = RSA.Create(2048);
@@ -38,13 +29,9 @@ internal static class SamlTestAssertions
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
     }
 
-    /// <summary>The base64 DER of the certificate (the value the server stores as its IdP cert).</summary>
     public static string ToBase64Der(X509Certificate2 certificate)
         => Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
 
-    /// <summary>
-    /// Produces a signed, valid SAML Response (base64-encoded, ready for the ACS SAMLResponse form field).
-    /// </summary>
     public static string CreateSignedResponse(
         X509Certificate2 certificate,
         string nameId,
@@ -104,11 +91,6 @@ internal static class SamlTestAssertions
         return SignAssertion(document.OuterXml, certificate);
     }
 
-    /// <summary>
-    /// Signed response whose <c>saml</c>, <c>xs</c>, and <c>xsi</c> prefixes are declared only
-    /// on the Response. Keycloak and SimpleSAMLphp emit this shape; exclusive C14N must keep
-    /// those ancestor declarations when the assertion is detached for the digest.
-    /// </summary>
     public static string CreateSignedPrefixedAncestorResponse(X509Certificate2 certificate, string nameId)
     {
         const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
@@ -146,19 +128,12 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
-    /// <summary>
-    /// Produces an UNSIGNED SAML Response (base64-encoded). Used to prove the server rejects it.
-    /// </summary>
     public static string CreateUnsignedResponse(string nameId)
     {
         var xml = BuildResponseXml(nameId, "x@example.com", "X", ["viewer"], null, null);
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(xml));
     }
 
-    /// <summary>
-    /// Produces a signed response whose assertion body is then tampered with (an attribute value
-    /// changed AFTER signing). The signature digest must no longer match.
-    /// </summary>
     public static string CreateTamperedResponse(X509Certificate2 certificate, string nameId)
     {
         var xml = BuildResponseXml(nameId, "x@example.com", "X", ["viewer"], null, null);
@@ -168,14 +143,6 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(tampered));
     }
 
-    /// <summary>
-    /// Produces a signed SAML Response whose <c>AttributeStatement</c> carries the supplied
-    /// attribute <c>Name</c>/values verbatim. This drives the per-IdP conformance matrix
-    /// (#2154): each IdP (Okta, Entra ID, Auth0, PingFederate) emits role/email/display-name
-    /// under different attribute <c>Name</c> URIs, and Honua maps them through the configured
-    /// <c>RoleAttribute</c>/<c>EmailAttribute</c>/<c>DisplayNameAttribute</c>. The signature is
-    /// produced by the in-box <see cref="SignedXml"/> oracle exactly as for the default builder.
-    /// </summary>
     public static string CreateSignedResponseWithAttributes(
         X509Certificate2 certificate,
         string nameId,
@@ -188,12 +155,6 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
-    /// <summary>
-    /// Produces a signed SAML 2.0 <c>LogoutRequest</c> (base64-encoded, HTTP-POST binding) as an
-    /// IdP emits for IdP-initiated Single Logout (#2154). The <c>LogoutRequest</c> element is
-    /// signed with the in-box <see cref="SignedXml"/> oracle so the server's hand-rolled verifier
-    /// must accept it.
-    /// </summary>
     public static string CreateSignedLogoutRequest(X509Certificate2 certificate, string nameId)
     {
         var xml = BuildLogoutRequestXml(nameId);
@@ -201,10 +162,6 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
-    /// <summary>
-    /// Produces an UNSIGNED SAML 2.0 <c>LogoutRequest</c> (base64-encoded). Used to prove the
-    /// server rejects an unauthenticated single-logout that would otherwise terminate a session.
-    /// </summary>
     public static string CreateUnsignedLogoutRequest(string nameId)
         => Convert.ToBase64String(Encoding.UTF8.GetBytes(BuildLogoutRequestXml(nameId)));
 
@@ -331,18 +288,9 @@ internal static class SamlTestAssertions
             """;
     }
 
-    /// <summary>
-    /// Signs the &lt;Assertion&gt; element with an enveloped signature using Exclusive C14N and
-    /// RSA-SHA256, mirroring what a real IdP emits.
-    /// </summary>
     private static string SignAssertion(string responseXml, X509Certificate2 certificate)
         => SignElement(responseXml, "_assertion1", certificate);
 
-    /// <summary>
-    /// Signs the element bearing the supplied <c>ID</c> with an enveloped XML-DSig signature
-    /// (Exclusive C14N, RSA-SHA256), inserting the signature after the element's saml:Issuer
-    /// child. Shared by the assertion and LogoutRequest signers.
-    /// </summary>
     private static string SignElement(string xml, string referenceId, X509Certificate2 certificate)
     {
         var document = new XmlDocument { PreserveWhitespace = true };

@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Collaboration.Checkpoints;
 
-/// <summary>
-/// The admission validator must accept exactly what the checkpoint applier can express: anything
-/// it lets through would otherwise take a permanent op-log cursor and wedge every later
-/// checkpoint (honua-server#2999 review).
-/// </summary>
 public sealed class SavedMapOperationPayloadValidatorTests
 {
     [Theory]
@@ -165,12 +160,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         }
     }
 
-    /// <summary>
-    /// The rejection reason is returned verbatim in the append endpoint's 400, so it must be a
-    /// stable validation message. <c>JsonException.Message</c> carries CLR type names, JSON paths
-    /// and byte offsets, which the shared error-handling rule forbids leaking to clients
-    /// (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":"invalid"}""")]
@@ -194,11 +183,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
             "Path:");
     }
 
-    /// <summary>
-    /// System.Text.Json ignores properties it cannot bind, so a misspelled member produced an
-    /// empty composition that passed admission and then cleared the document at checkpoint time
-    /// (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("""{"layres":[{"id":"parcels"}]}""")]
@@ -213,11 +197,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("unrecognized member");
     }
 
-    /// <summary>
-    /// The ADR-0031 controls collection has to be admitted here as well as at the composition
-    /// tool gate: an interaction bound to <c>control:{id}</c> only resolves when the same
-    /// document-replace payload carries the control.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("""{"controls":{"id":"nav","kind":"navigation"}}""", "must be an array")]
@@ -365,10 +344,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("not grid items");
     }
 
-    /// <summary>
-    /// C# <c>required</c> only demands the JSON member be present; it does not make the value
-    /// non-null or non-blank (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("""{"widgets":[{"id":"legend","kind":null}]}""")]
@@ -383,10 +358,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("kind");
     }
 
-    /// <summary>
-    /// Deserialization is permissive at every level, not just the payload root, so a typo
-    /// inside layers/widgets/view silently applied a default (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads","visble":false}]}""")]

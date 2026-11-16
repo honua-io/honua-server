@@ -11,10 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Compare-and-set semantics of <see cref="UniversalProgressStore"/> in its in-memory mode
-/// (no distributed cache configured), the atomicity baseline for honua-server#1593.
-/// </summary>
 [Collection("Unit")]
 public sealed class UniversalProgressStoreCompareAndSetTests
 {

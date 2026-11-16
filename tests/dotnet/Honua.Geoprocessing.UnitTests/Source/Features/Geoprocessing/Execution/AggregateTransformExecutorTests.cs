@@ -18,11 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Regression coverage for BH2-016: AggregateTransformExecutor.BuildGroupKey must escape
-/// U+001F/U+001E within field values so that distinct groups whose string values straddle
-/// the separator boundary are not merged into the same aggregate bucket.
-/// </summary>
 public sealed class AggregateTransformExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

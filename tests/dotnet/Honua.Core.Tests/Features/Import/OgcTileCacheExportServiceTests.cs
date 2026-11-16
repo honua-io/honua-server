@@ -17,10 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Tests for the slice-4 XYZ/TMS tile-cache exporter
-/// (<see cref="OgcTileCacheExportService"/>).
-/// </summary>
 public sealed class OgcTileCacheExportServiceTests
 {
     private const string ServiceUrl = "https://wmts.example.test/wmts";

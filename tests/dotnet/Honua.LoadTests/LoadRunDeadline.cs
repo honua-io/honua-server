@@ -8,10 +8,6 @@ namespace Honua.LoadTests;
 
 internal static class LoadRunDeadline
 {
-    /// <summary>
-    /// Bounds the entire NBomber session, including statistics and report teardown.
-    /// The caller returns nonzero on timeout; no partial result becomes receipt input.
-    /// </summary>
     internal static bool TryComplete<T>(Func<T> action, TimeSpan budget, [NotNullWhen(true)] out T? result)
         where T : class
     {

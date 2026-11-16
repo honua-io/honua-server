@@ -9,7 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>Shared native transport for executor and public API proofs.</summary>
 internal static class GdalProofRuntime
 {
     internal static DockerGdalCommandRunner CreateRunner() => new(

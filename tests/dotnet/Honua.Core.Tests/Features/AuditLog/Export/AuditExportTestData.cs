@@ -6,9 +6,6 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Core.Tests.Features.AuditLog.Export;
 
-/// <summary>
-/// Shared fixtures for the audit export unit tests (#2157).
-/// </summary>
 internal static class AuditExportTestData
 {
     public static AuditEvent SampleEvent(
@@ -43,10 +40,6 @@ internal static class AuditExportTestData
     }
 }
 
-/// <summary>
-/// Test double for <see cref="IAuditSink"/> that returns a scripted sequence of
-/// results and counts invocations.
-/// </summary>
 internal sealed class FakeAuditSink : IAuditSink
 {
     private readonly Queue<AuditSinkResult> _scripted;

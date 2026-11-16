@@ -27,10 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for the deterministic ops-findings rule set (<see cref="OpsFindingsService"/>), one
-/// rule at a time against fake seams.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class OpsFindingsServiceTests
 {
@@ -635,10 +631,6 @@ public sealed partial class OpsFindingsServiceTests
         Assert.Contains("manual-intervention-deploy-operations:beyond-materialization-window", coverage.ExpectedComponentIds ?? []);
     }
 
-    /// <summary>
-    /// Stubs the store's kind + status query, the read the real store answers for stuck deploys
-    /// (the Redis store never lists them as active).
-    /// </summary>
     private static void StubStuckDeploys(IWorkflowOperationStore workflowStore, params WorkflowOperationRecord[] operations)
     {
         workflowStore.HasLaterDeployOfTargetAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())

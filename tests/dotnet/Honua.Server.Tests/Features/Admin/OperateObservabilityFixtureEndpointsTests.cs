@@ -22,9 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration coverage for the Development/Test Console Operate fixture seed endpoint (#1209).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -349,9 +346,6 @@ public sealed class OperateObservabilityFixtureOptionsTests
     }
 }
 
-/// <summary>
-/// Verifies the fixture seed endpoint stays opt-in by default (#1209).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -379,10 +373,6 @@ public sealed class OperateObservabilityFixtureDisabledEndpointTests : IAsyncLif
     }
 }
 
-/// <summary>
-/// Verifies the flat <c>HONUA_ENABLE_OBSERVABILITY_TEST_SEED</c> env-var alias enables the seed
-/// endpoint and produces the same deterministic alert + job records Console asserts (#1229).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -444,14 +434,6 @@ public sealed class OperateObservabilityFixtureEnvAliasEndpointTests : IAsyncLif
     }
 }
 
-/// <summary>
-/// Verifies the seed endpoint degrades gracefully when the geofence alert stores are not
-/// registered (a host that has not configured the Preview alerts feature; alerts.geofence is
-/// opt-in for 2026.1, so the stores can be
-/// absent). The seeder must skip the alert-fixture slice and still hydrate
-/// jobs/logs/investigation instead of returning 500 with
-/// "No service for type 'IAlertAdminStore' has been registered." (honua-server#2350).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

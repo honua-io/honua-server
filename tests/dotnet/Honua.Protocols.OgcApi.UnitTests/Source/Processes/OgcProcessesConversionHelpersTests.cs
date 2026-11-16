@@ -13,9 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Unit tests for <see cref="OgcProcessesConversionHelpers"/>.
-/// </summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class OgcProcessesConversionHelpersTests

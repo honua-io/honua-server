@@ -26,15 +26,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.StudioAi;
 
-/// <summary>
-/// Endpoint-level tests for the Studio AI proxy (honua-server#3000/#3303): Studio lifecycle
-/// authorization on both routes, the capabilities shape, and — the audit-record requirement
-/// (REQ-002) — that a chat call reaching a known, configured (but unreachable) provider still
-/// produces exactly one audit record with the expected action/resource/outcome. No live provider
-/// is called anywhere in this file: the "provider" here is an unreachable loopback port, so the
-/// HTTP call fails fast with a connection error that the adapter turns into a normal <c>error</c>
-/// SSE event.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

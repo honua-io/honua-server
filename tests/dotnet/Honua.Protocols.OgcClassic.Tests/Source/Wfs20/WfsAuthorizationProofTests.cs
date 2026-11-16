@@ -21,29 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// WFS 2.0 authorization proven through the protocol rather than at a unit seam
-/// (#4387). Every assertion here is made against a real HTTP request handled by the
-/// production WFS dispatcher, edit pipeline and PostGIS store; the only substituted
-/// service is the <see cref="IRoleStore"/> that supplies the principal's grants, so a
-/// non-admin identity can be injected without standing up an identity provider.
-/// </summary>
-/// <remarks>
-/// Two layers are used because the two properties under test need opposite policy
-/// shapes. <c>ServiceDataEditorAuthorization.EvaluateExplicitWritePolicy</c> makes an
-/// explicit <see cref="AccessPolicy"/> write restriction authoritative — deliberately,
-/// so a wildcard RBAC grant cannot widen it — which means a layer carrying
-/// <c>AllowedRoles</c> or <c>AllowedWriteRoles</c> never reaches the per-operation
-/// grant check at all. So:
-/// <list type="bullet">
-/// <item>layer 0 (<c>test_layer</c>) carries a read policy and proves read denial and
-/// capabilities omission;</item>
-/// <item>layer 1 (<c>related_test_layer_1</c>) carries no access policy, so its writes
-/// are governed by per-operation RBAC grants and the BH3-001/BH3-014 narrowing in
-/// <c>Wfs20Handler.Transaction.ValidateTransactionLayerWriteAccessAsync</c> is what is
-/// actually exercised.</item>
-/// </list>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsAuthorizationProofTests : IAsyncLifetime
@@ -52,14 +29,8 @@ public sealed class WfsAuthorizationProofTests : IAsyncLifetime
     private static readonly XNamespace Gml = "http://www.opengis.net/gml/3.2";
     private static readonly XNamespace HonuaNs = "http://honua.io/wfs";
 
-    /// <summary>Read-protected layer: <c>tests/seed/server.yaml</c> layer 0, objectids 1-5.</summary>
     private const string ReadProtectedType = "pub-layer-0";
 
-    /// <summary>
-    /// Write target: <c>tests/seed/server.yaml</c> layer 1, objectids 101-104. The WFS
-    /// local name is derived from the resource name "Related Test Layer 1" by
-    /// <c>Wfs20Handler.BuildTypeLocalName</c>.
-    /// </summary>
     private const string WriteType = "pub-layer-1";
     private const string TargetFeature = WriteType + ".101";
     private const int WriteLayerId = 1;

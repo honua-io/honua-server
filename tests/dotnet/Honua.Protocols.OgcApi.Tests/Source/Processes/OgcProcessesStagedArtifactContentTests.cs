@@ -26,14 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// End-to-end coverage of the staged raster output surface (#3089) against local
-/// object storage: the canonical authenticated content route streams the immutable
-/// staged object for a succeeded job; incomplete (running), cancelled, and failed
-/// jobs never expose staged content; and the OGC results document links staged
-/// artifacts through the content route instead of embedding payload bytes or
-/// backing-store locations.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesStagedArtifactContentTests
@@ -44,19 +36,6 @@ public sealed class OgcProcessesStagedArtifactContentTests
     public OgcProcessesStagedArtifactContentTests(OgcProcessesStagedArtifactContentTestsFixture fixture)
         => _fixture = fixture;
 
-    /// <summary>
-    /// Artifact <em>streaming</em> for an opaque staged payload — not raster evidence
-    /// (honua-server#4400).
-    /// </summary>
-    /// <remarks>
-    /// The staged object here is 32 KiB of deterministic synthetic bytes with no GeoTIFF
-    /// framing; the fixture's descriptor stamps <c>ProducingEngine = "gdal-worker"</c> because
-    /// the streaming route reads that field, not because GDAL produced anything. This test
-    /// proves the content route streams the staged object with the declared media type and an
-    /// ETag. It must NOT be counted as a <c>raster.*</c> execution receipt: those live in
-    /// <c>Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs</c>, which drives production
-    /// executors against the pinned worker image with analytical cell oracles.
-    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
@@ -155,10 +134,6 @@ public sealed class OgcProcessesStagedArtifactContentTests
         (await recovered.Content.ReadAsByteArrayAsync()).Should().Equal(_fixture.StagedPayload);
     }
 
-    /// <summary>
-    /// #3089 review: the checksum ETag flows through Results.Stream, so conditional
-    /// requests (If-None-Match) are honoured with 304 instead of re-streaming.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
@@ -286,12 +261,6 @@ public sealed class OgcProcessesStagedArtifactContentTests
     }
 }
 
-/// <summary>
-/// #3089 review (split-host staging config): when the serving host has NO matching
-/// output store — worker-enabled/server-disabled or a mismatched StoreReference — the
-/// results document must not advertise content links that are guaranteed to fail, and
-/// the content route reports the store as unavailable. No descriptor internals leak.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesStagedArtifactStoreUnavailableTests
@@ -333,10 +302,6 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTests
     }
 }
 
-/// <summary>
-/// Fixture hosting the server WITHOUT a registered staged-output store while a
-/// succeeded job references a staged artifact (the split-host misconfiguration).
-/// </summary>
 public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAsyncLifetime
 {
     public const string JobId = "gp-staged-storeless-001";
@@ -401,11 +366,6 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAs
     public Task DisposeAsync() => App.DisposeAsync();
 }
 
-/// <summary>
-/// Per-class fixture hosting the server with a real filesystem staged-output store
-/// and a substituted execution job store carrying one succeeded, one running, and one
-/// cancelled geoprocessing job, all referencing the same staged object.
-/// </summary>
 public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifetime
 {
     public const string SucceededJobId = "gp-staged-succeeded-001";
@@ -556,12 +516,6 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         }
     }
 
-    /// <summary>
-    /// 32 KiB of deterministic synthetic bytes. Deliberately NOT a GeoTIFF: this fixture backs
-    /// artifact-streaming and volume-restore tests, and the descriptors that reference it carry
-    /// <c>ProducingEngine = "gdal-worker"</c> only because the streaming route reads that field.
-    /// Nothing here is raster-execution evidence (honua-server#4400).
-    /// </summary>
     private static byte[] CreatePayload()
     {
         return Enumerable.Range(0, 32768).Select(index => (byte)((index * 31 + 7) % 256)).ToArray();

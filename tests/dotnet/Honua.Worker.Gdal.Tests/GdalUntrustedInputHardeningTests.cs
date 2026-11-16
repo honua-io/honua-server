@@ -13,16 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Proves the #2765 GDAL untrusted-input controls actually block: the content
-/// pre-check refuses a base64-supplied VRT / XML indirection blob and any
-/// <c>/vsi</c> reference before GDAL ever opens it, the base64 input readers wire
-/// that pre-check in, and every GDAL subprocess inherits a driver-skip /
-/// remote-VSI-disable environment. GDAL is not required for any of these — they
-/// pin the pre-check and the subprocess-environment construction (the two controls
-/// that block, independent of a live gdal binary). The end-to-end "gdal actually
-/// refuses to open the VRT" assertion needs a gdal-present integration run.
-/// </summary>
 public sealed class GdalUntrustedInputHardeningTests
 {
     private const string ScratchSuite = "honua-gdal-hardening-test";

@@ -8,14 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for the declarative <c>interactions</c>/<c>layout</c> composition blocks
-/// (geospatial-mcp ADR-0030): the <see cref="StudioCompositionBodyEditor"/> bind/remove
-/// operations and their admission gate, the shared
-/// <see cref="StudioInteractionVocabulary"/> reference grammar, and the
-/// <c>WriteBody</c> round trip that must keep an authored interactions block alive
-/// across unrelated composition mutations.
-/// </summary>
 public sealed class StudioCompositionInteractionsTests
 {
     [UnitTest]

@@ -9,15 +9,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// The GeoServices spec defines <c>supportedQueryFormats</c> as a comma-delimited
-/// string. The ArcGIS Maps SDK for JavaScript parses it with <c>value.split(",")</c>,
-/// so emitting it as a JSON array broke <c>FeatureLayer.load()</c> ("split is not a
-/// function") and prevented the JS SDK from loading any FeatureServer layer. These
-/// tests pin the spec-compliant string wire format while preserving the lenient
-/// (string-or-array) read path the internal <c>string[]</c> contract relies on, and
-/// verify the response DTOs apply the converter.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class SupportedQueryFormatsSerializationTests
 {

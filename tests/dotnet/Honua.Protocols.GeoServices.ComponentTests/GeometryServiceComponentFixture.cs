@@ -13,7 +13,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>Real PostGIS geometry operations through the production GeometryServer HTTP routes.</summary>
 public sealed class GeometryServiceComponentFixture : IAsyncLifetime, IAsyncDisposable
 {
     private readonly Lock _disposeGate = new();

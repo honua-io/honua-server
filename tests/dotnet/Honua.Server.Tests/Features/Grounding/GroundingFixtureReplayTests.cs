@@ -19,13 +19,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Replays the scenarios in <c>tests/fixtures/grounding/grounding-fixtures.json</c>
-/// through the real <see cref="GroundingService"/> + <see cref="DeterministicGroundingEngine"/>
-/// + <see cref="BuiltInProcessCatalog"/> stack. These are the same fixtures the
-/// honua-server-734 eval harness replays once it lands, so a change to any
-/// piece of the pipeline needs to update the JSON in lock-step.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class GroundingFixtureReplayTests
 {

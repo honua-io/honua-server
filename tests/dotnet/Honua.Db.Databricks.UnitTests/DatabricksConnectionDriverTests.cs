@@ -12,10 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Admin connection-test driver for Databricks: connection-string shape, stubbed
-/// <c>SELECT 1</c> success, and failure when the token is rejected.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksConnectionDriverTests
 {
@@ -167,10 +163,6 @@ public class DatabricksConnectionDriverTests
     private static DatabricksConnectionDriver CreateDriver(HttpMessageHandler? handler = null)
         => new(NullLogger<DatabricksConnectionDriver>.Instance, handler);
 
-    /// <summary>
-    /// Raises the same <see cref="TaskCanceledException"/> <see cref="HttpClient.Timeout"/> raises
-    /// when the caller token is still active.
-    /// </summary>
     private sealed class TimeoutHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

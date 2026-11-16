@@ -8,24 +8,6 @@ using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Burned-pixel proofs for <c>conversion.rasterize</c> (#3938).
-///
-/// The prior evidence ran the executor against a fake CLI runner and asserted the
-/// generated flags, so nothing checked what gdal_rasterize actually burns. These
-/// cases run the production executor against the pinned production GDAL image over
-/// a committed GeoJSON fixture and decode the emitted GeoTIFF.
-///
-/// The oracle is gdal_rasterize's documented rule — a pixel is burned when its
-/// CENTRE falls inside the polygon — applied by hand to the fixture ordinates.
-/// The fixture is deliberately laid out so that on the width/height grid no pixel
-/// centre lies on a polygon edge, which makes every expected cell unambiguous
-/// rather than dependent on a scanline tie-break.
-///
-/// Grid derivation for the width+height (<c>-ts</c>) path: the extent is the layer
-/// envelope x[0,5] y[0,3], so 5x3 pixels give 1x1 cells with origin (0,3) and
-/// centres at x 0.5/1.5/2.5/3.5/4.5 and y 2.5/1.5/0.5.
-/// </summary>
 public sealed partial class RasterExecutionProofTests
 {
     private const double RasterizeNoData = -9999;

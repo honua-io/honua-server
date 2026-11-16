@@ -12,12 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="DefaultComplianceDependencyGate"/>. Pins the conservative
-/// detection contract: capabilities without a real signal must require an explicit
-/// operator attestation rather than report satisfied off the presence of an in-memory
-/// placeholder service.
-/// </summary>
 public sealed class ComplianceDependencyGateTests
 {
     [Trait("Tier", "Fast")]

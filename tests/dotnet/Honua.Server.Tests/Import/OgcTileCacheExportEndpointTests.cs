@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the OGC WMTS tile-cache export endpoint (#1016 slice 4).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

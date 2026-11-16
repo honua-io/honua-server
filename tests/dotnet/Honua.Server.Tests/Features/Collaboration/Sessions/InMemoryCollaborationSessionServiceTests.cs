@@ -601,12 +601,6 @@ public sealed class InMemoryCollaborationSessionServiceTests
         service.GetSnapshot("map-a").Participants.Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Reproduces the claim shape <c>ApiKeyAuthenticationHandler</c> emits for a full-admin key:
-    /// a shared <see cref="ClaimTypes.Name"/> of "admin", no
-    /// <see cref="ClaimTypes.NameIdentifier"/> and no <c>sub</c>, and a per-key
-    /// <c>api_key_id</c>.
-    /// </summary>
     private static ClaimsPrincipal AdminApiKeyPrincipal(string apiKeyId) =>
         new(new ClaimsIdentity(
             [

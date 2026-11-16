@@ -18,12 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Oracle.Tests;
 
-/// <summary>
-/// Verifies that the Oracle provider plugs into the shared Metadata v2 provider seam:
-/// it is discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
-/// whose connection selects the Oracle engine.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class OracleProviderResolutionTests
 {
@@ -380,11 +374,6 @@ public class OracleProviderResolutionTests
         return new OracleFeatureStore(dataAccess, guard, v2Provider, readSecurity);
     }
 
-    /// <summary>
-    /// Probe stub that approves any SDO_GEOMETRY column and reports no versioning. Allows
-    /// resolution tests to exercise binding/connection flow without a real Oracle connection
-    /// while still proving that the guard is invoked before the data access call.
-    /// </summary>
     private sealed class AcceptingProbe : IOracleSpatialMetadataProbe
     {
         public Task<string?> GetGeometryColumnTypeAsync(OracleLayerMapping mapping, DataConnection? dataConnection, CancellationToken cancellationToken)

@@ -24,14 +24,6 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 {
     private const string AdminPassword = "metric-name-contract-admin-key";
 
-    /// <summary>
-    /// Prefix applied to the probe instruments the exposition test registers. Probing under a
-    /// distinct name keeps the guard from colliding with the identically named production
-    /// instrument (a duplicate registration with a different type is dropped by OpenTelemetry with
-    /// only a log line, which would make this test silently vacuous — the very failure mode it
-    /// exists to catch). The prefix is a plain name prefix, so it cannot interact with the
-    /// unit-suffix or <c>_total</c>-suffix logic under test.
-    /// </summary>
     private const string ProbePrefix = "honua_metric_name_probe_";
 
     private static readonly Regex CreateInstrumentCall = new(
@@ -260,11 +252,6 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
             string.Join(Environment.NewLine + "  ", unresolved.Distinct(StringComparer.Ordinal)));
     }
 
-    /// <summary>
-    /// The Prometheus series a given instrument produces, per the exporter's naming rules
-    /// (documented in the <c>_rules</c> field of the contract and verified end to end by
-    /// <see cref="PrometheusExposition_ExportsEveryContractInstrumentUnderItsContractSeriesName"/>).
-    /// </summary>
     private static string[] ExpectedSeries(string kind, string instrument)
     {
         var name = Sanitize(instrument);
@@ -279,7 +266,6 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         };
     }
 
-    /// <summary>Applies the exporter's metric-name sanitization (dots and dashes become underscores).</summary>
     private static string Sanitize(string name)
     {
         var builder = new StringBuilder(name.Length);
@@ -334,10 +320,6 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         return entries;
     }
 
-    /// <summary>
-    /// Every <c>Create*</c> instrument declaration in <c>src/</c> with a literal (or
-    /// <c>const string</c>-resolvable) name, paired with the unit it declares.
-    /// </summary>
     private static ContractEntry[] ScanSourceTree()
     {
         var sourceRoot = RepositoryPaths.Resolve("src");
@@ -537,10 +519,6 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         return parts;
     }
 
-    /// <summary>
-    /// Every PromQL expression committed to this repository: Grafana panel/alert <c>expr</c>
-    /// fields and Prometheus rule <c>expr:</c> entries.
-    /// </summary>
     private static IEnumerable<(string Path, string Expression)> CommittedPromqlExpressions()
     {
         var dashboards = RepositoryPaths.Resolve("docker", "monitoring", "grafana", "dashboards");

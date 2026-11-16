@@ -13,10 +13,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Hosting;
 
-/// <summary>
-/// Proves the per-instance identity through the real server pipeline: the <c>Honua-Instance</c>
-/// header on success, probe, and method-not-allowed responses, and the admin version <c>instance</c> block.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]

@@ -21,12 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that the MCP functional tools delegate to
-/// <see cref="IGeoprocessingJobService"/> with the right resource type,
-/// operation, and domain plan, and that they translate the service result into
-/// the published MCP output shape.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpToolDelegationTests
 {

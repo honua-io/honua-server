@@ -8,9 +8,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Performance;
 
-/// <summary>
-/// Performance tests for streaming feature operations
-/// </summary>
 [Collection("Performance")]
 public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
 {
@@ -247,9 +244,6 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
         Assert.True(stopwatch.ElapsedMilliseconds < 1000, $"Should respond to cancellation within 1 second, took: {stopwatch.ElapsedMilliseconds}ms");
     }
 
-    /// <summary>
-    /// Seeds the test store with a large dataset for performance testing
-    /// </summary>
     private async Task SeedLargeDataset()
     {
         const int featureCount = 5000;

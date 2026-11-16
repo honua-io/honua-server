@@ -19,11 +19,6 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Core.Tests.Features.Portal;
 
-/// <summary>
-/// Unit tests for the RBAC-aware Metadata v2 → ArcGIS Portal item projector.
-/// Covers service-type mapping, item URL emission (including behind-proxy base
-/// URLs), access-tier derivation, and the RBAC visibility rule.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class PortalItemProjectorTests
 {
@@ -430,12 +425,6 @@ public sealed class PortalItemProjectorTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"));
     }
 
-    /// <summary>
-    /// Faithful test double for the host's access-policy evaluator. Reproduces the
-    /// deny-wins composition of the production <c>AccessPolicyEvaluator</c>
-    /// (anonymous flag → authenticated → role membership) so the projector's RBAC
-    /// behaviour is exercised end to end without referencing Honua.Hosting.
-    /// </summary>
     private sealed class FakePortalReadAuthorizer : IPortalResourceReadAuthorizer
     {
         public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Object? resource, MetadataV2Service service,

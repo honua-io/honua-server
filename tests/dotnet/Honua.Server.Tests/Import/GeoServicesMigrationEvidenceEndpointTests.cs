@@ -19,10 +19,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the slice 6 admin endpoints that surface ArcGIS migration evidence
-/// (#1025).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

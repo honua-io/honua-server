@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for <see cref="InMemoryPackageDraftStore"/>, the surface that makes the
-/// <c>map_…</c> / <c>app_…</c> identifier the draft factories mint actually resolvable at its
-/// <c>honua://map-packages/{id}</c> / <c>honua://app-packages/{id}</c> URI (ADR-0076 amendment,
-/// honua-server#3262). They pin round-trip, the two retention bounds, and the kind separation.
-/// </summary>
 public sealed class InMemoryPackageDraftStoreTests
 {
     private const string Owner = "owner-a";
@@ -220,7 +214,6 @@ public sealed class InMemoryPackageDraftStoreTests
             clock);
     }
 
-    /// <summary>Hand-rolled advanceable clock; retention is an age rule, so time must be pinned.</summary>
     private sealed class MutableClock(DateTimeOffset utcNow) : TimeProvider
     {
         private DateTimeOffset _utcNow = utcNow;

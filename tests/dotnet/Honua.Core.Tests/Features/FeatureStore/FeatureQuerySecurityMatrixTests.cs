@@ -8,11 +8,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Shared security-seam matrix: every read shape must reject a masked field when it is
-/// used as a predicate, grouping key, aggregate input, or sort key. Provider adapters
-/// resolve the mask once and call this same validator before building their SQL.
-/// </summary>
 public sealed class FeatureQuerySecurityMatrixTests
 {
     public static IEnumerable<object[]> MaskedQueryCases()

@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Boots the real server composition with a compatibility checker that reports the database as
-/// transiently unavailable (SQLSTATE 53300, as on the aws-serverless certification cell in run
-/// 38133126673) or as incompatible. A transient result must start the host degraded and not ready;
-/// an incompatible database must still abort startup.
-/// </summary>
 public sealed class DatabasePreflightDegradedStartTests
 {
     private const string SlotsExhaustedClass = "SQLSTATE 53300 (class 53: insufficient resources)";
@@ -260,7 +254,6 @@ public sealed class DatabasePreflightDegradedStartTests
             }
         });
 
-    /// <summary>Schema guard whose full-floor check fails with <see cref="Failure"/> until it is cleared.</summary>
     private sealed class ScriptedSchemaGuard(Exception? failure) : IDatabaseSchemaGuard
     {
         public volatile Exception? Failure = failure;

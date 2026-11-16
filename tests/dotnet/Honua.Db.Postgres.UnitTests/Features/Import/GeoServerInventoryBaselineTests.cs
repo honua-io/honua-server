@@ -20,11 +20,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Verifies the GeoServer migration inventory scanner against deterministic
-/// fixture-backed baselines. Baselines are regenerated on demand by setting
-/// <c>UPDATE_GEOSERVER_INVENTORY_BASELINES=1</c>.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerInventoryBaselineTests
 {

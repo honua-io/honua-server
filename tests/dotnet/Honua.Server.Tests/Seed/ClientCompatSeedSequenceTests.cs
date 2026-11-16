@@ -14,13 +14,6 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.Server.Tests.Seed;
 
-/// <remarks>
-/// Uses the shared <see cref="PostgresFixture"/> sidecar (honua-server#3988) instead of a
-/// dedicated Testcontainer per test: the class writes to the literal, process-global
-/// <c>honua</c> schema via the seed SQL, which per-test <c>search_path</c> isolation does not
-/// protect, so each test still gets its own dedicated database via
-/// <see cref="PostgresFixture.CreateIsolatedDatabaseAsync"/>.
-/// </remarks>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class ClientCompatSeedSequenceTests : IAsyncLifetime

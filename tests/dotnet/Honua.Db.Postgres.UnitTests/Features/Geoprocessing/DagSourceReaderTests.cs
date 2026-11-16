@@ -29,12 +29,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// In-memory unit coverage for the first-class DAG remote source connectors. Each
-/// reader is exercised against a faked transport (HttpMessageHandler / streaming
-/// feature store) so the upstream-query build, pagination/streaming, and GeoJSON
-/// projection are verified without Docker or a live remote service.
-/// </summary>
 public sealed class DagSourceReaderTests
 {
     // -------------------------------------------------------------------------

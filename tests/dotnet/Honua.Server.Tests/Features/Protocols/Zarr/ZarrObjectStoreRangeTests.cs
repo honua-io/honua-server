@@ -16,21 +16,6 @@ using Honua.TestKit.Formats;
 
 namespace Honua.Server.Tests.Features.Protocols.Zarr;
 
-/// <summary>
-/// Reads a Zarr store out of a real object store (LocalStack S3) through the production
-/// <see cref="AwsS3RangeReader"/>, including byte-range semantics (honua-server#4395).
-/// </summary>
-/// <remarks>
-/// Every Zarr backing store in the suite was a <c>Dictionary&lt;string, byte[]&gt;</c> behind
-/// <see cref="ICloudRangeReader"/>, so nothing proved that the reader's ranged GETs, HEAD sizes and
-/// not-found classification behave against an S3 implementation — the deployment shape the
-/// cloud-native GA promise is about. This suite uploads a real Zarr v2 layout and drives the
-/// production metadata extractor and subset reader over it.
-/// <para>
-/// Tier=Slow / Category=Emulator per ADR-0037: it runs in <c>nightly-slow-tier.yml</c>, not the
-/// required PR gate, because it needs a container runtime.
-/// </para>
-/// </remarks>
 [Collection("Emulators")]
 public sealed class ZarrObjectStoreRangeTests
 {
@@ -41,25 +26,12 @@ public sealed class ZarrObjectStoreRangeTests
     private const string ServiceUrlEnv = "HONUA_TEST_S3_SERVICE_URL";
     private const string ForcePathStyleEnv = "HONUA_TEST_S3_FORCE_PATH_STYLE";
 
-    /// <summary>Edge length of the uploaded cube, in cells.</summary>
     private const int Grid = 8;
 
-    /// <summary>Edge length of one chunk, in cells: the cube is a 2x2 grid of chunks.</summary>
     private const int Chunk = 4;
 
-    /// <summary>The cube's cell value at storage row <paramref name="row"/>, column <paramref name="col"/>.</summary>
-    /// <remarks>Asymmetric off the diagonal, so a transposed read is a different value grid.</remarks>
     private static float Sample(int row, int col) => (row * 10f) + col;
 
-    /// <summary>
-    /// The committed reader path, end to end over S3: scan, plan, ranged chunk fetch, decode.
-    /// </summary>
-    /// <remarks>
-    /// The requested window is the cube's south-east quadrant, which lies wholly inside chunk
-    /// (1, 1). Asserting the fetched key set is exactly that one chunk is what proves the read is
-    /// chunk-addressed against the object store rather than pulling the whole array — the property
-    /// that makes cloud-native serving viable at all.
-    /// </remarks>
     [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
     public async Task ReadSubset_FromRealObjectStore_FetchesOnlyTheIntersectingChunkAndDecodesItsCells()
     {
@@ -110,15 +82,6 @@ public sealed class ZarrObjectStoreRangeTests
         recorder.RangeKeys.Should().BeEquivalentTo([root + "/temperature/1.1"]);
     }
 
-    /// <summary>
-    /// The reader's range/size/not-found contract against a real S3 implementation.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="ZarrSubsetReader"/> sizes each chunk with a HEAD and then fetches it with a
-    /// bounded ranged GET, so those three behaviours are the contract the cloud path depends on.
-    /// The interior-offset case is the one an in-memory dictionary can never prove: it requires the
-    /// service to honour a <c>Range</c> header and answer 206 with exactly that window.
-    /// </remarks>
     [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
     public async Task ReadRange_AgainstRealObjectStore_HonoursOffsetLengthEofAndMissingKeys()
     {
@@ -155,16 +118,6 @@ public sealed class ZarrObjectStoreRangeTests
         await missingGet.Should().ThrowAsync<FileNotFoundException>();
     }
 
-    /// <summary>
-    /// An unwritten chunk must read back as the array's fill value, over a real object store.
-    /// </summary>
-    /// <remarks>
-    /// Sparse Zarr stores omit chunks that hold only the fill value, so this is ordinary input, not
-    /// a corruption case. End to end it is also the assertion that binds
-    /// <see cref="AwsS3RangeReader.GetObjectSizeAsync"/>'s not-found translation to a behaviour:
-    /// if that HEAD stopped raising <see cref="FileNotFoundException"/>, this read would fault
-    /// instead of returning the declared fill value.
-    /// </remarks>
     [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
     public async Task ReadSubset_WithAnUnwrittenChunk_FillsThatWindowWithTheDeclaredFillValue()
     {
@@ -283,7 +236,6 @@ public sealed class ZarrObjectStoreRangeTests
         return new AmazonS3Client(options.AccessKeyId, options.SecretAccessKey, config);
     }
 
-    /// <summary>Records which object keys a read path fetches, without altering the bytes returned.</summary>
     private sealed class RecordingRangeReader(ICloudRangeReader inner) : ICloudRangeReader
     {
         private readonly ConcurrentBag<string> _rangeKeys = [];

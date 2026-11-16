@@ -16,12 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Integration tests for the ADR-0048 Phase 2 (#1389) independent style catalog: the
-/// styleId-keyed store and its many-to-many associations, the <c>Type=Style</c> graph
-/// producer lighting up <c>StyleResourceIds</c> with real data, and one-style-many
-/// resource reuse.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
 public sealed class StyleCatalogPhase2Tests : IAsyncLifetime

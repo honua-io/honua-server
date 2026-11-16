@@ -7,16 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the AWS / Azure SDK isolation contract: per the aws-split and
-/// azure-split refactors, all AWSSDK.* and Azure.* package references live in
-/// Honua.Aws / Honua.Azure (and Honua.Geocoding for AWSSDK.LocationService).
-/// Honua.Core, Honua.Core.Abstractions, and Honua.Hosting are upstream of the
-/// cloud-SDK split and MUST NOT transitively depend on any AWSSDK.* or
-/// Azure.* package — otherwise cloud-neutral consumers (the rest of the
-/// modularization graph) re-acquire the heavy SDK surface they were carved
-/// away from.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class CloudSdkIsolationTests
 {
@@ -26,12 +16,6 @@ public sealed class CloudSdkIsolationTests
         "Azure.",
     };
 
-    /// <summary>
-    /// Projects upstream of the cloud-SDK carve-out: each must build a complete
-    /// transitive package-reference closure that contains no AWSSDK.* / Azure.*
-    /// PackageReference. Direct AND transitive references via other ProjectReferences
-    /// are both checked.
-    /// </summary>
     public static IEnumerable<object[]> CloudNeutralProjects()
     {
         yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core", "Abstractions", "Honua.Core.Abstractions.csproj") };
@@ -63,15 +47,6 @@ public sealed class CloudSdkIsolationTests
                 string.Join(", ", offending.Select(pair => $"{Path.GetFileName(pair.Csproj)} -> {pair.Package}")));
     }
 
-    /// <summary>
-    /// Honua.Server is downstream of Honua.Aws / Honua.Azure but per the
-    /// cloud-SDK isolation contract its source files must not name any
-    /// AWSSDK / Azure SDK types directly — the carve-out kept the
-    /// <c>Honua.Server.Features.*</c> namespaces on the per-cloud projects
-    /// precisely so callers don't need to. A regression that re-introduces
-    /// <c>using Amazon.*</c> or <c>using Azure.*</c> in Honua.Server should
-    /// fail this guard rather than silently re-leak the SDK surface.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void HonuaServer_MustNotImport_AwsOrAzureSdkNamespaces()

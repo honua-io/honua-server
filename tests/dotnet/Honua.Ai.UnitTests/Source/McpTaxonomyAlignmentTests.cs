@@ -31,11 +31,6 @@ using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the MCP tool names, resource URIs, and workflow-family tags to the
-/// geospatial-mcp taxonomy v1 as described in <c>AI_OPERATOR_CONTRACT.md §MCP
-/// Contract Families</c>. A rename on either side trips this test.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class McpTaxonomyAlignmentTests
 {
@@ -376,10 +371,6 @@ public sealed partial class McpTaxonomyAlignmentTests
     // Tool annotations (#1953): every tool must advertise read/write hints
     // -------------------------------------------------------------------
 
-    /// <summary>
-    /// Read-only tools per the geospatial-mcp taxonomy: planning, grounding,
-    /// validation, and map read tools never mutate server state.
-    /// </summary>
     private static readonly HashSet<string> ReadOnlyToolNames = new(StringComparer.Ordinal)
     {
         "honua_validate_plan",
@@ -418,9 +409,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_preview_draft",
     };
 
-    /// <summary>
-    /// Write tools and their expected destructive/idempotent classification.
-    /// </summary>
     private static readonly Dictionary<string, (bool Destructive, bool Idempotent)> WriteToolExpectations =
         new(StringComparer.Ordinal)
         {
@@ -913,11 +901,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             .ToArray();
     }
 
-    /// <summary>
-    /// The full static tool roster this host composes. Exposed to the assembly so
-    /// the workflow-view tests (honua-server#3428) derive their view from the same
-    /// canonical roster instead of restating one.
-    /// </summary>
     private static IMcpResource[] BuildResources()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();

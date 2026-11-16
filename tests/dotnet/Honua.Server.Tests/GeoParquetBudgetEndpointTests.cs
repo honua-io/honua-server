@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
-/// <summary>Budget refusals are complete protocol errors; a later bounded query still encodes successfully.</summary>
 [Collection("Database.CoreEndpoints")]
 [Protocol(ProtocolNames.FeatureServer, ProtocolNames.ODataV4)]
 public sealed class GeoParquetBudgetEndpointTests

@@ -13,27 +13,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// #4423: proves the NAServer anonymous contract in behaviour rather than in source text.
-/// <para>
-/// NAServer's six routes are <c>.AllowAnonymous()</c> <b>by design</b> (#1144, #1266): a solve is
-/// a stateless computation over a fixed routing capability, not a metadata-published, per-tenant
-/// feature service, so there is no published resource to gate and no denial branch to test. The
-/// only assertion the repository previously made about that contract was
-/// <c>EndpointAuthorizationGuardTests.cs:124</c>, which requires that the source file <i>contain
-/// the words</i> <c>AllowAnonymous</c>. That is a source-text check, not a behavioural one: it
-/// would pass unchanged if the routes started requiring a credential, or if they started serving
-/// published feature data.
-/// </para>
-/// <para>
-/// This test displaces the F1 development-authentication bypass — under which every existing
-/// NAServer test runs as an admin — and asserts the two halves of the contract that matter for
-/// the security floor: an unauthenticated solve genuinely works (so the anonymous decision is
-/// real and deliberate, not an accident of the bypass), and its response carries only the
-/// computed route, with none of the published service, layer or feature metadata that would mean
-/// the surface had started exposing gated data.
-/// </para>
-/// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerAnonymousContractTests : IAsyncLifetime

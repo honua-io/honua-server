@@ -20,7 +20,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>Live target readback must never substitute desired configuration for observed state.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class ManagedComposeObserverTests
 {

@@ -3,14 +3,6 @@
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// The honua-sdk-js canonical <c>honua_map_package.v1</c> artifact, copied verbatim from
-/// <c>examples/runtime-parity-showcase/fixtures/map-package.json</c> at honua-sdk-js
-/// <c>cd96ff4</c>. It validates against the SDK's published
-/// <c>schemas/honua-map-package.v1.json</c>, and the sdk-js#1426 replay saw the 2026.1
-/// candidate refuse it as a map draft body (honua-server#4898). Do not edit it to make a
-/// server test pass: re-copy it from the SDK instead.
-/// </summary>
 internal static class MapPackageCanonicalFixture
 {
     public const string RuntimeParityShowcase = """

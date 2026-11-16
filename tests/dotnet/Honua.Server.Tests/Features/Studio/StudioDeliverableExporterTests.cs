@@ -14,11 +14,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Regression coverage for honua-server#4908: a Studio deliverable export must fail loudly with a
-/// machine-readable reason when it cannot render, rather than silently returning a "succeeded"
-/// result over a blank artifact.
-/// </summary>
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
 public sealed class StudioDeliverableExporterTests

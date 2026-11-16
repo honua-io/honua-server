@@ -7,26 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the Honua.Ai isolation contract: the carved-out AI surface
-/// (AiBuilder + Grounding + NlQuery + AnalysisContent) must never take a
-/// ProjectReference on Honua.Server, even transitively. The whole reason
-/// Honua.Ai exists is to flip that edge: today Server references Ai (the
-/// composition root pulls the carved feature in), and that direction must
-/// stay one-way.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Mirror of <see cref="CloudSdkIsolationTests"/> in shape but pinned to
-/// the Ai cluster's specific failure mode. A regression here would mean
-/// the AI feature surface started reaching back into the composition root
-/// (re-introducing the cycle ADR-0047 forbids).
-/// </para>
-/// <para>
-/// See <c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c> for
-/// the module-dependency policy this guard sits inside.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class HonuaAiIsolationTests
 {
@@ -56,17 +36,6 @@ public sealed class HonuaAiIsolationTests
                 string.Join(", ", serverReferences));
     }
 
-    /// <summary>
-    /// Asserts the ProjectReference set declared by Honua.Ai stays inside the
-    /// canonical allow-list (Abstractions, Core, Geocoding, Routing, Hosting,
-    /// Jobs, Geoprocessing, ServiceDefaults). Geocoding and Routing entered the
-    /// list with #1597: the MCP geocode/route tools adapt the canonical
-    /// IGeocodeCoordinatorService / IRoutingProvider pipelines, mirroring the
-    /// Protocols -> Routing edge the NAServer adapter uses. Further new
-    /// references - to a storage provider, a protocol module, or any other
-    /// satellite — must come with a deliberate matrix update in ADR-0047 /
-    /// <see cref="ModuleDependencyPolicyTests"/>.
-    /// </summary>
     [ArchitectureTest]
     public void HonuaAi_MustOnlyReference_PermittedProviders()
     {

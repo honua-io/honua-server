@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Db.Postgres.Tests.Queries.Filters;
 
-/// <summary>
-/// Pins the PostgreSQL <see cref="ISqlDialect"/> identifier-quoting and parameter-prefix
-/// surface. Identifier quoting drift between providers was the SQL-injection boundary
-/// risk audit C4 was closing — these tests are the regression net.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresSqlDialectTests
 {

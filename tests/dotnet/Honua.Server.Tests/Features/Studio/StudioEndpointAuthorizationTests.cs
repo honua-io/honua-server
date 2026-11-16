@@ -11,10 +11,6 @@ using Moq;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Verifies that Studio endpoint denials coordinate their explicit audit write with the
-/// request-level generic-audit suppression marker.
-/// </summary>
 public sealed class StudioEndpointAuthorizationTests
 {
     [Fact]

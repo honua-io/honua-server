@@ -6,7 +6,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.TestKit.Helpers;
 
-/// <summary>Provisions the deployment-owned contract on a test volume, never in the runtime store.</summary>
 public static class GeoprocessingOutputStoreTestHelper
 {
     public static GeoprocessingOutputStagingOptions Attest(GeoprocessingOutputStagingOptions options)

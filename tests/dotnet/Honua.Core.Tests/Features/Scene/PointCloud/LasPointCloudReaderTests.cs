@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.PointCloud;
 
-/// <summary>
-/// Unit tests for the pure-managed LAS reader (#1201).
-/// </summary>
 public sealed class LasPointCloudReaderTests
 {
     [UnitTest]

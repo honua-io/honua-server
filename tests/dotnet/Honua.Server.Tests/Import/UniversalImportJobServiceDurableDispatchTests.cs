@@ -22,11 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Dispatch decision for background file imports (honua-server#5916): a configured durable
-/// runner receives an execution job carrying the staged storage reference; a Lambda host without
-/// one refuses; a long-lived host without one keeps the in-process runner.
-/// </summary>
 public sealed class UniversalImportJobServiceDurableDispatchTests
 {
     private const string BatchBackendName = "honua-aws-batch";

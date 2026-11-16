@@ -18,11 +18,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Testing.Tests;
 
-/// <summary>
-/// Unit tests for S1 security hardening: SSRF validation on WFS/OGC-features
-/// remote sources (PA-194) and terminal-callback status correctness when the
-/// result-package store write fails (PA-209).
-/// </summary>
 public sealed class GeoprocessingHardeningTests
 {
     // Step-input parameter prefix for step ordinal 0 (matches ExecutionJobParameterKeys internals).

@@ -13,10 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Neither managed-key exchange (the local admin credential bridge or the OAuth2
-/// client_credentials API-key fallback) may widen a constrained key (#4577).
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]

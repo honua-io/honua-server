@@ -95,11 +95,6 @@ public sealed partial class DeployWorkflowServiceTests
         persisted!.ProviderOperationId.Should().Be($"test-backend:{firstResult.OperationId}");
     }
 
-    /// <summary>
-    /// BH5-021 regression: two concurrent SubmitAsync calls for the same operation must
-    /// result in exactly one backend.StartAsync call. The loser of the TrySetAsync CAS
-    /// race returns the current state without calling the provider backend.
-    /// </summary>
     [Fact]
     public async Task SubmitAsync_ConcurrentCalls_ExactlyOneSubmitsToBackend()
     {

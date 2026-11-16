@@ -3,11 +3,6 @@
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Walks up from the test runner's base directory to locate a named scene
-/// fixture directory under <c>tests/fixtures/scenes/</c>. Shared by the
-/// per-fixture path helpers so the repo-root discovery logic lives in one place.
-/// </summary>
 internal static class SceneFixtureRoots
 {
     public static string Resolve(string fixtureName)

@@ -7,10 +7,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Creates configured test host factories while disposing the temporary base factory
-/// used by <see cref="WebApplicationFactory{TEntryPoint}.WithWebHostBuilder"/>.
-/// </summary>
 internal static class ConfiguredWebApplicationFactory
 {
     private static readonly object _testEnvironmentGate = new();
@@ -24,19 +20,9 @@ internal static class ConfiguredWebApplicationFactory
         return new DirectlyConfiguredFactory(configure, environmentName);
     }
 
-    /// <summary>
-    /// Starts a test host with the early environment values <c>Program.cs</c> reads before
-    /// <see cref="WebApplicationFactory{TEntryPoint}.ConfigureWebHost"/> runs. The process-wide
-    /// values are serialized, preserved, and restored as soon as host startup completes so a
-    /// later Production or Staging factory cannot inherit the Test environment.
-    /// </summary>
     internal static IHost StartInTestEnvironment(Func<IHost> startHost)
         => StartInEnvironment(startHost, "Test", enableTestSchemaHeaders: true);
 
-    /// <summary>
-    /// Starts a host with the environment value that <c>Program.cs</c> must observe before
-    /// later web-host callbacks run.
-    /// </summary>
     internal static IHost StartInEnvironment(
         Func<IHost> startHost,
         string environmentName,

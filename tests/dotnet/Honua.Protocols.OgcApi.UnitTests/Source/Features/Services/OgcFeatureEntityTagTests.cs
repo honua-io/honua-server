@@ -10,14 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Covers the representationETag consistency invariant for OGC API Features single-item GET
-/// (BH6-006): the entity hash embedded in the representation ETag must be derived from
-/// the same Feature snapshot used to serialize the response payload. A mixed-state tag
-/// (entity hash from storedFeature V1, payload bytes from responseFeature V2) causes
-/// spurious 412 Precondition Failed on subsequent If-Match PUT/PATCH because
-/// MatchesEntityOrRepresentation checks the tag against the current V2 entity hash.
-/// </summary>
 public sealed class OgcFeatureEntityTagTests
 {
     private static readonly ETagService ETagService = new();
@@ -110,10 +102,6 @@ public sealed class OgcFeatureEntityTagTests
             .Should().NotBe(OgcFeatureEntityTag.Compute(explicitNull, ETagService));
     }
 
-    /// <summary>
-    /// Proves that two Feature versions with the same id but different attributes produce
-    /// different entity ETags.
-    /// </summary>
     [UnitTest]
     public void Compute_DifferentFeatureVersions_ProduceDifferentEntityETags()
     {
@@ -126,13 +114,6 @@ public sealed class OgcFeatureEntityTagTests
         etagV1.Should().NotBe(etagV2, "changing an attribute must change the entity ETag");
     }
 
-    /// <summary>
-    /// Proves the bug (BH6-006): a mixed-state representationETag (entity hash from V1,
-    /// payload bytes from V2) is NOT matched by MatchesEntityOrRepresentation against V2's
-    /// entityETag. Without the fix, HandleGetItemAsync computed entityETag from storedFeature
-    /// (V1 under a concurrent write) but serialized the payload from responseFeature (V2),
-    /// producing exactly this mixed-state tag.
-    /// </summary>
     [UnitTest]
     public void MatchesEntityOrRepresentation_MixedStateRepresentationETag_ReturnsFalse()
     {
@@ -153,12 +134,6 @@ public sealed class OgcFeatureEntityTagTests
                 "a representation ETag built from a stale V1 entity hash cannot match a V2 If-Match check");
     }
 
-    /// <summary>
-    /// Proves the fix: when both entity hash and payload bytes come from the same Feature (V2),
-    /// the representationETag matches V2's entityETag in MatchesEntityOrRepresentation.
-    /// This is the correct post-fix behavior where HandleGetItemAsync derives entityETag from
-    /// responseFeature.Value (the same instance used to build the payload).
-    /// </summary>
     [UnitTest]
     public void MatchesEntityOrRepresentation_ConsistentRepresentationETag_ReturnsTrue()
     {

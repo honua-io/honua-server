@@ -16,35 +16,6 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate OData lossless-delta certification (honua-server#3872). Boots the real,
-/// digest-addressed candidate server image (<c>HONUA_CANDIDATE_IMAGE</c>) against a real PostGIS
-/// over the production container path, drives the equal-timestamp / delete / recreate /
-/// filter-transition delta scenario over real HTTP, restarts the candidate container mid-scenario,
-/// and asserts convergence against an independently computed direct SQL query — never in-process.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Requires Docker and <c>HONUA_CANDIDATE_IMAGE</c>; the test <c>[SkippableFact]</c>-skips when
-/// either is unavailable, mirroring <see cref="CandidateTelemetryGateCertificationTests"/>. Writes
-/// an immutable JSON receipt (image identity, per-stage state hashes, and the pass/fail outcome) to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when it is set, and to the test output otherwise.
-/// </para>
-/// <para>
-/// The candidate image boots against an empty database and immediately activates a Metadata v2
-/// snapshot containing only the built-in GPServer bootstrap entry (honua-server#2349); the
-/// read path never re-derives one from the legacy V1 catalog once any snapshot is active
-/// (honua-server#1412). This harness seeds the V1 catalog directly
-/// (<c>tests/seed/odata.yaml</c>'s SQL, byte-identical to the in-process fixture) and then
-/// activates the same V1-to-V2 compat projection production code uses on a real publish
-/// (<c>PostgresMetadataV2LegacyCatalogProjector</c> / <c>CloudDemoServiceSeeder</c>) — executed
-/// here as the equivalent SQL function the shared test fixture already ships
-/// (<c>tests/seed/base-schema.sql</c>'s <c>honua.seed_metadata_v2_compat_snapshot()</c>), applied
-/// against the target database once the candidate's own migrations have created the schema, so
-/// the next request already resolves the seeded layer through the real, unmodified read path
-/// exactly as it would after a real publish, with no restart or cache-invalidation race observed.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateODataDeltaCertificationTests
 {
@@ -499,11 +470,6 @@ public sealed class CandidateODataDeltaCertificationTests
             throw new TimeoutException($"Postgres container '{containerName}' never became ready.");
         }
 
-        /// <summary>
-        /// Seeds the legacy V1 catalog with the same SQL the in-process fixture applies
-        /// (<c>tests/seed/odata.yaml</c>), so the candidate-cert layer is byte-identical to the one
-        /// <c>ODataDeltaTests.Convergence.cs</c> exercises in-process.
-        /// </summary>
         private static async Task SeedV1CatalogAsync(string connectionString)
         {
             var seedPath = ResolveRepoRelativePath(Path.Join("tests", "seed", "odata.yaml"));
@@ -522,15 +488,6 @@ public sealed class CandidateODataDeltaCertificationTests
             }
         }
 
-        /// <summary>
-        /// Activates the same V1-to-V2 compat projection production code applies on a real publish
-        /// (<c>PostgresMetadataV2LegacyCatalogProjector.BuildFromLegacyCatalogAsync</c> /
-        /// <c>CloudDemoServiceSeeder.ProjectLegacyCatalogIntoGraphAsync</c>). This harness runs
-        /// outside the candidate's process, so it executes the equivalent SQL function the shared
-        /// test fixture already ships and already uses for the same purpose
-        /// (<c>tests/seed/base-schema.sql</c>'s <c>honua.seed_metadata_v2_compat_snapshot()</c>)
-        /// against the target database, before the candidate's first boot.
-        /// </summary>
         private static async Task ActivateCompatSnapshotAsync(string connectionString)
         {
             var baseSchemaPath = ResolveRepoRelativePath(Path.Join("tests", "seed", "base-schema.sql"));

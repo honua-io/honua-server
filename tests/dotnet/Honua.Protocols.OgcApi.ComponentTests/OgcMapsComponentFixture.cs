@@ -12,7 +12,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>Production OGC Maps routes over the canonical Postgres component services.</summary>
 public sealed class OgcMapsComponentFixture : IAsyncLifetime, IAsyncDisposable
 {
     private readonly Lock _disposeGate = new();

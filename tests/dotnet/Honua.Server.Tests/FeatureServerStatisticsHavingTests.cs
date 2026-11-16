@@ -12,11 +12,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for the FeatureServer statistics <c>having</c> predicate
-/// (GeoServices REST conformance, honua-server#1772). Verifies that a HAVING
-/// clause actually filters aggregated groups rather than being parsed and ignored.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
 public sealed class FeatureServerStatisticsHavingTests : IAsyncLifetime

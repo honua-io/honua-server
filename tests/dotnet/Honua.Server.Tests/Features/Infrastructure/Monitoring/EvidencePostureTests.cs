@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Contract tests for the shared <c>evidencePosture</c> envelope (#3475): the closed vocabularies,
-/// the fail-closed validation rules, and the source-generated serialization the REST and MCP
-/// projections share.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class EvidencePostureTests
 {

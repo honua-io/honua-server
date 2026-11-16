@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Geoprocessing.Testing.Tests;
 
-/// <summary>
-/// Proves manifest discovery + loading (GP Devkit P6, issue #2127): a <c>fixture.json</c>
-/// manifest resolves its golden path, base64-encodes referenced input files into the
-/// process inputs, and is then runnable end-to-end through the SDK — fully offline.
-/// </summary>
 public sealed class GoldenFixtureLoaderTests : IDisposable
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";

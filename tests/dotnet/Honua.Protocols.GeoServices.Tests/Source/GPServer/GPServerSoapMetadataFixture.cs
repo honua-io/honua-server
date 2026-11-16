@@ -6,11 +6,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Shares hosts for read-only SOAP metadata and request-validation cases. Each
-/// case still owns its client and authentication headers. Execution cases keep
-/// their own factories because their job services and state vary per test.
-/// </summary>
 public sealed class GPServerSoapMetadataFixture : IDisposable
 {
     public WebApplicationFactory<Program> Factory { get; } = ServiceRbacTestFixture.CreateFactory();

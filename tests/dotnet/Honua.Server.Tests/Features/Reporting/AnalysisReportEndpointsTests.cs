@@ -16,15 +16,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Integration coverage for the public analysis-report HTTP surface registered
-/// in <c>EndpointRegistry</c>: the JSON envelope at
-/// <c>/api/v1/analysis/reports/{jobId}</c> and the Markdown / HTML render at
-/// <c>/api/v1/analysis/reports/{jobId}/render</c>. Tests exercise route
-/// reachability, admin authorization parity with the canonical job-results
-/// surface, and 400/404 boundaries so the routes stay covered by the
-/// public-interface proof ledger.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class AnalysisReportEndpointsTests : IAsyncLifetime
@@ -85,16 +76,6 @@ public sealed class AnalysisReportEndpointsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Happy-path coverage for honua-server#2945: prior proving tests for this surface were
-/// error-paths only (the store is intentionally absent above so a real job never resolves).
-/// This registers a fake <see cref="IGeoprocessingJobService"/> that returns a completed
-/// <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisResultPackage"/> (reusing
-/// <see cref="ReportingFixtures.BufferAggregatePackage"/>, the same fixture the real
-/// <c>AnalysisReportService</c>/<c>AnalysisReportBuilder</c> unit tests assert against) so the
-/// REAL report builder, store, and Markdown/HTML renderers run end to end through the actual
-/// HTTP surface, proving a report genuinely generates and renders rather than only erroring.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class AnalysisReportEndpointsHappyPathTests : IAsyncLifetime
@@ -165,13 +146,6 @@ public sealed class AnalysisReportEndpointsHappyPathTests : IAsyncLifetime
         body.Should().Contain("Buffered places");
     }
 
-    /// <summary>
-    /// Minimal <see cref="IGeoprocessingJobService"/> test double that only implements the
-    /// three members <c>AnalysisReportService</c> actually calls (authorization pass-through,
-    /// authorized job identity and result-package lookup); every other member throws <see cref="NotSupportedException"/>
-    /// since the reporting surface never calls them (mirrors the pattern already used by
-    /// <c>OgcProcessesJobResultsTestsFixture.ArtifactBackedJobService</c>).
-    /// </summary>
     private sealed class CompletedJobService : IGeoprocessingJobService
     {
         public Task EnsureCallerAuthorizedAsync(

@@ -27,9 +27,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for PostgresAttachmentStore using real PostgreSQL database.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public partial class PostgresAttachmentStoreTests : IAsyncLifetime
@@ -394,12 +391,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Null(result);
     }
 
-    /// <summary>
-    /// <c>CreateAsync</c> is the metadata half of the two-step write, so it is expected to
-    /// succeed for a storage path that no object backs. The name now says so: this is not
-    /// evidence that an attachment round-trips, and the assertions below pin the dangling
-    /// state explicitly so nobody reads it as one (honua-server#4404).
-    /// </summary>
     [Fact]
     public async Task CreateAsync_WithMetadataOnly_CreatesRowPointingAtNoStoredObject()
     {
@@ -432,13 +423,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Null(download);
     }
 
-    /// <summary>
-    /// The upload path writes the object first and the metadata row second, with no shared
-    /// transaction. When the insert fails the compensating delete must remove the object it
-    /// already wrote, or the deployment accumulates unreachable blobs nobody can enumerate.
-    /// Before this test every compensating <c>catch</c> block in the store had zero coverage
-    /// (honua-server#4404).
-    /// </summary>
     [Fact]
     public async Task UploadAsync_WhenMetadataInsertFails_RemovesTheObjectItAlreadyUploaded()
     {
@@ -468,12 +452,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.DoesNotContain(rows, attachment => attachment.Filename == "orphan.txt");
     }
 
-    /// <summary>
-    /// When the compensating delete fails too, the object is live and no row will ever
-    /// reference it. That divergence must be recorded so an operator can enumerate and
-    /// reconcile it — previously it was swallowed into a warning log line
-    /// (honua-server#4404).
-    /// </summary>
     [Fact]
     public async Task UploadAsync_WhenInsertAndCompensatingDeleteBothFail_RecordsAnOrphan()
     {
@@ -508,12 +486,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         await _fileStorage.DeleteAsync(orphan.StoragePath);
     }
 
-    /// <summary>
-    /// <c>DeleteAsync</c> removes the committed row first and then the object. A storage
-    /// failure after that commit leaves an object nothing references; the caller still gets
-    /// <c>true</c> (the row really is gone), so the leak has to be surfaced through the
-    /// ledger rather than only logged (honua-server#4404).
-    /// </summary>
     [Fact]
     public async Task DeleteAsync_WhenStorageDeleteFails_SurfacesTheUndeletedObject()
     {
@@ -545,10 +517,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         await _fileStorage.DeleteAsync(attachment.StoragePath);
     }
 
-    /// <summary>
-    /// A successful delete must not report an orphan. Without this the ledger assertions
-    /// above would also pass for an implementation that recorded on every delete.
-    /// </summary>
     [Fact]
     public async Task DeleteAsync_WhenStorageDeleteSucceeds_RecordsNoOrphan()
     {
@@ -569,12 +537,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.False(await _fileStorage.ExistsAsync(attachment.StoragePath));
     }
 
-    /// <summary>
-    /// <c>ICloudFileStorage.DeleteAsync</c> defines <c>false</c> as "file was not found", so a
-    /// row whose object had already been removed is a fully reconciled delete, not an orphan.
-    /// Reporting one here would put a false positive on the counter operators alert on
-    /// (honua-server#4468).
-    /// </summary>
     [Fact]
     public async Task DeleteAsync_WhenStorageObjectIsAlreadyGone_RecordsNoOrphan()
     {
@@ -600,12 +562,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, attachment.Id));
     }
 
-    /// <summary>
-    /// The metadata row is committed away before storage deletion begins, so a caller
-    /// disconnect or timeout during <c>DeleteAsync</c> leaks the object just as a storage
-    /// outage does. The cancellation must be recorded before it propagates
-    /// (honua-server#4468).
-    /// </summary>
     [Fact]
     public async Task DeleteAsync_WhenStorageDeleteIsCanceled_RecordsTheUndeletedObject()
     {
@@ -697,7 +653,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         return files.Select(file => file.FileId).ToHashSet(StringComparer.Ordinal);
     }
 
-    /// <summary>Captures every orphan the store reports, for assertion.</summary>
     private sealed class RecordingOrphanLedger : IAttachmentOrphanLedger
     {
         private readonly List<AttachmentOrphan> _orphans = [];
@@ -724,11 +679,6 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Passes every call through to the real storage except <c>DeleteAsync</c>, which is
-    /// answered by <paramref name="onDelete"/> — by default a storage outage, the failure
-    /// that turns a compensating delete into a leak.
-    /// </summary>
     private sealed class DeleteFailingFileStorage(
         ICloudFileStorage inner,
         Func<string, CancellationToken, Task<bool>>? onDelete = null) : ICloudFileStorage

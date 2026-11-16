@@ -9,12 +9,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Unit coverage for the shared subtype fidelity seam (honua-server#4824 REQ-002). A source
-/// editing construct the canonical model cannot represent must reach the operator as a named
-/// finding against the resource, carrying the construct code and the offending type, rather
-/// than as an opaque failure of the whole layer read.
-/// </summary>
 public sealed class GeoServicesSubtypeFidelityClassifierTests
 {
     private static readonly GeoServicesConstructCapabilityDescriptor Descriptor =

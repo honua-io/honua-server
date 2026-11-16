@@ -10,26 +10,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="PdalPointCloudConvertJobExecutor"/>
-/// (LAZ/COPC decompress + projected-CRS reprojection, #1854). Pins routing,
-/// <c>pdal translate</c> argument projection, the geographic-source pass-through,
-/// the CRS-token guard, the artifact size guard, and the canonical
-/// uncompressed-LAS artifact contract — all without PDAL installed.
-/// </summary>
 public sealed class PdalPointCloudConvertExecutorTests
 {
     private const string ScratchSuite = "honua-pdal-pcloud-test";
 
     private static string Base64(string text) => GdalCli.Base64(text);
 
-    /// <summary>
-    /// A fake runner that succeeds and writes <paramref name="outputBytes"/> to the
-    /// <c>output.las</c> argument. The PDAL argument vector ends with a writer
-    /// option (not the output path), so the generic last-arg
-    /// <see cref="FakeGdalCommandRunner.Succeeding"/> cannot be used here — the
-    /// output path is the third positional argument of <c>pdal translate</c>.
-    /// </summary>
     private static FakeGdalCommandRunner SucceedingWritingOutput(byte[] outputBytes)
         => new((_, args, _) =>
         {

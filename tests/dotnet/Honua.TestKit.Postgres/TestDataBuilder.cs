@@ -3,10 +3,6 @@
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Fluent builder for creating test data in PostgreSQL/PostGIS.
-/// Supports schema-based isolation for parallel tests.
-/// </summary>
 public sealed class TestDataBuilder
 {
     private readonly PostgresFixture _fixture;
@@ -20,9 +16,6 @@ public sealed class TestDataBuilder
         _schema = schema;
     }
 
-    /// <summary>
-    /// Create a test table with geometry column.
-    /// </summary>
     public TestDataBuilder WithTable(string tableName, string geometryType = "POINT", int srid = 4326, Dictionary<string, string>? additionalColumns = null)
     {
         _actions.Add(async () =>
@@ -53,9 +46,6 @@ public sealed class TestDataBuilder
         return this;
     }
 
-    /// <summary>
-    /// Insert a point feature.
-    /// </summary>
     public TestDataBuilder WithPoint(string tableName, string name, double lon, double lat, Dictionary<string, object>? additionalValues = null)
     {
         _actions.Add(async () =>
@@ -88,9 +78,6 @@ public sealed class TestDataBuilder
         return this;
     }
 
-    /// <summary>
-    /// Insert a polygon feature from WKT.
-    /// </summary>
     public TestDataBuilder WithPolygon(string tableName, string name, string wkt, int srid = 4326, Dictionary<string, object>? additionalValues = null)
     {
         _actions.Add(async () =>
@@ -123,9 +110,6 @@ public sealed class TestDataBuilder
         return this;
     }
 
-    /// <summary>
-    /// Insert a linestring feature from coordinates.
-    /// </summary>
     public TestDataBuilder WithLineString(string tableName, string name, IEnumerable<(double lon, double lat)> coordinates, int srid = 4326)
     {
         var points = string.Join(", ", coordinates.Select(c => $"{c.lon} {c.lat}"));
@@ -133,9 +117,6 @@ public sealed class TestDataBuilder
         return WithPolygon(tableName, name, wkt, srid);
     }
 
-    /// <summary>
-    /// Insert multiple points in a grid pattern.
-    /// </summary>
     public TestDataBuilder WithPointGrid(string tableName, string namePrefix, double startLon, double startLat, int rows, int cols, double spacing = 0.01)
     {
         for (int r = 0; r < rows; r++)
@@ -151,9 +132,6 @@ public sealed class TestDataBuilder
         return this;
     }
 
-    /// <summary>
-    /// Insert random points within a bounding box.
-    /// </summary>
     public TestDataBuilder WithRandomPoints(string tableName, int count, double minLon, double minLat, double maxLon, double maxLat)
     {
         for (int i = 0; i < count; i++)
@@ -166,9 +144,6 @@ public sealed class TestDataBuilder
         return this;
     }
 
-    /// <summary>
-    /// Insert a circle polygon (approximated with points).
-    /// </summary>
     public TestDataBuilder WithCircle(string tableName, string name, double centerLon, double centerLat, double radiusMeters, int srid = 4326)
     {
         _actions.Add(async () =>
@@ -189,18 +164,12 @@ public sealed class TestDataBuilder
         return this;
     }
 
-    /// <summary>
-    /// Execute custom SQL.
-    /// </summary>
     public TestDataBuilder WithSql(string sql)
     {
         _actions.Add(() => _fixture.ExecuteAsync(sql, _schema));
         return this;
     }
 
-    /// <summary>
-    /// Build and execute all actions.
-    /// </summary>
     public async Task BuildAsync()
     {
         foreach (var action in _actions)
@@ -210,22 +179,13 @@ public sealed class TestDataBuilder
     }
 }
 
-/// <summary>
-/// Extension methods for test data setup.
-/// </summary>
 public static class TestDataExtensions
 {
-    /// <summary>
-    /// Create a test data builder for the public schema.
-    /// </summary>
     public static TestDataBuilder CreateTestData(this PostgresFixture fixture)
     {
         return new TestDataBuilder(fixture);
     }
 
-    /// <summary>
-    /// Create a test data builder for a specific schema.
-    /// </summary>
     public static TestDataBuilder CreateTestData(this PostgresFixture fixture, string schema)
     {
         return new TestDataBuilder(fixture, schema);

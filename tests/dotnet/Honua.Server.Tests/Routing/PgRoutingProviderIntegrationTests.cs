@@ -12,26 +12,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Gated integration tests that validate the real <see cref="PgRoutingProvider"/>
-/// SQL (<c>pgr_dijkstra</c> / <c>pgr_drivingDistance</c>) against a live
-/// pgRouting database seeded with a deterministic 3x3 lattice
-/// (<see cref="PgRoutingFixture.SeedSql"/>). Opt-in only: set
-/// <c>HONUA_ROUTING_TEST=1</c> to run (the heavy <c>pgrouting/pgrouting</c> image
-/// is never pulled on the default Fast tier). Point at an existing pgRouting DB
-/// (e.g. <c>docker/routing/compose.yml</c>) via <c>HONUA_ROUTING_TEST_DB_URL</c>
-/// to skip the Testcontainer. See issue #1266 and ADR-0050.
-/// </summary>
-/// <remarks>
-/// Seed network (vertices 1-9, every edge cost = 1):
-/// <code>
-///   7 -- 8 -- 9        (0,.02) (.01,.02) (.02,.02)
-///   |    |    |
-///   4 -- 5 -- 6        (0,.01) (.01,.01) (.02,.01)
-///   |    |    |
-///   1 -- 2 -- 3        (0,0)   (.01,0)   (.02,0)
-/// </code>
-/// </remarks>
 public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingFixture>
 {
     private const string RoutingTestEnv = "HONUA_ROUTING_TEST";
@@ -39,10 +19,6 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
     private readonly PgRoutingFixture _fixture;
     private readonly PgRoutingProvider _provider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PgRoutingProviderIntegrationTests"/> class.
-    /// </summary>
-    /// <param name="fixture">The seeded pgRouting fixture.</param>
     public PgRoutingProviderIntegrationTests(PgRoutingFixture fixture)
     {
         ArgumentNullException.ThrowIfNull(fixture);

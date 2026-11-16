@@ -16,11 +16,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Verifies the compute-once-then-persist statistics behavior behind ImageServer/WCS
-/// service metadata (#1639): statistics must be served from persisted rows and never
-/// recomputed per request once a backfill has run.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
 {

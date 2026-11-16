@@ -26,10 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// SOAP responses for one ImageServer fixture must carry the same catalog, multidimensional,
-/// key-property, histogram, and tile-cache facts the REST binding returns.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerSoapParityTests : IAsyncLifetime
@@ -1135,12 +1131,6 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     private static XElement MultidimensionalPropertyValue(XElement set, string key)
         => Child(Child(set, "PropertyArray").Elements().Single(property => Child(property, "Key").Value == key), "Value");
 
-    /// <summary>
-    /// The default fixture serves only the three-band RGB mosaic. A registered
-    /// multidimensional coverage replaces the service raster description (#6493), so
-    /// mosaic facts (bands, statistics, histograms, extent) and coverage facts are
-    /// asserted against separate layer shapes.
-    /// </summary>
     private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache, bool registerCoverage = false)
     {
         var rasterStore = CreateRasterStore();

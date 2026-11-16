@@ -13,9 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
-/// <summary>
-/// Integration tests for alert admin health aggregation in <see cref="PostgresAlertAdminStore"/>.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
 {

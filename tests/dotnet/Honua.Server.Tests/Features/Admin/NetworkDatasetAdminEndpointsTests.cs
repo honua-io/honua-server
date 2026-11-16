@@ -12,12 +12,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the network-dataset registry admin editing endpoints (#1882).
-/// Covers register/list/get/update/delete happy paths, validation rejections (id slug,
-/// edge/vertex identifier, srid, status), duplicate-id conflict, not-found handling, and
-/// the anonymous-access auth gate.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

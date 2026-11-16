@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FileStorage.Domain;
 
-/// <summary>
-/// Unit tests for CloudFile domain model
-/// </summary>
 public class CloudFileTests
 {
     [UnitTest]

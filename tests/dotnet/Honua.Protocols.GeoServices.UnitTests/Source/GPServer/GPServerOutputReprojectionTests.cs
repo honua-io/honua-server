@@ -11,11 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit coverage for honoring <c>env:outSR</c> on synchronous results by
-/// reprojecting GeoJSON output artifacts, and for the capability messaging
-/// returned when a transform or output type is unsupported.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerOutputReprojectionTests
 {

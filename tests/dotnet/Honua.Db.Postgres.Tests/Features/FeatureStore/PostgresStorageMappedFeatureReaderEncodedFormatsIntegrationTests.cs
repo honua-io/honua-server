@@ -24,14 +24,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Integration coverage for FlatGeobuf / Geobuf output on source-backed (provider-routed)
-/// PostGIS layers via <see cref="PostgresStorageMappedFeatureReader"/> (honua-server#1938).
-/// Before the fix the storage-mapped reader threw <see cref="NotSupportedException"/> for
-/// <c>f=fgb</c> and lacked <see cref="IGeobufFeatureStore"/> entirely, so the FeatureServer
-/// emitted a 400 for every compat-seeded layer. These tests run the encoders against a real
-/// PostGIS table to prove both formats now produce valid payloads over the storage mapping.
-/// </summary>
 [Collection("Database")]
 public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationTests : IAsyncLifetime
 {

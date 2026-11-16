@@ -8,22 +8,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Builds a production-shaped <see cref="KubernetesJobBatchComputeBackend"/> wired against a
-/// real out-of-cluster API server (a kind cluster). The wiring mirrors
-/// <c>Program.cs</c>: a named <c>control-plane-kubernetes</c> HttpClient whose primary
-/// handler is <see cref="KubernetesJobClient.CreatePrimaryHandler"/> (so the kind cluster CA
-/// is trusted exactly as it would be for a real private-CA target), the shared
-/// <see cref="KubernetesApiRequestFactory"/>, and a <see cref="KubernetesExecutionOptions"/>
-/// snapshot with in-cluster auto-detect disabled (out-of-cluster targeting).
-/// </summary>
 internal static class KubernetesBackendFactory
 {
-    /// <summary>
-    /// Composes the backend and its real <see cref="IKubernetesJobClient"/> against the
-    /// supplied kind cluster inputs. The returned <see cref="ServiceProvider"/> owns the
-    /// HttpClient lifetime and must be disposed by the caller.
-    /// </summary>
     public static (KubernetesJobBatchComputeBackend Backend, ServiceProvider Provider) Create(
         string apiServerUrl,
         string bearerToken,
@@ -71,11 +57,6 @@ internal static class KubernetesBackendFactory
         return (backend, provider);
     }
 
-    /// <summary>
-    /// Minimal <see cref="IOptionsMonitor{T}"/> over a fixed snapshot. The backend and request
-    /// factory only read <see cref="IOptionsMonitor{T}.CurrentValue"/>; change notification is
-    /// not exercised by the harness.
-    /// </summary>
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue { get; } = value;

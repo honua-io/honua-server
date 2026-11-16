@@ -14,13 +14,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Executor-level coverage that the pixel-dimension / zone-count admission control
-/// (#2766) rejects a decompression-bomb raster and an oversized zone set BEFORE any
-/// GDAL CLI runs (asserted via an empty <c>runner.Invocations</c> — the reject
-/// happens from the cheap header read, not after a full-raster allocation), and
-/// that a normal in-bounds raster + normal zone set still succeed (regression).
-/// </summary>
 public sealed class GdalRasterAdmissionExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-admission-test";

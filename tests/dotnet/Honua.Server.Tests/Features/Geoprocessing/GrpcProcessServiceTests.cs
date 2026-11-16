@@ -29,9 +29,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for the gRPC ProcessService implementation.
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcProcessServiceTests
 {

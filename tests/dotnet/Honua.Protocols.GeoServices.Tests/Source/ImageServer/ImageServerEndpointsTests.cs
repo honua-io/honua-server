@@ -30,13 +30,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// API surface integration tests for the ImageServer endpoints added in #520
-/// (catalog query, computeStatisticsHistograms, legend, computeClassStatistics).
-/// Each test exercises the actual route through <see cref="WebAppFixture"/> so
-/// route binding, telemetry, JSON formatting, and error handling are all covered
-/// per ADR-0011 API Surface Coverage.
-/// </summary>
 // Retaining PostgreSQL between cases avoids infrastructure restarts while each case owns
 // its host, schema, and substitutes.
 [Collection("Database.GeoServicesRaster")]
@@ -168,13 +161,6 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         return store;
     }
 
-    /// <summary>
-    /// Builds a substitute for calculateVolume: the image layer's primary raster carries a DEM
-    /// source (layer 777); the DEM primary raster has a 10x10 (100 unit²) pixel and the clipped read
-    /// returns the supplied elevations for band 1. The AOI geometry is ignored by the substitute, so
-    /// the volume result is fully determined by <paramref name="elevations"/>, the pixel area, and
-    /// the base plane, making the expected cut/fill/area hand-verifiable.
-    /// </summary>
     private static IRasterStore CreateVolumeRasterStoreSubstitute(
         double[] elevations,
         bool exceedBudget = false)

@@ -31,9 +31,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for file import endpoints
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

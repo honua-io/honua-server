@@ -13,13 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Caching;
 
-/// <summary>
-/// Integration tests for prepared statement caching functionality
-/// </summary>
-/// <remarks>
-/// Verifies that prepared statement caching integrates properly with existing
-/// parameterized query patterns without breaking security or functionality.
-/// </remarks>
 [Collection("Database")]
 public class PreparedStatementCacheTests : IDisposable
 {
@@ -263,9 +256,6 @@ public class PreparedStatementCacheTests : IDisposable
     }
 }
 
-/// <summary>
-/// Tests for caching-aware database connection provider
-/// </summary>
 [Collection("Database")]
 public class CachingDatabaseConnectionProviderTests : IDisposable
 {

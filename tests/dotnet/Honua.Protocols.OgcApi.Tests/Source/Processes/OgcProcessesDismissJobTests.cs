@@ -19,11 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Verifies that OGC job dismissal does not recreate a cancelled job from a stale
-/// snapshot when the authoritative job record disappears between the initial read
-/// and the post-notifier re-read.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesDismissJobTests : IAsyncLifetime

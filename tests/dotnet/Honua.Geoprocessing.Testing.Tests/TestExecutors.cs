@@ -11,13 +11,6 @@ using NSubstitute;
 
 namespace Honua.Geoprocessing.Testing.Tests;
 
-/// <summary>
-/// Executor builders for the golden-SDK self-tests (GP Devkit P6, issue #2127). The
-/// managed <c>geometry.buffer</c> executor proves the geometry (NTS-tolerance) path fully
-/// offline; the lightweight <see cref="StubArtifactExecutor"/> publishes a caller-chosen
-/// data-URI artifact so the scalar/structural path and the run-failure paths can be driven
-/// without any native (GDAL) dependency.
-/// </summary>
 internal static class TestExecutors
 {
     public static GeometryBufferJobExecutor Buffer()
@@ -32,11 +25,6 @@ internal static class TestExecutors
     }
 }
 
-/// <summary>
-/// Minimal <see cref="IProcessExecutor"/> that publishes a fixed data-URI artifact (or
-/// fails / publishes nothing), letting the self-tests exercise the SDK's scalar/structural
-/// comparison and failure handling with no native runtime.
-/// </summary>
 internal sealed class StubArtifactExecutor : IProcessExecutor
 {
     private readonly string? _artifact;
@@ -53,15 +41,12 @@ internal sealed class StubArtifactExecutor : IProcessExecutor
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <summary>Publishes <paramref name="text"/> as a <c>text/csv</c> base64 data URI.</summary>
     public static StubArtifactExecutor Csv(string processId, string text) =>
         new(processId, DataUri("text/csv", text), failure: null);
 
-    /// <summary>Publishes <paramref name="json"/> as an <c>application/json</c> base64 data URI.</summary>
     public static StubArtifactExecutor Json(string processId, string json) =>
         new(processId, DataUri("application/json", json), failure: null);
 
-    /// <summary>Fails terminally with the supplied message before publishing anything.</summary>
     public static StubArtifactExecutor Failing(string processId, string message) =>
         new(processId, artifact: null, failure: message);
 

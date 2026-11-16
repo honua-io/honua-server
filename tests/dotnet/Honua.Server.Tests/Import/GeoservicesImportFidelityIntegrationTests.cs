@@ -24,9 +24,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// External parity checks that compare selected ArcGIS layer responses with imported Honua table data.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

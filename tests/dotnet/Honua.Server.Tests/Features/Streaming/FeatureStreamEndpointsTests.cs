@@ -33,11 +33,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Integration tests for feature-change streaming endpoints covering
-/// WebSocket connect, SSE connect, heartbeat delivery, slow-consumer disconnect,
-/// cursor replay on reconnect, and admin session visibility.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
@@ -2094,10 +2089,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    /// <summary>
-    /// Verifies that a fresh SSE connection (no cursor) delivers the first live
-    /// event without dropping or replaying the entire store.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_FreshConnect_DeliversFirstLiveEvent()
@@ -2300,12 +2291,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
             "SSE replay should deliver exactly the events after the provided cursor");
     }
 
-    /// <summary>
-    /// Validates the full replay-to-live path: connects with a cursor, publishes
-    /// additional events while connected, and asserts all events arrive exactly once.
-    /// Note: the overlap timing between replay and live publish is best-effort;
-    /// the test primarily guards against regression in the handoff path.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Reconnect_WithLiveEventsPublishedDuringReplay_DeliversAll()

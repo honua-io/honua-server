@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit tests for the <see cref="DuplicateVersionNameException"/> domain exception.
-/// </summary>
 public sealed class DuplicateVersionNameExceptionTests
 {
     [UnitTest]

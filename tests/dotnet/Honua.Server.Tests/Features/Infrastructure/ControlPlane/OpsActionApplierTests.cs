@@ -15,12 +15,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Integration tests for the payload-discriminated ops-action registry behind
-/// <see cref="IAdminConfigChangeApplier"/> (#2561): every registered action executes
-/// for real, is idempotent and audited, and unknown/malformed payloads fail closed
-/// before any side effect.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 // Service-level integration tests over IAdminConfigChangeApplier (no HTTP surface of

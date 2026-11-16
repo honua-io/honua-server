@@ -13,18 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// OData v4 conformance regressions (#1989):
-/// <list type="number">
-/// <item><description><c>$top=0</c> returns a 200 with an empty <c>value</c> array (not a 400),
-/// while <c>$count=true</c> still reports the true total.</description></item>
-/// <item><description>The <c>Layers</c> collection emits a followable <c>@odata.nextLink</c>
-/// when more layers exist than the server page, and treats <c>$top</c> as a total ceiling
-/// (#5464).</description></item>
-/// <item><description>Feature pagination is not truncated: a full page always carries an
-/// <c>@odata.nextLink</c> regardless of provider <c>TotalCount</c> fidelity.</description></item>
-/// </list>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime

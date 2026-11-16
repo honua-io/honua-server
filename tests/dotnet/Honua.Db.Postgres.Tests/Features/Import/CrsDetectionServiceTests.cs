@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration tests for CRS detection functionality
-/// </summary>
 [Collection("Database")]
 public class CrsDetectionServiceTests : IAsyncLifetime
 {

@@ -14,7 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>Studio clients can discover real catalog sources without routing unrelated tools.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAssistantCatalogTests
 {

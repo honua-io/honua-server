@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Tiles;
 
-/// <summary>
-/// Extensive tests for TileMath covering edge cases and invariants.
-/// </summary>
 public class TileMathExtensiveTests
 {
     private const double WebMercatorExtent = 20037508.342789244;

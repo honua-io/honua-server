@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Simple validation test without Docker dependencies
-/// </summary>
 public class SimpleTest
 {
     [UnitTest]

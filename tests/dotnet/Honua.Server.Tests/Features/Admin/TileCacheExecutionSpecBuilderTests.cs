@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit coverage for the tile-cache execution-job spec encode/decode contract
-/// (issue #1697): every behavior-changing tile parameter must round-trip from a
-/// <see cref="TileOperationStartRequest"/> through <see cref="ExecutionJobSpec.Parameters"/>
-/// and back so the worker executes exactly what the caller requested.
-/// </summary>
 public sealed class TileCacheExecutionSpecBuilderTests
 {
     [UnitTest]

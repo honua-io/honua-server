@@ -18,7 +18,6 @@ using Moq;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>Exercises the shared HTTP/non-HTTP edit decision seams before grants.</summary>
 public sealed class CompositeRelationshipWritePolicyTests
 {
     [UnitTest]

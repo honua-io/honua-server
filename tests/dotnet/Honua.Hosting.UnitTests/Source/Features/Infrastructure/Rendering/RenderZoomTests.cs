@@ -7,18 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for deriving a MapLibre zoom level from a render envelope and image size.
-/// </summary>
-/// <remarks>
-/// The reference envelopes below are the bounds a MapLibre GL JS map reports for a known
-/// camera zoom, center, and viewport at bearing 0 / pitch 0. They are computed from MapLibre's
-/// own published definitions: <c>mercatorXfromLng</c>/<c>mercatorYfromLat</c>
-/// (src/geo/mercator_coordinate.ts) over a world of <c>tileSize * 2^zoom</c> pixels, where
-/// <c>Transform.tileSize</c> is the constant 512 (src/geo/transform_helper.ts). Deriving the zoom
-/// back from those bounds must return the camera zoom MapLibre started from — a derivation that is
-/// off by one silently drops or adds a layer.
-/// </remarks>
 [Trait("Component", "MapServer")]
 public class RenderZoomTests
 {

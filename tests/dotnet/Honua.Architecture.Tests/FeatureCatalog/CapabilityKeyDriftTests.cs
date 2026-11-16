@@ -10,14 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Drift guard for the capability layer (#2893): every feature-catalog entry
-/// maps to exactly one capability key, every canonical capability key has at
-/// least one feature-catalog entry or an explicit no-surface annotation, and
-/// the committed <c>capability-keys.v1.json</c> snapshot stays in lockstep with
-/// <see cref="CapabilityKeyCatalog.All"/> — the same drift-guard shape as
-/// <see cref="FeatureCatalogDriftTests"/>.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class CapabilityKeyDriftTests
 {
@@ -381,119 +373,84 @@ public sealed class CapabilityKeyDriftTests
     }
 }
 
-/// <summary>Top-level document for <c>capability-keys.v1.json</c>.</summary>
 internal sealed class CapabilityKeysDocument
 {
-    /// <summary>Schema version.</summary>
     public string SchemaVersion { get; init; } = string.Empty;
 
-    /// <summary>The full canonical capability list.</summary>
     public CapabilityKeyJson[] Capabilities { get; init; } = [];
 
-    /// <summary>Crosswalk sections.</summary>
     public CapabilityCrosswalksJson Crosswalks { get; init; } = new();
 }
 
-/// <summary>A single capability entry as committed to JSON.</summary>
 internal sealed class CapabilityKeyJson
 {
-    /// <summary>Capability key.</summary>
     public string Key { get; init; } = string.Empty;
 
-    /// <summary>Display name.</summary>
     public string DisplayName { get; init; } = string.Empty;
 
-    /// <summary>Category.</summary>
     public string Category { get; init; } = string.Empty;
 
-    /// <summary>Edition (string form of <see cref="HonuaEdition"/>).</summary>
     public string Edition { get; init; } = string.Empty;
 
-    /// <summary>Description.</summary>
     public string Description { get; init; } = string.Empty;
 
-    /// <summary>Optional public release posture (for example live or experimental).</summary>
     public string? Status { get; init; }
 }
 
-/// <summary>The four crosswalk sections.</summary>
 internal sealed class CapabilityCrosswalksJson
 {
-    /// <summary>honua-esri-assess verdict-registry crosswalk rows.</summary>
     public GeoServicesAssessCrosswalkRow[] GeoservicesAssess { get; init; } = [];
 
-    /// <summary>Client-interop (client_lane x protocol) crosswalk rows.</summary>
     public InteropCrosswalkRow[] Interop { get; init; } = [];
 
-    /// <summary>geoservices-rest-parity.json service-id crosswalk rows.</summary>
     public GeoServicesCompatMatrixCrosswalkRow[] GeoservicesCompatMatrix { get; init; } = [];
 
-    /// <summary>geobench scenario crosswalk rows.</summary>
     public GeobenchCrosswalkRow[] Geobench { get; init; } = [];
 }
 
-/// <summary>A single honua-esri-assess crosswalk row.</summary>
 internal sealed class GeoServicesAssessCrosswalkRow
 {
-    /// <summary>The assess registry key.</summary>
     public string AssessKey { get; init; } = string.Empty;
 
-    /// <summary>The capability key it maps to.</summary>
     public string Capability { get; init; } = string.Empty;
 }
 
-/// <summary>A single client-interop crosswalk row.</summary>
 internal sealed class InteropCrosswalkRow
 {
-    /// <summary>The client_lane value.</summary>
     public string ClientLane { get; init; } = string.Empty;
 
-    /// <summary>The protocol value.</summary>
     public string Protocol { get; init; } = string.Empty;
 
-    /// <summary>The capability key it maps to.</summary>
     public string Capability { get; init; } = string.Empty;
 }
 
 internal sealed class GeoServicesCompatMatrixCrosswalkRow
 {
-    /// <summary>The geoservices-rest-parity.json service id.</summary>
     public string ServiceId { get; init; } = string.Empty;
 
-    /// <summary>The capability key it maps to.</summary>
     public string Capability { get; init; } = string.Empty;
 }
 
-/// <summary>A single geobench crosswalk row.</summary>
 internal sealed class GeobenchCrosswalkRow
 {
-    /// <summary>The geobench scenario name.</summary>
     public string Scenario { get; init; } = string.Empty;
 
-    /// <summary>The capability key it maps to.</summary>
     public string Capability { get; init; } = string.Empty;
 }
 
-/// <summary>Top-level document for <c>capability-no-surface-allowlist.v1.json</c>.</summary>
 internal sealed class CapabilityNoSurfaceAllowlistDocument
 {
-    /// <summary>Schema version.</summary>
     public string SchemaVersion { get; init; } = string.Empty;
 
-    /// <summary>The allowlisted no-surface capabilities.</summary>
     public NoSurfaceCapabilityEntry[] NoSurfaceCapabilities { get; init; } = [];
 }
 
-/// <summary>A single no-surface allowlist entry.</summary>
 internal sealed class NoSurfaceCapabilityEntry
 {
-    /// <summary>The capability key with no distinct route.</summary>
     public string Capability { get; init; } = string.Empty;
 
-    /// <summary>Reason code (config-flag, sdk-only, ...).</summary>
     public string ReasonCode { get; init; } = string.Empty;
 
-    /// <summary>Free-text reason.</summary>
     public string Reason { get; init; } = string.Empty;
 }
 

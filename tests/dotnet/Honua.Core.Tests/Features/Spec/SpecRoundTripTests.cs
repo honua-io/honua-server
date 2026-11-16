@@ -8,10 +8,6 @@ using Honua.Core.Features.Spec.Grammar;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Round-trip invariants from ticket 788: text → JSON → AST → JSON is
-/// idempotent, and semantically equivalent to the original source.
-/// </summary>
 public sealed class SpecRoundTripTests
 {
     private static readonly SpecParser _parser = new();

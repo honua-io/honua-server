@@ -7,12 +7,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.UnitTests.Features.Geoprocessing.Release;
 
-/// <summary>
-/// The server-side lock reader/writer must agree byte-for-byte with the release repository's
-/// Python digest (<c>tools/gp_process_release.py lock-digest</c>): the committed lock
-/// <c>release/gp-process-locks/buffer-features/75154d7a4ebd.json</c> is the cross-implementation
-/// test vector, and its file name is the first twelve hex characters of that digest.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpProcessReleaseLockTests
 {

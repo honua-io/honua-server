@@ -11,13 +11,6 @@ using Honua.Protocols.Ogc.Api.Tiles.Models;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
-/// <summary>
-/// CITE byte-identical guard: the new registry/geometry-driven
-/// <see cref="OgcTilesUtilities.BuildTileMatrixSetDefinition"/> must produce output identical to
-/// the legacy hardcoded <c>BuildWebMercatorQuadDefinition</c> / <c>BuildWorldCrs84QuadDefinition</c>
-/// paths so OGC API Tiles 16/16 conformance does not regress. A drift here means the gridset
-/// generalization changed advertised metadata and the WMTS/Tiles CITE suites must be re-checked.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class TileMatrixSetDefinitionSnapshotTests
 {

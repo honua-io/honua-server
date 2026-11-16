@@ -7,13 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Exactness contract for <see cref="CrsIdentifier"/> (honua-server#3053): the
-/// recognized spellings of a CRS all resolve to the same code, and identifiers
-/// that merely LOOK like one — <c>EPSG:43260</c>, <c>NOT_CRS84</c> — resolve to
-/// nothing. Callers gate payload acceptance on this, so a substring-ish match
-/// here is a validation bypass there.
-/// </summary>
 public sealed class CrsIdentifierTests
 {
     // The four spellings named in the imagery process contract, plus the aliases

@@ -13,12 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Denominator proof for #3887. The authorization transition is exercised at the common
-/// dispatcher boundary over the exact catalog resolved for the call, including dynamic tools.
-/// Adding a new tool cannot evade this test invariant because the loop is built from
-/// <see cref="McpDataAccessSurface.GetCatalogEntriesAsync"/>, not a sampled name list.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpCatalogAuthorizationDenominatorTests
 {

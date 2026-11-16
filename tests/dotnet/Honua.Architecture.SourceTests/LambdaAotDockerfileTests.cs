@@ -5,9 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the build and publishing contracts for the AWS Lambda Native AOT image.
-/// </summary>
 public sealed class LambdaAotDockerfileTests
 {
     private static readonly string[] RenderingSourcePaths =

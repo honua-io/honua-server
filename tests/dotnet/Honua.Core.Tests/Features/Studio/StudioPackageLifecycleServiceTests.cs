@@ -1359,10 +1359,6 @@ public sealed partial class StudioPackageLifecycleServiceTests
         }
     }
 
-    /// <summary>
-    /// One bridged item. GetVersion and GetPointers resolve it; Publish records the request
-    /// instead of writing the inner Studio store.
-    /// </summary>
     private sealed class SingleItemFamilyBridge : IStudioFamilyPersistenceBridge
     {
         private StudioContentVersion? _version;

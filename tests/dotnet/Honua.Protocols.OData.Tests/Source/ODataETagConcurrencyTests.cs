@@ -14,10 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData ETag concurrency control:
-/// If-Match, If-None-Match, 412 Precondition Failed, 304 Not Modified.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataETagConcurrencyTests : IAsyncLifetime

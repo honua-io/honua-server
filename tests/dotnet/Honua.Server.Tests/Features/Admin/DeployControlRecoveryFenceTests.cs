@@ -27,14 +27,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// honua-server#4958: the rollback surface is fenced to a declared, scoped, non-expired recovery grant.
-/// Every case here drives the real <c>POST /api/v1/admin/deploy/operations/{operationId}/rollback</c>
-/// endpoint against a real protected activation — no injected authorization result, no seam standing in
-/// for the fence — and every refusal asserts both the stable machine-readable code and that the
-/// operation did <b>not</b> transition. On the pinned candidate (886206527cc97bad1bbaa5fa6358910ebc45e9c0)
-/// each of these bodies returned HTTP 200 and settled the operation with every fence term dropped.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -624,7 +616,6 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
 
     private sealed record ProtectedActivation(string OperationId, string CandidateRevision, JsonElement Protection)
     {
-        /// <summary>Every fence term quoted from what the activation actually sealed — the positive control.</summary>
         public RecoveryFenceBody SatisfiedFence() => new(
             Reason: "telemetry breach",
             TargetId: TargetId,
@@ -639,7 +630,6 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
             Compensation: Protection.GetProperty("permittedCompensation").GetString());
     }
 
-    /// <summary>Wire shape of the recovery fence, so each case corrupts exactly one term.</summary>
     public sealed record RecoveryFenceBody(
         string Reason,
         string? TargetId,

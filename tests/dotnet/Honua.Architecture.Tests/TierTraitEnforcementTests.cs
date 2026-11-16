@@ -13,37 +13,6 @@ using Xunit.Sdk;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Gate-reachability guard (honua-server#4410).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The required per-PR gate selects server tests by trait —
-/// <c>dotnet test tests/dotnet/Honua.Server.Tests --filter "Tier=Fast"</c>
-/// (<c>.github/actions/lean-gate/action.yml</c>). <c>Tier</c> is emitted only by a TestKit
-/// tier attribute (<c>[UnitTest]</c> → <c>Tier=Fast</c>, <c>[IntegrationTest]</c> →
-/// <c>Tier=Integration</c>, <c>[ScaleTest]</c>/<c>[CloudTest]</c>/… → <c>Tier=Slow</c>).
-/// A method written with a plain xUnit <c>[Fact]</c> carries no <c>Tier</c> trait at all and
-/// is therefore invisible to every tier filter — it lands off the required check and nothing
-/// tells the author.
-/// </para>
-/// <para>
-/// This guard makes that a build failure for anything NEW. The methods that were already
-/// untiered when the guard landed are listed, by fully-qualified method signature, in the committed
-/// baseline <c>tests/dotnet/Honua.Architecture.Tests/tier-trait-baseline.txt</c>. The list is
-/// a ratchet: adding a tier attribute to a baselined method must also remove its line, and a
-/// stale line fails the guard. The required gate compares the file to the first parent of
-/// its checked-out merge commit, so adding a new bare test and its baseline line also fails.
-/// </para>
-/// <para>
-/// Regenerate the baseline after tiering existing methods, then commit the resulting deletions:
-/// <code>
-/// HONUA_EMIT_TIER_TRAIT_BASELINE=1 dotnet test \
-///   tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
-///   --filter "FullyQualifiedName~TierTraitBaselineEmitter"
-/// </code>
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class TierTraitEnforcementTests
 {
@@ -153,17 +122,6 @@ public sealed class TierTraitEnforcementTests
         }
     }
 
-    /// <summary>
-    /// Pins the tier-detection primitive itself.
-    /// </summary>
-    /// <remarks>
-    /// The guard above is only as good as <see cref="TierTraitScanner.EmitsTierTrait"/>. If that
-    /// silently stops recognising the TestKit attributes, EVERY method looks untiered: the emitter
-    /// writes a baseline covering the whole suite (15 398 entries when this was first generated,
-    /// against ~3 100 genuinely untiered methods), and afterwards the enforcement guard fails every
-    /// NEWLY ADDED and correctly tiered test — the exact inverse of what it is for. That failure mode
-    /// is invisible in the guard's own output, so it gets its own assertion.
-    /// </remarks>
     [ArchitectureTest]
     public void TierDetection_RecognisesTestKitTierAttributes_AndRejectsPlainXunitFacts()
     {
@@ -381,15 +339,9 @@ public sealed class TierTraitEnforcementTests
     }
 }
 
-/// <summary>
-/// Regeneration entry point for <c>tier-trait-baseline.txt</c>, gated behind an environment
-/// variable so ordinary <c>dotnet test</c> runs stay read-only (the same idiom as
-/// <c>FeatureCatalogEmitter</c>).
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class TierTraitBaselineEmitter
 {
-    /// <summary>Environment variable that opts a run in to rewriting the baseline.</summary>
     public const string EmitEnvironmentVariable = "HONUA_EMIT_TIER_TRAIT_BASELINE";
 
     [Fact]
@@ -407,36 +359,20 @@ public sealed class TierTraitBaselineEmitter
     }
 }
 
-/// <summary>
-/// Reflection scan for xUnit test methods that emit no <c>Tier</c> trait.
-/// </summary>
 internal static class TierTraitScanner
 {
     private const BindingFlags TestMemberFlags =
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
-    /// <summary>
-    /// xUnit's own <c>[Fact]</c>/<c>[Theory]</c>. Everything that carries a tier derives from
-    /// one of these AND from <c>ITraitAttribute</c> with a discoverer that emits <c>Tier</c>.
-    /// </summary>
     private static readonly string[] XunitFactAttributeNames =
     [
         "Xunit.FactAttribute",
         "Xunit.TheoryAttribute"
     ];
 
-    /// <summary>
-    /// The assemblies whose gate reachability this guard owns. <c>Honua.Server.Tests</c> is the
-    /// assembly the required lean gate filters (#4410); the extracted per-protocol assemblies
-    /// are scanned too so a test moved out of Server.Tests cannot lose its tier on the way.
-    /// </summary>
     internal static IReadOnlyList<Assembly> ScannedAssemblies()
         => ArchitectureTestHelpers.IntegrationTestAssemblies();
 
-    /// <summary>
-    /// Fully-qualified <c>Namespace.Type.Method(ParameterTypes)</c> signatures of every discovered test method that
-    /// carries no tier-bearing attribute, sorted ordinally.
-    /// </summary>
     internal static IReadOnlyCollection<string> UntieredTestMethodNames()
     {
         var names = new SortedSet<string>(StringComparer.Ordinal);
@@ -543,12 +479,6 @@ internal static class TierTraitScanner
         return false;
     }
 
-    /// <summary>
-    /// True when the member carries an attribute whose trait discoverer emits a <c>Tier</c>
-    /// trait. Resolved from the attribute's own <c>[TraitDiscoverer]</c> metadata rather than
-    /// a hard-coded attribute list, so a new TestKit tier attribute is honoured the day it is
-    /// added and one that stops emitting <c>Tier</c> stops satisfying the guard.
-    /// </summary>
     internal static bool HasTierBearingAttribute(MemberInfo member)
     {
         var explicitTraits = AttributeMetadata(member)
@@ -578,18 +508,6 @@ internal static class TierTraitScanner
         }
     }
 
-    /// <summary>
-    /// Resolves the <c>ITraitDiscoverer</c> that xUnit would use for <paramref name="attributeType"/>.
-    /// </summary>
-    /// <remarks>
-    /// <c>Xunit.Sdk.TraitDiscovererAttribute</c> is declared with an EMPTY BODY in xunit.core: it
-    /// stores its <c>typeName</c>/<c>assemblyName</c> constructor arguments nowhere readable, which
-    /// is why xUnit's own discovery reads them through <c>IAttributeInfo.GetConstructorArguments()</c>.
-    /// Reflecting for <c>TypeName</c>/<c>AssemblyName</c> PROPERTIES therefore always yields null and
-    /// would make every attribute — including <c>[UnitTest]</c> and <c>[IntegrationTest]</c> — look
-    /// non-tier-bearing, so the guard would baseline the entire suite and then fail every newly added
-    /// and correctly tiered test. The arguments must come from the attribute METADATA instead.
-    /// </remarks>
     private static Type? ResolveDiscovererType(Type attributeType)
     {
         // [TraitDiscoverer] is Inherited=true, so mirror xUnit and walk the attribute's base chain.
@@ -723,12 +641,8 @@ internal static class TierTraitScanner
         });
 }
 
-/// <summary>
-/// Reads and writes the committed tier-trait baseline.
-/// </summary>
 internal static class TierTraitBaseline
 {
-    /// <summary>Repo-relative location of the committed baseline.</summary>
     public const string RelativePath = "tests/dotnet/Honua.Architecture.Tests/tier-trait-baseline.txt";
 
     private const string Header =

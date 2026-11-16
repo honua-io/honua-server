@@ -13,12 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Integration tests for the hosted 3D Tiles serving endpoints.
-/// Verifies that <c>tileset.json</c>, binary tile content, and nested
-/// tilesets are served with correct content types, ETags, and cache headers
-/// against a public fixture tileset.
-/// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Scene)]
 public sealed class SceneTilesetEndpointTests : IAsyncLifetime, IAsyncDisposable
 {

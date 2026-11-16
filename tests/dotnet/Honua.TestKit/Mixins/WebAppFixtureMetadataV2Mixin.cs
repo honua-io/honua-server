@@ -12,31 +12,10 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.TestKit.Mixins;
 
-/// <summary>
-/// Audit-A2 mixin: the Metadata v2 graph factory functions that <see cref="WebAppFixture"/>
-/// historically inlined as ~770 LOC of <c>BuildXxxTestGraph</c> / <c>GetSeededLayerXxx</c>
-/// helpers. They are pure functions over layer ids and seed-file names — no fixture state —
-/// so they belong on a stateless mixin that lives next to the fixture without bloating its
-/// core surface. The mixin keeps the same default-graph shape (services + layers + bindings +
-/// publications + style resources) the fixture needs to register into the test DI container.
-/// </summary>
-/// <remarks>
-/// Per structural-audit-2026-05 (group A2), <c>WebAppFixture.cs</c> was 1,939 LOC and a
-/// god-fixture for the Server test suite. Extracting the metadata-graph factories here is
-/// the first concrete step in the mixin split; subsequent extractions should peel off
-/// protocol-specific service-override / mock-setup blocks the same way. Behaviour is byte-
-/// identical to the previous inline implementations — this is a pure relocation.
-/// </remarks>
 internal static class WebAppFixtureMetadataV2Mixin
 {
-    /// <summary>
-    /// Default service id used by the test seed (mirrors <see cref="WebAppFixture.TestServiceId"/>).
-    /// </summary>
     internal const string TestServiceId = "test";
 
-    /// <summary>
-    /// Default layer id used by the test seed (mirrors <see cref="WebAppFixture.TestLayerId"/>).
-    /// </summary>
     internal const int TestLayerId = 0;
 
     private const string DefaultPointDrawingInfoJson = """
@@ -59,12 +38,6 @@ internal static class WebAppFixtureMetadataV2Mixin
         }
         """;
 
-    /// <summary>
-    /// Registers the default Metadata v2 graph provider into the test DI container.
-    /// Removes the production <see cref="IMetadataV2GraphProvider"/> / <see cref="IMetadataV2GraphStore"/>
-    /// registrations and replaces them with an in-memory <c>TestMetadataV2GraphProvider</c>
-    /// seeded by <see cref="BuildDefaultTestGraph"/>.
-    /// </summary>
     internal static void RegisterDefaultMetadataV2Graph(IServiceCollection services)
     {
         services.RemoveAll<IMetadataV2GraphProvider>();
@@ -77,13 +50,6 @@ internal static class WebAppFixtureMetadataV2Mixin
             sp.GetRequiredService<Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider>());
     }
 
-    /// <summary>
-    /// Builds the default Metadata v2 graph snapshot registered into the test DI container so
-    /// that endpoints have a graph to read from. Mirrors the layer ids seeded by
-    /// <c>tests/seed/server.yaml</c> so existence probes keyed on the layer id continue to find a
-    /// matching publication. Tests that need a richer
-    /// graph can replace the registration through <c>WebAppFixture.ConfigureServices</c>.
-    /// </summary>
     internal static MetadataV2Graph BuildDefaultTestGraph()
     {
         // The Postgres test seed (tests/seed/server.yaml) registers a single "test" service
@@ -575,17 +541,6 @@ internal static class WebAppFixtureMetadataV2Mixin
                 publicationType: MetadataV2LayerType.ODataEntitySet);
     }
 
-    /// <summary>
-    /// Returns the V2 schema fields for the layers the Postgres test seeds
-    /// (tests/seed/server.yaml, tests/seed/odata.yaml) populate via the v1
-    /// layer_fields table. Returns the union of all known seed fields so the same
-    /// fixture works for tests selecting different seed files. OGC API Features
-    /// queryables, OData $metadata, STAC properties, and other schema-driven
-    /// endpoints all read this from the V2 resource graph after the metadata-v2
-    /// cutover. Layers without seeded fields (everything but 0/1/2) return an
-    /// empty list — matching the v1 fixture behavior where those layers have no
-    /// layer_fields rows.
-    /// </summary>
     internal static IEnumerable<MetadataV2Field>? GetSeededLayerSchemaFields(int layerIndex)
         => layerIndex switch
         {

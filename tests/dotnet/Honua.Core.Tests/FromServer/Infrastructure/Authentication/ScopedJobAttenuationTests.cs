@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the pure attenuation math that computes and freezes the
-/// narrow-only intersection at the heart of the custom-code auth spine. These prove
-/// the intersection can only narrow, before any token or pipeline is involved.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

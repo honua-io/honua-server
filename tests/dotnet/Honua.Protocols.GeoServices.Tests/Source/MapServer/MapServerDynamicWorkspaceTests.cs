@@ -25,12 +25,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Integration coverage for MapServer <c>dynamicLayers</c> workspace data layers
-/// (<c>source.type=dataLayer</c>, #1660). A dataLayer source resolves a registered workspace
-/// (data connection) and table to an already-published layer, gated by a server-side allowlist;
-/// non-allowlisted workspaces, unpublished tables, and disabled servers are rejected.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDynamicWorkspaceTests.Fixture>
 {

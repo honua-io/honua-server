@@ -12,12 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Integration coverage for the geometry edit/transform GeometryServer operations
-/// added as a follow-up to #1301: cut, trimExtend, offset, autoComplete, reshape,
-/// and findTransformations. These are the remaining operations ArcGIS Pro and the
-/// ArcGIS SDKs invoke that previously returned 404.
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceEditOperationsTests

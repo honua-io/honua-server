@@ -16,12 +16,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// Component coverage for the shared <see cref="CapabilityGateEndpointFilter"/>
-/// (Track T5 / #2341): a group-level gate that short-circuits with 404
-/// <c>application/problem+json</c> when its capability descriptor resolves
-/// experimental-disabled, and passes through when the experimental flag is on.
-/// </summary>
 public sealed class CapabilityGateEndpointFilterTests
 {
     private const string GatedDescriptorId = "test.experimental.capability";
@@ -133,11 +127,6 @@ public sealed class CapabilityGateEndpointFilterTests
         return host.GetTestServer();
     }
 
-    /// <summary>
-    /// Minimal <see cref="ICapabilityRegistry"/> that exposes a single opt-in
-    /// descriptor and defers resolution to the shared
-    /// <see cref="CapabilityGateResolver"/>, mirroring the production registry.
-    /// </summary>
     private sealed class StubCapabilityRegistry : ICapabilityRegistry
     {
         private readonly CapabilityDescriptor _descriptor;

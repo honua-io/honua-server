@@ -8,9 +8,6 @@ using System.Xml.Serialization;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// XML validation tests for the WFS 2.0 GetCapabilities response.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class Wfs20CapabilitiesXmlValidationTests
 {

@@ -19,10 +19,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Integration tests that exercise the full DuckDB provider stack
-/// using a temp-file database with seeded spatial data.
-/// </summary>
 public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private string _dbPath = null!;
@@ -797,10 +793,6 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Opens a fresh DuckDB connection to the temp-file database for each call,
-    /// ensuring the spatial extension is loaded on each connection.
-    /// </summary>
     private sealed class FileDuckDBConnectionProvider : Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider
     {
         private readonly string _connectionString;

@@ -15,9 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles;
 
-/// <summary>
-/// SRV-OGC-008: style authorization uses the same ordinal name match as stylesheet resolution.
-/// </summary>
 public sealed class OgcStylesCaseAuthorizationTests
 {
     [UnitTest]

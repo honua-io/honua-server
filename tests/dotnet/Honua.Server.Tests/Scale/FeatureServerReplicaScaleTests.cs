@@ -12,9 +12,6 @@ using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Scale;
 
-/// <summary>
-/// Multi-node scale tests that validate replica state is shared across instances.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicaScaleTests
 {

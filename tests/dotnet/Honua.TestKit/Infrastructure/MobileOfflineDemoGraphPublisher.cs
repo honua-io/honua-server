@@ -9,19 +9,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Shared builder/publisher for the canonical <c>mobile_offline_demo</c> Metadata v2 graph
-/// (layers 68910/68920) used by both the FeatureServer and OGC API Features regression
-/// suites for honua-server#1238.
-/// <para>
-/// The seeded layers store every non-key field as a key inside the shared
-/// <c>features.attributes</c> JSONB column. The storage binding must therefore declare
-/// <c>attributesColumn=attributes</c> so the storage-mapped reader projects
-/// <c>attributes-&gt;&gt;'field'</c> instead of bare columns (which produce Postgres 42703).
-/// The <c>includeAttributesAccessor</c> flag lets a test reproduce the broken drift
-/// (no accessor =&gt; bare columns =&gt; 42703) and then prove the fix.
-/// </para>
-/// </summary>
 public static class MobileOfflineDemoGraphPublisher
 {
     public const string ServiceName = "mobile_offline_demo";
@@ -32,10 +19,6 @@ public static class MobileOfflineDemoGraphPublisher
         ["Query", "Extract", "Create", "Update", "Delete", "Editing", "Sync"];
     private static readonly string[] SupportedFormats = ["JSON", "GeoJSON"];
 
-    /// <summary>
-    /// Replaces the mobile-offline service/resources/bindings/publications in the supplied
-    /// graph with FeatureServer and OGC API Features projections of layers 68910/68920.
-    /// </summary>
     public static async Task PublishAsync(
         TestMetadataV2GraphProvider provider,
         bool includeAttributesAccessor = true,

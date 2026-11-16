@@ -26,9 +26,6 @@ using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServerExportHandler functionality.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerExportHandlerTests
 {

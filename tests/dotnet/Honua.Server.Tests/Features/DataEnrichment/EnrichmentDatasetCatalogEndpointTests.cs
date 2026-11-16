@@ -15,12 +15,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
-/// <summary>
-/// Endpoint-level integration tests for the managed enrichment-dataset catalog
-/// (#2280): discovery (<c>GET /api/enrich/datasets</c>, <c>/{id}</c>) and admin
-/// registration (<c>POST/PUT/DELETE /api/enrich/datasets</c>). Runs as Pro edition so
-/// Pro-tier datasets are visible to discovery.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class EnrichmentDatasetCatalogEndpointTests : IAsyncLifetime

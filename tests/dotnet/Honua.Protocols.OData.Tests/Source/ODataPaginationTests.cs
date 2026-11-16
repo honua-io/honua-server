@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData v4 pagination tests for $top, $skip, $count combinations
-/// and nextLink validation. Implements parity with OGC API Features test matrices per issue #200.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataPaginationTests : IAsyncLifetime

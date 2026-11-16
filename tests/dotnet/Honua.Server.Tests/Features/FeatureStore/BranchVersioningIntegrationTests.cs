@@ -18,12 +18,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Branch-versioning Slice 1 integration tests (#1272 Track B, ADR-0051). Proves the readable/editable
-/// version core against a real PostGIS schema: a version's edits are isolated from DEFAULT, a versioned
-/// read overlays them, the DEFAULT read is unaffected, the ancestor base image is captured on first
-/// touch, and the DEFAULT (null version) read/edit path is byte-identical.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime

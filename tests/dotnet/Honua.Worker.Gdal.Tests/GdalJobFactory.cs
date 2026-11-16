@@ -8,10 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Test helpers for building execution-job records and options for the GDAL
-/// worker executors.
-/// </summary>
 internal static class GdalJobFactory
 {
     public static ExecutionJobRecord Job(string processId, params (string Name, string Value)[] inputs)

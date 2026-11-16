@@ -6,11 +6,6 @@ using Honua.Infrastructure.Services;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit coverage for the native-load-failure detector that lets the GeoParquet writer
-/// translate a missing/incompatible ParquetSharpNative runtime into a clean capability
-/// response (HTTP 501) instead of an unhandled 500 (honua-server#1942).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ParquetRuntimeUnavailableExceptionTests
 {

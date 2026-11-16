@@ -20,34 +20,12 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr;
 
-/// <summary>
-/// #4423: HTTP-level authorization denial proof for OGC API EDR (Preview; the security floor is
-/// retained at full severity).
-/// <para>
-/// Before this file EDR had no denial test at all: every EDR test ran under the F1
-/// development-authentication bypass, which returns an <c>admin</c> principal before any
-/// credential is read, so the per-collection access gate
-/// (<c>LayerValidationHelpers.ValidateCollectionWithAccessV2Async</c>) was never entered.
-/// </para>
-/// <para>
-/// The test below runs with <c>HONUA_DEV_AUTH=false</c>, restricts the published collection to a
-/// role, and asserts past the status code: the response carries no sampled value. The Records and
-/// Coverages halves of the same proof live in
-/// <c>Ogc.Api.Records.OgcRecordsAuthorizationDenialTests</c> and
-/// <c>Ogc.Api.Coverages.OgcCoveragesAuthorizationDenialTests</c>; the three are split by surface
-/// so each lands in the CI shard that owns its namespace.
-/// </para>
-/// </summary>
 [Collection("Database.OgcApiData")]
 public sealed class EdrAuthorizationDenialTests
 {
     private const string EntitledRole = "catalog-reader";
     private const string Referer = "https://ogcapi-authorization-proof.example/";
 
-    /// <summary>
-    /// EDR <c>/position</c> and <c>/cube</c> return sampled pixel values. A caller without access
-    /// to the collection's resource receives neither the values nor the collection.
-    /// </summary>
     [IntegrationTest]
     [Protocol(TestProtocols.OgcApiCoverages)]
     [Operation(Operations.Query)]

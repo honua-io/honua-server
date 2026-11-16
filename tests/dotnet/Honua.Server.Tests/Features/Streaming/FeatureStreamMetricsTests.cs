@@ -11,15 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit coverage for the GA-promotion (#2428) streaming telemetry. Verifies the OTel
-/// instruments land on the shared "Honua" meter with the expected tags so backpressure,
-/// reconnect/replay, and cross-node broadcast loss are observable. Each test constructs an
-/// isolated <see cref="FeatureStreamMetrics"/> over its own <see cref="TestMeterFactory"/> and
-/// filters the listener to that exact meter instance, so parallel tests never pollute one
-/// another's observations and the active-session gauge is asserted with a single deterministic
-/// read (#2802). Mirrors <c>AlertPipelineMetricsTests</c>.
-/// </summary>
 public sealed class FeatureStreamMetricsTests
 {
     [UnitTest]

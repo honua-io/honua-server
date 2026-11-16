@@ -15,10 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// SEC-23: Postgres import writers accept only the configured operational schemas as a target, and
-/// refuse anything else before they read the source or open a connection.
-/// </summary>
 public sealed class ImportTargetSchemaRefusalTests
 {
     private const string UnreachableConnectionString = "Host=unreachable.invalid;Database=none;Username=none;Password=none";

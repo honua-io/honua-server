@@ -26,12 +26,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests.ComposeExecutor;
 
-/// <summary>
-/// Proves an approved proposal can converge an installed Compose project and roll it back across
-/// migration 142. The honua service is a local Python stand-in, not the published server image:
-/// it applies the real 140 and 142 scripts and serves a customer readback. PostGIS is the real
-/// <c>postgis/postgis:16-3.4</c> image. The test fails when Docker is missing.
-/// </summary>
 public sealed class ComposeProposalExecutorIntegrationTests
 {
     private const string PostgisImage = "postgis/postgis:16-3.4";

@@ -28,10 +28,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the REST-equivalent authorization and operator-approval boundary for
-/// both hand-authored MCP projections of <c>service.publish</c>.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Mcp, TestProtocols.Admin)]
 public sealed class ServicePublishMcpAuthorizationTests

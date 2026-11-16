@@ -11,7 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
-/// <summary>SDK wire regressions against a loopback object server, not cloud qualification.</summary>
 public sealed class ConditionalCloudDownloadTests
 {
     [Theory]

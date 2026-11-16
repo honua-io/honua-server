@@ -20,10 +20,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Imported vector tables gain nullable typed columns for source attributes while the
-/// properties jsonb document stays complete (honua-server#6640).
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.TestQuality)]
 public sealed partial class ImportTypedColumnTests(PostgresFixture fixture)

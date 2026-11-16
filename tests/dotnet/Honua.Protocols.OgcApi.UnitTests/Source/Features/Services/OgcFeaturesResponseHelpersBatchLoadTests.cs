@@ -12,12 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Covers the batched response reload used by the OGC Features batch transaction mapping
-/// phase (#1593): created rows are reloaded with one ObjectIds query (projected when the
-/// response CRS differs from storage) and missing rows are simply absent, preserving the
-/// per-operation fallback to payload-derived ids.
-/// </summary>
 public sealed class OgcFeaturesResponseHelpersBatchLoadTests
 {
     private const int LayerId = 9;

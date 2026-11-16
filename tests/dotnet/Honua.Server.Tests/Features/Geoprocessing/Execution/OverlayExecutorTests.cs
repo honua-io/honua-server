@@ -11,11 +11,6 @@ using static Honua.Server.Tests.Features.Geoprocessing.Execution.ManagedExecutor
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the layer-aware overlay tool pack (#2206, #2139):
-/// clip, intersect, union, erase, merge, split, and append. Pure managed
-/// NetTopologySuite geometry over two inline FeatureCollections — no Docker.
-/// </summary>
 public sealed class OverlayExecutorTests
 {
     private static readonly string[] ExpectedAppendedFields = { "id", "name" };

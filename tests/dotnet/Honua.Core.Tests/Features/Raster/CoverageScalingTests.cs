@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster;
 
-/// <summary>
-/// Unit tests for the WCS 2.0 Scaling extension arithmetic used by the WCS
-/// protocol adapter to translate SCALEFACTOR/SCALEAXES/SCALEEXTENT into explicit
-/// output grid dimensions.
-/// </summary>
 public sealed class CoverageScalingTests
 {
     [UnitTest]

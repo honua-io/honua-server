@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests for the <see cref="IChangeTracker"/> object-id-filtered overload's default
-/// (client-side) implementation, used by providers that cannot push the filter into the store.
-/// </summary>
 public sealed class ChangeTrackerObjectIdFilterTests
 {
     [UnitTest]
@@ -62,10 +58,6 @@ public sealed class ChangeTrackerObjectIdFilterTests
         ChangedAt = DateTimeOffset.UtcNow
     };
 
-    /// <summary>
-    /// Implements only the abstract <see cref="IChangeTracker"/> members so the interface's default
-    /// client-side filter is exercised.
-    /// </summary>
     private sealed class StubChangeTracker : IChangeTracker
     {
         private readonly FeatureChange[] _changes;

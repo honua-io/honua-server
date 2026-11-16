@@ -13,11 +13,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Wire-level lifecycle and plan-isolation contract for the scoped planner
-/// batch. These exercise ordinary pooled connections, including
-/// the NoResetOnClose setting used by the production data source factory.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.Query)]

@@ -25,13 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
-/// <summary>Exercises the registration-to-ImageServer binding through HTTP and the real COG store.</summary>
-/// <remarks>
-/// Service A publishes index 1 over storage layer 42; service B publishes index 2 over storage
-/// layer 1. The registration's <c>layerId</c> is the service-local index (1), so a lookup keyed
-/// by storage id (#4204) would miss A's COG and could serve it to whichever service owns
-/// storage layer 1 (B).
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Cog, TestProtocols.ImageServer)]
 public sealed class CogRegistrationTileTests

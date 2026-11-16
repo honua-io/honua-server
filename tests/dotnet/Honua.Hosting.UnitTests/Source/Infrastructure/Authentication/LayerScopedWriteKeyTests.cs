@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the permission-grant classification that governs whether an API
-/// key is elevated to the full <c>admin</c> role, kept as a layer-scoped write key,
-/// or restricted to a genuinely-scoped non-admin principal (issue #1985 / #1637).
-/// </summary>
 public sealed class LayerScopedWriteKeyTests
 {
     [global::Xunit.Trait("Tier", "Fast")]

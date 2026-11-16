@@ -13,13 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// End-to-end health-gated rollback coverage (#1849 / #2163). Drives the REAL
-/// <see cref="DeployTelemetrySignalEvaluator"/> with a synthetic <c>/healthz/ready</c> probe through
-/// the <see cref="DeployWorkflowReconciler"/> against an arbitrary deploy backend, proving the
-/// health gate is inherited by the backend rollout path (no hard-flip): an unhealthy probe drives the
-/// SAME automatic-rollback path as an error-rate/latency breach, and a healthy probe promotes.
-/// </summary>
 public sealed class DeployWorkflowReconcilerHealthGateTests
 {
     [Fact]
@@ -613,9 +606,6 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
     private static HttpResponseMessage Respond(HttpStatusCode status, string body)
         => new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-    /// <summary>
-    /// Builds an operation carrying exactly <paramref name="parameters"/> (no default telemetry keys).
-    /// </summary>
     private static WorkflowOperationRecord CreateOperationWith(
         IReadOnlyDictionary<string, string> parameters,
         DateTimeOffset createdAt,

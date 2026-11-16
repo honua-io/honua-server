@@ -22,9 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServerIdentifyHandler functionality.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerIdentifyHandlerTests
 {

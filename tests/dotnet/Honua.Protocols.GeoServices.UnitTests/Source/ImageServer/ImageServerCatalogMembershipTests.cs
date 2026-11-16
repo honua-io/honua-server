@@ -7,7 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>Catalog IN operands must reach list evaluation, not scalar resolution.</summary>
 public sealed class ImageServerCatalogMembershipTests
 {
     [UnitTheory]

@@ -10,17 +10,8 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Collaboration.Checkpoints;
 
-/// <summary>
-/// The checkpoint applier must be lossless against the stored document: a collaboration operation
-/// edits the composition projection only, and has no authority over the package-lifecycle members
-/// the canonical Map/App family contract requires (honua-server#2999 review).
-/// </summary>
 public sealed class SavedMapOperationDraftApplierTests
 {
-    /// <summary>
-    /// A canonical map body: the composition projection (<c>layers</c>/<c>view</c>) plus the
-    /// members <c>StudioPackageValidator.ValidateFamilyBody</c> requires of a <c>MapPackage</c>.
-    /// </summary>
     private const string CanonicalMapBody = """
         {
           "mapPackageId": "map-1",

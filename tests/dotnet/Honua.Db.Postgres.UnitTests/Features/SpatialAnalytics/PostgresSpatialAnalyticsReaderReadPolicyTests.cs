@@ -21,12 +21,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// The spatial analytics reader must apply the same read policy as a direct feature
-/// query against the same layer: the row policy narrows the rows every operation
-/// aggregates, and masked fields are neither returned nor usable as operands. Spatial
-/// join applies each layer's own policy to its own side.
-/// </summary>
 public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
 {
     [UnitTheory]

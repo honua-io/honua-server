@@ -20,10 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Restart leaves print jobs in the shared progress store with no in-process
-/// channel entry. A new host must fail those jobs once their heartbeat lease expires.
-/// </summary>
 [Trait("Component", "PrintingTools")]
 public class PrintingToolsOrphanReconcilerTests
 {

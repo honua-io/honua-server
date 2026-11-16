@@ -11,11 +11,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for the default GPServer service seeder (honua-server#2349): a bare
-/// instance must gain a GPServer-capable service so the facade is usable out of the
-/// box, without wiping or duplicating anything on instances that already expose GP.
-/// </summary>
 public sealed class GeoprocessingServiceSeederTests
 {
     private static GeoprocessingServiceSeeder CreateSeeder(TestMetadataV2GraphProvider store)

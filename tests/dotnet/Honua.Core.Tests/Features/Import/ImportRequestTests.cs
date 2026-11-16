@@ -8,9 +8,6 @@ using Honua.Core.Features.FileImport.Domain;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Tests for ImportRequest validation and cloud storage detection.
-/// </summary>
 public sealed class ImportRequestTests
 {
     [Trait("Tier", "Fast")]

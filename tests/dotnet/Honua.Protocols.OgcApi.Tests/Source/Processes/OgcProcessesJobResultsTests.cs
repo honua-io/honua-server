@@ -22,9 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Integration coverage for OGC API Processes result evidence.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobResultsTestsFixture>
@@ -152,13 +149,6 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
     }
 }
 
-/// <summary>
-/// Per-class wrapper that owns a single <see cref="WebAppFixture"/> with a fixed
-/// succeeded artifact-backed job store and geoprocessing job service registered
-/// once, shared across all tests in <see cref="OgcProcessesJobResultsTests"/> via
-/// <see cref="IClassFixture{T}"/>. Both tests only read the fixed job id, so the
-/// shared fixture is safe.
-/// </summary>
 public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
 {
     private const string JobId = "ogc-gp-result-job";
@@ -524,13 +514,6 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// #2753 IDOR regression: GET /ogc/processes/jobs/{jobId} must enforce per-job
-/// ownership through the shared service path. A job that exists in the store (so it
-/// clears the coarse Job.Read gate and the geoprocessing-kind check) but whose
-/// ownership check denies the caller must surface as a 404 — not a 200 leaking the
-/// other owner's job status.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobStatusOwnershipTests : IClassFixture<OgcProcessesJobStatusOwnershipTestsFixture>
@@ -555,11 +538,6 @@ public sealed class OgcProcessesJobStatusOwnershipTests : IClassFixture<OgcProce
     }
 }
 
-/// <summary>
-/// Fixture for <see cref="OgcProcessesJobStatusOwnershipTests"/>: the store returns a
-/// geoprocessing job so the endpoint reaches the ownership check, but the job service's
-/// ownership-enforcing GetJobAsync denies it (as the real service does for a non-owner).
-/// </summary>
 public sealed class OgcProcessesJobStatusOwnershipTestsFixture : IAsyncLifetime
 {
     private const string JobId = "ogc-gp-foreign-job";
@@ -602,11 +580,6 @@ public sealed class OgcProcessesJobStatusOwnershipTestsFixture : IAsyncLifetime
             }
         };
 
-    /// <summary>
-    /// An <see cref="IGeoprocessingJobService"/> whose ownership-enforcing GetJobAsync
-    /// denies every caller (surfaced as not-found, exactly as the real service does for a
-    /// non-owner), so the endpoint's deny→404 mapping is exercised end to end.
-    /// </summary>
     private sealed class OwnershipDenyingJobService : IGeoprocessingJobService
     {
         public Task<ExecutionJobRecord> GetJobAsync(
@@ -662,10 +635,6 @@ public sealed class OgcProcessesJobStatusOwnershipTestsFixture : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Integration coverage for the OGC API Processes GET /jobs/{jobId}/results failed-job case.
-/// PA-205: results for a failed job must use a registered OGC exception type URI, not about:blank.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesFailedJobResultsTests : IClassFixture<OgcProcessesFailedJobResultsTestsFixture>
@@ -695,9 +664,6 @@ public sealed class OgcProcessesFailedJobResultsTests : IClassFixture<OgcProcess
     }
 }
 
-/// <summary>
-/// Fixture that seeds a single failed job for <see cref="OgcProcessesFailedJobResultsTests"/>.
-/// </summary>
 public sealed class OgcProcessesFailedJobResultsTestsFixture : IAsyncLifetime
 {
     private const string JobId = "ogc-gp-failed-job";

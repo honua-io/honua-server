@@ -8,10 +8,6 @@ using Honua.Ai.Grounding.Spec;
 
 namespace Honua.Server.Tests.Features.Grounding.Spec;
 
-/// <summary>
-/// Regression coverage for grounding mutations that materialize typed spec
-/// literals from planner-emitted strings.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class SpecMutationApplierTests
 {

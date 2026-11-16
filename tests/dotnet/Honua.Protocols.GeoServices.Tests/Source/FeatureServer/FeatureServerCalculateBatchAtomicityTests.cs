@@ -17,11 +17,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// #6359: a calculate that spans more than one edit batch must not leave the earlier
-/// batches committed when a later batch fails. A retry of an increment then adds one,
-/// not two.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerCalculateBatchAtomicityTests : IAsyncLifetime
@@ -133,10 +128,6 @@ public sealed class FeatureServerCalculateBatchAtomicityTests : IAsyncLifetime
             && success.ValueKind == JsonValueKind.True;
     }
 
-    /// <summary>
-    /// Fails the second apply of the first writer transaction opened in this host.
-    /// Later transactions, including the client retry, pass through.
-    /// </summary>
     private sealed class LaterBatchFailureGate
     {
         private int _transactions;

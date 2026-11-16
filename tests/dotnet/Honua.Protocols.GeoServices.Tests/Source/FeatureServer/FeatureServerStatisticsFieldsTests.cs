@@ -18,9 +18,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Statistics must describe their result columns even when no usable values exist (#5045).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerStatisticsFieldsTests(FeatureServerStatisticsFieldsFixture fixture)

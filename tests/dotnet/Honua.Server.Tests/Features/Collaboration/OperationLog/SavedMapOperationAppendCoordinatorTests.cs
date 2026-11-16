@@ -13,13 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Collaboration.OperationLog;
 
-/// <summary>
-/// The append coordinator owns one <see cref="SemaphoreSlim"/> per map stripe for its whole
-/// lifetime, so it must own their disposal too (honua-server#2999 review). It is a DI singleton,
-/// which means the container is the disposer — these tests pin the contract that makes that work:
-/// the type is disposable, disposal is idempotent, and a disposed coordinator refuses work instead
-/// of touching disposed gates.
-/// </summary>
 public sealed class SavedMapOperationAppendCoordinatorTests
 {
     private const string MapId = "11111111-2222-3333-4444-555555555555";

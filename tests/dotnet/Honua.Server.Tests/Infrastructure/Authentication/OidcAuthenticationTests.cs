@@ -35,9 +35,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Integration tests for OIDC authentication with JWT Bearer support.
-/// </summary>
 [Collection("Database.OidcAuthentication")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -57,9 +54,6 @@ public class OidcAuthenticationTests
         _output = output;
     }
 
-    /// <summary>
-    /// Helper method to configure WebApplicationFactory with OIDC settings.
-    /// </summary>
     private WebApplicationFactory<Program> CreateOidcTestFactory(
         Action<IWebHostBuilder>? configure = null,
         Dictionary<string, string?>? oidcSettings = null,
@@ -157,11 +151,6 @@ public class OidcAuthenticationTests
 
     private string TestPostgresConnectionString => _database.ConnectionString;
 
-    /// <summary>
-    /// Service provider carrying an Enterprise-entitled license so claims transformation tests
-    /// exercise the pre-#2997 behavior (custom claims mapping applied); the unentitled path is
-    /// covered by OidcClaimsMappingEntitlementTests.
-    /// </summary>
     private static ServiceProvider EnterpriseEntitledServices()
         => new ServiceCollection()
             .AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(
@@ -260,9 +249,6 @@ public class OidcAuthenticationTests
         return settings;
     }
 
-    /// <summary>
-    /// Generates a test JWT token with the specified claims.
-    /// </summary>
     private static string GenerateTestJwtToken(
         string userId = "test-user-id",
         string name = "Test User",
@@ -2101,9 +2087,6 @@ public class OidcAuthenticationTests
             $"Expected Bearer failure status 400/401 but received {(int)statusCode}.");
     }
 
-    /// <summary>
-    /// Test logger implementation for unit testing.
-    /// </summary>
     private sealed class TestLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;

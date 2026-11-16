@@ -19,14 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Endpoint round-trip tests for the Esri-conventional task-name alias overlay
-/// (<see cref="Honua.Protocols.GeoServices.GPServer.GPServerEsriTaskAliases"/>):
-/// task-list publication, task-info/submitJob/execute resolution via alias,
-/// unknown-alias behavior, deliberate case-insensitivity, duplicate-name handling,
-/// and the deterministic collision policy (a real catalog process ID always wins
-/// over an alias; aliases only resolve when no real process owns the name).
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
@@ -611,10 +603,6 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     private const string CustomBufferDescription =
         "Catalog process that owns the name 'Buffer', shadowing the geometry.buffer alias.";
 
-    /// <summary>
-    /// Builds a fixture whose process catalog contains a real process whose ID collides
-    /// with the Esri alias <c>Buffer</c>, to prove the deterministic collision policy.
-    /// </summary>
     private static WebAppFixture CreateCollisionFixture(Action<IServiceCollection>? extraServices = null)
         => new WebAppFixture()
             .ConfigureServices(services =>
@@ -625,10 +613,6 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
                 extraServices?.Invoke(services);
             });
 
-    /// <summary>
-    /// Wraps the built-in catalog and adds a process whose ID equals the Esri alias
-    /// <c>Buffer</c>, simulating a custom/catalog process colliding with the alias table.
-    /// </summary>
     private sealed class AliasCollidingProcessCatalog(IProcessCatalog inner) : IProcessCatalog
     {
         private static readonly ProcessDefinition CustomBuffer = new()
@@ -664,10 +648,6 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             => category == CustomBuffer.Category ? [CustomBuffer] : inner.GetProcessesByCategory(category);
     }
 
-    /// <summary>
-    /// Records the submitted plan/metadata so tests can assert which canonical process
-    /// an alias-addressed submitJob resolved to.
-    /// </summary>
     private sealed class RecordingJobService : IGeoprocessingJobService
     {
         public AnalysisPlan? LastPlan { get; private set; }
@@ -731,10 +711,6 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// Test double for the synchronous /execute path: submission returns a terminal
-    /// Succeeded job immediately so the polling loop completes on the first tick.
-    /// </summary>
     private sealed class SyncExecuteJobService : IGeoprocessingJobService
     {
         private static readonly AnalysisResultPackage SuccessPackage =

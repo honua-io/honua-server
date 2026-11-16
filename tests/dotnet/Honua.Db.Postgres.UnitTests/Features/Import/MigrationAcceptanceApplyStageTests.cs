@@ -20,15 +20,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Drives the migration acceptance suite apply stage end-to-end across the same fixture set used by
-/// <see cref="MigrationAcceptanceScanStageTests"/>: one ArcGIS GeoServices REST fixture, one
-/// GeoServer REST fixture, and one OGC API Features snapshot fixture. The apply stage runs scan ->
-/// manifest -> apply (dry-run for fixtures whose apply path is not yet supported against the
-/// fixture target) and asserts that the slice-3 <see cref="MigrationApplyStageReport"/> emits the
-/// <see cref="MigrationManifestArtifact"/> per fixture deterministically while preserving the
-/// slice-1 redaction and manual-review-classification contracts.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceApplyStageTests
 {

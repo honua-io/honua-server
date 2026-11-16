@@ -248,9 +248,6 @@ public sealed class ControlPlaneTriggerTests
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 
-    /// <summary>
-    /// Batch backend that reports a fixed observation and counts how many times it was observed.
-    /// </summary>
     private sealed class CountingBatchBackend(ExecutionJobStatus observedStatus) : IBatchComputeBackend
     {
         public int ObserveCount { get; private set; }

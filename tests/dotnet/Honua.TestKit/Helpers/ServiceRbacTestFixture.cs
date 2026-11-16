@@ -39,13 +39,6 @@ using OgcGeoJsonFeature = Honua.Protocols.Ogc.Common.GeoJsonFeature;
 
 namespace Honua.TestKit.Helpers;
 
-/// <summary>
-/// Shared fixture for service-level RBAC tests across protocols
-/// (FeatureServer, OData, OGC API Features). Wires a
-/// <see cref="TestWebApplicationFactory"/> with a metadata v2 graph
-/// scenario and a test authentication scheme that reads claims from
-/// request headers.
-/// </summary>
 public static class ServiceRbacTestFixture
 {
     public const string AlphaService = "alpha";
@@ -281,11 +274,6 @@ public sealed class TestAuthHandler(
     }
 }
 
-/// <summary>
-/// A test fixture that builds a Metadata v2 graph provider describing a scenario, letting
-/// <see cref="ServiceRbacTestFixture.CreateFactory"/> seed the in-memory v2 graph from any
-/// scenario catalog without coupling to a concrete type.
-/// </summary>
 public interface ITestMetadataV2GraphSource
 {
     TestMetadataV2GraphProvider BuildProvider();
@@ -325,11 +313,6 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
         _reverseServiceOrder = reverseServiceOrder;
     }
 
-    /// <summary>
-    /// Builds the Metadata v2 graph for the configured RBAC scenario (two layers, two services,
-    /// optional shared alpha layer / reversed service order, with per-service and per-layer
-    /// access policies seeded onto services and resources respectively).
-    /// </summary>
     public TestMetadataV2GraphProvider BuildProvider() => new(BuildGraph());
 
     public MetadataV2Graph BuildGraph()

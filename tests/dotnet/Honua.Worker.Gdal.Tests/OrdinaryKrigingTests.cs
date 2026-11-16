@@ -8,12 +8,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Numerical coverage for the ordinary-kriging predictor backing
-/// <c>raster.interpolate-kriging</c>. Every oracle here is a mathematical property of
-/// the estimator or a closed-form solution of the small system — never a value copied
-/// from a run of the code under test.
-/// </summary>
 public sealed class OrdinaryKrigingTests
 {
     private static readonly KrigingSample[] Corners =
@@ -116,14 +110,6 @@ public sealed class OrdinaryKrigingTests
         failure.Should().NotContain("raise 'nugget'");
     }
 
-    /// <summary>
-    /// Scale invariance. The bordered system mixes semivariances (magnitude ~ the sill,
-    /// i.e. the SQUARE of the value units) with the unbiasedness constraint's exact 1s,
-    /// so a singularity threshold taken from the largest matrix entry grows with the sill
-    /// while the constraint pivot does not. Under that rule the same two-point problem
-    /// solves in small units and is rejected as singular in large ones — a well-posed
-    /// elevation or concentration job failing purely because of its units.
-    /// </summary>
     [Theory]
     [InlineData(2e-6)]
     [InlineData(2d)]

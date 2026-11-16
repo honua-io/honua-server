@@ -32,11 +32,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-PostgreSQL receipts for the migration-integrity mismatches named by #3899. Each case
-/// proves both preflight/startup and runtime checks fail closed without changing physical schema
-/// or advancing the journal.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
 public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture postgres)
     : IClassFixture<LocalSubstratePostgresFixture>

@@ -17,9 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.API;
 
-/// <summary>
-/// Comprehensive API endpoint coverage tests ensuring 100% API surface testing
-/// </summary>
 [Collection("Database")]
 public sealed class EndpointCoverageTests : IAsyncLifetime
 {

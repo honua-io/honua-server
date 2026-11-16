@@ -14,11 +14,6 @@ using Newtonsoft.Json.Schema;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Focused regressions for the shipped spec grammar contract.
-/// These lock the documented canonical JSON shape to the actual parser,
-/// validator, and canonicalizer behavior.
-/// </summary>
 public sealed class SpecContractRegressionTests
 {
     private static readonly SpecParser Parser = new();

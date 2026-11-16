@@ -9,18 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 3: data reconciliation, catalog reconciliation, record loss,
-/// attachment loss and relationship omissions must fold into one migration verdict. Before this
-/// evaluator the data artifact alone decided Completed vs NeedsReview while catalog findings — the
-/// pass that catches "counts match but the schema is wrong" — were recorded and then ignored.
-/// </summary>
-/// <remarks>
-/// Every expected verdict below is derived from the acceptance criterion, not from a snapshot of
-/// the evaluator's output: a blocking difference must yield <c>incomplete</c>, an unexecuted
-/// required check must yield <c>unverified</c> (never <c>full-fidelity</c>), and only an
-/// all-checks-ran-and-passed run may report <c>full-fidelity</c>.
-/// </remarks>
 public sealed class MigrationFidelityEvaluatorTests
 {
     [Trait("Tier", "Fast")]
@@ -800,10 +788,6 @@ public sealed class MigrationFidelityEvaluatorTests
             difference.Summary.Contains("not a successful repair", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// A run where every required check executed and reported parity, with no data, attachment or
-    /// relationship loss. The only input shape that may be reported as a full-fidelity migration.
-    /// </summary>
     private static MigrationFidelityEvaluationInput FullyVerifiedInput() => new()
     {
         LayerName = "Inspections",

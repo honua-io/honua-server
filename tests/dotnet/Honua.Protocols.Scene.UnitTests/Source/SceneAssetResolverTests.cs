@@ -9,12 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Unit tests for the path-traversal guard in <see cref="SceneAssetResolver"/>.
-/// Integration coverage in <c>SceneTilesetEndpointTests</c> exercises the
-/// HTTP layer; this file isolates the path-canonicalization logic so failures
-/// are easy to diagnose.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAssetResolverTests : IDisposable
 {

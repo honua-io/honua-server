@@ -16,12 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Federation;
 
-/// <summary>
-/// Integration tests for the federation admin surface (issue #341). Sources are supplied
-/// through the bound <c>Federation</c> configuration section, so these tests exercise the
-/// configuration-backed registry and the offline query planner end to end without contacting
-/// any remote source.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

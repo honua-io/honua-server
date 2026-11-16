@@ -7,31 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Drift guard for the integration-test seed (honua-server#1568).
-///
-/// The integration-test web host runs with <c>HONUA_SKIP_MIGRATIONS=true</c> and a
-/// <c>NullDatabaseMigrationRunner</c>, so production DbUp migrations never run against the
-/// test database. The durable RBAC stores (<c>PostgresRoleStore</c>,
-/// <c>PostgresRlsPolicyStore</c>) are still registered against the default <c>honua</c>
-/// schema, and they read explicitly-qualified <c>honua.rbac_*</c> tables regardless of the
-/// per-test <c>search_path</c>. Those tables therefore have to exist in the shared
-/// <c>honua</c> schema that the test seed (<c>tests/seed/server.yaml</c>) hand-mirrors from
-/// the production migrations.
-///
-/// When migration 041 added <c>honua.rbac_roles</c>/<c>rbac_role_permissions</c> the seed
-/// was not updated to match, so RBAC-touching integration tests intermittently/consistently
-/// failed with <c>relation "honua.rbac_roles" does not exist</c>, which then cascaded into
-/// unrelated assertion failures across whatever shard ran the RBAC path (the EndpointRegistry
-/// coverage test, OData paging assertions, etc.). This test fails fast and deterministically
-/// at build time if a durable authorization store references a <c>honua.*</c> table the seed
-/// has not mirrored, instead of surfacing later as a hard-to-attribute integration-shard flake.
-///
-/// The same contract covers the durable identity stores (<c>PostgresUserStore</c>,
-/// <c>PostgresScimGroupStore</c>, migration 106, #3141): they back the SCIM and admin
-/// user surfaces in the same migration-skipping host, so their <c>honua.*</c> tables must
-/// be mirrored by the seed too.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class SeedRbacTableParityTests
 {

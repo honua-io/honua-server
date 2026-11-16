@@ -9,17 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Reproduces the reflection-disabled constraint the published server image runs under
-/// (<c>JsonSerializerIsReflectionEnabledByDefault=false</c> in <c>Honua.Server.csproj</c>): every
-/// CLR type the Studio AI proxy hands to <c>JsonSerializer.SerializeToElement</c> /
-/// <c>Serialize</c> must have a source-generated <c>JsonTypeInfo</c> registered in
-/// <see cref="StudioAiProxyJsonContext"/>. The rest of this test project runs with reflection
-/// enabled (the xUnit test-host default), which would silently mask an accidental anonymous-type
-/// <c>SerializeToElement</c> call or a missing registration; this test forces source-generated-only
-/// metadata (mirrors <c>MapServerFindSerializationTests</c>) so the gap surfaces as a failing test
-/// instead of a runtime throw on the AOT image (honua-server#3010 review).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiProxyJsonContextReflectionSafetyTests
 {

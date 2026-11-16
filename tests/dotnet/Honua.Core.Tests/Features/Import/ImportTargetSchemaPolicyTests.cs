@@ -7,10 +7,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// SEC-23: import targets are limited to the configured operational schemas; the server metadata
-/// schema and PostgreSQL system schemas are refused even when listed as operational.
-/// </summary>
 public sealed class ImportTargetSchemaPolicyTests
 {
     private static readonly string[] OperationalSchemas = ["honua_data", "public", "ops"];

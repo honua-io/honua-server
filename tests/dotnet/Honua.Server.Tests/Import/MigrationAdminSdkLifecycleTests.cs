@@ -33,20 +33,6 @@ using SdkModels = Honua.Sdk.Admin.Models;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 7 (SDK-driven half): the service import lifecycle is driven through the
-/// published <c>Honua.Sdk.Admin</c> package a customer installs, against the real server host and PostGIS.
-/// The SDK scans the source, starts the service (batch) migration, follows the batch and each layer's import
-/// job to a terminal state, and the imported rows are then read back from PostGIS. Expected values come from
-/// the fake FeatureServer's own records, never from the server's output.
-/// </summary>
-/// <remarks>
-/// The published 1.7.0 models predate the server's fidelity fields, so three reads go over the wire with the same
-/// authenticated client: the scan manifest (<c>artifactSet=all</c> is not on
-/// <see cref="SdkModels.MigrationInventoryScanRequest"/>), the batch verdict and construct accounting (not on
-/// <see cref="SdkModels.MigrationBatchResponse"/>), and each layer job's verdict and differences (not on
-/// <see cref="SdkModels.GeoservicesImportProgress"/>).
-/// </remarks>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -62,12 +48,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
     public MigrationAdminSdkLifecycleTests(SdkMigrationHost host) => _host = host;
 
-    /// <summary>
-    /// Full selection of a service with a Z point layer and a nonspatial table. Every source record lands in
-    /// PostGIS and both resources publish, including the nonspatial table. Record counts reconcile, but this
-    /// host has no activated Metadata v2 snapshot for catalog reconciliation to read back, so both resources
-    /// and the service fidelity verdict remain unverified despite successful execution.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/scan")]
     [Endpoint("POST /api/v1/admin/import/migrations")]
@@ -169,10 +149,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
                 (MigrationFidelityDifferenceCodes.ServiceLayerUnverified, MigrationFidelityDifferenceSeverities.Unverified, InspectionsId));
     }
 
-    /// <summary>
-    /// A selection that leaves a discovered table out finishes without importing it and without claiming
-    /// success: the batch routes to review and the service verdict is incomplete on the unselected table.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/scan")]
     [Endpoint("POST /api/v1/admin/import/migrations")]
@@ -214,9 +190,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         verdict.RootElement.GetProperty("constructAccounting").GetProperty("isBlocking").GetBoolean().Should().BeTrue();
     }
 
-    /// <summary>
-    /// The single-layer lifecycle through the SDK: start, wait, and the same rows read back from PostGIS.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     [Endpoint("GET /api/v1/admin/import/geoservices/jobs/{jobId}")]
@@ -299,10 +272,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         return progress;
     }
 
-    /// <summary>
-    /// A layer job's verdict and its (code, severity) differences. Read over the wire because the published 1.7.0
-    /// <see cref="SdkModels.GeoservicesImportProgress"/> has no fidelity members.
-    /// </summary>
     private static async Task<(string? Verdict, (string? Code, string? Severity)[] Differences)> GetJobFidelityAsync(
         HttpClient http,
         string jobId)
@@ -321,10 +290,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         return (verdict, differences);
     }
 
-    /// <summary>
-    /// The scan manifest the batch accounts its selection against. Requested over the wire because the
-    /// published 1.7.0 scan request has no <c>artifactSet</c>.
-    /// </summary>
     private static async Task<string> ScanManifestBodyAsync(HttpClient http)
     {
         using var response = await http.PostAsJsonAsync(
@@ -462,11 +427,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
     private static JsonNode? Attribute(JsonObject row, string sourceField)
         => row.FirstOrDefault(pair => string.Equals(pair.Key, sourceField, StringComparison.OrdinalIgnoreCase)).Value;
 
-    /// <summary>
-    /// The real server host over PostGIS, with the ArcGIS REST client pointed at the in-process
-    /// <see cref="FieldOpsFeatureServer"/> and the batch poller the WebAppFixture normally strips restored, so
-    /// batches advance exactly as they do in a deployed server.
-    /// </summary>
     public sealed class SdkMigrationHost : IAsyncLifetime
     {
         public SdkMigrationHost()
@@ -496,10 +456,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
         public WebAppFixture Web { get; }
 
-        /// <summary>
-        /// Imports land in the default operational schema. The fixture's isolated schema holds its catalog,
-        /// which is not an import target.
-        /// </summary>
         public const string ImportSchema = "honua_data";
 
         private readonly System.Collections.Concurrent.ConcurrentBag<string> _importedTables = new();
@@ -560,17 +516,10 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         }
     }
 
-    /// <summary>A hydrant record served by the fake FeatureServer.</summary>
     public sealed record Hydrant(long ObjectId, string Name, double? PressurePsi, double X, double Y, double Z);
 
-    /// <summary>An inspection row served from the fake FeatureServer's nonspatial table.</summary>
     public sealed record Inspection(long ObjectId, int HydrantId, string Result);
 
-    /// <summary>
-    /// A FeatureServer with one Z-enabled point layer (three records over two pages, one null attribute) and
-    /// one nonspatial table, answering the ArcGIS REST requests an import makes. Every request is recorded so a
-    /// failure names what the server actually asked for.
-    /// </summary>
     public sealed class FieldOpsFeatureServer
     {
         public const string ServiceUrl = "https://example.com/arcgis/rest/services/FieldOps/FeatureServer";
@@ -784,10 +733,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
             => query.TryGetValue(name, out var value) && string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// The fixture's connection provider, with the connection string it hands out searching the fixture schema
-    /// first. Connections the provider opens itself already set that search path.
-    /// </summary>
     private sealed class FixtureSchemaConnectionProvider(IAdoNetDatabaseConnectionProvider inner, Func<string?> schema)
         : IAdoNetDatabaseConnectionProvider
     {
@@ -817,10 +762,6 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
             => inner.ExecuteWithDeadlockRetryAsync(operation, cancellationToken);
     }
 
-    /// <summary>
-    /// A fresh handler per HttpClientFactory rotation over the shared <see cref="FieldOpsFeatureServer"/> state,
-    /// so an expired handler being disposed never tears down the source.
-    /// </summary>
     private sealed class FieldOpsFeatureServerHandler(FieldOpsFeatureServer source) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

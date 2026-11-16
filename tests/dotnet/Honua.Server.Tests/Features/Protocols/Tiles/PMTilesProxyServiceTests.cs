@@ -386,11 +386,6 @@ public sealed class PMTilesProxyServiceTests
             .Should().BeFalse();
     }
 
-    /// <summary>
-    /// Builds the same per-cloud classifier set that production DI assembles —
-    /// one AWS classifier, one Azure classifier — so the orchestrator-level
-    /// tests exercise the chained classification path end-to-end.
-    /// </summary>
     private static ICloudNotFoundClassifier[] TestClassifiers() =>
     [
         new AwsS3NotFoundClassifier(),
@@ -604,12 +599,6 @@ public sealed class PMTilesProxyServiceTests
             return fileId;
         }
 
-        /// <summary>
-        /// Marks the bytes for the given file as missing while keeping the
-        /// metadata entry. Mirrors an out-of-band delete (lifecycle expiry,
-        /// console deletion) where <c>GetMetadataAsync</c> still returns the
-        /// stale record but <c>DownloadAsync</c> returns null.
-        /// </summary>
         public void SimulateOutOfBandDelete(string fileId) => _missingBytes.Add(fileId);
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();

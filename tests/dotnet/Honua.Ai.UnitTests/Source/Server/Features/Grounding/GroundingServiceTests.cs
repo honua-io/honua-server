@@ -20,14 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// End-to-end unit tests for <see cref="GroundingService"/>. The engine and
-/// authorization filter are stubbed so each test pins one orchestration
-/// concern — banding/capping, authorization filtering, parameter-gap probing,
-/// clarification envelope wiring, layer catalog outage handling (unregistered
-/// catalog falls back to empty datasets; injected catalog failures surface
-/// <see cref="GroundingErrorKind.CatalogUnavailable"/>), and error translation.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class GroundingServiceTests
 {

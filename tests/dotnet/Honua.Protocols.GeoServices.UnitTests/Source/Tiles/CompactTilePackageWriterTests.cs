@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 
-/// <summary>
-/// Compatibility tests for the Esri TPKX 1.0 / Compact Cache V2 writer.
-/// Specification sources: https://github.com/Esri/tile-package-spec and
-/// https://github.com/Esri/raster-tiles-compactcache.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class CompactTilePackageWriterTests
 {

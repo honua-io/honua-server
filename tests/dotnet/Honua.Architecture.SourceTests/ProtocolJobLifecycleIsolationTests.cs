@@ -6,10 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Prevents OGC Processes and GPServer adapters from taking ownership of canonical runtime
-/// stores, queues, worker notifiers, or compute backends.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class ProtocolJobLifecycleIsolationTests
 {

@@ -31,13 +31,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Coverage for #2483 (ADR-0056 Increment 4): validated operations-toolset descriptors
-/// projected as first-class MCP tools. Verifies the projection (typed schema +
-/// annotations), governance through the policy decision point, deterministic
-/// param-keyed caching, deterministic mode, and the surface merge into
-/// <c>tools/list</c> / <c>tools/call</c>.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class PublishedOperationToolTests
 {

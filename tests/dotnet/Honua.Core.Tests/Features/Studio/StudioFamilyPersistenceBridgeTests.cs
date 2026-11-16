@@ -10,11 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for the ADR-0069 family persistence bridge composition (honua-server#3004):
-/// deterministic id derivation, family-registry descriptor overrides, and
-/// <see cref="BridgedStudioPackageStore"/> routing/merging semantics.
-/// </summary>
 public sealed class StudioFamilyPersistenceBridgeTests
 {
     [UnitTest]
@@ -191,11 +186,6 @@ public sealed class StudioFamilyPersistenceBridgeTests
         };
     }
 
-    /// <summary>
-    /// In-memory <see cref="IStudioFamilyPersistenceBridge"/> stub emulating a native store:
-    /// versions appended through <see cref="SaveVersionAsync"/> resolve through pointers,
-    /// listing, and item summaries; publish honors <see cref="PublishSupportedValue"/>.
-    /// </summary>
     private sealed class StubBridge : IStudioFamilyPersistenceBridge
     {
         private readonly Dictionary<Guid, List<StudioContentVersion>> _versionsByItem = new();

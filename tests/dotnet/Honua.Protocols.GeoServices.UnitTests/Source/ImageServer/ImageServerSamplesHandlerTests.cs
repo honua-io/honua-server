@@ -21,10 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerSamplesHandler"/>, focused on the
-/// <c>multidimensionalDefinition</c> per-slice sampling added in #1869.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerSamplesHandlerTests
 {

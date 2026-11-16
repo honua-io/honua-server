@@ -8,22 +8,10 @@ using Npgsql;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Helper methods for seeding attachment test data.
-/// </summary>
 public static class AttachmentTestData
 {
-    /// <summary>
-    /// Exact bytes seeded as <c>test1.txt</c> (attachment id 1). Exposed so download tests
-    /// can assert the served bytes rather than only that the response was non-empty
-    /// (honua-server#4404).
-    /// </summary>
     public static ReadOnlySpan<byte> SeededTextFileBytes => "Test file content"u8;
 
-    /// <summary>
-    /// Exact bytes seeded as <c>test2.jpg</c> (attachment id 2) — a minimal JPEG SOI/EOI
-    /// marker pair, so a binary body can be byte-compared without a text codepath.
-    /// </summary>
     public static ReadOnlySpan<byte> SeededImageFileBytes => [0xFF, 0xD8, 0xFF, 0xD9];
 
     public static async Task SeedAsync(PostgresFixture fixture, ICloudFileStorage fileStorage, int layerId, long featureId, string schemaName = "honua")

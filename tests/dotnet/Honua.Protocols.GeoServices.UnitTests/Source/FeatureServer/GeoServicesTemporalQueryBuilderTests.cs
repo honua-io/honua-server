@@ -9,13 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit tests for <see cref="GeoServicesTemporalQueryBuilder"/>. Per honua's documented
-/// temporal-animation contract (docs/gis/temporal-animation-api.md), a non-empty
-/// <c>time</c> parameter supplied against a layer that is not time-enabled is REJECTED
-/// with an <see cref="ArgumentException"/> (HTTP 400) — an intentional, documented
-/// divergence from Esri's lenient "ignore time" behavior (issue #1444).
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class GeoServicesTemporalQueryBuilderTests
 {

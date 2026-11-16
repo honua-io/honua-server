@@ -6,18 +6,8 @@ using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Protocol-shape validator for served Esri I3S 1.7 SceneServer resources
-/// (#1813). Asserts the structural invariants a conformant SceneLayer client
-/// relies on — descriptor field presence, store/node-page wiring, node-page
-/// obb/lod/child/mesh shapes, and statistics summary shape — without vendoring
-/// the CC BY-ND Esri i3s-spec. The validator returns a list of violation
-/// messages; an empty list means the resource is structurally conformant. This
-/// is the test oracle for the node-page / attribute hard lane.
-/// </summary>
 internal static class I3sProtocolShapeValidator
 {
-    /// <summary>Validates a served SceneServer service descriptor.</summary>
     public static IReadOnlyList<string> ValidateService(JsonElement service)
     {
         var violations = new List<string>();
@@ -46,7 +36,6 @@ internal static class I3sProtocolShapeValidator
         return violations;
     }
 
-    /// <summary>Validates a served <c>3dSceneLayer</c> descriptor.</summary>
     public static IReadOnlyList<string> ValidateLayer(JsonElement layer)
     {
         var violations = new List<string>();
@@ -124,7 +113,6 @@ internal static class I3sProtocolShapeValidator
         return violations;
     }
 
-    /// <summary>Validates a served node page.</summary>
     public static IReadOnlyList<string> ValidateNodePage(JsonElement page)
     {
         var violations = new List<string>();
@@ -187,7 +175,6 @@ internal static class I3sProtocolShapeValidator
         return violations;
     }
 
-    /// <summary>Validates a served per-field statistics document.</summary>
     public static IReadOnlyList<string> ValidateStatistics(JsonElement document)
     {
         var violations = new List<string>();

@@ -13,11 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit coverage for the GA-promotion (#2428) feature-stream health check: healthy under
-/// normal load, degraded when sessions approach the concurrent cap, and never Unhealthy
-/// (best-effort delivery with durable replay must not fail readiness).
-/// </summary>
 public sealed class FeatureStreamHealthCheckTests
 {
     private static FeatureStreamSessionManager CreateManager(int maxConcurrentSessions)

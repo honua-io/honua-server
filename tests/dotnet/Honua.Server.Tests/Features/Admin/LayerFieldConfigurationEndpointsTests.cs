@@ -15,9 +15,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for admin layer field configuration endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime

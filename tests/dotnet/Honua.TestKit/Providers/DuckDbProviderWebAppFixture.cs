@@ -13,34 +13,13 @@ using Xunit;
 
 namespace Honua.TestKit.Providers;
 
-/// <summary>
-/// Web-app fixture that boots a real <see cref="WebApplicationFactory{TEntryPoint}"/> host
-/// with <c>DataSource:Provider=duckdb</c> against a standalone, file-backed DuckDB database
-/// seeded with <see cref="ProviderSmokeData"/> (honua-server#2947). DuckDB is embedded — no
-/// Testcontainer is needed; the fixture creates a temp <c>.duckdb</c> file, installs/loads
-/// the <c>spatial</c> extension, and seeds it directly via <see cref="DuckDBConnection"/>
-/// before the host opens the same file read-only (matching the documented production
-/// default, <c>DuckDB:ReadOnly=true</c>).
-/// </summary>
-/// <remarks>
-/// DuckDB is a primary-provider replacement (mutually exclusive with Postgres at
-/// <c>InfrastructureCompositionRoot</c>'s <c>DataSource:Provider</c> switch), so this
-/// fixture builds its own <see cref="WebApplicationFactory{TEntryPoint}"/> from scratch
-/// rather than reusing <see cref="WebAppFixture"/>, which is hard-wired to Postgres. Layer
-/// mapping (table/column names) is static, config-time (<c>DuckDB:Layers:0:*</c>), so the
-/// Metadata v2 graph built by <see cref="ProviderSmokeGraph"/> is used only for protocol
-/// discovery/schema surfaces (OGC API Features collection, OData $metadata, FeatureServer
-/// layer metadata) — both must agree on the layer id (ProviderSmokeGraph.LayerId) / table "parcels".
-/// </remarks>
 public sealed class DuckDbProviderWebAppFixture : IAsyncLifetime
 {
     private string _dbPath = null!;
     private WebApplicationFactory<Program> _factory = null!;
 
-    /// <summary>HTTP client bound to the fixture's DuckDB-backed host.</summary>
     public HttpClient Client { get; private set; } = null!;
 
-    /// <summary>The in-memory Metadata v2 graph provider installed into the test host.</summary>
     public TestMetadataV2GraphProvider GraphProvider { get; private set; } = null!;
 
     public async Task InitializeAsync()

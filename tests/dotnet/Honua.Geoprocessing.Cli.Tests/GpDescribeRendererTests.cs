@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// Offline unit tests for the <c>honua gp describe</c> renderer (GP Devkit P3, issue #2124):
-/// the typed parameter view, the inputs JSON Schema, and the machine-readable descriptor.
-/// Pure string/JSON transforms over a hand-built <see cref="ProcessDefinition"/>; no Redis,
-/// catalog, or control plane.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpDescribeRendererTests
 {

@@ -7,9 +7,6 @@ using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Verifies the release-channel handshake for platform build versions.
-/// </summary>
 public sealed class AdminReleaseChannelTests
 {
     [Theory]

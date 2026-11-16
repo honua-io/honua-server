@@ -43,11 +43,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Receiver-side alert delivery evidence. Unlike sink unit tests that replace the HTTP handler,
-/// these tests run the production evaluator, outbox writer, dispatcher, retry policy, and webhook
-/// sink against a real HTTPS Kestrel socket.
-/// </summary>
 [Protocol(ProtocolNames.Infrastructure)]
 [Operation(Operations.ContractTesting)]
 [Collection("Database.Alerts")]
@@ -244,12 +239,6 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         row.DeliveredAt.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Five dead-lettered webhook rows drain through the admin redrive endpoint in
-    /// batches of two, then two dispatch replicas deliver them once. A delivered row
-    /// and a not-yet-due failed row stay put, including when the caller retries a
-    /// redrive whose response it did not observe (#3869).
-    /// </summary>
     [IntegrationTest(Timeout = 180000)]
     [Endpoint("POST /api/v1/admin/alerts/dispatch/redrive")]
     public async Task DeadLetters_RedriveInBatchesOfTwo_DeliverOnceAndLeaveControlRows()

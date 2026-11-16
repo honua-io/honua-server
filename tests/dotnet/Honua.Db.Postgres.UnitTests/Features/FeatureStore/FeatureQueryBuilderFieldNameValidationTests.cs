@@ -5,15 +5,6 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Covers the deliberate split between the two field-name validators
-/// (honua-server#3392): <see cref="FeatureQueryBuilder.IsValidFieldName"/> guards
-/// names that are emitted as SQL <b>identifiers</b> (quoted columns and result
-/// aliases, which cannot be parameter-bound), while
-/// <see cref="FeatureQueryBuilder.IsValidJsonAttributeKey"/> guards names that are
-/// only ever used as <b>jsonb keys</b> and are bound as query parameters. A jsonb
-/// key is not an identifier, so the two must not share one character class.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderFieldNameValidationTests
 {

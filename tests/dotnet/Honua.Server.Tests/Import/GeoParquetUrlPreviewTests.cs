@@ -11,10 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for GeoParquet preview-url error handling.
-/// Verifies that invalid GeoParquet metadata returns 400 instead of 500.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

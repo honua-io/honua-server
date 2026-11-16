@@ -14,15 +14,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Verifies that the worker registration REPLACES (rather than appends onto) the
-/// pre-populated <see cref="GdalWorkerOptions.AllowedRasterInputFormats"/> and
-/// <see cref="GdalHardeningOptions.SkipDrivers"/> lists when the operator configures
-/// them. ConfigurationBinder appends array items onto a non-empty default list, so
-/// without the post-bind replacement an operator could never TIGHTEN the raster-format
-/// allowlist nor REMOVE a default skip driver — exactly the workflow the XML docs
-/// promise (#2784 follow-up).
-/// </summary>
 public sealed class GdalWorkerOptionsConfigBindingTests
 {
     [UnitTest]

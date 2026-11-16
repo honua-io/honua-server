@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys to be ignored.
-/// QGIS appends SLD_VERSION and TRANSPARENT to the advertised legend tile URL.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
 public sealed class OgcClassicWmtsUnknownParameterTests : IAsyncLifetime

@@ -13,22 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
-/// <summary>
-/// Regression tests for the AWS SDK v4 null-collection behavior (honua-server#2311): when a
-/// ListObjectsV2 call matches zero objects, S3 returns a ListBucketResult with no
-/// &lt;Contents&gt; elements and the SDK v4 unmarshaller leaves <c>response.S3Objects</c>
-/// <c>null</c> instead of an empty list. Unguarded dereferences of that collection threw
-/// <c>NullReferenceException</c> from every listing over an empty prefix — most visibly
-/// <c>CloudBackedTemporaryFileService.EnsureCloudStorageCapacityAsync</c>'s quota listing of the
-/// empty <c>temporary-files/</c> prefix, which turned every rendered map-image
-/// <c>href</c>/<c>f=json</c> export (MapServer <c>export</c>, ImageServer <c>exportImage</c>)
-/// into a 500 on S3-backed deployments such as demo.honua.io.
-///
-/// The tests drive the real <see cref="AwsS3FileStorage"/> and the real SDK serialization
-/// pipeline against a local HTTP stub that answers ListObjectsV2 with the exact empty
-/// ListBucketResult payload live S3 returns for an empty prefix, so the S3Objects-null shape is
-/// produced by the SDK itself rather than hand-constructed.
-/// </summary>
 [Collection("Unit")]
 public sealed class AwsS3FileStorageEmptyListingTests
 {
@@ -117,12 +101,6 @@ public sealed class AwsS3FileStorageEmptyListingTests
             new InMemoryUploadProgressStore());
     }
 
-    /// <summary>
-    /// Minimal local S3 endpoint that answers every GET (ListObjectsV2) with the canonical
-    /// empty ListBucketResult document. Requests other than listings are answered 404 so any
-    /// unexpected follow-up call (e.g. a per-object HEAD) surfaces as a test failure rather
-    /// than hanging.
-    /// </summary>
     private sealed class EmptyListObjectsStub : IDisposable
     {
         private readonly HttpListener _listener;

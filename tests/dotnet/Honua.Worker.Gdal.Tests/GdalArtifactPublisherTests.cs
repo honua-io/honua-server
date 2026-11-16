@@ -26,13 +26,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Verifies the staged-output publication seam (#3089): with a registered output
-/// store, large outputs are streamed to attempt-scoped immutable keys and published
-/// as typed references (no payload bytes in the durable reference); small outputs
-/// stay bounded inline; without a store the legacy data-URI publication and its
-/// <c>MaxArtifactBytes</c> ceiling are preserved; Zarr-shaped outputs fail closed.
-/// </summary>
 public sealed class GdalArtifactPublisherTests : IDisposable
 {
     private readonly string _scratch = Directory.CreateTempSubdirectory("honua-gdal-publish-tests-").FullName;
@@ -213,12 +206,6 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         store.Objects.Keys.Should().Contain(key => key.Contains("/a2/"));
     }
 
-    /// <summary>
-    /// #3089 review: an output carrying a post-success registration intent must be
-    /// staged regardless of size — only staged objects can register into the COG
-    /// catalog, so an inline descriptor would deterministically fail registration on
-    /// every results read and permanently wedge the succeeded job.
-    /// </summary>
     [Fact]
     public async Task PublishFileAsync_SmallOutputWithRegistrationIntent_IsStagedNotInlined()
     {
@@ -250,11 +237,6 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         store.Objects.Should().ContainSingle();
     }
 
-    /// <summary>
-    /// #3089 review: the grid summary is best-effort — a malformed/truncated TIFF
-    /// whose bounded header parse faults (including argument/overflow faults from the
-    /// IFD parser) must degrade to a null grid, never fail the publication.
-    /// </summary>
     [Fact]
     public async Task PublishFileAsync_MalformedTiff_DegradesToNullGrid()
     {
@@ -391,10 +373,6 @@ public sealed class GdalArtifactPublisherTests : IDisposable
             MaxStagedArtifactBytes = maxStagedArtifactBytes,
         };
 
-    /// <summary>
-    /// Deterministic in-memory <see cref="IGeoprocessingOutputObjectStore"/> double
-    /// mirroring the filesystem store's contract (create-once keys, sha256 identity).
-    /// </summary>
     internal sealed class InMemoryOutputObjectStore : IGeoprocessingOutputObjectStore
     {
         public Dictionary<string, byte[]> Objects { get; } = new(StringComparer.Ordinal);

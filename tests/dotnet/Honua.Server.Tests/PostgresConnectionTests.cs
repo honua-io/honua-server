@@ -5,9 +5,6 @@ using Honua.TestKit;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests verifying PostgreSQL/PostGIS connectivity.
-/// </summary>
 [Trait("Category", "Integration")]
 public sealed class PostgresConnectionTests : IAsyncLifetime
 {

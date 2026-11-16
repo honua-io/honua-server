@@ -265,7 +265,6 @@ public sealed class ImportEndpointDurableRunnerIntegrationTests(DatabaseFixtureA
         (await DurableImportTestData.CountImportedRowsAsync(_fixture, tableName)).Should().Be(FeatureCount);
     }
 
-    /// <summary>Stands in for AWS Batch: records the launch the worker process would receive.</summary>
     private sealed class LaunchRecordingBackend : IBatchComputeBackend
     {
         public List<string> Launched { get; } = [];

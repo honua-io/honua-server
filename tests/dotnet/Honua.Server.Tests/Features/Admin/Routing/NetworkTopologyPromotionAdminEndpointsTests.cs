@@ -15,12 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
 
-/// <summary>
-/// Integration tests for the atomic network-topology promotion/rollback admin endpoints
-/// (#2719). Covers the full allocate -&gt; edit -&gt; rebuild -&gt; promote lifecycle, evidence/
-/// precondition rejections, idempotent replay, a concurrency race proving only one
-/// candidate wins, and rollback to a retired generation.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]

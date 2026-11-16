@@ -19,13 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
-/// <summary>
-/// End-to-end tests for the rate-limiting middleware running inside a real endpoint-routing
-/// pipeline. These prove per-endpoint partitioning of the fixed-window counter (issue #2779):
-/// traffic to one rate-limited endpoint from a single tenant+IP must not consume another
-/// endpoint's allowance, and OIDC/auth endpoints stay reachable under ordinary Console/BFF
-/// traffic from a single egress IP.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class RateLimitingPartitionIntegrationTests
 {

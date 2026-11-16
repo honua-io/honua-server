@@ -10,27 +10,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164): the first live-account smoke proving the AWS Batch
-/// control-plane path Honua's <c>AwsBatchComputeBackend</c> depends on actually works against a
-/// REAL account (not LocalStack), and that the OIDC/credential wiring in
-/// <c>real-aws-certification.yml</c> is sound. It performs a register → describe → deregister
-/// round-trip on a uniquely-named job definition.
-///
-/// SAFETY: this lane is OFF unless <see cref="RealAwsCertificationFixture.Enabled"/> (it
-/// <c>[SkippableFact]</c>-skips otherwise, so it never costs money or fails on
-/// forks/PRs without credentials). The job definition is registered ONLY (never submitted), so
-/// there is NO compute, NO running job, and therefore ZERO cost. Every created resource carries
-/// the per-run <c>honua-certrun-*</c> job-definition prefix — a namespace deliberately DISJOINT from
-/// the standing GP pool (<c>honua-cert-cert-*</c>) so the honua-iac OIDC register/deregister grant
-/// cannot touch a standing definition — no pre-existing resource is ever read-modified, and teardown
-/// (deregister → status INACTIVE) is guaranteed in a <c>finally</c> block.
-///
-/// Remainder (tracked under #2164, requires a supervised, budgeted run): the full
-/// submit-to-SUCCEEDED Batch lifecycle and the ECS/Lambda deploy + rollback certifications need an
-/// ephemeral Fargate compute environment + IAM execution role whose teardown is slower and must be
-/// supervised, so they are intentionally NOT performed automatically here.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class AwsBatchRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {

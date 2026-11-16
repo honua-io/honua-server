@@ -20,7 +20,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>Provider-level routing discovery without a feature-service catalog publication.</summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointTestsFixture>

@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Unit tests for the hand-rolled MGRS/USNG converter that backs the
-/// toGeoCoordinateString / fromGeoCoordinateString operations.
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 public sealed class MgrsConverterTests
 {

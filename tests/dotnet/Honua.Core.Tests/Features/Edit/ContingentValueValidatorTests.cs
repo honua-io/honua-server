@@ -9,13 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-/// <summary>
-/// Unit coverage for <see cref="ContingentValueValidator"/> (#2133): the shared edit-path
-/// enforcement of a resource's contingent-value field groups. Verifies that a valid cross-field
-/// combination is accepted, an invalid one is rejected naming the offending group, the
-/// <c>any</c> wildcard and <c>null</c>/coded/range contingency types behave per Esri semantics,
-/// and a partial update validates the full effective (merged) row rather than only changed fields.
-/// </summary>
 public sealed class ContingentValueValidatorTests
 {
     [UnitTest]

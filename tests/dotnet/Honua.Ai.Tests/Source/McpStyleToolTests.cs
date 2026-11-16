@@ -45,15 +45,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for the styling MCP tools (<c>honua_get_style</c> /
-/// <c>honua_apply_style_preset</c>). Both are thin adapters over the canonical
-/// styleId-keyed <see cref="IStyleCatalog"/> and the Metadata v2 style graph
-/// (ADR-0048), so these tests substitute those seams and assert the adapters
-/// read/bind styles correctly, that an unknown preset is rejected naming the
-/// valid presets, that applying is gated on the authoring grant, and that a
-/// subsequent <c>honua_render_map</c> resolves the applied style.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class McpStyleToolTests
 {

@@ -170,13 +170,6 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         });
     }
 
-    /// <summary>
-    /// Groups queryDateBins response features by the "boundary" attribute's year (or
-    /// year-month), keyed off the "count" attribute. Tolerates the "boundary" value being
-    /// serialized either as an ISO-8601 string or an epoch-millisecond number, since the
-    /// wire representation of a boxed <c>DateTime</c>/<c>DateTimeOffset</c> attribute value
-    /// is an internal serialization detail this test should not hard-code.
-    /// </summary>
     private static Dictionary<string, long> ExtractCountsByYearMonth(JsonElement features, bool yearOnly = false)
     {
         var result = new Dictionary<string, long>();

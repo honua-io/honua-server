@@ -9,12 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="FeatureStateToken"/>, the canonical optimistic-concurrency
-/// token used by <see cref="FeatureEditPrecondition"/>. Protocol adapters compute the token
-/// from their read snapshot and feature writers recompute it from the row re-read inside the
-/// write transaction, so the computation must be deterministic and representation-neutral.
-/// </summary>
 public sealed class FeatureStateTokenTests
 {
     private static byte[] SampleWkb(byte marker) => [0x01, 0x01, 0x00, 0x00, marker];

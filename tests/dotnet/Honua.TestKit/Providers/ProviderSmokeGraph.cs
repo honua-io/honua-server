@@ -24,30 +24,14 @@ namespace Honua.TestKit.Providers;
 // collection resource (/ogc/tiles/collections/{collectionId}/tiles/...).
 public static class ProviderSmokeGraph
 {
-    /// <summary>
-    /// Layer id / OGC API Features collection id used by every smoke fixture. 1, not 0:
-    /// <c>MySqlOptionsValidator</c> requires a positive layer <c>Id</c> (DuckDB's validator
-    /// has no such floor), so a shared id across all three provider fixtures must satisfy
-    /// the stricter constraint.
-    /// </summary>
     public const int LayerId = 1;
 
-    /// <summary>Service name used for the GeoServices FeatureServer smoke publication.</summary>
     public const string ServiceName = "smoke";
 
-    /// <summary>Resource id of the published "parcels" dataset.</summary>
     public const string ResourceId = "res-smoke";
 
     private const string BindingId = "binding-smoke";
 
-    /// <summary>
-    /// Edit capabilities the smoke service declares. Since #4234 a FeatureServer
-    /// applyEdits that the service does not declare is rejected with a 400 before it
-    /// reaches the provider's writer. The read-only-provider smoke tests exist to prove
-    /// the provider-level rejection (the documented 405), so the service must declare
-    /// edits for those requests to reach <c>ReadOnlyFeatureWriter</c>. Declaring them does
-    /// not make any provider writable: that is decided by the provider, not the metadata.
-    /// </summary>
     private static readonly string[] _declaredCapabilities = ["Query", "Create", "Update", "Delete"];
 
     private static IReadOnlyDictionary<string, JsonElement> ServiceOptions => new Dictionary<string, JsonElement>(StringComparer.Ordinal)
@@ -55,23 +39,6 @@ public static class ProviderSmokeGraph
         ["capabilities"] = JsonSerializer.SerializeToElement(_declaredCapabilities),
     };
 
-    /// <summary>
-    /// Builds the Metadata v2 graph for a provider-smoke fixture.
-    /// </summary>
-    /// <param name="locator">
-    /// Storage binding locator (e.g. <c>"parcels"</c> for DuckDB/MySql static-config layers,
-    /// or <c>"dbo.parcels_xxx"</c> for a SQL Server table resolved dynamically through the
-    /// storage mapping).
-    /// </param>
-    /// <param name="connectionId">
-    /// Metadata v2 connection id routing this binding to a secondary provider (SQL Server).
-    /// Left <see langword="null"/> for primary-provider fixtures (DuckDB/MySql), where the
-    /// binding falls back to the router's default provider (the primary <c>DataSource:Provider</c>).
-    /// </param>
-    /// <param name="connectionProvider">
-    /// Canonical provider name for the connection node (e.g. <c>"sqlserver"</c>). Only used
-    /// when <paramref name="connectionId"/> is set.
-    /// </param>
     public static MetadataV2Graph Build(string locator, string? connectionId = null, string? connectionProvider = null)
     {
         var fields = new[]

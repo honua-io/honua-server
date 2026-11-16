@@ -25,9 +25,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Tests for upload progress tracking with AWS S3 cloud storage.
-/// </summary>
 [Collection("Emulators")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

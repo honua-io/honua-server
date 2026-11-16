@@ -18,23 +18,11 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 5, after #4742: staging cleanup, explicit partial-state and
-/// restart semantics, one writer per target, and source changes during the transfer. These run
-/// against real PostGIS. The oracles are the seeded prior rows, the PostgreSQL catalog read from a
-/// separate session, and the record populations the mock source is told to serve — never the
-/// importer's own output.
-/// </summary>
 [Collection("Database")]
 public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixture)
 {
     private const string TableName = "geoservices_transfer_target";
 
-    /// <summary>
-    /// Before #4600 a replacement dropped the prior target at the start of its transaction, holding an
-    /// exclusive lock on the live table for the whole transfer: every reader blocked until the import
-    /// finished. A second session now reads the prior rows mid-transfer under a short lock timeout.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_ReplacingExistingTarget_KeepsPriorTargetReadableWhileTransferring()
     {
@@ -104,10 +92,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// A committed replacement leaves exactly the relations a first import creates: no staging table,
-    /// primary key and sequence carrying the target's names, and a sequence that still feeds the key.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_ReplacingExistingTarget_LeavesOnlyTheTargetsOwnRelations()
     {
@@ -138,10 +122,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// Staging cleanup on both abort paths: a refused replacement (a record failed to load) and a
-    /// cancellation mid-transfer leave the prior target's relations exactly as seeded.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_ReplacementRefusedOrCancelled_LeavesNoStagingRelations()
     {
@@ -186,11 +166,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// One writer per target. A second job for the same table, started while the first is mid-transfer
-    /// (a retry submitted too early, or two operators), fails at once with an explicit message instead
-    /// of blocking on the first job's locks or replacing what it commits.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenAnotherImportIsWritingTheSameTarget_FailsWithoutTouchingIt()
     {
@@ -248,11 +223,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// Restart semantics: an import that is not a replacement, pointed at a table that already exists
-    /// (including a job restarted after its data committed), fails explicitly and leaves the table as
-    /// it was. Before #4600 it failed inside CREATE TABLE with only a generic message.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WithoutOverwriteIntoAnExistingTable_FailsExplicitlyAndLeavesItUnchanged()
     {
@@ -276,10 +246,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// Offset-paged transfer: the source advertises 2 records at discovery and 3 once the last page has
-    /// been read. The run commits what it read but must not claim a faithful snapshot.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenSourceCountChangesDuringPagedTransfer_RoutesToReviewWithBothCounts()
     {
@@ -306,10 +272,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// Object-id window transfer: record 2 is deleted and record 3 added mid-transfer. The count is
-    /// unchanged, so only the object-ID set comparison can see it.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenSourceObjectIdsChangeDuringWindowedTransfer_RoutesToReview()
     {
@@ -336,10 +298,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// When the source cannot be re-counted after the transfer, a change cannot be ruled out: the run
-    /// completes, but as unverified rather than full fidelity.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenSourceCannotBeRecountedAfterTransfer_CompletesUnverified()
     {
@@ -362,12 +320,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// A target name at PostgreSQL's 63-byte limit, where the derived primary-key and sequence names
-    /// are shortened. A replacement must leave exactly the relation names a first import of that
-    /// table creates, and the same job replacing it again must still succeed. The oracle is the first
-    /// import's own catalog entries.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_ReplacingALongNamedTargetRepeatedly_KeepsFirstImportRelationNames()
     {
@@ -400,11 +352,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// The lease covers the whole job, not only the data transaction. A competing import started after
-    /// the first job committed but before it finished must still be refused: publishing, attachment
-    /// copy and reconciliation run in that window. The final progress report follows the commit.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenAnotherImportStartsAfterCommitBeforeTheJobFinishes_RefusesIt()
     {
@@ -444,10 +391,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// A post-transfer re-count that exceeds the per-request timeout is an unreadable snapshot, not a
-    /// cancellation of the import, so the run completes as unverified.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenSourceRecountTimesOut_CompletesUnverifiedInsteadOfFailing()
     {
@@ -469,12 +412,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <summary>
-    /// #4827 REQ-003: when the import's own database session is lost mid-transfer, the failure-path
-    /// rollback cannot run on that session. The job must still report the originating database
-    /// failure as a specific, redacted reason instead of letting the rollback error replace it, and
-    /// the prior target must be untouched.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenImportSessionIsLostMidTransfer_ReportsDatabaseFailureInsteadOfRollbackError()
     {
@@ -646,11 +583,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         return relations.ToArray();
     }
 
-    /// <summary>
-    /// ArcGIS FeatureServer mock serving one point layer whose records carry the supplied <c>code</c>
-    /// values, with OBJECTIDs 1..n. The first count and the first object-ID enumeration describe that
-    /// population; later ones can be overridden to model a source edited mid-transfer.
-    /// </summary>
     private sealed class TransferFeatureServerHandler(string[] codes) : HttpMessageHandler
     {
         private int _countRequests;
@@ -778,11 +710,6 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    /// <param name="postgresFixture">The shared PostGIS fixture.</param>
-    /// <param name="applicationName">
-    /// When set, connections are opened outside the fixture's pool under this application name, so a
-    /// test can find (and end) exactly the importer's own session.
-    /// </param>
     private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture, string? applicationName = null)
         : IAdoNetDatabaseConnectionProvider
     {

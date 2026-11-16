@@ -14,11 +14,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for <see cref="GeoServicesGeometryConverter"/> true-curve densification and JSON
-/// round-trip (#1877 Parts A and B). Circular-arc, elliptic-arc, and cubic-Bézier geometries convert to WKB
-/// through the shared densifier; the curve definition survives a parse+serialize cycle.
-/// </summary>
 public sealed class CurveGeometryConverterTests
 {
     private static Geometry ReadGeometry(byte[] wkb) => new WKBReader().Read(wkb);

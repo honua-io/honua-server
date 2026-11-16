@@ -12,12 +12,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// MapServer identify, find, generateKml and dynamicLayers joins never emit, search or join on
-/// publisher-hidden fields, matching FeatureServer query (#6098). The in-memory store returns
-/// every stored attribute, so these prove the handlers filter rather than relying on the reader.
-/// Left layer 0 hides <c>category</c>; right layer 1 hides <c>name</c>.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerHiddenFieldTests : IClassFixture<MapServerHiddenFieldTests.Fixture>
 {

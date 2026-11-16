@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
-/// <summary>
-/// Unit tests for the glTF/3D-Tiles → I3S geometry transcoder (#1810): verify
-/// the Default PerAttributeArray buffer layout, vertex/feature counts, relative-to-MBS
-/// recentring, and the feature-id / faceRange section.
-/// </summary>
 public sealed class I3sGeometryTranscoderTests
 {
     [UnitTest]

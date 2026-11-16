@@ -6,12 +6,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Core.Tests.Features.AuditLog;
 
-/// <summary>
-/// Unit tests for the tamper-evident hash chain primitive (#350). The same
-/// canonical hashing is used by the Postgres writer (chain construction) and the
-/// integrity verifier (chain replay), so determinism and injectivity are the
-/// load-bearing properties.
-/// </summary>
 public sealed class AuditEntryHasherTests
 {
     private static string Hash(

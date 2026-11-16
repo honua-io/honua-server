@@ -9,61 +9,26 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.TestKit.Mixins;
 
-/// <summary>
-/// Audit-A2 mixin: the Metadata v2 graph mutation helpers that <see cref="WebAppFixture"/>
-/// historically inlined as ~400 LOC of <c>UpdateV2Xxx</c>, <c>SetV2LayerEnabled</c>, and
-/// <c>AddAdminSampleMetadataV2Graph</c> methods. The mutation helpers all run the same
-/// pattern: read the current snapshot from a <see cref="TestMetadataV2GraphProvider"/>,
-/// transform resources / services / publications, bump the revision, and write back. They
-/// are stateless w.r.t. the fixture itself — they only need the provider — so they live as
-/// static helpers on this mixin and the fixture exposes thin delegating wrappers to keep
-/// the public API surface unchanged.
-/// </summary>
-/// <remarks>
-/// Per structural-audit-2026-05 (group A2), this is the second slice of the WebAppFixture
-/// mixin split. Behaviour is byte-identical to the previous inline implementations — this
-/// is a pure relocation.
-/// </remarks>
 internal static class WebAppFixtureMetadataV2GraphMutationMixin
 {
     private const string ProviderNotRegisteredMessage =
         "Test V2 graph provider not registered as TestMetadataV2GraphProvider.";
 
-    /// <summary>
-    /// Resolves the singleton test V2 graph provider from the fixture's service scope or
-    /// throws if the test pipeline replaced it with an incompatible implementation. All
-    /// mutation helpers in this mixin go through this accessor so the error path is
-    /// shared.
-    /// </summary>
     internal static TestMetadataV2GraphProvider RequireProvider(WebAppFixture fixture)
     {
         return fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(ProviderNotRegisteredMessage);
     }
 
-    /// <summary>
-    /// Reads the current graph snapshot for the fixture's graph partition (#1359).
-    /// Shared-server fixture mutations run outside an HTTP request, so the ambient request
-    /// schema is not populated; passing the fixture's schema explicitly keeps
-    /// read-modify-write cycles scoped to the test's isolated schema and parallel-safe.
-    /// Isolated fixtures own their provider instance but still send a schema header for
-    /// database routing, so their graph reads and writes use that same schema partition.
-    /// </summary>
     private static MetadataV2GraphSnapshot ReadCurrent(WebAppFixture fixture, TestMetadataV2GraphProvider provider)
         => provider.GetCurrentForSchema(fixture.MetadataGraphSchema);
 
-    /// <summary>
-    /// Reads the current Metadata v2 graph snapshot for the fixture's graph partition.
-    /// </summary>
     internal static MetadataV2GraphSnapshot GetCurrentSnapshot(WebAppFixture fixture)
     {
         var provider = RequireProvider(fixture);
         return ReadCurrent(fixture, provider);
     }
 
-    /// <summary>
-    /// Writes a graph snapshot to the fixture's graph partition (#1359).
-    /// </summary>
     private static void WriteGraph(WebAppFixture fixture, TestMetadataV2GraphProvider provider, MetadataV2Graph graph)
         => provider.SetGraph(graph, etag: null, schema: fixture.MetadataGraphSchema);
 
@@ -82,12 +47,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         => new(
             $"Cannot apply {mutation}: no publications for layer {layerIndex} were found in the test V2 graph.");
 
-    /// <summary>
-    /// Updates the canonical resource published at <paramref name="layerIndex"/> with any
-    /// of the supplied metadata slots. <see cref="WebAppFixture.UpdateV2ResourceMetadata"/>
-    /// is a thin wrapper over this helper. Clearing flags take precedence over value
-    /// arguments; omitting both leaves a slot untouched.
-    /// </summary>
     internal static void UpdateResourceMetadata(
         WebAppFixture fixture,
         int layerIndex,
@@ -232,11 +191,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         });
     }
 
-    /// <summary>
-    /// Adds or replaces a Metadata v2 schema field on the resource published at
-    /// <paramref name="layerIndex"/>. Match on field name is case-insensitive so callers
-    /// can re-assert a field with the same logical name.
-    /// </summary>
     internal static void UpdateResourceSchemaField(WebAppFixture fixture, int layerIndex, MetadataV2Field field)
     {
         ArgumentNullException.ThrowIfNull(field);
@@ -305,10 +259,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         });
     }
 
-    /// <summary>
-    /// Sets (or clears) editor-tracking and GlobalID bindings on the resource published
-    /// at <paramref name="layerIndex"/> so applyEdits can stamp those fields (#6134).
-    /// </summary>
     internal static void UpdateResourceEditing(
         WebAppFixture fixture,
         int layerIndex,
@@ -348,12 +298,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         });
     }
 
-    /// <summary>
-    /// Sets (or clears) the Esri subtype set on the resource published at
-    /// <paramref name="layerIndex"/> so FeatureServer layer-metadata serving of
-    /// <c>subtypeField</c> / <c>subtypes</c> / <c>defaultSubtypeCode</c> can be exercised
-    /// end-to-end against the served graph (honua-server#1378).
-    /// </summary>
     internal static void UpdateResourceSubtypes(WebAppFixture fixture, int layerIndex, MetadataV2Subtypes? subtypes)
     {
         var provider = RequireProvider(fixture);
@@ -416,12 +360,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Sets (or clears) the Esri attribute-rule set on the resource published at
-    /// <paramref name="layerIndex"/> so the shared edit path's calculation/constraint
-    /// enforcement can be exercised end-to-end against the served graph
-    /// (honua-server#1271).
-    /// </summary>
     internal static Task UpdateResourceAttributeRulesAsync(
         WebAppFixture fixture,
         int layerIndex,
@@ -469,12 +407,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Sets (or clears) the Esri contingent-value groups on the resource published at
-    /// <paramref name="layerIndex"/> so the FeatureServer service-level
-    /// <c>queryContingentValues</c> serving can be exercised end-to-end against the served
-    /// graph (honua-server#1878).
-    /// </summary>
     internal static Task UpdateResourceContingentValueGroupsAsync(
         WebAppFixture fixture,
         int layerIndex,
@@ -522,10 +454,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Renames the resource bound to the publication with <paramref name="layerIndex"/>.
-    /// Mirrors the v1 layer-rename behaviour CITE-conformance tests depend on.
-    /// </summary>
     internal static void UpdateResourceName(WebAppFixture fixture, int layerIndex, string newName)
     {
         var provider = RequireProvider(fixture);
@@ -567,11 +495,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
-    /// <summary>
-    /// Updates every service that shares the supplied logical name (case-insensitive).
-    /// The test graph fans out one service per protocol cluster under the same name, so
-    /// matches sweep across all of them.
-    /// </summary>
     internal static void UpdateServiceMetadata(
         WebAppFixture fixture,
         string serviceName,
@@ -680,11 +603,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         });
     }
 
-    /// <summary>
-    /// Flips Active↔Retired on the publications + resources bound to the supplied layer
-    /// index. The operational state stays Ready in both directions so visibility tests
-    /// observe the lifecycle change in isolation.
-    /// </summary>
     internal static void SetLayerEnabled(WebAppFixture fixture, int layerIndex, bool enabled)
     {
         var provider = RequireProvider(fixture);
@@ -730,12 +648,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         });
     }
 
-    /// <summary>
-    /// Merges the admin-sample subgraph from
-    /// <see cref="WebAppFixtureMetadataV2Mixin.BuildAdminSampleMetadataV2Graph"/> into
-    /// the live test graph. Existing nodes with matching ids are replaced so the helper
-    /// is idempotent across re-applies.
-    /// </summary>
     internal static void AddAdminSample(WebAppFixture fixture)
     {
         var provider = RequireProvider(fixture);
@@ -778,12 +690,6 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         });
     }
 
-    /// <summary>
-    /// Swaps in the seed-specific V2 graph when the fixture has been told to apply
-    /// <c>tests/seed/odata.yaml</c> or <c>tests/seed/spatial-reference.yaml</c>. No-op for
-    /// any other seed (the default graph already covers it). Returns silently when no seed
-    /// path is configured so callers can fire-and-forget from <c>InitializeAsync</c>.
-    /// </summary>
     internal static void ApplySeedSpecificGraph(WebAppFixture fixture, string? seedPath)
     {
         if (seedPath is null)

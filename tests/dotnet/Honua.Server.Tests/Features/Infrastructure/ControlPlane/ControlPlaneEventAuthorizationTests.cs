@@ -11,11 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Security tests for the control-plane event endpoint authorization gate (PA-060).
-/// Verifies that the endpoint fails closed (503) when no token is configured, rather
-/// than the prior fail-open behaviour that admitted any caller on unconfigured deployments.
-/// </summary>
 public sealed class ControlPlaneEventAuthorizationTests
 {
     // ---- Fail-closed when no token is configured (PA-060) -------------------
@@ -122,10 +117,6 @@ public sealed class ControlPlaneEventAuthorizationTests
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
-    /// <summary>
-    /// Extracts the HTTP status code from an <see cref="IResult"/> by executing it against a
-    /// minimal <see cref="DefaultHttpContext"/> with the services needed by JSON results.
-    /// </summary>
     private static int StatusOf(IResult result)
     {
         var services = new ServiceCollection();

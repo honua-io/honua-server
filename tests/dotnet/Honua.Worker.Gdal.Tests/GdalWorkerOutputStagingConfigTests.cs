@@ -14,13 +14,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// The worker-side staging contract (#3089): placement-agnostic static operator
-/// configuration — the same configuration keys an AWS Batch worker container
-/// receives as environment variables — selects the staged output store. An enabled
-/// but unimplemented provider fails closed at startup instead of silently falling
-/// back to inline publication, and disabled staging registers no store at all.
-/// </summary>
 public sealed class GdalWorkerOutputStagingConfigTests
 {
     [Fact]

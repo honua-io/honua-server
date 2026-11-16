@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Import and publish paths hold session advisory locks. On Lambda those connections must end
-/// their session on close; long-lived hosts keep pooled connections (honua-server#6765).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresSessionLockConnectionsTests
 {

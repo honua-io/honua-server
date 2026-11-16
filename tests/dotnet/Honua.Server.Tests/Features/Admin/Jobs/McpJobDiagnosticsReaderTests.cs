@@ -12,11 +12,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Admin.Jobs;
 
-/// <summary>
-/// Unit coverage for the server-side MCP job diagnostics adapter (honua-server#6219): it
-/// reads the admin diagnostics projection under the caller's principal, separates observed
-/// facts from inferred explanations, and keeps unknown and unreadable jobs indistinguishable.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpJobDiagnosticsReaderTests
 {

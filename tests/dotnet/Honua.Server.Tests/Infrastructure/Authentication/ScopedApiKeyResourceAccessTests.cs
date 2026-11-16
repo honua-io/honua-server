@@ -13,10 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// A scoped API key must not read every auth-only layer. Grants on the key are the
-/// authority, including when the layer has no access policy.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

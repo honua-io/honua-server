@@ -6,10 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.EmbedGovernance;
 
-/// <summary>
-/// Unit tests for <see cref="EmbedPolicyEvaluator"/> covering origin/domain,
-/// service, content, tenant, and rate-limit decisions.
-/// </summary>
 public sealed class EmbedPolicyEvaluatorTests
 {
     private static readonly DateTimeOffset _now = new(2026, 6, 26, 0, 0, 0, TimeSpan.Zero);

@@ -27,12 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Server-half proof for the custom-code geoprocessing control path (Phase 1): the
-/// submit gate validates the customcode.* contract (SHA-only git ref, https +
-/// repo-allowlist, declared_scope ⊆ owner), mints a scoped job-bound token scoped to
-/// the declared scope, injects it as env.HONUA_JOB_TOKEN, and revokes it on terminal.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.GPServer)]
 [Operation(Operations.Security)]
@@ -1053,11 +1047,6 @@ public sealed class CustomCodeSubmitTests
             customCodeArtifactStorage: hasArtifactStorage ? storage : null);
     }
 
-    /// <summary>
-    /// Configures the evaluator to DENY the #2752 custom-code operation
-    /// (Process.ExecuteCustomCode) while leaving the baseline Process.Execute (and every
-    /// other operation) granted by the always-allow default set in the constructor.
-    /// </summary>
     private void DenyCustomCodePermission()
         => _authEvaluator
             .EvaluateAsync(
@@ -1066,7 +1055,6 @@ public sealed class CustomCodeSubmitTests
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AccessDecision.Forbidden("custom-code submission is not authorized")));
 
-    /// <summary>A minimal built-in-tool plan (no customcode.* metadata).</summary>
     private static AnalysisPlan BuiltInPlan() => new()
     {
         PlanId = "builtin-plan-1",
@@ -1088,7 +1076,6 @@ public sealed class CustomCodeSubmitTests
         ]
     };
 
-    /// <summary>A test verifier that returns a fixed signature outcome.</summary>
     private sealed class StubSignatureVerifier(CommitSignatureResult result) : ICustomCodeCommitSignatureVerifier
     {
         public Uri? LastRepo { get; private set; }

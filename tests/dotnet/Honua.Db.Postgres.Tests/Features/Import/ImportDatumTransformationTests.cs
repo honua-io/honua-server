@@ -18,13 +18,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Verifies the file-import reprojection path routes through the auditable
-/// Esri-default datum-transformation catalog (#1501). Imports that resolve a curated
-/// PROJ pipeline for the <c>(sourceSrid -&gt; targetSrid)</c> pair must apply it through
-/// <c>ST_TransformPipeline</c> inside <c>honua.insert_import_feature</c>;
-/// imports with no curated default keep PROJ's default (2-argument) behavior.
-/// </summary>
 [Collection("Database")]
 public sealed partial class ImportDatumTransformationTests(PostgresFixture fixture)
 {
@@ -418,10 +411,6 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         await fixture.ApplyGlobalSeedSqlAsync("CREATE SCHEMA IF NOT EXISTS honua;\n" + CreateImportFunctionsSql);
     }
 
-    /// <summary>
-    /// A catalog that always offers a syntactically invalid PROJ pipeline for any pair,
-    /// used to prove the import path routes the catalog selection into ST_Transform.
-    /// </summary>
     private sealed class InvalidPipelineCatalog : IDatumTransformationCatalog
     {
         public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
@@ -443,10 +432,6 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         }
     }
 
-    /// <summary>
-    /// A catalog that returns a reverse-direction selection carrying an invalid forward pipeline.
-    /// The import path must invert and execute it, so the import fails.
-    /// </summary>
     private sealed class ReverseDirectionPipelineCatalog : IDatumTransformationCatalog
     {
         public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
@@ -469,9 +454,6 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         }
     }
 
-    /// <summary>
-    /// Affine offsets of (+2, -3). The reverse direction must subtract those offsets.
-    /// </summary>
     private sealed class AffinePipelineCatalog(bool forward) : IDatumTransformationCatalog
     {
         public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)

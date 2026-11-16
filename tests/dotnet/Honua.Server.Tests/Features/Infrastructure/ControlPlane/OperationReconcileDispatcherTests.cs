@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Phase 0 dispatcher-seam tests: the dispatcher routes each operation kind to the matching typed
-/// reconciler's reconcile-once method and does nothing else (no extra coordination, no behavior).
-/// </summary>
 public sealed class OperationReconcileDispatcherTests
 {
     [Fact]

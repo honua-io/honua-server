@@ -33,18 +33,11 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// WebApplicationFactory configured for the test environment without Aspire wiring.
-/// </summary>
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
     private readonly string _environmentName;
 
-    /// <summary>
-    /// Creates the default Test-environment factory. This explicit parameterless constructor
-    /// is required by xUnit when the factory is used as an <c>IClassFixture&lt;T&gt;</c>.
-    /// </summary>
     public TestWebApplicationFactory()
         : this("Test")
     {
@@ -56,7 +49,6 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         _environmentName = environmentName;
     }
 
-    /// <summary>Creates a factory whose early Program startup observes the requested environment.</summary>
     public static TestWebApplicationFactory CreateForEnvironment(string environmentName)
         => new(environmentName);
 
@@ -402,13 +394,6 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             => Task.FromResult(_replicas.TryRemove(replicaId, out _));
     }
 
-    /// <summary>
-    /// In-memory <see cref="IReplicaRepository"/> double that reports
-    /// <see cref="IReplicaRepository.SupportsReplicaPersistence"/> as <c>true</c> so the offline
-    /// replica sync surface is treated as supported (mirroring a Postgres-backed deployment) while
-    /// keeping all state in process. Replaces the host's Postgres-backed repository, which cannot be
-    /// constructed without a real database connection provider.
-    /// </summary>
     private sealed class InMemoryReplicaRepository : IReplicaRepository
     {
         private readonly ConcurrentDictionary<string, ReplicaRecord> _records = new(StringComparer.OrdinalIgnoreCase);

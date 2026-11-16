@@ -6,9 +6,6 @@ using System.Text.Json;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Resolves immutable, digest-verified assets from the shared curated test corpus.
-/// </summary>
 public sealed class CuratedCorpus
 {
     private const string SupportedSchemaVersion = "honua.curated-test-corpus/v1";
@@ -22,24 +19,16 @@ public sealed class CuratedCorpus
         _assets = assets;
     }
 
-    /// <summary>Gets the immutable corpus revision.</summary>
     public string Revision { get; }
 
-    /// <summary>Gets all declared assets in stable identifier order.</summary>
     public IReadOnlyCollection<CuratedCorpusAsset> Assets => _assets.Values.ToArray();
 
-    /// <summary>Loads a committed corpus revision from the repository fixture root.</summary>
     public static CuratedCorpus Load(string revision = "v1")
     {
         ValidateRevision(revision);
         return LoadFromDirectory(RepositoryPaths.Resolve("tests", "fixtures", "curated-edge-corpus", revision));
     }
 
-    /// <summary>
-    /// Loads the external-format corpus: the format fixtures written by GDAL/OGR rather than by
-    /// Honua's own readers and writers (honua-server#4419). It shares this manifest schema, digest
-    /// verification and containment checks; only the corpus identity differs.
-    /// </summary>
     public static CuratedCorpus LoadExternalFormats(string revision = "v1")
     {
         ValidateRevision(revision);
@@ -48,10 +37,8 @@ public sealed class CuratedCorpus
             expectedId: ExternalFormatCorpusId);
     }
 
-    /// <summary>Corpus identity of the GDAL-authored format fixtures.</summary>
     public const string ExternalFormatCorpusId = "external-format-corpus";
 
-    /// <summary>Loads a corpus rooted at an explicit directory, primarily for integrity tests.</summary>
     public static CuratedCorpus LoadFromDirectory(string root, string expectedId = "curated-edge-corpus")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
@@ -90,7 +77,6 @@ public sealed class CuratedCorpus
         return new CuratedCorpus(fullRoot, revision, assets);
     }
 
-    /// <summary>Verifies and returns an asset's absolute filesystem path.</summary>
     public string ResolveVerifiedPath(string assetId)
     {
         var asset = GetAsset(assetId);
@@ -118,10 +104,8 @@ public sealed class CuratedCorpus
         return path;
     }
 
-    /// <summary>Verifies and reads an asset into memory.</summary>
     public byte[] ReadAllBytes(string assetId) => File.ReadAllBytes(ResolveVerifiedPath(assetId));
 
-    /// <summary>Verifies every asset declared by the manifest.</summary>
     public void VerifyAll()
     {
         foreach (var asset in Assets)
@@ -227,7 +211,6 @@ public sealed class CuratedCorpus
     }
 }
 
-/// <summary>Immutable metadata for one digest-bound corpus asset.</summary>
 public sealed record CuratedCorpusAsset(
     string Id,
     string Path,

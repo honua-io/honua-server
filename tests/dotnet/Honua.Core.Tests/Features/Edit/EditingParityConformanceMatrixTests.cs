@@ -12,27 +12,17 @@ namespace Honua.Core.Tests.Features.Edit;
 
 public sealed class EditingParityConformanceMatrixTests
 {
-    /// <summary>Supported / partial / unsupported parity status of a matrix row.</summary>
     public enum ParityStatus
     {
-        /// <summary>Capability is fully implemented and executed by the matrix.</summary>
         Supported,
 
-        /// <summary>Capability is partially implemented; tracked for completion in the receipt.</summary>
         Partial,
 
-        /// <summary>Capability is not implemented.</summary>
         Unsupported
     }
 
-    /// <summary>A single conformance row tying a capability to its asserted edit-path behavior.</summary>
-    /// <param name="Capability">Stable capability key.</param>
-    /// <param name="Status">The capability's parity status.</param>
-    /// <param name="Verify">Executable assertion for supported rows; a no-op for non-supported rows.</param>
     public sealed record MatrixRow(string Capability, ParityStatus Status, Action Verify);
 
-    /// <summary>Supplies the supported capability keys for the executable matrix theory.</summary>
-    /// <returns>The supported capability keys.</returns>
     public static TheoryData<string> SupportedCapabilities()
     {
         var data = new TheoryData<string>();

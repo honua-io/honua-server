@@ -295,17 +295,6 @@ public sealed partial class CandidateTelemetryGateCertificationTests
             WriteIndented = true
         };
 
-        /// <summary>
-        /// One throwaway PKCS#12 key-ring certificate per lane process (honua-server#4617).
-        /// </summary>
-        /// <remarks>
-        /// A 2026.1 server image that connects to Redis outside Development/Test refuses to start
-        /// until <c>Operations:SecretChannel:KeyRingCertificatePath</c> names a real certificate
-        /// (#4722, #4885). That is an operator-supplied file, so the lane mints one and mounts it
-        /// read-only into every replica, the same way the capacity soak does (#4902). Without it the
-        /// candidate replica exits at startup and the rollout fails at the exposure deadline, which
-        /// reads as a candidate health failure rather than as missing configuration.
-        /// </remarks>
         private static readonly Lazy<KeyRingCertificate> LaneKeyRing = new(MintKeyRing, LazyThreadSafetyMode.ExecutionAndPublication);
 
         private sealed record KeyRingCertificate(string HostDirectory, string ContainerDirectory, string FileName, string Password)

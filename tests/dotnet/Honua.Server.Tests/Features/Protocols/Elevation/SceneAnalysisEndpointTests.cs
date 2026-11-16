@@ -13,13 +13,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
-/// <summary>
-/// Integration coverage for the Pro-tier scene analysis endpoints (#1204):
-/// <c>POST /elevation/{datasetId}/sun-shadow</c> and
-/// <c>POST /elevation/{datasetId}/slice</c>. The sun/shadow + slice math itself
-/// is unit-tested in <c>Honua.Core.Tests</c>; these tests exercise the HTTP
-/// pipeline (license gate, validation, JSON contract) against a seeded DEM.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Elevation)]
 public sealed class SceneAnalysisEndpointTests : IAsyncLifetime

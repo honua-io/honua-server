@@ -29,13 +29,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// Owner decision 10 (2026-10-10): a Production host composed from the shipped
-/// <c>appsettings.Production.json</c> lets an administrative key execute typed operations through
-/// the built-in rule, without operator-authored rules, while a layer write key still hits the
-/// fail-closed default. Reproduces the honua-release run 38066103745 denial of
-/// <c>service.publish</c> for an <c>admin:write</c> key.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

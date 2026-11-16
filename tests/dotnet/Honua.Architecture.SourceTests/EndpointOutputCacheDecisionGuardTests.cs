@@ -11,26 +11,11 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Regression guard for SEC-20. The shared output cache keys on the request URL
-/// plus the base policy's vary-by values (tenant, license), so a read route whose
-/// response depends on a credential presented in a request header or query
-/// parameter — or that returns a credential — is not a function of its cache key.
-/// Every read route declared in an endpoint file that handles one of those
-/// credential families must therefore state an output-cache decision explicitly
-/// (<c>CacheOutput(...)</c> on the route or on its parent group), rather than
-/// inheriting whatever the shared base policy happens to do.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class EndpointOutputCacheDecisionGuardTests
 {
     private const string SourceRelativePath = "src";
 
-    /// <summary>
-    /// Literals that mark an endpoint file as handling an application-defined
-    /// credential: the credential-bearing request headers, and the metadata marker
-    /// applied to routes whose response body is itself a credential.
-    /// </summary>
     private static readonly string[] CredentialSurfaceMarkers =
     {
         "X-API-Key",
@@ -52,14 +37,6 @@ public sealed class EndpointOutputCacheDecisionGuardTests
 
     private static readonly char[] StatementBoundaryChars = { ';', '{', '}' };
 
-    /// <summary>
-    /// Every read route mapped in an endpoint file that handles a credential
-    /// header, a credential query parameter, or a credential response body must
-    /// declare its own output-cache decision. Routes that are genuinely public and
-    /// URL-pure opt into a named policy; the rest opt out with
-    /// <c>CacheOutput(policy =&gt; policy.NoCache())</c>. Silence is the gap this
-    /// guard closes.
-    /// </summary>
     [ArchitectureTest]
     public void EveryReadEndpointOnACredentialSurface_DeclaresACacheDecision()
     {

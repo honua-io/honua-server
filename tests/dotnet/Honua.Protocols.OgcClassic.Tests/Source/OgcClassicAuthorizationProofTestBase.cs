@@ -13,39 +13,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
 
-/// <summary>
-/// Shared fixture and denial assertions for the OGC-classic authorization proofs
-/// (#4388): WMS <c>GetMap</c> / <c>GetFeatureInfo</c>, WMTS <c>GetTile</c>, and WCS
-/// <c>DescribeCoverage</c> / <c>GetCoverage</c>. Before these proofs the only
-/// OGC-classic authorization tests in the repository covered WMS
-/// <c>GetCapabilities</c> and WFS <c>GetFeature</c>; every operation that actually
-/// returns imagery, tiles, coverage bytes or attribute data was untested.
-/// </summary>
-/// <remarks>
-/// Every case is a real HTTP request against a real PostGIS seed with the dev-auth
-/// bypass switched off, so the denials are produced by the production access
-/// pipeline rather than by an unconfigured endpoint. Each denial is paired with an
-/// authenticated success on the same fixture that asserts the actual payload — a
-/// denial-only test would also pass against an endpoint that is broken for everyone.
-///
-/// The access policy is set on the <c>test</c> service rather than on layer 0
-/// because these operations resolve through different resources: WMS and WMTS serve
-/// the feature resource <c>res-layer-0</c> while WCS serves the raster resource
-/// <c>res-image-test</c>. A service-level policy covers both, and
-/// <c>AccessPolicyEvaluator</c> gives a service denial the same force as a layer
-/// denial when the layer carries no policy of its own.
-///
-/// The proofs are split into one concrete class per protocol namespace
-/// (<c>…Ogc.Classic.Wms</c>, <c>…Ogc.Classic.Wmts</c>, <c>…Ogc.Classic.Wcs20</c>) so
-/// each proving test lands in the CI shard that already owns its protocol; the
-/// capability-impact crosswalk rejects a proving test that no shard selects.
-/// </remarks>
 public abstract class OgcClassicAuthorizationProofTestBase : IAsyncLifetime
 {
     protected const string ViewerRole = "map-viewer";
     protected const string OutsiderRole = "unrelated-role";
 
-    /// <summary>Seed attribute values that must never appear in a denial body.</summary>
     protected static readonly string[] SeededAttributeValues =
         ["Test Feature", "Another Feature", "Fifth Feature", "A test feature for integration tests"];
 
@@ -103,10 +75,6 @@ public abstract class OgcClassicAuthorizationProofTestBase : IAsyncLifetime
         client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, string.Join(',', roles));
     });
 
-    /// <summary>
-    /// The shared half of every denial assertion: the refusal status, and a response
-    /// that carries no imagery, tile, coverage bytes or feature attributes.
-    /// </summary>
     protected static async Task<string> AssertRefusedWithoutPayloadAsync(
         HttpResponseMessage response,
         HttpStatusCode expectedStatus)

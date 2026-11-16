@@ -14,10 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console session bootstrap, content CRUD, action
-/// check, and provenance endpoints (#1162).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]

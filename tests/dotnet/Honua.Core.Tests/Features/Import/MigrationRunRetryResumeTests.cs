@@ -9,13 +9,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Retry / resume / idempotency / cancellation evidence for migration runs
-/// (issue #1033 slice 3). Each scenario drives a small in-process migration
-/// runner that uses <see cref="MigrationRunMetricsRecorder"/> +
-/// <see cref="IMigrationRunCheckpointStore"/>, then asserts the recorded metric
-/// counters and the produced "manifest" artifact behave correctly.
-/// </summary>
 public sealed class MigrationRunRetryResumeTests
 {
     private const string RunId = "retry-resume-run-001";
@@ -192,10 +185,6 @@ public sealed class MigrationRunRetryResumeTests
         BaseUrl = "https://fixture.example/geoserver"
     };
 
-    /// <summary>
-    /// Minimal deterministic in-process migration runner used to exercise retry, resume,
-    /// idempotency, and cancellation behavior against the recorder + checkpoint store.
-    /// </summary>
     private sealed class FakeMigrationRunner
     {
         private readonly int _itemCount;

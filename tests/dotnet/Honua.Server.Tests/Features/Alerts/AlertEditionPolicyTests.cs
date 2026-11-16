@@ -11,11 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Unit tests for the license-derived <see cref="AlertEditionPolicy"/> (#2998): allowed
-/// triggers/channels come from the active license entitlements, and <c>Alerts:Edition</c> acts
-/// only as a downward cap — never an upward grant.
-/// </summary>
 public sealed class AlertEditionPolicyTests
 {
     private static AlertEditionPolicy CreatePolicy(

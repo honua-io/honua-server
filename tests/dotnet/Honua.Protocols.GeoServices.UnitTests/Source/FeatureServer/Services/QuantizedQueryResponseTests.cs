@@ -9,12 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services;
 
-/// <summary>
-/// Wire-level tests for view-mode quantized <c>f=json</c> featureSets (#5438). A client
-/// reads the featureSet front to back and resolves each quantized geometry against the
-/// <c>transform</c> it has already read, so the transform must be serialized before
-/// <c>features</c>; otherwise the integer coordinates are never dequantized and nothing draws.
-/// </summary>
 public sealed class QuantizedQueryResponseTests
 {
     // The polygon exchange from #5438: two clockwise fixture rectangles requested with

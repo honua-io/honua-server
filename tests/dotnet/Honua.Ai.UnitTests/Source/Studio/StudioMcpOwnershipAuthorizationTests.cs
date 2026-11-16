@@ -28,12 +28,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Ownership-parity matrix for the Studio MCP lifecycle surface (#3412).
-/// Exercises the real <see cref="StudioAuthorizationService"/> behind a
-/// recording adapter so the tests prove both policy behavior and the exact
-/// loaded owner/operation/resource id each MCP family supplies to it.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpOwnershipAuthorizationTests
 {

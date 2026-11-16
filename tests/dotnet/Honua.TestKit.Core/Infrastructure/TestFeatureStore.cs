@@ -14,9 +14,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Test implementation of feature store interfaces for unit and integration tests
-/// </summary>
 public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IStreamingFeatureStore, IDisposable
 {
     private const string UnsupportedWhereClauseMessage =
@@ -354,13 +351,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return Task.FromResult<TemporalExtentResult?>(TemporalExtentResult.Create(min, max));
     }
 
-    /// <summary>
-    /// Asynchronously creates a feature in the specified layer.
-    /// </summary>
-    /// <param name="layerId">The layer ID where the feature will be created.</param>
-    /// <param name="feature">The feature to create.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The created feature.</returns>
     public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.ContainsKey(layerId))
@@ -372,14 +362,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return Task.FromResult(newFeature);
     }
 
-    /// <summary>
-    /// Asynchronously updates a feature in the specified layer.
-    /// </summary>
-    /// <param name="layerId">The layer ID where the feature exists.</param>
-    /// <param name="feature">The feature with updated data.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated feature.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the layer or feature is not found.</exception>
     public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.TryGetValue(layerId, out var features))
@@ -394,11 +376,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return Task.FromResult(feature);
     }
 
-    /// <summary>
-    /// Mirrors the Postgres writer's partial-update contract: a partial update keeps stored
-    /// attributes it omits (except explicit removals) and, when it omitted geometry, the
-    /// stored geometry (#6094).
-    /// </summary>
     private static Feature MergeOmittedOntoStored(Feature update, Feature stored)
     {
         if (update.PreserveOmittedGeometry)
@@ -433,13 +410,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return update with { Attributes = attributes.ToImmutable() };
     }
 
-    /// <summary>
-    /// Asynchronously deletes a feature from the specified layer.
-    /// </summary>
-    /// <param name="layerId">The layer ID where the feature exists.</param>
-    /// <param name="featureId">The ID of the feature to delete.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True if the feature was successfully deleted, false if not found.</returns>
     public Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.TryGetValue(layerId, out var features))
@@ -705,15 +675,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return map.Count == 0 ? null : map;
     }
 
-    /// <summary>
-    /// In-memory analogue of the provider's transactional precondition enforcement
-    /// (compare-in-the-UPDATE's-WHERE-clause / affected-rows semantics): when the batch
-    /// carries a precondition for the target object ID and the stored feature's canonical
-    /// <see cref="FeatureStateToken"/> no longer matches, the operation is rejected with a
-    /// typed <see cref="EditOperationResult.PreconditionFailed"/> result and the write is
-    /// not applied. The check and the subsequent write happen within the store's single
-    /// synchronous mutation flow, so no concurrent writer can interleave between them.
-    /// </summary>
     private bool CheckPrecondition(
         int layerId,
         long? objectId,
@@ -1183,9 +1144,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return Feature.Create(feature.Id, feature.Geometry, filteredAttributes);
     }
 
-    /// <summary>
-    /// Creates a WKB point geometry for testing
-    /// </summary>
     private static byte[] CreatePointWkb(double x, double y)
     {
         var wkbBytes = new byte[21]; // 1 + 4 + 8 + 8 bytes
@@ -1196,9 +1154,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return wkbBytes;
     }
 
-    /// <summary>
-    /// Applies spatial filtering for test scenarios
-    /// </summary>
     private static IEnumerable<Feature> ApplySpatialFilter(IEnumerable<Feature> features, SpatialFilter spatialFilter)
     {
         // Handle KNN queries - sort by distance and take K nearest
@@ -1295,9 +1250,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         });
     }
 
-    /// <summary>
-    /// Converts a distance value to meters based on the specified unit
-    /// </summary>
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
     {
         return unit switch
@@ -1310,9 +1262,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         };
     }
 
-    /// <summary>
-    /// Calculates approximate distance in meters between two geographic points using Haversine formula
-    /// </summary>
     private static double CalculateDistance((double x, double y) point1, (double x, double y) point2)
     {
         const double earthRadiusMeters = 6371000; // Earth's radius in meters
@@ -1330,9 +1279,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return earthRadiusMeters * c;
     }
 
-    /// <summary>
-    /// Applies temporal filtering for test scenarios
-    /// </summary>
     private static IEnumerable<Feature> ApplyTemporalFilter(IEnumerable<Feature> features, TemporalFilter temporalFilter)
     {
         return features.Where(feature =>
@@ -1434,9 +1380,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         }
     }
 
-    /// <summary>
-    /// Simple point-in-polygon algorithm for testing
-    /// </summary>
     private static bool IsPointInPolygon((double x, double y) point, List<(double x, double y)> polygon)
     {
         bool inside = false;
@@ -1454,9 +1397,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return inside;
     }
 
-    /// <summary>
-    /// Parse point coordinates from WKB data
-    /// </summary>
     private static (double x, double y)? ParsePointFromWkb(byte[] wkb)
     {
         if (wkb.Length < 21)
@@ -1468,10 +1408,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return (x, y);
     }
 
-    /// <summary>
-    /// Parse polygon coordinates from WKB data for testing
-    /// Simplified implementation that only handles the test polygon
-    /// </summary>
     private static List<(double x, double y)>? ParsePolygonFromWkb(byte[] wkb)
     {
         // For test purposes, return a hard-coded polygon that matches the test

@@ -12,17 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins which planner the <c>honua_plan_analysis</c> MCP tool resolves.
-/// </summary>
-/// <remarks>
-/// Successor to <c>LivePlanAnalysisServiceTests</c>, which exercised the live,
-/// provider-backed plan lane that ADR-0076 (honua-server#3255) retired along with
-/// the <c>WorkflowGeneration</c> seam it rode on. The assertions that survive that
-/// removal are the registration ones, and they now carry a stronger claim: no
-/// configuration re-enables a server-side inference lane, because the registration
-/// no longer consults configuration at all.
-/// </remarks>
 [Protocol(TestProtocols.Mcp)]
 public sealed class PlanAnalysisRegistrationTests
 {

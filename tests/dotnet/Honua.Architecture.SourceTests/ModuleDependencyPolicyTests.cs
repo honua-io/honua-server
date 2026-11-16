@@ -43,18 +43,6 @@ public sealed class ModuleDependencyPolicyTests
         Worker,
     }
 
-    /// <summary>
-    /// The dependency-direction matrix from ADR-0047, encoded as the set of
-    /// <c>(consumer, provider)</c> pairs that are allowed. Every pair NOT in
-    /// this set is forbidden; violations either fail the test or — if the
-    /// violation is pre-existing — must appear in <see cref="_techDebtAllowances"/>.
-    /// </summary>
-    /// <remarks>
-    /// Reading the matrix: each entry is "this consumer may reference this
-    /// provider". The Server row is the only one that may reference everything
-    /// below it in the tier stack. The Abstractions row is empty (the contract
-    /// surface depends on nothing in the repo).
-    /// </remarks>
     private static readonly HashSet<(ModuleRole Consumer, ModuleRole Provider)> _allowedCells = new()
     {
         // Core can reference Abstractions only.
@@ -323,19 +311,6 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Worker, ModuleRole.Azure),
     };
 
-    /// <summary>
-    /// Tech-debt ratchet for pre-existing policy violations. Each entry pins
-    /// the number of distinct <c>ProjectReference</c> edges that today violate
-    /// the matrix, partitioned by <c>(consumer-role, provider-role)</c>. The
-    /// ratchet is one-way: caps may only shrink. When the matrix in ADR-0047
-    /// is the actual state of the world, this list is empty.
-    /// </summary>
-    /// <remarks>
-    /// As of ADR-0047, every runtime csproj reference matches the matrix
-    /// exactly. Future heavy-package-migration PRs (carving
-    /// <c>Honua.Geometry</c> and <c>Honua.Geocoding</c> out of
-    /// <c>Honua.Core</c>) may introduce transitional edges that land here.
-    /// </remarks>
     private static readonly IReadOnlyList<TechDebtAllowance> _techDebtAllowances = Array.Empty<TechDebtAllowance>();
 
     private sealed record TechDebtAllowance(ModuleRole Consumer, ModuleRole Provider, int MaxCount);
@@ -516,15 +491,6 @@ public sealed class ModuleDependencyPolicyTests
     private static IReadOnlyList<string> LoadProjectReferenceNames(string csprojPath)
         => ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 
-    /// <summary>
-    /// Maps a csproj name to its <see cref="ModuleRole"/>. Order matters — the
-    /// more-specific names (e.g. <c>Honua.Core.Abstractions</c>) must be tested
-    /// before their less-specific prefixes (e.g. <c>Honua.Core</c>). Names that
-    /// do not match any matrix role return <see cref="ModuleRole.Unclassified"/>;
-    /// the caller treats unclassified consumers as tooling (allowed to
-    /// reference anything) but flags unclassified runtime providers as a
-    /// violation that needs an explicit matrix entry.
-    /// </summary>
     private static ModuleRole ClassifyByCsprojName(string projectName)
     {
         // Tooling first: test projects, the test-kit, and packaged dev-tool CLIs are

@@ -3,10 +3,6 @@
 
 namespace Honua.TestKit.Constants;
 
-/// <summary>
-/// Operation identifiers for test trait attributes.
-/// Used with <see cref="Attributes.OperationAttribute"/> for test categorization.
-/// </summary>
 public static class Operations
 {
     // Common Operations
@@ -76,7 +72,6 @@ public static class Operations
     public const string RoleManagement = "RoleManagement";
     public const string ApiKeyManagement = "ApiKeyManagement";
 
-    /// <summary>Operation-proposal approval surface management.</summary>
     public const string ApprovalManagement = "ApprovalManagement";
     public const string RateLimitManagement = "RateLimitManagement";
     public const string License = "License";

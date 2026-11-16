@@ -12,30 +12,6 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 
 public sealed partial class ODataDeltaTests
 {
-    /// <summary>
-    /// #3872: a delete and a filter exit that carry the same database timestamp as the
-    /// baseline they follow must cross the delta token boundary exactly once, in the
-    /// documented identity-only removal shape the public SDK consumes, and a change
-    /// committed while the subscriber is still paging must not be lost.
-    /// </summary>
-    /// <remarks>
-    /// This complements <c>Delta_EqualTimestampsDeletesRecreateAndFilterTransitions_PageOneConverges</c>,
-    /// which proves that the materialized state converges. Convergence alone does not
-    /// prove the three properties asserted here, because a materialized view reaches the
-    /// same state whether a removal is delivered once, delivered twice, or delivered with
-    /// extra fields attached:
-    /// <list type="bullet">
-    /// <item>the removal payload is identity-only — no attribute or geometry value of a row
-    /// that left the query is disclosed through the tombstone;</item>
-    /// <item>replaying the terminal delta token yields an empty change set, so a removal is
-    /// never re-emitted and a subscriber cannot accumulate phantom work;</item>
-    /// <item>a delete committed while the subscriber is mid-paging is absent from the frozen
-    /// page image and delivered exactly once by the next poll, so nothing is dropped in the
-    /// window between a nextLink and its deltaLink.</item>
-    /// </list>
-    /// Every mutation here keeps the seeded <c>updated_at</c> value unchanged, so no part of
-    /// the proof can be satisfied by a timestamp advancing.
-    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]

@@ -11,12 +11,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards against silent drift between the built-in geoprocessing process catalog
-/// (<c>BuiltInProcessCatalog</c>) and its public reference documentation
-/// (<c>docs/reference/geoprocessing-operations.md</c>). Every registered process id
-/// must be documented so adapters and operators can trust the page.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class GeoprocessingCatalogDocParityTests
 {
@@ -40,13 +34,6 @@ public sealed class GeoprocessingCatalogDocParityTests
             + "through a declared entry point or it is not in the catalog (#4409)");
     }
 
-    /// <summary>
-    /// Every advertised operation must declare at least one entry point, and the declared
-    /// entry points must agree with the canonical execution classification. This is the
-    /// catalog half of the entry-point contract; the advertisement half — that no surface
-    /// offers an operation on an undeclared entry point — is enforced by
-    /// <c>ProcessEntryPointAdvertisementTests</c>.
-    /// </summary>
     [Fact]
     public void EveryCatalogProcess_DeclaresEntryPointsMatchingItsClassification()
     {
@@ -69,11 +56,6 @@ public sealed class GeoprocessingCatalogDocParityTests
         }
     }
 
-    /// <summary>
-    /// The reference page is a generated catalog document, so it must state the entry
-    /// points per operation exactly as the catalog declares them — an operator reading the
-    /// page has to be able to tell which surface will accept the operation.
-    /// </summary>
     [Fact]
     public void EveryCatalogProcess_DeclaresItsEntryPointsInTheReferenceDoc()
     {
@@ -118,13 +100,6 @@ public sealed class GeoprocessingCatalogDocParityTests
             + $"{DocRelativePath}; regenerate it from BuiltInProcessCatalog. Missing: {string.Join(", ", missing)}");
     }
 
-    /// <summary>
-    /// Guards against the prose process count (and native-process fraction) drifting
-    /// from the catalog, which is exactly what happened before honua-server#2355:
-    /// the doc said "95 processes" (and "30 of the 95") while the catalog had grown
-    /// to 96. Both numbers are pinned here so a future catalog change that isn't
-    /// reflected in the doc fails the build instead of silently going stale.
-    /// </summary>
     [Fact]
     public void DocProseCount_MatchesCatalogCount()
     {

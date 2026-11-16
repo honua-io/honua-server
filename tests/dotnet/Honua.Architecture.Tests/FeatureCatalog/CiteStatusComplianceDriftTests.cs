@@ -9,17 +9,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Drift guard for the CITE canonical-numbers join (#2924).
-/// <c>docs/cite-status.md</c> is the single canonical snapshot of OGC CITE
-/// per-suite pass rates. The <c>x-honua-cite-compliance</c> vendor extension
-/// embedded in the <c>info</c> object of <c>src/Honua.Server/openapi.json</c>
-/// and the four protocol-scoped <c>*-openapi.json</c> files
-/// (<c>ogc-processes</c>, <c>ogc-tiles</c>, <c>ogc-coverages</c>,
-/// <c>ogc-maps</c>) each restate a subset of the same numbers. Before this
-/// guard, nothing checked that join — a hand-edit to any one of the five
-/// artifacts could silently diverge from cite-status.md forever.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed partial class CiteStatusComplianceDriftTests
 {
@@ -249,18 +238,6 @@ public sealed partial class CiteStatusComplianceDriftTests
         }
     }
 
-    /// <summary>
-    /// Validates every "&lt;passed&gt;/&lt;total&gt;" fraction mentioned anywhere in the
-    /// extension's summary prose -- not just the full-suite aggregate
-    /// <see cref="ProseAggregatePattern"/> anchors on. The protocol-scoped
-    /// *-openapi.json files restate their own suite's count ahead of the aggregate
-    /// (e.g. "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is
-    /// 1117/1117"); <see cref="AssertSuiteRows"/> only checks the structured
-    /// suites[] entries, so a stale leading count in the prose would otherwise
-    /// slip past this gate even when suites[] and cite-status.md still agree.
-    /// Each fraction found must equal either the canonical full-suite aggregate
-    /// or one of this file's own suites[] (passed, total) pairs.
-    /// </summary>
     private static void AssertEveryProseFractionIsKnown(
         string displayPath,
         JsonElement extension,

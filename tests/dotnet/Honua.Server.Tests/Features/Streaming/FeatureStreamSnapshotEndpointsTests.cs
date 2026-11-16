@@ -25,11 +25,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Integration tests for snapshot-then-delta subscriptions, subscription-local sequence
-/// continuity, replacement snapshots on cursor gap/expiry, SSE/WebSocket parity, and the
-/// immutable deployment-revision projection (#3038).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
@@ -118,7 +113,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             "deltas resume strictly after the captured baseline cursor");
     }
 
-    /// <summary>Real GeoServices mutations must reach a subscriber with the edited values and ID.</summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_RealUpdateAndDelete_ReachTheSubscriberCorrelatedToTheEdit()
@@ -1471,10 +1465,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                     serviceProvider,
                     descriptor.ImplementationType!));
 
-    /// <summary>
-    /// Delegates every read except the two the baseline path uses, which fail the way a backing
-    /// store whose table has been dropped or whose grants were revoked fails.
-    /// </summary>
     private sealed class UnreadableFeatureReader(IFeatureReader inner, bool allowObjectIdProbe) : IFeatureReader
     {
         public const string FailureMessage = "42P01: relation \"honua_test.features\" does not exist";
@@ -1547,12 +1537,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                     original.Lifetime));
             });
 
-    /// <summary>
-    /// Wraps the real event store so <see cref="IFeatureChangeEventStore.GetOldestRetainedCursorAsync"/>
-    /// reports a retained floor ABOVE the snapshot's baseline cursor — the state the store is
-    /// left in when more than <c>MaxRetainedEvents</c> mutations land while a snapshot scan is
-    /// in flight. Everything else delegates, so only the retention answer is synthetic.
-    /// </summary>
     private sealed class TrimmedWindowEventStore(IFeatureChangeEventStore inner, long oldestRetained)
         : IFeatureChangeEventStore
     {
@@ -1568,11 +1552,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             => inner.QueryAsync(query, cancellationToken);
     }
 
-    /// <summary>
-    /// Represents a quiescent stream whose durable cursor survived after every retained payload
-    /// expired. Older resume cursors still require replacement, but a snapshot captured at the
-    /// current cursor has a known-empty successor window and is complete.
-    /// </summary>
     private sealed class FullyExpiredEventStore(long currentCursor)
         : IFeatureChangeEventStore
     {
@@ -1609,10 +1588,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return request;
     }
 
-    /// <summary>
-    /// Inserts one correlated feature through the canonical GeoServices edit pipeline and
-    /// returns the object id the server assigned.
-    /// </summary>
     private async Task<long> ApplyEditAsync(string correlation, CancellationToken cancellationToken)
     {
         var payload = $$"""
@@ -1631,7 +1606,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return await ApplyEditsAsync(payload, "addResults", cancellationToken);
     }
 
-    /// <summary>Updates one existing feature through the same pipeline (#4427).</summary>
     private async Task<long> ApplyUpdateAsync(long objectId, string correlation, CancellationToken cancellationToken)
     {
         var payload = $$"""
@@ -1650,7 +1624,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return await ApplyEditsAsync(payload, "updateResults", cancellationToken);
     }
 
-    /// <summary>Deletes one existing feature through the same pipeline (#4427).</summary>
     private async Task<long> ApplyDeleteAsync(long objectId, CancellationToken cancellationToken)
     {
         var payload = $$"""
@@ -1664,12 +1637,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return await ApplyEditsAsync(payload, "deleteResults", cancellationToken);
     }
 
-    /// <summary>
-    /// #4427: asserts the observed delta IS the edit this test made — the object id the server
-    /// assigned, an <c>insert</c> operation, and the run's unique correlation marker carried in
-    /// the streamed after-image. Without all three, any concurrent event on the layer satisfies
-    /// "the mutation was observed".
-    /// </summary>
     private static void AssertCorrelatedInsert(JsonElement delta, long editedObjectId, string correlation)
     {
         delta.GetProperty("objectId").GetInt64().Should().Be(
@@ -1762,30 +1729,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return new BaselineFrames(begin, features, end, sequences, eventIds);
     }
 
-    /// <summary>
-    /// A baseline together with the number of UTF-8 bytes its snapshot frames occupied on the
-    /// wire. <paramref name="EnvelopeBytes"/> is the mandatory <c>snapshot-begin</c> +
-    /// <c>snapshot-end</c> pair; <paramref name="TotalBytes"/> adds every
-    /// <c>snapshot-feature</c> frame between them.
-    /// </summary>
     private readonly record struct MeasuredBaseline(
         BaselineFrames Frames,
         int EnvelopeBytes,
         int TotalBytes);
 
-    /// <summary>
-    /// Reads a baseline like <see cref="ReadBaselineAsync"/> while charging each snapshot frame
-    /// the exact bytes it occupied, so a test can compare the response against the server's
-    /// <c>MaxSnapshotBytes</c> budget. The accounting mirrors the SSE framing the server writes
-    /// — an optional <c>id:</c> line, an <c>event:</c> line, and a <c>data:</c> line followed by
-    /// the blank line that terminates the frame — because a budget the server honors in its own
-    /// units but overruns on the wire is exactly the failure this measurement exists to catch.
-    /// Non-snapshot frames (the status handshake) are excluded: the budget bounds the baseline.
-    /// <para>The count is scoped to those three SSE field types, which is the complete set the
-    /// snapshot writer emits today. A line of any other kind (an SSE comment/keepalive, or a
-    /// <c>retry:</c> field) would be skipped rather than charged, so if the writer ever emits
-    /// one inside a baseline this must charge it too or the measurement would undercount.</para>
-    /// </summary>
     private static async Task<MeasuredBaseline> ReadMeasuredBaselineAsync(
         StreamReader reader,
         CancellationToken cancellationToken)

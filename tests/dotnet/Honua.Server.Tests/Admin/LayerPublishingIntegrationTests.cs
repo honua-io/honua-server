@@ -31,9 +31,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Integration tests for layer publishing admin endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed partial class LayerPublishingIntegrationTests : IClassFixture<LayerPublishingIntegrationTests.PublishingFixture>, IAsyncLifetime
@@ -1784,10 +1781,6 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         await CreateSecureConnectionAsync(publishConnection.ConnectionString);
     }
 
-    /// <summary>
-    /// Counts a layer's rows in the server's managed <c>features</c> table, the table the
-    /// managed feature writer writes for this fixture's isolated schema.
-    /// </summary>
     private async Task<int> GetManagedStoreRowCountAsync(int layerId)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
@@ -1926,12 +1919,6 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Asserts the published collection serves exactly the single row
-    /// <see cref="CreatePostGisTableAsync()"/> seeds, including its attribute values and
-    /// ordinates. The expected values are the literals the fixture inserted, computed
-    /// independently of any server response.
-    /// </summary>
     private async Task AssertPublishedCollectionServesSeedRowOnlyAsync(int layerId)
     {
         var itemsResponse = await _client.GetAsync(
@@ -1956,10 +1943,6 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         coordinates[1].GetDouble().Should().Be(1d);
     }
 
-    /// <summary>
-    /// Counts rows in the live source table the published layer is served from, optionally
-    /// narrowed to a single feature name.
-    /// </summary>
     private async Task<int> GetSourceRowCountAsync(string? name = null)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();

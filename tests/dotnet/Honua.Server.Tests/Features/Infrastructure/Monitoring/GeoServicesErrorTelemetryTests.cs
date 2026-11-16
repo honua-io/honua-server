@@ -10,13 +10,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Verifies the keystone error-rate telemetry (#2243): every GeoServices error
-/// envelope — including the LB-invisible HTTP-200 in-band <c>{error}</c> body and
-/// sub-500 errors — must increment the OTel meter counters
-/// (<c>honua_geoservices_error_total</c>, <c>honua_request_error_total</c>) and the
-/// Core <c>honua_application_errors_total</c> counter.
-/// </summary>
 [Collection("HonuaTelemetry")]
 public sealed class GeoServicesErrorTelemetryTests
 {
@@ -208,10 +201,6 @@ public sealed class GeoServicesErrorTelemetryTests
         }
     }
 
-    /// <summary>
-    /// Test-only MeterListener capturing long measurements for a set of named
-    /// instruments on the "Honua" meter.
-    /// </summary>
     private sealed class ErrorMetricsCollector : IDisposable
     {
         private readonly MeterListener _listener;

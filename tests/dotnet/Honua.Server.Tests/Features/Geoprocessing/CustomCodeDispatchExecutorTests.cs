@@ -12,11 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Proves the custom-code dispatch executor is fenced to the <c>custom-code</c>
-/// runtime profile (so neither the lean managed dispatcher nor the native GDAL
-/// worker can claim a custom-code job) and fails closed when claimed in-process.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class CustomCodeDispatchExecutorTests
 {

@@ -9,9 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for <see cref="QueryConcurrencyGate"/> admission control.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class QueryConcurrencyGateTests
 {

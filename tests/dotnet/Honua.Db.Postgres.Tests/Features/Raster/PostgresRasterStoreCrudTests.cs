@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Integration tests for the admin raster CRUD gap (#1875) and the sensor-metadata hydration
-/// foundation (#1879/#1880/#1881) on <see cref="PostgresRasterStore"/>.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
 {

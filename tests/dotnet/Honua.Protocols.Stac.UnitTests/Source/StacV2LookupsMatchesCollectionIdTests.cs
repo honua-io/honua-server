@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Unit tests for <see cref="StacV2Lookups.MatchesCollectionId"/>.
-/// PA-120: STAC API Item Search collections parameter must accept arbitrary string collection IDs
-/// (e.g. "sentinel-2-l2a"), not just integer layer indices.
-/// </summary>
 public sealed class StacV2LookupsMatchesCollectionIdTests
 {
     private static MetadataV2Layer MakePublication(

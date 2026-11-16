@@ -14,30 +14,13 @@ using Xunit;
 
 namespace Honua.TestKit.Providers;
 
-/// <summary>
-/// Web-app fixture that boots a real <see cref="WebApplicationFactory{TEntryPoint}"/> host
-/// with <c>DataSource:Provider=mysql</c> against a Testcontainers <c>mysql:8</c> instance
-/// seeded with <see cref="ProviderSmokeData"/> (honua-server#2947).
-/// </summary>
-/// <remarks>
-/// MySql is a primary-provider replacement (mutually exclusive with Postgres at
-/// <c>InfrastructureCompositionRoot</c>'s <c>DataSource:Provider</c> switch), so this
-/// fixture builds its own <see cref="WebApplicationFactory{TEntryPoint}"/> from scratch
-/// rather than reusing <see cref="WebAppFixture"/>, which is hard-wired to Postgres. Layer
-/// mapping (table/column names) is static, config-time (<c>MySql:Layers:0:*</c>), so the
-/// Metadata v2 graph built by <see cref="ProviderSmokeGraph"/> is used only for protocol
-/// discovery/schema surfaces (OGC API Features collection, OData $metadata, FeatureServer
-/// layer metadata) — both must agree on the layer id (ProviderSmokeGraph.LayerId) / table "parcels".
-/// </remarks>
 public sealed class MySqlProviderWebAppFixture : IAsyncLifetime
 {
     private MySqlContainer _container = null!;
     private WebApplicationFactory<Program> _factory = null!;
 
-    /// <summary>HTTP client bound to the fixture's MySql-backed host.</summary>
     public HttpClient Client { get; private set; } = null!;
 
-    /// <summary>The in-memory Metadata v2 graph provider installed into the test host.</summary>
     public TestMetadataV2GraphProvider GraphProvider { get; private set; } = null!;
 
     public async Task InitializeAsync()

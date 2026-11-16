@@ -16,24 +16,11 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit-level regression for BH3-027: <c>ImportDatasetJobExecutor</c> must reject
-/// any <c>sourcePath</c> job input that resolves to a path outside the configured
-/// staging root directory.  These tests run without Docker / Testcontainers because
-/// the path-validation logic is pure in-process and requires no external services.
-/// </summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ImportDatasetJobExecutorPathTraversalTests
 {
     // ─── BH3-027 regression ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// A <c>sourcePath</c> that resolves to a location outside the staging root must be
-    /// rejected immediately — before any file I/O — with a <c>Failed</c> job status.
-    /// Before the fix the executor passed the path verbatim to <see cref="File.Exists"/>
-    /// and then to the import pipeline, allowing server-side path traversal by any
-    /// authenticated caller with GP execution rights.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/processes/{processId}/execution")]
@@ -120,7 +107,6 @@ public sealed class ImportDatasetJobExecutorPathTraversalTests
         };
     }
 
-    /// <summary>No-op job execution context for path-traversal unit tests.</summary>
     private sealed class NullJobExecutionContext(string operationId) : IJobExecutionContext
     {
         public string OperationId { get; } = operationId;

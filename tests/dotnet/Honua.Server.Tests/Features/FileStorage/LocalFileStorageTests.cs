@@ -16,9 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
-/// <summary>
-/// Integration tests for LocalFileStorage implementation
-/// </summary>
 [Collection("Unit")]
 public class LocalFileStorageTests : IAsyncLifetime, IDisposable
 {

@@ -7,11 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="DefaultDataResidencyPolicyProvider"/> — covers the
-/// "data residency controls can enforce configured regional boundaries"
-/// acceptance criterion for #352.
-/// </summary>
 public sealed class DataResidencyPolicyTests
 {
     [Trait("Tier", "Fast")]

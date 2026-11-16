@@ -8,9 +8,6 @@ using Honua.Core.Features.FileImport.Domain;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Tests for <see cref="OgcWfsImportRequest"/> and <see cref="OgcWfsImportResult"/> defaults.
-/// </summary>
 public sealed class OgcWfsImportRequestTests
 {
     [Trait("Tier", "Fast")]

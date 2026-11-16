@@ -7,13 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Pins the canonical geographic-SRID classification (#2732). Two buckets are asserted separately:
-/// the broad <see cref="GeographicSridClassifier.IsGeographicSrid(int)"/> used for axis order and
-/// general degree/planar routing, and the deliberately-narrower geodesic-safe allowlist used by the
-/// provider distance paths. The divergences the audit resolved (EPSG:4759, 4619, 4617) are pinned
-/// explicitly so a future edit cannot silently re-split the lists.
-/// </summary>
 public sealed class GeographicSridClassifierTests
 {
     [Trait("Tier", "Fast")]

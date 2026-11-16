@@ -19,12 +19,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Hosting;
 
-/// <summary>
-/// Composition and refusal coverage for migrate-only mode (honua-server#6470). The migrate-only
-/// service graph must start nothing (no web server, no hosted or background service) and must
-/// refuse an unusable configuration before it touches a database, each with its typed exit code.
-/// The real-database path is proven in <c>LocalSubstrateMigrateOnlyTests</c>.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class MigrateOnlyModeTests
 {

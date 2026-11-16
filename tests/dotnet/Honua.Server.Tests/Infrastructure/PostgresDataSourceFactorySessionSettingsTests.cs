@@ -12,16 +12,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Integration tests proving that <see cref="PostgresDataSourceFactory"/> applies the
-/// session settings (lock/statement/idle-in-transaction timeouts and default
-/// search_path) via the physical-connection initializer — i.e. with plain SET
-/// statements after connect instead of the libpq <c>options</c> startup parameter,
-/// which AWS RDS Proxy rejects with 0A000 and transaction-mode poolers break on
-/// (issue #1638) — and that the settings survive pool return. In
-/// <c>Database:SessionSettings:Mode=role-defaults</c> the factory must issue no session
-/// SET at all and the role defaults apply, verified at startup (issue #5870).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresDataSourceFactorySessionSettingsTests : IAsyncLifetime
@@ -222,9 +212,6 @@ public sealed class PostgresDataSourceFactorySessionSettingsTests : IAsyncLifeti
         return sources;
     }
 
-    /// <summary>
-    /// A throwaway LOGIN role (roles are cluster-wide, so each test owns a unique one).
-    /// </summary>
     private sealed class LoginRole : IAsyncDisposable
     {
         private const string Password = "rd_test_pw";

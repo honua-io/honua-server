@@ -14,11 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for embed governance: key lifecycle, scoped policy
-/// evaluation, CORS/domain enforcement, rate limiting, analytics ingestion, and
-/// usage aggregation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApiKeyManagement)]

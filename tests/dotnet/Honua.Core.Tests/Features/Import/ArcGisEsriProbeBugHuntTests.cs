@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Regression probes for the Esri REST migration client. These tests document source
-/// behaviors observed during the 2026-09-03 ArcGIS compatibility hunt.
-/// </summary>
 public sealed class ArcGisEsriProbeBugHuntTests
 {
     private static readonly Func<string, CancellationToken, Task<IPAddress[]>> PublicResolver =

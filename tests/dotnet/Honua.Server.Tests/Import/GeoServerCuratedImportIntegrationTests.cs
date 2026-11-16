@@ -18,9 +18,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests that verify GeoServer discovery against deterministic seeded resources.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

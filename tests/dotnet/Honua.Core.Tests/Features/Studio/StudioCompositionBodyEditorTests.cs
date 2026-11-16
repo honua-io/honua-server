@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for the pure, side-effect-free <see cref="StudioCompositionBodyEditor"/>
-/// operations (honua-server#3002) the Studio composition MCP tools patch a
-/// draft's envelope through.
-/// </summary>
 public sealed class StudioCompositionBodyEditorTests
 {
     [UnitTest]

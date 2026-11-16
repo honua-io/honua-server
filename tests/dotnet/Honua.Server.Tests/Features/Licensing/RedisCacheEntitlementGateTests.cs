@@ -11,14 +11,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
-/// <summary>
-/// Guards the startup Redis-cache entitlement gate
-/// (<see cref="StartupConfigurationHelpers.IsRedisCacheEntitledAsync"/>). The gate decides
-/// whether the host wires the <c>IConnectionMultiplexer</c> that the durable job store depends
-/// on. Before honua-server#1787 it read a bootstrap license snapshot that ignored
-/// <c>Licensing:DevGrantEdition</c>, so a Development + <c>DevGrantEdition=Pro</c> stack with
-/// Redis reachable still had no store and GPServer <c>/execute</c>/<c>/submitJob</c> returned 503.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public sealed class RedisCacheEntitlementGateTests

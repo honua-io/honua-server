@@ -12,12 +12,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Behind RDS Proxy a session advisory lock pins the proxy session, and a frozen Lambda never
-/// prunes its pool. On Lambda the import and publish paths hold those locks on unpooled
-/// connections, so releasing the lock ends the backend instead of returning a pinned connection
-/// to the pool (honua-server#6765).
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixture fixture)

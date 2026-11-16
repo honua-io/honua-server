@@ -2365,9 +2365,6 @@ public sealed partial class GrpcFeatureServiceTests
         ],
         "Test"));
 
-    /// <summary>
-    /// Minimal ServerCallContext for unit testing gRPC services.
-    /// </summary>
     internal sealed class TestServerCallContext : ServerCallContext, IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
@@ -2390,9 +2387,6 @@ public sealed partial class GrpcFeatureServiceTests
             Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Test double for IServerStreamWriter that collects written pages.
-    /// </summary>
     private sealed class TestServerStreamWriter<T> : IServerStreamWriter<T>
     {
         public List<T> Pages { get; } = new();
@@ -2411,11 +2405,6 @@ public sealed partial class GrpcFeatureServiceTests
         }
     }
 
-    /// <summary>
-    /// Minimal <see cref="IRoleStore"/> that resolves the supplied per-operation
-    /// grants for any role, so the gRPC resolver-seam tests can prove a grant is
-    /// honored without standing up the full RBAC store.
-    /// </summary>
     private sealed class GrpcMatrixRoleStore(PermissionGrant[] grants) : IRoleStore
     {
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
@@ -2455,10 +2444,8 @@ public sealed partial class GrpcFeatureServiceTests
 
     private const string AliasedServiceName = "aliased";
 
-    /// <summary>Service-local index the request addresses; also the storage handle of a different resource.</summary>
     private const int AliasedLayerIndex = 3;
 
-    /// <summary>Storage handle the addressed publication is actually bound to.</summary>
     private const int AliasedStorageLayerId = 7;
 
     [UnitTest]
@@ -2627,13 +2614,6 @@ public sealed partial class GrpcFeatureServiceTests
         current.Graph.StorageBindings.Should().OnlyContain(binding => binding.StorageLayerId == reboundStorageLayerId);
     }
 
-    /// <summary>
-    /// Publishes <c>resource.aliased</c> at the service-local index
-    /// <see cref="AliasedLayerIndex"/> while binding it to storage handle
-    /// <see cref="AliasedStorageLayerId"/>, and gives a second resource
-    /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
-    /// storage handle therefore lands on the neighbouring resource.
-    /// </summary>
     private (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Object Resource) ArrangeAliasedLayer()
     {
         var graph = new TestMetadataV2GraphBuilder()
@@ -2678,9 +2658,6 @@ public sealed partial class GrpcFeatureServiceTests
     }
 }
 
-/// <summary>
-/// Provides async enumerable conversion for test data.
-/// </summary>
 internal static class AsyncEnumerableExtensions
 {
     public static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IEnumerable<T> source)

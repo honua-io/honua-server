@@ -18,20 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.SqlServer.Tests;
 
-/// <summary>
-/// Gated integration tests for the SQL Server feature provider.
-/// </summary>
-/// <remarks>
-/// <para>These tests run against a real SQL Server instance and are skipped automatically
-/// when the <c>HONUA_SQLSERVER_TEST_CONNECTION</c> environment variable is not set. The
-/// connection string must point to a SQL Server 2016+ instance where the test user can
-/// create and drop a temporary table.</para>
-/// <para>Manual run example:</para>
-/// <code>
-///   export HONUA_SQLSERVER_TEST_CONNECTION="Server=localhost,1433;Database=tempdb;User Id=sa;Password=Strong!Pass;TrustServerCertificate=True"
-///   dotnet test tests/dotnet/Honua.Db.SqlServer.Tests --filter Category=SqlServerIntegration
-/// </code>
-/// </remarks>
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 {

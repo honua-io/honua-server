@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-/// <summary>
-/// Integration coverage for the self-hosted, PostGIS-backed local geocoder (#2151). Loads a small
-/// reference fixture into an isolated PostGIS database and geocodes/reverse-geocodes known addresses,
-/// fully offline (no external provider calls).
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class LocalPostgisGeocodeProviderIntegrationTests : IAsyncLifetime
 {

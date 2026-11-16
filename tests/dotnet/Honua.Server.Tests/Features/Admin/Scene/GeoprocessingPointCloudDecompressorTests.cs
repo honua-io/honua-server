@@ -15,17 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin.Scene;
 
-/// <summary>
-/// Fake-driven coverage for <see cref="GeoprocessingPointCloudDecompressor"/>
-/// (#1854): the server-side auto-dispatch that submits the canonical
-/// <c>pcloud.translate</c> worker plan, polls the job to a terminal state, and
-/// returns the decompressed uncompressed-LAS bytes. A fake job service stands in
-/// for the durable job runtime and the out-of-tree PDAL worker, so the
-/// dispatch/detection logic is verified without Redis or a live PDAL install —
-/// mirroring the worker-side <c>PdalPointCloudConvertExecutorTests</c>
-/// fake-runner pattern. The poll interval is driven to near-zero so the tests run
-/// in milliseconds against the real clock.
-/// </summary>
 public sealed class GeoprocessingPointCloudDecompressorTests
 {
     private static readonly byte[] DecompressedLas = Encoding.UTF8.GetBytes("LASF-fake-decompressed");

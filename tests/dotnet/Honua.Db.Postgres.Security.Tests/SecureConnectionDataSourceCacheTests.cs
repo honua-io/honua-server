@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Db.Postgres.Security.Tests;
 
-/// <summary>
-/// Regression tests for <see cref="SecureConnectionDataSourceCache"/> to
-/// ensure named secure connections honour the same data-source configuration
-/// — most importantly the embedded <c>search_path</c> — as the default
-/// <see cref="NpgsqlDataSource"/> built in <c>ServiceCollectionExtensions</c>.
-/// </summary>
 public sealed partial class SecureConnectionDataSourceCacheTests
 {
     private const string SampleConnectionString =

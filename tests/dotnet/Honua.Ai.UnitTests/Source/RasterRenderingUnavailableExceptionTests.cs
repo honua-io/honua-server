@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Unit coverage for the native SkiaSharp load-failure classifier that lets the render
-/// seam translate an opaque native-load failure into an actionable capability error on
-/// serverless/AOT images that cannot rasterize maps (honua-server#2770).
-/// </summary>
 public sealed class RasterRenderingUnavailableExceptionTests
 {
     [UnitTest]

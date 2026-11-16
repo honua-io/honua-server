@@ -29,10 +29,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// End-to-end coverage for the agentic ops loop that proposes and approves the deterministic
-/// alert-dispatch dead-letter redrive action (#2568).
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]

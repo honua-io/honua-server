@@ -8,14 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for the <c>controls</c> composition collection (geospatial-mcp ADR-0031):
-/// the <see cref="StudioCompositionBodyEditor"/> add/remove operations and their admission
-/// gate, the closed control-kind vocabulary, the cascade-or-reject removal obligation, and
-/// the <c>WriteBody</c> round trip that must keep an authored controls block alive across
-/// unrelated composition mutations. Mirrors
-/// <see cref="StudioCompositionInteractionsTests"/> one collection over.
-/// </summary>
 public sealed class StudioCompositionControlsTests
 {
     [UnitTest]

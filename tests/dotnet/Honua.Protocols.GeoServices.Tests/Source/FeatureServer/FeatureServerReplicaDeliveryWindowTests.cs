@@ -14,12 +14,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// #4019: a replica scope or download backlog larger than the per-layer limit used to be a permanent
-/// 400. It is now delivered in bounded generation windows. The host runs with
-/// <c>Limits:Query:MaxRecordCount=100</c> and <c>Limits:Replica:MaxChangesPerLayer=250</c>; the expected
-/// rows are read back from the database with SQL, independently of the replica API.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicaDeliveryWindowTests : IAsyncLifetime

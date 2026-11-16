@@ -10,13 +10,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Spec;
 
-/// <summary>
-/// Unit tests pinning the SpecService side of the Geospatial.Grpc 0.2.0-alpha.1 convergence:
-/// <c>SpecDiagnostic</c> folded into <c>ErrorDetail</c>, <c>SpecCostEstimate</c> /
-/// <c>SpecCostActual</c> folded into <c>DryRunResult</c>, <c>apply_token</c> replaced by
-/// <c>job_id</c>, and <c>CanonicalSpecNode</c> inputs/parameters retyped to
-/// <c>ParameterValue</c>.
-/// </summary>
 public sealed class SpecProtoMappingTests
 {
     [UnitTest]

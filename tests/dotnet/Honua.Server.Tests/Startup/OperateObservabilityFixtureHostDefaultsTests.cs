@@ -8,12 +8,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression guard for honua-server#2350: a standalone Operate observability fixture host that
-/// supplies no connection-encryption key must receive deterministic Development/Test defaults so
-/// the Postgres secure-connection provider (and therefore the seed endpoint) works. Explicitly
-/// configured values must always win.
-/// </summary>
 public sealed class OperateObservabilityFixtureHostDefaultsTests
 {
     [Fact]

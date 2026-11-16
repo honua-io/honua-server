@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the reconciled GeoETL attribute transform
-/// executors (transform.attribute-rename, transform.attribute-cast,
-/// transform.computed-field, transform.attribute-filter). Each builds an input
-/// FeatureCollection, runs the executor, and asserts the published
-/// FeatureCollection data URI carries the expected attributes through. Mirrors
-/// the slice-5 geometry.dissolve executor test shape.
-/// </summary>
 public sealed class AttributeTransformExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

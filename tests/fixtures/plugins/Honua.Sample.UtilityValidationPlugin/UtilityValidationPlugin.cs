@@ -7,18 +7,12 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Sample.UtilityValidationPlugin;
 
-/// <summary>
-/// Example feature validator plugin (issue #347). Demonstrates a custom business rule:
-/// high-voltage transformers require special approval before they can be created or updated.
-/// This is the reference example from the plugin SDK ticket.
-/// </summary>
 [Plugin("utility-validation", "1.0.0",
     Description = "Rejects high-voltage transformer assets that require special approval.")]
 public sealed class UtilityValidationPlugin : IFeatureValidator
 {
     private const double HighVoltageThreshold = 50_000d;
 
-    /// <inheritdoc />
     public ValueTask<PluginValidationResult> ValidateAsync(
         Feature feature,
         PluginValidationContext context,

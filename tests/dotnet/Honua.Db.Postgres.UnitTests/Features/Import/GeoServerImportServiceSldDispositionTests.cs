@@ -17,12 +17,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Disposition tests for the SLD conversion path inside <see cref="GeoServerImportService"/>.
-/// Covers the regression where <see cref="UnsupportedResourceBehavior.Skip"/> on a converter
-/// error incremented <c>SkippedCount</c> but still imported the same style downstream
-/// (issue #375 review finding).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerImportServiceSldDispositionTests
 {

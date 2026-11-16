@@ -7,10 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.EmbedGovernance;
 
-/// <summary>
-/// Unit tests for the in-memory embed key and analytics stores: lifecycle,
-/// validation, rate accounting, and usage aggregation.
-/// </summary>
 public sealed class InMemoryEmbedStoreTests
 {
     private static EmbedKeyScope Scope() => new()

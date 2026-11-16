@@ -7,10 +7,6 @@ using Honua.Core.Features.Compliance.Services;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for the CSV and PDF compliance renderers — covers the
-/// "compliance report export produces PDF and CSV outputs" acceptance criterion.
-/// </summary>
 public sealed class ComplianceReportRendererTests
 {
     [Trait("Tier", "Fast")]

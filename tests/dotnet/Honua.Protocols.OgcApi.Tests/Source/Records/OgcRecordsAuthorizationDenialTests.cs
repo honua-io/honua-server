@@ -16,41 +16,17 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// #4423: HTTP-level authorization denial proof for OGC API Records, the GA catalog surface.
-/// <para>
-/// Before this file, <c>git grep -n -i -e '401' -e '403' -e 'Unauthorized' -e 'Forbidden'
-/// -e 'tenant' -- tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/</c> returned nothing:
-/// every Records test ran under the F1 development-authentication bypass, which returns an
-/// <c>admin</c> principal before any credential is read, so the per-resource access gate
-/// (<c>AccessPolicyHelpers.IsResourceAccessible</c>) was never entered.
-/// </para>
-/// <para>
-/// The test below runs with <c>HONUA_DEV_AUTH=false</c>, restricts a published resource to a
-/// role, and asserts past the status code: the restricted record id is absent from the catalog
-/// body. The EDR and Coverages halves of the same proof live in
-/// <c>Ogc.Api.Edr.EdrAuthorizationDenialTests</c> and
-/// <c>Ogc.Api.Coverages.OgcCoveragesAuthorizationDenialTests</c>; the three are split by surface
-/// so each lands in the CI shard that owns its namespace.
-/// </para>
-/// </summary>
 [Collection("Database.OgcApiData")]
 public sealed class OgcRecordsAuthorizationDenialTests
 {
     private const string EntitledRole = "catalog-reader";
     private const string Referer = "https://ogcapi-authorization-proof.example/";
 
-    /// <summary>The resource restricted by this test; layer 0 stays open as the control.</summary>
     private const int RestrictedLayerId = 1;
 
     private static readonly string RestrictedRecordId = $"layer:pub-layer-{RestrictedLayerId}";
     private static readonly string OpenRecordId = $"layer:pub-layer-{WebAppFixture.TestLayerId}";
 
-    /// <summary>
-    /// OGC API Records is GA and is the catalog surface. A record whose resource the caller may
-    /// not access must not appear in <c>/items</c> — asserted on the record id in the body, not
-    /// on a status, because Records has no denial status: it omits silently.
-    /// </summary>
     [IntegrationTest]
     [Protocol(TestProtocols.OgcApiRecords)]
     [Operation(Operations.Query)]

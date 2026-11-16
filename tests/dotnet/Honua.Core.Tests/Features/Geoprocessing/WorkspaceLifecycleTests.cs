@@ -5,9 +5,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Tests for workspace and artifact domain model behavior.
-/// </summary>
 public class WorkspaceLifecycleTests
 {
     private static readonly DateTimeOffset Now = new(2026, 4, 11, 12, 0, 0, TimeSpan.Zero);

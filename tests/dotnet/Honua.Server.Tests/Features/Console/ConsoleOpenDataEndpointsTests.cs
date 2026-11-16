@@ -20,12 +20,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console open-data DCAT and STAC publication API (#1214):
-/// open-data page read/write, eligibility, DCAT export + validation, STAC
-/// publish/update/unpublish/status, and the anonymous open-data/STAC reads with
-/// non-leaking denial.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]

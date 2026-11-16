@@ -10,22 +10,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Regression guard for the residual honua-server#1568 <c>40P01: deadlock detected</c> flake.
-/// </summary>
-/// <remarks>
-/// #1568/#2028 serialized schema <em>drop</em>, raw <c>honua.*</c> seed/DDL, and the embedded
-/// migration set on the shared schema-mutation advisory lock, but left schema <em>creation</em>
-/// a non-participant: the bare <c>CREATE SCHEMA</c> in
-/// <see cref="PostgresFixture.CreateIsolatedSchemaInternalAsync"/> and a handful of tests' own
-/// <c>ExecuteAsync("CREATE SCHEMA ...")</c>. A per-test <c>CREATE SCHEMA</c> in one collection could
-/// then race another collection's locked <c>DROP SCHEMA ... CASCADE</c> — both churn the shared
-/// <c>pg_catalog</c> (<c>pg_namespace</c>/<c>pg_class</c>/<c>pg_depend</c>) — and the asymmetric
-/// serialization left a residual catalog lock-ordering hazard. This test drives the
-/// create + migrate + drop surface from many tasks at once (the parallel-collection pattern) so the
-/// schema-mutation surface is exercised concurrently and the serialization is proven by the absence
-/// of a deadlock victim escaping the retry budget.
-/// </remarks>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class SchemaMutationConcurrencyTests : IAsyncLifetime

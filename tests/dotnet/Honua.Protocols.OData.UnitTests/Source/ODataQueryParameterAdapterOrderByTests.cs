@@ -12,12 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Unit tests for the OData v4 $orderby null-placement mandate (OData v4.01 Protocol
-/// §11.2.6.2): nulls before non-null values when ascending, after them when descending.
-/// The OData adapter is the only protocol adapter that requests an explicit
-/// <see cref="NullOrdering"/>; every other adapter leaves the provider default.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataQueryParameterAdapterOrderByTests
 {

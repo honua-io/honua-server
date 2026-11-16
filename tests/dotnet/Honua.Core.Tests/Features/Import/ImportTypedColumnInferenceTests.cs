@@ -8,9 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Type inference for promoting import attributes to typed columns.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ImportTypedColumnInferenceTests
 {

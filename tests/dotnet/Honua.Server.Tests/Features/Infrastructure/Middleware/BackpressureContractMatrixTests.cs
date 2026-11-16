@@ -26,9 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
-/// <summary>
-/// Full 9-surface by 2-cause backpressure matrix for issue #3905.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class BackpressureContractMatrixTests
 {

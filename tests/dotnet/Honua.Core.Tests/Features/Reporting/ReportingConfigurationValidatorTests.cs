@@ -8,12 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies that <see cref="ReportingConfigurationValidator"/> enforces the
-/// documented contract for the LLM narrative provider when the feature is
-/// enabled, including refusing unsupported provider tokens that would be
-/// silently ignored at registration time.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ReportingConfigurationValidatorTests
 {

@@ -199,11 +199,6 @@ public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition : ICol
     public const string Name = "Geoprocessing.OutputStoreReadiness";
 }
 
-/// <summary>
-/// honua-server#4805: the served <c>/healthz/ready</c> probe of a host composed by
-/// <c>Program.cs</c> (not a hand-built <see cref="ReadinessCheckService"/>) must fail closed once
-/// the persistent-store attestation marker is lost, while liveness stays 200.
-/// </summary>
 [Collection(GeoprocessingOutputStoreReadinessCollectionDefinition.Name)]
 [Protocol(TestProtocols.Health)]
 public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable

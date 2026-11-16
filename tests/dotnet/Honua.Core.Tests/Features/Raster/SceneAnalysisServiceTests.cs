@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster;
 
-/// <summary>
-/// Unit tests for the scene analysis math: NOAA solar position, sun/shadow
-/// casting, and slice cross-section. The solar position is pure math validated
-/// against published reference values. The DEM is modeled by a synthetic
-/// <see cref="IElevationService"/> stub (the same contract the real
-/// <c>PostgresElevationService</c> fulfills) so the surface analyses run
-/// deterministically without a live database.
-/// </summary>
 public sealed class SceneAnalysisServiceTests
 {
     private const int LayerId = 7;

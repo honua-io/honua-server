@@ -438,11 +438,6 @@ public class DatabricksFeatureQueryBuilderTests
         Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Little-endian EWKB with the SRID flag set. The payload is only as complete as
-    /// <see cref="WkbSridNormalizer"/> requires, so this unit project does not reference the
-    /// GeoServices converter that emits the same flag.
-    /// </summary>
     private static byte[] EwkbWithEmbeddedSrid(uint geometryType, int srid)
     {
         using var stream = new MemoryStream();

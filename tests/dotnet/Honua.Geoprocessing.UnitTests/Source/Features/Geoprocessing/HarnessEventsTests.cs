@@ -8,11 +8,6 @@ using Honua.Geoprocessing.LocalRunner;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// The server half of honua.gp.events/v1: parsing, bounded forwarding with a disclosed
-/// truncation entry, credential redaction on event payloads, measured-vs-inferred
-/// timing, and the devkit's local evidence writer.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class HarnessEventsTests
 {

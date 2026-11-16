@@ -15,13 +15,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for <see cref="StudioLifecycleAuthorizationHandler"/>'s admin-tier admission
-/// (honua-server#3001 review follow-ups): the API-key permission grammar must bind exactly the
-/// principals the ApiKey scheme authenticated, while OIDC/session admins -- including admins via
-/// a configured alias role, and admins whose IdP attached unrelated <c>permission</c> claims --
-/// keep the role-based admission the pre-#3001 OIDC-widened admin policies gave them.
-/// </summary>
 public sealed class StudioLifecycleAuthorizationHandlerTests
 {
     [Fact]

@@ -21,22 +21,13 @@ using Xunit;
 
 namespace Honua.Protocols.OData.Tests.Services;
 
-/// <summary>
-/// The OData write surface addresses a layer by its service-local route id, while the feature
-/// reader/writer boundary is keyed on the storage-layer handle. These tests pin that the CRUD
-/// service reads and writes the handle its caller resolved, not the route id, so an aliased
-/// publication (route id != storage handle) touches the rows of the publication the request
-/// actually resolved.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "Crud")]
 public sealed class ODataCrudServiceStorageLayerTests
 {
-    /// <summary>Service-local route id; also the storage handle of a different resource.</summary>
     private const int RouteLayerId = 3;
 
-    /// <summary>Storage handle the addressed publication is bound to.</summary>
     private const int StorageLayerId = 7;
 
     private const long ObjectId = 42;

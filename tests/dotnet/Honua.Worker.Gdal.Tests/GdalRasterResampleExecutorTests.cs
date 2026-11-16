@@ -12,11 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterResampleJobExecutor"/>: gdalwarp
-/// -tr argument projection, resampling enum mapping, cell-size guards, and the
-/// canonical data-URI artifact contract.
-/// </summary>
 public sealed class GdalRasterResampleExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-resample-test";

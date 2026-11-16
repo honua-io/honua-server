@@ -6,10 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene;
 
-/// <summary>
-/// Unit tests for the snippet generator that produces CesiumJS and
-/// <c>&lt;honua-scene&gt;</c> embed snippets.
-/// </summary>
 public class SceneSnippetGeneratorTests
 {
     [UnitTest]

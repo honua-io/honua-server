@@ -19,9 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC Search endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 public sealed class StacSearchTests : IAsyncLifetime
@@ -289,13 +286,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         problem.GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:999999'");
     }
 
-    /// <summary>
-    /// STAC Item Search Filter Extension (honua-server#1932): a CQL2 filter referencing a property
-    /// that is not in the declared queryables set returns a structured 400. This is the
-    /// spec-permitted behavior because the queryables documents declare "additionalProperties":
-    /// false, so undeclared properties are not valid queryables and the request is rejected with a
-    /// problem+json error body rather than silently ignored.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -922,11 +912,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    /// <summary>
-    /// Regression test for BH2-009: a property-only include (e.g. +properties.datetime)
-    /// must not null out id, type, geometry, stac_version, links, or assets.
-    /// Before the fix, all eight required top-level fields were absent from the response.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -957,11 +942,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         item.GetProperty("properties").TryGetProperty("name", out _).Should().BeTrue();
     }
 
-    /// <summary>
-    /// Regression test for #4147: the advertised STAC canonical fields must be
-    /// accepted by both the Fields and Sort extensions, including the canonical
-    /// properties.datetime spelling.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -998,11 +978,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Regression test for BH2-010: the GET search next-link for paginated requests must
-    /// use literal commas as collection-ID separators rather than encoding the separator
-    /// comma, so that following the link correctly returns page 2.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]

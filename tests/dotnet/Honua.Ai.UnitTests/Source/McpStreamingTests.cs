@@ -22,13 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit tests for the MCP sessions + streaming spine (honua-server#1954):
-/// per-session notification channels, the JSON-RPC notification publisher,
-/// job-progress threading from the canonical job runtime, and the SSE pump. These
-/// run without Docker/PostGIS so the server-push contract is covered even when the
-/// full integration harness is unavailable.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStreamingTests
 {

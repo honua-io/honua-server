@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData v4 filter matrix tests validating all comparison operators,
-/// string functions, null/boolean/numeric field handling, and logical combinations.
-/// Implements parity with OGC API Features Python test matrices per issue #200.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataFilterMatrixTests : IAsyncLifetime

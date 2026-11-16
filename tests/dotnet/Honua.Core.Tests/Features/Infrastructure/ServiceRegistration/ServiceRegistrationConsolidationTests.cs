@@ -6,10 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Infrastructure.ServiceRegistration;
 
-/// <summary>
-/// Tests for the service registration consolidation framework.
-/// Validates that the consolidated patterns work correctly and eliminate duplication.
-/// </summary>
 public class ServiceRegistrationConsolidationTests
 {
     [Trait("Tier", "Fast")]

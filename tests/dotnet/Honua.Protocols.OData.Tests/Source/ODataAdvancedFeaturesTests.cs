@@ -18,13 +18,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData v4 advanced features:
-/// - $batch operations
-/// - $apply aggregation
-/// - $search full-text search
-/// - $expand related entities
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime

@@ -12,12 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the compliance admin endpoints (#352). Verifies the full
-/// HTTP surface: dashboard, residency evaluation, key rotation, report export
-/// (CSV + PDF). These tests exercise the same DI registration the production
-/// host uses, so they catch wiring regressions the unit tests cannot.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

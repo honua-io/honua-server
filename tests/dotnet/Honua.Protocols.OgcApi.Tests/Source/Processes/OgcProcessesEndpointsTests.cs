@@ -18,10 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Integration tests for OGC API Processes endpoints.
-/// Tests the adapter layer over the canonical geoprocessing runtime.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>

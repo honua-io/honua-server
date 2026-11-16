@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene;
 
-/// <summary>
-/// Unit tests for the glTF/3D-Tiles -> I3S 1.7 node-page projector (#1809):
-/// flattening the tileset tree into HLOD node pages with oriented bounding
-/// boxes, LOD thresholds, parent/child references by global index, and per-node
-/// geometry/attribute resource references.
-/// </summary>
 public sealed class I3sNodePageProjectorTests
 {
     [UnitTest]

@@ -12,15 +12,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
-/// <summary>
-/// Cross-checks the tile decode path against GDAL.
-///
-/// Every fixture under <c>Fixtures/</c> was produced by GDAL 3.12.1 (via rasterio 1.5.0);
-/// the paired <c>.bin</c> holds GDAL's own decode of that file, concatenated in TIFF tile
-/// order. Decoding the <c>.tif</c> must reproduce those bytes exactly, so these tests
-/// validate against what real tooling emits rather than against a Honua-side encoder.
-/// Regenerate with <c>scripts/raster/generate-cog-fixtures.py</c>.
-/// </summary>
 public class TileDecompressorFixtureTests
 {
     private static readonly string FixtureDirectory =

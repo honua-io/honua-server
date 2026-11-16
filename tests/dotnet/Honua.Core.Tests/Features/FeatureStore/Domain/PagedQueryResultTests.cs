@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="PagedQueryResult{T}"/>. The struct backs the
-/// paged feature query contract — default values must be safe so that callers
-/// using <c>default(PagedQueryResult&lt;T&gt;)</c> do not NRE on enumeration
-/// (#1144).
-/// </summary>
 public sealed class PagedQueryResultTests
 {
     [UnitTest]

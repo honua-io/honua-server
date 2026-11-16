@@ -7,13 +7,6 @@ using NBomber.CSharp;
 
 namespace Honua.LoadTests.Scenarios;
 
-/// <summary>
-/// Load scenario: <c>GET /ogc/features/collections/{c}/items?limit=100&amp;offset=N</c>
-/// walking offsets 0..1000 (in increments of 100). Nominal rate is 30
-/// requests/second over <see cref="LoadScenarioSettings.GetDuration"/>
-/// (default 60 seconds). Exercises the OGC Features pagination cursor and
-/// downstream Postgres LIMIT/OFFSET planning under sustained traffic.
-/// </summary>
 public static class FeaturesPaginationLoadScenario
 {
     public const string ScenarioName = "features_pagination_load";

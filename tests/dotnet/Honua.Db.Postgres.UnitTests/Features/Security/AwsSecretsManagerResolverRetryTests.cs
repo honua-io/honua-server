@@ -9,10 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// AWS Secrets Manager failures name the error type and retry only throttling,
-/// request limits, internal service errors, and HTTP 5xx (#6646).
-/// </summary>
 [Collection("Security")]
 [Trait("Tier", "Fast")]
 public sealed class AwsSecretsManagerResolverRetryTests

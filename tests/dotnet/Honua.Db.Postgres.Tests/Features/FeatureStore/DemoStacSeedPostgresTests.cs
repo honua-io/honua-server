@@ -15,9 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// PostgreSQL regression coverage for the schema-coupled demo STAC seed.
-/// </summary>
 [Collection("Database")]
 public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 {

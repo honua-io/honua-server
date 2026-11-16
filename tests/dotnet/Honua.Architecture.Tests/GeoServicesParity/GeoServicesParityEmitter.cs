@@ -8,7 +8,6 @@ namespace Honua.Architecture.Tests.GeoServicesParity;
 [Trait("Category", "Architecture")]
 public sealed class GeoServicesParityEmitter
 {
-    /// <summary>Environment variable that opts a run in to regenerating the artifact.</summary>
     public const string EmitEnvironmentVariable = "HONUA_EMIT_GEOSERVICES_PARITY";
 
     [Fact]

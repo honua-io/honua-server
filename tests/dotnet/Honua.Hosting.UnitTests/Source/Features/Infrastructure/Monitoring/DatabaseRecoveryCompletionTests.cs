@@ -68,12 +68,6 @@ public sealed class DatabaseRecoveryCompletionTests
         await recovery.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// honua-release run 40746787170: a Lambda cold start before the migration task ran stayed
-    /// schema-floor because the background loop only runs while an invocation executes. The
-    /// readiness probe's own bounded attempt must recover it once the schema is current, with the
-    /// background loop never having run.
-    /// </summary>
     [UnitTest]
     public async Task ReadinessProbeRecovery_OnLambda_RecoversOnceSchemaIsCurrent()
     {
@@ -116,10 +110,6 @@ public sealed class DatabaseRecoveryCompletionTests
         await guard.DidNotReceive().VerifyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// A probe whose budget runs out mid-connect returns not-ready and leaves recovery retryable;
-    /// whatever the cancelled connect surfaced is never classified as a terminal failure.
-    /// </summary>
     [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]

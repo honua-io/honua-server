@@ -14,11 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Integration tests for the SAML 2.0 SP endpoints (#508): SP metadata generation and the
-/// Assertion Consumer Service that consumes a signed assertion and establishes a session, with
-/// forged and expired assertions rejected.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]

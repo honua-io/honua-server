@@ -12,47 +12,10 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Conformance gate for the POSIX store provisioner (honua-io/honua-server#3900).
-/// </summary>
-/// <remarks>
-/// <para>
-/// A referenced-output volume only becomes attested when a deployment runs
-/// <c>scripts/operations/initialize-gp-output-store.sh</c> (or its PowerShell sibling)
-/// to write the marker the runtime validates. The script re-implements the versioned
-/// canonical form and SHA-256 digest of
-/// <see cref="GeoprocessingOutputStoreAttestation.Create"/> in Bash — its own ordinal
-/// inventory sort and its own <c>[d.]hh:mm:ss</c> to ticks conversion — so the two can
-/// drift silently. When they do, every deployment provisioned by the documented
-/// procedure fails closed at startup, and the failure reads as a broken mount rather
-/// than a broken tool. The sibling <see cref="GeoprocessingOutputStoreAttestationTests"/>
-/// pins the PowerShell implementation to a hand-carried digest; nothing covered the
-/// POSIX one, which is the path every containerized topology uses.
-/// </para>
-/// <para>
-/// The first vector's expected digest is not read back from the script or from the
-/// runtime: it is the value the PowerShell provisioner independently produced for the
-/// same contract, already pinned in the sibling suite. The second vector is the
-/// checked-in qualification topology, which closes the loop between the manifest, the
-/// provisioning procedure and the runtime validator.
-/// </para>
-/// <para>
-/// Every vector runs the shipped script itself, so the fixture is
-/// <see cref="GnuLinuxUnitTestAttribute"/> rather than <c>[UnitTest]</c>: still Tier=Fast for
-/// the PR gate, which is ubuntu-latest, but skipped on a contributor's Windows or macOS box
-/// where a local <c>--filter "Tier=Fast"</c> run would fail on the missing GNU toolchain
-/// instead of on the conformance this gate exists to check.
-/// </para>
-/// </remarks>
 public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
 {
     private const string ProvisionerRelativePath = "scripts/operations/initialize-gp-output-store.sh";
 
-    /// <summary>
-    /// The digest the PowerShell provisioner emits for the default contract over store
-    /// <c>gp-outputs</c> with a 1 KiB inline ceiling, pinned independently of this suite in
-    /// <c>GeoprocessingOutputStoreAttestationTests.Create_DeploymentToolDigest_MatchesIndependentPowerShellVector</c>.
-    /// </summary>
     private const string IndependentDefaultContractDigest =
         "6eb07467421c0a70d34ef40a20aeb7f0767def7ba74cddb8b0c01d62db5b6103";
 
@@ -83,12 +46,6 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
             .Should().NotContain(root);
     }
 
-    /// <summary>
-    /// The provisioner's own ordinal sort and tick conversion have to agree with the
-    /// runtime for a contract that actually exercises them: a multi-store backup inventory
-    /// whose ordinal order differs from a locale-aware one, and non-default sweep/retention
-    /// durations including a day component.
-    /// </summary>
     [GnuLinuxUnitTest]
     public async Task Provisioner_UnsortedInventoryAndTunedDurations_MatchesTheRuntimeDigest()
     {
@@ -134,11 +91,6 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
         GeoprocessingOutputStoreAttestationValidator.IsValid(options).Should().BeTrue();
     }
 
-    /// <summary>
-    /// The documented procedure must provision a store the checked-in qualification
-    /// topology accepts: the digest the compose file declares is the digest the script
-    /// produces from that topology's own settings.
-    /// </summary>
     [GnuLinuxUnitTest]
     public async Task Provisioner_QualificationTopologySettings_ReproduceTheDeclaredDigest()
     {
@@ -164,10 +116,6 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
         ReadMarker(root).ConfigurationDigest.Should().Be(topology["ConfigurationDigest"]);
     }
 
-    /// <summary>
-    /// Re-provisioning in place would silently re-attest a different store or backup
-    /// policy over live data, so it must fail and leave the existing marker untouched.
-    /// </summary>
     [GnuLinuxUnitTest]
     public async Task Provisioner_AlreadyAttestedRoot_RefusesAndPreservesTheMarker()
     {
@@ -195,11 +143,6 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
             .Should().Equal(provisioned);
     }
 
-    /// <summary>
-    /// A store outside the declared backup inventory is exactly the failure #3900 is
-    /// about — bytes that survive nothing. The script must refuse it before any marker
-    /// exists, matching the runtime's own precondition.
-    /// </summary>
     [GnuLinuxUnitTest]
     public async Task Provisioner_StoreOutsideTheBackupInventory_RefusesAndWritesNoMarker()
     {
@@ -239,11 +182,6 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
             ?? throw new InvalidOperationException("The provisioner wrote an unreadable attestation marker.");
     }
 
-    /// <summary>
-    /// The staging settings the qualification Compose topology binds. Every host in that
-    /// file must resolve one store identity — the architecture suite owns that invariant —
-    /// so a key with two values here is a topology this gate must not silently average.
-    /// </summary>
     private static Dictionary<string, string> ReadQualificationTopology()
     {
         const string Prefix = "Geoprocessing__OutputStaging__";

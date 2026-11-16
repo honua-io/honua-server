@@ -9,18 +9,9 @@ using Honua.Protocols.Stac.Models;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Pure contract tests for STAC search query translation. These do not require a provider
-/// or container, so canonical extension-field regressions fail locally before the endpoint
-/// integration suite is available.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class StacSearchContractTests
 {
-    /// <summary>
-    /// Regression test for #4147: canonical STAC fields are accepted by both extensions
-    /// even when the source schema only exposes the backing temporal/id fields.
-    /// </summary>
     [Fact]
     public void CanonicalFields_AreAcceptedByFieldsAndSort()
     {

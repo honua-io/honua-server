@@ -13,12 +13,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the first-class OAuth2 client-registry and scope-catalogue
-/// admin endpoints (ADR-0053 Increment 2, #1888): client CRUD, scope catalogue
-/// CRUD, secret returned only at create (never on list), and admin authorization
-/// required on the management surface.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

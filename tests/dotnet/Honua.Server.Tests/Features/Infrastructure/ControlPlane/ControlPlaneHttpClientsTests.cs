@@ -12,13 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Isolation between the control plane's telemetry client and its candidate probes (honua-server#4617).
-/// The probes used to share the telemetry client, whose retry and circuit breaker suit a metrics backend.
-/// On a real rollout of the 9f2f16a server image, a candidate whose readiness answered 503 opened that
-/// breaker, so the Prometheus queries behind the telemetry gate failed with BrokenCircuitException while
-/// Prometheus itself reported a 0.79 error rate. The gate recovered only by missing-evidence rollback.
-/// </summary>
 public sealed class ControlPlaneHttpClientsTests
 {
     [Fact]
@@ -93,9 +86,6 @@ public sealed class ControlPlaneHttpClientsTests
         }
     }
 
-    /// <summary>
-    /// A candidate whose readiness answers 503 on every request, next to a Prometheus that answers queries.
-    /// </summary>
     private sealed class CandidateAndPrometheusHandler : HttpMessageHandler
     {
         private readonly ConcurrentDictionary<string, int> _requests = new(StringComparer.Ordinal);

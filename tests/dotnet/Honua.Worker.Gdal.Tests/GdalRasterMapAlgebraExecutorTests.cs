@@ -11,11 +11,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterMapAlgebraJobExecutor"/>: gdal_calc.py
-/// band-variable argument projection, the expression allow-list guard, and the
-/// canonical data-URI artifact contract (#2239).
-/// </summary>
 public sealed class GdalRasterMapAlgebraExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-mapalgebra-test";
@@ -227,12 +222,6 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         }
     }
 
-    /// <summary>
-    /// Regression tests for BH-021: a bare exponent character ('e'/'E') with no
-    /// following digits is not a valid Python literal and must be rejected by the
-    /// allow-list validator before reaching gdal_calc.py.  Previously "1e" passed
-    /// the scanner and produced a Python SyntaxError at runtime.
-    /// </summary>
     [Theory]
     [InlineData("A + 1e")]       // trailing bare exponent
     [InlineData("1E + A")]       // leading bare exponent (not a valid numeric start)
@@ -260,10 +249,6 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         }
     }
 
-    /// <summary>
-    /// Regression test for BH-021 (positive case): valid scientific notation with a
-    /// digit after the exponent character must be accepted.
-    /// </summary>
     [Theory]
     [InlineData("A * 1e3")]      // valid: 1000
     [InlineData("A + 2E6")]      // valid: 2,000,000

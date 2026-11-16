@@ -10,13 +10,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
 
-/// <summary>
-/// Unit tests for the OGC temporal capability formatter introduced for ticket #379.
-/// The formatter must preserve sub-second precision from the layer extent so the
-/// timestamp advertised in WMS / WMTS capabilities (and resolved by
-/// <c>time=default</c> / <c>time=current</c>) round-trips through the inclusive
-/// Postgres comparison without dropping the row at the layer's actual maximum.
-/// </summary>
 public sealed class TemporalExtentHelpersTests
 {
     private const int LayerIndex = 0;

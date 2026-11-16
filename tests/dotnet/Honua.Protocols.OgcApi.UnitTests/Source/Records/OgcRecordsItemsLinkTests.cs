@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>Next-page links stay absent when the offset sum does not fit a further page.</summary>
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class OgcRecordsItemsLinkTests
 {

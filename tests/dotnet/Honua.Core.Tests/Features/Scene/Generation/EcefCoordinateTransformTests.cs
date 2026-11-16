@@ -6,11 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the WGS-84 → ECEF coordinate projection used by the v1
-/// 3D Tiles generation pipeline (#842). Validates against well-known ECEF
-/// coordinates so a regression in ellipsoid constants is caught immediately.
-/// </summary>
 public sealed class EcefCoordinateTransformTests
 {
     private const double EcefMeterTolerance = 0.5;

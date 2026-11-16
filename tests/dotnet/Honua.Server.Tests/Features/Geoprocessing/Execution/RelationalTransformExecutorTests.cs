@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the relational GeoETL transform executors added
-/// alongside the safe expression engine: transform.computed-field (op=expression),
-/// transform.attribute-join (inner/left hash join), transform.aggregate (group-by
-/// with scalar + geometry aggregates), and transform.pivot / transform.unpivot.
-/// Each builds an input FeatureCollection, runs the executor, and asserts the
-/// published FeatureCollection data URI carries the expected attributes/geometry.
-/// </summary>
 public sealed class RelationalTransformExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

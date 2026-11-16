@@ -7,12 +7,6 @@ using Honua.ControlPlane;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Coverage for <see cref="HttpDeployHealthProbe"/> (#1849): the synthetic <c>/healthz/ready</c>
-/// signal that promotes "unhealthy" to a first-class rollback trigger. The probe issues N sequential
-/// HTTPS GETs, counts how many do not return the expected status (or fail outright), and refuses to
-/// run against a non-HTTPS / private destination (SSRF protection shared with the metrics gate).
-/// </summary>
 public sealed class DeployHealthProbeTests
 {
     [Fact]

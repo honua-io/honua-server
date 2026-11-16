@@ -15,12 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Provider integration + scale tests for the raster-catalog spatial pushdown (#2666). These prove
-/// PostGIS performs the indexed footprint (envelope-intersects) filter and paging in SQL before
-/// materialization, that only a bounded number of rows are read on a large catalog, and that result
-/// count, extent, paging, and envelope-intersects semantics match the neutral contract.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreCatalogQueryTests(PostgresFixture fixture)
 {
@@ -229,11 +223,6 @@ public sealed class PostgresRasterStoreCatalogQueryTests(PostgresFixture fixture
         }
     }
 
-    /// <summary>
-    /// Scale test: seed a large catalog, then prove the selective footprint query is served by the
-    /// GiST envelope index (EXPLAIN plan) and reads only a bounded number of rows — never the full
-    /// catalog — while returning the correct small matched set and total count.
-    /// </summary>
     [ScaleTest]
     public async Task QueryCatalogAsync_LargeCatalog_UsesFootprintIndexAndBoundsReads()
     {

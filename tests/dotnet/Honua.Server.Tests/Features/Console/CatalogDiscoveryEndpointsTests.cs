@@ -14,12 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console catalog discovery-endpoints registry read
-/// API (honua-server#1279): registry list (incl. empty workspace and
-/// opt-in-vs-default-on aggregates), endpoint detail (incl. not-found), item
-/// drill-down (incl. not-found), and admin permission enforcement.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]

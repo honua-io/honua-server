@@ -17,12 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Streaming-parse contract tests for <see cref="OpenAiCompatibleStudioAiProxyAdapter"/> against
-/// canned OpenAI-compatible <c>chat.completion.chunk</c> SSE fixtures — no live provider call. This
-/// is the adapter kind that covers OpenAI itself, OpenRouter, LiteLLM, Ollama, and vLLM, so the
-/// fixtures below use the wire shape common to all of them.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 {

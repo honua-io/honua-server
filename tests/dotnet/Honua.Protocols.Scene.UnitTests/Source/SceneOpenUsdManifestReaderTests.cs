@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Unit tests for the OpenUSD scene manifest reader. The reader maps a hosted
-/// scene's tileset + observation sidecar into the manifest input model; these
-/// tests isolate URL escaping of sidecar paths and CRS validation without a
-/// web host.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneOpenUsdManifestReaderTests
 {

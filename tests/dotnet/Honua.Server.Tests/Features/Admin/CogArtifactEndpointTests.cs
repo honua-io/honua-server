@@ -24,13 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The published-COG surface: an admin publish that materialises a layer's primary raster
-/// through the raster store's COG export, and the policy-aware byte-range proxy desktop clients
-/// (GDAL /vsicurl, ArcGIS Pro) read it through. The raster store is substituted so the test
-/// pins the HTTP contract - deterministic key, exact bytes, HEAD length, 206 ranges - rather
-/// than PostGIS's GDAL build.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]
@@ -448,11 +441,6 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// 4 KiB of deterministic bytes behind a little-endian TIFF magic. The endpoint publishes
-    /// what the raster store returns; the COG layout itself is PostGIS/GDAL's contract and is
-    /// exercised by the client lanes against the real fixture.
-    /// </summary>
     private static byte[] BuildFakeCogBytes()
     {
         var bytes = new byte[4096];

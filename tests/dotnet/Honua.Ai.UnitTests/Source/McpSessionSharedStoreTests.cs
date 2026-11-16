@@ -14,14 +14,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Cross-instance MCP session semantics (honua-release#531, journey stage 1.5):
-/// two <see cref="McpSessionManager"/> instances sharing one
-/// <see cref="IMcpSessionStore"/> behave as two server replicas behind a
-/// non-sticky router. The invariant under test: a session negotiated on any
-/// instance is honoured by every instance, or refused (HTTP 404 at the
-/// transport), never silently downgraded.
-/// </summary>
 public sealed partial class McpSessionSharedStoreTests
 {
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);

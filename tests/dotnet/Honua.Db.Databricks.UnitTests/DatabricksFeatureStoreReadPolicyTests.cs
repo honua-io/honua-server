@@ -12,11 +12,6 @@ using Honua.Tests.ProviderUnitSupport;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Verifies read-policy parity for the Databricks provider: a read is refused when a permanent
-/// filter, row-level security predicate or field mask applies to the layer (the provider
-/// applies none of them), and the emitted SQL is unchanged when nothing resolves.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksFeatureStoreReadPolicyTests
 {

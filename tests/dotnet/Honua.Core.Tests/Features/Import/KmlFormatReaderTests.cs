@@ -65,11 +65,6 @@ public sealed class KmlFormatReaderTests
         line.Coordinates[1].Z.Should().Be(30);
     }
 
-    /// <summary>
-    /// A southern-hemisphere, western-longitude point whose |longitude| and |latitude| differ and
-    /// whose signs differ: transposing the pair, dropping a sign, or reading the altitude into an
-    /// ordinate all produce a different value here.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PointCoordinates_AreLongitudeThenLatitude()
@@ -92,11 +87,6 @@ public sealed class KmlFormatReaderTests
         point.Coordinate.Z.Should().Be(7.5);
     }
 
-    /// <summary>
-    /// Polygons, outer/inner boundary rings and ring closure had no coverage at all
-    /// (honua-server#4419). The expected area is computed independently: a 0.2° x 0.2° outer
-    /// square minus a 0.1° x 0.1° hole is 0.04 - 0.01 = 0.03 square degrees.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PolygonWithHole_PreservesBothRingsAndTheirWinding()
@@ -133,10 +123,6 @@ public sealed class KmlFormatReaderTests
         polygon.IsValid.Should().BeTrue();
     }
 
-    /// <summary>
-    /// A ring whose coordinate list is not explicitly closed must be closed rather than dropped —
-    /// the reader documents this behaviour but nothing asserted it.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UnclosedRing_IsClosedRatherThanDiscarded()
@@ -160,11 +146,6 @@ public sealed class KmlFormatReaderTests
         polygon.Area.Should().BeApproximately(4d, 1e-12, "a 2 x 2 square");
     }
 
-    /// <summary>
-    /// Placemarks nested in folders had no coverage, and neither did the feature count: an
-    /// importer that dropped every placemark after the first passed the HTTP-level KML tests,
-    /// which asserted only that the response mentioned the table name.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PlacemarksInNestedFolders_YieldsEveryPlacemarkInOrder()

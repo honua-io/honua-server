@@ -11,11 +11,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Provider-aware tests for the degraded-start classifier (#1632): verifies real Npgsql exception
-/// types are correctly bucketed as transient (connectivity) vs. fatal (misconfiguration), and that
-/// the degraded-start context arms recovery without crashing the process.
-/// </summary>
 [Protocol(TestProtocols.Health)]
 public sealed class StartupDatabaseResilienceNpgsqlTests
 {

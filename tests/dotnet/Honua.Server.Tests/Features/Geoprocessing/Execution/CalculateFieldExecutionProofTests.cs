@@ -15,26 +15,6 @@ using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Execution-content proof for <c>data-management.calculate-field</c> (#3937).
-///
-/// The prior evidence asserted only <c>success</c> and the presence of an updated
-/// count; it never read the changed values back, so an implementation that
-/// reported a count and wrote nothing (or wrote the wrong rows) passed. These
-/// cases add literal rows to the editable PostGIS-backed FeatureServer layer
-/// through the shared edit pipeline, execute the owning FeatureServer
-/// <c>calculate</c> path over them, then read every one of those rows back
-/// through the canonical protocol query route and assert exact post-state.
-/// The oracle is the committed fixture plus arithmetic done here, never a
-/// snapshot of what calculate produced.
-///
-/// The target is an editable Honua feature layer rather than a table published
-/// with <c>PublishLayerAsync</c>: a published table is a read-only snapshot (it
-/// advertises Query/Extract, and a refresh re-materializes it from its source),
-/// so forcing Update onto one proves nothing about calculate. Every calculate
-/// here is scoped to the object ids this proof created, so rows the shared seed
-/// owns can neither satisfy nor disturb an assertion.
-/// </summary>
 [Collection("Database")]
 [Trait("Category", "CalculateFieldExecutionProof")]
 public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
@@ -186,10 +166,6 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     // Fixture rows
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Adds <see cref="SeedRows"/> through the FeatureServer <c>addFeatures</c> route and
-    /// returns the object ids the edit pipeline assigned, in <see cref="SeedRows"/> order.
-    /// </summary>
     private async Task<long[]> AddSeedRowsAsync()
     {
         var features = new JsonArray();
@@ -225,10 +201,6 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         return addResults.EnumerateArray().Select(result => result.GetProperty("objectId").GetInt64()).ToArray();
     }
 
-    /// <summary>
-    /// A where clause that confines a calculate to the rows this proof created, optionally
-    /// narrowed further by <paramref name="predicate"/>.
-    /// </summary>
     private string OwnedRows(string? predicate = null)
     {
         var owned = $"objectid IN ({ObjectIdList()})";
@@ -242,13 +214,6 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     // Read-back oracle
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Reads every proof row back through the canonical FeatureServer query route and
-    /// asserts exact attribute values and field-type fidelity. A wrong-but-well-formed
-    /// implementation — one that updated every row, stringified the integer field, or
-    /// wrote nothing — fails here. Rows are named by their 1-based position in
-    /// <see cref="SeedRows"/>.
-    /// </summary>
     private async Task AssertRowsAsync((string Name, int Population, string? Notes)[] expected)
     {
         using var response = await _fixture.Client.GetAsync(
@@ -298,12 +263,6 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// The transport status and raw body of one calculate call. The body is carried so
-    /// every assertion below can report it: a rejection envelope and a success envelope
-    /// are both HTTP 200, so without the body a wrong-shaped response surfaces only as a
-    /// bare <see cref="KeyNotFoundException"/> on a missing property.
-    /// </summary>
     private readonly record struct CalculateOutcome(HttpStatusCode Status, string Body);
 
     private async Task<CalculateOutcome> PostCalculateAsync(string where, string calcExpression)
@@ -320,10 +279,6 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         return new CalculateOutcome(response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
-    /// <summary>
-    /// Asserts that calculate returned the success envelope and hands back the parsed
-    /// document. The caller owns the returned <see cref="JsonDocument"/>.
-    /// </summary>
     private static JsonDocument ParseSuccessfulCalculate(CalculateOutcome outcome)
     {
         outcome.Status.Should().Be(HttpStatusCode.OK);
@@ -345,13 +300,6 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         return document;
     }
 
-    /// <summary>
-    /// Asserts a calculate rejection. PA-070/PA-117: every GeoServices response — errors
-    /// included — is HTTP 200, and the rejection travels in the body as
-    /// <c>{"error":{"code":400,...}}</c>. Asserting the body code AND the reason is
-    /// strictly stronger than asserting a transport status this protocol never emits:
-    /// it pins which guard fired, not merely that something failed.
-    /// </summary>
     private static void AssertRejected(CalculateOutcome outcome, string expectedReason, string because)
     {
         outcome.Status.Should().Be(HttpStatusCode.OK,

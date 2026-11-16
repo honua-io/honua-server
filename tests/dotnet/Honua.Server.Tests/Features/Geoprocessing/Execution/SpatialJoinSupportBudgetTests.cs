@@ -10,14 +10,6 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Bounding and cancellation coverage for the shared managed spatial join
-/// (honua-server#3075). The carried-value budget only charges SUCCESSFUL matches, so it
-/// cannot see the failure mode these tests pin down: inputs whose envelopes overlap
-/// broadly but whose exact predicates mostly fail burn CPU proportional to
-/// targets x dataset while charging almost nothing, and before the fix nothing observed
-/// cancellation inside the candidate loop either.
-/// </summary>
 public sealed class SpatialJoinSupportBudgetTests
 {
     private static readonly GeometryFactory Factory = new();
@@ -103,10 +95,6 @@ public sealed class SpatialJoinSupportBudgetTests
         act.Should().Throw<OperationCanceledException>();
     }
 
-    /// <summary>
-    /// Builds a target whose envelope contains every candidate but which intersects none of
-    /// them: a diagonal line from (0,0) to (n,n) against points offset off that diagonal.
-    /// </summary>
     private static (IFeature Target, NetTopologySuite.Index.Strtree.STRtree<IFeature> Index) BuildOffDiagonalCase(
         int candidateCount)
     {

@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>Release persistence follows the primary provider's aliases and defaults.</summary>
 [Trait("Tier", "Fast")]
 public sealed class GpProcessReleaseRegistrationTests
 {

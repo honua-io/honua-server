@@ -10,11 +10,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Queries.Filters;
 
-/// <summary>
-/// The shared parse seam reports an over-long flat logical sequence, and any string
-/// literal, identifier or value list beyond the shared parser limits, as an ordinary
-/// parse failure in every filter language, before any caller receives a tree.
-/// </summary>
 public sealed class FilterExpressionServiceParseBoundsTests
 {
     private const int OperandsBeyondLimit = FilterParserGuard.MaxExpressionDepth + 1;

@@ -15,13 +15,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 1, end to end over the real scan: a FeatureServer source is scanned by
-/// <see cref="GeoservicesImportService.ScanSourceAsync"/>, translated to a manifest, and every discovered
-/// construct is accounted against a service selection before apply. The source serves a point layer with
-/// attachments, one simple and one composite relationship, a nonspatial table and a multipatch layer; the
-/// expected accounting follows from that source, not from the accountant's output.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesServiceConstructAccountingScanTests
 {

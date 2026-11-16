@@ -12,12 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies the bounded in-memory report store: round-trip semantics by
-/// (jobId, contractVersion), invalidation, and that the underlying
-/// MemoryCache enforces the configured size cap so the store cannot grow
-/// unbounded as new job ids accumulate.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class InMemoryAnalysisReportStoreTests
 {

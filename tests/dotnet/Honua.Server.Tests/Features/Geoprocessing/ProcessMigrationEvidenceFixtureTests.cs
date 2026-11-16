@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Keeps the process migration evidence fixture scaffold aligned with the
-/// server-side process classification contract.
-/// </summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ProcessMigrationEvidenceFixtureTests
 {

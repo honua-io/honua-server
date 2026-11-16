@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Metadata.Services;
 
-/// <summary>
-/// Tests for the file-backed Metadata v2 graph provider.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class FileMetadataV2GraphProviderTests
 {

@@ -9,18 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// SAML 2.0 IdP conformance matrix (#2154). Each major IdP — Okta, Microsoft Entra ID,
-/// Auth0, and PingFederate — emits the role/email/display-name claims under a different
-/// attribute <c>Name</c> (Entra/Auth0 use long claim-type URIs; Okta/PingFederate use short
-/// directory attribute names). These tests drive the real <see cref="SamlAssertionValidator"/>
-/// against an assertion shaped like each provider emits, signed by the in-box
-/// <c>SignedXml</c> oracle, and assert the attribute/role mapping is correct for that
-/// provider's configuration. They run in CI against mocked (locally-signed) exchanges with no
-/// network dependency, so a regression in the attribute-mapping or signature path fails the
-/// build. The companion docs receipt is
-/// <c>docs/reference/compatibility/idp-conformance-matrix.md</c>.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class IdpConformanceMatrixTests
 {

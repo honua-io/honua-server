@@ -13,11 +13,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional;
 
-/// <summary>
-/// Unit coverage for the ADR-0039 Path B submit-side helper: spec projection
-/// onto the GDAL native worker job, scan-job identification, and mapping the
-/// worker's <c>gdalmdiminfo</c> artifact back to coverage metadata.
-/// </summary>
 public sealed class MultidimCoverageScanJobTests
 {
     private const string GdalMdimInfoJson =

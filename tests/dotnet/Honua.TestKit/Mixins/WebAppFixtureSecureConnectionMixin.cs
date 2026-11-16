@@ -12,42 +12,14 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.TestKit.Mixins;
 
-/// <summary>
-/// Audit-A2 mixin: the secure-connection bootstrap that <see cref="WebAppFixture"/>
-/// historically inlined as ~130 LOC of <c>EnsureTestSecureConnectionAsync</c>,
-/// <c>SecureConnectionTablesAvailableAsync</c>, <c>EnsureSecureConnectionProviderColumnAsync</c>,
-/// and the transient-failure classifier. Registering the test secure connection has no
-/// dependency on the fixture's other concerns (HTTP client, V2 graph, schema isolation),
-/// so the whole block lives here as static helpers parameterised by the fixture's service
-/// provider and the configuration's <c>DefaultConnection</c> string.
-/// </summary>
-/// <remarks>
-/// Per structural-audit-2026-05 (group A2), this is the third slice of the WebAppFixture
-/// mixin split. Behaviour is byte-identical to the previous inline implementations — this
-/// is a pure relocation. The mixin owns a shared semaphore so that parallel fixtures
-/// racing the same Postgres instance don't double-insert the connection.
-/// </remarks>
 internal static class WebAppFixtureSecureConnectionMixin
 {
-    /// <summary>
-    /// Logical name of the test secure connection registered into the
-    /// <see cref="ISecureConnectionRegistry"/>. Mirrors the historic constant on
-    /// <see cref="WebAppFixture"/>.
-    /// </summary>
     internal const string TestSecureConnectionName = "test";
 
-    /// <summary>
-    /// Audit trail tag written into the secure connection's <c>created_by</c> column.
-    /// </summary>
     internal const string TestSecureConnectionCreatedBy = "test-fixture";
 
     private static readonly SemaphoreSlim _secureConnectionLock = new(1, 1);
 
-    /// <summary>
-    /// Returns the connection id of the registered test secure connection, or null when
-    /// the service scope, registry, or row isn't available yet. Mirrors the historic
-    /// behaviour of <see cref="WebAppFixture.GetTestSecureConnectionIdAsync"/>.
-    /// </summary>
     internal static async Task<Guid?> GetTestSecureConnectionIdAsync(IServiceScope? scope)
     {
         if (scope is null)
@@ -65,11 +37,6 @@ internal static class WebAppFixtureSecureConnectionMixin
         return connection?.ConnectionId;
     }
 
-    /// <summary>
-    /// Ensures the test secure connection row exists in the live database. No-op if the
-    /// fixture has no service scope, the secure-connections table is missing, or the
-    /// connection string can't be parsed.
-    /// </summary>
     internal static async Task EnsureTestSecureConnectionAsync(IServiceScope? scope)
     {
         if (scope is null)

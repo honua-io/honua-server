@@ -14,13 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-/// <summary>
-/// A supplied-but-invalid portal token is rejected by middleware before any protocol handler
-/// runs. GeoServices keeps the Esri convention (HTTP 200, body code 498); OGC protocol requests
-/// must instead receive the same auth refusal their handler gives a missing credential: HTTP 401
-/// with an AccessDenied exception in the request's protocol and version format, so OGC clients
-/// (QGIS) recognise it as an authentication failure.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class InvalidTokenProtocolResponseTests
 {

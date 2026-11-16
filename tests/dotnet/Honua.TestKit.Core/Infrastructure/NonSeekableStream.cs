@@ -3,10 +3,6 @@
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Stream wrapper that reports <see cref="CanSeek"/> as <c>false</c>,
-/// useful for testing non-seekable stream handling (e.g. cloud downloads, HTTP uploads).
-/// </summary>
 public sealed class NonSeekableStream : Stream
 {
     private readonly Stream _inner;

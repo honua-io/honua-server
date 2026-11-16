@@ -22,14 +22,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Temporal;
 
-/// <summary>
-/// Integration tests for slices 2-5 of the temporal data history API (honua-server#1166): diff, feature
-/// timeline, attribution surfacing, and governed rollback planning/execution. The Metadata v2 graph,
-/// change tracker, and temporal history store are overridden with deterministic fakes so the real
-/// <c>TemporalHistoryService</c>, the admin endpoints, the distinct authorization policies, and AOT JSON
-/// serialization are exercised end-to-end. Rollback execution uses a fake runner so the job-handle
-/// contract is verified without depending on the durable job runner.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

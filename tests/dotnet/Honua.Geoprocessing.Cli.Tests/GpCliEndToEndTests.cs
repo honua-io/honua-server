@@ -7,19 +7,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// End-to-end coverage for the <c>honua gp</c> command surface (<see cref="GpCli.RunAsync"/>):
-/// the GP Devkit umbrella (#2130) Wave-1 exit criterion — the minimal authoring/run/test loop
-/// "proven end-to-end with tests". Where the sibling unit tests cover each building block in
-/// isolation (the scaffolder, the describe renderer, the publish pipeline), these drive the
-/// REAL verb dispatch — argument parsing, the registered managed executor set, the Redis-free
-/// <c>GeoprocessingLocalRunner</c>, the planner, the golden test runner, exit codes, and the
-/// console output — through the public entry point a developer actually invokes.
-///
-/// Every scenario stays managed-only (the <c>geometry.buffer</c> op and the managed
-/// <c>geometry-buffer-point</c> golden fixture) so the loop is deterministic and needs no
-/// Redis, no job store, no Docker, and no GDAL binary on PATH.
-/// </summary>
 [Collection(GpCliEndToEndTests.CollectionName)]
 [global::Xunit.Trait("Tier", "Integration")]
 public sealed class GpCliEndToEndTests
@@ -549,11 +536,6 @@ public sealed class GpCliEndToEndTests
         stderr.Should().Contain("No GP fixture with id 'no-such-fixture'");
     }
 
-    /// <summary>
-    /// The headline umbrella proof: the full devkit loop — list -> describe -> plan -> run -> test —
-    /// drives the SAME registered process through every verb and asserts each exits clean. This is the
-    /// "minimal CLI proven end-to-end" exit criterion for GP Devkit Wave 1 (#2130).
-    /// </summary>
     [Fact]
     public async Task RunAsync_FullDevkitLoop_ListDescribePlanRunTest_AllSucceed()
     {
@@ -581,11 +563,6 @@ public sealed class GpCliEndToEndTests
         test.ExitCode.Should().Be(0, "the golden fixture must assert the output");
     }
 
-    /// <summary>
-    /// Invokes <see cref="GpCli.RunAsync"/> with the supplied argv while capturing stdout/stderr.
-    /// Console redirection is process-global, so this collection disables cross-collection
-    /// parallelization (and xUnit serializes the methods within this class).
-    /// </summary>
     private static async Task<CliResult> InvokeAsync(params string[] args)
     {
         var originalOut = Console.Out;
@@ -634,9 +611,5 @@ public sealed class GpCliEndToEndTests
     private readonly record struct CliResult(int ExitCode, string StdOut, string StdErr);
 }
 
-/// <summary>
-/// Serializes the console-capturing GP CLI end-to-end tests against every other test
-/// collection in the assembly, since redirecting <see cref="Console.Out"/> is process-global.
-/// </summary>
 [CollectionDefinition(GpCliEndToEndTests.CollectionName, DisableParallelization = true)]
 public sealed class GpCliConsoleCaptureDefinition;

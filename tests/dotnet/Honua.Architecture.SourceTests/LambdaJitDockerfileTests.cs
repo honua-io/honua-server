@@ -5,9 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the RID-specific restore contract for the AWS Lambda JIT image.
-/// </summary>
 public sealed class LambdaJitDockerfileTests
 {
     [ArchitectureTest]

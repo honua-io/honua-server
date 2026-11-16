@@ -14,12 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAlertOutboxWriter"/> — the atomic append-event +
-/// enqueue-dispatch write that closes the alert-loss window (#A11b-1). The event append and its
-/// per-channel dispatch enqueue must commit together on one connection/transaction so a crash can
-/// never persist an event with no delivery enqueued (or vice versa).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAlertOutboxWriterTests(PostgresFixture fixture)
 {

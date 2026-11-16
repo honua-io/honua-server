@@ -12,10 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Refresh tokens stay bound to the original expiry and the live identity. Rotation does
-/// not open a new 90-day window, and a deprovisioned principal cannot mint another token.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

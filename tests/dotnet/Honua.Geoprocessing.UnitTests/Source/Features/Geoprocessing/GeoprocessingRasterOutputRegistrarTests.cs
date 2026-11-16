@@ -16,12 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Idempotency contract of the post-success COG-catalog registration (#3089): a
-/// retried terminal callback, a reconciler replay, and a concurrent registration
-/// race must all converge on exactly one catalog row per immutable staged object,
-/// and unsupported or Zarr-shaped registrations fail closed.
-/// </summary>
 public sealed class GeoprocessingRasterOutputRegistrarTests
 {
     private const string JobId = "job-reg-1";
@@ -325,14 +319,6 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
         };
     }
 
-    /// <summary>
-    /// In-memory <see cref="ICogStore"/> double that faithfully enforces the
-    /// <c>uq_cloud_raster_object</c> unique constraint the way
-    /// <c>PostgresCogStore.RegisterAsync</c> surfaces it (an
-    /// <see cref="InvalidOperationException"/> for a duplicate identity), including an
-    /// optional simulated concurrent insert between the caller's existence check and
-    /// its own insert.
-    /// </summary>
     private sealed class UniqueConstraintCogStore : ICogStore
     {
         private long _nextId = 1;
@@ -413,10 +399,6 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
                && string.Equals(row.ObjectKey, request.ObjectKey, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Minimal output-store double for hold assertions: matches the descriptors'
-    /// (AwsS3, gp-outputs) identity and records retention holds.
-    /// </summary>
     private sealed class HoldRecordingOutputObjectStore
         : Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore
     {

@@ -13,13 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Verifies OData server-driven paging (OData:MaxPageSize, #1644): a large $top must
-/// return promptly with a bounded first page and an @odata.nextLink, rather than
-/// materializing an unbounded LIMIT that hangs past the request budget on ad hoc
-/// spatial queries (geo.intersects + $select). The fixture pins a small MaxPageSize
-/// so the 15-feature seed exercises the multi-page path.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataServerPagingEndpointTests : IAsyncLifetime

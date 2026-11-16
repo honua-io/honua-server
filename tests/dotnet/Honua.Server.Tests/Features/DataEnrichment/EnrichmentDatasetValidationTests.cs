@@ -9,9 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
-/// <summary>
-/// Unit tests for the managed enrichment-dataset registration validation (#2280).
-/// </summary>
 public sealed class EnrichmentDatasetValidationTests
 {
     [Theory]

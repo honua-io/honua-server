@@ -11,12 +11,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Coverage-style migration diagnostic tests for the slice-4 builder
-/// (<see cref="CoverageStyleDiagnosticBuilder"/>) of issue #1030.
-/// Each fact targets one of the four documented classification rules plus
-/// JSON round-trip stability.
-/// </summary>
 public sealed class CoverageStyleDiagnosticBuilderTests
 {
     [Trait("Tier", "Fast")]

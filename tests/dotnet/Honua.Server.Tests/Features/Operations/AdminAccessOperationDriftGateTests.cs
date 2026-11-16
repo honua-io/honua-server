@@ -18,10 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// #3361 acceptance: the lane-C schema and exclusion-roster drift gates pass on the shipped
-/// contract and fail on missing, hand-forked, unaudited or unexpectedly published operations.
-/// </summary>
 public sealed class AdminAccessOperationDriftGateTests
 {
     private static readonly JsonElement Contract = AdminAccessOperationDriftGate.LoadAdminOpenApi();

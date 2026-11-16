@@ -10,10 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// Unit tests for ValidationErrorHelpers ensuring consistent error response
-/// formatting across all protocols.
-/// </summary>
 public class ValidationErrorHelpersTests
 {
     [Fact]

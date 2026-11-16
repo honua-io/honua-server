@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Extensive property-based and edge case tests for Feature domain model
-/// </summary>
 public class FeatureExtensiveTests
 {
     [UnitTest]

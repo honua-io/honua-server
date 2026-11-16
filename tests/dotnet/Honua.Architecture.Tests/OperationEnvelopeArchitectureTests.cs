@@ -21,9 +21,6 @@ using OperationGatewayRequest = Honua.Core.Features.ControlPlane.Abstractions.Op
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Security ratchets for the canonical operation identity and approval envelope.
-/// </summary>
 public sealed class OperationEnvelopeArchitectureTests
 {
     [ArchitectureTest]

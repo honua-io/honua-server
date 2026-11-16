@@ -33,18 +33,6 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// End-to-end parity coverage for the slice-2 through slice-5 vector
-/// executors. Each test submits a process through the OGC API Processes
-/// execute endpoint, polls the durable runtime until the job reaches a
-/// terminal status, retrieves the result document, and compares the
-/// published GeoJSON Feature (FeatureLayer outputs), FeatureCollection
-/// (geometry.dissolve), or measure-result document (Scalar outputs)
-/// against a golden expectation (geometry type, feature count, area /
-/// coordinate position, measure value). Mirrors the slice-1 buffer
-/// integration test shape so the new processes pin the same evidence
-/// contract.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database)

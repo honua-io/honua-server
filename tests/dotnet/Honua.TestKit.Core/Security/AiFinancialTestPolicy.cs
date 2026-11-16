@@ -5,10 +5,8 @@ using Honua.Core.Features.Security.Admission;
 
 namespace Honua.TestKit.Security;
 
-/// <summary>Explicit synthetic economic values for offline regressions; never production price or term approval.</summary>
 public static class AiFinancialTestPolicy
 {
-    /// <summary>Creates an isolated finite fixture policy for an inert Reporting route.</summary>
     public static AiAdmissionPolicy Create(string destination = "https://fixture.invalid/v1/chat/completions", string model = "fixture-model", string provider = "fixture") => new()
     {
         DeploymentAttempts = 100,

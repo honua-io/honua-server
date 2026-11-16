@@ -9,7 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>Tests for <see cref="StudioAiChatRequestMapper"/>: the wire-to-domain translation the endpoint uses before validation.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiChatRequestMapperTests
 {

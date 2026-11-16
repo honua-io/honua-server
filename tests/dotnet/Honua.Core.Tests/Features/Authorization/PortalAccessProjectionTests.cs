@@ -8,14 +8,6 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Tests.Features.Authorization;
 
-/// <summary>
-/// Unit tests for <see cref="PortalAccessProjection"/> — the shared seam (#1370)
-/// that turns a canonical RBAC decision and the coarse <see cref="AccessPolicy"/>
-/// into the ArcGIS Portal <see cref="PortalAccessLevel"/> and per-item visibility
-/// consumed by the read surface (#1243) and OAuth2 bridge (#1242). Locks in the
-/// access-level mapping, the layer-narrows-service rule, the grant-over-policy
-/// visibility fold, and the off-by-default gate.
-/// </summary>
 public sealed class PortalAccessProjectionTests
 {
     private static readonly PortalAccessProjection Enabled = new(enabled: true);

@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the scoped admin API-key permission grammar (#1985). These are
-/// pure, deterministic tests of <see cref="AdminApiKeyPermission"/> and do not
-/// require a database or Docker.
-/// </summary>
 public sealed class AdminApiKeyPermissionTests
 {
     private static ClaimsPrincipal AdminPrincipal(params string[] permissions)

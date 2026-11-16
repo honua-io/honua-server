@@ -7,10 +7,6 @@ using Honua.Core.Features.MultiTenancy.Billing;
 
 namespace Honua.Core.Tests.Features.MultiTenancy;
 
-/// <summary>
-/// Unit tests for the metering-to-billing attribution path (issue #2156): each tenant's metered
-/// usage must map to a billing record keyed by the same tenant id.
-/// </summary>
 public sealed class TenantBillingExporterTests
 {
     [Trait("Tier", "Fast")]

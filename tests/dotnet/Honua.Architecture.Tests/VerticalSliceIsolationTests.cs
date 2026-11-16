@@ -8,10 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces vertical slice isolation by preventing cross-feature dependencies.
-/// Each feature should be independent and not directly reference other features.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class VerticalSliceIsolationTests
 {
@@ -67,25 +63,6 @@ public sealed class VerticalSliceIsolationTests
         "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
     };
 
-    /// <summary>
-    /// Sub-areas under <c>Honua.Infrastructure.*</c> that are explicitly
-    /// permitted shared plumbing. The arch test treats these as a closed allow-list so
-    /// future additions to Infrastructure require an intentional update here. See ADR-0044
-    /// for the carve-out that moved Authentication / Caching / Events / Helpers / Models /
-    /// Validation out of Honua.Infrastructure into Honua.Hosting (their
-    /// namespaces are preserved under <c>Honua.Infrastructure.*</c> but
-    /// the source lives in the Hosting assembly).
-    /// </summary>
-    /// <remarks>
-    /// Audit-A1 (structural-audit-2026-05): the audit found Infrastructure had grown to
-    /// 351 files / 42 subdirs with Auth(45), ControlPlane(38), Styling(26), Rendering(16)
-    /// misfiled — entries that should have been their own slices. The Hosting carve moved
-    /// six sub-areas out (Authentication, Caching, Events, Helpers, Models, Validation),
-    /// and ControlPlane / Styling have been extracted to their own slices. Anything not on
-    /// this allow-list is treated as a real feature slice and must comply with vertical
-    /// isolation. Update the list when a new genuinely-shared subsystem is added; reject
-    /// additions that look like a slice in disguise.
-    /// </remarks>
     private static readonly HashSet<string> _infrastructureAllowedSubAreas =
         new(StringComparer.Ordinal)
         {
@@ -176,15 +153,6 @@ public sealed class VerticalSliceIsolationTests
             "Validation",       // Lives in Honua.Hosting under the preserved namespace.
         };
 
-    /// <summary>
-    /// Protocol-adapter features that are allowed to consume a specific domain
-    /// feature's transport-neutral services. The Mcp operator surface adapts
-    /// <c>IGeoprocessingJobService</c> and <c>IAnalysisReportService</c>, but
-    /// lives in its own vertical slice per ticket #728 / #801.
-    /// Grounding is a domain feature that reuses the Geoprocessing process
-    /// catalog + destructive classifier per ticket #742. Each entry lists the
-    /// cross-feature references permitted for the key.
-    /// </summary>
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
@@ -245,21 +213,6 @@ public sealed class VerticalSliceIsolationTests
             "Infrastructure is an exception as it provides shared services.");
     }
 
-    /// <summary>
-    /// Audit-A1 ratchet: confirms the Infrastructure carve-out is intact. The blanket
-    /// "Infrastructure is exempt" rule is anchored to the explicit
-    /// <see cref="_infrastructureAllowedSubAreas"/> allow-list — any new top-level folder
-    /// under <c>src/Honua.Server/Features/Infrastructure/</c> must be reviewed and either
-    /// (a) extracted to its own slice (preferred for misfiled slices like the historical
-    /// Auth/ControlPlane/Styling sub-areas) or (b) added to the allow-list with a comment
-    /// explaining why it is shared plumbing.
-    /// </summary>
-    /// <remarks>
-    /// See <see cref="_infrastructureAllowedSubAreas"/> for the historical context and
-    /// ADR-0044 for the Hosting carve. This test scans the filesystem (not the assembly)
-    /// so it captures namespaces whose source has moved to Honua.Hosting under the same
-    /// <c>Honua.Infrastructure.*</c> namespace.
-    /// </remarks>
     [ArchitectureTest]
     public void Infrastructure_SubAreas_ShouldBeOnExplicitAllowList()
     {

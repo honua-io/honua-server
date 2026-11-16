@@ -25,11 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the managed GeoETL file sink executors
-/// (sink.geojson-file, sink.quarantine). Each writes to a temp file and publishes a
-/// result descriptor. No native dependency, no Docker.
-/// </summary>
 public sealed class FileSinkExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

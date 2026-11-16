@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the managed (NetTopologySuite) clustering
-/// executor — the job-dispatchable counterpart to trunk's PostGIS-protocol
-/// <c>analytics.cluster</c>. DBSCAN and K-Means each emit one feature per
-/// input feature with a <c>CLUSTER_ID</c> attribute appended; DBSCAN noise
-/// points get <c>CLUSTER_ID = -1</c>. Pure managed geometry; no native
-/// dependency, no Docker.
-/// </summary>
 public sealed class ManagedClusterExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.AiBuilder;
 
-/// <summary>
-/// End-to-end exercise of the AI app-builder platform contract: the same prompt
-/// flows through the deterministic NL filter planner, the honua_plan_analysis
-/// MCP tool, and (for the operations-dashboard family) the app-package preview.
-/// One fixture catalog backs all three services, so this test proves that the
-/// canned outputs stay consistent across the chain rather than diverging at
-/// each layer.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class AiBuilderEndToEndContractTests
 {

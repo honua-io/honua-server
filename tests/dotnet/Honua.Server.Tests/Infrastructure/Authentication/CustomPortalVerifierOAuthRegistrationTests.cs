@@ -11,13 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// A host that registers its own <see cref="IPortalCredentialVerifier"/> before
-/// <see cref="PortalTokenAuthenticationExtensions.AddPortalTokenAuthentication"/>
-/// must still be able to activate the OAuth broker. The broker depends on the
-/// concrete OIDC verifier, not on whichever implementation was selected for
-/// generateToken.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
 public sealed class CustomPortalVerifierOAuthRegistrationTests

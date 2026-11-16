@@ -14,10 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for FeatureServer queryRelatedRecords endpoint.
-/// Tests Issue #14 - Related records query functionality implementation.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime

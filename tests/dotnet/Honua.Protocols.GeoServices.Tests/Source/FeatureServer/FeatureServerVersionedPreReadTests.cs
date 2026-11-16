@@ -14,10 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Named-version applyEdits pre-reads the branch image so an attribute-only update
-/// does not copy the DEFAULT row onto the branch overlay.
-/// </summary>
 public sealed class FeatureServerVersionedPreReadTests
 {
     private static readonly byte[] BranchGeometry = [10, 20, 30];

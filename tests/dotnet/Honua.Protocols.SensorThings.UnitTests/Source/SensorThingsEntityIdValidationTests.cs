@@ -14,7 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>Object-valued <c>@iot.id</c> references are client errors, not store failures.</summary>
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsEntityIdValidationTests
 {

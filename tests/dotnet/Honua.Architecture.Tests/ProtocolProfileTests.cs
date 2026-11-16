@@ -11,9 +11,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// The four build-time protocol profiles select the same projects, constants, and receipt.
-/// </summary>
 public sealed class ProtocolProfileTests
 {
     private static readonly string[] Profiles = ["gsr", "ogc-api", "ogc-api-classic", "all"];

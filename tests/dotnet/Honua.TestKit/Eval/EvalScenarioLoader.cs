@@ -5,11 +5,6 @@ using System.Text.Json;
 
 namespace Honua.TestKit.Eval;
 
-/// <summary>
-/// AOT-safe loader that deserializes <see cref="EvalScenario"/> documents through the
-/// source-generated <see cref="EvalJsonContext"/>. Resolves scenario paths relative
-/// to the nearest <c>Honua.sln</c> root.
-/// </summary>
 public static class EvalScenarioLoader
 {
     private const string ScenarioRootSegment = "tests/fixtures/eval";
@@ -55,10 +50,6 @@ public static class EvalScenarioLoader
         }
     }
 
-    /// <summary>
-    /// Enumerates all scenario identifiers discoverable under the scenario root.
-    /// Used by CI reporting and the xUnit host to iterate the full corpus.
-    /// </summary>
     public static IReadOnlyList<string> DiscoverScenarioIds()
     {
         var root = ResolveScenarioRoot();

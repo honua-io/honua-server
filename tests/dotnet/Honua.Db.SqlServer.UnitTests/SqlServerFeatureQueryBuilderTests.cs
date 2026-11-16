@@ -11,10 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.SqlServer.Tests;
 
-/// <summary>
-/// Unit tests for the SQL Server query builder. Verifies T-SQL dialect, identifier
-/// quoting, parameter binding, and rejection of unsupported relationships/inputs.
-/// </summary>
 public class SqlServerFeatureQueryBuilderTests
 {
     private const int TestLayerId = 7;

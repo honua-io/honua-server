@@ -12,10 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for Metadata v2 extruded 3D feature layer metadata output
-/// surfaced through the GeoServices FeatureServer layer metadata response.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerExtrusionTests : IAsyncLifetime

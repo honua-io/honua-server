@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalContourJobExecutor"/>: gdal_contour
-/// interval/base argument projection and the GeoJSON vector artifact contract (#2240).
-/// </summary>
 public sealed class GdalContourExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-contour-test";

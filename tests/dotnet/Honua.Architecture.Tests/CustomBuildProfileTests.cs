@@ -8,9 +8,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the custom Docker/MSBuild build-profile contract for optional modules.
-/// </summary>
 public sealed class CustomBuildProfileTests
 {
     [ArchitectureTest]

@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Tests for BoundingBox antimeridian-aware operations and edge cases.
-/// </summary>
 public class BoundingBoxAntimeridianTests
 {
     [UnitTest]

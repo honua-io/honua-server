@@ -26,12 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for the MCP location tools added in #1597. These tests run
-/// through the JSON-RPC <c>tools/call</c> dispatcher while substituting the
-/// canonical geocoding/routing services, so they validate the MCP adapter
-/// behavior without external geocoder or pgRouting dependencies.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpLocationToolTests
 {

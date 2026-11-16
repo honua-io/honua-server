@@ -25,13 +25,6 @@ using Org.BouncyCastle.Security;
 
 namespace Honua.Server.Tests.Features.StudioAi;
 
-/// <summary>
-/// Production-host proof for the terminal-model canary configuration: the candidate boots with
-/// <c>StudioAiProxy:TranscriptSigning:PrivateKeyReference=env://HONUA_CANARY_TRANSCRIPT_SIGNING_SEED</c>
-/// and the real composed <c>ISecretProvider</c> (no substituted secret provider). The capabilities
-/// response must publish the required transcript-signing manifest for the configured key id, and a
-/// certification chat must emit a transcript signed by exactly that key.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

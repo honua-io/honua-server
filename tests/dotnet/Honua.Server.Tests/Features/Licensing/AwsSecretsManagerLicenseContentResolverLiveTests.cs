@@ -12,17 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
-/// <summary>
-/// Opt-in live test for the AWS Secrets Manager license-content resolver. It is skipped
-/// unless the operator points it at a real secret holding a signed Pro license envelope
-/// and supplies the matching trusted public key, so CI never depends on cloud credentials.
-///
-/// To run against the demo Pro license:
-///   HONUA_LIVE_LICENSE_SECRET_ARN=aws:secretsmanager:&lt;arn-or-name of honua-demo-demo/license-pro&gt;
-///   HONUA_LIVE_LICENSE_KEY_ID=honuademo2026q2
-///   HONUA_LIVE_LICENSE_PUBLIC_KEY=base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k
-///   AWS_REGION=&lt;region&gt; plus credentials with secretsmanager:GetSecretValue on the secret.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public sealed class AwsSecretsManagerLicenseContentResolverLiveTests

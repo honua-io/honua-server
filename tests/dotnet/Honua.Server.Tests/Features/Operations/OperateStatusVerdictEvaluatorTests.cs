@@ -7,11 +7,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.OperateStatus;
 
-/// <summary>
-/// Unit tests for the server-side aggregated-status verdict rules (A12). Pure and deterministic —
-/// they pin the documented "is the system healthy" logic under composed conditions so the verdict is
-/// never client-invented.
-/// </summary>
 public sealed class OperateStatusVerdictEvaluatorTests
 {
     private static OperateStatusSignals Clear(string rollup = "Healthy")

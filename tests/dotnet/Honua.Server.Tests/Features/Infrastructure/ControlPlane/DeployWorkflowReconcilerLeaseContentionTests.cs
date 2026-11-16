@@ -10,13 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Reconciler-level lease-contention coverage (#2161). The store-level lease primitive
-/// (<c>TryAcquireLeaseAsync</c>) is tested elsewhere; this proves that when two distinct reconciler
-/// instances (i.e. two nodes / two background loops) race the SAME operation, the per-operation
-/// exclusive lease lets only ONE reconciler advance — the loser observes the lease is held and
-/// no-ops, so the backend is not double-driven.
-/// </summary>
 public sealed class DeployWorkflowReconcilerLeaseContentionTests
 {
     [Theory]
@@ -506,10 +499,6 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
             => Task.FromResult(targetId == Target.TargetId ? Target : null);
     }
 
-    /// <summary>
-    /// In-memory store with a real exclusive lease (TryAdd admits one owner) plus instrumentation that
-    /// records the maximum number of simultaneous lease holders so the test can assert exclusivity.
-    /// </summary>
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);

@@ -7,11 +7,6 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Phase 3 dispatcher-seam tests: the scheduled-tick dispatcher routes each tick kind to the handler
-/// that owns it and runs that handler's tick exactly once, and does nothing else (no extra
-/// coordination). Mirrors <see cref="OperationReconcileDispatcherTests"/> for the PERIODIC services.
-/// </summary>
 public sealed class ScheduledTickDispatcherTests
 {
     private sealed class RecordingHandler(ScheduledTickKind kind) : IScheduledTickHandler

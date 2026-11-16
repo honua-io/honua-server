@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Public SDK-compatible scene discovery coverage for the shipped
-/// downtown-honolulu fixture used by mobile live-image tests.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class PublicSceneDiscoveryEndpointTests : IAsyncLifetime

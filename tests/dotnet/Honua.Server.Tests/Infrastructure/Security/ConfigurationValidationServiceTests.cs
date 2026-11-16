@@ -199,12 +199,6 @@ public sealed class ConfigurationValidationServiceTests
             error.Contains("placeholder", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Drift guard: every credential-shaped literal this repository ships in a compose
-    /// file, an <c>.env*.example</c> file, or a CI harness default must already be denied
-    /// at production startup. A new harness that introduces a fresh literal fails here
-    /// instead of quietly becoming a value a deployment can keep.
-    /// </summary>
     [Fact]
     public void KnownPlaceholderSecrets_CoversCredentialLiteralsInShippedFiles()
     {

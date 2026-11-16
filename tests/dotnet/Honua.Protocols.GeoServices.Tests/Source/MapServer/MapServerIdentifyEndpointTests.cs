@@ -20,7 +20,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>MapServer identify and find endpoint integration tests.</summary>
 [Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase

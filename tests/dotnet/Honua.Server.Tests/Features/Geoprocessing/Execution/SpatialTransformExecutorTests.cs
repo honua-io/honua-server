@@ -17,11 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the reconciled GeoETL spatial transform executors
-/// (transform.spatial-filter, transform.clip, transform.dedup). Uses pure managed
-/// NetTopologySuite geometry; no native dependency and no Docker.
-/// </summary>
 public sealed class SpatialTransformExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

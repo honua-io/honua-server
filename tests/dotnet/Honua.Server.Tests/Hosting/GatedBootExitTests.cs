@@ -12,23 +12,12 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Server.Tests.Hosting;
 
-/// <summary>
-/// Boots the real server entry point against a database whose migration journal is behind an
-/// annotated contract migration and the approval token is unset. The safety gate must refuse,
-/// the process must exit with <see cref="GatedBootShutdown.RefusalExitCode"/>, and shutdown must
-/// not write a crash dump. An in-process host cannot observe the process status or a dump, so
-/// this test starts <c>Honua.Server.dll</c> out of process.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class GatedBootExitTests
 {
     private const string PostgisImage = "postgis/postgis:18-3.6";
     private const string TestRunIdEnv = "HONUA_TEST_RUN_ID";
 
-    /// <summary>
-    /// Journal row for a real applied migration. Its attachment table is provisioned from the
-    /// same embedded resource so the journal has a valid physical floor while <c>038</c> stays pending.
-    /// </summary>
     private const string SeededJournalScript = "Honua.Server.Migrations.002_CreateAttachmentsTable.sql";
 
     private const string PendingContractScript = "038_DropV1MetadataGraphTables";

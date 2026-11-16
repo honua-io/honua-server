@@ -14,14 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// Unit tests for the spatial analytics Pro-tier edition gate. Mirrors the
-/// <c>PrintingToolsRequestHandlerTests.ValidateEdition_*</c> pattern: instead of
-/// going through the full HTTP pipeline (which would require booting Postgres),
-/// the helper is exercised directly with a stub <see cref="ILicenseStatusProvider"/>.
-/// This proves that <see cref="SpatialAnalyticsRequestHandlers.RequireProEdition"/>
-/// blocks Community licenses with HTTP 402 and lets Pro / Enterprise through.
-/// </summary>
 [Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsEditionGateTests
 {

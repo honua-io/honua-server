@@ -26,24 +26,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages;
 
-/// <summary>
-/// #4423: HTTP-level authorization denial proof for OGC API Coverages (Preview; the security
-/// floor is retained at full severity).
-/// <para>
-/// Before this file Coverages had no denial test at all: every Coverages test ran under the F1
-/// development-authentication bypass, which returns an <c>admin</c> principal before any
-/// credential is read, so the per-resource access gate
-/// (<c>AccessPolicyHelpers.IsResourceAccessible</c>) was never entered.
-/// </para>
-/// <para>
-/// The test below runs with <c>HONUA_DEV_AUTH=false</c>, restricts the published resource to a
-/// role, and asserts past the status code — on the mocked raster store, which must record no
-/// export query at all, so the denial provably precedes any data access. The Records and EDR
-/// halves of the same proof live in <c>Ogc.Api.Records.OgcRecordsAuthorizationDenialTests</c> and
-/// <c>Ogc.Api.Edr.EdrAuthorizationDenialTests</c>; the three are split by surface so each lands in
-/// the CI shard that owns its namespace.
-/// </para>
-/// </summary>
 [Collection("Database.OgcApiData")]
 public sealed class OgcCoveragesAuthorizationDenialTests
 {
@@ -162,10 +144,6 @@ public sealed class OgcCoveragesAuthorizationDenialTests
         exportQueries.Should().HaveCount(zarrBacked ? 0 : 1);
     }
 
-    /// <summary>
-    /// Coverages <c>/coverage</c> returns raster bytes. The denial is asserted both on the
-    /// response and on the raster store: a denied request must never reach an export query.
-    /// </summary>
     [IntegrationTest]
     [Protocol(TestProtocols.OgcApiCoverages)]
     [Operation(Operations.Export)]

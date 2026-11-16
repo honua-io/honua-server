@@ -5,20 +5,8 @@ using System.Text;
 
 namespace Honua.Core.Tests.Features.Scene.Bim;
 
-/// <summary>
-/// Inline CityGML 2.0 documents for the building ingest tests (#1207). Kept in
-/// source (rather than as committed binary/large fixtures) so the exact XML the
-/// reader parses is visible alongside the assertions, mirroring the point-cloud
-/// LAS fixture builder.
-/// </summary>
 internal static class CityGmlFixtures
 {
-    /// <summary>
-    /// A minimal CityGML 2.0 city model with one building made of a ground, a
-    /// roof, and two wall surfaces, carrying both a building-level generic
-    /// attribute and storey counts. Coordinates are small lon/lat degrees near
-    /// the origin so an identity geo-transform places them on the ellipsoid.
-    /// </summary>
     public static byte[] SingleBuilding()
     {
         const string xml = """
@@ -115,10 +103,6 @@ internal static class CityGmlFixtures
         return Encoding.UTF8.GetBytes(xml);
     }
 
-    /// <summary>
-    /// A document using the older <c>gml:pos</c> coordinate encoding (one pos
-    /// element per vertex) to exercise that parse path.
-    /// </summary>
     public static byte[] GmlPosEncoding()
     {
         const string xml = """
@@ -156,11 +140,6 @@ internal static class CityGmlFixtures
         return Encoding.UTF8.GetBytes(xml);
     }
 
-    /// <summary>
-    /// A document whose building carries no <c>gml:id</c>, exercising the
-    /// deterministic synthetic-id fallback. The surface keeps an id so geometry
-    /// still parses; only the building id must be synthesised.
-    /// </summary>
     public static byte[] BuildingWithoutId()
     {
         const string xml = """
@@ -195,7 +174,6 @@ internal static class CityGmlFixtures
         return Encoding.UTF8.GetBytes(xml);
     }
 
-    /// <summary>A document with no building geometry, to exercise the empty-input rejection.</summary>
     public static byte[] NoBuildings()
     {
         const string xml = """

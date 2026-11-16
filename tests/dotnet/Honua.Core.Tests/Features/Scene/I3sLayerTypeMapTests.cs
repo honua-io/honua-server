@@ -8,10 +8,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Scene;
 
-/// <summary>
-/// Unit tests for the <see cref="SceneDatasetType"/> -> I3S layerType / store
-/// profile mapping (#1812).
-/// </summary>
 public sealed class I3sLayerTypeMapTests
 {
     [Trait("Tier", "Fast")]

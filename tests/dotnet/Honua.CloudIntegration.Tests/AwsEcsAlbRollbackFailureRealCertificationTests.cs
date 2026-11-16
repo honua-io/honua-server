@@ -12,19 +12,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164) — failure-of-failure cell for #2161. It drives the
-/// <see cref="DeployWorkflowReconciler"/> through a telemetry-triggered rollback using the production
-/// <see cref="AwsEcsAlbDeployBackend"/> and real AWS SDK clients, then injects a live ELBv2
-/// rollback failure by substituting a non-existent listener-rule ARN only for the rollback call.
-///
-/// SAFETY: the observe phase reads the real standing ECS/ALB cert substrate, but the failing rollback
-/// targets a syntactically valid rule ARN that does not exist. <see cref="AwsSdkAlbClient"/> describes
-/// the rule before <c>ModifyRule</c>, so AWS returns the failure before any traffic weight mutation.
-/// The test asserts the real listener rule remains at the known stable=100/canary=0 baseline after
-/// the reconciler escalates to <see cref="WorkflowOperationStatus.ManualInterventionRequired"/>.
-/// OFF unless <see cref="RealAwsCertificationFixture.EcsAlbConfigured"/>; skips otherwise.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class AwsEcsAlbRollbackFailureRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {

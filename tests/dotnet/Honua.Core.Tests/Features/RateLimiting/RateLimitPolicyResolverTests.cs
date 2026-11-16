@@ -6,10 +6,6 @@ using Honua.Core.Features.RateLimiting.Domain;
 
 namespace Honua.Core.Tests.Features.RateLimiting;
 
-/// <summary>
-/// Unit tests for the tier-precedence resolver (issue #2158): an explicit per-API-key quota
-/// overrides a per-tenant quota, which overrides a per-plan quota.
-/// </summary>
 public sealed class RateLimitPolicyResolverTests
 {
     private static RateLimitPolicy Policy(string scope, string key, int limit = 100) => new()

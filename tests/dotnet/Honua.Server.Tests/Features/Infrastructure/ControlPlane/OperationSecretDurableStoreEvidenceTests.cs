@@ -36,7 +36,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed partial class OperationSecretDurableStoreEvidenceTests
 {
-    /// <summary>Secret-returning access operations and the response field carrying the one-time value.</summary>
     private static readonly string RotateKeyId = Guid.NewGuid().ToString();
 
     private static readonly (string OperationId, string SecretField, string? RouteId)[] SecretOutputOperations =

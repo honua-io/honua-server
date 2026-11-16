@@ -15,10 +15,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Database-backed application whose layer 0 marks <c>category</c> (string) and
-/// <c>timestamp</c> (date) as publisher-hidden.
-/// </summary>
 public sealed class FeatureServerAnalyticsHiddenFieldFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture()
@@ -53,11 +49,6 @@ public sealed class FeatureServerAnalyticsHiddenFieldFixture : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// FeatureServer analytics endpoints refuse publisher-hidden fields exactly like
-/// <c>/query</c> outStatistics, so distinct values, class breaks and bin counts of a
-/// hidden column cannot be read (#6098).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerAnalyticsHiddenFieldTests(FeatureServerAnalyticsHiddenFieldFixture fixture)

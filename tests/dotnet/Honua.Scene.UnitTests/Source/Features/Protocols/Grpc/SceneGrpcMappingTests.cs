@@ -10,9 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Unit tests for the pure scene/elevation gRPC projection helpers.
-/// </summary>
 public sealed class SceneGrpcMappingTests
 {
     [UnitTest]

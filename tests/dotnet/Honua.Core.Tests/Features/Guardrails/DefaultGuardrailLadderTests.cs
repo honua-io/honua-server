@@ -11,10 +11,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.Guardrails;
 
-/// <summary>
-/// Unit tests for the edition guardrail ladder (#1691) covering the
-/// edition x operation-class matrix, operator overrides, and unknown classes.
-/// </summary>
 public class DefaultGuardrailLadderTests
 {
     private static DefaultGuardrailLadder CreateLadder(

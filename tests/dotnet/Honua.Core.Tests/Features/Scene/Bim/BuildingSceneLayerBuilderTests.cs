@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Bim;
 
-/// <summary>
-/// End-to-end unit tests for the CityGML -> 3D Tiles Building Scene Layer
-/// pipeline (#1207): reader -> BSL builder -> tileset + GLB with per-feature
-/// BSL attributes carried through EXT_structural_metadata.
-/// </summary>
 public sealed class BuildingSceneLayerBuilderTests
 {
     // Treat CityGML X/Y as longitude/latitude degrees directly so the test does

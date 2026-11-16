@@ -7,14 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Hermetic on-disk assertions over the NVIDIA construction demo fixture
-/// (<c>tests/fixtures/scenes/nvidia-construction/</c>): tileset shape,
-/// extras schema, observations sidecar invariants, and tile binaries.
-/// No web host, no Postgres, no <see cref="Honua.TestKit.WebAppFixture"/> —
-/// these run on the fast tier. HTTP-side coverage lives in
-/// <see cref="NvidiaConstructionFixtureTests"/>.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class NvidiaConstructionFixtureFileTests
 {

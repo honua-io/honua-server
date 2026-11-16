@@ -11,9 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Composite migration writes keep ownership on the canonical graph or stay deferred.
-/// </summary>
 public sealed class QueryOnlyCompositeRelationshipApplyTests
 {
     [UnitTest]

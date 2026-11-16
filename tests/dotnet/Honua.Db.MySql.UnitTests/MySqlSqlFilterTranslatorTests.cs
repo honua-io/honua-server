@@ -10,10 +10,6 @@ using Honua.Db.MySql.Queries.Filters;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Unit tests for translating CQL2/OGC filter expressions into MySQL/MariaDB SQL.
-/// Verifies operator mapping, identifier quoting, KNN rejection, and cross-SRID rejection.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class MySqlSqlFilterTranslatorTests
 {

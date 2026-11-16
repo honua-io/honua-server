@@ -25,23 +25,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #1015 slice 3: GeoServer style migration persistence and diagnostics.
-///
-/// Slice 1 (PR #1095) added idempotent catalog persistence of workspace and
-/// layer-group entries. Slice 2 (PR #1107) added data-source and feature-data
-/// copy. Slice 3 extends that to:
-/// 1. Persist a deterministic row in <c>honua.migration_styles</c> for each
-///    in-scope style on the manifest, capturing the original SLD body, any
-///    converter output, and structured conversion diagnostics.
-/// 2. Reuse the registered <see cref="ISldStyleConverter"/> rather than
-///    reimplementing conversion logic; warnings/errors are written through to
-///    the persisted row so the evidence pack carries explicit manual-review
-///    records when visual parity cannot be guaranteed (issue AC).
-/// 3. Respect the workspace-scope guard from issue #1098 so a manifest cannot
-///    cause cross-workspace style mutations.
-/// 4. Re-apply is idempotent on (source_kind, source_id).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerImportServiceStyleApplyTests
 {

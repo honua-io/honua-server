@@ -7,23 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet for same-name near-duplicate methods under <c>src/</c>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>scripts/ci/duplicate-method-ratchet.py</c> pairs block-bodied methods that
-/// share a name, are each at least 25 normalized lines, and whose bodies are at
-/// least 0.92 similar after comments and blank lines are removed. The committed
-/// baseline is the seed. After it is on trunk the file may only shrink: a new
-/// pair fails the set check, and adding a baseline line fails the parent check.
-/// Delete a line only when that pair is gone.
-/// </para>
-/// <para>
-/// Regenerate the seed, then delete lines rather than adding them:
-/// <c>python3 scripts/ci/duplicate-method-ratchet.py --write tests/dotnet/Honua.Architecture.Tests/duplicate-method-baseline.txt</c>.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class DuplicateMethodRatchetTests
 {

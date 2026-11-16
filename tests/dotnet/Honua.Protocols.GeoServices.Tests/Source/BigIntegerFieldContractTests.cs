@@ -11,9 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
-/// <summary>
-/// Protects the Esri BigInteger wire contract discovered during native desktop testing.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer, TestProtocols.MapServer)]
 public sealed class BigIntegerFieldContractTests

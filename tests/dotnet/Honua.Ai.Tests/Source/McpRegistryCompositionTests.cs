@@ -27,12 +27,6 @@ using NSubstitute;
 
 namespace Honua.Ai.Tests.Capabilities;
 
-/// <summary>
-/// Composition conformance for ADR-0058 B2 (#2334): the served <c>/mcp</c> catalog
-/// must be bound to the unified capability registry — no tool or resource is served
-/// without a registry descriptor — and the geospatial-mcp manifest emitter must
-/// project its tool roster from the registry rather than a hand-maintained list.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpRegistryCompositionTests
 {
@@ -536,14 +530,12 @@ public sealed class McpRegistryCompositionTests
             NullLogger<McpDataAccessSurface>.Instance);
     }
 
-    /// <summary>A runtime tool source that is not backed by the operation catalog.</summary>
     private sealed class FixedToolSource(params IMcpTool[] tools) : IMcpToolSource
     {
         public ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken) =>
             ValueTask.FromResult<IReadOnlyList<IMcpTool>>(tools);
     }
 
-    /// <summary>A tool with a name no capability-registry descriptor advertises.</summary>
     private sealed class StubOrphanTool : IMcpTool
     {
         public const string OrphanName = "honua_not_in_registry";
@@ -559,7 +551,6 @@ public sealed class McpRegistryCompositionTests
             throw new NotSupportedException();
     }
 
-    /// <summary>A resource template no capability-registry descriptor advertises.</summary>
     private sealed class StubOrphanResource : IMcpResource
     {
         public const string OrphanUriTemplate = "honua://mystery/{mysteryId}";

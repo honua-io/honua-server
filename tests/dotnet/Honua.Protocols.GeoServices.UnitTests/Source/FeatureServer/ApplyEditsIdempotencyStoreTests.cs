@@ -14,11 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit coverage for the server-side at-most-once applyEdits store and Idempotency-Key header parsing
-/// (#2250): a recorded response is replayed for a repeated key, keys are isolated by principal/service/
-/// layer, and a malformed header is rejected.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ApplyEditsIdempotencyStoreTests
 {
@@ -116,11 +111,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
     // ─── #3052: reservation release ──────────────────────────────────────────────
 
-    /// <summary>
-    /// #3052: a reservation that will never be replaced by a recorded response (the edit failed
-    /// before dispatch, was rejected, rolled back, or committed no rows) must be releasable, so the
-    /// client's retry wins the reservation again instead of losing it and getting a 409.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public async Task ReleaseAsync_AfterReservation_AllowsTheSameKeyToReserveAgain()
@@ -140,9 +130,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
             "a released reservation must not pin the key for the rest of the reservation window");
     }
 
-    /// <summary>
-    /// #3052: the in-process fallback path (no IDistributedCache configured) must release too.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public async Task ReleaseAsync_WithInProcessFallback_AllowsTheSameKeyToReserveAgain()
@@ -159,12 +146,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
         (await store.TryReserveAsync(scope)).Should().NotBeNull();
     }
 
-    /// <summary>
-    /// #3052 correctness guard, the direction that matters most: release is a compare-and-delete on
-    /// the pending sentinel. Once a response has been recorded the key must stay reserved for the
-    /// whole dedupe window, otherwise a late release would discard the replay value and let a
-    /// duplicate retry re-apply an already-committed edit.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public async Task ReleaseAsync_AfterRecordedResponse_LeavesTheReplayValueIntact()
@@ -185,10 +166,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
         replay!.AddResults![0].ObjectId.Should().Be(1234);
     }
 
-    /// <summary>
-    /// #3052: releasing a key that was never reserved is a harmless no-op rather than a throw —
-    /// the handler calls it from a finally block on already-failing paths.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public async Task ReleaseAsync_WithoutReservation_IsANoOp()
@@ -203,17 +180,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
         (await store.TryReserveAsync(scope)).Should().NotBeNull();
     }
 
-    /// <summary>
-    /// #3052 (Codex P1): a reservation carries a token unique to its owner, so a request whose
-    /// reservation has already lapsed cannot delete the reservation that now belongs to someone
-    /// else. Reproduces the lapse without waiting out the reservation window: the first owner
-    /// releases (as the reservation window expiring would do), a retry re-reserves the key, and the
-    /// first owner's late release must then be a no-op.
-    ///
-    /// Before the fix every reservation stored the identical pending sentinel, so the
-    /// compare-and-delete matched the successor's reservation and freed it — after which a third
-    /// same-key request could execute alongside the retry and duplicate its rows.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public async Task ReleaseAsync_WithLapsedOwnersToken_LeavesTheSuccessorsReservationHeld()

@@ -27,17 +27,6 @@ using WireMock.Server;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// End-to-end OIDC bearer-token validation (honua-server#2945). Every previous "proving" test
-/// for identity.oidc only exercised CRUD on <c>InMemoryOidcProviderStore</c> — no test signed a
-/// real JWT or drove it through the actual JwtBearer pipeline, so a broken/no-op validator would
-/// ship undetected. This stands up a fake in-process IdP (WireMock discovery document + JWKS
-/// endpoint, RSA-signed tokens) and drives real bearer tokens through a protected admin endpoint
-/// (<c>GET /api/v1/admin/oidc/providers</c>, gated by <c>AuthenticationExtensions.AdminPolicy</c>,
-/// which <see cref="Honua.Infrastructure.Authentication.OidcAuthenticationExtensions.AddOidcAuthorization"/>
-/// extends to accept the Composite/JwtBearer scheme once OIDC is enabled) to prove accept-valid /
-/// reject-expired / reject-wrong-issuer / reject-wrong-audience / reject-tampered-signature.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
@@ -391,12 +380,6 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         return proposal;
     }
 
-    /// <summary>
-    /// Mints an RSA-signed JWT. Defaults describe a fully valid token (correct issuer/audience,
-    /// live validity window, real signature, an "admin" role claim so accept-valid isolates JWT
-    /// trust-chain validation from the separate role/authorization check) — callers override only
-    /// the dimension under test.
-    /// </summary>
     private string CreateToken(
         string? issuer = null,
         string? audience = null,

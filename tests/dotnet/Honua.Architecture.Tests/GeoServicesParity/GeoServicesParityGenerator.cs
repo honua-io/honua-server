@@ -7,23 +7,14 @@ namespace Honua.Architecture.Tests.GeoServicesParity;
 
 internal static class GeoServicesParityGenerator
 {
-    /// <summary>Published matrix schema version. Bumped by #2863 (roster is now derived).</summary>
     public const int SchemaVersion = 2;
 
-    /// <summary>Repo-relative path of the hand-authored judgement source.</summary>
     public const string JudgmentRelativePath = "docs/gis/data/geoservices-parity-judgment.json";
 
-    /// <summary>Repo-relative path of the generated, published matrix.</summary>
     public const string MatrixRelativePath = "docs/gis/data/geoservices-rest-parity.json";
 
-    /// <summary>Statuses a served operation may carry.</summary>
     public static readonly string[] ServedStatuses = ["implemented", "partial", "stub"];
 
-    /// <summary>
-    /// Joins the derived roster against the judgement source and reports every
-    /// mismatch in both directions without throwing, so the gate can present all of
-    /// them at once rather than one per run.
-    /// </summary>
     public static GeoServicesParityJoin Join()
     {
         var roster = GeoServicesRouteRoster.Derive();
@@ -101,11 +92,6 @@ internal static class GeoServicesParityGenerator
         };
     }
 
-    /// <summary>
-    /// Projects the join onto the published matrix document. Assumes the join closes;
-    /// the drift guard runs the join assertions first so a failure is reported as the
-    /// specific mismatch rather than as a generation crash.
-    /// </summary>
     public static ParityMatrix Generate()
     {
         var join = Join();
@@ -196,12 +182,10 @@ internal static class GeoServicesParityGenerator
         };
     }
 
-    /// <summary>Serializes the matrix with the same deterministic, LF-pinned formatting the feature catalog uses.</summary>
     public static string Serialize(ParityMatrix matrix)
         => JsonSerializer.Serialize(matrix, ParityMatrixJsonContext.Default.ParityMatrix)
             .ReplaceLineEndings("\n") + "\n";
 
-    /// <summary>Reads and deserializes the hand-authored judgement source.</summary>
     public static ParityJudgment LoadJudgment()
     {
         var path = ArchitectureTestHelpers.CombinePath(
@@ -212,7 +196,6 @@ internal static class GeoServicesParityGenerator
             ?? throw new InvalidOperationException($"{JudgmentRelativePath} did not deserialize into a judgement document.");
     }
 
-    /// <summary>Absolute path of the committed, generated matrix.</summary>
     public static string CommittedMatrixPath()
         => ArchitectureTestHelpers.CombinePath(
             ArchitectureTestHelpers.ResolveRepositoryRoot(),

@@ -16,9 +16,6 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Integration tests for table discovery with a separate PostGIS database connection.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.TableDiscovery)]

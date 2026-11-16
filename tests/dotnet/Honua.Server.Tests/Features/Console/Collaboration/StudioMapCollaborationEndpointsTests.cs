@@ -18,11 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Console.Collaboration;
 
-/// <summary>
-/// Integration coverage for the durable Studio map collaboration endpoints
-/// (#1278, slice 1): comment thread create/list/reply/resolve and the activity
-/// feed, including anchor metadata, not-found, and admin permission gating.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

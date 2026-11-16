@@ -12,9 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the deterministic GLB tile builder.
-/// </summary>
 public sealed class GeometryTileBuilderTests
 {
     [UnitTest]

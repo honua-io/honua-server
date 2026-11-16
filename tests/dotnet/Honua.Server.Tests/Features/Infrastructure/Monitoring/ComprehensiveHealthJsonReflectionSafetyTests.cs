@@ -10,28 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Holds the AOT contract for <c>GET /monitoring/health/comprehensive</c>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>Honua.Server.csproj</c> sets <c>JsonSerializerIsReflectionEnabledByDefault=false</c>, so the
-/// shipped server — every AOT image and every Lambda package — has no reflection fallback. The
-/// endpoint's own write already goes through <see cref="MetricsJsonContext"/>, but the per-entry
-/// <c>Data</c> projection built its values with the parameterless
-/// <c>JsonSerializer.SerializeToElement(value)</c> overload, which resolves metadata through
-/// <c>JsonSerializerOptions.Default</c>. That threw <see cref="InvalidOperationException"/> inside
-/// the projection lambda — before the source-generated write could run — so the endpoint returned
-/// 500 on every deployed build whenever any health check attached data, which is the normal case.
-/// </para>
-/// <para>
-/// This test project runs on the xUnit host, where reflection serialization IS enabled, so an
-/// integration test against the endpoint cannot see the defect: the reflection fallback simply
-/// succeeds. The guard therefore has two halves — a direct assertion that the projection produces
-/// the right JSON, and a call-site scan asserting no serializer call in the endpoint file omits its
-/// source-generated type info. The scan is the half that actually catches a regression.
-/// </para>
-/// </remarks>
 [Protocol(TestProtocols.Admin)]
 public sealed class ComprehensiveHealthJsonReflectionSafetyTests
 {
@@ -166,7 +144,6 @@ public sealed class ComprehensiveHealthJsonReflectionSafetyTests
             EndpointsSourcePath);
     }
 
-    /// <summary>Returns the argument list of a call, starting at its opening parenthesis.</summary>
     private static string ReadBalancedCall(string source, int openParenIndex)
     {
         var depth = 0;

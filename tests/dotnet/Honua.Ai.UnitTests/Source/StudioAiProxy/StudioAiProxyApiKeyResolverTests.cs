@@ -19,7 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>Credential-custody tests for the provider API-key resolver.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiProxyApiKeyResolverTests
 {

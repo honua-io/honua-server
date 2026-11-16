@@ -16,11 +16,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for geometry validation and edge case handling.
-/// Tests Issue #97 - Geometry validation and repair capabilities.
-/// Tests Issue #45 - Edge case handling (nulls, large payloads, unicode).
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class GeometryValidationTests : IAsyncLifetime

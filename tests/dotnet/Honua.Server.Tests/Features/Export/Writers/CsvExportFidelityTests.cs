@@ -13,22 +13,8 @@ using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
 
-/// <summary>
-/// Pins the two CSV export behaviours that honua-server#4419 found unasserted: the exported
-/// geometry cell's exact shape — which today carries <b>no CRS at all</b> — and the writer's typed
-/// value formatting, where every existing test declared only <see cref="ExportFieldType.String"/>
-/// so the numeric, boolean and temporal branches were never reached.
-/// </summary>
 public sealed class CsvExportFidelityTests
 {
-    /// <summary>
-    /// <b>Known fidelity gap, now detected.</b> <c>CsvExportWriter</c> writes bare OGC WKT with no
-    /// <c>SRID=</c> prefix and emits no sidecar, so the spatial reference the caller exported in is
-    /// not recoverable from the file: a consumer re-importing it must guess, and guessing wrong is
-    /// silent wrong data. Nothing asserted this, so neither the loss nor a future fix would have
-    /// been noticed. This test states the current contract exactly; a change that starts carrying
-    /// the SRID must update it deliberately (honua-server#4419).
-    /// </summary>
     [Fact]
     public async Task WriteAsync_ProjectedGeometry_EmitsBareWktCarryingNoSrid()
     {
@@ -59,10 +45,6 @@ public sealed class CsvExportFidelityTests
         csv.Should().NotContain("3857");
     }
 
-    /// <summary>
-    /// A multi-vertex geometry's WKT contains commas, so the cell must be quoted or the row's
-    /// column count changes — the failure mode that made the delimiter import fixtures interesting.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_GeometryWktContainingCommas_IsQuoted()
     {
@@ -78,11 +60,6 @@ public sealed class CsvExportFidelityTests
             "a WKT containing a comma must be quoted so the row keeps two columns");
     }
 
-    /// <summary>
-    /// The same statement one level up: a CSV exported from a projected geometry and read straight
-    /// back produces the same ordinates with no spatial reference attached, so a round trip cannot
-    /// restore the CRS on its own.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_ThenRead_LosesTheSpatialReferenceButNotTheOrdinates()
     {
@@ -110,13 +87,6 @@ public sealed class CsvExportFidelityTests
             "must supply it out of band (SourceSrid on import)");
     }
 
-    /// <summary>
-    /// honua-server#4419: the writer formats <see cref="DateTime"/>, <see cref="DateTimeOffset"/>,
-    /// <see cref="double"/>, <see cref="float"/>, <see cref="decimal"/> and <see cref="bool"/>
-    /// through dedicated invariant-culture branches that no test reached, because every CSV export
-    /// fixture declared only string fields. A locale-sensitive or lossy formatter would have gone
-    /// unnoticed.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_TypedValues_AreFormattedWithInvariantCulture()
     {
@@ -177,7 +147,6 @@ public sealed class CsvExportFidelityTests
         await Task.CompletedTask;
     }
 
-    /// <summary>Splits a CSV row on unquoted commas, dropping the trailing WKT cell.</summary>
     private static string[] SplitCsvRow(string row)
     {
         var cells = new List<string>();

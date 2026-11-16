@@ -11,13 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Coverage for the Demo C coordinated platform-upgrade conductor: the ordered forward path
-/// (preflight → backup → container rollout (gated) → DB-schema + metadata (gated) → smoke → promote),
-/// the per-step approval gates that hold at the container-swap and data-affecting boundaries, and the
-/// single coordinated rollback that unwinds the completed reversible steps in reverse order when any
-/// step faults.
-/// </summary>
 public sealed class CoordinatedReleaseReconcilerTests
 {
     [UnitTest]

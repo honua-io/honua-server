@@ -20,18 +20,12 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Eval;
 
-/// <summary>
-/// End-to-end operator-workflow eval harness. Drives the canonical process runtime and
-/// its gRPC / OGC API Processes / GeoServices GPServer adapters through a fixture-backed
-/// scenario suite and emits the versioned report consumed by honua-devops-31.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OperatorEval, TestProtocols.Grpc, TestProtocols.OgcApiProcesses, TestProtocols.GPServer)]
 public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
 {
     private readonly EvalHarnessFixture _fixture;
 
-    /// <summary>Creates a new instance bound to the shared class-scoped fixture.</summary>
     public EvalHarnessTests(EvalHarnessFixture fixture)
     {
         _fixture = fixture ?? throw new ArgumentNullException(nameof(fixture));
@@ -48,10 +42,6 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         await RunScenarioAsync(scenarioId);
     }
 
-    /// <summary>
-    /// GPServer parity probes should target a real published task and then report either
-    /// acceptance or an environmental skip when the durable job substrate is unavailable.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task AnalysisBufferPlaces_RecordsGpServerProbeAgainstPublishedTaskSurface()
@@ -70,19 +60,6 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
                 : EvalStageStatus.Skipped);
     }
 
-    /// <summary>
-    /// Dry-run validation must fail when the server reports artifact kinds beyond the
-    /// scenario's declared set. Subset-only comparison would silently accept drift in
-    /// the canonical runtime's artifact surface, weakening the eval gate's contract.
-    /// </summary>
-    /// <remarks>
-    /// Uses a dedicated single-step (direct-submit-executable) plan rather than deriving
-    /// from a corpus scenario: DirectSubmitPlanValidator (#2806) now gates the shared
-    /// ValidatePlan/DryRunPlan pipeline on direct-submit executability, so a multi-step
-    /// plan's DryRun response is always Valid=false/Result=null and never reaches the
-    /// artifact-kind comparison this test exercises. A single Geoprocess-only plan stays
-    /// direct-submit executable, so the comparison logic actually runs.
-    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task DryRun_UnexpectedArtifactKinds_FailsScenario()
@@ -96,12 +73,6 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         dryRun.Reason.Should().Be("artifact-kinds-unexpected");
     }
 
-    /// <summary>
-    /// OGC protocol parity must treat a 403 approval-required response as a matched
-    /// rejection when the scenario itself expects <c>RequiresApproval=true</c>. Without
-    /// this, any future approval-gated scenario would incorrectly fail parity even
-    /// though the OGC adapter matches the canonical runtime's approval gate exactly.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task OgcProbe_ApprovalRequiredScenario_MatchesApprovalRejection()
@@ -135,14 +106,6 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         }
     }
 
-    /// <summary>
-    /// An approval-gated scenario must still exercise the canonical DryRun contract
-    /// (a Read operation that does not enforce executability or approval) while only
-    /// SubmitJob is skipped because it is the RPC that actually enforces the
-    /// approval gate. Without the split, DryRun would record a synthetic skip and the
-    /// harness would never observe a real artifact-kind mismatch against the seeded
-    /// runtime for approval-gated plans.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task ApprovalRequiredScenario_RunsDryRun_SkipsOnlySubmitJob()
@@ -179,12 +142,6 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         }
     }
 
-    /// <summary>
-    /// HTTP parity probes must convert transport-level timeouts (e.g. <c>HttpClient.Timeout</c>
-    /// firing) into a deterministic <c>Failed(http-timeout)</c> probe rather than letting
-    /// the <c>TaskCanceledException</c> propagate and abort the scenario. This preserves
-    /// <see cref="EvalRunner.RunAsync"/>'s no-throw reporting contract.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario()
@@ -223,14 +180,6 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         }
     }
 
-    /// <summary>
-    /// Caller cancellation of the scenario's <see cref="CancellationToken"/> must abort
-    /// <see cref="EvalRunner.RunAsync"/> with an <see cref="OperationCanceledException"/>
-    /// rather than being swallowed into <c>Failed(grpc-cancelled)</c> stage outcomes.
-    /// gRPC surfaces caller cancellation as <c>StatusCode.Cancelled</c>, so each gRPC
-    /// stage helper must distinguish caller cancel from a server-side cancel status
-    /// and propagate the former unchanged.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task RunAsync_WhenCallerTokenIsCancelled_PropagatesCancellation()

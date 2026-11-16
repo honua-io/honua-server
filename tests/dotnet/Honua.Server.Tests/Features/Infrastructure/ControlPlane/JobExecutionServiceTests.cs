@@ -17,11 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies that the execution service re-reads job state before promoting
-/// a claimed job to Running, preventing resurrection of jobs that were
-/// cancelled between claim and worker startup.
-/// </summary>
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed partial class JobExecutionServiceTests
 {
@@ -271,10 +266,6 @@ public sealed partial class JobExecutionServiceTests
         };
     }
 
-    /// <summary>
-    /// Regression: a cancel arriving between TryClaimAsync and ProcessJobAsync
-    /// must not be overwritten by the Running transition.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_SkipsExecution_WhenJobCancelledBeforeRunningTransition()
     {
@@ -319,11 +310,6 @@ public sealed partial class JobExecutionServiceTests
         await jobQueue.Received(1).RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: if another worker reclaimed the job before this worker
-    /// transitions to Running, this worker must bail out without deleting
-    /// the queue entry that now belongs to the new owner.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_SkipsExecution_WhenClaimOwnerChangedBeforeRunningTransition()
     {
@@ -366,10 +352,6 @@ public sealed partial class JobExecutionServiceTests
             provisioning.OperationId, Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a requeued job (status=Queued, ClaimedBy=null) must not have
-    /// its queue entry deleted by the stale worker that lost ownership.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_DoesNotRemoveQueue_WhenJobRequeuedBeforeRunningTransition()
     {
@@ -627,10 +609,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a stale worker's heartbeat pump must stop when
-    /// the job has been reclaimed by another worker.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatPump_Stops_WhenOwnershipChanges()
     {
@@ -664,10 +642,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// A stale worker that loses its claim must cancel the job token so the
-    /// executor stops, not only stop the heartbeat pump (#6154).
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatPump_CancelsJobCts_WhenOwnershipChanges()
     {
@@ -711,9 +685,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Losing the claim during execution must not be recorded as operator cancellation.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_SkipsTerminalWrite_WhenOwnershipChangesDuringExecution()
     {
@@ -768,10 +739,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a stale worker's progress report must be silently
-    /// dropped when ownership has moved to another worker.
-    /// </summary>
     [UnitTest]
     public async Task ReportProgress_Skips_WhenOwnershipLost()
     {
@@ -802,10 +769,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a stale worker's artifact publication must be silently
-    /// dropped when ownership has moved to another worker.
-    /// </summary>
     [UnitTest]
     public async Task PublishArtifact_Skips_WhenOwnershipLost()
     {
@@ -836,10 +799,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a progress update racing with a terminal or cancellation write
-    /// must skip the stale write instead of clobbering the newer durable state.
-    /// </summary>
     [UnitTest]
     public async Task ReportProgress_Skips_WhenTrySetConflicts()
     {
@@ -870,11 +829,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// #3089: artifact publication racing a terminal write must re-read after the
-    /// version conflict and skip once the record is no longer owned, instead of
-    /// silently dropping a publish that could still win.
-    /// </summary>
     [UnitTest]
     public async Task PublishArtifact_RetriesConflict_ThenSkipsOnTerminalReRead()
     {
@@ -913,12 +867,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// #3089 review: a durable cancellation stamp that lands while the executor is
-    /// finishing must win at finalization. The artifact publication fence already
-    /// refused to publish after the stamp, so finalizing Succeeded would durably
-    /// expose a success with silently missing outputs and no repair path.
-    /// </summary>
     [UnitTest]
     public async Task FinalizeJob_SuccessRacingDurableCancellation_FinalizesAsCancelled()
     {
@@ -958,10 +906,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// #3089: persistent unexplained version conflicts must surface as an error
-    /// instead of silently losing the published artifact reference.
-    /// </summary>
     [UnitTest]
     public async Task PublishArtifact_Throws_AfterExhaustingConflictRetries()
     {
@@ -1024,10 +968,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: executor warnings must be persisted on the terminal failed
-    /// record when no retries remain, so clients rendering job.Warnings see them.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_PersistsWarnings_WhenExecutorReturnsFailure_NoRetries()
     {
@@ -1079,14 +1019,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression (#2348): when an executor returns a curated failure detail and
-    /// no retries remain, the terminal failed record must persist that detail on
-    /// <see cref="ExecutionJobRecord.ErrorMessage"/> — not the generic safe
-    /// message — so GP job failures (e.g. missing/misconfigured output sink) are
-    /// diagnosable through the OGC Processes / GPServer status surfaces instead of
-    /// failing opaquely with "Job execution failed.".
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_PersistsExecutorFailureDetail_WhenExecutorReturnsFailure_NoRetries()
     {
@@ -1137,11 +1069,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression (#2348): an unexpected thrown exception must still be genericized
-    /// to the safe failure message on the record (info-leak guard) — raw exception
-    /// text is never persisted, unlike a curated <see cref="JobExecutionResult.Failed(string, System.Collections.Generic.IReadOnlyList{string})"/> detail.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_PersistsGenericMessage_WhenExecutorThrows_NoRetries()
     {
@@ -1190,11 +1117,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when retries are exhausted and the job transitions to terminal
-    /// Failed, the execution log retention must be set so structured logs remain
-    /// accessible for post-mortem inspection.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_SetsLogRetention_WhenRetriesExhausted()
     {
@@ -1240,11 +1162,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when executor returns failure with warnings and retries
-    /// remain, warnings must be cleared from the requeued record to prevent
-    /// stale per-attempt warnings from leaking to the next attempt.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_ClearsWarnings_WhenExecutorReturnsFailure_WithRetries()
     {
@@ -1292,11 +1209,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a transient log-store failure during per-attempt warning
-    /// persistence must not block the durable requeue transition. The job
-    /// must still be requeued with cleared warnings.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_RequeuesJob_WhenWarningLogAppendThrows()
     {
@@ -1352,12 +1264,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a graceful host shutdown must always requeue the job, even
-    /// when the retry budget is exhausted (<see cref="JobRetryPolicy.None"/>).
-    /// Infrastructure shutdown is not an execution failure and must not
-    /// permanently fail jobs that have no retry budget.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_RequeuesJob_WhenShutdownWithNoRetryPolicy()
     {
@@ -1463,11 +1369,6 @@ public sealed partial class JobExecutionServiceTests
         }
     }
 
-    /// <summary>
-    /// Regression: when both shutdown and timeout fire concurrently, the
-    /// timed-out job must fail terminally instead of being force-requeued.
-    /// ADR-0031 says timed-out jobs are not retried.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_ShutdownAndTimeout_FailsTerminallyInsteadOfRequeue()
     {
@@ -1529,11 +1430,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a stale worker's log append must be silently dropped
-    /// when ownership has moved to another worker, preventing log pollution
-    /// into the next attempt's or terminal state's log stream.
-    /// </summary>
     [UnitTest]
     public async Task AppendLog_Skips_WhenOwnershipLost()
     {
@@ -1572,15 +1468,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: after a worker requeues a job on executor failure with retries
-    /// remaining, the tracked CTS must be removed immediately so that a cancel
-    /// request arriving in the window between requeue and ProcessJobAsync's finally
-    /// block is not incorrectly delegated to a worker that no longer owns the job.
-    /// Without the fix, Cancel() returns true in this window and the API caller
-    /// trusts the worker to persist Cancelled — but the worker already dropped
-    /// ownership, so the cancel is silently swallowed and the job stays Queued.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_RemovesCtsAfterRetryRequeue_SoCancelIsNotFalselyDelegated()
     {
@@ -1624,12 +1511,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
     }
 
-    /// <summary>
-    /// Regression: shutdown-triggered requeue must also clear the tracked CTS
-    /// immediately to prevent cancel-delegation to a worker that dropped ownership.
-    /// Shutdown requeues bypass the retry budget (<see cref="JobRetryPolicy.None"/>)
-    /// and must still clean up the CTS before the finally block.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_RemovesCtsAfterShutdownRequeue_SoCancelIsNotFalselyDelegated()
     {
@@ -1671,11 +1552,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
     }
 
-    /// <summary>
-    /// Regression: a durable cancellation signal racing with worker shutdown must
-    /// be honoured by AbandonJobAsync instead of requeueing the job to an indefinite
-    /// Queued state that the reconciler does not sweep.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_ShutdownRequeue_HonoursDurableCancellationSignal()
     {
@@ -1730,11 +1606,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: after the authoritative store write in FinalizeJobAsync, the CTS
-    /// must be removed before RemoveAsync so that a Redis hang does not leave a
-    /// stale CTS that falsely accepts cancel delegation.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_Finalize_RemovesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
     {
@@ -1773,11 +1644,6 @@ public sealed partial class JobExecutionServiceTests
             "CTS must be removed after authoritative store write and before queue RemoveAsync");
     }
 
-    /// <summary>
-    /// Regression: after the authoritative store write in TerminateJobAsync, the CTS
-    /// must be removed before RemoveAsync so that a Redis hang does not leave a
-    /// stale CTS that falsely accepts cancel delegation.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_Terminate_RemovesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
     {
@@ -1821,12 +1687,6 @@ public sealed partial class JobExecutionServiceTests
             "CTS must be removed after authoritative store write and before queue RemoveAsync");
     }
 
-    /// <summary>
-    /// Regression: after the authoritative store transition to Queued in
-    /// AbandonJobAsync, the CTS must be removed before RequeueAsync so that
-    /// a Redis failure does not leave a stale CTS that falsely accepts cancel
-    /// delegation while the stale-claim reconciler repairs the queue.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_AbandonRequeue_RemovesCtsBeforeQueueRequeue_SoRequeueFailureDoesNotLeakStaleCts()
     {
@@ -1876,11 +1736,6 @@ public sealed partial class JobExecutionServiceTests
             "CTS must be removed after authoritative store write and before queue RequeueAsync");
     }
 
-    /// <summary>
-    /// Regression: after the authoritative store write in AbandonJobAsync's terminal
-    /// path (retries exhausted), the CTS must be removed before RemoveAsync so that
-    /// a Redis hang does not leave a stale CTS that falsely accepts cancel delegation.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_AbandonTerminal_RemovesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
     {
@@ -1922,11 +1777,6 @@ public sealed partial class JobExecutionServiceTests
             "CTS must be removed after authoritative store write and before queue RemoveAsync");
     }
 
-    /// <summary>
-    /// Regression: when a new worker reclaims a job, the old worker's CTS must be
-    /// cancelled during registration so the stale worker observes cancellation even
-    /// if Revoke has not yet run.
-    /// </summary>
     [UnitTest]
     public void CreateLinkedTokenSource_CancelsOldCts_WhenJobReclaimedByNewWorker()
     {
@@ -1943,13 +1793,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.False(ctsB.IsCancellationRequested);
     }
 
-    /// <summary>
-    /// Regression: heartbeat pump store failures must not fault the task.
-    /// If the pump task faults and StopHeartbeatPumpAsync only catches
-    /// OperationCanceledException, the store exception propagates up and
-    /// skips finalization. The pump must catch non-cancellation exceptions
-    /// and continue pumping on the next interval.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatPump_DoesNotFaultTask_WhenStoreThrowsPersistently()
     {
@@ -1970,12 +1813,6 @@ public sealed partial class JobExecutionServiceTests
         await context.RunHeartbeatPumpAsync(cts.Token);
     }
 
-    /// <summary>
-    /// Regression: a single transient store failure must not kill the heartbeat
-    /// pump. The pump must catch the exception, log it, and continue pumping
-    /// on the next interval so that the reconciler does not declare the worker
-    /// dead due to a brief Redis blip.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatPump_ContinuesAfterTransientStoreFailure()
     {
@@ -2007,10 +1844,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when a job is requeued and immediately reclaimed by another worker,
-    /// the stale worker's finally-block Remove must not delete the new worker's CTS.
-    /// </summary>
     [UnitTest]
     public void Remove_PreservesNewWorkerCts_WhenJobReclaimedAfterRequeue()
     {
@@ -2032,10 +1865,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.True(ctsB.IsCancellationRequested);
     }
 
-    /// <summary>
-    /// Regression: when the reconciler requeues a job and a new worker claims it
-    /// before Revoke runs, the Revoke must not cancel the new worker's CTS.
-    /// </summary>
     [UnitTest]
     public void Revoke_PreservesNewWorkerCts_WhenJobReclaimedBeforeRevoke()
     {
@@ -2059,11 +1888,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.True(ctsB.IsCancellationRequested);
     }
 
-    /// <summary>
-    /// The generated worker ID must always contain a full 32-hex-char GUID suffix,
-    /// even when the machine hostname is very long. Without this, two workers on
-    /// long-hostname nodes can share the same truncated ID, breaking ownership guards.
-    /// </summary>
     [UnitTest]
     public void GenerateWorkerId_AlwaysPreservesFullGuid()
     {
@@ -2080,11 +1904,6 @@ public sealed partial class JobExecutionServiceTests
             "GUID suffix must be 32 lowercase hex characters");
     }
 
-    /// <summary>
-    /// Regression: even when the machine hostname exceeds the available prefix
-    /// budget, the generated worker ID must keep the full GUID claim token and
-    /// only truncate the hostname portion.
-    /// </summary>
     [UnitTest]
     public void GenerateWorkerId_TruncatesHostnamePrefix_ButPreservesFullGuidSuffix()
     {
@@ -2097,11 +1916,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.Equal(48, workerId.Length);
     }
 
-    /// <summary>
-    /// When a worker has no executors registered, it must not enter the claim
-    /// loop. Without this guard, the worker performs O(n) Redis scans every
-    /// poll interval for no benefit.
-    /// </summary>
     [UnitTest]
     public async Task ExecuteAsync_SkipsClaimLoop_WhenNoExecutorsRegistered()
     {
@@ -2129,12 +1943,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: when the host stops after TryClaimAsync succeeds but before
-    /// the executor try/catch is reached, the claimed job must be immediately
-    /// requeued by the ExecuteAsync shutdown handler instead of being left in
-    /// Provisioning until heartbeat expiry.
-    /// </summary>
     [UnitTest]
     public async Task ExecuteAsync_RequeuesClaimedJob_WhenShutdownDuringPreExecution()
     {
@@ -2197,11 +2005,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a durable cancellation signal (CancellationRequestedAt) set by
-    /// a remote API host before the worker transitions to Running must be honoured
-    /// so the job does not proceed to execution.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_SkipsExecution_WhenDurableCancellationSignalIsSet()
     {
@@ -2242,11 +2045,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: the heartbeat pump must detect a durable cancellation signal
-    /// and cancel the per-job CTS so the executor receives the cancellation
-    /// through its CancellationToken.
-    /// </summary>
     [UnitTest]
     public async Task HeartbeatPump_CancelsJobCts_WhenDurableCancellationSignalDetected()
     {
@@ -2275,12 +2073,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.True(jobCts.IsCancellationRequested);
     }
 
-    /// <summary>
-    /// Regression: after the authoritative store write, a queue removal failure
-    /// must not prevent the terminal callback from firing. The admin API reads
-    /// from the progress store (synced by the callback), so skipping it leaves
-    /// stale in-progress state until TTL expiry.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_Finalize_NotifiesTerminalCallback_WhenQueueRemovalFails()
     {
@@ -2316,10 +2108,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: terminal callback must fire even when queue removal fails
-    /// in the abandon path (retries exhausted).
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_AbandonTerminal_NotifiesTerminalCallback_WhenQueueRemovalFails()
     {
@@ -2439,11 +2227,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a durable cancellation signal that arrives during the retry-
-    /// preparation phase (log appends) must be honoured by the pre-requeue re-read
-    /// instead of being silently overwritten by the requeue write.
-    /// </summary>
     [UnitTest]
     public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesDuringRetryPrep()
     {
@@ -2500,10 +2283,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Regression: a durable cancellation signal that arrives before the terminal
-    /// fail write (retries exhausted) must be honoured by the pre-fail re-read.
-    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -2705,10 +2484,6 @@ public sealed partial class JobExecutionServiceTests
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
         => tags.FirstOrDefault(tag => tag.Key == name).Value?.ToString();
 
-    /// <summary>
-    /// Invokes the private ProcessJobAsync method via reflection.
-    /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
-    /// </summary>
     private static async Task InvokeProcessJobAsync(
         JobExecutionService service,
         string operationId,
@@ -2723,13 +2498,6 @@ public sealed partial class JobExecutionServiceTests
         await task.ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Runtime-profile claim fence (worker-side aggregation). A worker composed
-    /// entirely of default (un-overridden) executors must pass only the
-    /// managed/default profile to the queue claim, so it can never request native
-    /// jobs. Uses concrete executors so the default interface member resolves to
-    /// <see cref="RuntimeProfiles.DefaultAccepted"/> (NSubstitute would return null).
-    /// </summary>
     [UnitTest]
     public async Task ExecuteAsync_LeanWorker_PassesManagedOnlyAcceptedProfilesToClaim()
     {
@@ -2766,10 +2534,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.Single(capturedProfiles);
     }
 
-    /// <summary>
-    /// A worker whose executor declares the native profile aggregates to a
-    /// native-accepting set, so the heavyweight GDAL worker requests native jobs.
-    /// </summary>
     [UnitTest]
     public async Task ExecuteAsync_NativeWorker_PassesNativeAcceptedProfilesToClaim()
     {
@@ -2805,11 +2569,6 @@ public sealed partial class JobExecutionServiceTests
         Assert.DoesNotContain(RuntimeProfiles.Managed, capturedProfiles);
     }
 
-    /// <summary>
-    /// A store fault at any step between the claim and executor dispatch must hand the
-    /// claimed attempt back to the queue at once (no heartbeat-expiry wait), release the
-    /// per-job cancellation registration, and let the next claim run the job to success.
-    /// </summary>
     [UnitTheory]
     [InlineData(PreDispatchFaultStore.InitialRead)]
     [InlineData(PreDispatchFaultStore.ReRead)]
@@ -2861,11 +2620,6 @@ public sealed partial class JobExecutionServiceTests
         }
     }
 
-    /// <summary>
-    /// When the store stays unavailable, the best-effort requeue after a pre-dispatch fault
-    /// also fails. That must be absorbed (reconciliation recovers the job), must not
-    /// escape into the claim loop, and must still drop the per-job cancellation entry.
-    /// </summary>
     [UnitTheory]
     [InlineData(PreDispatchFaultStore.InitialRead)]
     [InlineData(PreDispatchFaultStore.ReRead)]
@@ -2897,10 +2651,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// A pre-dispatch store fault consumes the claimed attempt, so a job whose retry budget
-    /// is spent fails terminally instead of cycling through requeues.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_FailsJob_WhenStoreFaultsBeforeDispatchWithRetryBudgetSpent()
     {
@@ -2924,11 +2674,6 @@ public sealed partial class JobExecutionServiceTests
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// A write that lands between the recovery's re-read and its requeue makes that requeue's CAS
-    /// lose. The claim must still be resolved on the spot — here the durable cancellation signal that
-    /// caused the conflict is honoured — rather than left for heartbeat-expiry reconciliation.
-    /// </summary>
     [UnitTest]
     public async Task ProcessJob_ResolvesClaim_WhenRequeueAfterPreDispatchFaultLosesTheCas()
     {
@@ -2965,10 +2710,6 @@ public sealed partial class JobExecutionServiceTests
                 : new OperationConcurrencyPolicy()
         };
 
-    /// <summary>
-    /// Single-record job store that throws once at a chosen step of the worker's
-    /// pre-dispatch sequence, optionally failing every later call too.
-    /// </summary>
     private sealed class PreDispatchFaultStore(ExecutionJobRecord initial, string faultPoint) : IExecutionJobStore
     {
         public const string InitialRead = "initial-read";
@@ -2986,10 +2727,6 @@ public sealed partial class JobExecutionServiceTests
 
         public bool FailAfterFirstFault { get; init; }
 
-        /// <summary>
-        /// Makes the first requeue write lose its CAS the way a concurrent operator cancellation
-        /// would: the durable signal is stamped on the record and the write is rejected.
-        /// </summary>
         public bool CancelOnFirstRequeue { get; init; }
 
         public bool FaultInjected { get; private set; }
@@ -3170,7 +2907,6 @@ public sealed partial class JobExecutionServiceTests
             => throw new NotSupportedException();
     }
 
-    /// <summary>Queue holding one job id; a claim stamps the store record like the real queue does.</summary>
     private sealed class SingleJobQueue(PreDispatchFaultStore store, string operationId) : IJobQueue
     {
         private readonly Lock _gate = new();
@@ -3275,10 +3011,6 @@ public sealed partial class JobExecutionServiceTests
         }
     }
 
-    /// <summary>
-    /// Default executor: does not override <see cref="IJobExecutor.AcceptedRuntimeProfiles"/>,
-    /// so it inherits the managed/default-only fence.
-    /// </summary>
     private sealed class ManagedTestExecutor : IJobExecutor
     {
         public ExecutionJobKind Kind => ExecutionJobKind.ExtractTransformLoad;
@@ -3288,9 +3020,6 @@ public sealed partial class JobExecutionServiceTests
             => Task.FromResult(JobExecutionResult.Succeeded());
     }
 
-    /// <summary>
-    /// Native executor: overrides the accepted set to declare the native profile.
-    /// </summary>
     private sealed class NativeTestExecutor : IJobExecutor
     {
         public ExecutionJobKind Kind => ExecutionJobKind.ExtractTransformLoad;

@@ -12,9 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Tests for OGC Maps parameter validation: format variations, CRS, dimensions, bbox, and styles.
-/// </summary>
 [Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsParameterValidationTests : IAsyncLifetime

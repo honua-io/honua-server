@@ -967,10 +967,6 @@ public sealed partial class FeatureServerQueryExecutorTests
         return (sut, service, resource, publication);
     }
 
-    /// <summary>
-    /// Fake upstream FeatureServer that honors resultOffset/resultRecordCount on returnIdsOnly
-    /// requests and records every request so a test can prove what was asked for.
-    /// </summary>
     private sealed class RecordingGeoServicesRestClient(int totalIds) : IGeoServicesRestFeatureClient
     {
         public List<string> FeatureRequests { get; } = [];

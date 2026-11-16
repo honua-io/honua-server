@@ -15,20 +15,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Integration tests for the controlled-conformance mutation workflow (honua-server#3038,
-/// REQ-005/REQ-006/NFR-001): lease isolation, ownership-checked mutation and cleanup,
-/// deployment-revision binding, fail-closed refusals, and observation of a controlled
-/// mutation on the live feature stream.
-/// </summary>
-/// <remarks>
-/// The conformance source is pointed at the seeded <c>test</c> service/layer with the
-/// ownership marker stored in its <c>name</c> attribute. That keeps the test honest about the
-/// contract that matters — a dedicated source named by configuration, with ownership read back
-/// from the stored row — without needing a second seeded schema. The seeded baseline record's
-/// <c>name</c> is ordinary text and therefore never parses as a marker, which is exactly the
-/// property that protects real records in a deployment.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
@@ -592,10 +578,6 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// The manifest wraps its payload in the shared API envelope on some surfaces and returns
-    /// it bare on others; accept either rather than pinning the test to the envelope shape.
-    /// </summary>
     private static JsonElement ResolveServerBlock(JsonElement body)
         => body.TryGetProperty("data", out var data) && data.TryGetProperty("server", out var wrapped)
             ? wrapped

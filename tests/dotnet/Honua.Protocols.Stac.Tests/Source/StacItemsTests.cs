@@ -13,9 +13,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC Items endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 public sealed class StacItemsTests : IAsyncLifetime

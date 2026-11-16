@@ -22,7 +22,6 @@ using Xunit;
 
 namespace Honua.Protocols.Scene.ComponentTests;
 
-/// <summary>Production scene serving without a database or unrelated protocols.</summary>
 [Protocol(ProtocolNames.Scene)]
 public sealed class SceneComponentTests
 {

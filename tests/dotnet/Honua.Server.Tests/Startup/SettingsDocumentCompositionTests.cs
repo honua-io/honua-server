@@ -13,12 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Boots the real <c>Program</c> with <c>HONUA_SETTINGS_DOCUMENT</c> pointing at a stub Secrets
-/// Manager and proves the document's settings reach the running host, that environment variables
-/// and command-line settings still override it, and that a reference inside the document resolves
-/// through the existing bootstrap security resolution.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class SettingsDocumentCompositionTests

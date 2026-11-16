@@ -21,9 +21,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for the built-in process catalog and plan validator.
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
 public sealed class ProcessCatalogTests
 {

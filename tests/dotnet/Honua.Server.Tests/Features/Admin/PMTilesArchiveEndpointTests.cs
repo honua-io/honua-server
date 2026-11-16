@@ -274,9 +274,6 @@ public sealed class PMTilesArchiveEndpointTests(DatabaseFixtureAdapter database)
         }
     }
 
-    /// <summary>
-    /// Walks the root directory, following leaf directories, and returns every tile entry.
-    /// </summary>
     private static PMTilesEntry[] ReadAllEntries(byte[] archiveBytes, PMTilesHeader header)
     {
         var root = ReadDirectory(archiveBytes, header, header.RootDirectoryOffset, header.RootDirectoryLength);

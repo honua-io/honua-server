@@ -8,56 +8,26 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Static, deterministic fixture for the NVIDIA construction demo scene
-/// (#899). Provides the layer definition, polygon footprints, and matching
-/// extrusion configuration that exercise the v1 generation pipeline against
-/// a representative AEC dataset without requiring Postgres.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Coordinates fall inside the prebuilt demo bounds documented in
-/// <c>tests/fixtures/scenes/nvidia-construction/tileset.json</c>:
-/// west = -121.98°, south = 37.37°, east = -121.96°, north = 37.38°. Every
-/// value is a compile-time constant so the byte-hash of generated output
-/// remains stable across environments.
-/// </para>
-/// <para>
-/// Five footprints span the three demo work packages (foundation / structure
-/// / envelope) with heights from 8m to 80m, matching the prebuilt fixture's
-/// <c>extras.bounds.maxHeight</c>.
-/// </para>
-/// </remarks>
 internal static class ConstructionDemoFixture
 {
-    /// <summary>Stable layer id reserved for the construction demo seed entry.</summary>
     public const int LayerId = 9;
 
-    /// <summary>Layer name surfaced in the catalog and admin UI.</summary>
     public const string LayerName = "NVIDIA Construction Site";
 
-    /// <summary>Stable scene id used by the prebuilt and generated tilesets.</summary>
     public const string SceneId = "nvidia-construction";
 
-    /// <summary>Western bound (degrees) — matches the prebuilt fixture.</summary>
     public const double WestLongitude = -121.98;
 
-    /// <summary>Southern bound (degrees) — matches the prebuilt fixture.</summary>
     public const double SouthLatitude = 37.37;
 
-    /// <summary>Eastern bound (degrees) — matches the prebuilt fixture.</summary>
     public const double EastLongitude = -121.96;
 
-    /// <summary>Northern bound (degrees) — matches the prebuilt fixture.</summary>
     public const double NorthLatitude = 37.38;
 
-    /// <summary>Maximum extrusion height (meters) — matches the prebuilt bounds.</summary>
     public const double MaxExtrusionHeightMeters = 80.0;
 
-    /// <summary>Field name driving extrusion height.</summary>
     public const string HeightField = "height_m";
 
-    /// <summary>Metadata v2 extrusion configuration matching the layer's <c>height_m</c> field.</summary>
     public static MetadataV2ExtrusionInfo Extrusion { get; } = new()
     {
         HeightField = HeightField,
@@ -65,7 +35,6 @@ internal static class ConstructionDemoFixture
         DefaultHeight = 10.0
     };
 
-    /// <summary>Metadata v2 graph carrying the demo resource extrusion metadata.</summary>
     public static MetadataV2Graph BuildMetadataGraph(bool includeExtrusion = true)
     {
         const string resourceId = "res-construction-demo";
@@ -115,7 +84,6 @@ internal static class ConstructionDemoFixture
         };
     }
 
-    /// <summary>Five deterministic polygon footprints covering all three work packages.</summary>
     public static IReadOnlyList<SceneFeature> Features { get; } = BuildFeatures();
 
     // objectids match the demo seed in tests/seed/server.yaml (PK rows

@@ -25,11 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// Endpoint coverage for the Operations Toolset HTTP surface: the descriptor catalog lists
-/// over <c>GET /api/v1/operations</c>, and an operation submits over
-/// <c>POST /api/v1/operations/{id}/submit</c> through the policy-gated dispatcher.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class OperationsEndpointsTests

@@ -12,13 +12,6 @@ namespace Honua.Architecture.Tests.FeatureCatalog;
 [Trait("Category", "Architecture")]
 public sealed class CapabilityCrosswalkDriftTests
 {
-    /// <summary>
-    /// The honua-esri-assess verdict registry's hard-lock-in ("no-go") keys
-    /// (<c>src/honua_esri_assess/verdict/registry.py</c>, <c>HARD_LOCK_IN_KEYS</c>,
-    /// read-only reference — this repo does not modify that registry). Mirrored
-    /// here so the drift guard can assert they never silently reappear in the
-    /// mapped-capability crosswalk and always appear in the no-go allowlist.
-    /// </summary>
     private static readonly string[] GeoServicesAssessHardLockInKeys = ["utility-network", "parcel-fabric", "lrs"];
 
     [ArchitectureTest]
@@ -171,32 +164,23 @@ public sealed class CapabilityCrosswalkDriftTests
     }
 }
 
-/// <summary>Top-level document for <c>capability-no-go-allowlist.v1.json</c>.</summary>
 internal sealed class CapabilityNoGoAllowlistDocument
 {
-    /// <summary>Schema version.</summary>
     public string SchemaVersion { get; init; } = string.Empty;
 
-    /// <summary>The explicit not-supported entries.</summary>
     public NoGoAllowlistEntry[] NotSupported { get; init; } = [];
 }
 
-/// <summary>A single not-supported allowlist entry.</summary>
 internal sealed class NoGoAllowlistEntry
 {
-    /// <summary>The originating evidence vocabulary (e.g. <c>esri-assess</c>).</summary>
     public string Source { get; init; } = string.Empty;
 
-    /// <summary>The source vocabulary's key.</summary>
     public string Key { get; init; } = string.Empty;
 
-    /// <summary>Must always be <c>not-supported</c>.</summary>
     public string Marker { get; init; } = string.Empty;
 
-    /// <summary>Plain-language migration-boundary description.</summary>
     public string Boundary { get; init; } = string.Empty;
 
-    /// <summary>Reference to the source-of-truth registry entry.</summary>
     public string Reference { get; init; } = string.Empty;
 }
 

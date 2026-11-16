@@ -18,10 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Attachment metadata follows canonical editing flags, with annotation fallback only
-/// for resources without editing metadata (#4825). FeatureServer also requires its store.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Protocol(TestProtocols.MapServer)]
 [Collection("Database")]

@@ -44,12 +44,6 @@ using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for the catalog-discovery, feature-query, and map-render MCP
-/// tools. These run through the JSON-RPC dispatcher while substituting the
-/// canonical metadata / feature-query / raster-render services, so they validate
-/// the MCP adapter behavior without a database or renderer dependency.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpMapToolTests
 {

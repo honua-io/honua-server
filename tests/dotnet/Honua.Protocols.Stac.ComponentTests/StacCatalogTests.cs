@@ -10,9 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC Catalog (root) endpoint.
-/// </summary>
 [Protocol(TestProtocols.Stac)]
 public sealed class StacCatalogTests : IClassFixture<StacComponentFixture>
 {
@@ -85,11 +82,6 @@ public sealed class StacCatalogTests : IClassFixture<StacComponentFixture>
             "public compliance claim that no longer matches the runtime");
     }
 
-    /// <summary>
-    /// Every conformance URI the STAC catalog advertises, written out from the STAC API and OGC
-    /// API specifications rather than referenced from the production constants, so a change to
-    /// those constants has to be re-stated here deliberately (honua-server#4425).
-    /// </summary>
     private static readonly string[] ExpectedConformanceClasses =
     [
         // STAC API core + extensions.
@@ -160,12 +152,6 @@ public sealed class StacCatalogTests : IClassFixture<StacComponentFixture>
             link.GetProperty("href").GetString()!.EndsWith("/stac/conformance", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// STAC Item Search Filter Extension (honua-server#1932): the landing page MUST advertise the
-    /// catalog queryables document via the OGC queryables rel link
-    /// (http://www.opengis.net/def/rel/ogc/1.0/queryables) so clients and stac-api-validator can
-    /// discover the filterable property set. The href must point at /stac/queryables.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
     [Endpoint("GET /stac")]
@@ -229,11 +215,6 @@ public sealed class StacCatalogTests : IClassFixture<StacComponentFixture>
         json.RootElement.GetProperty("paths").TryGetProperty("/stac/search", out _).Should().BeTrue();
     }
 
-    /// <summary>
-    /// STAC API spec §7.2: the landing page links array MUST contain at least one rel=search link
-    /// for each supported HTTP method on /stac/search, with the corresponding "method" field set so
-    /// clients know which verbs are available.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
     [Endpoint("GET /stac")]

@@ -11,9 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit tests for GPServer parameter translation (GP types ↔ canonical opaque inputs).
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerParameterTranslationTests
 {

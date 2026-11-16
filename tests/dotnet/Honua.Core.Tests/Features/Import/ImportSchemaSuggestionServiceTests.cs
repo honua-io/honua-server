@@ -15,9 +15,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Tests for the import schema suggestion service.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ImportSchemaSuggestionServiceTests
 {

@@ -20,12 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies the clarification-envelope → MCP-native elicitation mapping
-/// (honua-server#2484): the pure envelope-to-elicitation projection, and the
-/// grounding tools' capability-detected behavior with graceful fallback to the
-/// proprietary envelope when the client did not advertise elicitation.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpClarificationElicitationTests
 {

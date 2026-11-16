@@ -28,12 +28,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Plugins;
 
-/// <summary>
-/// Integration coverage for plugin-contributed REST routes (<see cref="ICustomEndpoint"/>, #1562)
-/// mapped via <see cref="PluginCustomEndpoints.MapHonuaPluginEndpoints"/>. Uses a minimal
-/// self-hosted <see cref="TestServer"/> rather than the full server factory: the route is only
-/// present when a custom-endpoint plugin is compiled in, which the default host does not do.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class PluginCustomEndpointsTests
 {

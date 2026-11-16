@@ -8,10 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for the in-process serving-latency rolling-window aggregation
-/// (<see cref="ServingLatencyAggregator"/>).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ServingLatencyAggregatorTests
 {

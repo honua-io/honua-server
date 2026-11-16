@@ -6,9 +6,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the evidence-correctness repairs for the analyst-client baselines introduced by #3481.
-/// </summary>
 public sealed class ClientCertificationEvidenceCorrectnessTests
 {
     private static readonly HashSet<string> AnalystLanes =

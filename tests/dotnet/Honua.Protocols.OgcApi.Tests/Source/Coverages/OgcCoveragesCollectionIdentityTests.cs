@@ -20,9 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages;
 
-/// <summary>
-/// Discovery uses public collection identity when metadata resources share storage.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiCoverages)]
 public sealed class OgcCoveragesCollectionIdentityTests

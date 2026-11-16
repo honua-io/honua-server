@@ -7,12 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Provider query builders call <c>WhereClauseSplitter.SplitOnAnd</c>. Postgres
-/// keeps its own copy because that splitter also handles double quotes and
-/// whitespace. A new private copy fails this test instead of growing another
-/// provider-local parser.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed partial class WhereClauseSplitterAllowlistTests
 {

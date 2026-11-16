@@ -3,7 +3,6 @@
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>Nonsecret controls captured from installed ArcPy 3.7.1 SubmitJob.</summary>
 internal static class GPServerSoapRequestFixtures
 {
     internal const string ArcPyDefaultControls = """

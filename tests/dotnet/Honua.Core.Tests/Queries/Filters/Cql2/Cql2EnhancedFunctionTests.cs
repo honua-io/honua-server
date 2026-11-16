@@ -7,9 +7,6 @@ using Honua.Core.Queries.Filters.Cql2;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
-/// <summary>
-/// Tests for enhanced spatial and math function support in CQL2
-/// </summary>
 public class Cql2EnhancedFunctionTests
 {
     private readonly Cql2Parser _parser = new();

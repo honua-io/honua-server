@@ -5,7 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
-/// <summary>Prevents registered-cloud and imported raster serving claims from being conflated.</summary>
 public sealed class CogLifecycleDocumentationTests
 {
     [Trait("Tier", "Fast")]

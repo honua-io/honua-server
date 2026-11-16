@@ -10,13 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.OperationsToolset.Policy;
 
-/// <summary>
-/// Unit coverage for <see cref="ConfigurableOperationPolicyDecisionPoint"/>: the configurable
-/// guardrail policy decision point. Proves the default-permissive behavior, default-decision
-/// fallback, per-operation / tier / role rule matching, first-match-wins ordering, dry-run
-/// honouring, and an end-to-end <see cref="OperationDispatcher"/> integration showing a
-/// require-approval rule routes to the approval lane WITHOUT touching the executor.
-/// </summary>
 public sealed class ConfigurableOperationPolicyDecisionPointTests
 {
     private const string PublishOperationId = "service.publish";

@@ -25,37 +25,19 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Zarr;
 
-/// <summary>
-/// Endpoint-level coverage for the datacube (Zarr coverage) slice -> tile render route (#1835),
-/// exercising the public GET so it is backed by a real HTTP request (EndpointRegistryDriftTests).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
 public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 {
-    /// <summary>Edge length of the registered cube, in cells.</summary>
-    /// <remarks>
-    /// Odd on purpose. The zoom-1 tile edge falls at the world centre, which on a nine-cell axis
-    /// spanning the whole world is cell index 4.5 — strictly inside a cell. An even grid would put
-    /// that edge exactly on a cell boundary, where a sub-ulp difference in the tile-bounds
-    /// arithmetic decides whether the boundary cell is included, and the expected window would
-    /// depend on floating-point luck rather than on the geometry.
-    /// </remarks>
     private const int Grid = 9;
 
-    /// <summary>Rendered tile edge length (<c>ZarrTileRenderer.DefaultTileSize</c>).</summary>
     private const int TileSize = 256;
 
-    /// <summary>Half-extent of the WebMercatorQuad world, and of the registered cube.</summary>
     private const double WorldExtent = SpatialConstants.WebMercatorExtent;
 
     private const string CubeRoot = "cubes/datacube-tile";
 
-    /// <summary>
-    /// Publication index the cube is registered against. The default graph publishes layer indices
-    /// 0, 1 and 2; the registration request requires a positive layer id, so 0 cannot be used.
-    /// </summary>
     private const int CubeLayerId = 1;
 
     private readonly WebAppFixture _fixture = new();
@@ -68,11 +50,6 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
             builder.UseSetting("HONUA_DEV_AUTH", "false");
         });
 
-    /// <summary>
-    /// A host whose only storage reader serves the in-memory cube below, so the tile route runs
-    /// its production path — publication resolution, authorization, registration lookup, slice
-    /// planning, chunk decode and render — against a cube with known cell values.
-    /// </summary>
     private readonly WebAppFixture _cubeFixture = new WebAppFixture()
         .ConfigureServices(services =>
         {
@@ -95,37 +72,8 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
                     yMax: WorldExtent)));
         });
 
-    /// <summary>Fixtures this test instance started, disposed in <see cref="DisposeAsync"/>.</summary>
-    /// <remarks>
-    /// xUnit constructs the class and runs <see cref="InitializeAsync"/> once per test method, so
-    /// eagerly starting all three hosts would boot twelve of them for four tests. Each test starts
-    /// only the host it needs.
-    /// </remarks>
     private readonly List<WebAppFixture> _started = [];
 
-    /// <summary>The cube's cell value at storage row <paramref name="row"/>, column <paramref name="col"/>.</summary>
-    /// <remarks>
-    /// Three properties, each load-bearing for an assertion below:
-    /// <list type="bullet">
-    ///   <item><description>
-    ///     Asymmetric (<c>Sample(r, c) != Sample(c, r)</c> off the diagonal), so a render that
-    ///     swapped the X and Y strides is a visibly different image.
-    ///   </description></item>
-    ///   <item><description>
-    ///     Strictly increasing along both axes, so the auto-stretch ramp's endpoints are any
-    ///     window's north-west and south-east cells and the corner anchors are computable.
-    ///   </description></item>
-    ///   <item><description>
-    ///     <em>Quadratic</em>, not linear. With no colormap the renderer normalises each selected
-    ///     window to that window's own minimum and maximum, so a linear <c>row * 10 + col</c> ramp
-    ///     would make every translated window an affine image of every other one: serving the
-    ///     north-west quadrant for a north-east tile request would produce byte-identical pixels
-    ///     and identical black/white corners. Squaring both axes makes a shifted window a different
-    ///     shape, which the stretch cannot undo, so the pixels do pin the x/y tile selection.
-    ///   </description></item>
-    /// </list>
-    /// Every value is a small exactly-representable integer (0..6464 on this grid).
-    /// </remarks>
     private static float Sample(int row, int col)
     {
         // Evaluated in float space from the start rather than multiplying as integers and casting
@@ -222,15 +170,6 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The first positive test of the datacube tile route (honua-server#4395).
-    /// </summary>
-    /// <remarks>
-    /// Zarr serving is GA in 2026.1, and this route's only coverage was a 404 and a 401 — nothing
-    /// asserted that it ever returns a correct tile. The cube is registered and scanned through the
-    /// production admin endpoints, then a zoom-0 WebMercatorQuad tile is requested over HTTP and
-    /// every pixel is decoded and compared against the value its own source cell carries.
-    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
     public async Task DatacubeTile_RegisteredCoverage_RendersEveryCubeCellAtZoomZero()
@@ -298,17 +237,6 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Each tile index must select its own window of the cube, not the whole cube (#4395).
-    /// </summary>
-    /// <remarks>
-    /// A renderer that ignored z/x/y and drew the full cube into every tile satisfied every
-    /// assertion this route previously carried. Over a cube covering [-E, E] on both axes, the
-    /// zoom-1 north-east tile spans x in [0, E] and y in [0, E], so its half-open index window is
-    /// columns [4, 9) and rows [0, 5); the north-west tile's is columns [0, 5) and rows [0, 5).
-    /// Both are asserted against their own cells, and the two responses must differ — see
-    /// <see cref="Sample"/> for why a linear fixture could not tell them apart.
-    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
     public async Task DatacubeTile_ZoomOneQuadrants_EachRenderTheirOwnWindowOfTheCube()
@@ -333,10 +261,6 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         image.Pixel(TileSize - 1, TileSize - 1).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
     }
 
-    /// <summary>
-    /// Registers the in-memory cube through the production admin endpoints and scans its metadata,
-    /// so the served tiles depend on the same registration/scan path an operator drives.
-    /// </summary>
     private async Task<HttpClient> StartCubeAsync(WebAppFixture? fixture = null)
     {
         var client = await StartAsync(fixture ?? _cubeFixture);
@@ -375,19 +299,6 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         return bytes;
     }
 
-    /// <summary>
-    /// Decodes the served tile and asserts every pixel against the cube cell it renders.
-    /// </summary>
-    /// <remarks>
-    /// The tile covers the window <c>[windowRow, windowRow + windowRows) x [windowCol, windowCol +
-    /// windowCols)</c> of the cube, so output pixel (px, py) samples window cell
-    /// <c>(py * windowRows / TileSize, px * windowCols / TileSize)</c> — the nearest-neighbour block
-    /// map for a north-up tile over a north-to-south stored grid. With no colormap the display ramp
-    /// spans the window's own finite range, and <see cref="Sample"/> increases along both axes, so
-    /// that range runs from the window's north-west cell to its south-east cell. Comparing by
-    /// coordinate rather than as a multiset is what pins the spatial mapping: a multiset comparison
-    /// passes for a transposed or vertically flipped render.
-    /// </remarks>
     private static MiniPngDecoder.DecodedImage AssertTilePixels(
         byte[] png,
         int windowRow,

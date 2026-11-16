@@ -20,18 +20,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Proves a collaborative-editing lease is binding on the OGC API Features write
-/// surface — PUT, merge-PATCH, DELETE and the transaction batch (honua-server#4402).
-/// </summary>
-/// <remarks>
-/// The lease is claimed in the <c>("test", 0, objectId)</c> namespace: the service
-/// <em>name</em> and layer id. The FeatureServer publication of this same row lives on a
-/// different graph service row (<c>svc-test-feature</c>) that shares that name, so the
-/// lease taken here is the same lease a GeoServices client would take —
-/// <see cref="Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease"/> proves
-/// one lease blocks both protocols rather than each protocol having a private namespace.
-/// </remarks>
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database")]
 public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime

@@ -5,13 +5,6 @@ using System.Text;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Builds minimal, header-only TIFF / BigTIFF / PNG / JPEG byte payloads that
-/// DECLARE a given width/height/bands/bit-depth without any pixel data — the exact
-/// shape a decompression-bomb raster takes (tiny on disk, enormous declared
-/// dimensions). Used to exercise <c>GdalRasterDimensionGuard</c> with no GDAL
-/// binary.
-/// </summary>
 internal static class TiffHeaderBuilder
 {
     private const int TagImageWidth = 256;
@@ -25,7 +18,6 @@ internal static class TiffHeaderBuilder
     private const int TypeDouble = 12;
     private const int TypeLong8 = 16;
 
-    /// <summary>Builds a classic (32-bit) TIFF header with a single IFD.</summary>
     public static byte[] Classic(long width, long height, int bands = 1, int bits = 8, bool littleEndian = true)
     {
         var bytes = new List<byte>();
@@ -46,12 +38,6 @@ internal static class TiffHeaderBuilder
         return bytes.ToArray();
     }
 
-    /// <summary>
-    /// Builds a classic (32-bit) TIFF header that ALSO carries a GeoTIFF ModelPixelScale
-    /// tag (33550: <paramref name="scaleX"/>, <paramref name="scaleY"/>, 0 as three
-    /// out-of-line DOUBLEs), so the resample -tr extent bound can derive ground extent =
-    /// declared dimensions × pixel scale.
-    /// </summary>
     public static byte[] ClassicWithPixelScale(
         long width, long height, double scaleX, double scaleY, int bands = 1, int bits = 8, bool littleEndian = true)
     {
@@ -81,7 +67,6 @@ internal static class TiffHeaderBuilder
         return bytes.ToArray();
     }
 
-    /// <summary>Builds a BigTIFF (64-bit) header with a single IFD.</summary>
     public static byte[] BigTiff(long width, long height, int bands = 1, int bits = 8, bool littleEndian = true)
     {
         var bytes = new List<byte>();
@@ -103,10 +88,6 @@ internal static class TiffHeaderBuilder
         return bytes.ToArray();
     }
 
-    /// <summary>
-    /// Builds a BigTIFF header where width/height are written as raw unsigned
-    /// LONG8 values — used to exercise the &gt; Int64.Max overflow path.
-    /// </summary>
     public static byte[] BigTiffUnsigned(ulong width, ulong height, int bands = 1, int bits = 8, bool littleEndian = true)
     {
         var bytes = new List<byte>();
@@ -127,7 +108,6 @@ internal static class TiffHeaderBuilder
         return bytes.ToArray();
     }
 
-    /// <summary>Builds a minimal header-only PNG (signature + IHDR chunk).</summary>
     public static byte[] Png(long width, long height, int bitDepth = 8, int colourType = 2)
     {
         var b = new List<byte>
@@ -147,10 +127,6 @@ internal static class TiffHeaderBuilder
         return b.ToArray();
     }
 
-    /// <summary>
-    /// Builds a minimal header-only JPEG: SOI, an APP0/JFIF segment (to exercise
-    /// marker skipping), then an SOF0 frame header declaring the dimensions.
-    /// </summary>
     public static byte[] Jpeg(int width, int height, int components = 3, int precision = 8)
     {
         var b = new List<byte> { 0xFF, 0xD8 }; // SOI

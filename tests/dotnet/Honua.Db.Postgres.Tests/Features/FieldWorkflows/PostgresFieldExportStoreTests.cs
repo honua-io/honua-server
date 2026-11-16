@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FieldWorkflows;
 
-/// <summary>
-/// Drives <see cref="PostgresFieldExportStore"/> against PostGIS with a small row cap
-/// so truncation is observable without inserting <see cref="FieldExportLimits.MaxRows"/> rows.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresFieldExportStoreTests(PostgresFixture fixture)
 {

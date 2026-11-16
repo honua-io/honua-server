@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the deterministic <c>tileset.json</c> writer.
-/// </summary>
 public sealed class TilesetDocumentWriterTests
 {
     [UnitTest]

@@ -6,13 +6,6 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
-/// <summary>
-/// Covers <see cref="BaseGeocodeProvider.CheckHealthAsync"/>'s exception path
-/// (PA-067/PA-201): the previous bare <c>catch (Exception)</c> swallowed the
-/// failure entirely, returning a fixed "Provider health check failed." string
-/// with no way to tell what actually broke. The fix surfaces the exception's
-/// type and message in <see cref="GeocodeProviderHealth.ErrorMessage"/>.
-/// </summary>
 public sealed class BaseGeocodeProviderHealthTests
 {
     [Trait("Tier", "Fast")]

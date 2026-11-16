@@ -9,9 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit coverage for errors emitted before the MCP dispatcher runs.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
 public sealed class McpEarlyErrorResponseTests

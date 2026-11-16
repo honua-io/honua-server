@@ -11,9 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Ogc;
 
-/// <summary>
-/// Integration tests for shared OGC OpenAPI content negotiation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OpenApiSpecNegotiationTests : IAsyncLifetime

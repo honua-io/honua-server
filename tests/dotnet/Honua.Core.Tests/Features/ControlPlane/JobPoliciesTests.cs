@@ -6,9 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
 
-/// <summary>
-/// Tests for job retry, heartbeat, and timeout policy models.
-/// </summary>
 public class JobPoliciesTests
 {
     // -----------------------------------------------------------------------

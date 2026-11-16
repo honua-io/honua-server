@@ -169,10 +169,6 @@ public sealed class ApiKeyStoreOutageTests
             CreatedBy: "test"));
     }
 
-    /// <summary>
-    /// Returns the scripted result for each <see cref="IAdminApiKeyStore.ValidateAsync"/> call.
-    /// An exception factory faults that call. Other store methods are unused.
-    /// </summary>
     private sealed class ScriptedStore : IAdminApiKeyStore
     {
         private readonly Queue<Func<AdminApiKeyValidationResult?>> _results = new();

@@ -10,9 +10,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Simple integration tests for API key authentication focusing only on auth functionality
-/// </summary>
 [Collection("Database")]
 public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
 {

@@ -26,13 +26,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Row-level security <c>WITH CHECK</c> on the shared Postgres write path (honua-server#6103):
-/// a caller scoped by an RLS policy (<c>region IN (claim region)</c>) must not create a row
-/// outside that scope or move a visible row out of it. Every protocol (GeoServices applyEdits,
-/// OGC API Features, WFS-T, OData, gRPC) writes through
-/// <c>PostgresFeatureStoreRefactored.ApplyEditsAsync</c> or its writer transaction.
-/// </summary>
 [Collection("Database")]
 public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {

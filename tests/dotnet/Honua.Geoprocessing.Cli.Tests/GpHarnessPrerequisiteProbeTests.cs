@@ -7,11 +7,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// Doctor's harness prerequisites (#6218). The probe takes a path lookup so the
-/// suite does not need Docker, kind, kubectl, or Helm. Missing tools are reported;
-/// they are not a doctor failure by themselves.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpHarnessPrerequisiteProbeTests
 {

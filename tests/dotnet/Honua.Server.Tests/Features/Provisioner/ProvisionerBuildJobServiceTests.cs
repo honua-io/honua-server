@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Provisioner;
 
-/// <summary>
-/// Unit coverage for batch-dispatched per-area geocoder/router build submission and
-/// cancellation. Exercises the canonical submission flow against the in-process
-/// <see cref="LocalBatchComputeBackend"/> (durable record + queue enqueue) and a remote
-/// stub backend (provider submission with the AWS Batch coordinates wired), plus
-/// cancellation and rollback â€” all with the Batch backend mocked, no live AWS.
-/// </summary>
 public sealed class ProvisionerBuildJobServiceTests
 {
     private static ProvisionerArea MauiCounty()

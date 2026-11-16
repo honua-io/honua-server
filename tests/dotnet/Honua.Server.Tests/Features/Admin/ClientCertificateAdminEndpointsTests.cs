@@ -23,9 +23,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration coverage for client-certificate trust profile admin endpoints.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
 public sealed class ClientCertificateAdminEndpointsTests : IDisposable

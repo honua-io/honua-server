@@ -10,17 +10,9 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Verifies the in-process namespace-version cache and concurrent-fetch behaviour
-/// introduced in PA-052.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class CacheServiceResponseCacheLocalCacheTests
 {
-    /// <summary>
-    /// The second call with the same namespace keys must NOT issue any additional
-    /// GetAsync calls to the backing cache service (local cache hit within TTL).
-    /// </summary>
     [Fact]
     public async Task SetAsync_SecondCallWithSameNamespaces_ServesLocalCacheWithoutRedis()
     {
@@ -47,11 +39,6 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
         Assert.Equal(getCountAfterFirst, getCountAfterSecond);
     }
 
-    /// <summary>
-    /// After a RemoveByPatternAsync invalidates a namespace version, the local
-    /// cache entry for that namespace must be evicted so the next call re-fetches
-    /// from Redis rather than serving a stale version key.
-    /// </summary>
     [Fact]
     public async Task RemoveByPatternAsync_InvalidatesLocalCache_NextCallRefetchesFromRedis()
     {
@@ -78,12 +65,6 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
             $"but GetCallCount stayed at {warmGetCount}.");
     }
 
-    /// <summary>
-    /// Namespace version lookups for a cold cache are issued concurrently via Task.WhenAll
-    /// rather than sequentially, so N missing namespaces produce a single round-trip latency.
-    /// We verify this by checking that all N GetAsync calls are started before any
-    /// completes — using a gate-based fake cache service.
-    /// </summary>
     [Fact]
     public async Task SetAsync_MultipleNamespaceMisses_IssuedConcurrently()
     {
@@ -114,9 +95,6 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
         Assert.Equal(expectedNamespaces, cache.StartedCount);
     }
 
-    /// <summary>
-    /// Missing namespace version ("0") default is preserved by the new batched path.
-    /// </summary>
     [Fact]
     public async Task SetAsync_MissingNamespaceVersion_DefaultsToZero()
     {
@@ -194,11 +172,6 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
             => Task.FromResult(CacheEntryMetadata<T>.Miss());
     }
 
-    /// <summary>
-    /// A <see cref="ICacheService"/> whose namespace-version GetAsync calls wait
-    /// for all expected concurrent calls to start before any returns, proving
-    /// that the callers issued them concurrently via Task.WhenAll.
-    /// </summary>
     private sealed class GatedCacheService : ICacheService
     {
         private readonly Dictionary<string, string> _versions;

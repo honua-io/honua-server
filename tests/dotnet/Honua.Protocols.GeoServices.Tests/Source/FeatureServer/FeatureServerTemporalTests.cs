@@ -12,9 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Tests for temporal filtering in FeatureServer endpoints
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
@@ -516,13 +513,6 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         }
     }
 
-    /// <summary>
-    /// #4782: the ArcGIS API for Python sends a layer's <c>timeInfo.timeExtent</c> as a bracketed
-    /// JSON array (<c>time=[start, end]</c>). The expected features are computed here from the
-    /// unfiltered layer with the intersects rule — feature <c>[timestamp, COALESCE(event_date,
-    /// timestamp)]</c> overlaps the query interval, and an open bound does not constrain — rather
-    /// than taken from a time-filtered server response.
-    /// </summary>
     private async Task AssertBracketedTimeExtentMatchesPlainExtentAsync(string serviceType)
     {
         var queryPath = $"/rest/services/{WebAppFixture.TestServiceId}/{serviceType}/{WebAppFixture.TestLayerId}/query";

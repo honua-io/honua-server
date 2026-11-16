@@ -16,11 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// The startup compatibility preflight must tell an unreachable database (no free connection slots,
-/// a timeout, a socket failure) apart from an incompatible one. Run 38133126673 (aws-serverless,
-/// redis-off) reported SQLSTATE 53300 as incompatible and every cold start exited.
-/// </summary>
 [Protocol(TestProtocols.Health)]
 public sealed class DatabasePreflightTransientClassificationTests
 {

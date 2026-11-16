@@ -8,14 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Pure-unit guards for the shared elevation/vertical selection parser (#1792 Shape A) as
-/// consumed by the WMTS adapter. WMTS GetCapabilities advertises a discrete <c>elevation</c>
-/// dimension (values 100/200/300, default 100) for the CITE Terrain layer; the dimension
-/// validator accepts/rejects values against those enumerated values, and this parser then
-/// converts the validated token into the recorded numeric selection. These tests exercise
-/// that conversion without a database (no Docker).
-/// </summary>
 [Protocol(TestProtocols.Wmts10)]
 public sealed class OgcClassicWmtsVerticalSelectionTests
 {

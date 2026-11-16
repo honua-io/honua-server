@@ -17,18 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// End-to-end guard for the deterministic package-draft tools through the real
-/// <c>POST /mcp</c> pipeline and the real host composition (ADR-0076, #3255).
-/// </summary>
-/// <remarks>
-/// This is the load-bearing check the ADR asks for. Dispatcher-level tests
-/// construct the tools by hand and therefore cannot prove the host composed the
-/// draft factories; tool-roster and capability-manifest checks compare names and
-/// would pass against a tool that is advertised but permanently returns an
-/// unavailable stub. Only a real call through the composed server proves the
-/// tools return a package with a stable <c>map_…</c> / <c>app_…</c> identifier.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
@@ -38,31 +26,6 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
 
     private HttpClient _client = null!;
 
-    /// <summary>
-    /// Opts the fixture host into the hosted-promotion MCP resources
-    /// (<c>honua://map-packages/{packageId}</c> and its app counterpart), which the
-    /// default Test composition does not advertise.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>AddServerFeatures</c> gates <c>AddMcpPromotionSurface</c> on
-    /// <see cref="IPublishedServiceStore"/> and <see cref="IDeploymentStore"/> already
-    /// being present in the service collection, so a store-less profile cannot advertise
-    /// an always-empty promotion surface. Only <c>AddPostgreSqlServices</c> registers
-    /// those stores, and <c>Program.cs</c> skips infrastructure registration under the
-    /// Test environment because <see cref="WebAppFixture"/> owns data access. The gate is
-    /// therefore false in this host and the package URIs resolve to
-    /// <c>Unknown MCP resource</c> — a property of the test composition, not of the draft
-    /// path under test.
-    /// </para>
-    /// <para>
-    /// Both stores are registered empty on purpose: no deployment references a package
-    /// that was created a moment ago, so an empty deployment store *is* the state a real
-    /// server is in at the instant the create tool returns. That keeps the assertion
-    /// honest — the URI can only resolve through the draft store this test exists to
-    /// prove is written and read (honua-server#3262).
-    /// </para>
-    /// </remarks>
     private static void AdvertiseHostedPromotionResources(IServiceCollection services)
     {
         var deployments = Substitute.For<IDeploymentStore>();

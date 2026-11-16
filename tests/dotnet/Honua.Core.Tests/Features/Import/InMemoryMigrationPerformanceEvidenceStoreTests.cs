@@ -10,9 +10,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Behaviour tests for <see cref="InMemoryMigrationPerformanceEvidenceStore"/> (issue #1033 slice 5).
-/// </summary>
 public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
 {
     private static readonly DateTimeOffset BaseTime =

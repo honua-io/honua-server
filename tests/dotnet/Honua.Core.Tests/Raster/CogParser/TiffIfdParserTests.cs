@@ -7,9 +7,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
-/// <summary>
-/// Unit tests for the AOT-safe TIFF IFD parser.
-/// </summary>
 public class TiffIfdParserTests
 {
     [Trait("Tier", "Fast")]

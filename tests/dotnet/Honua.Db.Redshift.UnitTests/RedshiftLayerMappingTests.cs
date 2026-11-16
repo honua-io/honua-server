@@ -7,10 +7,6 @@ using Honua.Db.Redshift.Features.FeatureStore.Services;
 
 namespace Honua.Db.Redshift.Tests;
 
-/// <summary>
-/// Ungated unit tests for <see cref="RedshiftLayerMapping"/> identifier validation and
-/// provider-option resolution.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class RedshiftLayerMappingTests
 {

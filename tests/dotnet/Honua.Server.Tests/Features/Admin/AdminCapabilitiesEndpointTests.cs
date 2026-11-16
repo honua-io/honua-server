@@ -11,12 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Verifies that <c>GET /api/v1/admin/capabilities</c> emits the canonical
-/// <c>data.compatibility</c> envelope the generated admin SDKs handshake on, per
-/// docs/developer/SDK_COMPATIBILITY_METADATA.md (controlPlaneApi / releaseChannel /
-/// metadataSchemas / features) — not just the flat fields.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]

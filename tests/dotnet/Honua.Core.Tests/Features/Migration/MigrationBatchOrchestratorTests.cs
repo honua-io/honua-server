@@ -14,11 +14,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Migration;
 
-/// <summary>
-/// Unit tests for <see cref="MigrationBatchOrchestrator"/> (issue #1253): ordering
-/// from dependency edges, sequential child queueing, status roll-up, resumability
-/// (skip succeeded / restart from failed), and relationship-apply wiring (#1256).
-/// </summary>
 public sealed class MigrationBatchOrchestratorTests
 {
     [Trait("Tier", "Fast")]
@@ -487,11 +482,6 @@ public sealed class MigrationBatchOrchestratorTests
         (await catalog.GetManifestBodyAsync(batch.BatchId)).Should().NotBeNull();
     }
 
-    /// <summary>
-    /// A scanned FeatureServer manifest that discovers the two layers <see cref="NewRequest"/> selects, plus
-    /// <paramref name="extraLayerIds"/>, with every construct automated so accounting a full selection
-    /// contributes no difference of its own.
-    /// </summary>
     private static string DiscoveredManifestBody(params string[] extraLayerIds)
     {
         string[] layerIds = ["resource:x:layer:0", "resource:x:layer:1", .. extraLayerIds];
@@ -817,9 +807,6 @@ public sealed class MigrationBatchOrchestratorTests
             return Task.FromResult<MigrationBatchRunRecord?>(updated);
         }
 
-        /// <summary>
-        /// Simulates the child-row write that a crash lost after the child's import job was queued.
-        /// </summary>
         public void ResetChildToPending(string batchId, int ordinal)
         {
             var children = _children[batchId];

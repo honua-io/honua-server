@@ -24,10 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for <see cref="PortalTokenIssuer"/> covering binding, expiry, and
-/// claim projection behavior independent of the HTTP pipeline.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

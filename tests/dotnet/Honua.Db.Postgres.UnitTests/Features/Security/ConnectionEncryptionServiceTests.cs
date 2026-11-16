@@ -8,17 +8,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// Comprehensive tests for the connection encryption service.
-/// </summary>
-/// <remarks>
-/// Tests cover:
-/// - Encryption/decryption round-trips
-/// - Key versioning and rotation
-/// - Security properties (authentication, integrity)
-/// - Error conditions and edge cases
-/// - Performance characteristics
-/// </remarks>
 [Collection("Security")]
 [global::Xunit.Trait("Tier", "Fast")]
 public class ConnectionEncryptionServiceTests : IDisposable

@@ -13,10 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The in-memory provider store probes discovery and publishes enabled providers into
-/// the authentication catalog. A missing probe is not reported as success.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

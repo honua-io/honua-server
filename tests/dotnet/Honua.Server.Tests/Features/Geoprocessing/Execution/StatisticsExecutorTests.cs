@@ -11,11 +11,6 @@ using static Honua.Server.Tests.Features.Geoprocessing.Execution.ManagedExecutor
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the statistics/summarization tool pack (#2140):
-/// Summarize-by-group, Frequency, and CalculateStatistics. Table outputs are
-/// null-geometry FeatureCollections; no Docker.
-/// </summary>
 public sealed class StatisticsExecutorTests
 {
     private static double D(IFeature f, string key) => Convert.ToDouble(f.Attributes.GetOptionalValue(key), CultureInfo.InvariantCulture);

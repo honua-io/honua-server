@@ -9,7 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>GeoServices editFieldsInfo projection from metadata editing bindings (#6134).</summary>
 public sealed class EditFieldsInfoTests
 {
     [UnitTest]

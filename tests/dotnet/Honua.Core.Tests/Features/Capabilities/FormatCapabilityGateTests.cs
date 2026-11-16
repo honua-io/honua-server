@@ -7,14 +7,6 @@ using Honua.Core.Features.Capabilities;
 
 namespace Honua.Core.Tests.Features.Capabilities;
 
-/// <summary>
-/// Unit coverage for the shared format-negotiation gate (#2342 / T6): mapping a
-/// data-format name to its <c>format.*</c> descriptor, consulting the T2 resolver,
-/// and translating the outcome into a format-scoped <see cref="FormatGateDecision"/>.
-/// Enabled formats stay enabled; a disabled-experimental format and an unknown
-/// format resolve to a non-enabled decision so a seam returns a 400 rather than
-/// silently serving or coercing the format.
-/// </summary>
 public sealed class FormatCapabilityGateTests
 {
     // A registry that reports a single format id as experimental, so the

@@ -10,9 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for packaging domain models.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class PackageDomainTests
 {

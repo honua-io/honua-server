@@ -20,10 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Re-runs the reflection-disabled JSON call sites from honua-server#5633 in a child process.
-/// The xUnit host keeps reflection enabled, so an in-process test cannot see the failure.
-/// </summary>
 internal static class ReflectionDisabledAotJsonProbe
 {
     public const string Command = "aot-json-5633";

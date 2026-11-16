@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Unit tests for the role-defaults verification (honua-server#5870): comparison of the
-/// effective session settings with <c>Limits:Connections</c> and the exact <c>ALTER ROLE</c>
-/// remediation statements.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresSessionSettingsVerifierTests
 {

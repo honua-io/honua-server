@@ -28,9 +28,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Export;
 
-/// <summary>
-/// Integration tests for the data export endpoint.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class ExportEndpointTests : IAsyncLifetime

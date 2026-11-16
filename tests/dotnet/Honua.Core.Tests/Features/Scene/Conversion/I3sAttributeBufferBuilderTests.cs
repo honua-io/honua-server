@@ -10,12 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
-/// <summary>
-/// Unit tests for the I3S per-field attribute binary builder (#1811): the
-/// <c>nodes/{id}/attributes/f_0/0</c> file that an ArcGIS SceneLayer client reads
-/// to satisfy identify. The OBJECTID values must be derived from — and aligned
-/// with — the served node geometry's feature section.
-/// </summary>
 public sealed class I3sAttributeBufferBuilderTests
 {
     [UnitTest]

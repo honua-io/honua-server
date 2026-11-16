@@ -13,9 +13,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC Collections endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 public sealed class StacCollectionsTests : IAsyncLifetime

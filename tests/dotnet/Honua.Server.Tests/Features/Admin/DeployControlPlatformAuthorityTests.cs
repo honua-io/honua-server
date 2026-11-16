@@ -35,11 +35,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Deploy and platform-release creation authority with multi-tenancy enabled (#4842).
-/// Every case drives the real MCP tool, reader and REST handler; only the admin policy
-/// (which a tenant-scoped admin holds) and the downstream stores/gateway are seams.
-/// </summary>
 [Trait("Tier", "Fast")]
 [Trait("Category", "Unit")]
 public sealed class DeployControlPlatformAuthorityTests

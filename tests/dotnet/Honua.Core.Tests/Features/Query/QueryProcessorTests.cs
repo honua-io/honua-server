@@ -15,9 +15,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.Query;
 
-/// <summary>
-/// Unit tests for <see cref="QueryProcessor"/>.
-/// </summary>
 public sealed class QueryProcessorTests
 {
     private readonly QueryProcessor _processor;

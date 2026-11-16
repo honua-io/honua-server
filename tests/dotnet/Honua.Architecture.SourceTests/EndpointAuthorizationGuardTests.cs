@@ -10,15 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Regression guard for the audit finding (#1144): every HTTP mutation
-/// endpoint declared via the minimal-API <c>MapPost/MapPut/MapDelete/MapPatch</c>
-/// surface under <c>src/Honua.Server/Features</c> must opt into an explicit
-/// authorization decision — either a <c>Require*Authorization</c>/<c>RequireAdminApiKey</c>
-/// helper on the route or its parent group, or an explicit
-/// <c>AllowAnonymous()</c> when the surface is intentionally public (read-only
-/// OGC/REST POST mirrors, signed-token issuers, etc.).
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class EndpointAuthorizationGuardTests
 {
@@ -67,13 +58,6 @@ public sealed class EndpointAuthorizationGuardTests
 
     private static readonly char[] StatementBoundaryChars = { ';', '{', '}' };
 
-    /// <summary>
-    /// Every mutation route — direct or inherited through a parent group — must
-    /// declare its authorization intent explicitly. Routes that should remain
-    /// public must opt in via <c>AllowAnonymous()</c> so reviewers can audit
-    /// the decision; routes that protect data must reference one of the
-    /// <c>Require*</c> helpers. Anything else is treated as an accidental gap.
-    /// </summary>
     [ArchitectureTest]
     public void EveryMutationEndpoint_HasExplicitAuthorizationDecision()
     {
@@ -126,10 +110,6 @@ public sealed class EndpointAuthorizationGuardTests
             + "must opt in via AllowAnonymous() so the decision is visible to reviewers.");
     }
 
-    /// <summary>
-    /// The gRPC SpecService is a mutating twin of the admin-only REST Spec surface,
-    /// so its service mapping must carry the same canonical Admin policy metadata.
-    /// </summary>
     [ArchitectureTest]
     public void GrpcSpecServiceMapping_RequiresCanonicalAdminAuthorization()
     {
@@ -146,11 +126,6 @@ public sealed class EndpointAuthorizationGuardTests
             + "Admin authorization policy as their POST-based REST twins before handler execution");
     }
 
-    /// <summary>
-    /// Sanity check: the audited feature surface is non-empty. Guards against a
-    /// regression where the directory moves and the scan silently passes
-    /// because no files are discovered.
-    /// </summary>
     [ArchitectureTest]
     public void AuditedFeaturesDirectory_ContainsEndpointFiles()
     {

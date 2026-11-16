@@ -8,18 +8,11 @@ using Xunit.Sdk;
 
 namespace Honua.TestKit.Attributes;
 
-/// <summary>
-/// Marks a test as an integration test (uses real database, HTTP, etc).
-/// Integration tests should comprise ~70% of test suite.
-/// Tier=Integration — runs on merge-to-trunk and on PRs scoped via
-/// <c>scripts/honua-server-targeted-tests.sh</c>. See ADR-0037.
-/// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class IntegrationTestAttribute : FactAttribute, ITraitAttribute
 {
 }
 
-/// <summary>Marks a parameterized test as integration-tier while retaining xUnit theory discovery.</summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class IntegrationTheoryAttribute : TheoryAttribute, ITraitAttribute
 {

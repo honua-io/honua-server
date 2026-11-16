@@ -259,13 +259,6 @@ public class ZarrSubsetReaderTests
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    /// <summary>
-    /// Regression test for BH-017: a Zarr store that declares chunk dimensions whose
-    /// product × element-size exceeds MaxBytesPerRequest must be rejected before any
-    /// per-chunk heap allocation is attempted.  With MaxDegreeOfParallelism=8, reading
-    /// 8 such chunks would otherwise allocate ~2 GB of heap before the caller receives
-    /// any error.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_OversizedChunkDimensions_ThrowsBeforeAllocatingChunkBuffer()
@@ -295,10 +288,6 @@ public class ZarrSubsetReaderTests
             .WithMessage("*chunk size*exceeds*");
     }
 
-    /// <summary>
-    /// Regression test for BH-017: ResolveElementSize must reject unrealistically
-    /// large element-size suffixes (> 16) before any array-wide computation occurs.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveElementSize_ElementSizeExceedsMaxSupported_Throws()
@@ -309,12 +298,6 @@ public class ZarrSubsetReaderTests
             .WithMessage("*element size*exceeds*");
     }
 
-    /// <summary>
-    /// Regression test for BH2-015: WriteFillScalar had no case for &lt;i8 (int64) so
-    /// a missing chunk was zero-filled instead of using the declared fill_value.
-    /// After the fix the chunk buffer must be filled with the correct little-endian
-    /// representation of the fill value.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_Int64DtypeWithNonzeroFillValue_MissingChunkFillsCorrectly()
@@ -354,13 +337,6 @@ public class ZarrSubsetReaderTests
 
     // ─── BH3-022 regressions ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Regression test for BH3-022: the read ceiling passed to ICloudRangeReader.ReadRangeAsync
-    /// must be the metadata-declared chunk byte count, not int.MaxValue/4 (~512 MB).
-    /// Before the fix, eight parallel 512 MB reads could allocate ~4.3 GB of temporary
-    /// buffers for a request where the per-request cap is 256 MiB.
-    /// After the fix the ceiling equals chunkBytes so the allocation is bounded.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_UncompressedChunk_ReadLengthBoundedToChunkBytes()
@@ -393,12 +369,6 @@ public class ZarrSubsetReaderTests
                 "read ceiling must equal the declared chunk byte count (BH3-022), not int.MaxValue/4"));
     }
 
-    /// <summary>
-    /// Regression test for BH3-022: when an attacker-controlled Zarr store writes a chunk
-    /// object that is larger than the declared chunk size, reject the inconsistent object
-    /// before reading its payload. This strengthens the original bounded-read protection:
-    /// a correct sample prefix does not make the rest of the encoded chunk valid.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_ChunkObjectLargerThanDeclaredSize_RejectsBeforePayloadRead()
@@ -440,10 +410,6 @@ public class ZarrSubsetReaderTests
 
     // ─── BH2-015 regressions ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Regression test for BH2-015: WriteFillScalar had no case for &lt;u8 (uint64) so
-    /// a missing chunk was zero-filled instead of using the declared fill_value.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_UInt64DtypeWithNonzeroFillValue_MissingChunkFillsCorrectly()
@@ -571,15 +537,10 @@ public class ZarrSubsetReaderTests
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Wraps an <see cref="ICloudRangeReader"/> and records every <c>length</c> argument
-    /// passed to <see cref="ReadRangeAsync"/> so tests can assert the read ceiling.
-    /// </summary>
     private sealed class TrackingZarrRangeReader(ICloudRangeReader inner) : ICloudRangeReader
     {
         private readonly List<int> _lengths = new();
 
-        /// <summary>All <c>length</c> values recorded from calls to <see cref="ReadRangeAsync"/>.</summary>
         public IReadOnlyList<int> RecordedLengths => _lengths;
 
         public CloudStorageProvider Provider => inner.Provider;

@@ -39,9 +39,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Wfs;
 
-/// <summary>
-/// Checks edit leases through the WFS transaction handler and shared writer decorators.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsMultiLayerTransactionLockTests
 {

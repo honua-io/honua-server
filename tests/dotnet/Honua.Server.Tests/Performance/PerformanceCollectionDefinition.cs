@@ -5,9 +5,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Performance;
 
-/// <summary>
-/// Serializes server performance tests to reduce contention-driven timing noise.
-/// </summary>
 [CollectionDefinition("Performance", DisableParallelization = true)]
 public sealed class PerformanceCollectionDefinition
 {

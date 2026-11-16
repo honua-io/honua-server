@@ -8,12 +8,6 @@ using Honua.Core.Features.Operations.Services;
 
 namespace Honua.Core.Tests.OperationScopes;
 
-/// <summary>
-/// Every audit record the canonical operation runtime writes for one invocation must name the
-/// authenticated caller that submitted it. MCP tools submit through <see cref="IOperationInvoker"/>
-/// with the caller's canonical actor id, so an audit row that falls back to the anonymous actor
-/// would record an authenticated MCP call as anonymous.
-/// </summary>
 public sealed class OperationActorAuditTests
 {
     private const string OperationId = "service.publish";

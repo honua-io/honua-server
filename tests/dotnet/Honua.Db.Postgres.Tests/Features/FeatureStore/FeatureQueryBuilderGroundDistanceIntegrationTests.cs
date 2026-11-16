@@ -11,13 +11,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Executes the analytics SQL against PostGIS and checks ground distances.
-/// A 1,000 m pair at 60°N must buffer at 1,000 m and not at 600 m. Longitudes
-/// on either side of the antimeridian must cluster on the short arc. Points at
-/// the edge of an extent wider than one azimuthal plane must stay within 1%
-/// of the spheroid.
-/// </summary>
 [Collection("Database")]
 public sealed class FeatureQueryBuilderGroundDistanceIntegrationTests(PostgresFixture fixture, ITestOutputHelper output)
 {

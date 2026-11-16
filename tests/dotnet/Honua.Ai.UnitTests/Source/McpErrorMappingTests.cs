@@ -10,12 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that <see cref="McpErrorMapper"/> translates every geoprocessing
-/// domain exception and protocol-level failure into the canonical MCP error
-/// envelope so clients can react to recoverable signals (approval, idempotency,
-/// auth) without parsing message strings.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpErrorMappingTests
 {

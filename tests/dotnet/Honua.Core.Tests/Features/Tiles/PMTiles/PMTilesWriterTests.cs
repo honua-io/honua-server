@@ -411,11 +411,6 @@ public class PMTilesWriterTests
         writer.TileCount.Should().Be(2);
     }
 
-    /// <summary>
-    /// Regression test for BH-018: latitude header fields must be clamped to [-90, 90],
-    /// not to the longitude range [-180, 180].  A swapped or out-of-range latitude (e.g.
-    /// 91°) must be clamped to 90° before being encoded as an E7 integer.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_OutOfRangeLatitude_ClampsToLatitudeBounds()
@@ -450,10 +445,6 @@ public class PMTilesWriterTests
         header.MaxLonE7.Should().Be(1_800_000_000);
     }
 
-    /// <summary>
-    /// Regression test for BH-018 (negative case): a longitude of 181 must be clamped
-    /// to 180, ensuring the longitude helper also enforces its own bounds.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_OutOfRangeLongitude_ClampsToLongitudeBounds()

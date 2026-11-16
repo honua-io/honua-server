@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Verifies request → domain projection invariants for Console content items.
-/// </summary>
 public class ConsoleContentMapperTests
 {
     private static ClaimsPrincipal Actor(string id) =>

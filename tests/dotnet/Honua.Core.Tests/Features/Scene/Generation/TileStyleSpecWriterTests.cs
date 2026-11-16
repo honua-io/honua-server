@@ -10,11 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the style-metadata contract writer that translates a layer's
-/// <see cref="Symbology3D"/> into the emitted <see cref="TileStyleSpec"/> and
-/// its 3D Tiles Styling expressions.
-/// </summary>
 public sealed class TileStyleSpecWriterTests
 {
     [UnitTheory]
@@ -448,12 +443,6 @@ public sealed class TileStyleSpecWriterTests
         return dict;
     }
 
-    /// <summary>
-    /// Evaluates an emitted 3D Tiles Styling <c>conditions</c> array against a
-    /// feature's attributes using first-match-wins semantics (exactly how a
-    /// client runtime applies it), returning the value expression of the first
-    /// matching branch. Mirrors the styling expression grammar the writer emits.
-    /// </summary>
     private static string EvaluateColor(
         TileStyleConditions conditions,
         IReadOnlyDictionary<string, object?> attributes)

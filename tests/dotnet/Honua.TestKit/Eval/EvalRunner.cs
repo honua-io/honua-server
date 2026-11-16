@@ -13,36 +13,19 @@ using Proto = Geospatial.V1;
 
 namespace Honua.TestKit.Eval;
 
-/// <summary>
-/// End-to-end eval harness runner. Drives the canonical runtime and protocol
-/// adapters (gRPC <see cref="Proto.ProcessService"/>, OGC API Processes, GeoServices
-/// GPServer) through a single <see cref="EvalScenario"/> and captures per-stage
-/// outcomes into an <see cref="EvalScenarioResult"/>.
-/// </summary>
 public sealed class EvalRunner
 {
-    /// <summary>
-    /// <see cref="ActivitySource"/> used to emit one span per scenario and per stage.
-    /// Downstream observability in CI consumes these spans through the standard
-    /// <c>Honua.ServiceDefaults</c> telemetry pipeline when enabled.
-    /// </summary>
     public static readonly ActivitySource ActivitySource = new("Honua.Tests.Eval");
 
     private readonly WebAppFixture _fixture;
     private readonly IEvalFixtureSource _fixtureSource;
 
-    /// <summary>Creates a runner bound to the supplied web host and fixture source.</summary>
     public EvalRunner(WebAppFixture fixture, IEvalFixtureSource fixtureSource)
     {
         _fixture = fixture ?? throw new ArgumentNullException(nameof(fixture));
         _fixtureSource = fixtureSource ?? throw new ArgumentNullException(nameof(fixtureSource));
     }
 
-    /// <summary>
-    /// Executes all stages for the given scenario. Stages may be <see cref="EvalStageStatus.Skipped"/>
-    /// when upstream capabilities are not yet wired (e.g. execution engine, publish surface).
-    /// Never throws for per-stage failures; surface those through the returned outcome.
-    /// </summary>
     public async Task<EvalScenarioResult> RunAsync(EvalScenario scenario, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scenario);

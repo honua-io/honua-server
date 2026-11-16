@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests for <see cref="DatumTransformSql"/> (issue #1274). Asserts the shared
-/// chokepoint emits the 2-argument PostGIS ST_Transform by default and the explicit
-/// 3-argument pipeline form when a datum transformation is selected.
-/// </summary>
 public sealed class DatumTransformSqlTests
 {
     [UnitTest]

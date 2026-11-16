@@ -7,10 +7,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Tests for smart sampling rules functionality including business logic
-/// for critical operations, error conditions, and performance characteristics.
-/// </summary>
 public class SmartSamplingRulesTests
 {
     private static readonly string[] _vipClients = ["vip-client-1", "premium-user"];

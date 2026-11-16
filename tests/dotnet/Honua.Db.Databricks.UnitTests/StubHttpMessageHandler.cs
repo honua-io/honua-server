@@ -6,11 +6,6 @@ using System.Net.Http.Headers;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Test double that returns queued canned responses in order, recording each request
-/// for assertions. Used to drive the Statement Execution submit → poll → chunk flow
-/// without a live Databricks workspace.
-/// </summary>
 internal class StubHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> _responders = new();

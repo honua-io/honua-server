@@ -11,20 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Failure-of-failure coverage (#2161) for the deploy reconciler's rollback escalation. When the
-/// telemetry gate decides a rollback is required but the provider backend cannot honour it, the
-/// reconciler distinguishes two failure shapes:
-/// <list type="bullet">
-/// <item>A TERMINAL/hard failure (the backend returns <see cref="WorkflowOperationStatus.Failed"/> or
-/// <see cref="WorkflowOperationStatus.ManualInterventionRequired"/>) escalates immediately.</item>
-/// <item>A TRANSIENT failure (the Lambda backend echoes the operation's pre-rollback status on a
-/// throttle/transient AWS error) is retried on a bounded budget — a single blip must NOT page an
-/// operator — and escalates only once the budget is exhausted.</item>
-/// </list>
-/// Either way the deploy must reach a terminal manual-intervention state rather than parking in a
-/// never-terminal loop with the degraded revision still live.
-/// </summary>
 public sealed class DeployWorkflowReconcilerRollbackFailureTests
 {
     [Fact]

@@ -17,11 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the reconciled GeoETL source executors
-/// (source.geojson, source.csv). Each parses an inline document and publishes a
-/// FeatureCollection artifact. Pure managed parsing — no native dependency, no Docker.
-/// </summary>
 public sealed class SourceExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

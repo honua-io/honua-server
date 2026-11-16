@@ -7,17 +7,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards <c>docs/gis/data/client-certification-roster.v1.json</c>, the repository-owned
-/// projection of the full client-certification roster (honua-server#3395, parent #3389).
-///
-/// The roster replaces an external Claude artifact as the authority for which clients exist
-/// and what status each one holds. These tests keep it closed and honest:
-/// every entry is classified exactly once, the reconciled count is arithmetically justified,
-/// identities cannot collide across statuses, the projection stays joined to
-/// <c>client-certification-matrix.v1.json</c> in both directions, the prose pair documents the
-/// same id set, and no planned or excluded row can ever pass or block a gate.
-/// </summary>
 public sealed class ClientCertificationRosterTests
 {
     private static readonly Regex ProseEntryPattern = new(
@@ -536,15 +525,6 @@ public sealed class ClientCertificationRosterTests
         => entry.GetProperty("protocolSurfaces").EnumerateArray()
             .Select(value => value.GetString()!).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>
-    /// The operation families a matrix lane declares <b>entirely</b> not-applicable.
-    /// </summary>
-    /// <remarks>
-    /// Expands the lane's <c>notApplicable</c> patterns against the declared case ids and
-    /// keeps only those families for which no case is left applicable. This is what makes
-    /// the roster's family-level classification joinable to the matrix's id-level one
-    /// without flattening a partially applicable family into a blanket exclusion.
-    /// </remarks>
     private static HashSet<string> WhollyNotApplicableFamilies(
         JsonElement lane,
         IReadOnlyCollection<string> declaredCaseIds)
@@ -598,10 +578,6 @@ public sealed class ClientCertificationRosterTests
         return expanded;
     }
 
-    /// <summary>
-    /// The operation family of a concrete case id — <c>CERT-RNDR-SYM-01</c> is
-    /// <c>CERT-RNDR</c>, as is <c>CERT-RNDR-01</c>.
-    /// </summary>
     private static string CaseFamilyOf(string caseId)
     {
         var parts = caseId.Split('-');

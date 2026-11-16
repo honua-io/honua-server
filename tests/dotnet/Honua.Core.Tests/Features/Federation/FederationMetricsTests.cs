@@ -22,12 +22,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Federation;
 
-/// <summary>
-/// Unit tests for the per-source federation latency/error metrics (issue #341 acceptance
-/// criterion: "Latency and error metrics per federated source"). A <see cref="MeterListener"/>
-/// captures the instruments the executor records so the tests assert the metric tags without a
-/// live exporter.
-/// </summary>
 public sealed class FederationMetricsTests
 {
     private static readonly ResiliencePolicyOptions FastFail = new()

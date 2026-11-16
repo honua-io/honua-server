@@ -13,15 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Regression tests for <see cref="MigrationBatchBackgroundService"/>. The
-/// provider-specific <see cref="IMigrationBatchRunCatalog"/> and
-/// <see cref="IMigrationBatchOrchestrator"/> are registered only by the
-/// infrastructure composition root (the Postgres extension), which is skipped in
-/// the Test environment and by primary providers that own no batch-run schema.
-/// The hosted service is registered unconditionally, so it must no-op rather than
-/// throw an unregistered-service error on every tick (related to #1687).
-/// </summary>
 [Collection("Unit")]
 public sealed class MigrationBatchBackgroundServiceTests
 {

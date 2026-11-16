@@ -15,12 +15,6 @@ using static Honua.Server.Tests.Features.Geoprocessing.Execution.ManagedExecutor
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit coverage for the usage-ranked GP tool tiering store (#2144): the in-memory
-/// telemetry ranks processes by invocation count with stable tie-breaking, reflects
-/// newly recorded invocations on the next read, and is fed by the geoprocessing
-/// dispatcher on every dispatched job.
-/// </summary>
 public sealed class ProcessUsageTelemetryTests
 {
     private sealed class MutableTimeProvider : TimeProvider

@@ -16,13 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// #6100: the SAML ACS issues <c>honua_admin_session</c> as <c>SameSite=Lax</c>, so the
-/// AdminSession scheme (which the Composite default scheme selects whenever that cookie is sent
-/// without a bearer) must refuse to authenticate an unsafe request a browser marked as
-/// cross-site. Same-origin/same-site browser requests, safe methods, and non-browser clients that
-/// send neither <c>Sec-Fetch-Site</c> nor <c>Origin</c> keep authenticating.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class AdminSessionCrossSiteGuardTests
 {

@@ -10,14 +10,8 @@ using Gen = FsCheck.Fluent.Gen;
 
 namespace Honua.TestKit.PropertyBased;
 
-/// <summary>
-/// Property-based generators for filter expressions to test CQL2 parsing and evaluation.
-/// </summary>
 public static class FilterExpressionGenerators
 {
-    /// <summary>
-    /// Generates valid property names for filter expressions.
-    /// </summary>
     public static Arbitrary<string> PropertyName() =>
         Arb.From(
             Gen.OneOf(
@@ -31,9 +25,6 @@ public static class FilterExpressionGenerators
                 from name in Gen.ArrayOf(Gen.Elements("abcdefghijklmnopqrstuvwxyz_".ToCharArray()), length)
                 select new string(name)));
 
-    /// <summary>
-    /// Generates valid comparison operators.
-    /// </summary>
     public static Arbitrary<BinaryOperator> ComparisonOperator() =>
         Arb.From(Gen.Elements(
             BinaryOperator.Equal,
@@ -43,9 +34,6 @@ public static class FilterExpressionGenerators
             BinaryOperator.GreaterThan,
             BinaryOperator.GreaterThanOrEqual));
 
-    /// <summary>
-    /// Generates valid string literals for filters.
-    /// </summary>
     public static Arbitrary<string> StringLiteral() =>
         Arb.From(
             Gen.OneOf(
@@ -63,9 +51,6 @@ public static class FilterExpressionGenerators
                 Gen.Constant("文档测试"),
                 Gen.Constant("🚀✨")));
 
-    /// <summary>
-    /// Generates valid numeric literals.
-    /// </summary>
     public static Arbitrary<decimal> NumericLiteral() =>
         Arb.From(
             Gen.OneOf(
@@ -76,9 +61,6 @@ public static class FilterExpressionGenerators
                 Gen.Constant(decimal.MaxValue),
                 Gen.Constant(decimal.MinValue)));
 
-    /// <summary>
-    /// Generates complex nested filter expressions.
-    /// </summary>
     public static Arbitrary<BinaryExpression> NestedExpression() =>
         Arb.From(GenerateNestedExpression(depth: 0, maxDepth: 3));
 
@@ -107,9 +89,6 @@ public static class FilterExpressionGenerators
         return Gen.OneOf(leafExpression, nestedExpression);
     }
 
-    /// <summary>
-    /// Generates malformed CQL2 expressions for error handling tests.
-    /// </summary>
     public static Arbitrary<string> MalformedCql2() =>
         Arb.From(Gen.OneOf(
             // Unmatched parentheses
@@ -135,9 +114,6 @@ public static class FilterExpressionGenerators
             Gen.Constant(""),
             Gen.Constant("   ")));
 
-    /// <summary>
-    /// Generates valid CQL2 expressions for parsing tests.
-    /// </summary>
     public static Arbitrary<string> ValidCql2() =>
         Arb.From(Gen.OneOf(
             // Simple comparisons

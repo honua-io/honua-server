@@ -20,15 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the DI shape for the MCP operator surface and the opt-in promotion
-/// surface. The hosted-promotion resources (<c>honua://published-services*</c>,
-/// <c>honua://deployments*</c>, <c>honua://map-packages*</c>,
-/// <c>honua://app-packages*</c>) are intentionally gated behind
-/// <see cref="McpServiceCollectionExtensions.AddMcpPromotionSurface"/> so the
-/// default server composition cannot advertise promotion URIs backed only by
-/// process-local empty state.
-/// </summary>
 public sealed partial class McpServiceCollectionExtensionsTests
 {
     private static IEnumerable<Type?> RegisteredToolHandlers(IServiceCollection services)

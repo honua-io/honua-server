@@ -20,13 +20,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Drives the migration acceptance suite scan stage end-to-end across one ArcGIS GeoServices REST
-/// fixture, one GeoServer REST fixture, and one OGC API Features snapshot fixture. Asserts that the
-/// scan stage emits a deterministic <see cref="MigrationScanStageReport"/> that respects the
-/// artifact contracts shipped by issue #1024 slice 1 (no credentials in artifact output, unsupported
-/// items are classified, deterministic re-run produces identical output).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceScanStageTests
 {

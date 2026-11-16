@@ -17,30 +17,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Read-your-writes across the exact response cache, end to end: a real HTTP <c>applyEdits</c>
-/// must invalidate a FeatureServer query response another replica has cached, immediately rather
-/// than at the end of the namespace TTL (honua-server#4406, the missing test asset behind #4259).
-/// </summary>
-/// <remarks>
-/// <para>
-/// <see cref="CacheServiceResponseCacheReplicaTests"/> already proves the second half of the chain —
-/// that once a pattern is invalidated, a warm replica stops returning the old response — using two
-/// <see cref="CacheServiceResponseCache"/> instances over one shared cache. What nothing covered is
-/// the first half: that an <em>edit</em> actually reaches that invalidation with a pattern matching
-/// the layer's cached query keys. Greps for <c>read-after-write</c> / <c>ReadAfterWrite</c> /
-/// <c>readYourWrite</c> returned no test anywhere in the repository.
-/// </para>
-/// <para>
-/// The test host authenticates every request through the dev-auth bypass and
-/// <c>ResponseCacheUtilities.ShouldCache</c> skips authenticated requests, so the endpoint cannot
-/// populate the cache for itself here. The replica below therefore seeds the cache directly, under
-/// the key shape the FeatureServer query path uses, over the <see cref="ICacheService"/> the running
-/// host resolves — which is the same shared cache the edit's invalidation writes to. That models a
-/// second server instance that served an anonymous query and cached it, which is exactly the #4259
-/// scenario.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.ApplyEdits)]
@@ -49,7 +25,6 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
     private const string ServiceId = "test";
     private const int LayerId = 0;
 
-    /// <summary>The key shape <c>ResponseCacheUtilities.BuildFeatureServerKey</c> produces.</summary>
     private const string CachedQueryKey = "query:featureserver:service:test:layer:0:query-hash";
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
@@ -62,15 +37,6 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
 
     private CacheServiceResponseCache _warmReplica = null!;
 
-    /// <summary>
-    /// Every cache key is scoped to the tenant's schema before it reaches the store
-    /// and the schema comes from the ambient <see cref="SchemaContext"/> the request
-    /// middleware sets. A bare test thread has no ambient schema, so it would read and write
-    /// the unscoped default namespace while the server's edit invalidates the fixture's
-    /// isolated schema — two disjoint key spaces, and the assertions below would be vacuous.
-    /// Assigning the ambient schema publishes it to the whole calling flow, which is what
-    /// makes the replica a second instance serving THIS tenant rather than a different one.
-    /// </summary>
     private readonly SchemaContext _schemaContext = new();
 
     public async Task InitializeAsync()
@@ -82,12 +48,6 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Puts the calling test method in the same tenant cache scope the server request uses.
-    /// See <see cref="_schemaContext"/>; the ambient value must be set inside the test method
-    /// itself because an <c>AsyncLocal</c> written in <see cref="InitializeAsync"/> does not
-    /// flow back out to its caller.
-    /// </summary>
     private void JoinTenantCacheScope() => _schemaContext.CurrentSchema = _fixture.CurrentSchema;
 
     [IntegrationTest]

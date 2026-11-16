@@ -9,14 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Configuration-binding tests for the operator-facing alert options: the worker enable switch
-/// (<c>Alerts:Enabled</c>, #3055) and the downward-only alert-edition cap (<c>Alerts:Edition</c>,
-/// #2998). Both are settable so the configuration binding source generator assigns them; these
-/// tests bind the option the same way the host does
-/// (<c>AddOptions().Bind(configuration.GetSection("Alerts"))</c>) so each configuration path is
-/// covered independently of the HTTP surface.
-/// </summary>
 public sealed class AlertOptionsBindingTests
 {
     private static AlertOptions Bind(params (string Key, string? Value)[] settings)

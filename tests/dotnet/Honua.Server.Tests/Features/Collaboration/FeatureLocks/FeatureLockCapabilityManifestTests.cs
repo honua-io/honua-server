@@ -17,26 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 
-/// <summary>
-/// Proves the recorded honua-server#4402 dispositions are published by the machine-readable
-/// capability manifest, not only by the docs page (acceptance criterion 1).
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>docs/reference/collaboration/feature-locks.md</c> tells a client that everything the
-/// disposition table answers "not implemented" is reported that way by the capability
-/// manifest "so a client can discover it without reading this page". These tests are what
-/// makes that sentence true and keeps it true: a client that reads
-/// <c>/api/v1/capabilities/manifest</c> learns that leases are enforced, that no lease can
-/// be granted until an authorizer is supplied, that leases do not span nodes, and that the
-/// GeoServices <c>applyEdits</c> surface honours no client-supplied version token.
-/// </para>
-/// <para>
-/// Both manifest composition paths are covered — the hand-curated roster and the #2335
-/// registry-derived projection — because the two must stay wire-identical, and a gap that
-/// is honest on only one of them is a gap a client can still be lied to about.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Metadata)]

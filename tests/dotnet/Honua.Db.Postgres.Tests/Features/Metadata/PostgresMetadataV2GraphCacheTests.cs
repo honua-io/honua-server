@@ -19,13 +19,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
-/// <summary>
-/// Integration tests for the Metadata v2 hot-path snapshot cache (MCP A2). Proves, against the real
-/// Postgres store, that the caching provider decorator serves repeated catalog reads from one
-/// materialized snapshot, that a catalog write through the store invalidates that cache so read
-/// surfaces observe the mutation immediately, and measures the per-call wall-clock delta the cache
-/// removes from the hot path.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, ITestOutputHelper output)
 {

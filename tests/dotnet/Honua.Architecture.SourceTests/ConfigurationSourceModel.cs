@@ -6,22 +6,10 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Shared, purely syntactic model of the <c>src/</c> tree used by the configuration guards:
-/// <see cref="ConfigurationBindingShapeTests"/> (source-generated binding, #3055) and
-/// <see cref="HandParsedConfigurationSectionTests"/> (hand-rolled section parsers, #3315).
-/// </summary>
-/// <remarks>
-/// Both guards need the same primitives — a comment/literal stripper, brace matching, an
-/// auto-property scan, and simple-name-to-declaration resolution — so they live here rather than
-/// being duplicated (or re-derived slightly differently) per guard.
-/// </remarks>
 internal static partial class ConfigurationSourceModel
 {
-    /// <summary>A public auto-property declared on a type in <c>src/</c>.</summary>
     internal sealed record PropertyShape(string Name, string TypeName, bool IsInitOnly);
 
-    /// <summary>A class or record declared in <c>src/</c>, with its public auto-properties.</summary>
     internal sealed record TypeShape(
         string Name,
         string Namespace,
@@ -35,9 +23,6 @@ internal static partial class ConfigurationSourceModel
             : $"{Namespace}.{Name}";
     }
 
-    /// <summary>
-    /// Reads every non-artifact <c>*.cs</c> file under <c>src/</c>, keyed by repository-relative path.
-    /// </summary>
     internal static Dictionary<string, string> LoadSourceFiles()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
@@ -115,19 +100,6 @@ internal static partial class ConfigurationSourceModel
         return typesByName;
     }
 
-    /// <summary>
-    /// Resolves a possibly-unqualified type name to the declarations it can refer to, preferring the
-    /// referring file's own namespace and then its <c>using</c> imports.
-    /// </summary>
-    /// <param name="candidateName">The (possibly unqualified) type name to resolve.</param>
-    /// <param name="preferredNamespace">Namespace of the file making the reference.</param>
-    /// <param name="usingNamespaces">Namespaces imported by that file.</param>
-    /// <param name="typesByName">All declarations parsed from <c>src/</c>, keyed by simple name.</param>
-    /// <param name="ambiguous">
-    /// Set when the simple name matches several declarations that neither the preferred namespace nor
-    /// the imports disambiguate. The walk cannot follow such a reference, so callers report it rather
-    /// than dropping it silently — that silent drop is the #3306 reachability blind spot.
-    /// </param>
     internal static IEnumerable<TypeShape> ResolveDeclaredTypes(
         string candidateName,
         string preferredNamespace,
@@ -211,10 +183,6 @@ internal static partial class ConfigurationSourceModel
         IReadOnlyDictionary<string, List<TypeShape>> typesByName)
         => ResolveDeclaredTypes(candidateName, preferredNamespace, usingNamespaces, typesByName, out _);
 
-    /// <summary>
-    /// Yields <paramref name="namespaceName"/> and each of its ancestor namespaces, which are the
-    /// prefixes C# will try when completing a partially-qualified type name.
-    /// </summary>
     private static IEnumerable<string> EnclosingNamespaces(string namespaceName)
     {
         var current = namespaceName;
@@ -290,12 +258,6 @@ internal static partial class ConfigurationSourceModel
         return separator < 0 ? typeName : typeName[(separator + 1)..];
     }
 
-    /// <summary>
-    /// Blanks comments while preserving string literals and total length, so an offset found in the
-    /// <see cref="StripCommentsAndLiterals"/> view of the same file indexes correctly into this one.
-    /// Used where the guard needs the literal text (configuration keys) but must do its structural
-    /// scanning on the literal-free view.
-    /// </summary>
     internal static string StripComments(string source)
     {
         var result = new StringBuilder(source.Length);
@@ -341,10 +303,6 @@ internal static partial class ConfigurationSourceModel
         return result.ToString();
     }
 
-    /// <summary>
-    /// Blanks comments, string literals, and character literals, preserving total length and line
-    /// structure so brace matching and declaration scanning cannot be misled by their contents.
-    /// </summary>
     internal static string StripCommentsAndLiterals(string source)
     {
         var result = new StringBuilder(source.Length);

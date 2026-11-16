@@ -10,19 +10,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// HTTP integration coverage for the NVIDIA construction demo fixture
-/// (<c>tests/fixtures/scenes/nvidia-construction/</c>): both scene ids serve
-/// their tilesets, the observations sidecar is reachable via the static scene
-/// asset path, and shared-AssetRoot routing keeps each id on its own tileset.
-/// <para>
-/// The fixture is registered via in-memory configuration through
-/// <see cref="WebAppFixture"/>, which provisions a test-managed Postgres
-/// container so the configuration registry composes behind the same Postgres
-/// composite that production runs. Pure on-disk JSON / b3dm assertions live
-/// in <see cref="NvidiaConstructionFixtureFileTests"/> on the fast tier.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class NvidiaConstructionFixtureTests : IAsyncLifetime

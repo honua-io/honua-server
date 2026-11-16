@@ -8,17 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the Honua.Core.Abstractions isolation contract: the abstractions assembly is
-/// the contract surface that protocol assemblies (modularization Phase 1) consume in
-/// place of Honua.Core. It must not pull a transitive dependency on heavy data-layer
-/// or geospatial libraries, so protocol assemblies stay light-weight.
-/// </summary>
-/// <remarks>
-/// See <c>docs/internal/contributor/adr/0041-core-abstractions-extraction.md</c> for the rationale
-/// and the multi-PR sequencing plan that moves the rest of the abstractions surface
-/// into this assembly.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class CoreAbstractionsIsolationTests
 {
@@ -127,16 +116,6 @@ public sealed class CoreAbstractionsIsolationTests
             "the abstractions package may expose only explicitly reviewed infrastructure contracts");
     }
 
-    /// <summary>
-    /// Audit C3 goal-state assertion: <c>IDatabaseConnectionProvider</c> must
-    /// not leak <c>System.Data.Common.DbConnection</c> /
-    /// <c>System.Data.Common.DbTransaction</c> through its public surface.
-    /// </summary>
-    /// <remarks>
-    /// Provider-internal raw ADO.NET access is available through
-    /// <c>IAdoNetDatabaseConnectionProvider</c> in <c>Honua.Core</c>; the
-    /// public abstractions contract remains provider-neutral.
-    /// </remarks>
     [Fact]
     [Trait("Category", "Architecture")]
     public void DatabaseConnectionProvider_ShouldNotLeak_AdoNetTypes()
@@ -193,13 +172,6 @@ public sealed class CoreAbstractionsIsolationTests
         "NetTopologySuite.IO.GeoJSON",
     };
 
-    /// <summary>
-    /// Asserts that the geometry-subsystem extraction kept the heavy geospatial
-    /// packages (FlatGeobuf / Parquet.Net / Snappier / NetTopologySuite) out of
-    /// <c>Honua.Core.csproj</c>. Those packages now live with the readers, the
-    /// Spec subsystem, the WKT/GeoJSON-consuming filter parsers, and the
-    /// NlQuery filter-plan compiler inside <c>Honua.Geometry</c>.
-    /// </summary>
     [ArchitectureTest]
     public void HonuaCoreCsproj_ShouldNotReference_GeometryFileFormatPackages()
     {

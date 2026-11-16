@@ -5,17 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Cross-client certification evidence envelope (schema v1.0).
-/// Mirrors the JSON shape defined in
-/// <c>docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md</c>.
-/// </summary>
-/// <remarks>
-/// Field ordering matches the spec example so a pretty-printed envelope is
-/// trivially diff-able against the manual template. Properties typed as
-/// nullable are serialized with explicit <c>null</c> values rather than
-/// being omitted, per the "nullable field convention" in the spec.
-/// </remarks>
 public sealed record CertEnvelope
 {
     [JsonPropertyName("schema_version")]
@@ -55,9 +44,6 @@ public sealed record CertEnvelope
     public IReadOnlyList<CertExtension> Extensions { get; init; } = [];
 }
 
-/// <summary>
-/// Result row for one common-core CERT-* test case in a certification envelope.
-/// </summary>
 public sealed record CertResult
 {
     [JsonPropertyName("test_case_id")]
@@ -82,11 +68,6 @@ public sealed record CertResult
     public string EvidenceRef { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Aggregated counts for an envelope's <see cref="CertEnvelope.Results"/>.
-/// Lane-specific extensions are tracked separately on
-/// <see cref="CertEnvelope.Extensions"/> per the spec.
-/// </summary>
 public sealed record CertSummary
 {
     [JsonPropertyName("total")]
@@ -105,9 +86,6 @@ public sealed record CertSummary
     public int NotApplicable { get; init; }
 }
 
-/// <summary>
-/// Lane-specific extension result row (e.g., CLI-EXT-01, BI-EXT-02).
-/// </summary>
 public sealed record CertExtension
 {
     [JsonPropertyName("test_case_id")]
@@ -132,11 +110,6 @@ public sealed record CertExtension
     public string EvidenceRef { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Source-generated <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>
-/// for the certification envelope. Keeps the helper AOT/trim-friendly so it can be
-/// reused outside test projects without runtime reflection.
-/// </summary>
 [JsonSourceGenerationOptions(
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never,

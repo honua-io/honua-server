@@ -6,9 +6,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Tests.Configuration;
 
-/// <summary>
-/// Unit tests for ConfigurationExtensions.
-/// </summary>
 public class ConfigurationExtensionsTests
 {
     [Trait("Tier", "Fast")]

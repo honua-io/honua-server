@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Covers <see cref="FeatureStorageMapping.SupportsManagedWrites"/>, the predicate the write
-/// surfaces consult before applying a mutation through the managed feature store
-/// (honua-server#4707).
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class FeatureStorageMappingManagedWriteTests
 {

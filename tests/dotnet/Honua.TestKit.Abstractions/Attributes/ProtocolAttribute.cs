@@ -5,17 +5,9 @@ using Xunit;
 
 namespace Honua.TestKit.Attributes;
 
-/// <summary>
-/// Indicates which protocol(s) this test covers.
-/// Used for test discovery and coverage analysis.
-/// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]
 public sealed class ProtocolAttribute : Attribute
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ProtocolAttribute"/> class.
-    /// </summary>
-    /// <param name="protocols">One or more protocol identifiers from <see cref="Constants.ProtocolNames"/></param>
     public ProtocolAttribute(params string[] protocols)
     {
         Protocols = protocols ?? [];

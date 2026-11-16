@@ -226,11 +226,6 @@ public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixtu
         text.Should().NotContain("file://").And.NotContain("must-not-be-read").And.NotContain("StackTrace");
     }
 
-    /// <summary>
-    /// Renders one operation in the three document/literal argument forms: ArcPy/Pro's
-    /// unqualified arguments, arguments qualified with the operation prefix, and a
-    /// default-namespace operation whose whole argument tree inherits the namespace.
-    /// </summary>
     private static string SoapOperationForm(string operation, string arguments, string form) => form switch
     {
         "unqualified" => $"<tns:{operation}>{arguments}</tns:{operation}>",

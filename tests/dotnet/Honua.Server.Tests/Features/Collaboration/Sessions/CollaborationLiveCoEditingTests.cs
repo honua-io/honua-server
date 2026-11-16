@@ -24,17 +24,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
-/// <summary>
-/// End-to-end live co-editing coverage for honua-server#2999 against the REAL
-/// Studio-lifecycle-backed collaboration authorizer (no fixture authorizer override): two
-/// WebSocket clients join a Studio map draft's session, edits submitted through the op-log REST
-/// append are echoed to every participant as server-ordered v1 <c>operation-appended</c>
-/// envelopes, late joiners receive snapshot + tail, stale resume cursors surface the typed
-/// <c>resync-required</c> error, checkpoints produce immutable Studio content versions whose
-/// envelope reflects the ops (AC-2), and session authorization honors the Studio identity model
-/// (AC-3). These envelope-contract assertions stand in for the SDK collaboration contract tests
-/// until the honua-sdk-js WebSocket adapter lands.
-/// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
 public sealed class CollaborationLiveCoEditingTests

@@ -21,14 +21,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The GP process release and binding admin API (honua-server#6221) driven the way
-/// honua-release's deploy workflow drives it: publish v1 and v2, activate v1 under expected
-/// version 0, promote v2 under version 1, refuse the stale and the wrong-target attempts with
-/// named reasons, roll back to v1, and read every projection back. The store is the in-memory
-/// one so the sequence is deterministic; the Postgres store runs the same policy under a row
-/// lock and is exercised by its own migration-backed path.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -325,7 +317,6 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
             }
             """;
 
-    /// <summary>A registry that advertises one activatable AWS Batch workload.</summary>
     private sealed class AwsBatchOnlyRegistry : IExecutionJobDefinitionRegistry
     {
         private static readonly ExecutionJobDefinition Definition = new()

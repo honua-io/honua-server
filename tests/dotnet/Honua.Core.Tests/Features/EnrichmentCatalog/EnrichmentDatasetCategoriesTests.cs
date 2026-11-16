@@ -8,9 +8,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.EnrichmentCatalog;
 
-/// <summary>
-/// Unit tests for the enrichment-dataset category taxonomy (#2280).
-/// </summary>
 public sealed class EnrichmentDatasetCategoriesTests
 {
     [Trait("Tier", "Fast")]

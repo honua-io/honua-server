@@ -10,24 +10,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Anti-drift gate for the frozen 2026.1 client-certification fixture manifest
-/// (<c>docs/gis/data/client-certification-fixture.v1.json</c>,
-/// honua-io/honua-server#3393).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The manifest is only worth anything if it is content-addressed to the real
-/// files: these tests recompute every per-file digest and every composite
-/// revision from disk, so editing a seed without republishing the manifest is a
-/// build failure rather than silent evidence drift.
-/// </para>
-/// <para>
-/// The Python projection (<c>tests/python/shared/canonical_fixture.py</c>) is
-/// compared symbol by symbol rather than by digest, and it is parsed — never
-/// executed — so the architecture suite stays free of a Python runtime.
-/// </para>
-/// </remarks>
 public sealed class CanonicalFixtureManifestTests
 {
     private const string ManifestRelativePath = "client-certification-fixture.v1.json";
@@ -42,7 +24,6 @@ public sealed class CanonicalFixtureManifestTests
     private static readonly Regex IdentifierPattern =
         new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    /// <summary>The auth profiles the 2026.1 contract requires the manifest to enumerate.</summary>
     private static readonly string[] RequiredAuthProfiles =
     [
         "anonymous", "valid-credential", "invalid-credential", "expired-credential",
@@ -50,7 +31,6 @@ public sealed class CanonicalFixtureManifestTests
         "licensed-entitlement",
     ];
 
-    /// <summary>The composite revisions the prose contract must publish verbatim.</summary>
     private static readonly string[] PublishedRevisions =
     [
         "fixtureRevision", "serverConfigRevision", "authPolicyRevision",
@@ -469,10 +449,6 @@ public sealed class CanonicalFixtureManifestTests
     private static string ComputeDigest(byte[] payload)
         => "sha256:" + Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
 
-    /// <summary>
-    /// honua.input-set-digest/v1: sha256sum-shaped lines for one role's inputs,
-    /// ordered by the UTF-8 bytes of the repo-relative path, hashed once more.
-    /// </summary>
     private static string ComputeInputSetDigest(JsonElement manifest, string role)
     {
         var lines = manifest.GetProperty("inputs").EnumerateArray()
@@ -486,10 +462,6 @@ public sealed class CanonicalFixtureManifestTests
         return ComputeDigest(Encoding.UTF8.GetBytes(string.Concat(lines)));
     }
 
-    /// <summary>
-    /// honua.canonical-json-digest/v1 serialization: members sorted by ordinal name,
-    /// no insignificant whitespace, non-ASCII emitted literally, numbers rejected.
-    /// </summary>
     private static string CanonicalJson(JsonElement element)
     {
         var builder = new StringBuilder();
@@ -599,10 +571,6 @@ public sealed class CanonicalFixtureManifestTests
         builder.Append('"');
     }
 
-    /// <summary>
-    /// Renders a manifest JSON value into the same normalized text the Python
-    /// literal parser produces, so the two can be compared without executing Python.
-    /// </summary>
     private static string DescribeJson(JsonElement element) => element.ValueKind switch
     {
         JsonValueKind.String => "s:" + element.GetString(),

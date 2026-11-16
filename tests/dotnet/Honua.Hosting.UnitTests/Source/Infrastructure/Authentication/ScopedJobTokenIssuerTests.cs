@@ -15,13 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Security proof for the custom-code geoprocessing scoped-job token issuer (Phase 0
-/// auth spine). Each invariant — narrow-only attenuation, non-forgeable tenant,
-/// read-only-unless-write, job-binding, revocation, and expiry — is exercised
-/// against the real issuer so the hydrated principal can never out-grant the
-/// submitter or reach another tenant.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

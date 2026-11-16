@@ -6,9 +6,6 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Core.Tests.Features.AuditLog.Export;
 
-/// <summary>
-/// Unit tests for <see cref="AuditRetentionPolicy"/> cutoff arithmetic (#2157).
-/// </summary>
 public sealed class AuditRetentionPolicyTests
 {
     private static readonly DateTimeOffset Now = new(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
@@ -61,9 +58,6 @@ public sealed class AuditRetentionPolicyTests
     }
 }
 
-/// <summary>
-/// Unit tests for the in-memory retention pruner seam (#2157).
-/// </summary>
 public sealed class InMemoryAuditRetentionPrunerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);

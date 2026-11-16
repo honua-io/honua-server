@@ -12,10 +12,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
 
-/// <summary>
-/// Regression coverage for the shared Metadata v2 retirement boundary used by the
-/// classic OGC adapters.
-/// </summary>
 public sealed class MetadataV2LifecycleRoutingTests
 {
     [UnitTest]

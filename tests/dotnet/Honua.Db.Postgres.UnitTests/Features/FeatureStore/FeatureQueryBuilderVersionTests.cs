@@ -9,12 +9,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Branch-versioning overlay read tests (#1272 Track B, ADR-0051). The central guarantee proved here is
-/// the CITE firewall: for the DEFAULT version (null or <see cref="VersionContext.Default"/>) the builder
-/// must emit byte-identical SQL to the non-versioned base path. A non-DEFAULT version overlays the
-/// version_edits table onto DEFAULT.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderVersionTests
 {

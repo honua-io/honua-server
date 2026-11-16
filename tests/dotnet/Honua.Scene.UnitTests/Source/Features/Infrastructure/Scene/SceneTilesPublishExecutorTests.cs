@@ -22,11 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Unit tests for the 3D Tiles generation executor (#842). The tests use
-/// in-memory stubs for the catalog and feature source so the pipeline can be
-/// exercised end-to-end without standing up Postgres.
-/// </summary>
 public sealed class SceneTilesPublishExecutorTests : IDisposable
 {
     private const int LayerId = 7;

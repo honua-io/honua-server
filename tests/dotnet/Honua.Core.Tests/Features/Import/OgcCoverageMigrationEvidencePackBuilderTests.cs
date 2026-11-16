@@ -12,12 +12,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Slice 5 (capstone) of issue #1030: deterministic OGC coverage migration
-/// evidence-pack generation tests. Covers fingerprint determinism, schema
-/// stability, credential redaction, combined OGC API Coverages + WCS
-/// roll-up, scoping evidence, and aggregated style-diagnostic surfacing.
-/// </summary>
 public sealed class OgcCoverageMigrationEvidencePackBuilderTests
 {
     [Trait("Tier", "Fast")]

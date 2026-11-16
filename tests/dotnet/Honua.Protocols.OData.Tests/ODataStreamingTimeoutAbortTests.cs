@@ -16,12 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// The request timeout must never let a streamed OData collection finish as a whole 200 response
-/// once its headers are on the wire (#5472). A source that stalls after the first flush must make
-/// the server abort the transport so the client sees the truncation, while a source that stalls
-/// before any byte is sent still receives the shaped 408 response.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
@@ -231,11 +225,6 @@ public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// The OData handler streams from the resolved reader whenever it is also a streaming store,
-    /// so the stall is injected at the reader rather than at the separately registered
-    /// <see cref="IStreamingFeatureStore"/>.
-    /// </summary>
     private sealed class StallingFeatureReader(IFeatureReader inner, SlowSource source)
         : IFeatureReader, IStreamingFeatureStore
     {

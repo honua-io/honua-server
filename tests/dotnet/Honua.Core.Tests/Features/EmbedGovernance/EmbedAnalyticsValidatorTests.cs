@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.EmbedGovernance;
 
-/// <summary>
-/// Unit tests for <see cref="EmbedAnalyticsValidator"/> and raw-key detection.
-/// </summary>
 public sealed class EmbedAnalyticsValidatorTests
 {
     private static readonly DateTimeOffset _now = new(2026, 6, 26, 0, 0, 0, TimeSpan.Zero);

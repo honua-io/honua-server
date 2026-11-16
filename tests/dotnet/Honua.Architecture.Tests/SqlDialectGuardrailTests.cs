@@ -7,24 +7,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guardrails the <see cref="ISqlDialect"/> / <see cref="SqlFilterExpressionVisitorBase"/>
-/// contracts introduced for audit C4 (no SQL-dialect abstraction below the AST — identifier
-/// quoting reimplemented per-provider, SQL-injection boundary risk).
-/// </summary>
-/// <remarks>
-/// The asserts are deliberately tied to the shipped data providers (Postgres, MySql, SqlServer,
-/// DuckDB, Oracle). When another provider is added, extend <see cref="ProviderAssemblies"/>
-/// — letting a new provider through without a dialect would re-open the per-provider quoting
-/// drift the audit called out.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class SqlDialectGuardrailTests
 {
-    /// <summary>
-    /// All shipped provider assemblies. Force-loaded via a type from each so the test runner
-    /// (which does not necessarily preload every referenced assembly) sees them.
-    /// </summary>
     private static readonly IReadOnlyList<(string Name, System.Reflection.Assembly Assembly)> ProviderAssemblies = new[]
     {
         ("Honua.Postgres", typeof(Honua.Db.Postgres.Queries.Filters.PostgresSqlDialect).Assembly),

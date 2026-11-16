@@ -7,11 +7,6 @@ using Honua.Core.Features.Spec.Grammar;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Unit tests for <see cref="SpecLexer"/> — line/column tracking is the
-/// single most important improvement over the existing CQL2 tokenizer so it
-/// has the most coverage here.
-/// </summary>
 public sealed class SpecLexerTests
 {
     [Trait("Tier", "Fast")]

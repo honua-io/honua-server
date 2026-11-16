@@ -8,10 +8,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Oracle.Tests;
 
-/// <summary>
-/// Verifies that <see cref="OracleSpatialGuard"/> refuses to read non-SDO geometry columns or
-/// ArcSDE-versioned tables (IP / clean-room enforcement point).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class OracleSpatialGuardTests
 {

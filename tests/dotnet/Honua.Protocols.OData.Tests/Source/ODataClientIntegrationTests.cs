@@ -12,16 +12,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData integration tests using Microsoft.OData.Client.
-/// Tests service document parsing, metadata validation, and query operations
-/// with deterministic test data for cross-protocol parity verification.
-/// </summary>
-/// <remarks>
-/// Behavior reference: Issue #158 - Add OData integration tests using Microsoft.OData.Client
-/// These tests validate that the OData service document parses correctly,
-/// metadata is accessible, and query operations return expected results.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataClientIntegrationTests : IAsyncLifetime

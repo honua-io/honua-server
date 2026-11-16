@@ -7,9 +7,6 @@ using Honua.Server;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ensures OpenAPI specifications stay in sync with the registered OGC endpoints.
-/// </summary>
 public sealed class OpenApiDriftTests
 {
     private static readonly HashSet<string> _supportedMethods = new(StringComparer.OrdinalIgnoreCase)
@@ -100,16 +97,6 @@ public sealed class OpenApiDriftTests
             stylesRegistryEndpoints);
     }
 
-    /// <summary>
-    /// Capability honesty (#2822, part of #2803): the published admin OpenAPI contract must not
-    /// advertise the metadata manifest apply/dry-run/prune surface removed in the #1035 cutover.
-    /// The admin spec base path is <c>/api/v1/admin</c>, so its <c>/manifest</c> (export) and
-    /// <c>/manifest/apply</c> paths map to <c>/api/v1/admin/manifest[/apply]</c> — neither is a
-    /// registered route. The only surviving read-only manifest surfaces are the GitOps release
-    /// export (<c>.../release-packages/{id}/gitops-manifest</c>) and the capabilities manifest
-    /// (<c>/api/v1/capabilities/manifest</c>, out of this spec's base). A generated/governed SDK
-    /// derived from the stale spec would emit calls that 404.
-    /// </summary>
     [ArchitectureTest]
     public void AdminApiSpec_DoesNotAdvertiseRemovedManifestApplyOrExportPaths()
     {

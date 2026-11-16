@@ -7,13 +7,6 @@ using Honua.Server.Features.Admin.Services;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit tests for <see cref="InMemoryUserStore"/> stable-identifier resolution (#3141).
-/// The single-node store must resolve a managed identity by the SCIM <c>userName</c> AND
-/// by the stable external subject (SCIM <c>externalId</c> / OIDC <c>sub</c>), because
-/// deferred security snapshots capture the OIDC subject while SCIM keys the record by
-/// <c>userName</c>.
-/// </summary>
 public sealed class InMemoryUserStoreTests
 {
     [Fact]

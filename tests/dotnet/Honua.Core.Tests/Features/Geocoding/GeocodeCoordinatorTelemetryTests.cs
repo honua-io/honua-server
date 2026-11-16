@@ -11,14 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
-/// <summary>
-/// Verifies PA-200:
-/// <see cref="GeocodeCoordinatorService.SuggestAsync(SuggestGeocodeRequest, string, CancellationToken)"/> and
-/// <see cref="GeocodeCoordinatorService.BatchGeocodeAsync(BatchGeocodeRequest, string, CancellationToken)"/> emit
-/// "Honua.Geocoding" spans (mirroring the existing Forward/Reverse geocode
-/// telemetry) tagged with query length / batch size rather than raw
-/// address/query text.
-/// </summary>
 public sealed class GeocodeCoordinatorTelemetryTests
 {
     [Trait("Tier", "Fast")]

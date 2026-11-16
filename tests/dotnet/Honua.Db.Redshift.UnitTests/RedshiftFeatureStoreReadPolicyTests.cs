@@ -16,11 +16,6 @@ using Npgsql;
 
 namespace Honua.Db.Redshift.Tests;
 
-/// <summary>
-/// Verifies read-policy parity for the Redshift provider: a bound reader refuses a read when a
-/// permanent filter, row-level security predicate or field mask applies to the layer (the
-/// provider applies none of them), and reads exactly as before when nothing resolves.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class RedshiftFeatureStoreReadPolicyTests
 {

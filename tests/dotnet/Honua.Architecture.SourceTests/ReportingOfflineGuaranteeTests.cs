@@ -6,12 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the "HTML reports render without external CDN dependencies" AC.
-/// Scans every committed HTML golden for forbidden external patterns so a
-/// later template change that introduces a CDN link fails the build rather
-/// than silently breaking on-prem operators.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class ReportingOfflineGuaranteeTests
 {

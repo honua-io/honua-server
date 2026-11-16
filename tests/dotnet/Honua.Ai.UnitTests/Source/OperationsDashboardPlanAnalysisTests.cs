@@ -13,12 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the honua_plan_analysis output for the operations-dashboard app-builder
-/// family. The dashboard scenario exercises the spec-draft + app-package
-/// surface of the planner — separate from the spatial-query family which only
-/// emits an analysis plan — so coverage lives in its own fixture.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class OperationsDashboardPlanAnalysisTests
 {

@@ -13,12 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Snowflake.Tests;
 
-/// <summary>
-/// Integration tests against a live Snowflake account. Gated behind <c>HONUA_TEST_SNOWFLAKE=1</c>
-/// plus <c>HONUA_SNOWFLAKE_TEST_CONNECTION</c>; they report an explicit credential skip in normal CI so the suite stays
-/// hermetic. Configure a Snowflake account with a table whose schema matches the test publication
-/// below (<c>ANALYTICS.PUBLIC.PARCELS</c> with an OBJECTID key and a GEOGRAPHY column named SHAPE).
-/// </summary>
 [Trait("Category", "Snowflake")]
 public sealed class SnowflakeFeatureStoreIntegrationTests
 {

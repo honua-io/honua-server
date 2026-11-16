@@ -11,11 +11,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Slice 5 (capstone) of issue #1029. Verifies the OGC API Features migration evidence
-/// pack builder is deterministic, fingerprint-sensitive to bundle changes, schema-stable
-/// at the top level, and strips source URLs / credentials before serialization.
-/// </summary>
 public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
 {
     [Trait("Tier", "Fast")]

@@ -27,9 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServerTileHandler functionality.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerTileHandlerTests
 {

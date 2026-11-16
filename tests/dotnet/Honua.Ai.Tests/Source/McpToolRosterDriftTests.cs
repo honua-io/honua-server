@@ -23,19 +23,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Drift gate and opt-in emitter for <c>docs/gis/data/mcp-tool-roster.v1.json</c>, the canonical
-/// <c>/mcp</c> tool roster that downstream repositories (sdk-js certification, honua-release
-/// expected tools, the geospatial-mcp index) gate their <c>tools/list</c> parity on.
-/// </summary>
-/// <remarks>
-/// The roster body is generated from the hand-authored <see cref="IMcpTool"/> registrations,
-/// the audited Admin projection manifest plus the closed operator roster (minus
-/// <see cref="AdminMcpOperationExclusions"/>), the Admin catalog membership that only registers
-/// with a durable proposal store, and <see cref="McpWorkflowViewCatalog"/>. The provenance fields
-/// (<c>serverSha</c>, <c>generatedAt</c>) record the commit the body was last regenerated from and
-/// are only restamped when the body changes, so an unchanged roster never produces a diff.
-/// </remarks>
 public sealed class McpToolRosterDriftTests
 {
     private const string EmitVariable = "HONUA_EMIT_MCP_TOOL_ROSTER";
@@ -43,7 +30,6 @@ public sealed class McpToolRosterDriftTests
     private const string RosterFile = "mcp-tool-roster.v1.json";
     private const string RegenerateCommand = "bash scripts/ci/generate-mcp-tool-roster.sh";
 
-    /// <summary>Tool names the server deliberately no longer advertises.</summary>
     internal static readonly string[] RetiredToolNames = ["honua_propose_operation"];
 
     [UnitTest]

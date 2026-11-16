@@ -9,9 +9,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Keeps inexpensive source guards independent of executable runtime/test assembly discovery.
-/// </summary>
 public sealed class SourceArchitectureIsolationTests
 {
     [ArchitectureTest]

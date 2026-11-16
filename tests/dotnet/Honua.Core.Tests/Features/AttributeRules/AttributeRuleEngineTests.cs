@@ -7,13 +7,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Tests.Features.AttributeRules;
 
-/// <summary>
-/// Unit coverage for the shared attribute-rule engine and safe Arcade-subset evaluator
-/// (honua-server#1271). Verifies that calculation rules populate their target field,
-/// constraint/validation rules reject violations, triggering events gate firing, and
-/// expressions outside the supported subset are routed out of scope (skipped) rather
-/// than failing the edit.
-/// </summary>
 public sealed class AttributeRuleEngineTests
 {
     [Trait("Tier", "Fast")]

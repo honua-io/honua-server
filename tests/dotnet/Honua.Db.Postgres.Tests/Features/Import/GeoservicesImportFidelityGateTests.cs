@@ -22,27 +22,9 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 3: catalog discrepancies must control the completion verdict.
-/// These run end to end against real PostGIS and the real Metadata v2 graph store — the import
-/// publishes, the publish materializes the catalog entry, and the catalog reconciler reads it back.
-/// </summary>
-/// <remarks>
-/// The source layer here advertises an Esri subtype set keyed on <c>assetclass</c>, a field the
-/// service never lists in its <c>fields</c> array. The importer therefore cannot create that column,
-/// the publish path prunes the subtype set, and the migrated layer silently loses a construct the
-/// source had. Every feature still lands, so data-movement reconciliation is green: only the
-/// catalog pass can see the loss. Before #4600 that pass was recorded and then ignored, and the run
-/// reported <c>Completed</c>.
-/// </remarks>
 [Collection("Database")]
 public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
 {
-    /// <summary>
-    /// #4854: a publication that fails after the source transfer committed (for example a snapshot
-    /// copy that exceeds its budget) must keep the transferred rows for recovery and end in
-    /// NeedsReview with a blocking publish omission, never a full-fidelity completion.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenPublicationTimesOut_RetainsRowsAndRequiresReview()
     {
@@ -148,11 +130,6 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
         }
     }
 
-    /// <summary>
-    /// The complementary case: when the same pipeline reconciles clean on both passes the run
-    /// reports <see cref="MigrationFidelityVerdicts.FullFidelity"/>. Without this the gate could be
-    /// "green" simply by never letting anything through.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenEveryCheckRanAndPassed_ReportsFullFidelity()
     {
@@ -211,11 +188,6 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
         }
     }
 
-    /// <summary>
-    /// A deployment without the catalog read-back seam cannot prove schema parity, so the run must
-    /// report <see cref="MigrationFidelityVerdicts.Unverified"/> rather than full fidelity — while
-    /// still completing, because an unexecuted check is not evidence of a faithless import.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenCatalogCheckCannotRun_CompletesAsUnverifiedNotFullFidelity()
     {
@@ -368,12 +340,6 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
         });
     }
 
-    /// <summary>
-    /// ArcGIS FeatureServer mock with two shapes. The default ("drop") layer advertises a subtype
-    /// set keyed on <c>assetclass</c>, a field the service never lists, so the construct cannot
-    /// survive the import. The faithful layer advertises the same subtype set keyed on a field it
-    /// does publish.
-    /// </summary>
     private sealed class FidelityFeatureServerHandler(bool faithful) : HttpMessageHandler
     {
         private const string SubtypeBlockDrop = """

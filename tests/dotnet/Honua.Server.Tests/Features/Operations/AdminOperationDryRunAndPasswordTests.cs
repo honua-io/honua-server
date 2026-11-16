@@ -15,10 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// Unit coverage for dry-run dispatch, case-insensitive inline passwords, and
-/// queued connect/import status mapping (honua-server#5625).
-/// </summary>
 public sealed class AdminOperationDryRunAndPasswordTests
 {
     [UnitTest]

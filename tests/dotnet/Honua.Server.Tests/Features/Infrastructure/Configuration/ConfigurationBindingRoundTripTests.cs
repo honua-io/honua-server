@@ -15,10 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Configuration;
 
-/// <summary>
-/// Representative source-generated binding round trips for nested objects, nullable children,
-/// lists, and dictionaries in the configuration graphs audited by honua-server#3055.
-/// </summary>
 public sealed class ConfigurationBindingRoundTripTests
 {
     [UnitTest]

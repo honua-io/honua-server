@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Service-level <c>getEstimates</c> reports each layer under its service-local index and
-/// reads it from the publication's own storage-layer handle (SEC-4). The fixture publishes
-/// <c>resource.parcels</c> as layer <see cref="ParcelsLayerIndex"/> while its storage handle
-/// is <see cref="ParcelsStorageLayerId"/>, and <c>resource.permits</c> owns
-/// <see cref="ParcelsLayerIndex"/> as its storage handle.
-/// </summary>
 public sealed class FeatureServerServiceEstimateLayerIdsTests
 {
     private const int ParcelsLayerIndex = 3;

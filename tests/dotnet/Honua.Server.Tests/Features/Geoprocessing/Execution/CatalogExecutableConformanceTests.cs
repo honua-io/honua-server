@@ -17,11 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Guards agreement between catalog-owned execution capability metadata and the
-/// concrete managed dispatcher. No protocol-local process list participates in
-/// the classification contract.
-/// </summary>
 public sealed class CatalogExecutableConformanceTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();

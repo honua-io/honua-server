@@ -332,12 +332,6 @@ public sealed class FlatGeobufPreviewTests
         return stream;
     }
 
-    /// <summary>
-    /// Builds a FlatGeobuf file with <paramref name="featureCount"/> features and a
-    /// header that declares the correct <c>FeaturesCount</c>. NTS Serialize writes
-    /// <c>FeaturesCount = 0</c> (unknown), so we splice a custom header with the
-    /// correct count in front of NTS-serialized feature data.
-    /// </summary>
     private static MemoryStream CreateFlatGeobufStreamWithExplicitCount(int featureCount)
     {
         var columns = new List<ColumnMeta>
@@ -404,11 +398,6 @@ public sealed class FlatGeobufPreviewTests
         return result;
     }
 
-    /// <summary>
-    /// Builds a minimal valid FlatGeobuf file with a CRS code in the header.
-    /// The NTS Serialize API does not write CRS, so we construct the binary
-    /// directly using the FlatBuffer builder to exercise SRID detection.
-    /// </summary>
     private static MemoryStream CreateFlatGeobufStreamWithCrs(int epsgCode)
     {
         var columns = new List<ColumnMeta>
@@ -476,11 +465,6 @@ public sealed class FlatGeobufPreviewTests
         return result;
     }
 
-    /// <summary>
-    /// Builds a valid FlatGeobuf file with an embedded CRS and <paramref name="columnCount"/>
-    /// columns so the FlatBuffer header exceeds the 8 KB CRS-detection buffer.
-    /// Features count is zero — the test exercises CRS detection, not feature parsing.
-    /// </summary>
     private static MemoryStream CreateFlatGeobufStreamWithLargeHeader(int epsgCode, int columnCount)
     {
         var builder = new FlatBufferBuilder(16384);
@@ -514,10 +498,6 @@ public sealed class FlatGeobufPreviewTests
         return result;
     }
 
-    /// <summary>
-    /// Builds a minimal FlatGeobuf file with a CRS using authority Org/CodeString (Code=0).
-    /// Exercises the codeString-based CRS resolution path in <see cref="FlatGeobufFormatReader.ResolveSrid"/>.
-    /// </summary>
     private static MemoryStream CreateFlatGeobufStreamWithAuthorityCrs(string org, string codeString)
     {
         var builder = new FlatBufferBuilder(512);
@@ -545,11 +525,6 @@ public sealed class FlatGeobufPreviewTests
         return result;
     }
 
-    /// <summary>
-    /// Builds a parsed FlatGeobuf <see cref="Header"/> with optional CRS fields for unit-testing
-    /// <see cref="FlatGeobufFormatReader.ResolveSrid"/>. Uses <see cref="Helpers.ReadHeader(Stream)"/>
-    /// to produce the same Header struct the production code receives.
-    /// </summary>
     private static Header BuildHeaderWithCrs(int code = 0, string? org = null, string? codeString = null)
     {
         var builder = new FlatBufferBuilder(256);
@@ -580,10 +555,6 @@ public sealed class FlatGeobufPreviewTests
         return Helpers.ReadHeader(ms);
     }
 
-    /// <summary>
-    /// Builds a minimal FlatGeobuf file with CRS encoded as WKT only (no org/code/codeString).
-    /// Exercises the WKT fallback path in CRS detection.
-    /// </summary>
     private static MemoryStream CreateFlatGeobufStreamWithWktCrs(string wkt)
     {
         var builder = new FlatBufferBuilder(4096);
@@ -605,9 +576,6 @@ public sealed class FlatGeobufPreviewTests
         return result;
     }
 
-    /// <summary>
-    /// Builds a parsed FlatGeobuf <see cref="Header"/> with a WKT-only CRS field.
-    /// </summary>
     private static Header BuildHeaderWithWkt(string wkt)
     {
         var builder = new FlatBufferBuilder(4096);

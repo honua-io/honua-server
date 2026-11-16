@@ -9,11 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Drives <see cref="RollbackDataPlaneCompletion.Evaluate"/> — the production completion rule —
-/// and the real backend observe paths that call it. Nominal weight/alias/traffic convergence
-/// without a healthy restored endpoint must not report <see cref="WorkflowOperationStatus.RolledBack"/>.
-/// </summary>
 public sealed class RollbackDataPlaneHealthTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);

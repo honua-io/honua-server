@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Verifies guarded native-window warps, source coverage and original typed masks.
-/// </summary>
 [Collection("Database")]
 public sealed class RasterNativeWindowSqlIntegrationTests(PostgresFixture fixture)
 {

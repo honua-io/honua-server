@@ -10,14 +10,8 @@ using WireMock.Server;
 
 namespace Honua.TestKit.Contract;
 
-/// <summary>
-/// Contract testing scenarios to ensure API compliance with specifications.
-/// </summary>
 public static class ContractTestScenarios
 {
-    /// <summary>
-    /// Validates that OGC API Features responses conform to the OGC specification schema.
-    /// </summary>
     public static async Task<ContractTestResult> ValidateOgcApiSchema(
         HttpClient client,
         string endpoint,
@@ -66,9 +60,6 @@ public static class ContractTestScenarios
         };
     }
 
-    /// <summary>
-    /// Validates GeoJSON responses conform to RFC 7946 specification.
-    /// </summary>
     public static async Task<ContractTestResult> ValidateGeoJsonSchema(
         HttpClient client,
         string endpoint)
@@ -103,9 +94,6 @@ public static class ContractTestScenarios
         };
     }
 
-    /// <summary>
-    /// Tests backwards compatibility by comparing current responses with baseline.
-    /// </summary>
     public static async Task<ContractTestResult> ValidateBackwardsCompatibility(
         HttpClient client,
         Dictionary<string, string> endpointBaselines)
@@ -144,9 +132,6 @@ public static class ContractTestScenarios
         };
     }
 
-    /// <summary>
-    /// Tests API contract using consumer-driven contract patterns.
-    /// </summary>
     public static async Task<ContractTestResult> ValidateConsumerContracts(
         List<ConsumerContract> contracts)
     {
@@ -212,9 +197,6 @@ public static class ContractTestScenarios
         };
     }
 
-    /// <summary>
-    /// Validates HTTP semantics compliance (status codes, headers, etc.).
-    /// </summary>
     public static async Task<ContractTestResult> ValidateHttpSemantics(
         HttpClient client,
         Dictionary<string, HttpSemanticsExpectation> expectations)

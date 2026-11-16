@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster.Multidimensional;
 
-/// <summary>
-/// Verifies the gdalinfo enrichment pass (ADR-0039 Path B) that supplies the
-/// spatial extent, resolution, and temporal bounds gdalmdiminfo cannot. The
-/// golden document mirrors <c>gdalinfo -json maui_sst.nc</c> (OSGeo gdal
-/// ubuntu-full) over the CF-1.8 NetCDF4 cube.
-/// </summary>
 public sealed class GdalInfoCoverageEnricherTests
 {
     private const string GdalInfoJson =

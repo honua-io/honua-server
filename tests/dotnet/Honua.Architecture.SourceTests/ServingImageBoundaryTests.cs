@@ -5,9 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the native-AOT web image and isolated GDAL-worker distribution boundary.
-/// </summary>
 public sealed class ServingImageBoundaryTests
 {
     private const string VerifierCommand = "scripts/ci/verify-serving-image-boundary.py --serving-image";

@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-2 <c>geometry.clip</c> executor. Pins the same
-/// failure surfaces slice 1 introduced for <c>geometry.buffer</c> (unsupported
-/// process id, malformed inputs, oversized artifact guardrail) plus the
-/// happy-path produced GeoJSON Feature shape.
-/// </summary>
 public sealed class GeometryClipJobExecutorTests
 {
     [UnitTest]

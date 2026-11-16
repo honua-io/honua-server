@@ -10,17 +10,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration coverage for issue #1033 slice 3: drive a small deterministic GeoServer
-/// fixture through a failure-injection wrapper, prove the resulting run metrics carry
-/// the slice-3 retry/resume/idempotency counters, and confirm the slice-2 baseline
-/// evaluator still classifies the recovered run.
-/// </summary>
-/// <remarks>
-/// Deliberately does not require a Postgres container: the wrapper is a deterministic
-/// in-process pipeline driven by a JSON fixture so the test stays fast and can run on
-/// the PR gate alongside the other Postgres test-project fixtures.
-/// </remarks>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationRunRetryResumeFixtureTests
 {
@@ -144,12 +133,6 @@ public sealed class MigrationRunRetryResumeFixtureTests
 
     private sealed record FixtureResource(string Id, long FeatureCount);
 
-    /// <summary>
-    /// Failure-injection wrapper that drives the fixture through a recorder + checkpoint
-    /// store. Mirrors the shape of the Core retry/resume runner but operates against
-    /// realistic fixture data so the integration test exercises the same metric surface
-    /// the production migration pipeline uses.
-    /// </summary>
     private sealed class FixtureRunner
     {
         private readonly FixtureFile _fixture;

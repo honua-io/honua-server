@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the managed (NetTopologySuite) density
-/// executor — the job-dispatchable counterpart to trunk's PostGIS-protocol
-/// <c>analytics.density</c>. Snaps each input geometry's point representative
-/// onto a square or hex grid of cellSize CRS units and emits one feature
-/// per non-empty cell with COUNT (and optionally SUM_&lt;weightField&gt;).
-/// </summary>
 public sealed class ManagedDensityExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

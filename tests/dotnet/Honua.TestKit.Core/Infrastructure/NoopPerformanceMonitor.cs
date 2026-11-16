@@ -5,10 +5,6 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Performance monitor that discards all metrics. Used by unit tests
-/// where telemetry recording is not the concern under test.
-/// </summary>
 public sealed class NoopPerformanceMonitor : IPerformanceMonitor
 {
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
@@ -62,9 +58,6 @@ public sealed class NoopPerformanceMonitor : IPerformanceMonitor
     }
 }
 
-/// <summary>
-/// Operation scope that does nothing. Used alongside <see cref="NoopPerformanceMonitor"/>.
-/// </summary>
 public sealed class NoopOperationScope : IOperationScope
 {
     public IOperationScope WithTag(string key, string value) => this;

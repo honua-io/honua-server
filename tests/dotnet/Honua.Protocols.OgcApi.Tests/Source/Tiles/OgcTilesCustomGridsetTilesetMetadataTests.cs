@@ -13,13 +13,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
-/// <summary>
-/// Verifies that an operator-defined custom gridset is advertised as a <c>vector</c> tileset in the
-/// per-dataset and per-collection OGC API tileset-metadata documents (#1916). The two built-in
-/// gridsets keep their byte-identical static-descriptor path; these tests pin the additive custom
-/// gridset advertisement (its own CRS/URI + full-coverage matrix limits derived from the gridset
-/// geometry).
-/// </summary>
 [Protocol(TestProtocols.OgcApiTiles)]
 [Collection("Database.OgcApiTiles")]
 public sealed class OgcTilesCustomGridsetTilesetMetadataTests : IAsyncLifetime

@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Verifies that provenance references survive store round-trips and that
-/// transitive resolution walks across the documented kinds (catalog-resource →
-/// published-service → studio-artifact → generated-app).
-/// </summary>
 public class ConsoleProvenanceTests
 {
     private static ConsoleContentItem Item(string id, ConsoleContentItemType type, params ConsoleProvenanceRef[] refs)

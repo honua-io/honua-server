@@ -9,13 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Covers <see cref="StaQueryOptions"/> paging arithmetic at the 32-bit offset boundary.
-/// The store pages on an <see cref="int"/> offset, so a continuation whose <c>$skip</c>
-/// exceeded <see cref="int.MaxValue"/> used to be emitted anyway; following it failed to
-/// parse and silently reset <c>Skip</c> to zero, restarting pagination from the first
-/// page (duplicating rows or looping forever).
-/// </summary>
 public sealed class StaQueryOptionsPagingTests
 {
     private static StaQueryOptions Parse(string queryString)

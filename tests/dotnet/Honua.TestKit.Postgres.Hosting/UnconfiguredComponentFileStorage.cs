@@ -6,10 +6,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.TestKit.Postgres.Hosting;
 
-/// <summary>
-/// Satisfies attachment-store construction without pretending that a database-only
-/// component host has object storage. Every storage access requires explicit composition.
-/// </summary>
 internal sealed class UnconfiguredComponentFileStorage : ICloudFileStorage
 {
     public CloudStorageProvider Provider => throw Unconfigured();

@@ -23,11 +23,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Unit coverage for the control-plane findings in honua-server#5625 that are
-/// exercised without a database: principal capture, rollback CAS, proposal
-/// source-status rejection, topology recovery, and promotion idempotency.
-/// </summary>
 public sealed class ControlPlane5625Tests
 {
     [UnitTest]

@@ -5,9 +5,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Pins REST upload and MCP inline ingest to the same import authorization seam.
-/// </summary>
 public sealed class ImportAuthorizationArchitectureTests
 {
     private const string AuthorizationCall = "ImportAdminAuthorization.IsAuthorizedAsync(";

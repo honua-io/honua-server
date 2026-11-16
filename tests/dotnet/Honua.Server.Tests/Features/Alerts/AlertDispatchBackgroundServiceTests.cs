@@ -15,11 +15,6 @@ using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Behavioural tests for the alert dispatcher's suppression (#A11b-2) and per-channel circuit
-/// breaking (#A11b-3): a suppressed event must be recorded but NOT delivered while suppressed, and a
-/// channel whose circuit breaker is open must defer rather than drive delivery to the dead-letter path.
-/// </summary>
 public sealed class AlertDispatchBackgroundServiceTests
 {
     [UnitTest]

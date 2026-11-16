@@ -8,12 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Unit tests for <see cref="GroundingOptionsValidator"/>. The feature slice
-/// registers this validator alongside <c>.ValidateOnStart()</c>, so invalid
-/// configuration must fail fast instead of silently corrupting banding,
-/// capping, or ambiguity evaluation at request time.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class GroundingOptionsValidatorTests
 {

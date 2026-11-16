@@ -6,10 +6,6 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Tests.Features.Observability;
 
-/// <summary>
-/// Unit tests for <see cref="OpsHealthRollupAggregation"/>: the cross-replica merge helpers that back the
-/// cluster-wide serving-latency aggregation and the history read API (#2553).
-/// </summary>
 public class OpsHealthRollupAggregationTests
 {
     [Trait("Tier", "Fast")]

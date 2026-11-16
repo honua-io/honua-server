@@ -12,13 +12,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Integration tests for the dynamic WMS TIME dimension introduced for ticket #379.
-/// Configures the test layer with explicit Metadata V2 temporal metadata so
-/// the dimension is opt-in (fallback-only layers do not advertise a time dimension)
-/// and exercises both GetCapabilities advertising and GetMap TIME parameter
-/// acceptance and per-layer temporal semantics.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime

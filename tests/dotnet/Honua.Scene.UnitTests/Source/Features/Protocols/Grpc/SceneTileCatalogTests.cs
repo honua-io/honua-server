@@ -9,9 +9,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Unit tests for the pure tileset-to-gRPC catalog projection.
-/// </summary>
 public sealed class SceneTileCatalogTests
 {
     private static Domain.TilesetDocument BuildTwoLevelTileset()

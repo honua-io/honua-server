@@ -11,10 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies renderer output shape: contract refusal for unsupported versions,
-/// HTML offline guarantees, and Markdown/HTML coverage for every section kind.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ReportRendererTests
 {

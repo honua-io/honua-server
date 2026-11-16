@@ -8,10 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for the broker-agnostic feature-change event sink broadcaster (#357),
-/// verifying fan-out, the disabled/no-sink defaults, and per-sink failure isolation.
-/// </summary>
 public sealed class FeatureChangeEventSinkBroadcasterTests
 {
     private static FeatureChangeEvent SampleEvent(string eventId = "evt-1") => new()

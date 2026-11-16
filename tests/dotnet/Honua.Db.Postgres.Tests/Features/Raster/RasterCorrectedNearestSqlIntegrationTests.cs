@@ -10,9 +10,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Verifies canonical separable sampling, target centers and original typed coverage masks.
-/// </summary>
 [Collection("Database")]
 public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fixture, ITestOutputHelper output)
 {

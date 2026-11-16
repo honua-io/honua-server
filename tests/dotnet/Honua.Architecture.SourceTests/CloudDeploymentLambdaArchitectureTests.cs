@@ -5,10 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// The unsuffixed Lambda AOT tag is the certified x86_64/amd64 image.
-/// arm64 is only the explicit <c>-arm64</c> tag.
-/// </summary>
 public sealed class CloudDeploymentLambdaArchitectureTests
 {
     [ArchitectureTest]

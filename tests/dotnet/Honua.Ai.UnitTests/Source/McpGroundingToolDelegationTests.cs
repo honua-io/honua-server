@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that the grounding MCP tools (<c>honua_ground_candidates</c> and
-/// <c>honua_clarify_intent</c>) parse wire arguments into domain requests,
-/// delegate to <see cref="IGroundingService"/>, and translate the canonical
-/// result into the published MCP output shape. Error-path tests (missing
-/// fields, unknown enums) live on the mapper; these pin the full invocation.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpGroundingToolDelegationTests
 {

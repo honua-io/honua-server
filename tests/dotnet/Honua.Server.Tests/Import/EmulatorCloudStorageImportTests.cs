@@ -20,10 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Tests for cloud storage import using real emulators (LocalStack for S3, Azurite for Azure Blob).
-/// Verifies the cloud upload/download staging path used during import processing.
-/// </summary>
 [Collection("Emulators")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -234,10 +230,6 @@ public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Tests for cloud storage import using Azurite (Azure Blob emulator).
-/// Verifies the Azure Blob upload/download staging path used during import processing.
-/// </summary>
 [Collection("Emulators")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

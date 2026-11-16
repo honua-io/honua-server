@@ -23,10 +23,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for FeatureServer attachment endpoints.
-/// Tests Issue #13 - Attachment CRUD operations implementation.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class AttachmentEndpointTests : IAsyncLifetime
@@ -968,12 +964,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         content.Should().Contain("exceeds maximum allowed size");
     }
 
-    /// <summary>
-    /// The core attachment promise: what goes in comes back out, byte for byte, through the
-    /// public API. Before this test exactly one assertion in the whole endpoint suite compared
-    /// bytes, and it was on the replace path — an <c>addAttachment</c> that committed a row
-    /// over a garbled or truncated blob passed (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1000,11 +990,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         info.Name.Should().Be("roundtrip.png");
     }
 
-    /// <summary>
-    /// <c>deleteAttachments</c> must remove both halves of the two-store write. The existing
-    /// test asserted only that the response said success and never re-queried, making it
-    /// strictly weaker than the store-level test one layer down (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
@@ -1047,11 +1032,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             "a deleted attachment must not leave its object behind");
     }
 
-    /// <summary>
-    /// A rejected upload must leave neither a row nor a partial object. The 413 and 415 tests
-    /// asserted only the status, so a handler that streamed the body to storage before
-    /// rejecting it would have passed (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1088,11 +1068,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             infosBefore, "a rejected upload must not leave a metadata row");
     }
 
-    /// <summary>
-    /// Two uploads to the same feature at the same time must both land as distinct, complete
-    /// attachments — no id collision, no crossed blobs. No attachment test had any concurrency
-    /// at all before this (honua-server#4404, see also #4250).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1117,11 +1092,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         infos.Single(info => info.Id == uploads[1]).Size.Should().Be(second.Length);
     }
 
-    /// <summary>
-    /// An upload racing the delete of a different attachment on the same feature must leave
-    /// both outcomes intact: the survivor keeps its exact bytes and the deleted attachment
-    /// takes its object with it (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1160,23 +1130,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         (await storage.ExistsAsync(doomedPath)).Should().BeFalse();
     }
 
-    /// <summary>
-    /// Attachment authorization with the development authentication bypass disabled
-    /// (honua-server#4404).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Every other test in this file runs as the dev-bypass principal, and a grep for
-    /// "attachment" across both security test projects returns nothing — so the attachment
-    /// surface had no authorization evidence at all. This runs on an isolated host with
-    /// <c>HONUA_DEV_AUTH_ALLOW_BYPASS=false</c>.
-    /// </para>
-    /// <para>
-    /// The refusal is a GeoServices error envelope (HTTP 200 with <c>error.code</c> 499), not a
-    /// transport 401 — the convention this surface uses. The assertion that matters either way is
-    /// that the object's bytes are never in the response body.
-    /// </para>
-    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
@@ -1246,25 +1199,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().BeEmpty();
     }
-    /// <summary>
-    /// Media type used for the binary round-trip payloads. The upload validator's default
-    /// allowlist is <c>image/*,application/pdf,text/plain,text/csv,application/json</c>
-    /// (<c>LimitsOptions.AllowedMimeTypes</c>), so an
-    /// <c>application/octet-stream</c> upload is rejected before it ever reaches storage.
-    /// </summary>
     private const string BinaryContentType = "image/png";
 
-    /// <summary>
-    /// Deterministic binary payload: not valid UTF-8, contains NUL/CR/LF, and is a pure
-    /// function of (length, seed) so an expected value can be recomputed rather than
-    /// snapshotted from the server's own output.
-    /// </summary>
-    /// <remarks>
-    /// It opens with the PNG signature, which is both what makes the declared
-    /// <see cref="BinaryContentType"/> honest and a built-in tripwire: the signature itself
-    /// contains <c>0x0D 0x0A 0x1A 0x0A</c>, so any newline translation or text round-trip
-    /// corrupts it. The bytes immediately after it force a NUL and a 0xFF as well.
-    /// </remarks>
     private static byte[] BuildBinaryPayload(int length, int seed = 7)
     {
         var payload = new byte[length];
@@ -1379,10 +1315,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         return infos.Should().ContainSingle(info => info.Id == attachmentId).Subject;
     }
 
-    /// <summary>
-    /// Reads the storage identifier of an attachment straight from the metadata table, so a
-    /// test can assert on the object after the row that names it has been deleted.
-    /// </summary>
     private static string QuoteSchema(string schema)
     {
         using var builder = new Npgsql.NpgsqlCommandBuilder();
@@ -1409,14 +1341,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         return files.Select(file => file.FileId).ToHashSet(StringComparer.Ordinal);
     }
 
-    /// <summary>
-    /// The <c>returnUrl</c> form emits either an absolute URL (when a base URL is
-    /// configured) or a base-path-relative one. The test client routes every request to the
-    /// in-memory server regardless of the authority in the URI, so an absolute URL naming
-    /// the wrong scheme, host or port would still be fetched successfully; assert the
-    /// authority explicitly before dereferencing, or the round trip proves nothing about
-    /// whether the advertised URL is usable by a real client (honua-server#4468).
-    /// </summary>
     private Uri ResolveAdvertisedUrl(string url)
     {
         var baseAddress = _fixture.Client.BaseAddress;

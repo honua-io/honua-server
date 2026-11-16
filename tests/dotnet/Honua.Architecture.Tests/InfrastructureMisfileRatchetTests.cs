@@ -8,21 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet that locks in the audit-A1 misfile relocations
-/// (memory: <c>structural-audit-2026-05</c>, A1). When a sub-area moves out
-/// of <c>Honua.Infrastructure</c> to its proper feature
-/// directory, this test asserts the old namespace stays empty so a
-/// re-introduced misfile fails the gate at PR time instead of silently
-/// growing the grab-bag again.
-/// </summary>
-/// <remarks>
-/// Add an assertion here every time an Infrastructure sub-area is
-/// unmisfiled. Do not remove entries — the audit explicitly noted the
-/// grab-bag grew unchecked because the Infrastructure exemption let
-/// drift in (<c>VerticalSliceIsolationTests.cs:44,88</c>). This ratchet
-/// is the replacement guardrail for the relocated sub-areas.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class InfrastructureMisfileRatchetTests
 {

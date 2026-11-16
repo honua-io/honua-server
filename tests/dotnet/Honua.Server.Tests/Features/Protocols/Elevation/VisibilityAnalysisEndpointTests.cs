@@ -14,13 +14,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
-/// <summary>
-/// Endpoint-level integration tests for the Pro-tier 3D visibility analysis
-/// endpoints (line-of-sight and viewshed). The fixture is provisioned with a Pro
-/// license so the <c>analytics.line-of-sight</c> / <c>analytics.viewshed</c>
-/// entitlements are active; without these the endpoints return 402 before any
-/// analysis runs.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Elevation)]
 public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
@@ -257,13 +250,6 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     private const double RidgeFloorElevationMeters = 10;
     private const double RidgeRimElevationMeters = 3000;
 
-    /// <summary>
-    /// Observer offset used by the "raised above the ring" viewshed test. The rim is a square
-    /// frame, so the worst-case crossing on a diagonal ray is at 2000 * sqrt(2) ~= 2828 m; a
-    /// sight line from this height to a sample at 4034 m (the nearest diagonal sample beyond
-    /// the 4000 m assertion threshold) still passes ~5990 m above sea level there, well clear
-    /// of the 3000 m rim.
-    /// </summary>
     private const double ObserverAboveRidgeHeightMeters = 20000;
 
     [IntegrationTest]

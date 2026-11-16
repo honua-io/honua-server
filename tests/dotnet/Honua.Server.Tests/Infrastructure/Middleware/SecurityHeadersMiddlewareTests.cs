@@ -8,10 +8,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Integration tests for Security Headers Middleware ensuring proper security headers
-/// are applied to all responses per MVP security requirements.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]

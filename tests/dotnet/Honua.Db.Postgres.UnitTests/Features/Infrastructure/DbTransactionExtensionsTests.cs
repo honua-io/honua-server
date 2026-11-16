@@ -7,14 +7,6 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Regression tests for <see cref="DbTransactionExtensions.CommitSafelyAsync"/>.
-/// These tests verify the phantom-commit guard (BH3-018 / BH3-019): the method
-/// must throw <see cref="OperationCanceledException"/> when the token is already
-/// cancelled BEFORE touching the database, and must pass
-/// <see cref="CancellationToken.None"/> to the underlying commit so the in-flight
-/// round-trip is never interrupted.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class DbTransactionExtensionsTests
 {
@@ -58,7 +50,6 @@ public sealed class DbTransactionExtensionsTests
         Assert.True(wasCommitted);
     }
 
-    /// <summary>Minimal concrete DbTransaction for unit-testing the extension.</summary>
     private sealed class StubDbTransaction : DbTransaction
     {
         private readonly Func<CancellationToken, Task> _onCommit;

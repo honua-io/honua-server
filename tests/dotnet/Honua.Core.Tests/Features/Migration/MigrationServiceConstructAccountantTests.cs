@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Migration;
 
-/// <summary>
-/// Issue #4600, acceptance criterion 1: every construct discovered on the source is accounted against the
-/// service migration selection before apply, and unselected resources, unsupported service types and
-/// unsupported constructs block full fidelity. Expected entries and differences are derived by hand from
-/// each manifest below, not captured from the accountant's output.
-/// </summary>
 public sealed class MigrationServiceConstructAccountantTests
 {
     private const string ServiceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer";

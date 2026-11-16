@@ -11,11 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalPolygonizeJobExecutor"/>: gdal_polygonize.py
-/// band/connectedness/field argument projection and the GeoJSON vector artifact
-/// contract (#2240).
-/// </summary>
 public sealed class GdalPolygonizeExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-polygonize-test";

@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Unit tests for CSV formatting in OGC response formatter.
-/// </summary>
 public class OgcResponseFormatterTests
 {
     [UnitTest]

@@ -14,14 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #2459 (Ops WS0, ADR-0060): <see cref="PostgresMigrationRunCheckpointStore"/>
-/// persists resumable migration-run checkpoints in the shared data plane
-/// (honua.migration_run_checkpoints) rather than on a compute node's local disk, so a run
-/// checkpointed on one node can resume on any node. These tests exercise the real SQL
-/// (no mocks) against the shared Testcontainers Postgres fixture, including the sanitizer
-/// applied on write and idempotent upsert semantics.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMigrationRunCheckpointStoreTests(PostgresFixture fixture)
 {
@@ -126,13 +118,6 @@ public sealed class PostgresMigrationRunCheckpointStoreTests(PostgresFixture fix
             Attempt = attempt
         };
 
-    /// <summary>
-    /// The 073 migration creates honua.migration_run_checkpoints; tests apply the same
-    /// schema directly so they do not depend on the migration runner. The table is
-    /// process-global (run id is per-test), so apply it under the shared seed advisory
-    /// lock (honua-server#1568) to keep parallel Database-collection tests off the
-    /// 40P01 deadlock path racing catalog locks on the same global object.
-    /// </summary>
     private async Task EnsureTableAsync()
     {
         await fixture.ApplyGlobalSeedSqlAsync("""

@@ -325,9 +325,6 @@ public sealed class TileExportAdmissionSharedLeaseTests
             ],
             "Test"));
 
-    /// <summary>
-    /// Smallest valid map export plan from TileExportJobServiceTests.CreatePlan.
-    /// </summary>
     private static TileExportJobPlan MapPlan()
         => new()
         {

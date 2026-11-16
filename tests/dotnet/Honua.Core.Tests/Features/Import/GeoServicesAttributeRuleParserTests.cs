@@ -9,13 +9,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Unit coverage for the shared Esri attribute-rule parser (honua-server#1271). The
-/// parser is the single source of truth for attribute-rule capture: it maps Esri
-/// calculation/constraint/validation rules into the canonical model, normalizes
-/// triggering events, drops un-appliable calculation rules (no target field), and bounds
-/// the rule set by the cap.
-/// </summary>
 public sealed class GeoServicesAttributeRuleParserTests
 {
     [Trait("Tier", "Fast")]

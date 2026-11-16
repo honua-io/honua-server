@@ -8,26 +8,12 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Deterministic in-process <see cref="IRoutingProvider"/> used by the NAServer
-/// integration tests. Mirrors the production MockRoutingProvider behavior
-/// (straight-line routes, buffered-circle service areas) without depending on the
-/// internal mock type, so the GeoServices.Tests project can exercise the full
-/// adapter pipeline without a pgRouting topology.
-/// </summary>
 internal sealed class TestRoutingProvider : IRoutingProvider
 {
     private const double MetersPerDegree = 111_320.0;
     private const double MetersPerMinute = 50_000.0 / 60.0;
     private readonly Func<RouteSolveRequest, Exception?>? _routeExceptionFactory;
 
-    /// <summary>
-    /// Creates a provider advertising full capabilities (route + service area, both
-    /// travel directions, all barrier kinds, and driving/walking travel modes).
-    /// Used by the happy-path NAServer integration tests. The mock geometry ignores
-    /// barriers and the mode impedance, but advertising the capability lets the
-    /// adapter's accept/validate/thread surface be exercised end-to-end.
-    /// </summary>
     public TestRoutingProvider()
         : this(new RoutingProviderCapabilities(
             SupportsRoute: true,
@@ -54,13 +40,6 @@ internal sealed class TestRoutingProvider : IRoutingProvider
     {
     }
 
-    /// <summary>
-    /// Creates a provider with the supplied capabilities so the capability-gate tests
-    /// can exercise restricted-provider behavior (e.g. service area disabled, or a
-    /// travel direction not advertised).
-    /// </summary>
-    /// <param name="capabilities">Capabilities the provider should advertise.</param>
-    /// <param name="routeExceptionFactory">Optional exception factory for route solve tests.</param>
     public TestRoutingProvider(
         RoutingProviderCapabilities capabilities,
         Func<RouteSolveRequest, Exception?>? routeExceptionFactory = null)

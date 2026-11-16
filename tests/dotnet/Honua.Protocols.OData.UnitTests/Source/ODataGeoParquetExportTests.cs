@@ -15,10 +15,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// OData <c>$format=parquet</c> geometry fidelity. The JSON geometry payload keeps Z.
-/// The Parquet page must keep the same ordinate.
-/// </summary>
 public sealed class ODataGeoParquetExportTests
 {
     [UnitTest]

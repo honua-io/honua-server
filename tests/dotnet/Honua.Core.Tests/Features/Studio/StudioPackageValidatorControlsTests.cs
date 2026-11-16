@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Validation-gate tests for the standard-owned <c>controls</c> composition collection
-/// (geospatial-mcp ADR-0031). <see cref="StudioCompositionControlsTests"/> covers the
-/// editor's admission gate (controls added through <c>honua_studio_add_control</c>);
-/// these cover the second gate — a document authored WHOLESALE through the draft-update
-/// surface, which never passes through the editor.
-/// </summary>
 public sealed class StudioPackageValidatorControlsTests
 {
     [UnitTest]

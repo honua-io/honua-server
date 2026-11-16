@@ -17,11 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Console.Publications;
 
-/// <summary>
-/// API integration tests for the authenticated content publication endpoints. Uses an
-/// in-memory store override so the HTTP + service path is exercised without a migrated
-/// Postgres schema (the Postgres store has dedicated integration coverage).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

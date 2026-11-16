@@ -13,11 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Regression coverage for #1591: an OData <c>$batch</c> atomicity group (change set)
-/// applies writes through the shared writer without an edition gate. This proves a
-/// Community deployment can edit through the open OData surface.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataChangesetEditionGateTests : IAsyncLifetime

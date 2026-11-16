@@ -8,9 +8,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Test implementation of database connection provider for unit tests
-/// </summary>
 internal sealed class TestDatabaseConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;

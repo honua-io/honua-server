@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Streaming-execution coverage for the GeoETL transform path (ETL scale gap). Proves the
-/// transforms no longer materialize the whole FeatureCollection in memory and no longer
-/// fail the legacy 50 MiB artifact cap: a pipeline over a &gt;50 MiB (decoded) feature set
-/// completes and its output is correct; per-feature transforms stream the input to a
-/// spilled NDJSON artifact; dedup spills its seen-key set; and the spill backing file
-/// stays bounded relative to the inline path.
-/// </summary>
 public sealed class StreamingTransformExecutorTests : IDisposable
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -361,12 +353,6 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         return monitor;
     }
 
-    /// <summary>
-    /// Writes a large synthetic feature set directly to a spilled NDJSON artifact (bypassing
-    /// the in-memory inline encode), so a transform under test reads it as a real stream. Each
-    /// feature carries a "keep" flag (alternating true/false), a "gid", and a padded "pad"
-    /// attribute so the decoded payload crosses the 50 MiB cap at the configured counts.
-    /// </summary>
     private async Task<string> BuildSpilledSourceAsync(int featureCount, bool includeDuplicates)
     {
         Directory.CreateDirectory(_outputRoot);

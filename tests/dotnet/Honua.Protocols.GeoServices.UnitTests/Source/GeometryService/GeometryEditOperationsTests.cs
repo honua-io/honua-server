@@ -9,10 +9,6 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// In-process coverage for GeometryServer reshape and trimExtend. These operations are
-/// pure NetTopologySuite edits; the component host is not required to prove the geometry.
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 public sealed class GeometryEditOperationsTests
 {

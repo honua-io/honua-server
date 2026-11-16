@@ -14,10 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// The deploy preflight diagnostics report the database session-settings mode and the
-/// role-defaults verification, without letting a mismatch block deploys (honua-server#5870).
-/// </summary>
 public sealed class DeployPreflightProbeSessionSettingsTests
 {
     [UnitTest]

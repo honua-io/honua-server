@@ -13,7 +13,6 @@ using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>Real production executors and pinned native GDAL, with analytical cell oracles.</summary>
 [Trait("Category", "RasterExecutionProof")]
 public sealed partial class RasterExecutionProofTests : IDisposable
 {
@@ -256,16 +255,6 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         output.GetProperty("bands")[0].GetProperty("values")[12].GetDouble().Should().Be(centerValue);
     }
 
-    /// <summary>
-    /// Ordinary kriging is an EXACT interpolator: at a sample location the estimator
-    /// reproduces that sample's observed value, which is the property that separates it
-    /// from a smoother. The fixture's centre sample sits on a cell centre for an odd grid
-    /// size, so the oracle needs no reference implementation — the decoded cell must equal
-    /// the observation. The grid metadata is asserted against the same geotransform the
-    /// IDW proof pins, so both interpolators demonstrably land on one grid. Band 2 is the
-    /// kriging standard error: it vanishes at the same sample location (the estimator's
-    /// exactness applies to its uncertainty too) and is strictly positive everywhere else.
-    /// </summary>
     [Fact]
     public async Task InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly()
     {
@@ -304,16 +293,6 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// Two samples give the ordinary-kriging system a closed-form solution:
-    /// <c>w₂ - w₁ = (γ₀₁ - γ₀₂) / γ₁₂</c> under <c>w₁ + w₂ = 1</c>. The expectations below
-    /// are computed from that closed form and the spherical semivariogram, independently of
-    /// the executor's general dual solve, and the pinned variogram removes every fitted
-    /// default from the oracle. The kriging variance at a two-sample target has the closed
-    /// form <c>σ² = w₁γ₀₁ + w₂γ₀₂ + μ</c> with Lagrange multiplier
-    /// <c>μ = γ₀₁ - γ₁₂w₂</c>, derived from the same eliminated system — independently of
-    /// the executor's cached-factorization primal solve.
-    /// </summary>
     [Fact]
     public async Task InterpolateKriging_TwoSymmetricSamples_MatchesHandDerivedMidpointAndGridMetadata()
     {
@@ -717,11 +696,6 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         assert.Should().Throw<XunitException>();
     }
 
-    /// <summary>
-    /// Independently derives count, extrema, mean and population standard deviation
-    /// in C# from the cells a wrong implementation would measure, so a demonstrated
-    /// negative states its own result rather than snapshotting whatever GDAL printed.
-    /// </summary>
     private static void AssertCountedPopulation(JsonElement band, int index, double[] population, double? noData = null)
     {
         band.GetProperty("band").GetInt32().Should().Be(index);

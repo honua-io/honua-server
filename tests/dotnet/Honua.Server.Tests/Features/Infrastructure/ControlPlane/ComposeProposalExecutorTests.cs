@@ -22,9 +22,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Fail-closed contract for the Compose proposal executor. These tests do not start Docker.
-/// </summary>
 public sealed partial class ComposeProposalExecutorTests
 {
     private static string Digest(char hex) => "sha256:" + new string(hex, 64);

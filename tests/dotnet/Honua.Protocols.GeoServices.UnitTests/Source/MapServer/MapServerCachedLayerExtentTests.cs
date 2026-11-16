@@ -11,11 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// A 4326 layer whose latitude reaches ±90 has no finite Web Mercator equivalent.
-/// The cached MapServer builder must still advertise that sublayer in the 3857
-/// cache square, with Query intact and the tile cache left on (#5556).
-/// </summary>
 public sealed class MapServerCachedLayerExtentTests
 {
     [UnitTest]

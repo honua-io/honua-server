@@ -18,11 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// #3361 acceptance: the terminal journey verifies the installer-provisioned credential through the
-/// canonical operations runtime. Each submission is a real Admin API round trip — the executor loops
-/// back over Kestrel into the Admin REST route under the caller's own credential.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class AdminAccessInstallerCredentialTests

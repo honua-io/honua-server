@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Unit tests for <see cref="MetadataV2ExtrusionValidator"/>. Confirms that every
-/// validation branch reports the expected stable error code from
-/// <see cref="MetadataV2ExtrusionErrorCodes"/>.
-/// </summary>
 [Protocol(ProtocolNames.GeoservicesCatalog)]
 public sealed class MetadataV2ExtrusionValidatorTests
 {

@@ -14,13 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Unit tests for the combined-filter building logic in <see cref="OgcFilterProcessor"/>
-/// (BH6-007): a user-supplied CQL2 filter that contains a top-level OR must be
-/// parenthesized before being AND-combined with queryable parameter predicates.
-/// Without parentheses the CQL2 precedence rule `AND > OR` silently bypasses the
-/// queryable restriction for the first OR branch.
-/// </summary>
 public sealed class OgcFilterProcessorCombinedFilterTests
 {
     private static readonly MetadataV2Object Resource = new()
@@ -35,14 +28,6 @@ public sealed class OgcFilterProcessorCombinedFilterTests
         ]
     };
 
-    /// <summary>
-    /// A user filter containing OR must be wrapped in parentheses when combined with a
-    /// queryable field parameter so the AND applies to the whole OR expression.
-    /// Before the fix the combined filter was:
-    ///   status = 'active' OR priority > 5 AND country = 'France'
-    /// After the fix it is:
-    ///   (status = 'active' OR priority > 5) AND country = 'France'
-    /// </summary>
     [UnitTest]
     public async Task ProcessFiltersAsync_OrFilterWithQueryableParam_WrapsUserFilterInParens()
     {
@@ -72,10 +57,6 @@ public sealed class OgcFilterProcessorCombinedFilterTests
             "user filter with OR must be parenthesized before AND-combining with queryable predicates");
     }
 
-    /// <summary>
-    /// A user filter without OR does not need parentheses, but they are harmless — the
-    /// parenthesized form is still valid CQL2 text and produces the correct predicate.
-    /// </summary>
     [UnitTest]
     public async Task ProcessFiltersAsync_SimpleFilterWithQueryableParam_FilterIsParenthesized()
     {
@@ -103,10 +84,6 @@ public sealed class OgcFilterProcessorCombinedFilterTests
             "(status = 'active') AND country = 'Germany'");
     }
 
-    /// <summary>
-    /// When there is no user filter at all, only the queryable parameter predicate is used
-    /// (no parens needed around an absent filter).
-    /// </summary>
     [UnitTest]
     public async Task ProcessFiltersAsync_NoUserFilter_OnlyQueryablePredicateUsed()
     {

@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// Portal <c>q</c> treats top-level OR as a disjunction and AND or a space as a conjunction.
-/// </summary>
 public sealed class PortalSearchQueryTests
 {
     private static readonly PortalItem[] Items =

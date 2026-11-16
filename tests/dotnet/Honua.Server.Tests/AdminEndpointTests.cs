@@ -16,9 +16,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for admin endpoints.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Collection("Database")]
 public sealed class AdminEndpointTests : IAsyncLifetime

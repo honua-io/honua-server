@@ -17,11 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies that the MCP report resource renders the canonical
-/// <see cref="AnalysisReport"/> into a JSON envelope that round-trips through
-/// the source-generated context without reflection.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class AnalysisReportResourceTests
 {

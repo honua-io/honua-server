@@ -16,11 +16,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Unit tests for MySQL/MariaDB SQL query generation. Verifies backtick-quoted
-/// identifiers, named parameter binding, spatial filter translation, and the
-/// NotSupportedException contract for out-of-scope operations.
-/// </summary>
 public class MySqlFeatureQueryBuilderTests
 {
     private const int LayerId = 1;
@@ -1333,11 +1328,6 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// BH4-024: Permanent row-visibility filter must be included in the generated WHERE clause.
-    /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
-    /// bypassed.
-    /// </summary>
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()

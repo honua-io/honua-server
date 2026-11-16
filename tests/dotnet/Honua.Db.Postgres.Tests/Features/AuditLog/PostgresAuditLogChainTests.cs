@@ -18,11 +18,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Integration tests for the tamper-evident hash chain, the integrity verifier,
-/// and the SIEM exporter (#350, #509). Exercises real SQL against an isolated
-/// schema with the append-only rules installed.
-/// </summary>
 [Collection("Database")]
 public sealed partial class PostgresAuditLogChainTests(PostgresFixture fixture)
 {

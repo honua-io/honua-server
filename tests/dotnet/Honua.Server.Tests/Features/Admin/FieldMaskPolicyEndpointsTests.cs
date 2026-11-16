@@ -16,14 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for field-level security (column masking) — issue #1940, the
-/// field-level companion to RLS (#502). Proves the masking core end-to-end against real
-/// PostGIS + the canonical FeatureServer query pipeline: a field-mask policy keyed by role
-/// removes a column from query output for a restricted role across the shared projection
-/// seam, even when the caller explicitly requests the column via <c>outFields</c>, while an
-/// unrestricted caller still receives it.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime

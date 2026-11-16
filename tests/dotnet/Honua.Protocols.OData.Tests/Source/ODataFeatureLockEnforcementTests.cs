@@ -18,16 +18,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Proves a collaborative-editing lease is binding on the OData write surface
-/// (honua-server#4402).
-/// </summary>
-/// <remarks>
-/// The lease namespace is derived from the metadata graph the same way the write path
-/// derives it — the routed service <em>name</em> plus the publication's layer id — rather
-/// than hard-coded, so this also pins that a client claiming under the identifiers it can
-/// see is claiming under the identifiers the server enforces on.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataFeatureLockEnforcementTests : IAsyncLifetime
@@ -118,10 +108,6 @@ public sealed class ODataFeatureLockEnforcementTests : IAsyncLifetime
         claim.IsSuccess.Should().BeTrue("the lease the rest of the test depends on must exist");
     }
 
-    /// <summary>
-    /// Resolves the lease namespace exactly as the write path does: the name of the
-    /// service publishing this layer.
-    /// </summary>
     private string ResolveLeaseServiceName()
     {
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;

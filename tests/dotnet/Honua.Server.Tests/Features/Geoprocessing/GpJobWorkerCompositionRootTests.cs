@@ -17,23 +17,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Regression coverage for honua-server#1841: the in-process job worker
-/// (<c>AddJobWorker</c>) must be wired by the production composition root so that
-/// authenticated GPServer <c>submitJob</c> jobs are claimed, executed, and advanced to a
-/// terminal <c>esriJobSucceeded</c> status with a retrievable result package.
-/// </summary>
-/// <remarks>
-/// The test supplies only a Redis connection string and a Pro dev grant as host settings;
-/// the production composition root then wires the durable IConnectionMultiplexer, the job
-/// store, the result-package store, the queue, AND — per the #1841 fix — the in-process
-/// worker. Unlike <c>GPServerDurableRuntimeTests</c>, which calls <c>AddJobWorker()</c> in
-/// its own <c>ConfigureServices</c> override to compensate for the missing wiring, this
-/// test deliberately does NOT register the worker itself. That isolates the fix to a single
-/// variable: the only thing that drains the queue is the worker the composition root now
-/// registers. If it regresses to dead code, the worker assertion fails immediately and the
-/// end-to-end poll would otherwise time out, reproducing the original bug.
-/// </remarks>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClassFixture<RedisFixture>

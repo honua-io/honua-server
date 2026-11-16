@@ -9,9 +9,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Tests.Configuration;
 
-/// <summary>
-/// Parsing and validation of <c>Database:SessionSettings:Mode</c> (honua-server#5870).
-/// </summary>
 public sealed class DatabaseSessionSettingsOptionsTests
 {
     [UnitTheory]

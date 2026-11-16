@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Closest-facility FromFacility geometry must run facility to incident (#6161).
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class PgRoutingFromFacilityTests
 {

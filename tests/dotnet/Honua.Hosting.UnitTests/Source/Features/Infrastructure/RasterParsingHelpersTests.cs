@@ -11,10 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Unit tests for <see cref="RasterParsingHelpers"/> shared parsing utilities.
-/// These tests do NOT require Docker/database since they test pure static methods.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public class RasterParsingHelpersTests
 {

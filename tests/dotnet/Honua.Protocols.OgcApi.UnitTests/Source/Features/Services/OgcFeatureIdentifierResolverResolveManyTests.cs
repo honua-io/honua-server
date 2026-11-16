@@ -15,12 +15,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Covers the batched feature-id resolution used by the OGC Features batch transaction
-/// prepare phase (#1593): all update/delete targets resolve with at most two provider
-/// round trips while ids that do not resolve are simply absent from the result, so a
-/// missing feature fails only its own operation.
-/// </summary>
 public sealed class OgcFeatureIdentifierResolverResolveManyTests
 {
     private const int LayerId = 5;

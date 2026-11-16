@@ -12,13 +12,6 @@ using Honua.Core.Features.FileImport.Domain;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Pins the public JSON shape of migration acceptance suite artifacts. When an
-/// upstream slice (issues #1015 / #1016 / #1017 / #1018 and friends) adds a
-/// field, the developer must regenerate the snapshot in
-/// <c>MigrationArtifactSchemaSnapshots/</c> alongside the change so the
-/// acceptance-suite contract is updated deliberately.
-/// </summary>
 public sealed class MigrationArtifactSchemaStabilityTests
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
@@ -101,10 +94,6 @@ public sealed class MigrationArtifactSchemaStabilityTests
         value.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');
 }
 
-/// <summary>
-/// Walks the property graph of a migration artifact record and emits a
-/// deterministic shape representation used by the schema stability tests.
-/// </summary>
 internal static class MigrationArtifactSchemaSnapshot
 {
     public static SchemaNode Capture(Type artifactType) => CaptureType(artifactType, new HashSet<Type>());

@@ -26,12 +26,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Integration tests for the OGC API - Styles adapter (ADR-0048, issues #1388/#1389).
-/// Covers landing/styles list, conformance, content-negotiated stylesheets (MapLibre +
-/// derived SLD and Esri drawingInfo), style metadata, and the manage-styles PUT/POST/DELETE
-/// surface for both collection-keyed and standalone catalog styles (#3188).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
 public sealed class OgcStylesEndpointTests : IAsyncLifetime
@@ -1113,10 +1107,6 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         response.Be200Ok();
     }
 
-    /// <summary>
-    /// Creates a standalone (layer-less) catalog style through the manage-styles POST
-    /// surface and returns its identifier.
-    /// </summary>
     private static async Task<string> CreateStandaloneStyleAsync(
         HttpClient adminClient,
         MetadataV2GeometryType geometryType,

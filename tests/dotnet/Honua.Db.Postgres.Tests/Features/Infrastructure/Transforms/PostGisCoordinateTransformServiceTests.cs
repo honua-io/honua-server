@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Transforms;
 
-/// <summary>
-/// Integration tests for PostGIS-backed coordinate transform service.
-/// </summary>
 [Collection("Database")]
 public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
 {

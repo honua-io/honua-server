@@ -8,11 +8,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// The <c>env</c> secret provider resolves both the short <c>env:NAME</c> form and the URI-style
-/// <c>env://NAME</c> form a CI harness injects (for example the terminal-model canary's
-/// <c>env://HONUA_CANARY_TRANSCRIPT_SIGNING_SEED</c>), and fails typed without echoing values.
-/// </summary>
 [Collection("Security")]
 [SecurityTest]
 public sealed class EnvironmentSecretResolverTests

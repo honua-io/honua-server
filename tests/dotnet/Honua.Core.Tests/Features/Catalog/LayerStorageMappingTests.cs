@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Catalog;
 
-/// <summary>
-/// Unit coverage for <see cref="LayerStorageMapping"/>. Exercises the
-/// validate / qualified-name / source-backed pathways that feed capability
-/// reporting and storage routing decisions (#1144).
-/// </summary>
 public sealed class LayerStorageMappingTests
 {
     [UnitTest]

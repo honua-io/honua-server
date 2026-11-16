@@ -11,20 +11,12 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for MapLibre style to Skia paint translation.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class StyleTranslatorTests
 {
     private static readonly ImmutableDictionary<string, object?> _emptyProps =
         ImmutableDictionary<string, object?>.Empty;
 
-    /// <summary>
-    /// The zoom passed by every test whose style contains no <c>["zoom"]</c> input; evaluating a
-    /// zoom expression against it throws, so these tests passing unchanged shows their styles are
-    /// unaffected by zoom support (honua-server#2873).
-    /// </summary>
     private static readonly RenderZoom _noZoom =
         RenderZoom.NotDerivable("this test resolves no zoom expression");
 
@@ -296,11 +288,6 @@ public class StyleTranslatorTests
     // Zoom-dependent paint resolution (honua-server#2873).
     // ---------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Expected widths are MapLibre GL JS's own output for this expression
-    /// (<c>@maplibre/maplibre-gl-style-spec</c>, <c>createExpression(expr, 'line-width',
-    /// latest.paint_line['line-width'])</c>) at each zoom.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -373,12 +360,6 @@ public class StyleTranslatorTests
         StyleTranslator.UsesZoomExpression(layers[0]).Should().BeTrue();
     }
 
-    /// <summary>
-    /// A layer whose min/maxzoom scope it to a zoom range is not itself zoom-dependent: the gate is
-    /// applied by <see cref="StyleTranslator.ShouldRenderLayer"/>, and the paint it resolves to is
-    /// the same at every zoom it draws at. Reporting it as zoom-dependent would needlessly give up
-    /// the pre-resolved fast paths.
-    /// </summary>
     [UnitTest]
     public void UsesZoomExpression_DataDrivenAndZoomScopedStyles_ReturnFalse()
     {

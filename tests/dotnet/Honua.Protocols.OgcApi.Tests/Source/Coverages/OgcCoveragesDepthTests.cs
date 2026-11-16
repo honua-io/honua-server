@@ -13,14 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages;
 
-/// <summary>
-/// Depth tests for the OGC API Coverages surface (#2983): Accept-header negotiation
-/// (406, q-values, wildcards, f-parameter precedence), scaling-parameter exclusivity and
-/// bounds, properties/band selection error paths, response headers, unknown-parameter and
-/// unknown-collection handling. Complements the happy-path coverage in
-/// <see cref="OgcCoveragesEndpointsTests"/>. Tests share one server; the export-query log
-/// is cleared per test (xUnit runs same-class tests sequentially).
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiCoverages)]
 public sealed class OgcCoveragesDepthTests : IClassFixture<OgcCoveragesDepthTestsFixture>
@@ -271,10 +263,6 @@ public sealed class OgcCoveragesDepthTests : IClassFixture<OgcCoveragesDepthTest
     }
 }
 
-/// <summary>
-/// Depth tests for the OGC API Coverages native-size guard and empty-result mapping
-/// (#2983), using a raster whose native grid exceeds the 8192-pixel axis cap.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiCoverages)]
 public sealed class OgcCoveragesOversizeDepthTests : IClassFixture<OgcCoveragesOversizeDepthTestsFixture>
@@ -385,10 +373,6 @@ public sealed class OgcCoveragesOversizeDepthTests : IClassFixture<OgcCoveragesO
     }
 }
 
-/// <summary>
-/// Shared server fixture for <see cref="OgcCoveragesDepthTests"/>: a mocked
-/// <see cref="IRasterStore"/> serving a 3-band 64x64 raster, recording every export query.
-/// </summary>
 public sealed class OgcCoveragesDepthTestsFixture : IAsyncLifetime
 {
     private const long TestRasterId = 731;
@@ -411,11 +395,6 @@ public sealed class OgcCoveragesDepthTestsFixture : IAsyncLifetime
     public Task DisposeAsync() => App.DisposeAsync();
 }
 
-/// <summary>
-/// Shared server fixture for <see cref="OgcCoveragesOversizeDepthTests"/>: a mocked
-/// <see cref="IRasterStore"/> serving a 20000x20000 raster that exceeds the native-size
-/// cap, and returning an empty export payload when only band 2 is selected.
-/// </summary>
 public sealed class OgcCoveragesOversizeDepthTestsFixture : IAsyncLifetime
 {
     private const long TestRasterId = 733;
@@ -438,9 +417,6 @@ public sealed class OgcCoveragesOversizeDepthTestsFixture : IAsyncLifetime
     public Task DisposeAsync() => App.DisposeAsync();
 }
 
-/// <summary>
-/// Builds mocked <see cref="IRasterStore"/> instances for the coverage depth fixtures.
-/// </summary>
 internal static class CoverageDepthRasterStore
 {
     public static IRasterStore Create(RasterInfo raster, List<RasterQuery> exportQueries, int? emptyDataForSingleBand)
@@ -510,10 +486,6 @@ internal static class CoverageDepthRasterStore
         return rasterStore;
     }
 
-    /// <summary>
-    /// The extent a correct export covers: the requested clip envelope intersected with the
-    /// raster footprint, or the whole footprint when no clip was requested.
-    /// </summary>
     private static RasterExtent ClippedExtent(RasterExtent native, RasterQuery query, int srid)
     {
         if (query.ClipRegion is not { } clip)

@@ -29,10 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Real HTTP callbacks pass through production authentication and shared feature
-/// authorization. Only the persisted job and feature storage are test doubles.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer, TestProtocols.Admin)]
 [Operation(Operations.Security)]

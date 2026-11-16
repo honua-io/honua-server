@@ -5,24 +5,11 @@ using System.Buffers.Binary;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Synthesizes minimal, valid uncompressed LAS 1.2 buffers in memory for the
-/// point-cloud ingest tests (#1201). Avoids committing a binary fixture while
-/// exercising the real header/point-record byte layout the reader parses. The
-/// emitted coordinates are treated as geographic (lon/lat degrees) by the
-/// executor's geographic-pass-through transform.
-/// </summary>
 internal static class PointCloudSceneFixtures
 {
     private const int HeaderSize = 227;          // LAS 1.2 public header block.
     private const int RecordLengthFormat3 = 34;  // base 28 + RGB 6.
 
-    /// <summary>
-    /// Builds a LAS 1.2, point data record format 3 (XYZ + GPS time + RGB)
-    /// buffer holding a small geographic grid of coloured points around the
-    /// supplied origin. The grid is dense enough to subdivide into multiple
-    /// quadtree tiles under a small per-tile cap.
-    /// </summary>
     public static byte[] ColoredGridGeographic(
         int columns = 16,
         int rows = 16,
@@ -52,11 +39,9 @@ internal static class PointCloudSceneFixtures
         return BuildFormat3(points);
     }
 
-    /// <summary>Builds a single-point geographic LAS buffer (smallest valid cloud).</summary>
     public static byte[] SinglePointGeographic(double lon = -122.5, double lat = 37.5, double height = 12.0)
         => BuildFormat3([(lon, lat, height, Intensity: (ushort)100, Classification: (byte)2, R: (ushort)10, G: (ushort)20, B: (ushort)30)]);
 
-    /// <summary>Marks a format-3 buffer as LAZ-compressed (sets bit 7 of the format byte).</summary>
     public static byte[] MarkCompressed(byte[] lasBuffer)
     {
         var copy = (byte[])lasBuffer.Clone();

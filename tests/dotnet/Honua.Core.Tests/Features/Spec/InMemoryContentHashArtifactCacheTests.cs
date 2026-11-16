@@ -6,10 +6,6 @@ using Honua.Core.Features.Spec.Services;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Behaviour of the default process-local content-hash artifact cache: round-trip
-/// put/get, TTL expiry, and stable URIs.
-/// </summary>
 public class InMemoryContentHashArtifactCacheTests
 {
     [Trait("Tier", "Fast")]

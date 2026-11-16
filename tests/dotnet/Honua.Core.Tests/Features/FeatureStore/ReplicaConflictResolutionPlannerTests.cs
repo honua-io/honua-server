@@ -8,12 +8,6 @@ using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests for <see cref="ReplicaConflictResolutionPlanner"/> (#2430): the decision table that turns
-/// an operator-selected resolution action into the feature-store effect that makes it real. The
-/// polarity of accept-client vs keep-server depends entirely on whether the conflicting client edit was
-/// committed at sync time, which is the invariant these tests pin.
-/// </summary>
 public sealed class ReplicaConflictResolutionPlannerTests
 {
     private static ReplicaConflictRecord Conflict(

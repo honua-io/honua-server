@@ -5,24 +5,6 @@ using System.Globalization;
 
 namespace Honua.LoadTests.Scenarios;
 
-/// <summary>
-/// Shared configuration for the in-process load scenarios under
-/// <see cref="Honua.LoadTests.Scenarios"/>. Each scenario reads its target
-/// base URL, request rate (RPS), and duration from environment variables so
-/// that PR CI can keep the scenario classes compiled and discoverable while
-/// the actual run only happens on demand (nightly workflow or manual).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Environment variables:
-/// <list type="bullet">
-/// <item><c>HONUA_LOAD_TARGET</c> — base URL (default <c>http://localhost:8080</c>).</item>
-/// <item><c>HONUA_LOAD_DURATION_SECONDS</c> — steady-state duration in seconds (default <c>60</c>).</item>
-/// <item><c>HONUA_LOAD_RPS_MULTIPLIER</c> — multiplier (double) applied to each scenario's
-/// nominal rate so a single tuning knob can scale all three (default <c>1.0</c>).</item>
-/// </list>
-/// </para>
-/// </remarks>
 internal static class LoadScenarioSettings
 {
     public const string TargetEnvVar = "HONUA_LOAD_TARGET";

@@ -9,12 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Header-driven test authentication handler for the row-level security suite (#502).
-/// Reads a user name, optional roles, and an optional <c>category</c> claim from request
-/// headers so a test can drive RLS resolution with arbitrary claim values. When no user
-/// header is present the request stays anonymous (so anonymous-rejection tests still work).
-/// </summary>
 internal sealed class RlsClaimsTestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,

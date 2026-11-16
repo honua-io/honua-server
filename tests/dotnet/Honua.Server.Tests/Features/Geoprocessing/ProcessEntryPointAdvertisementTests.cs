@@ -12,21 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Enforces the 2026-09-06 catalog entry-point ruling (#4409): the whole
-/// <c>BuiltInProcessCatalog</c> stays GA with no per-operation carve-out, and GA is
-/// defined PER ENTRY POINT. Each operation declares the entry points it is callable
-/// through (<see cref="ProcessDefinition.SupportedEntryPoints"/>), and every
-/// advertisement surface must offer an operation on exactly those entry points —
-/// never fewer (a callable capability nobody can discover) and never more (a listing
-/// that leads to a submission the runtime refuses).
-///
-/// <para>
-/// Before this contract, GPServer advertised <c>raster.interpolate-kriging</c> as a
-/// task it could never run, and the workflow node provider offered protocol-only
-/// operations as graph nodes with no dispatcher executor behind them.
-/// </para>
-/// </summary>
 public sealed class ProcessEntryPointAdvertisementTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();
@@ -43,11 +28,6 @@ public sealed class ProcessEntryPointAdvertisementTests
         }
     }
 
-    /// <summary>
-    /// The shared job-entry predicate is what OGC API Processes, WPS 2.0, GPServer and
-    /// the MCP process tools all project through, so it must agree exactly with the
-    /// per-operation declaration.
-    /// </summary>
     [UnitTest]
     public void JobEntryPointPredicates_AgreeWithTheCatalogDeclaration()
     {

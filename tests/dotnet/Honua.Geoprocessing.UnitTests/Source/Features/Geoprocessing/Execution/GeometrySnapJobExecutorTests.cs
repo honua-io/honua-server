@@ -17,14 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-5 <c>geometry.snap</c> executor. Pins the
-/// failure surfaces shared by the other vector executors (unsupported
-/// process id, missing inputs, oversized artifact) and the happy path:
-/// a near-coincident input point is pulled onto the reference origin
-/// when the tolerance exceeds their separation, matching the behavior
-/// of NetTopologySuite's <c>GeometrySnapper.SnapTo</c>.
-/// </summary>
 public sealed class GeometrySnapJobExecutorTests
 {
     private const string FeatureDataUriPrefix = "data:application/geo+json;base64,";

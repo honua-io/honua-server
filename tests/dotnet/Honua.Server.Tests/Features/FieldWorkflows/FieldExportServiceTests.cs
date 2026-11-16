@@ -16,9 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.FieldWorkflows;
 
-/// <summary>
-/// Field export request parsing and truncation signaling for issue 5634.
-/// </summary>
 public sealed class FieldExportServiceTests
 {
     [UnitTest]

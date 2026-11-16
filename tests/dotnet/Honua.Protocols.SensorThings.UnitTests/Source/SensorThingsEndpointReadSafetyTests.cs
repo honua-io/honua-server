@@ -20,7 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>Counterexamples for credential links, cyclic navigation and stream time ranges.</summary>
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsEndpointReadSafetyTests
 {

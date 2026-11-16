@@ -29,17 +29,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// End-to-end coverage for the layer-aware, layer-SOURCED managed executors (#2322,
-/// #2325): <c>analytics.buffer-aggregate</c>, <c>conversion.feature-project</c>,
-/// <c>generalization.dissolve</c>, and <c>generalization.simplify-layer</c>. Each is
-/// the job-executable counterpart of a per-operation OGC API - Processes projection
-/// (#1382) that advertises a <c>layerId</c> input: the executor streams a Honua
-/// catalog layer through <c>source.honua-layer</c> (faked here so no Postgres runs),
-/// applies the managed NetTopologySuite op in one dispatched job, and publishes the
-/// canonical FeatureCollection artifact — reaching a terminal SUCCEEDED state that the
-/// bare projected ids previously never reached (they were refused at dispatch).
-/// </summary>
 public sealed class LayerSourcedExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -1126,14 +1115,6 @@ public sealed class LayerSourcedExecutorTests
     private static readonly string[] SharedSelectors =
         ["where", "objectIds", "geometry", "geometryType", "inSR", "spatialRel", "time", "timeRelation"];
 
-    /// <summary>
-    /// Every parameter the catalog advertises for a layer-sourced executor, each backed by an
-    /// execution proof: the shared selectors by
-    /// <see cref="LayerSourced_EveryAdvertisedSelector_ReachesTheCanonicalSource"/> (propagation)
-    /// plus LayerSourceExecutionProofTests (the PostGIS rows the canonical translation selects);
-    /// <c>outStatistics</c> by the GeoServices statistics oracles below; the op-specific inputs by
-    /// the per-operation tests above.
-    /// </summary>
     private static readonly IReadOnlyDictionary<string, string[]> ProvenLayerParameters =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
@@ -1432,11 +1413,6 @@ public sealed class LayerSourcedExecutorTests
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
-    /// <summary>
-    /// A <see cref="LimitsOptions"/> with a tightened <see cref="AnalyticsLimits.MaxInputFeatures"/>
-    /// and/or <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (#4629), so admission tests can
-    /// force the bound without depending on the production defaults (100,000 / 50,000).
-    /// </summary>
     private static IOptions<LimitsOptions> LimitsOptions(
         int? maxInputFeatures = null,
         int? maxVerticesPerGeometry = null,
@@ -1467,7 +1443,6 @@ public sealed class LayerSourcedExecutorTests
         return Microsoft.Extensions.Options.Options.Create(limits);
     }
 
-    /// <summary>A LineString feature with exactly <paramref name="vertexCount"/> vertices.</summary>
     private static DagSourceFeature LineFeature(int vertexCount)
     {
         var ci = System.Globalization.CultureInfo.InvariantCulture;
@@ -1479,13 +1454,6 @@ public sealed class LayerSourcedExecutorTests
         };
     }
 
-    /// <summary>
-    /// Scope factory for <c>analytics.buffer-aggregate</c> tests (#4623): registers the
-    /// CRS-aware <see cref="IGeometryOperationService"/> (a self-contained, independently
-    /// coded Web-Mercator/native-unit buffer implementation — NOT a delegate to production
-    /// PostGIS code) plus an <see cref="IMetadataV2GraphProvider"/> that resolves
-    /// <paramref name="layerId"/> to <paramref name="storageSrid"/>.
-    /// </summary>
     private static IServiceScopeFactory BufferScopeFactory(
         IDagFeatureSource source,
         int layerId,
@@ -1622,12 +1590,6 @@ public sealed class LayerSourcedExecutorTests
         }
     }
 
-    /// <summary>
-    /// Fake <see cref="IDagFeatureSource"/> that returns a distinct feature set per
-    /// catalog layer id, so a two-layer op such as <c>analytics.spatial-join</c> reads
-    /// its target (<c>layerId</c>) and join (<c>joinLayerId</c>) layers from the same
-    /// connector without a Postgres catalog.
-    /// </summary>
     private sealed class FakeTwoLayerDagFeatureSource : IDagFeatureSource
     {
         private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
@@ -1660,12 +1622,6 @@ public sealed class LayerSourcedExecutorTests
         }
     }
 
-    /// <summary>
-    /// Resolves a single catalog layer id to a relational storage binding with a fixed SRID
-    /// (#4623), matching the shape <c>MetadataV2GraphSnapshotExtensions.ResolveStorageSrid</c>
-    /// expects: a resource plus a <see cref="MetadataV2StorageBinding"/> whose
-    /// <see cref="MetadataV2StorageBinding.StorageLayerId"/> matches the layer id.
-    /// </summary>
     private sealed class FakeMetadataV2GraphProvider : IMetadataV2GraphProvider
     {
         private readonly MetadataV2GraphSnapshot _snapshot;
@@ -1707,13 +1663,6 @@ public sealed class LayerSourcedExecutorTests
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == _snapshot.Revision ? _snapshot : null);
     }
 
-    /// <summary>
-    /// Independently coded (not a delegate to <c>PostgresGeometryOperationService</c>)
-    /// CRS-aware buffer implementation used as the test oracle for #4623: a geographic SRID
-    /// buffers through a plain Web Mercator forward/inverse projection with a latitude-scale
-    /// correction; a projected SRID converts the metric distance into its declared native
-    /// linear unit before buffering directly.
-    /// </summary>
     private sealed class FakeGeometryOperationService : IGeometryOperationService
     {
         private const double EarthRadiusMeters = 6378137.0;

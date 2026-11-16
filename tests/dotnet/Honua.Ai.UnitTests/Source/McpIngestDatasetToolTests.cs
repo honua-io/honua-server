@@ -28,14 +28,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Coverage for <c>honua_ingest_dataset</c>: the inline CSV/GeoJSON → catalog
-/// table adapter over the canonical <see cref="IFileImportService"/> pipeline.
-/// Runs through the JSON-RPC <c>tools/call</c> dispatcher with the import
-/// service substituted, so it validates argument validation, option plumbing,
-/// per-row error projection, and the publish-chaining output triple without a
-/// database.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpIngestDatasetToolTests
 {

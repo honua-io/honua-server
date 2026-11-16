@@ -9,12 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-/// <summary>
-/// Unit coverage for <see cref="OwnerEditPolicyEvaluator"/> (#2132): ownership-based access
-/// control on the shared edit path. Verifies an owner-matched update is allowed, an
-/// owner-mismatched update is denied, an administrator bypasses the check, anonymous edits are
-/// denied while the policy is active, and a disabled/absent policy preserves full-edit behavior.
-/// </summary>
 public sealed class OwnerEditPolicyEvaluatorTests
 {
     private static readonly MetadataV2OwnerEditPolicy EnabledPolicy = new()

@@ -6,11 +6,6 @@ using Honua.ControlPlane;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Unit tests for the AWS Batch job-definition tier selector. The selector maps a job's
-/// ephemeral-storage need onto the honua-iac job-definition pool (honua-iac#70) and resolves
-/// the selected tier's ARN, while preserving the single-ARN back-compat path.
-/// </summary>
 public sealed class AwsBatchJobDefinitionTierSelectorTests
 {
     private const string ArnS = "arn:aws:batch:us-west-2:123:job-definition/gp-s:1";

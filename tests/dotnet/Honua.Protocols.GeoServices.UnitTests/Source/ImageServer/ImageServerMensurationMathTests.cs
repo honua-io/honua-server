@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit coverage for the ground-mensuration math backing Basic ImageServer measure (#2734).
-/// Verifies that Web Mercator distances are corrected by 1/cos(latitude), that geographic
-/// (degree) inputs are measured geodesically rather than as degrees-as-meters, that bearings
-/// carry the meridian-convergence correction, and that area handles the antimeridian and uses
-/// the signed-area centroid.
-/// </summary>
 public sealed class ImageServerMensurationMathTests
 {
     [UnitTheory]

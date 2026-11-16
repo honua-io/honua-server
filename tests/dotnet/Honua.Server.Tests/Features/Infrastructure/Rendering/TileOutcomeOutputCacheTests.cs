@@ -22,16 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Regression for honua-server#4918. ASP.NET Core's default output-cache policy stores 200
-/// responses only, so the two deterministic non-200 tile outcomes — 204 for a tile the layer has
-/// no features in, and 413 for a tile whose encoded MVT exceeds <c>Limits:Tiles:MaxTileSize</c> —
-/// were recomputed on every request even though the tile endpoints all carry <c>CacheOutput</c>.
-/// In the 2026.1 capacity soak that was the entire tile workload: 56% of requests answered 204 and
-/// 44% answered 413 after a ~1.4 s PostGIS encode of a 1,492,055-byte tile that was then
-/// discarded, so the advertised tile cache stored nothing and tiles_load blew the frozen p95/p99
-/// capacity lock (run 34923808977).
-/// </summary>
 [Trait("Tier", "Fast")]
 [Trait("Category", "Unit")]
 public sealed class TileOutcomeOutputCacheTests
@@ -217,11 +207,6 @@ public sealed class TileOutcomeOutputCacheTests
     {
         public int Invocations;
 
-        /// <summary>
-        /// The live options instance the output-cache policies read. Mutating
-        /// <see cref="Budget"/> therefore moves subsequent requests to a different cache key,
-        /// exactly as an operator's configuration change does at runtime.
-        /// </summary>
         public LimitsOptions Limits { get; } = new() { Tiles = new TileLimits() };
 
         public int Bytes { get; init; }

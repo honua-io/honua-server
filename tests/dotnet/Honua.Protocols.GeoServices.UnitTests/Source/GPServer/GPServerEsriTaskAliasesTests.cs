@@ -9,12 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit tests for the additive Esri-conventional task-name overlay
-/// (<see cref="GPServerEsriTaskAliases"/>) that lets unmodified ArcGIS clients address
-/// GPServer tasks by their familiar Esri GP tool name (e.g. <c>Buffer</c>) in addition
-/// to the canonical internal process ID (e.g. <c>geometry.buffer</c>).
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerEsriTaskAliasesTests
 {

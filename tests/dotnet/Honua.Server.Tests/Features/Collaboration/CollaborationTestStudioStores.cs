@@ -7,19 +7,6 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Server.Tests.Features.Collaboration;
 
-/// <summary>
-/// Studio package store that lets ONE other writer land between a draft update and whatever the
-/// caller does next, reproducing the checkpoint race in honua-server#2999's review: the checkpoint
-/// applies the replayed operations through <c>UpdateDraftAsync</c> and then versions the draft, but
-/// the version save re-reads the draft, so a Studio draft update arriving in that window would be
-/// versioned in place of the replay — while the checkpoint still advanced the op-log cursor, making
-/// those operations invisible to every later checkpoint.
-/// </summary>
-/// <remarks>
-/// The interleaved write replaces the composition body exactly as a competing Studio draft update
-/// would, and it is armed once so only the checkpoint's apply is raced; the version save's own
-/// internal update runs unmolested.
-/// </remarks>
 internal sealed class ConcurrentUpdateAfterDraftWriteStore : DelegatingStudioPackageStore
 {
     private readonly JsonElement _competingBody;
@@ -30,7 +17,6 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : DelegatingStudioPac
         _competingBody = competingBody;
     }
 
-    /// <summary>Arms exactly one interleaved competing draft update.</summary>
     public void ArmOnce() => Interlocked.Exchange(ref _armed, 1);
 
     public override async Task<StudioPackageDraft?> UpdateDraftAsync(
@@ -55,11 +41,6 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : DelegatingStudioPac
     }
 }
 
-/// <summary>
-/// Studio package store that deletes a draft after the checkpoint apply succeeds and the
-/// lifecycle version-save reads that generation, reproducing the deletion window between
-/// <c>SaveDraftAsVersionAsync</c>'s read and validation update.
-/// </summary>
 internal sealed class DeleteDuringVersionSaveStore : DelegatingStudioPackageStore
 {
     private int _armAfterNextUpdate;
@@ -68,10 +49,8 @@ internal sealed class DeleteDuringVersionSaveStore : DelegatingStudioPackageStor
 
     public DeleteDuringVersionSaveStore(IStudioPackageStore inner) : base(inner) { }
 
-    /// <summary>Arms exactly one deletion after the next successful draft update.</summary>
     public void ArmOnce() => Interlocked.Exchange(ref _armAfterNextUpdate, 1);
 
-    /// <summary>Whether the deterministic deletion seam ran.</summary>
     public bool DeleteWasTriggered => Volatile.Read(ref _deleteWasTriggered) != 0;
 
     public override async Task<StudioPackageDraft?> UpdateDraftAsync(

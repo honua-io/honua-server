@@ -16,12 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Tenant boundary for <see cref="StudioAuthorizationService"/> (honua-server#4905): the
-/// platform <c>admin</c> role is tenant-scoped, so it no longer bypasses the ownership check on
-/// another tenant's Studio content, while single-tenant and multi-tenant-admin behaviour is
-/// unchanged.
-/// </summary>
 public sealed class StudioTenantOwnershipAuthorizationTests
 {
     private const string TenantA = "tenant-a";

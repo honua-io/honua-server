@@ -22,14 +22,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the admin/operator disconnected-sync conflict-review API (#1167, slice 2):
-/// list conflicts, conflict detail (base/client/server states), conflict resolution, and the
-/// not-supported denial for providers that cannot support manual conflict review. Conflict records
-/// are seeded directly through <see cref="IReplicaConflictRepository"/> because the synchronize
-/// upload path's conflict-detection writer is a separate concern; these tests exercise the durable
-/// review/resolution contract that Console consumes.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
@@ -90,13 +82,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         return document.RootElement.GetProperty("replicaID").GetString()!;
     }
 
-    /// <summary>
-    /// Reads a conflict that the test has already seeded and asserts it is present, returning the
-    /// non-nullable record. The repository contract returns <c>ReplicaConflictRecord?</c>, so
-    /// reading through <c>.Value</c> at every call site both dereferences a nullable and turns a
-    /// missing row into an opaque <see cref="InvalidOperationException"/>; this fails on the
-    /// missing row instead, and hands back a value the rest of the assertion can use directly.
-    /// </summary>
     private static async Task<ReplicaConflictRecord> GetRequiredConflictAsync(
         IReplicaConflictRepository repository,
         string conflictId)
@@ -106,12 +91,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         return record!.Value;
     }
 
-    /// <summary>
-    /// Seeds a durable conflict record. Unless an explicit <paramref name="objectId"/> is supplied the
-    /// conflict is backed by a real feature created through the FeatureServer edit surface, because a
-    /// resolution now commits the resolved feature state through the shared edit pipeline (#2430) and
-    /// therefore needs a row to write.
-    /// </summary>
     private async Task<SeededConflict> SeedConflictAsync(
         string replicaId,
         ReplicaConflictType conflictType = ReplicaConflictType.Attribute,
@@ -149,7 +128,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         return new SeededConflict(conflictId, featureObjectId);
     }
 
-    /// <summary>A seeded conflict and the object id of the feature it is recorded against.</summary>
     private readonly record struct SeededConflict(string ConflictId, long ObjectId);
 
     private static string StateEnvelope(long objectId, string name) => JsonSerializer.Serialize(new
@@ -897,17 +875,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(404);
     }
 
-    /// <summary>
-    /// The conflict-claim compare-and-set against real Postgres (honua-server#4405).
-    /// </summary>
-    /// <remarks>
-    /// <c>ReplicaConflictResolutionServiceTests</c> is a careful 53-member claim/lease/staleness
-    /// suite, but every member is a <c>[UnitTest]</c> over <c>FakeConflictRepository</c>, and no
-    /// <c>*ConflictRepository*</c> integration test existed. The CAS the whole design rests on —
-    /// that a takeover is bound to the exact claim it observed — was therefore never executed
-    /// against the SQL that implements it. This drives <see cref="IReplicaConflictRepository"/>
-    /// through the real Postgres provider under genuine <c>Task.WhenAll</c> contention.
-    /// </remarks>
     [IntegrationTest]
     // Repository-direct: this drives IReplicaConflictRepository's CAS against real Postgres
     // rather than an HTTP route, so it carries the endpoint-exempt test-infrastructure
@@ -986,11 +953,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             .Should().Be(afterTakeover.ResolvedAt, "a stale precondition must not move the claim again");
     }
 
-    /// <summary>
-    /// The release half of the same CAS, against real Postgres: a release is bound to the exact
-    /// claim it observed, so once a replacement claim exists the stale releaser must fail rather
-    /// than clearing an ownership that is now live (honua-server#4405).
-    /// </summary>
     [IntegrationTest]
     // Repository-direct, as above: endpoint-exempt test-infrastructure operation.
     [Operation(Operations.TestInfrastructure)]

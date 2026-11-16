@@ -5,10 +5,6 @@ using Honua.TestKit;
 
 namespace Honua.Db.Postgres.Tests;
 
-/// <summary>
-/// Applies canonical numbered migration SQL to an isolated test schema. Production stores must
-/// never provision these objects; tests that skip DbUp own their schema setup explicitly.
-/// </summary>
 internal static class CoreMigrationTestFixture
 {
     public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema)

@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 
-/// <summary>
-/// Unit tests for <see cref="VectorTileStyleComposer"/> covering the sprite/glyphs scoping
-/// rule introduced for honua-server#1780: sprite and glyphs references are emitted into the
-/// composed Mapbox GL style ONLY when the style contains at least one <c>symbol</c> layer
-/// (which is what consumes a sprite/glyph stack); otherwise they stay omitted.
-/// </summary>
 public sealed class VectorTileStyleComposerTests
 {
     private const string ServiceName = "test";

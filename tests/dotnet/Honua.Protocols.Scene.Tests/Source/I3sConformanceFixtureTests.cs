@@ -16,13 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// I3S SceneServer conformance harness (#1813): mounts the Honua-authored
-/// synthetic I3S 1.7 fixture as a hosted scene, drives the live SceneServer
-/// endpoints (service / layer / node pages / statistics), and runs the protocol
-/// shape validator over each served resource. This is the test oracle for the
-/// node-page (#1809) / layerType (#1812) / statistics (#1811) lanes.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sConformanceFixtureTests : IAsyncLifetime

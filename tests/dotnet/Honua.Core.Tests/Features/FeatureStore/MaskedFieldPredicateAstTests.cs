@@ -9,13 +9,6 @@ using Honua.Core.Queries.Filters.GeoServicesSql;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// The shared field-security seam decides whether a <c>where</c> clause consumes a masked
-/// field from the field references of the parsed filter, so every operator of the filter
-/// grammar (negated forms included) is covered by the same rule. Text that the shared
-/// grammar does not parse can still reach a provider's own WHERE parser, so its identifier
-/// tokens are checked as well (SEC-11).
-/// </summary>
 public sealed class MaskedFieldPredicateAstTests
 {
     public static TheoryData<string, string> MaskedWhereClauses() => new()

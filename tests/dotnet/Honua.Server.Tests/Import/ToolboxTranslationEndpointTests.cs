@@ -15,13 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the arcpy/toolbox translation lane validation endpoint (#2145).
-/// The fixtures under <c>tests/fixtures/toolbox-translation/</c> are the shared contract
-/// with the honua-sdk-python <c>honua-migrate</c> translator: a fully translatable toolbox,
-/// a partially translatable toolbox, and a fully unsupported toolbox, each producing the
-/// documented report.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

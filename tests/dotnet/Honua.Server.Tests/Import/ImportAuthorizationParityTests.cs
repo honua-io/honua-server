@@ -29,7 +29,6 @@ using NSubstitute.ClearExtensions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>Real HTTP transport parity for both adapters over the file-import mutation.</summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Mcp)]

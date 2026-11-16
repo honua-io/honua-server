@@ -20,14 +20,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// honua-server#4919: the default <see cref="StudioAiProxyConfiguration.MaxPromptCharacters"/> must admit
-/// every round of a model-driven Studio map lifecycle over the setup view
-/// (create → update → validate → get → save → reopen → propose). The proxy re-counts every tool
-/// definition on every round, so the replay sends the live setup-view Studio descriptors each round and
-/// grows the conversation by the tool-result sizes measured on the 548b7a5 candidate
-/// (honua-sdk-js#1397, <c>terminal-session-lifecycle:admin-api-key-model</c>).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiProxyPromptBudgetTests
 {
@@ -157,11 +149,6 @@ public sealed class StudioAiProxyPromptBudgetTests
         return prefix + new string('r', padding) + suffix;
     }
 
-    /// <summary>
-    /// The Studio-classified members of the live setup view, exactly as <c>tools/list</c> serves them
-    /// and as the SDK forwards them to the proxy (name, description, input schema, annotations,
-    /// output schema).
-    /// </summary>
     private static async Task<IReadOnlyList<StudioAiToolDefinition>> SetupViewStudioToolsAsync()
     {
         var catalog = new Honua.Core.Features.Operations.Services.OperationCatalog(

@@ -5,9 +5,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Serializes MCP telemetry listener tests that consume shared meter instruments.
-/// </summary>
 [CollectionDefinition("McpTelemetry", DisableParallelization = true)]
 public sealed class McpTelemetryDefinition
 {

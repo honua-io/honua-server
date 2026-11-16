@@ -9,10 +9,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for NpgsqlDataSource extension methods with retry functionality
-/// Uses real PostgreSQL database to test connection retry behavior
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime

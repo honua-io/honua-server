@@ -29,13 +29,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// ADR-0069 (honua-server#3004) round-trip coverage for the bridged <c>form</c> and
-/// <c>analysis</c> families: content created through the native APIs is enumerable and openable
-/// through the Studio lifecycle, and drafts/versions saved through the lifecycle are visible
-/// through the native APIs with family semantics (form JSON kinds, ruleIds, publish gate;
-/// analysis artifact/job links) intact.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]

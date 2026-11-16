@@ -6,9 +6,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Core.Tests.Features.Licensing;
 
-/// <summary>
-/// Unit tests for FeatureCatalog and LicenseModels.
-/// </summary>
 public sealed class FeatureCatalogTests
 {
     [Trait("Tier", "Fast")]

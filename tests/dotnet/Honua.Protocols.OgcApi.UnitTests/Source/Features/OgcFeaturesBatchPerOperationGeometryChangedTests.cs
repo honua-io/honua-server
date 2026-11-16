@@ -11,15 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Unit tests for the OGC Features batch handler's per-operation geometry-change
-/// flag builder. The helper is the single source of truth for whether each row
-/// in an OGC Features batch transaction reports <c>GeometryChanged=true</c> in
-/// the outbox payload — and the contract for Replace-mode updates is that the
-/// flag must reflect either the request feature's geometry intent OR the
-/// existing row's geometry, so a body-less Replace that clears a non-null
-/// geometry is not silently published as <c>GeometryChanged=false</c> (#692).
-/// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesBatchPerOperationGeometryChangedTests
 {

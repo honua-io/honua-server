@@ -8,13 +8,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Core.Tests.Features.Authorization;
 
-/// <summary>
-/// Unit tests for <see cref="OperatorScopeAuthorizer"/> (honua-server#2851): the OAuth 2.1
-/// scope narrowing that intersects a bearer token's scopes with the operator grant model.
-/// The suite proves the invariant the acceptance criteria hinge on — scope narrowing can only
-/// ever <em>narrow</em> authority, never widen it, and a scope-governed token with no
-/// recognized scope is fail-closed — independently of whether the grant check would allow.
-/// </summary>
 public sealed class OperatorScopeAuthorizerTests
 {
     private readonly OperatorScopeAuthorizer _authorizer = new();

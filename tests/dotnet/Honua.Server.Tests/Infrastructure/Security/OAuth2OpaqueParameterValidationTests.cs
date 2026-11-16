@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
-/// <summary>
-/// Client-owned OAuth2 state and PKCE values are opaque strings. A "--" inside one must not
-/// be read as a SQL comment on the Sharing OAuth2 routes. The broker's generated hex IDs do
-/// not constrain client state, and all three fields stay inspected on unrelated routes.
-/// </summary>
 public sealed class OAuth2OpaqueParameterValidationTests
 {
     private const string Base64UrlWithDoubleDash = "Zm9v--YmFy_c3RhdGU.c2Vzc2lvbi--aWQ";

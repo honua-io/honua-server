@@ -11,38 +11,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164) — the CORE Batch execution cell. Unlike the seeded
-/// register/deregister smoke (<see cref="AwsBatchRealCertificationTests"/>), this drives a REAL
-/// end-to-end job lifecycle through the PRODUCTION seam: the real
-/// <see cref="AwsSdkBatchJobClient"/> behind the real <see cref="AwsBatchComputeBackend"/>, exactly
-/// as production wires them (the backend's unit tests construct it the same way, but with a stub
-/// client). It certifies that Honua's canonical batch-compute boundary actually submits, observes
-/// to a terminal state, and cancels against LIVE AWS Batch — the seam every GP workload rides.
-///
-/// It submits against the standing certification stack's SMALLEST-tier job definition + queue
-/// (honua-iac <c>examples/aws-cert</c>), so no compute environment or job definition is created
-/// here; the Fargate task runs to completion and ages out on its own. Per-job vCPU/memory/timeout
-/// overrides are exercised through the spec parameter keys (the per-job on-demand model). Every
-/// submission's provider job name is derived from an <c>honua-cert-{runId}</c> operation id so a
-/// run is traceable; the AWS Batch SubmitJob path the production seam uses does not attach resource
-/// tags (the seam sets no tags), and jobs are ephemeral run-to-completion, so there is nothing for
-/// the reaper to sweep here — teardown is a guaranteed cancel of any still-running job in a
-/// <c>finally</c> block.
-///
-/// BUDGET: two tiny jobs on the smallest tier, one polled to SUCCEEDED under a hard &lt;8-minute
-/// budget and one cancelled promptly. SAFETY: OFF unless
-/// <see cref="RealAwsCertificationFixture.BatchExecutionConfigured"/>; every path
-/// <c>[SkippableFact]</c>-skips otherwise.
-///
-/// LIVE-RUN ASSUMPTION (documented risk, not verifiable without AWS): the cert stack's smallest-tier
-/// job definition must resolve to a trivially- and quickly-succeeding container (for example a
-/// busybox <c>true</c>/<c>echo</c>). The AWS Batch SubmitJob ContainerOverrides the production seam
-/// emits can override environment + resource requirements but NOT the container image or command, so
-/// the "tiny echo/sleep" shape is a property of the maintainer-provisioned job definition, not of
-/// this test. The polled assertion is Succeeded; a job definition that fails fast would surface as a
-/// real certification failure by design.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {

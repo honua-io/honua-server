@@ -18,9 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for platform admin endpoints: license, identity, cache, geocoding, features.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class PlatformAdminEndpointsTests : IAsyncLifetime

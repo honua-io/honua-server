@@ -19,20 +19,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Tests for database migration functionality using DbUp.
-/// </summary>
-/// <remarks>
-/// These tests run raw DbUp migrations and seeds that target the hard-coded
-/// <c>honua</c>/<c>honua_data</c> schemas and take catalog-wide DDL locks. The
-/// <c>Database.*</c> collections run in parallel against a single shared PostGIS
-/// database and rely on per-test <c>search_path</c> schema isolation. That isolation
-/// does NOT protect fixed-name schemas or catalog locks, so these migration/seed tests
-/// otherwise collide with sibling collections that also create/populate the
-/// <c>honua</c> schema (intermittent count-assertion failures and <c>40P01</c>
-/// deadlocks). Each instance therefore provisions its own dedicated, uniquely-named
-/// database so its schema, DDL locks, and seed data are fully private.
-/// </remarks>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class DatabaseMigrationTests : IAsyncLifetime

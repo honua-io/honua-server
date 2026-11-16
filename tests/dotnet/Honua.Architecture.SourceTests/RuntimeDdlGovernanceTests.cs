@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Inventories production C# that can issue DDL. Core Honua schema evolution belongs only in the
-/// numbered migration roots; the allowlist is restricted to bounded generated/output targets,
-/// attempt-scoped routing shadows, session-local helper functions, tables, and views, and the audited retention-maintenance transaction.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed partial class RuntimeDdlGovernanceTests
 {

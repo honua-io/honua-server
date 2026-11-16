@@ -20,9 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for the ImageServer multidimensionalInfo operation.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMultidimensionalInfoHandlerTests
 {
@@ -235,10 +232,6 @@ public class ImageServerMultidimensionalInfoHandlerTests
 
 }
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerSlicesBuilder"/> (#1445), which derives the Esri
-/// slices document from a multidimensional info document.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerSlicesBuilderTests
 {
@@ -329,11 +322,6 @@ public class ImageServerSlicesBuilderTests
             .Which.Values.Should().Equal(86_400_000);
     }
 
-    /// <summary>
-    /// Regression for honua-server#1825: a multidimensional coverage that advertises
-    /// <c>hasMultidimensions:true</c> with a temporal dimension of <c>dimensionSize:4</c>
-    /// must enumerate one slice per temporal coordinate, not return an empty document.
-    /// </summary>
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
     public async Task BuiltInfo_RegularTimeDimension_EnumeratesOneSlicePerStep()

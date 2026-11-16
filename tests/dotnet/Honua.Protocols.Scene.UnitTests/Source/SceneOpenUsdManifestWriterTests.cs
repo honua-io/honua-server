@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Unit tests for the OpenUSD scene manifest writer. The writer is a pure
-/// function from the manifest input model to deterministic <c>.usda</c> text;
-/// these tests lock the stable content/ETag contract and USD string escaping.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneOpenUsdManifestWriterTests
 {

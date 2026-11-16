@@ -27,9 +27,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Integration tests for API key authentication with development bypass functionality
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -63,9 +60,6 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Helper method to configure WebApplicationFactory with proper test environment settings.
-    /// </summary>
     private WebApplicationFactory<Program> CreateTestFactory(
         string environmentName,
         Action<IWebHostBuilder> configure)

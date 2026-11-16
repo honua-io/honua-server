@@ -6,9 +6,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Core.Tests.Features.AuditLog;
 
-/// <summary>
-/// Unit tests for the CEF SIEM export formatter (#509).
-/// </summary>
 public sealed class AuditCefFormatterTests
 {
     private static AuditEventRecord SampleRecord(

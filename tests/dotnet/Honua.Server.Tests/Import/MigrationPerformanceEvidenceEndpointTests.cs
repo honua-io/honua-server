@@ -16,15 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the admin migration performance evidence endpoints
-/// (#1033 slice 5).
-/// </summary>
-/// <remarks>
-/// Tests run against the in-memory store registered by the Server when no Postgres
-/// provider is configured. Tests seed the store directly through DI so the endpoints
-/// can be exercised without spinning up the full release-evidence workflow.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

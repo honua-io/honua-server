@@ -25,23 +25,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// End-to-end proof that row-level security and field masking are enforced on a
-/// GEOPROCESSING JOB's layer reads (honua-server#3068), not only on the synchronous protocol
-/// surfaces. The job runs on the background worker, where there is no ambient
-/// <c>HttpContext</c> — before this fix both the RLS predicate and the field mask resolved to
-/// "nothing applies" there, so a restricted caller received every row and every attribute
-/// through the job artifact.
-/// </summary>
-/// <remarks>
-/// The plan submitted is <c>source.honua-layer</c>, the DAG connector every layer-sourced
-/// process reads through, so proving enforcement here proves it for the whole family
-/// (<c>analytics.*</c>, <c>generalization.*</c>, <c>conversion.feature-project</c>,
-/// enrichment). The seeded test layer has five features — three with <c>category='test'</c>
-/// and two with <c>category='sample'</c> — plus a <c>description</c> attribute, which is
-/// exactly the shape the synchronous RLS/field-mask tests assert against, so the job artifact
-/// can be compared to the known synchronous outcome.
-/// </remarks>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class GeoprocessingJobRowAndFieldSecurityTests(DatabaseFixtureAdapter database)
@@ -225,10 +208,6 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(DatabaseFixtureAdap
         return jobId!;
     }
 
-    /// <summary>
-    /// Submits the layer-source plan as the described submitter, waits for the job, and decodes
-    /// the published FeatureCollection artifact into one attribute dictionary per feature.
-    /// </summary>
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> RunLayerSourceJobAsync(
         WebAppFixture fixture,
         string category,

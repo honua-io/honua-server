@@ -7,12 +7,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.Tests.Services;
 
-/// <summary>
-/// Unit tests for OData <c>$apply</c> pipeline parsing (#1636). The handler previously parsed only
-/// a single transform, so on a <c>filter(...)/groupby(...)</c> pipeline the filter() regex greedily
-/// swallowed the rest of the pipeline and produced a broken filter — 400ing extent-scoped
-/// aggregation such as <c>filter(geo.intersects(...))/groupby(...)</c>.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "Apply")]

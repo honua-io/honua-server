@@ -18,10 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the admin ops-health snapshot and ops-findings endpoints
-/// (ADR-0060 WS4 / epic #2457). Compile locally; the full assertions run in CI (Testcontainers).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.HealthCheck)]
@@ -433,10 +429,6 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Regression coverage for Community deployments that retain the stock Redis connection string
-/// even though the Redis entitlement leaves <c>IConnectionMultiplexer</c> unregistered.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.HealthCheck)]

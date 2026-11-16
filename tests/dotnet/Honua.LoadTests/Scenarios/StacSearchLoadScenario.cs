@@ -9,13 +9,6 @@ using NBomber.CSharp;
 
 namespace Honua.LoadTests.Scenarios;
 
-/// <summary>
-/// Load scenario: <c>POST /stac/search</c> with a varying bbox + datetime
-/// payload. Nominal rate is 50 requests/second over <see cref="LoadScenarioSettings.GetDuration"/>
-/// (default 60 seconds). Used by the nightly load-soak workflow; not executed
-/// in PR CI (Tier=Slow excluded). Build-time discoverability is asserted by
-/// <see cref="Honua.LoadTests.LoadTestsSmokeTests"/>.
-/// </summary>
 public static class StacSearchLoadScenario
 {
     public const string ScenarioName = "stac_search_load";
@@ -30,11 +23,6 @@ public static class StacSearchLoadScenario
         "2024-06-01T00:00:00Z/.."
     };
 
-    /// <summary>
-    /// Builds the NBomber scenario. The HTTP client and base URL are captured
-    /// at construction time so the scenario can be registered with
-    /// <see cref="NBomberRunner.RegisterScenarios"/>.
-    /// </summary>
     public static ScenarioProps Build()
     {
         var baseUrl = LoadScenarioSettings.GetBaseUrl();

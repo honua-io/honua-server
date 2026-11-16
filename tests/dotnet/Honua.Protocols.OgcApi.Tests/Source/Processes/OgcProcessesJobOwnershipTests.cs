@@ -23,9 +23,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Horizontal-authorization coverage for OGC API Processes job reads.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobOwnershipTests : IClassFixture<OgcProcessesJobOwnershipTestsFixture>
@@ -115,9 +112,6 @@ public sealed class OgcProcessesJobOwnershipTests : IClassFixture<OgcProcessesJo
     }
 }
 
-/// <summary>
-/// Authenticated OGC host seeded with caller-owned, cross-owner, and ownerless jobs.
-/// </summary>
 public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
 {
     private readonly InMemoryExecutionJobStore _jobStore = new();
@@ -163,7 +157,6 @@ public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
 
     public HttpClient Client { get; private set; } = null!;
 
-    /// <summary>The seeded in-memory job store, so a test can assert a job was not mutated.</summary>
     public InMemoryExecutionJobStore JobStore => _jobStore;
 
     public async Task InitializeAsync()

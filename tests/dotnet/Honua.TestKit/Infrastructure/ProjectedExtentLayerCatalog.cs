@@ -3,10 +3,6 @@
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Shared identifiers for the projected-extent metadata test fixture. Tests seed the
-/// Metadata v2 graph with these ids/SRID to validate projected extent fallback paths.
-/// </summary>
 public static class ProjectedExtentLayerCatalog
 {
     public const string ServiceId = "projected-metadata";

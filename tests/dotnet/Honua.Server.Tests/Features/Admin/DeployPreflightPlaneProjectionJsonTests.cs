@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The grounding oracle compares MCP platform-release status to admin preflight
-/// by exact field set. A null runtime profile or artifact reference is an
-/// observation (no pin), so the key must be present. Dropping it is
-/// indistinguishable from a missing pin.
-/// </summary>
 public sealed class DeployPreflightPlaneProjectionJsonTests
 {
     [UnitTest]

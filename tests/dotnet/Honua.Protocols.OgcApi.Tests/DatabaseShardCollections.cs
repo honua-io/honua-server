@@ -22,27 +22,18 @@ namespace Honua.Protocols.OgcApi.Tests;
 // These collections intentionally declare no ICollectionFixture — the fixture is
 // per-class — so they exist only to give xUnit distinct, parallelizable collection names.
 
-/// <summary>
-/// Legacy database collection for OGC API tests that have not been proven schema-parallel safe.
-/// </summary>
 [CollectionDefinition("Database", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseOgcApiSerialCollection
 {
 }
 
-/// <summary>
-/// Database-backed collection for OGC API Maps / Tiles tests.
-/// </summary>
 [CollectionDefinition("Database.OgcApiTiles")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseOgcApiTilesCollection
 {
 }
 
-/// <summary>
-/// Database-backed collection for OGC API Coverages / Processes / Records tests.
-/// </summary>
 [CollectionDefinition("Database.OgcApiData")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseOgcApiDataCollection

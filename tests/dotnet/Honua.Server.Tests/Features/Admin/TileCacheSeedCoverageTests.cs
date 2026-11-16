@@ -14,25 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Proves that a <c>seed</c> job driven by a <c>bbox</c> renders exactly the tiles inside the box
-/// (honua-server#4421).
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>TileOperationExecutionCore.BuildTileCoordinates</c> — including the inclusive boundary loops
-/// and the truncation predicate — was exercised for <c>delete</c> only. No seed, warm, archive or
-/// publish job in the repository ever ran with a bbox, so the coordinate set a generation job
-/// actually produces was unasserted: a job that seeded the whole world, or the wrong quadrant,
-/// looked identical from the outside.
-/// </para>
-/// <para>
-/// Every expected tile below is derived from the XYZ definition rather than from a previous run:
-/// <c>x = floor((lon + 180) / 360 * 2^z)</c> and
-/// <c>y = floor((1 - ln(tan(lat) + sec(lat)) / pi) / 2 * 2^z)</c>. The captured tiles come from the
-/// tile provider the job dispatches to, so they are what the job asked to be rendered.
-/// </para>
-/// </remarks>
 public sealed class TileCacheSeedCoverageTests
 {
     [UnitTest]
@@ -96,9 +77,6 @@ public sealed class TileCacheSeedCoverageTests
         rendered.Should().BeEquivalentTo([(1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)]);
     }
 
-    /// <summary>
-    /// Runs a seed job and returns the (z, x, y) triples the job asked the tile provider to render.
-    /// </summary>
     private static async Task<(int Z, int X, int Y)[]> SeedAsync(
         int minZoom,
         int maxZoom,

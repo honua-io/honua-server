@@ -20,16 +20,13 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>Shared lifecycle and data helpers for the partitioned MapServer endpoint suites.</summary>
 public abstract class MapServerEndpointTestBase : IAsyncLifetime
 {
     protected WebAppFixture Fixture { get; } = new();
     private string? _generateKmlServiceName;
 
-    /// <inheritdoc />
     public async Task InitializeAsync() => await Fixture.InitializeAsync();
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         try

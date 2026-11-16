@@ -6,20 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the Honua.Scene isolation contract: the 3D scene subsystem (3D
-/// Tiles generation, scene registry, publishing executor, and the gRPC
-/// scene/tile/elevation services) is carved out of Honua.Core and Honua.Server
-/// so the protocol adapter (Honua.Protocols.Scene) and the Server host can
-/// consume it without it living inside the Core or Server graphs. The carve
-/// only holds if Honua.Scene itself does not back-reference Honua.Server.
-/// </summary>
-/// <remarks>
-/// Pinning the ProjectReference closure at the csproj layer (rather than
-/// scanning IL) catches the policy violation at PR time. Scene *domain* records
-/// intentionally remain in Honua.Core.Abstractions because the MetadataV2 graph
-/// references them; moving them into Honua.Scene would invert that edge.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class SceneIsolationTests
 {

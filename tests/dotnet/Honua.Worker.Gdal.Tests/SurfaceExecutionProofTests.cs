@@ -62,14 +62,6 @@ public sealed partial class RasterExecutionProofTests
         AssertSurface(output, 5, 5, RugosityExpected(operation, hole));
     }
 
-    /// <summary>
-    /// #3913 requires the TPI assertions to reject a plausible wrong-but-well-formed
-    /// output. The operation's prior coverage bound <c>surface.rugosity-tpi</c> to a
-    /// gdaldem subcommand string against a fake runner, so the defect it structurally
-    /// could not see is a dispatch that routes the operation to a sibling neighbourhood
-    /// statistic over the same DEM. Real execution of that sibling supplies the
-    /// substitute, so nothing here is a hand-built or corrupted raster.
-    /// </summary>
     [Fact]
     public async Task TpiOracle_SiblingNeighborhoodStatisticSubstituted_IsRejected()
     {
@@ -87,13 +79,6 @@ public sealed partial class RasterExecutionProofTests
         assert.Should().Throw<XunitException>().Which.Message.Should().Contain("cell " + Depression);
     }
 
-    /// <summary>
-    /// TPI's sign carries its meaning — a positive index is a peak, a negative one a
-    /// depression — so the proof must reject a magnitude-only index. That substitute is
-    /// maximally well formed: it preserves the grid, the pixel type, the sentinel, the
-    /// mask and even the peak cell's own value, and it is produced by mutating a real
-    /// execution's output in place rather than by synthesising a raster.
-    /// </summary>
     [Fact]
     public async Task TpiOracle_UnsignedMagnitudeSubstitutedForSignedIndex_IsRejected()
     {
@@ -119,14 +104,6 @@ public sealed partial class RasterExecutionProofTests
         assert.Should().Throw<XunitException>().Which.Message.Should().Contain("cell " + Depression);
     }
 
-    /// <summary>
-    /// The nodata half of the assertions needs its own rejection, because losing a
-    /// source hole is the defect class this surface family has already produced once:
-    /// #3916's viewshed reported its out-of-range domain as an ordinary computed value.
-    /// Dropping the source's nodata declaration makes real execution average the -9999
-    /// sentinel in as an elevation, which fills the hole and its neighbours with finite,
-    /// plausible numbers over an otherwise correct grid.
-    /// </summary>
     [Fact]
     public async Task TpiOracle_SourceHoleConsumedAsElevation_IsRejected()
     {
@@ -251,11 +228,6 @@ public sealed partial class RasterExecutionProofTests
 
     private static string SurfaceInput(string name) => Convert.ToBase64String(File.ReadAllBytes(SurfaceFixture(name)));
 
-    /// <summary>
-    /// Centre minus eight-neighbour mean (TPI), Riley TRI, and full-neighbourhood range
-    /// (roughness) over the peak/depression DEM, derived here from the fixture's declared
-    /// elevations. Nothing in this method reads an executor's output.
-    /// </summary>
     private static double[] RugosityExpected(string operation, bool hole)
     {
         static double Elevation(int row, int col) => (row, col) switch { (2, 2) => 12, (1, 1) => -4, _ => 2 };

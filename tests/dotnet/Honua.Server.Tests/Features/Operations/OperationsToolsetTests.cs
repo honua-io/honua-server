@@ -39,12 +39,6 @@ using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperatio
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// In-memory unit coverage for the Honua Operations Toolset de-risking spike: the grounding
-/// catalog lists the <c>service.publish</c> descriptor; the executor wraps the real
-/// <see cref="ILayerPublishingService"/>; the dispatcher consults the policy decision point
-/// and short-circuits the executor on a Deny decision (the guardrail seam).
-/// </summary>
 public sealed class OperationsToolsetTests
 {
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
@@ -2228,10 +2222,6 @@ public sealed class OperationsToolsetTests
             }
         };
 
-    /// <summary>
-    /// Stub policy decision point that denies every operation, used to prove the dispatcher
-    /// short-circuits the executor even though the production default is pass-through Allow.
-    /// </summary>
     private sealed class DenyAllPolicyDecisionPoint : IOperationPolicyDecisionPoint
     {
         public Task<PolicyDecision> EvaluateAsync(
@@ -2246,10 +2236,6 @@ public sealed class OperationsToolsetTests
             });
     }
 
-    /// <summary>
-    /// Stub decision point that returns a caller-supplied fixed decision, used to prove each
-    /// non-Allow outcome (RequireApproval / DryRunFirst) maps to its handle status.
-    /// </summary>
     private sealed class StubPolicyDecisionPoint(PolicyDecision decision) : IOperationPolicyDecisionPoint
     {
         public Task<PolicyDecision> EvaluateAsync(
@@ -2260,11 +2246,6 @@ public sealed class OperationsToolsetTests
             => Task.FromResult(decision);
     }
 
-    /// <summary>
-    /// Stub decision point that captures the descriptor + context it was evaluated with, used
-    /// to prove the descriptor's policy metadata and the caller's tier/role(s) flow into the
-    /// decision input.
-    /// </summary>
     private sealed class CapturingPolicyDecisionPoint(PolicyDecision decision) : IOperationPolicyDecisionPoint
     {
         public IOperationDescriptor? Descriptor { get; private set; }

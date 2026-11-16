@@ -11,11 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Governed restart and config actions. Separation of duties stays on
-/// <c>OperationGateway</c>: the requester cannot approve the proposal. These tests
-/// cover the product executor that runs after that approval. They do not call AWS.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GovernedWorkloadExecutorTests
 {

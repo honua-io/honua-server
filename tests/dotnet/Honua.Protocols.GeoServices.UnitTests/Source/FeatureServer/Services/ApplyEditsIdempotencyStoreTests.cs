@@ -15,11 +15,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
 {
     // ─── BH5-001 regression ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// BH5-001 regression: 10 concurrent TryReserveAsync calls for the same scope must
-    /// result in exactly one winner. The losers must return false so their callers can
-    /// return 409 rather than both executing and committing duplicate rows.
-    /// </summary>
     [Fact]
     public async Task TryReserveAsync_ConcurrentSameScope_ExactlyOneWins()
     {

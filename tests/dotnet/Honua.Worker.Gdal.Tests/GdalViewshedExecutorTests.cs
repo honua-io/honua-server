@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalViewshedJobExecutor"/>: gdal_viewshed
-/// observer/distance argument projection and the GeoTIFF artifact contract (#2240).
-/// </summary>
 public sealed class GdalViewshedExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-viewshed-test";

@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Observability;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresInvestigationStore"/> (#1168). Mirrors
-/// migration 034 inside an isolated per-test schema.
-/// </summary>
 [Collection("Database")]
 public sealed partial class PostgresInvestigationStoreTests(PostgresFixture fixture)
 {

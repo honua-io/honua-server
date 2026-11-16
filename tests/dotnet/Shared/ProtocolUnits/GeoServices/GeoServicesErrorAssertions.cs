@@ -7,42 +7,8 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
-/// <summary>
-/// Shared assertion helpers for GeoServices REST error responses.
-/// </summary>
-/// <remarks>
-/// GeoServices REST errors are emitted as HTTP <c>200</c> with the real status
-/// carried in the JSON body <c>{"error":{"code":N}}</c> per the Esri GeoServices
-/// REST spec (see <c>StandardErrorResponseFormatter.FormatGeoServicesError</c>,
-/// PA-070/PA-117). Asserting on <c>context.Response.StatusCode</c> therefore reads
-/// the transport <c>200</c>, never the error code — a harness anti-pattern that
-/// fails against correct product behavior. Handler unit tests must read the error
-/// code from the body instead; this helper centralizes that so future GeoServices
-/// handler tests use it by default.
-/// </remarks>
 public static class GeoServicesErrorAssertions
 {
-    /// <summary>
-    /// Executes an error <see cref="IResult"/> against the supplied context and
-    /// asserts the GeoServices error code carried in the response body. Asserts
-    /// the transport status is HTTP <c>200</c> and that <c>error.code</c> matches
-    /// one of <paramref name="expectedCodes"/>.
-    /// </summary>
-    /// <param name="context">
-    /// The HTTP context the result is executed against. Its
-    /// <see cref="HttpResponse.Body"/> must be a seekable stream (for example a
-    /// <see cref="System.IO.MemoryStream"/>) so the body can be re-read.
-    /// </param>
-    /// <param name="result">The error result returned by the handler under test.</param>
-    /// <param name="expectedCodes">
-    /// One or more acceptable GeoServices error codes (HTTP status values such as
-    /// <c>404</c> or <c>400</c>) carried in the JSON body. Since honua-server#2795,
-    /// <c>GeoServicesErrorCodes.FromHttpStatusCode</c> passes <c>501 Not Implemented</c>
-    /// through as body code <c>501</c> (not-implemented operations stay distinguishable
-    /// from a <c>500</c> server fault); statuses with explicit branches
-    /// (<c>400</c>/<c>401</c>/<c>403</c>/<c>404</c>/<c>499</c>/<c>501</c>/<c>503</c>…) map to
-    /// themselves. HTTP <c>401</c> is the sole remap (→ <c>499</c> TokenRequired).
-    /// </param>
     public static async Task AssertGeoServicesErrorAsync(HttpContext context, IResult result, params int[] expectedCodes)
     {
         if (expectedCodes is null || expectedCodes.Length == 0)

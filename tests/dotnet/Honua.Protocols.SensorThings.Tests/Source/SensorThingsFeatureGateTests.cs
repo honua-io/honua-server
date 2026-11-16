@@ -11,12 +11,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Verifies the experimental feature gate for OGC SensorThings API (PA-096/PA-103/PA-116/PA-145).
-/// When <c>Capabilities:Experimental:serve.sensorthings:Enabled</c> is absent or <c>false</c>, no STA routes are
-/// registered and all <c>/sta/v1.1/...</c> paths return 404. When the flag is <c>true</c>, the
-/// routes are active and return expected responses.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 [Trait("Category", "ExperimentalGate")]

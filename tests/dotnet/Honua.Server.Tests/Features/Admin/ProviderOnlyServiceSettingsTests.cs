@@ -15,10 +15,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// File-backed metadata hosts register <see cref="IMetadataV2GraphProvider"/> and not
-/// <see cref="IMetadataV2GraphStore"/>. GET settings must still resolve from the provider.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

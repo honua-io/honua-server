@@ -11,14 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Per-class fixture wrapper that owns a <see cref="WebAppFixture"/> whose
-/// <see cref="LimitsOptions"/> is replaced with a fixed instance raising MaxTileZoom to 24.
-/// Created once per test class via <see cref="IClassFixture{TFixture}"/> so the isolated
-/// schema + host build (including the service replacement) happen once rather than once per
-/// test method. The replaced options is a single shared immutable instance and both tests only
-/// issue read-only GetTile/GetCapabilities requests, so sharing one schema/server is safe.
-/// </summary>
 public sealed class OgcClassicWmtsLimitsTestsFixture : IAsyncLifetime
 {
     private static readonly LimitsOptions Limits = new()

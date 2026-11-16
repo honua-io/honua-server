@@ -27,51 +27,17 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Execution-content proof for <c>imagery.classify</c> (#3935).
-///
-/// <para>
-/// The prior evidence exercised validation and artifact handling against a
-/// simulated backend that echoed bytes, so nothing proved a model had ever
-/// classified anything. These cases stand up a REAL model server — a loopback
-/// HTTP endpoint speaking Honua's own inference contract, exactly the deployment
-/// shape the <c>http</c> provider documents — which runs a real
-/// minimum-distance-to-mean classifier (NumPy) over the posted scene inside the
-/// pinned production GDAL image and returns a GDAL-written classification
-/// GeoTIFF. Honua's production executor and HTTP adapter carry the whole
-/// exchange; nothing is substituted on the Honua side.
-/// </para>
-/// <para>
-/// The oracle is FROZEN, not a snapshot of the run: the committed scene's band
-/// values and the committed class centroids are recorded in
-/// <c>TestData/ImageryClassify/generate-scene.py</c>, and the expected class map
-/// and per-class counts below are those literals carried forward. A run that
-/// classified nothing, classified with the wrong model, or misaligned the output
-/// grid fails them.
-/// </para>
-/// </summary>
 [Trait("Category", "ImageryClassifyExecutionProof")]
 public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
 {
-    /// <summary>Model reference the proof asks the backend to run.</summary>
     private const string ModelReference = "honua-mindist-v1";
 
-    /// <summary>A second committed model whose class ids are rotated.</summary>
     private const string TransposedModelReference = "honua-mindist-transposed";
 
-    /// <summary>Scene side in pixels; a 4x4 signature layout upsampled by <see cref="Block"/>.</summary>
     private const int Side = 16;
 
-    /// <summary>Pixels per side of one committed spectral signature's block.</summary>
     private const int Block = 4;
 
-    /// <summary>
-    /// Frozen class layout, row-major from the north-west corner: the committed
-    /// water/vegetation/soil arrangement documented in the fixture generator, not
-    /// captured from a run. The scene upsamples it by <see cref="Block"/> because the
-    /// executor refuses to verify georeferencing on a result fewer than ten cells
-    /// across.
-    /// </summary>
     private static readonly int[] ExpectedLayout =
     [
         1, 1, 2, 2,
@@ -80,7 +46,6 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         3, 3, 1, 1,
     ];
 
-    /// <summary>Frozen class histogram over the upsampled grid: the confusion oracle's diagonal.</summary>
     private static readonly Dictionary<int, int> ExpectedClassCounts =
         new() { [1] = 6 * Block * Block, [2] = 5 * Block * Block, [3] = 5 * Block * Block };
 
@@ -302,13 +267,6 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         public string? Value { get; set; }
     }
 
-    /// <summary>
-    /// A real model server: a loopback HTTP endpoint speaking Honua's inference
-    /// contract that runs the committed minimum-distance classifier inside the
-    /// pinned production GDAL image. This is the deployment shape the <c>http</c>
-    /// provider documents (a model server, or a thin gateway in front of one), so
-    /// Honua's side of the exchange is entirely production code.
-    /// </summary>
     private sealed class MinimumDistanceModelServer : IAsyncDisposable
     {
         private static readonly Dictionary<string, string> Models =
@@ -417,11 +375,6 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Runs a command in the digest-pinned production GDAL image with a host
-    /// directory mounted. The proof consumes the same immutable native dependency
-    /// the worker ships, so a drifted local GDAL cannot change a result.
-    /// </summary>
     private static class PinnedGdal
     {
         private static readonly string Image = ReadProductionImage();

@@ -7,7 +7,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.TestKit.Hosting;
 
-/// <summary>Owns a protocol fixture's in-process HTTP host and client.</summary>
 public sealed class ComponentTestHost : IAsyncDisposable
 {
     private readonly Lock _disposeGate = new();
@@ -24,7 +23,6 @@ public sealed class ComponentTestHost : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    /// <summary>Starts a fixture-owned composition; no application services are supplied by this helper.</summary>
     public static async Task<ComponentTestHost> StartAsync(
         Action<WebApplicationBuilder> configure,
         Action<WebApplication> configurePipeline,

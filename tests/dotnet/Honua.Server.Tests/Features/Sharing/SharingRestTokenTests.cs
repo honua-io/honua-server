@@ -21,10 +21,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Integration tests for the ArcGIS-compatible <c>/sharing/rest/generateToken</c>
-/// endpoint and the matching <c>PortalToken</c> authentication scheme.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -75,10 +71,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             });
     }
 
-    /// <summary>
-    /// Stamps a fixed remote IP onto each request so IP-bound token flows behave as they
-    /// do behind Kestrel, where Connection.RemoteIpAddress is always populated.
-    /// </summary>
     private sealed class RemoteIpStartupFilter(IPAddress remoteIp) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)

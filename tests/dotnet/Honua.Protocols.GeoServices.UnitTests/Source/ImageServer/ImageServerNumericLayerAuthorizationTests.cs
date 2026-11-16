@@ -20,10 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// The numeric ImageServer route is keyed by storage layer id. A feature publication that
-/// shares that id must not authorize the raster pixels (#6452).
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerNumericLayerAuthorizationTests
 {

@@ -7,60 +7,12 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// The join gate for the published GeoServices REST parity matrix
-/// (<c>docs/gis/data/geoservices-rest-parity.json</c>, #2861 / #2863). The matrix is
-/// the most externally-consequential capability roster we publish — GitBook maps five
-/// public URLs onto its <c>.md</c> summary — and it is the only ADR-0058 roster a
-/// prospect reads.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Not to be confused with the import-fidelity scorecard.</b>
-/// <c>import-fidelity-scorecard-governance.yml</c>, <c>geoservices-import-fidelity-external.yml</c>,
-/// <c>GeoservicesImportFidelityIntegrationTests</c>, and <c>import-fidelity-scorecard-baseline.json</c>
-/// measure whether <i>imported data</i> matches Esri's across ten dataset cases. They
-/// never read this matrix and answer a different question. This file is the only gate
-/// over the published matrix.
-/// </para>
-/// <para>
-/// <b>What changed in #2863.</b> The interim guard (#2864) joined hand-listed matrix
-/// claims against <c>EndpointRegistry.All</c> while the matrix kept its own parallel
-/// hand roster — a second gate over a duplicated roster, which is precisely what
-/// ADR-0058 says not to build. The roster is now <b>derived</b>
-/// (<see cref="GeoServicesRouteRoster"/>) and the matrix <b>generated</b> from the join
-/// of that roster with a hand-authored judgement source
-/// (<see cref="GeoServicesParityGenerator"/>). So these tests no longer audit a copy;
-/// they assert the join is total and that the published artifact is the join's output.
-/// </para>
-/// <para>
-/// <b>What remains ungated, stated plainly:</b> whether a status is the <i>right</i>
-/// status. Nothing here stops someone labelling a Stub as Implemented, or a Partial
-/// whose parameter coverage has silently regressed. That needs human review — the
-/// judgement source's <c>lastReviewed</c> date and the release checklist remain the
-/// control. This gate makes the route-level claims honest, not the behavioural ones.
-/// <b>It must never be used to justify upgrading a status to make a test pass.</b> If
-/// a gate here creates that pressure, the gate is wrong: fix the gate, not the truth.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class GeoServicesParityMatrixDriftTests
 {
-    /// <summary>
-    /// The join, computed once. It reads the committed judgement source and derives the
-    /// roster from the generated capability data; both are pure, so sharing is safe and
-    /// keeps the suite from re-deriving the roster per assertion.
-    /// </summary>
     private static readonly Lazy<GeoServicesParityJoin> SharedJoin =
         new(GeoServicesParityGenerator.Join, isThreadSafe: true);
 
-    /// <summary>
-    /// Direction 1 — <b>served but unclassified</b>. We shipped a GeoServices operation
-    /// and never said anything about it. This is the direction the interim guard could
-    /// not enforce, and the one that let two whole served service types
-    /// (VectorTileServer, VersionManagementServer) go unmentioned while the matrix
-    /// presented itself as an operation-level coverage statement.
-    /// </summary>
     [ArchitectureTest]
     public void EveryServedOperation_CarriesAJudgment()
     {
@@ -73,12 +25,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "NOT pick a status because it is convenient.");
     }
 
-    /// <summary>
-    /// Direction 2 — <b>classified but not served</b>. The matrix names an operation
-    /// that resolves to no route. This is the over-claim a prospect discovers by
-    /// getting a 404, and it is why this work exists: we published a <c>computeClass</c>
-    /// route that never existed.
-    /// </summary>
     [ArchitectureTest]
     public void EveryJudgment_ResolvesToAServedOperation()
     {
@@ -89,11 +35,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "the assertion.");
     }
 
-    /// <summary>
-    /// Direction 3 — <b>not-implemented but served</b>. Shipped work still published as
-    /// deferred: the async exportTiles lifecycle (#2688 / #2831) that #2861 found stale
-    /// within a day of landing.
-    /// </summary>
     [ArchitectureTest]
     public void EveryNotImplementedOperation_IsAbsentFromTheServedSurface()
     {
@@ -103,11 +44,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "instead — which means classifying what it really does, not assuming 'implemented'.");
     }
 
-    /// <summary>
-    /// One operation, one judgement. Two entries claiming the same operation is how the
-    /// hand matrix ended up publishing <c>computeHistograms</c> and <c>getSamples</c> as
-    /// implemented <i>and</i> partial at the same time.
-    /// </summary>
     [ArchitectureTest]
     public void NoOperation_CarriesTwoJudgments()
     {
@@ -116,10 +52,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "disagree about the same route's status, so a reader cannot tell which claim is the real one.");
     }
 
-    /// <summary>
-    /// A judgement must live under the service that actually serves the operation, so
-    /// the per-service prose describes the routes it is filed against.
-    /// </summary>
     [ArchitectureTest]
     public void EveryJudgment_IsFiledUnderTheServingServiceType()
     {
@@ -129,11 +61,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "the operations filed beneath it.");
     }
 
-    /// <summary>
-    /// A newly served Esri service type must be given a home in the matrix rather than
-    /// silently omitted — the failure that hid VectorTileServer and
-    /// VersionManagementServer.
-    /// </summary>
     [ArchitectureTest]
     public void EveryServedServiceType_HasAMatrixHome()
     {
@@ -143,10 +70,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "served service type is how VectorTileServer and VersionManagementServer stayed unmentioned.");
     }
 
-    /// <summary>
-    /// Every route under a GeoServices family must normalize, so the roster cannot
-    /// under-report the served surface by quietly dropping what it fails to parse.
-    /// </summary>
     [ArchitectureTest]
     public void EveryGeoServicesRoute_Normalizes()
     {
@@ -156,11 +79,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "dropped route is an operation the join can never require a judgement for.");
     }
 
-    /// <summary>
-    /// A scope exclusion must still describe something real. An exclusion that matches
-    /// nothing is either a typo silently widening the matrix's blind spot, or a stale
-    /// note for a service type that no longer exists.
-    /// </summary>
     [ArchitectureTest]
     public void EveryRosterExclusion_StillMatchesAServedServiceType()
     {
@@ -186,12 +104,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "scripts/ci/generate-geoservices-parity.sh, then commit the result.");
     }
 
-    /// <summary>
-    /// Statuses must come from the declared vocabulary. <c>stub</c> in particular has an
-    /// exact meaning — route exists, spec-shaped response, backing model deferred;
-    /// read-stubs return empty/<c>false</c>, mutation-stubs return HTTP 400 rather than
-    /// fabricating success — and an invented token would let that meaning drift.
-    /// </summary>
     [ArchitectureTest]
     public void EveryJudgment_UsesTheDeclaredStatusVocabulary()
     {
@@ -208,12 +120,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "against the served surface separately.");
     }
 
-    /// <summary>
-    /// Every judgement must bind to at least one operation. An entry claiming nothing
-    /// contributes no claims, so the join would neither reject it nor require it to be
-    /// true — a status floating free of any route, which is how prose drifts back into
-    /// being a roster.
-    /// </summary>
     [ArchitectureTest]
     public void EveryJudgment_BindsToAtLeastOneOperation()
     {
@@ -229,10 +135,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "stops being true.");
     }
 
-    /// <summary>
-    /// Every judgement must say something. An empty note on a partial or stub is a
-    /// status with no stated reason, which is exactly the claim a reader cannot verify.
-    /// </summary>
     [ArchitectureTest]
     public void EveryPartialOrStubJudgment_StatesItsGap()
     {
@@ -247,11 +149,6 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "nothing they can act on and hides the size of the gap.");
     }
 
-    /// <summary>
-    /// Every <c>evidence</c> path must resolve to a real file — the matrix cited 24 paths
-    /// that no longer existed after GeoServices moved assemblies, and a dead path means
-    /// a reader cannot verify the claim.
-    /// </summary>
     [ArchitectureTest]
     public void EveryEvidencePath_ResolvesToARealFile()
     {

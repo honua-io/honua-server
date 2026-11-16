@@ -26,12 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the catalog honua-layer sink executor (#2210). Proves the
-/// seam: the node fails closed with a clear message when the optional
-/// <see cref="IHonuaLayerSink"/> capability is absent (a lean, Postgres-free deployment),
-/// and otherwise loads pre-encoded rows through the capability with the requested load mode.
-/// </summary>
 public sealed class HonuaLayerSinkExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -452,12 +446,6 @@ public sealed class HonuaLayerSinkExecutorTests
         }
     }
 
-    /// <summary>
-    /// Builds an <see cref="IServiceScopeFactory"/> whose scope resolves an
-    /// <see cref="IMetadataV2GraphProvider"/> over an EMPTY catalog (no resources, no storage
-    /// bindings) — every destination is therefore a "new destination" from
-    /// <see cref="HonuaLayerSinkExecutor.FindExistingLayerId"/>'s point of view.
-    /// </summary>
     private static IServiceScopeFactory EmptyCatalogScopeFactory()
     {
         var services = new ServiceCollection();
@@ -477,10 +465,8 @@ public sealed class HonuaLayerSinkExecutorTests
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == _snapshot.Revision ? _snapshot : null);
     }
 
-    /// <summary>Begins a job security scope for a submitter carrying the "admin" role claim.</summary>
     private static IDisposable BeginAdminSubmitterScope() => BeginSubmitterScope("admin");
 
-    /// <summary>Begins a job security scope for a submitter carrying the given role claim.</summary>
     private static IDisposable BeginSubmitterScope(string role) => JobSecurityScope.Begin(
         new JobSecurityContext(
             PrincipalId: "test-submitter",

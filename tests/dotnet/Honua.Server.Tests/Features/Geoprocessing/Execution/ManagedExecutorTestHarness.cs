@@ -15,13 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Shared in-memory harness for the managed (NetTopologySuite) vector overlay/
-/// proximity/statistics tool packs (#2139, #2140, #2206). Builds inline
-/// FeatureCollection data URIs, runs an executor through the canonical
-/// step-parameter envelope, and decodes the published FeatureCollection artifact —
-/// no Docker, no Postgres, no native dependency.
-/// </summary>
 internal static class ManagedExecutorTestHarness
 {
     public const string DataUriPrefix = "data:application/geo+json;base64,";

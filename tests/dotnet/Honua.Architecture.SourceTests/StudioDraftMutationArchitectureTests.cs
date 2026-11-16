@@ -6,7 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>Decrement-only ratchet for the Slice 3a Studio mutation conversion.</summary>
 public sealed class StudioDraftMutationArchitectureTests
 {
     private static readonly string[] KnownRemainingDirectMutationSites = [];

@@ -15,14 +15,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Regression tests for honua-server#1852 — a FeatureServer published as editable must
-/// advertise <c>Create,Update,Delete</c> (plus <c>Editing</c>) in its <c>capabilities</c>
-/// string so Esri clients (ArcGIS Pro / JS API) surface their edit tools; a read-only
-/// service still advertises <c>Query</c> only. The advertised capabilities are driven by
-/// the publish-time service metadata (<c>service.Options["capabilities"]</c>), not a
-/// hardcoded value.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerEditCapabilityAdvertisementTests

@@ -6,28 +6,6 @@ using System.Text;
 
 namespace Honua.TestKit.Formats;
 
-/// <summary>
-/// A dependency-free decoder for Mapbox Vector Tile 2.1 payloads
-/// (<see href="https://github.com/mapbox/vector-tile-spec/tree/master/2.1"/>), written for tests
-/// that need to assert what a tile actually contains (honua-server#4421).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Before this type no .NET test in the repository decoded an MVT: no decoder library was
-/// referenced, no <c>vector_tile.proto</c> existed, and every
-/// <c>application/vnd.mapbox-vector-tile</c> assertion checked a content-type header or that the
-/// body was non-empty. A tile pipeline that clipped wrongly, ignored a <c>where=</c> filter,
-/// dropped features at low zoom or emitted an undecodable payload passed all of them.
-/// </para>
-/// <para>
-/// This is deliberately a decoder and not a dependency: the wire format is a small, frozen subset
-/// of protobuf (varints, length-delimited fields, packed uint32 arrays), and a test asset that
-/// re-implements the spec independently of the producer is worth more than one that shares the
-/// producer's library. It is strict — a malformed payload throws
-/// <see cref="InvalidDataException"/> rather than yielding a partial tile — because "the bytes did
-/// not decode" is exactly the failure these tests exist to catch.
-/// </para>
-/// </remarks>
 public static class MvtTileDecoder
 {
     private const int TileLayersField = 3;
@@ -48,8 +26,6 @@ public static class MvtTileDecoder
     private const int LineTo = 2;
     private const int ClosePath = 7;
 
-    /// <summary>Decodes a tile payload into its layers.</summary>
-    /// <exception cref="InvalidDataException">The payload is not a well-formed vector tile.</exception>
     public static MvtTile Decode(ReadOnlySpan<byte> payload)
     {
         if (payload.IsEmpty)
@@ -80,7 +56,6 @@ public static class MvtTileDecoder
         return new MvtTile(layers);
     }
 
-    /// <summary>Decodes a tile payload, returning <see langword="false"/> instead of throwing.</summary>
     public static bool TryDecode(ReadOnlySpan<byte> payload, out MvtTile? tile)
     {
         try
@@ -213,11 +188,6 @@ public static class MvtTileDecoder
         return new MvtFeature(id, type, attributes, DecodeGeometry(commands, layerName));
     }
 
-    /// <summary>
-    /// Decodes the command/parameter integer stream into rings of tile-space coordinates. Point
-    /// features yield one single-coordinate ring per point; line and polygon features yield one
-    /// ring per part (polygon interior rings included, in wire order).
-    /// </summary>
     private static List<IReadOnlyList<MvtPoint>> DecodeGeometry(List<uint> commands, string layerName)
     {
         var rings = new List<IReadOnlyList<MvtPoint>>();
@@ -287,12 +257,6 @@ public static class MvtTileDecoder
         return rings;
     }
 
-    /// <summary>
-    /// Decodes one <c>Tile.Value</c>. The whole submessage is read even after the value field is
-    /// found: returning early would leave trailing bytes unparsed, so a truncated or malformed
-    /// remainder — which a conforming protobuf decoder rejects — would be reported as a valid
-    /// tile. The MVT spec allows exactly one value field per Value.
-    /// </summary>
     private static object? DecodeValue(ReadOnlySpan<byte> payload)
     {
         object? value = null;
@@ -366,16 +330,10 @@ public static class MvtTileDecoder
         }
     }
 
-    /// <summary>
-    /// Protobuf zig-zag decode. The intermediate XOR must be signed: doing it in <see cref="uint"/>
-    /// turns every negative ordinate into a value near 2^32, which is how a clipped geometry's
-    /// negative buffer coordinates read as ~4.29e9 instead of -256.
-    /// </summary>
     private static long ZigZag(uint value) => ((int)(value >> 1)) ^ -(int)(value & 1);
 
     private static long ZigZag64(ulong value) => (long)(value >> 1) ^ -(long)(value & 1);
 
-    /// <summary>Minimal forward-only protobuf reader over a span.</summary>
     private ref struct ProtoReader(ReadOnlySpan<byte> buffer)
     {
         private readonly ReadOnlySpan<byte> _buffer = buffer;
@@ -463,48 +421,36 @@ public static class MvtTileDecoder
     }
 }
 
-/// <summary>A decoded vector tile.</summary>
 public sealed record MvtTile(IReadOnlyList<MvtLayer> Layers)
 {
-    /// <summary>Gets the named layer, or throws when the tile does not contain it.</summary>
     public MvtLayer Layer(string name)
         => Layers.FirstOrDefault(layer => string.Equals(layer.Name, name, StringComparison.Ordinal))
            ?? throw new InvalidDataException(
                $"Vector tile has no layer '{name}'. Layers present: {string.Join(", ", Layers.Select(layer => layer.Name))}.");
 
-    /// <summary>Total feature count across every layer.</summary>
     public int FeatureCount => Layers.Sum(layer => layer.Features.Count);
 }
 
-/// <summary>A decoded vector tile layer.</summary>
 public sealed record MvtLayer(string Name, uint Version, uint Extent, IReadOnlyList<MvtFeature> Features);
 
-/// <summary>A decoded vector tile feature.</summary>
 public sealed record MvtFeature(
     ulong? Id,
     MvtGeometryType GeometryType,
     IReadOnlyDictionary<string, object?> Attributes,
     IReadOnlyList<IReadOnlyList<MvtPoint>> Rings)
 {
-    /// <summary>Every coordinate of the feature, in wire order.</summary>
     public IEnumerable<MvtPoint> Points => Rings.SelectMany(static ring => ring);
 }
 
-/// <summary>A coordinate in tile space: 0..extent across the tile, before any buffer is applied.</summary>
 public readonly record struct MvtPoint(long X, long Y);
 
-/// <summary>Vector tile geometry types (vector_tile.proto <c>GeomType</c>).</summary>
 public enum MvtGeometryType
 {
-    /// <summary>Unknown or unset.</summary>
     Unknown = 0,
 
-    /// <summary>Point or multipoint.</summary>
     Point = 1,
 
-    /// <summary>Linestring or multilinestring.</summary>
     LineString = 2,
 
-    /// <summary>Polygon or multipolygon.</summary>
     Polygon = 3
 }

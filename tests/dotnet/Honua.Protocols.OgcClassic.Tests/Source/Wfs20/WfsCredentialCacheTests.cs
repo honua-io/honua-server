@@ -16,7 +16,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>Credential-filtered WFS documents must never persist in a client's HTTP cache.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsCredentialCacheTests

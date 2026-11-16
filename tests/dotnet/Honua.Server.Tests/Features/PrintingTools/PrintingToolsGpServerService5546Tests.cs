@@ -13,11 +13,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Utilities/PrintingTools is a GPServer service: service resource, task resources,
-/// Utilities folder and service node, and the SOAP binding and catalog entries
-/// sibling GP services already publish.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.PrintingTools)]
 public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime

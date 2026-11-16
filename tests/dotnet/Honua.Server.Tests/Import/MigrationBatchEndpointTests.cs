@@ -18,14 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the footprint-driven batch import orchestration
-/// endpoints (issue #1253): <c>POST /api/v1/admin/import/migrations</c> and
-/// <c>GET /api/v1/admin/import/migrations/{batchId}</c>. Uses an in-memory
-/// catalog plus a recording orchestrator so the endpoints exercise routing,
-/// validation, serialization, and status-code policy without the distributed
-/// job pipeline.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -152,11 +144,6 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         _catalog.BatchCount.Should().Be(0);
     }
 
-    /// <summary>
-    /// #4600 (AC1): a caller that requires full fidelity gets 422 with the construct accounting that
-    /// refused the selection, and no run is created. The manifest discovers layers 0 and 1; only layer 0 is
-    /// selected, so layer 1 is the blocking unselected resource.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/migrations")]
     public async Task StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity()

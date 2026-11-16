@@ -25,7 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>Real handler authorization with in-memory stores; no database or desktop SDK.</summary>
 public sealed class Wcs20ScopedKeyAuthorizationTests
 {
     private static readonly byte[] CoverageBytes = [0x89, 0x50, 0x4e, 0x47];

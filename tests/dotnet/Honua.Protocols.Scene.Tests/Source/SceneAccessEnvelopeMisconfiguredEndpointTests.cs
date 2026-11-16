@@ -9,13 +9,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Integration coverage for the misconfigured-signing-key path. A deployment
-/// that registers a protected scene without setting
-/// <c>Honua:SceneAccessSigning:SigningKey</c> must surface a structured 500
-/// from the issue endpoint, while an unaccepted token on an asset request is
-/// refused rather than exposing configuration state as a server error.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAccessEnvelopeMisconfiguredEndpointTests : IAsyncLifetime
@@ -123,14 +116,6 @@ public sealed class SceneAccessEnvelopeMisconfiguredEndpointTests : IAsyncLifeti
     }
 }
 
-/// <summary>
-/// Integration coverage for the misconfigured TTL/refresh-fraction path.
-/// A deployment that sets <c>Honua:SceneAccessSigning:TokenTtlMinutes</c> outside
-/// the supported range must surface the same structured 500 +
-/// <c>OptionsMisconfigured</c> log as the missing-signing-key path, rather
-/// than silently clamping or escaping as an unhandled
-/// <c>OptionsValidationException</c> from data-annotation validation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAccessEnvelopeBadTtlEndpointTests : IAsyncLifetime

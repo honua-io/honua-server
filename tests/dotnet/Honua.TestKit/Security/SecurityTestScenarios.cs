@@ -5,15 +5,8 @@ using System.Net;
 
 namespace Honua.TestKit.Security;
 
-/// <summary>
-/// Security testing scenarios for API endpoints.
-/// Tests common vulnerabilities and attack vectors.
-/// </summary>
 public static class SecurityTestScenarios
 {
-    /// <summary>
-    /// SQL injection test payloads for filter parameters.
-    /// </summary>
     public static readonly string[] SqlInjectionPayloads = {
         "'; DROP TABLE users; --",
         "' OR 1=1 --",
@@ -29,9 +22,6 @@ public static class SecurityTestScenarios
         ") or ('1'='1--"
     };
 
-    /// <summary>
-    /// XSS attack payloads for text fields.
-    /// </summary>
     public static readonly string[] XssPayloads = {
         "<script>alert('xss')</script>",
         "<img src=x onerror=alert('xss')>",
@@ -43,9 +33,6 @@ public static class SecurityTestScenarios
         "<details open ontoggle=alert('xss')>"
     };
 
-    /// <summary>
-    /// Path traversal payloads for file access attempts.
-    /// </summary>
     public static readonly string[] PathTraversalPayloads = {
         "../../../etc/passwd",
         "..\\..\\..\\windows\\system32\\config\\sam",
@@ -56,9 +43,6 @@ public static class SecurityTestScenarios
         "\\..\\..\\..\\windows\\system32\\drivers\\etc\\hosts"
     };
 
-    /// <summary>
-    /// NoSQL injection payloads.
-    /// </summary>
     public static readonly string[] NoSqlInjectionPayloads = {
         "'; return true; //",
         "{'$gt':''}",
@@ -68,9 +52,6 @@ public static class SecurityTestScenarios
         "'; db.dropDatabase(); //"
     };
 
-    /// <summary>
-    /// LDAP injection payloads.
-    /// </summary>
     public static readonly string[] LdapInjectionPayloads = {
         "*)(uid=*",
         "*)(|(mail=*))",
@@ -79,9 +60,6 @@ public static class SecurityTestScenarios
         "*))%00"
     };
 
-    /// <summary>
-    /// Tests CQL2 filter endpoints for SQL injection vulnerabilities.
-    /// </summary>
     public static async Task<SecurityTestResult> TestCql2SqlInjection(
         HttpClient client,
         string endpoint,
@@ -129,9 +107,6 @@ public static class SecurityTestScenarios
         };
     }
 
-    /// <summary>
-    /// Tests endpoints for XSS vulnerabilities in responses.
-    /// </summary>
     public static async Task<SecurityTestResult> TestXssVulnerability(
         HttpClient client,
         string endpoint,
@@ -179,9 +154,6 @@ public static class SecurityTestScenarios
         };
     }
 
-    /// <summary>
-    /// Tests authorization boundaries and privilege escalation.
-    /// </summary>
     public static async Task<SecurityTestResult> TestAuthorizationBypass(
         HttpClient client,
         string[] protectedEndpoints,
@@ -247,9 +219,6 @@ public static class SecurityTestScenarios
         };
     }
 
-    /// <summary>
-    /// Tests for CORS misconfigurations.
-    /// </summary>
     public static async Task<SecurityTestResult> TestCorsConfiguration(
         HttpClient client,
         string endpoint)

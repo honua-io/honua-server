@@ -20,14 +20,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Branch-versioning async reconcile/post hardening tests (#1553). Proves the durable (service,version)
-/// lock serializes concurrent reconcile/post (surfacing a clear lock-contended signal), that the async
-/// job runner makes reconcile/post pollable end to end, and that the durable conflict records survive a
-/// "restart" so a re-run is idempotent/resumable. Uses a real PostGIS schema; the lock is the single-node
-/// in-process implementation (production substitutes the Redis-backed lock without changing behavior).
-/// The DEFAULT path is never exercised by these branch-version-only flows.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
@@ -252,11 +244,6 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         return services.BuildServiceProvider();
     }
 
-    /// <summary>
-    /// Minimal <see cref="Microsoft.Extensions.Hosting.IHostApplicationLifetime"/> test double whose
-    /// <see cref="ApplicationStopping"/> is already cancelled, simulating a background job that starts
-    /// just as the host begins a graceful shutdown.
-    /// </summary>
     private sealed class AlreadyStoppingApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
     {
         private readonly CancellationTokenSource _stoppingCts = new(0);

@@ -8,23 +8,14 @@ namespace Honua.Architecture.Tests.GeoServicesParity;
 
 internal static class GeoServicesRouteRoster
 {
-    /// <summary>Route-constraint stripper: <c>{layerId:int}</c> → <c>{layerId}</c>.</summary>
     private static readonly Regex RouteConstraintRegex = new(
         @"\{(?<name>[^{}:]+):[^{}]+\}",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    /// <summary>Synthetic service type for <c>/sharing/rest/*</c>.</summary>
     public const string PortalSharingServiceType = "PortalSharing";
 
-    /// <summary>Synthetic service type for the catalog roots (<c>/rest/info</c>, <c>/rest/services</c>).</summary>
     public const string CatalogServiceType = "Catalog";
 
-    /// <summary>
-    /// Esri service types served under <c>/rest/services/</c> that are deliberately
-    /// outside the GeoServices REST parity matrix, each with the reason. The join gate
-    /// asserts every exclusion still matches a served route, so an exclusion cannot
-    /// quietly outlive the thing it excluded.
-    /// </summary>
     public static readonly IReadOnlyDictionary<string, string> ExcludedServiceTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -34,12 +25,6 @@ internal static class GeoServicesRouteRoster
                 + "by the I3S capability family rather than this matrix.",
         };
 
-    /// <summary>
-    /// Maps a served Esri service type onto the parity matrix service that owns it.
-    /// A served service type absent from this map fails the join gate: a new Esri
-    /// service type has shipped and the matrix has no home for it (the
-    /// <c>VectorTileServer</c>/<c>VersionManagementServer</c> case #2861 found).
-    /// </summary>
     public static readonly IReadOnlyDictionary<string, string> ServiceIdByServiceType =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -56,13 +41,6 @@ internal static class GeoServicesRouteRoster
             [CatalogServiceType] = "geoservices-catalog",
         };
 
-    /// <summary>
-    /// Projects the generated feature catalog onto the GeoServices operation roster.
-    /// Consuming <see cref="FeatureCatalogGenerator.Generate"/> (rather than re-reading
-    /// <c>EndpointRegistry.All</c> independently) is deliberate: it makes the parity
-    /// roster a projection of the same generated capability data the catalog publishes,
-    /// so the two cannot disagree about what is served or how mature it is.
-    /// </summary>
     public static GeoServicesRoster Derive()
     {
         var operations = new Dictionary<string, List<(string Method, string Route, string Maturity)>>(StringComparer.Ordinal);
@@ -125,12 +103,6 @@ internal static class GeoServicesRouteRoster
         };
     }
 
-    /// <summary>
-    /// True for the route families the GeoServices REST parity matrix is answerable for:
-    /// the Esri service tree (<c>/rest/services/*</c>), the REST catalog roots, and the
-    /// ArcGIS portal-sharing surface. Scoping on the served path (rather than on the
-    /// proof ledger's hand-maintained family labels) keeps the roster mechanical.
-    /// </summary>
     private static bool IsGeoServicesRoute(string route)
         => route.StartsWith("/rest/", StringComparison.OrdinalIgnoreCase)
             || route.StartsWith("/sharing/rest/", StringComparison.OrdinalIgnoreCase);
@@ -175,12 +147,6 @@ internal static class GeoServicesRouteRoster
             : (segments[serviceTypeIndex], "/" + string.Join('/', segments[serviceTypeIndex..]));
     }
 
-    /// <summary>
-    /// Folds the maturity of every route backing one operation onto a single tier.
-    /// Any non-<c>implemented</c> tier wins: an operation is only as in-release as its
-    /// least-available route, and reporting the optimistic tier would let a
-    /// capability-gated (Preview) route be published as generally available.
-    /// </summary>
     private static string ResolveMaturity(IEnumerable<string> maturities)
     {
         var distinct = maturities.Distinct(StringComparer.Ordinal).ToArray();
@@ -189,29 +155,22 @@ internal static class GeoServicesRouteRoster
     }
 }
 
-/// <summary>One served Esri operation, derived from the generated capability data.</summary>
 internal sealed class GeoServicesOperation
 {
-    /// <summary>Esri-relative operation path; the join key between roster and judgement.</summary>
     public required string GeoServicesPath { get; init; }
 
-    /// <summary>Esri service type that owns the operation (<c>FeatureServer</c>, …).</summary>
     public required string ServiceType { get; init; }
 
     public required string[] HonuaEndpoints { get; init; }
 
-    /// <summary>Capability-registry maturity tier carried through from the feature catalog.</summary>
     public required string Maturity { get; init; }
 }
 
-/// <summary>The derived GeoServices roster plus what the derivation could not place.</summary>
 internal sealed class GeoServicesRoster
 {
     public required GeoServicesOperation[] Operations { get; init; }
 
-    /// <summary>Served GeoServices-family routes that carry no recognizable service type.</summary>
     public required string[] Unmapped { get; init; }
 
-    /// <summary>Excluded service types that actually matched a served route.</summary>
     public required string[] MatchedExclusions { get; init; }
 }

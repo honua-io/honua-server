@@ -22,7 +22,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>Exercises managed branch overlays through the production mapped reader (#5044).</summary>
 [Collection("Database")]
 public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {

@@ -10,11 +10,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Core.Tests.Features.Authorization;
 
-/// <summary>
-/// Unit tests for the AI-operations guardrail ladder (#1631): Community runs
-/// agent operations directly, Pro inserts the validation layer (plan/dry-run/
-/// validate + pre-change snapshot), and Enterprise adds approval + policy/audit.
-/// </summary>
 public sealed class EditionAgentGuardrailPolicyTests
 {
     private static AgentOperationDescriptor MutatingChange(bool supportsSnapshot = true, bool destructive = false) => new()

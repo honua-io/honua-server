@@ -10,10 +10,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.TestKit.Formats;
 
-/// <summary>
-/// Test double simulating an object store keyed by full path. Returns
-/// <see cref="FileNotFoundException"/> for missing keys so callers can probe.
-/// </summary>
 public sealed class InMemoryZarrRangeReader : ICloudRangeReader
 {
     private readonly Dictionary<string, byte[]> _objects;

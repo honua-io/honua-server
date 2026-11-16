@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit tests for the MCP Streamable-HTTP session registry (honua-server#1954).
-/// These run without Docker/PostGIS so the session-id issuance and validation
-/// invariants are covered even when the full integration harness is unavailable.
-/// </summary>
 public sealed class McpSessionManagerTests
 {
     [UnitTest]
@@ -354,10 +349,6 @@ public sealed class McpSessionManagerTests
         manager.IsValid(newest).Should().BeTrue();
     }
 
-    /// <summary>
-    /// Test <see cref="TimeProvider"/> whose UTC clock only advances when the test
-    /// asks, so idle-TTL and LRU behavior are deterministic without real waits.
-    /// </summary>
     private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
     {
         private DateTimeOffset _now = start;

@@ -5,10 +5,6 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Schema layout for import tests that write into per-test isolated schemas: the provider defaults
-/// plus those schemas as operational, since import targets must be operational schemas.
-/// </summary>
 internal static class ImportTestSchemaConfiguration
 {
     public static PostgresSchemaConfiguration WithOperational(string? schema) => new(

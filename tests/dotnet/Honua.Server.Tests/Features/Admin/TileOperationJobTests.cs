@@ -52,13 +52,6 @@ public sealed partial class TileOperationJobTests
             NullLogger<TileCacheJobService>.Instance,
             jobQueue ?? Substitute.For<IJobQueue>());
 
-    /// <summary>
-    /// Builds a real <see cref="IServiceScopeFactory"/> over a <em>scoped</em>
-    /// <see cref="IMetadataV2GraphProvider"/>, matching the production (Postgres) lifetime. The
-    /// service under test is a singleton, so it must reach the provider through a scope rather
-    /// than capture it — see the container-validation matrix in
-    /// <c>ImportExportTileOperationsRegistrationTests</c>.
-    /// </summary>
     private static IServiceScopeFactory ScopeFactoryFor(IMetadataV2GraphProvider graphProvider)
     {
         var services = new ServiceCollection();

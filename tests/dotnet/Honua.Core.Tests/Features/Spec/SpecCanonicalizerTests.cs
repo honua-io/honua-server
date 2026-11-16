@@ -9,12 +9,6 @@ using Honua.Core.Features.Spec.Grammar;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Tests for the canonical-JSON emitter. Covers three of the ticket 788
-/// acceptance criteria: (a) alphabetical keys with preserved array order,
-/// (b) grammar + capability version embedded at top, (c) comment sidecar
-/// keyed by JSON-Pointer.
-/// </summary>
 public sealed class SpecCanonicalizerTests
 {
     private static SpecDocument Parse(string text)

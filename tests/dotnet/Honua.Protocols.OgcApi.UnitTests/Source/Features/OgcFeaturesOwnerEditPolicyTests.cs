@@ -30,9 +30,6 @@ using NSubstitute;
 
 namespace Honua.Protocols.OgcApi.UnitTests.Features;
 
-/// <summary>
-/// OGC API Features item and transaction edits share the owner-edit policy.
-/// </summary>
 public sealed partial class OgcFeaturesOwnerEditPolicyTests
 {
     private const string NonOwnerDenial =

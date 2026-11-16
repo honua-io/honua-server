@@ -16,9 +16,6 @@ using System.Xml.Linq;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Provides an isolated database-backed application with publisher-hidden fields.
-/// </summary>
 public sealed class OgcFeaturesHiddenFieldTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -44,9 +41,6 @@ public sealed class OgcFeaturesHiddenFieldTestsFixture : IAsyncLifetime
 
 }
 
-/// <summary>
-/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
@@ -128,9 +122,6 @@ public sealed class OgcFeaturesHiddenFieldTests : IClassFixture<OgcFeaturesHidde
     }
 }
 
-/// <summary>
-/// Provides an isolated database-backed application with publisher-hidden fields.
-/// </summary>
 public sealed class OgcFeaturesHiddenFieldTestsRawFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture()
@@ -156,9 +147,6 @@ public sealed class OgcFeaturesHiddenFieldTestsRawFixture : IAsyncLifetime
 
 }
 
-/// <summary>
-/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]

@@ -7,13 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Provisioner;
 
-/// <summary>
-/// Unit coverage for the per-area build-job area selector. The same AREA forms the
-/// open-data provisioner accepts (<c>bbox:</c> / <c>geoid:</c>) must parse and validate
-/// here so a Maui geocoder/router build can be driven by, e.g., <c>geoid:15009</c>
-/// (Maui County) or a Maui bbox, and malformed input fails cleanly with a caller-facing
-/// reason rather than throwing.
-/// </summary>
 public sealed class ProvisionerAreaTests
 {
     [UnitTest]

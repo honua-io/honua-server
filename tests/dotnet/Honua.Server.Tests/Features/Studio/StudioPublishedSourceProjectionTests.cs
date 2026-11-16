@@ -21,7 +21,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>Real published reads keep audience metadata separate from publication authority.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]

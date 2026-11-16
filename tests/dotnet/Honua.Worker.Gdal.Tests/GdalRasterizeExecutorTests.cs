@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterizeJobExecutor"/>: gdal_rasterize
-/// burn/grid argument projection, the burn/grid XOR guards, and the GeoTIFF artifact
-/// contract (#2240).
-/// </summary>
 public sealed class GdalRasterizeExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-rasterize-test";

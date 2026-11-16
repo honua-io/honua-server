@@ -13,9 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for production health metric calculations.
-/// </summary>
 public sealed class ProductionHealthMetricsTests
 {
     [Fact]

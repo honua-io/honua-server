@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Geoprocessing.Testing.Tests;
 
-/// <summary>
-/// Proves the golden-file GP test harness ITSELF (GP Devkit P6, issue #2127): a passing
-/// golden, a deliberately-mismatched golden (failure + a located, useful diff), tolerance
-/// behavior (within-tolerance passes, outside fails), and update-mode regeneration — plus
-/// the scalar/structural path and the run-failure classification. Everything here runs
-/// fully offline over managed/stub executors: no Redis, job store, or control plane.
-/// </summary>
 public sealed class GpGoldenHarnessTests : IDisposable
 {
     // POINT(0 0) WKB — the same payload the durable-runtime buffer tests use.
@@ -228,10 +221,6 @@ public sealed class GpGoldenHarnessTests : IDisposable
             GoldenComparisonMode.Geometry,
             tolerance);
 
-    /// <summary>
-    /// Shifts every coordinate in a GeoJSON golden by <paramref name="delta"/>, so a fixture
-    /// run against it diverges by exactly that amount — driving the tolerance boundary tests.
-    /// </summary>
     private static void PerturbGoldenCoordinates(string goldenPath, double delta)
     {
         var text = File.ReadAllText(goldenPath);

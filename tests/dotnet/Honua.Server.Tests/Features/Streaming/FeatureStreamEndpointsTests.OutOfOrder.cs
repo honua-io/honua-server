@@ -10,11 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Regression coverage for honua-server#6104: live default subscriptions must deliver a frame
-/// whose cursor is lower than one already delivered (out-of-order arrival from publisher
-/// continuations or cross-node Redis fan-out) while still dropping true duplicates.
-/// </summary>
 public sealed partial class FeatureStreamEndpointsTests
 {
     private static readonly TimeSpan OutOfOrderSettleWindow = TimeSpan.FromMilliseconds(1500);

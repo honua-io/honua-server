@@ -5,9 +5,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Tests for workspace options startup validation.
-/// </summary>
 public class WorkspaceOptionsValidatorTests
 {
     private readonly WorkspaceOptionsValidator _validator = new();

@@ -10,9 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
-/// <summary>
-/// Integration tests for AzureBlobFileStorage using Azurite.
-/// </summary>
 [Collection("Emulators")]
 public sealed class AzureBlobFileStorageTests
 {

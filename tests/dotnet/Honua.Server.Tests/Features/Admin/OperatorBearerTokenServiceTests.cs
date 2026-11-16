@@ -8,9 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit tests for the console-consumable operator bearer issuer/validator (#2258).
-/// </summary>
 public sealed class OperatorBearerTokenServiceTests
 {
     private const string SigningKey = "operator-bearer-signing-key-at-least-32-bytes-long";

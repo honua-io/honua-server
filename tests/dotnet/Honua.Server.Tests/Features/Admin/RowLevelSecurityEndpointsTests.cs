@@ -20,12 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for row-level security (RLS) — issue #502, epic #1275. Proves the
-/// row-level core end-to-end against real PostGIS + the canonical FeatureServer query
-/// pipeline: an RLS policy filtering by attribute returns only the features matching the
-/// caller's claim, and that claim values are bound as parameters (injection-safe).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
@@ -454,11 +448,6 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
             .ToList();
     }
 
-    /// <summary>
-    /// Issues an edit/delete for the hidden objectId as the RLS-constrained caller and reports
-    /// whether the mutation SUCCEEDED. A successful per-row result on a 200 response is the bypass;
-    /// any non-success status (write-RBAC rejection) or a per-row failure is a correct block.
-    /// </summary>
     private async Task<bool> EditHiddenRowSucceededAsync(
         string claimCategory,
         string path,

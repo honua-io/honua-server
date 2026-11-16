@@ -12,13 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-/// <summary>
-/// Contract tests for the durable submitter-identity snapshot that carries row-level security
-/// and field masking onto the background job worker (honua-server#3068), plus live role
-/// membership replacement on deferred authorization (honua-server#3081). If capture, restore,
-/// or membership replacement loses a restricting claim, a restricted caller can silently get
-/// broader job output.
-/// </summary>
 public sealed class JobSecurityContextCaptureTests
 {
     [UnitTest]

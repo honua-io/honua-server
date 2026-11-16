@@ -14,10 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Integration tests for the SCIM 2.0 provisioning endpoints (#510): Users and Groups CRUD,
-/// list filtering/pagination, group-to-role mapping, deprovisioning, and bearer-token auth.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]

@@ -11,11 +11,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Drives the shipped routing pair budget and solve-capacity gate. The session
-/// factory fails if a solve reaches the database, so an over-budget request must
-/// be rejected by <see cref="PgRoutingProvider"/> first.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class RoutingSolveBudgetTests
 {

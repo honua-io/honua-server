@@ -14,7 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>Execution-content proofs for the catalog's native proximity operations.</summary>
 public sealed class GdalProximityCorrectnessTests
 {
     private const string FixtureName = "proximity-sources.tif";

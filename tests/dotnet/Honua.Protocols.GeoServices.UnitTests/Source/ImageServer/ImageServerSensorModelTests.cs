@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerSensorModel"/>, which parses the JSON sensor payloads
-/// (off-nadir orientation and RPC) carried by <see cref="RasterSensorMetadata"/>.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerSensorModelTests
 {

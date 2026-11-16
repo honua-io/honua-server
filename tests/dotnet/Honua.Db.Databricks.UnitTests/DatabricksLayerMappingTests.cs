@@ -7,9 +7,6 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Identifier validation and quoting for Metadata v2 <see cref="DatabricksLayerMapping.FromStorage"/>.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksLayerMappingTests
 {

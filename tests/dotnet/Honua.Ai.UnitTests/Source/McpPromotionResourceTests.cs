@@ -21,12 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies the promotion-surface resource handlers — published services,
-/// deployments, map/app packages, and the list-root index — serialize canonical
-/// fields, surface provenance edges, enforce authorization, return not-found for
-/// unknown identifiers, and cap list reads with a <c>truncated</c> flag.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPromotionResourceTests
 {

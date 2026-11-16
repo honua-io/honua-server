@@ -523,11 +523,6 @@ public sealed class FileBackedLicenseServiceTests
             logger,
             secretResolver is null ? null : [secretResolver]);
 
-    /// <summary>
-    /// Stand-in for a cloud secret store (e.g. AWS Secrets Manager) that returns the
-    /// configured license envelope content for a matching reference. Mirrors the
-    /// fail-safe contract of <see cref="ILicenseContentSecretResolver"/>.
-    /// </summary>
     private sealed class FakeLicenseSecretResolver : ILicenseContentSecretResolver
     {
         private readonly string _prefix;

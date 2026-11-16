@@ -17,9 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for raster import endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -546,12 +543,6 @@ public class RasterImportEndpointTests : IAsyncLifetime
     // Test data helpers
     // =============================================================================
 
-    /// <summary>
-    /// Creates a minimal valid TIFF header (little-endian, classic TIFF).
-    /// This is not a complete GeoTIFF but has the correct magic bytes for header validation.
-    /// PostGIS will reject it on actual ingest since it's incomplete, which tests the
-    /// error path for corrupt files.
-    /// </summary>
     private static byte[] CreateMinimalGeoTiffBytes()
     {
         // TIFF little-endian header: "II" + version 42
@@ -564,9 +555,6 @@ public class RasterImportEndpointTests : IAsyncLifetime
         ];
     }
 
-    /// <summary>
-    /// Creates minimal PNG file bytes (valid PNG header).
-    /// </summary>
     private static byte[] CreateMinimalPngBytes()
     {
         return

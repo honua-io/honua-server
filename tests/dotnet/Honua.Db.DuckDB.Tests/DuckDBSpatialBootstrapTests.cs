@@ -11,12 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Verifies the spatial extension is loaded onto every fresh DuckDB connection.
-/// LOAD is connection-scoped in DuckDB; if the bootstrap only loaded on the first
-/// connection, subsequent connections would fail when query execution references
-/// spatial ST_* functions.
-/// </summary>
 public sealed class DuckDBSpatialBootstrapTests
 {
     [Fact]

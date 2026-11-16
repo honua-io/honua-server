@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for the per-connection default-subscription delivery fence (honua-server#6104).
-/// </summary>
 public sealed class FeatureStreamDeliveredCursorWindowTests
 {
     [UnitTest]

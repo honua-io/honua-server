@@ -11,23 +11,10 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Identifier-allocation regressions for SensorThings ingest (#4199). Observation ids used
-/// to be reserved with <c>SELECT COALESCE(MAX(id), 0) + 1</c> inside a READ COMMITTED
-/// transaction and no lock, so two overlapping writers read the same MAX. Because the
-/// observation primary key is <c>(id, phenomenon_time)</c> the duplicate insert succeeded
-/// whenever the phenomenon times differed: two observations silently shared one
-/// <c>@iot.id</c> and the <c>Location</c> of one 201 resolved to the other row.
-///
-/// Every expectation here is computed from the request the test issued, never read back
-/// from the response it is checking: the posted result value is the oracle for "this
-/// <c>@iot.id</c> belongs to my observation".
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsIngestIdentityTests : IAsyncLifetime
 {
-    /// <summary>Seeded observations in the fixture datastream (ids 1..48, migration 059).</summary>
     private const int SeededObservationCount = 48;
 
     private readonly WebAppFixture _fixture = new();
@@ -48,7 +35,6 @@ public sealed class SensorThingsIngestIdentityTests : IAsyncLifetime
             .AddMinutes(index)
             .ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
-    /// <summary>The result value posted by writer <paramref name="index"/>, computed, not observed.</summary>
     private static double ExpectedResult(int index) => 1000d + (index * 0.5d);
 
     [IntegrationTest]

@@ -29,12 +29,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Regression coverage for issue #1098: the GeoServer catalog-apply path must
-/// never persist <c>honua.services</c> rows for workspaces outside the operator's
-/// requested scope, and any defense-in-depth guard must emit explicit evidence
-/// when a cross-workspace write is rejected.
-/// </summary>
 public sealed class GeoServerImportWorkspaceScopingTests
 {
     [Fact]

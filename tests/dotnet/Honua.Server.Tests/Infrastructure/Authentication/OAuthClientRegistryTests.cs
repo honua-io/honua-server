@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the first-class OAuth2 client registry and scope catalogue
-/// (ADR-0053 Increment 2, #1888): client CRUD, secret hashing (no plaintext at
-/// rest), secret validation, and scope grant/narrowing semantics.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

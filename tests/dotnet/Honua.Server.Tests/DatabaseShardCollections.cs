@@ -26,65 +26,42 @@ namespace Honua.Server.Tests;
 // shard area so the previously-serial Core, GeoServices ImageServer, and OGC API
 // Maps/Tiles shards parallelize within their own filtered test set.
 
-/// <summary>
-/// Database-backed collection for Core-shard feature-store / query / CRS tests.
-/// </summary>
 [CollectionDefinition("Database.CoreFeatureStore")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseCoreFeatureStoreCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
 
-/// <summary>
-/// Database-backed collection for Core-shard protocol-endpoint and seed tests.
-/// </summary>
 [CollectionDefinition("Database.CoreEndpoints")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseCoreEndpointsCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
 
-/// <summary>
-/// Database-backed collection for the enabled-candidate alerting qualification lane.
-/// The production alert outbox uses the global honua schema, so this collection keeps
-/// its end-to-end scenarios serialized with one shared fixture.
-/// </summary>
 [CollectionDefinition("Database.Alerts", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseAlertsCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
 
-/// <summary>
-/// Database-backed collection for Core-shard spatial-correctness tests.
-/// </summary>
 [CollectionDefinition("Database.CoreSpatial")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseCoreSpatialCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
 
-/// <summary>
-/// Database-backed collection for admin authorization endpoint tests.
-/// </summary>
 [CollectionDefinition("Database.AdminAuthorization")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseAdminAuthorizationCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
 
-/// <summary>
-/// Database-backed collection for gRPC Scene integration tests.
-/// </summary>
 [CollectionDefinition("Database.SceneGrpc")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseSceneGrpcCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
 
-/// <summary>
-/// Database-backed collection for OIDC authentication tests.
-/// </summary>
 [CollectionDefinition("Database.OidcAuthentication")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseOidcAuthenticationCollection : ICollectionFixture<DatabaseFixtureAdapter>

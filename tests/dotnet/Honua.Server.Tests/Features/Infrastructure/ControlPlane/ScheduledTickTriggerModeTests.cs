@@ -10,13 +10,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Phase 3 trigger-mode tests for the PERIODIC (bucket-b) services. Under <c>TriggerMode=Poll</c> the
-/// in-process timers are hosted as before; under <c>Event</c> none of them are hosted, but the
-/// scheduled-tick handlers + dispatcher are registered so EventBridge Scheduler can drive each tick.
-/// These exercise <see cref="ControlPlaneTriggerModeResolver"/> (the shared gate every registration
-/// site uses) and the dispatcher's resolution of the registered handler set.
-/// </summary>
 public sealed class ScheduledTickTriggerModeTests
 {
     private static IConfiguration Configuration(string? triggerMode)
@@ -103,10 +96,6 @@ public sealed class ScheduledTickTriggerModeTests
         act.Should().NotThrowAsync();
     }
 
-    /// <summary>
-    /// Mirrors the Poll-gated registration pattern used at every PERIODIC site: shared singleton +
-    /// always-on handler + conditionally-hosted timer keyed off the trigger mode.
-    /// </summary>
     private static void RegisterLikeProductionSite(IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<CountingTickHandler>();

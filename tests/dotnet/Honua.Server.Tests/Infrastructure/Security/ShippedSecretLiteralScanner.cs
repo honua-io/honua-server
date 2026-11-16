@@ -6,35 +6,14 @@ using System.Data.Common;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
-/// <summary>
-/// Reads the repository's shipped declarative files and reports the credential-shaped
-/// literal values they assign, so a drift test can assert each one is already refused by
-/// production startup validation.
-/// </summary>
-/// <remarks>
-/// Scope is deliberately limited to declarative <c>key: value</c> / <c>key=value</c>
-/// assignments in compose files, <c>.env*.example</c> files, workflow files and composite
-/// action files. Shell scripts assign the same values through too many forms to scan
-/// reliably; they reuse the literals these files already declare.
-/// </remarks>
 internal static partial class ShippedSecretLiteralScanner
 {
-    /// <summary>A credential-shaped literal found in a shipped file.</summary>
-    /// <param name="Value">The literal value as written.</param>
-    /// <param name="Key">The configuration or environment key it is assigned to.</param>
-    /// <param name="Location">Repository-relative <c>path:line</c> of the assignment.</param>
     internal sealed record Finding(string Value, string Key, string Location);
 
-    /// <summary>Repository-root file patterns that declare shipped configuration.</summary>
     private static readonly string[] RootFilePatterns = ["docker-compose*.yml", "compose*.yml", ".env*.example"];
 
-    /// <summary>File patterns scanned recursively under <c>docker/</c>.</summary>
     private static readonly string[] DockerFilePatterns = ["compose*.yml", "docker-compose*.yml", ".env*.example"];
 
-    /// <summary>
-    /// Key-name fragments that mark an assignment as credential-shaped. Matched
-    /// case-insensitively, so both <c>MasterKey</c> and <c>MASTER_KEY</c> are covered.
-    /// </summary>
     private static readonly string[] CredentialKeyFragments =
     [
         "password",
@@ -50,19 +29,12 @@ internal static partial class ShippedSecretLiteralScanner
         "salt",
     ];
 
-    /// <summary>
-    /// Keys whose name matches <see cref="CredentialKeyFragments"/> but whose value is not a
-    /// credential. Each entry is a deliberate, reviewed exemption.
-    /// </summary>
     private static readonly HashSet<string> NonCredentialKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         // PostgreSQL server setting: names the password hashing algorithm, not a password.
         "POSTGRESQL_CONF_password_encryption",
     };
 
-    /// <summary>Scans the repository and returns every credential-shaped literal it declares.</summary>
-    /// <param name="repositoryRoot">Absolute path to the repository root.</param>
-    /// <returns>One finding per assignment; the same value may appear more than once.</returns>
     internal static IReadOnlyList<Finding> Scan(string repositoryRoot)
     {
         var findings = new List<Finding>();
@@ -203,11 +175,6 @@ internal static partial class ShippedSecretLiteralScanner
         return CredentialKeyFragments.Any(fragment => key.Contains(fragment, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Reduces a raw right-hand side to the literal a deployment would actually use, or
-    /// reports that the assignment ships no literal at all (an interpolation, a required
-    /// variable, or an empty value).
-    /// </summary>
     private static bool TryReadLiteral(string raw, out string literal)
     {
         literal = string.Empty;

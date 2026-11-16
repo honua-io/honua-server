@@ -19,13 +19,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// End-to-end coverage of the production <c>geometry.buffer</c> executor wired
-/// into the durable runtime. Prior to this slice every submitted geoprocessing
-/// job hit <c>NoExecutorForKind</c> and was abandoned with empty results; the
-/// tests below pin the new behaviour so a regression cannot re-introduce that
-/// failure mode.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class GeometryBufferJobExecutorIntegrationTests(DatabaseFixtureAdapter database)

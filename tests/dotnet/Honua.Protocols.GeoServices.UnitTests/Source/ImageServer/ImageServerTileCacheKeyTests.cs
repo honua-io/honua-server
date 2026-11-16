@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit coverage for <see cref="ImageServerTileCacheKey"/> proving the durable tile-cache key
-/// varies with every render-affecting dimension the WMTS matrix-set feature introduced (#2665):
-/// tile matrix set, style, output format, time, tenant/auth identity, and layer identity. A
-/// collision on any of these would serve the wrong bytes across gridsets, styles, tenants, or times.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerTileCacheKeyTests
 {

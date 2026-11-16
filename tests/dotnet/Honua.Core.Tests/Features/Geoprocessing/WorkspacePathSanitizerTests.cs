@@ -5,11 +5,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit coverage for <see cref="WorkspacePathSanitizer"/>, the single source of
-/// truth shared by the GDAL worker's error sanitizer and the console job
-/// glass-box HTTP projection.
-/// </summary>
 public sealed class WorkspacePathSanitizerTests
 {
     [Trait("Tier", "Fast")]

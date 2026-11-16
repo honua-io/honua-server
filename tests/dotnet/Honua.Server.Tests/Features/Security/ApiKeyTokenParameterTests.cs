@@ -26,14 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// #5492: an API key is accepted wherever a GeoServices access token is accepted — the
-/// <c>token</c> query parameter, the <c>token</c> form field, and
-/// <c>X-Esri-Authorization: Bearer</c> — and carries exactly the authority it carries in
-/// the <c>X-API-Key</c> header: never more, and recorded as an API-key credential.
-/// Because URLs leak, a key with administrative authority is never accepted from the
-/// <c>token</c> query parameter; it must use a header transport.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -114,11 +106,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// The issue's first exchange: a client signing in with an API key checks it with
-    /// <c>GET /sharing/rest/portals/self?f=json&amp;token=&lt;key&gt;</c>. It must describe the
-    /// key's user, not answer 498.
-    /// </summary>
     [IntegrationTheory]
     [InlineData(ManagedKey, QueryTransport)]
     [InlineData(BootstrapKey, GeoServicesHeaderTransport)]
@@ -141,10 +128,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         user.GetProperty("username").GetString().Should().Be(expectedUser, "the key describes the user X-API-Key describes");
     }
 
-    /// <summary>
-    /// The issue's data exchange: the protected layer's query answers a key presented as a
-    /// token exactly as it answers the same key in <c>X-API-Key</c>.
-    /// </summary>
     [IntegrationTheory]
     [MemberData(nameof(KeyTransportMatrix))]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -166,11 +149,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         count.Should().Be(expected, "a {0} API key presented via {1} must read what X-API-Key reads", keyKind, transport);
     }
 
-    /// <summary>
-    /// The <c>token</c> query parameter is also the only credential carrier some clients of
-    /// the OGC services have. A non-admin key presented there sees the protected feature types
-    /// exactly as the same key in <c>X-API-Key</c> does, not the anonymous view.
-    /// </summary>
     [IntegrationTest]
     [Protocol(TestProtocols.Wfs20)]
     [Endpoint("GET /wfs")]
@@ -197,10 +175,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
             "a non-admin API key in the token parameter must list what X-API-Key lists");
     }
 
-    /// <summary>
-    /// An admin key in the WFS <c>token</c> parameter is not a credential: the response is the
-    /// anonymous view, while the same key in <c>X-API-Key</c> still sees the protected types.
-    /// </summary>
     [IntegrationTheory]
     [InlineData(BootstrapKey)]
     [InlineData(ManagedKey)]
@@ -227,10 +201,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
             keyKind);
     }
 
-    /// <summary>
-    /// A key with administrative authority is never accepted from the URL. On GeoServices paths
-    /// it is an invalid token (498); the same key in a header transport still works.
-    /// </summary>
     [IntegrationTheory]
     [InlineData(BootstrapKey)]
     [InlineData(ManagedKey)]
@@ -252,11 +222,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         (await ReadCountAsync(viaHeader)).Should().NotBeNull("header transports are unaffected");
     }
 
-    /// <summary>
-    /// A managed key is opaque base64url and may contain the SQL-comment bytes the input
-    /// filter flags. Presented as <c>?token=</c> it must still be the same credential on WFS
-    /// GetCapabilities and on a GeoServices query, including the form transport.
-    /// </summary>
     [IntegrationTheory]
     [InlineData(ManagedKeyWithSqlLineComment)]
     [InlineData(ManagedKeyWithSqlBlockComment)]
@@ -299,10 +264,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Exempting <c>token</c> from the SQL heuristic must not exempt <c>where</c>. A comment
-    /// token outside a quoted literal is still rejected.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task WhereParameter_WithSqlCommentOutsideLiteral_IsStillRejected()
@@ -323,10 +284,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         ErrorDetails(body).Should().Contain("SQL injection attempt detected in query parameter 'where'");
     }
 
-    /// <summary>
-    /// The token exemption skips only the SQL heuristic. An XSS payload in <c>token</c> is
-    /// still rejected, and so is a control character.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task TokenParameter_NonSqlChecks_StillRejectXssAndControlCharacters()
@@ -346,11 +303,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         ErrorDetails(controlBody).Should().Contain("Control characters detected in query parameter 'token'");
     }
 
-    /// <summary>
-    /// A key presented as a token carries only its own scope: a non-admin key is refused the
-    /// admin-only layer with the same status it gets through <c>X-API-Key</c>, and is never
-    /// mistaken for an invalid token.
-    /// </summary>
     [IntegrationTheory]
     [InlineData(QueryTransport)]
     [InlineData(FormTransport)]
@@ -377,9 +329,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         ReadErrorCode(body).Should().Be(403, "the key is valid and only its scope is insufficient: {0}", body);
     }
 
-    /// <summary>
-    /// Revoked and expired keys stay invalid tokens: the 498 answer is unchanged.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /sharing/rest/portals/self")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -404,10 +353,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// The token transports belong to the GeoServices surfaces. They do not turn a key into
-    /// an admin-API credential: the admin API still requires <c>X-API-Key</c>.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/api-keys")]
     public async Task AdminApi_ApiKeyPresentedAsToken_StillRequiresXApiKey()
@@ -424,11 +369,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// RFC 6750 §2.3: a response to a request whose credential travelled in the URI query is
-    /// <c>Cache-Control: private</c>. The shared credentialed-response policy still adds
-    /// <c>no-store</c>, which wins; the token never reaches a shared cache keyed by its URL.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ProtectedQuery_ApiKeyInTokenParameter_ResponseIsPrivateAndNotStored()
@@ -446,10 +386,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         cacheControl.Public.Should().BeFalse();
     }
 
-    /// <summary>
-    /// A key's referrer restriction applies on the <c>token</c> query transport exactly as on
-    /// <c>X-API-Key</c>: the URL alone is not enough when the key names its allowed origins.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ProtectedQuery_ReferrerRestrictedKeyInTokenParameter_IsEnforced()
@@ -641,10 +577,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// #5492: the principal a token-presented API key yields is the principal the
-/// <c>X-API-Key</c> header yields, so the audit trail records an API-key credential.
-/// </summary>
 public sealed class ApiKeyTokenParameterPrincipalTests
 {
     private const string AdminPassword = "ApiKeyTokenParameter-AdminPassword123!";

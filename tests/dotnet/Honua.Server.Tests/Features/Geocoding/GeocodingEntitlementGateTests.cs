@@ -24,28 +24,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-/// <summary>
-/// Entitlement-gate tests for the GeoServices GeocodeServer HTTP surface (#2981). Before this
-/// change, the catalog declared <c>geocoding.forward</c>/<c>geocoding.reverse</c> Pro and
-/// <c>geocoding.batch</c> Enterprise, but no HTTP endpoint enforced any of them — the release
-/// owner's "split" decision re-tiers forward/reverse to Community (the demo/adoption showcase
-/// path) and adds real enforcement for batch geocoding (the volume/enterprise workload) via the
-/// same <c>LicenseGate.RequireEntitlement</c> endpoint-filter pattern used for SAML/SCIM (#2978).
-///
-/// These tests prove both directions: <c>geocodeAddresses</c> signals the entitlement failure
-/// below Enterprise (including the #2978 "Pro-is-not-enough" shape) and succeeds at Enterprise;
-/// <c>findAddressCandidates</c>/<c>reverseGeocode</c> succeed with no license configured at all,
-/// proving they carry no entitlement gate. GeocodeServer metadata stays reachable with no license
-/// either, per the issue's "metadata/discovery stays Community" requirement.
-///
-/// The GeoServices REST surface (PA-070/PA-117, #2418) signals ALL errors — including this
-/// entitlement gate — with HTTP <b>200</b> and an <c>{"error":{"code":402,...}}</c> body rather
-/// than a raw non-2xx status, matching every Esri client's error-handling contract. These tests
-/// therefore assert via <see cref="GeoServicesErrorAssertions.AssertGeoServicesErrorAsync(HttpResponseMessage, int, bool)"/>
-/// (body <c>error.code == 402</c>) rather than <see cref="HttpStatusCode.PaymentRequired"/>
-/// directly — unlike the #2978 SAML/SCIM gate, which sits outside the GeoServices path and
-/// returns a literal HTTP 402.
-/// </summary>
 [Protocol(TestProtocols.Geocoding)]
 public sealed class GeocodingEntitlementGateTests
 {

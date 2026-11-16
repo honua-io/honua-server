@@ -8,15 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Reproduces honua-server#1771 at the serialization layer: the published/AOT image
-/// sets <c>JsonSerializerIsReflectionEnabledByDefault=false</c>, so the source-generated
-/// <see cref="MapServerJsonContext"/> must contain a <c>JsonTypeInfo</c> for every runtime
-/// CLR type that can land in a <see cref="FindResult.Attributes"/> <c>object</c> slot. The
-/// integration tests run with reflection enabled (test default), which masks a missing
-/// registration; these tests force source-generated-only metadata so the gap surfaces as a
-/// failing test instead of a runtime 500 on the AOT image.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MapServerFindSerializationTests
 {

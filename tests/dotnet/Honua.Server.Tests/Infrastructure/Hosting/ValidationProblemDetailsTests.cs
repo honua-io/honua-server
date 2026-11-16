@@ -12,12 +12,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Infrastructure.Hosting;
 
-/// <summary>
-/// Pins the wire shape emitted by
-/// <see cref="ProblemDetailsHelpers.CreateValidationProblem"/>: an RFC 7807
-/// problem document carrying the shared field-level validation contract as an
-/// <c>errors[]</c> extension member.
-/// </summary>
 public sealed class ValidationProblemDetailsTests
 {
     [Fact]

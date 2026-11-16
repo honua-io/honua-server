@@ -8,9 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces NuGet package version governance.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class PackageGovernanceTests
 {

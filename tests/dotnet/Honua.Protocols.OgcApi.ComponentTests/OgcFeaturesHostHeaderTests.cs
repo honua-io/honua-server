@@ -10,9 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Verifies OGC Features metadata links are not derived from untrusted Host headers.
-/// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesHostHeaderTests : IClassFixture<OgcFeaturesComponentFixture>
 {

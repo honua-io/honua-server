@@ -18,11 +18,6 @@ namespace Honua.Db.Oracle.Tests;
 // SRV-AUTH-008 -> fixed; OracleConnectionDriverTests.BuildConnectionString_SRV_AUTH_008_*.
 // SRV-DB-018 -> fixed; MySqlFeatureQueryBuilderTests.BuildExtentQuery_SRV_DB_018_*.
 
-/// <summary>
-/// Unit tests for the Oracle query builder. Verifies Oracle SQL dialect, identifier
-/// quoting, bind-parameter syntax, and spatial-filter correctness for each supported
-/// relationship.
-/// </summary>
 public class OracleFeatureQueryBuilderTests
 {
     private const int TestLayerId = 7;

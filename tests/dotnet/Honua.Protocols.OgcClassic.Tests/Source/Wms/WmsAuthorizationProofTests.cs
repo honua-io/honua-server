@@ -12,12 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Authorization proofs for the WMS operations that return pixels and attributes
-/// (#4388): <c>GetMap</c> and <c>GetFeatureInfo</c>. See
-/// <see cref="OgcClassicAuthorizationProofTestBase"/> for the fixture and for the
-/// shared denial floor these cases assert.
-/// </summary>
 [Collection("Database")]
 public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTestBase
 {
@@ -131,10 +125,6 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
         (await response.Content.ReadAsStringAsync()).Should().NotContain("Tenant service title");
     }
 
-    /// <summary>
-    /// WMS 1.3.0 §7.3.3.4 defines the ServiceExceptionReport payload for a refusal;
-    /// the principal is authenticated but lacks the role, so the status is 403.
-    /// </summary>
     private static async Task AssertWmsAccessDeniedAsync(HttpResponseMessage response, string version = "1.3.0")
     {
         var body = await AssertRefusedWithoutPayloadAsync(response, HttpStatusCode.Forbidden);

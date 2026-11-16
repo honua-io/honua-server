@@ -12,9 +12,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Real import and discovery results paired with anonymous denial on the same host.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class ImportReadWriteContractTests : IAsyncLifetime

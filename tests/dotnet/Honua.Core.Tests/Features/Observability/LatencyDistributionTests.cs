@@ -6,10 +6,6 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Tests.Features.Observability;
 
-/// <summary>
-/// Unit tests for <see cref="LatencyDistribution"/>: the mergeable fixed-bucket latency histogram that lets
-/// cluster percentiles be recomputed from merged distributions rather than a mean of percentiles (#2809).
-/// </summary>
 public class LatencyDistributionTests
 {
     [Trait("Tier", "Fast")]

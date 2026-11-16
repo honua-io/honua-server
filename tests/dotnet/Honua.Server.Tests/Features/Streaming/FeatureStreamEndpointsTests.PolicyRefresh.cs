@@ -21,10 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Open subscriptions re-resolve access, row-level security and field masks on the
-/// subscriber-policy refresh tick (honua-server#6105).
-/// </summary>
 public sealed partial class FeatureStreamEndpointsTests
 {
     private static readonly TimeSpan PolicyRefreshInterval = TimeSpan.FromMilliseconds(250);

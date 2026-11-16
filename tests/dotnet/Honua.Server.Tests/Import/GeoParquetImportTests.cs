@@ -24,9 +24,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for GeoParquet import (upload) endpoint.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

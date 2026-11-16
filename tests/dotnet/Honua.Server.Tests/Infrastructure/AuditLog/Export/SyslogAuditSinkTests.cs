@@ -9,10 +9,6 @@ using Honua.Server.Features.Infrastructure.AuditLog.Export;
 
 namespace Honua.Server.Tests.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Unit tests for <see cref="SyslogAuditSink"/> CEF framing and transport error
-/// classification (#2157).
-/// </summary>
 public sealed class SyslogAuditSinkTests
 {
     private static AuditEvent SampleEvent() => new()

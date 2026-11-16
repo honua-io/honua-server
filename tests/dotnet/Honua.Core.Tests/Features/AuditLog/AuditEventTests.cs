@@ -7,10 +7,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Core.Tests.Features.AuditLog;
 
-/// <summary>
-/// Sanity checks on the <see cref="AuditEvent"/> shape and the
-/// <see cref="NullAuditLog"/> fallback (#1144).
-/// </summary>
 public sealed class AuditEventTests
 {
     [Trait("Tier", "Fast")]
@@ -175,10 +171,6 @@ public sealed class AuditEventTests
     }
 }
 
-/// <summary>
-/// The <see cref="NullAuditLog"/> fallback must accept any well-formed event
-/// and never throw — call sites rely on it for tests / non-database hosts.
-/// </summary>
 public sealed class NullAuditLogTests
 {
     [Trait("Tier", "Fast")]

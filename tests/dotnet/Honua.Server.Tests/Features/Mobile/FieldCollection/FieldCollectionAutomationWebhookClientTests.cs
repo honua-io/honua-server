@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// The FieldCollection automation webhook client must not follow redirects and
-/// must pin DNS at connect time (#6126).
-/// </summary>
 public sealed class FieldCollectionAutomationWebhookClientTests
 {
     [UnitTest]

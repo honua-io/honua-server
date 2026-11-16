@@ -13,11 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Regression coverage for the conflict-resolution claim lifecycle (#2430). Every case here is a way
-/// a conflict could end up recorded as resolved without the corresponding feature write having
-/// committed — the exact dishonesty the write-through resolution path exists to remove.
-/// </summary>
 public sealed class ReplicaConflictResolutionServiceTests
 {
     [UnitTest]
@@ -814,11 +809,6 @@ public sealed class ReplicaConflictResolutionServiceTests
         result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
     }
 
-    /// <summary>
-    /// Drives the service once to capture the hash it records for a keepServer claim carrying an
-    /// irrelevant geometry hint, so the test asserts against the real normalization rather than a
-    /// duplicate of it.
-    /// </summary>
     private static string? ComputeKeepServerHashViaService(
         ReplicaConflictResolutionService service,
         string geometrySource)
@@ -987,11 +977,6 @@ public sealed class ReplicaConflictResolutionServiceTests
                 GeometrySource: null),
         };
 
-    /// <summary>
-    /// Drives the service once to capture the hash it records for a mergeFields claim naming
-    /// <paramref name="fieldName"/>, so the test asserts against the real normalization rather than a
-    /// duplicate of it.
-    /// </summary>
     private static string? ComputeMergeFieldsHashViaService(string fieldName)
     {
         var probeRepository = new FakeConflictRepository(Conflict(clientEditApplied: true));
@@ -1185,7 +1170,6 @@ public sealed class ReplicaConflictResolutionServiceTests
         repository.Current.ServerStateJson.Should().BeNull();
     }
 
-    /// <summary>Applier whose precondition fails and whose row has since been deleted.</summary>
     private sealed class AbsentRowPreconditionFailingApplier : IReplicaConflictResolutionApplier
     {
         public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
@@ -1371,13 +1355,10 @@ public sealed class ReplicaConflictResolutionServiceTests
     {
         public const long Generation = 77L;
 
-        /// <summary>Changes the tracker reports for the staleness probe.</summary>
         public List<FeatureChange> ChangesSinceBase { get; } = [];
 
-        /// <summary>Object-id filters supplied to the scoped staleness probe.</summary>
         public List<long[]> ObjectIdFilters { get; } = [];
 
-        /// <summary>Makes the staleness probe fault, as a cancelled request or provider error would.</summary>
         public bool ThrowOnProbe { get; init; }
 
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
@@ -1433,7 +1414,6 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public ReplicaConflictResolutionCommand? LastCommand { get; private set; }
 
-        /// <summary>Order of seam calls, so the token capture can be asserted to precede the probe.</summary>
         public List<string> Trace { get; } = [];
 
         public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
@@ -1466,7 +1446,6 @@ public sealed class ReplicaConflictResolutionServiceTests
             => Task.FromResult(new ReplicaConflictApplyResult(Applied: false, FailureMessage: "write rejected"));
     }
 
-    /// <summary>Applier that observes no row, as a resolution targeting an already-deleted feature does.</summary>
     private sealed class AbsentRowApplier : IReplicaConflictResolutionApplier
     {
         public ReplicaConflictResolutionCommand? LastCommand { get; private set; }
@@ -1484,7 +1463,6 @@ public sealed class ReplicaConflictResolutionServiceTests
         }
     }
 
-    /// <summary>Absent-row applier whose first write loses its transaction acknowledgement.</summary>
     private sealed class AbsentRowIndeterminateThenAppliedApplier : IReplicaConflictResolutionApplier
     {
         public List<ReplicaConflictResolutionCommand> Commands { get; } = [];
@@ -1507,7 +1485,6 @@ public sealed class ReplicaConflictResolutionServiceTests
         }
     }
 
-    /// <summary>Applier whose precondition caught an edit arriving just before the write transaction.</summary>
     private sealed class PreconditionFailingApplier : IReplicaConflictResolutionApplier
     {
         public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
@@ -1526,7 +1503,6 @@ public sealed class ReplicaConflictResolutionServiceTests
         }
     }
 
-    /// <summary>Applier whose write may or may not have committed, as a lost commit ack reports.</summary>
     private sealed class IndeterminateApplier : IReplicaConflictResolutionApplier
     {
         public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
@@ -1552,10 +1528,6 @@ public sealed class ReplicaConflictResolutionServiceTests
             => throw new InvalidOperationException("provider fault");
     }
 
-    /// <summary>
-    /// Conflict repository whose writes honor the cancellation token, so a test can prove the cleanup
-    /// path does not depend on the (possibly cancelled) request token.
-    /// </summary>
     private sealed class FakeConflictRepository(ReplicaConflictRecord seed) : IReplicaConflictRepository
     {
         public bool SupportsConflictReview => true;
@@ -1564,26 +1536,20 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public bool FinalizationThrows { get; set; }
 
-        /// <summary>Simulates the claim being released or replaced while the write is in flight.</summary>
         public bool LoseClaimAfterWrite { get; init; }
 
-        /// <summary>Simulates another recovery winning the takeover first.</summary>
         public bool TakeoverLoses { get; init; }
 
-        /// <summary>Simulates a retry taking the claim over while this request's audit is running.</summary>
         public bool LoseClaimBeforeFinalMarker { get; init; }
 
-        /// <summary>Simulates a retry taking the claim over while a re-applied write is running.</summary>
         public bool LoseClaimOnWriteMarker { get; init; }
 
-        /// <summary>Simulates a retry taking the claim over during the capture/probe phase.</summary>
         public bool LoseClaimOnTokenPersist { get; init; }
 
         public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
 
-        /// <summary>Swaps the stored record, simulating another request winning the row.</summary>
         public void Replace(ReplicaConflictRecord record) => Current = record;
 
         public Task UpsertAsync(ReplicaConflictRecord record, CancellationToken cancellationToken = default)
@@ -1603,7 +1569,6 @@ public sealed class ReplicaConflictResolutionServiceTests
             => Task.FromResult<ReplicaConflictRecord?>(
                 string.Equals(conflictId, Current.ConflictId, StringComparison.Ordinal) ? Current : null);
 
-        /// <summary>Detection-state corrections applied after the record was written.</summary>
         public List<ReplicaConflictDetectionUpdate> DetectionUpdates { get; } = [];
 
         public Task<bool> TryUpdateDetectionStateAsync(

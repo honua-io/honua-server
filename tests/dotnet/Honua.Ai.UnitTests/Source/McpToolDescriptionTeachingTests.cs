@@ -17,16 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the load-bearing teaching phrases in the MCP planning-tool descriptions
-/// and output schemas (the tool-description quality pass, #1948/#2485). Tool
-/// descriptions are prompts: an agent reading only <c>tools/list</c> plus the
-/// plan_analysis output must learn (a) how to route among the natural-language
-/// entry tools, (b) the full execute->poll->results->publish loop, (c) whether a
-/// plan came from a live model or a fixture, and (d) which processIds exist and
-/// where their parameter docs live. These assertions fail if a future edit drops
-/// the teaching, catching prompt-quality regressions the compiler cannot.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpToolDescriptionTeachingTests
 {

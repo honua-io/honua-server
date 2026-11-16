@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the managed (NetTopologySuite) Hot Spot Analysis
-/// executor — the job-dispatchable Getis-Ord Gi* tool over an inline
-/// FeatureCollection. The Gi* expectations below are hand-derived closed-form
-/// reference values, so the assertions exercise the statistic's correctness
-/// rather than echoing the implementation.
-/// </summary>
 public sealed class ManagedHotSpotExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

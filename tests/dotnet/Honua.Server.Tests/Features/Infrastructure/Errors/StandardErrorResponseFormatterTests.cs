@@ -17,10 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
-/// <summary>
-/// Tests for standardized error response formatting across all protocols.
-/// Ensures consistent error handling while maintaining protocol-specific formats.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime

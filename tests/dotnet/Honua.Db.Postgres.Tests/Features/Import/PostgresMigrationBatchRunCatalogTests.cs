@@ -11,12 +11,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #1253: <see cref="PostgresMigrationBatchRunCatalog"/> persists batch
-/// composition, ordered child rows, per-child status with sticky-terminal
-/// semantics, and rolled-up batch counts. Exercises the real SQL (migration 045
-/// schema) against the shared Testcontainers Postgres fixture.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixture)
 {
@@ -122,10 +116,6 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
         (await catalog.GetActiveBatchIdsAsync()).Should().NotContain(batchId);
     }
 
-    /// <summary>
-    /// #4600: the service-level verdict, its differences and each child's per-layer verdict survive a
-    /// round trip through the real columns (migration 117), including the jsonb difference payload.
-    /// </summary>
     [IntegrationTest]
     public async Task UpdateBatchAsync_PersistsFidelityVerdictAndDifferences_AtTheTerminalTransition()
     {
@@ -229,10 +219,6 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
         }
     ];
 
-    /// <summary>
-    /// Migration 045 creates the batch tables; tests apply the same schema
-    /// directly so they do not depend on the migration runner.
-    /// </summary>
     private async Task EnsureBatchTablesAsync()
     {
         // honua-server#1568 (signature 2): this DDL creates the literal, process-global

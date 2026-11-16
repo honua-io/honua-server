@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// Offline unit tests for the <c>honua gp new</c> scaffolder (GP Devkit P4, issue #2125):
-/// id validation + naming derivation, collision detection against the registered set, and
-/// the rendered executor/fixture templates. No I/O, no Redis, no control plane.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpScaffolderTests
 {

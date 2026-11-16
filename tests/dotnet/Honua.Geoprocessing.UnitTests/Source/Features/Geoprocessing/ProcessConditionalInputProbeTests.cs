@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Direct coverage for the conditional-input probe that backs the toolbox translation lane
-/// (#2145). These run the REAL <c>ProcessPlanValidator</c> and the REAL built-in catalog — the
-/// same pair the geoprocessing submit path runs — so the assertions are about canonical
-/// admissibility rather than a stubbed rule set. Fully offline: no Docker, no Redis, no job
-/// store. The end-to-end report shape is covered by
-/// <c>Honua.Server.Tests.Import.ToolboxTranslationEndpointTests</c>.
-/// </summary>
 public sealed class ProcessConditionalInputProbeTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();

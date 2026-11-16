@@ -17,11 +17,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for the propose idempotency gap (#1693): re-proposing an
-/// approval-tier operation with the same idempotency key previously minted a second
-/// AwaitingApproval proposal instead of folding onto the existing one.
-/// </summary>
 public sealed class OperationGatewayIdempotencyTests
 {
     [Fact]

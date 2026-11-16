@@ -19,12 +19,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the Enterprise-gated CityGML/BIM scene ingest endpoint
-/// (#1207). Covers the HTTP-surface contract — admin authentication, the
-/// Enterprise entitlement gate, malformed-upload rejection — and the end-to-end
-/// happy path that ingests a CityGML fixture and serves the resulting tileset.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

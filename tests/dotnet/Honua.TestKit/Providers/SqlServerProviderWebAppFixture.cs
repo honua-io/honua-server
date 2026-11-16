@@ -19,40 +19,6 @@ using Xunit;
 
 namespace Honua.TestKit.Providers;
 
-/// <summary>
-/// Fixture that pairs a Postgres-backed <see cref="Honua.TestKit.WebAppFixture"/> (the
-/// primary provider) with a Testcontainers <c>mcr.microsoft.com/mssql/server:2022-latest</c>
-/// instance registered as a secondary/additional provider (honua-server#2947), replacing
-/// the creds-gated <c>HONUA_SQLSERVER_TEST_CONNECTION</c> approach for this smoke suite.
-/// </summary>
-/// <remarks>
-/// <para>
-/// SQL Server is architecturally an "additional" provider (see
-/// <c>InfrastructureCompositionRoot.RegisterInfrastructureServices</c>): it is always
-/// layered on top of whatever the primary <c>DataSource:Provider</c> is (Postgres here)
-/// and routed per-publication through a Metadata v2 <see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Connection"/>
-/// whose provider resolves to <c>sqlserver</c>. Unlike the DuckDB/MySql fixtures, layer
-/// mapping is fully dynamic — <c>SqlServerFeatureStore</c> implements
-/// <c>IBindableFeatureDataProvider</c> and builds its column mapping from the Metadata v2
-/// resource's schema fields and storage-binding locator at request time, so no
-/// <c>SqlServer:Layers</c> config is needed.
-/// </para>
-/// <para>
-/// GeoServices FeatureServer, OGC API Features, OData, and OGC API Tiles raster (PNG)
-/// tiles all route reads through <c>FeatureProviderQueryRouter</c>
-/// (<c>TileFeatureProviderResolver</c> for tiles) for secondary/additional providers
-/// (honua-server#2962). OGC API Tiles vector (MVT) tiles remain unreachable for this
-/// provider: native MVT generation is a per-provider capability that only the PostGIS
-/// provider implements, independent of the routing fix, so a SQL Server-backed collection
-/// returns a <c>501 Not Implemented</c> problem response for vector tiles rather than
-/// silently serving PostGIS data for the same layer id.
-/// </para>
-/// <para>
-/// Trusted TLS setup requires a writable CurrentUser Root certificate store (Linux or
-/// Windows). .NET does not support writing that store on macOS; this fixture does not
-/// provide a macOS trust-store setup.
-/// </para>
-/// </remarks>
 public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
 {
     private MsSqlContainer _container = null!;
@@ -60,13 +26,10 @@ public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
     private string _tableName = null!;
     private X509Certificate2? _trustedRoot;
 
-    /// <summary>HTTP client bound to the underlying Postgres-primary host.</summary>
     public HttpClient Client => _webApp.Client;
 
-    /// <summary>The underlying Postgres-backed web-app fixture (primary provider).</summary>
     public WebAppFixture WebApp => _webApp;
 
-    /// <summary>The in-memory Metadata v2 graph provider installed into the test host.</summary>
     public TestMetadataV2GraphProvider GraphProvider { get; private set; } = null!;
 
     public async Task InitializeAsync()

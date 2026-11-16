@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Verifies the wire shape of the Console content item DTO so SDK generation
-/// stays consistent with documented OpenAPI behaviour.
-/// </summary>
 public class ConsoleContentItemTests
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);

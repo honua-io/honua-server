@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Reporting;
 
-/// <summary>
-/// Pins the polymorphic JSON shape of <see cref="AnalysisReportSection"/> so
-/// AOT serializers can round-trip the discriminated union without reflection.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class AnalysisReportSectionJsonTests
 {

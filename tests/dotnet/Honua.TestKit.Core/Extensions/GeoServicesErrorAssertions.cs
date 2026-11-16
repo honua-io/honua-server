@@ -7,57 +7,14 @@ using FluentAssertions;
 
 namespace Honua.TestKit.Extensions;
 
-/// <summary>
-/// Assertion helpers for the Esri GeoServices REST error contract.
-/// </summary>
-/// <remarks>
-/// PA-070 / PA-117 (honua-server #2418) aligned the GeoServices REST surface
-/// (paths under <c>/rest/services</c> and <c>/tiles</c>) with the Esri ArcGIS
-/// REST convention: operation errors are signalled with <b>HTTP 200</b> and an
-/// <c>{"error":{"code":N,...}}</c> JSON body rather than a non-2xx HTTP status.
-/// Modern OGC API (RFC 7807) error paths were intentionally left untouched.
-/// <para>
-/// These helpers assert that contract while remaining tolerant of a legacy
-/// non-2xx status, so they keep catching real regressions (a plain success body
-/// where an error is expected) without re-encoding the pre-parity status codes.
-/// This mirrors the Python helper
-/// <c>tests/python/shared/geoservices.py::assert_geoservices_error</c>.
-/// </para>
-/// </remarks>
 public static class GeoServicesErrorAssertions
 {
-    /// <summary>
-    /// Asserts a GeoServices REST/tiles error response whose body error code is
-    /// <paramref name="expectedCode"/>.
-    /// </summary>
-    /// <param name="response">The HTTP response to inspect.</param>
-    /// <param name="expectedCode">
-    /// The expected GeoServices <c>error.code</c> for a 200 body (or the HTTP
-    /// status of a legacy <c>&gt;= 400</c> response). Because #2418 maps the
-    /// body code 1:1 from the pre-parity HTTP status, this is simply the old
-    /// asserted status code (e.g. 400, 404, 405, 413, 422, 500).
-    /// </param>
-    /// <param name="allowEmpty">
-    /// Also accept an empty <c>204 No Content</c> (used by tile endpoints that
-    /// emit an empty tile rather than an error body).
-    /// </param>
     public static Task AssertGeoServicesErrorAsync(
         this HttpResponseMessage response,
         int expectedCode,
         bool allowEmpty = false)
         => response.AssertGeoServicesErrorCoreAsync(new[] { expectedCode }, allowEmpty);
 
-    /// <summary>
-    /// Asserts a GeoServices REST/tiles error response against one or more accepted
-    /// body codes, e.g. <c>AssertGeoServicesErrorAsync(400, 404)</c>. Pass no codes
-    /// to accept any error code (the response must still be an error, never a
-    /// success-shaped body).
-    /// </summary>
-    /// <param name="response">The HTTP response to inspect.</param>
-    /// <param name="expectedCodes">
-    /// The accepted <c>error.code</c> values of a 200 body (or the HTTP status of a
-    /// legacy <c>&gt;= 400</c> response). Empty means any error code is accepted.
-    /// </param>
     public static Task AssertGeoServicesErrorAsync(
         this HttpResponseMessage response,
         params int[] expectedCodes)
@@ -87,22 +44,6 @@ public static class GeoServicesErrorAssertions
         }
     }
 
-    /// <summary>
-    /// Asserts a GeoServices error for callers that have already captured the raw
-    /// status code and body string (for example scale-test wrappers that don't
-    /// expose the original <see cref="HttpResponseMessage"/>). Same contract as
-    /// the <see cref="HttpResponseMessage"/> overloads.
-    /// </summary>
-    /// <param name="statusCode">The HTTP status carried by the response.</param>
-    /// <param name="body">
-    /// The response body text. Required (non-empty) when <paramref name="statusCode"/>
-    /// is a 2xx; ignored on the legacy <c>&gt;= 400</c> and empty-204 paths.
-    /// </param>
-    /// <param name="expectedCodes">
-    /// If provided, the <c>error.code</c> of a 200 body (or the HTTP status of a
-    /// legacy <c>&gt;= 400</c> response) must be one of these.
-    /// </param>
-    /// <param name="allowEmpty">Also accept an empty <c>204 No Content</c>.</param>
     public static void AssertGeoServicesError(
         int statusCode,
         string? body,
@@ -186,7 +127,6 @@ public static class GeoServicesErrorAssertions
         }
     }
 
-    /// <summary>Convenience single-code overload of <see cref="AssertGeoServicesError(int, string, int[], bool)"/>.</summary>
     public static void AssertGeoServicesError(int statusCode, string? body, int expectedCode, bool allowEmpty = false)
         => AssertGeoServicesError(statusCode, body, new[] { expectedCode }, allowEmpty);
 

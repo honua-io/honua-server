@@ -88,10 +88,6 @@ public sealed class AwsImportObjectStoreReaderTests
             SourceUri = "s3://customer-bucket/layers/assumed.geojson",
         };
 
-    /// <summary>
-    /// STS that evaluates a <c>StringEquals sts:ExternalId</c> trust condition: AssumeRole without
-    /// the trusted id is refused with AccessDenied, as AWS does. It never reaches the network.
-    /// </summary>
     private sealed class TrustPolicyStsDouble(string trustedExternalId) : AmazonSecurityTokenServiceClient(
         new BasicAWSCredentials("unit", "unit"),
         new AmazonSecurityTokenServiceConfig { RegionEndpoint = RegionEndpoint.USEast1 })
@@ -126,7 +122,6 @@ public sealed class AwsImportObjectStoreReaderTests
         }
     }
 
-    /// <summary>Counts object HEADs so a refused role is shown never to reach S3.</summary>
     private sealed class CountingS3() : AmazonS3Client(
         new BasicAWSCredentials("unit", "unit"),
         new AmazonS3Config { RegionEndpoint = RegionEndpoint.USEast1 })

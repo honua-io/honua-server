@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Store-level invariants for <see cref="InMemoryConsoleContentStore"/> that the
-/// endpoint layer relies on for contract correctness.
-/// </summary>
 public class InMemoryConsoleContentStoreTests
 {
     private static ConsoleContentItem Seed(string id, ConsoleVisibility visibility, string? teamScopeId)

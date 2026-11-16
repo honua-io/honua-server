@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Validation;
 
-/// <summary>
-/// GeoServices wire integers must not change the canonical Boolean schema type.
-/// Strict adapters must continue rejecting those numeric Boolean representations.
-/// </summary>
 public sealed class BooleanMutationValidationTests
 {
     [UnitTheory]

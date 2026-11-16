@@ -15,14 +15,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// Component coverage for <see cref="CapabilityGateOpenApiDocumentTransformer"/>
-/// (Track T7 / #2343): the transformer wired into the <c>AddOpenApi</c> pipeline via
-/// <c>AddCapabilityGatedOpenApi</c> must prune an operation gated on a
-/// disabled-experimental capability from the generated OpenAPI document, while
-/// leaving enabled/ungated operations in place — the description-layer counterpart
-/// to the runtime 404 gate (T5).
-/// </summary>
 public sealed class CapabilityGateOpenApiDocumentTransformerTests
 {
     private const string GatedDescriptorId = "test.experimental.capability";
@@ -108,11 +100,6 @@ public sealed class CapabilityGateOpenApiDocumentTransformerTests
         return host.GetTestServer();
     }
 
-    /// <summary>
-    /// Minimal <see cref="ICapabilityRegistry"/> exposing a single experimental
-    /// descriptor and deferring resolution to the shared
-    /// <see cref="CapabilityGateResolver"/>, mirroring the production registry.
-    /// </summary>
     private sealed class StubCapabilityRegistry : ICapabilityRegistry
     {
         private readonly CapabilityDescriptor _descriptor;

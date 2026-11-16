@@ -15,12 +15,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Cross-protocol smoke proving the canonical permission resolver (#1375) is
-/// LIVE on an already-enforced path: the GeoServices FeatureServer layer-query
-/// read seam consults per-operation RBAC grants, and an explicit role list still
-/// denies a matching grant (#6358).
-/// </summary>
 public sealed class PermissionResolverQuerySmokeTests
 {
     private const string GrantedRole = "alpha-query-grant";
@@ -85,10 +79,6 @@ public sealed class PermissionResolverQuerySmokeTests
         await response.AssertGeoServicesErrorAsync(403);
     }
 
-    /// <summary>
-    /// Minimal <see cref="IRoleStore"/> that resolves the supplied grant for a
-    /// single named role; everything else is empty.
-    /// </summary>
     private sealed class StubRoleStore(string roleName, PermissionGrant grant) : IRoleStore
     {
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(

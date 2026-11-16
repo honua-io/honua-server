@@ -5,12 +5,6 @@ using Honua.Server.Tests.Infrastructure;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Collection definition for Server tests that share a database container.
-/// Tests in this collection share global catalog state and must remain isolated
-/// from the schema-parallel shard collections.
-/// Uses an abstracted database fixture to maintain Clean Architecture principles.
-/// </summary>
 [CollectionDefinition("Database", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseCollection : ICollectionFixture<DatabaseFixtureAdapter>

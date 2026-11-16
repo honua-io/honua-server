@@ -15,26 +15,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate certification of Redis-managed API keys under Native AOT (honua-server#4571). Boots a real
-/// published Honua server image (<c>HONUA_CANDIDATE_IMAGE</c>) as <c>Production</c> against a real PostGIS and a
-/// real Redis key registry, then replays the managed-key lifecycle over HTTP: create, list and get, scoped
-/// access under the shared admin policy, wrong keys, concurrent validation, rotation and revocation under
-/// sustained use, rotation racing revocation, expiry, and a process restart that reads every record back.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The in-process test host enables reflection-based JSON serialization, so it cannot reproduce the defect;
-/// only the published native image runs with reflection disabled. The lane asserts the image declares
-/// <c>honua.runtime.compilation=native-aot</c> and that the server log never reports the reflection-disabled
-/// exception. It writes a JSON receipt (image id, repo digests, source revision, per-step statuses) to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when set, and to the test output otherwise, including on failure.
-/// </para>
-/// <para>
-/// These checks prove the server's HTTP contract only. They do not award native QGIS or ArcGIS Pro
-/// authentication passes, which remain separate desktop results.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelper output)
 {

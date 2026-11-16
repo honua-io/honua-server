@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Catalog date predicates compare on the UTC timeline, and NULL never satisfies
-/// a comparison (including <c>&lt;&gt;</c>, <c>&lt;</c> and <c>&lt;=</c>).
-/// </summary>
 public sealed class ImageServerCatalogDateFilterTests
 {
     [UnitTest]

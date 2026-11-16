@@ -11,11 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression guard for #1575: the durable provider role store (e.g. PostgresRoleStore,
-/// registered earlier via AddPostgreSqlServices) must not be shadowed by the in-memory
-/// control-plane default. The default is registered with TryAdd so durable wins.
-/// </summary>
 public sealed class ControlPlaneIamDefaultsTests
 {
     [Fact]

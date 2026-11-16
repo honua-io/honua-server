@@ -11,9 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Tests for OGC Maps error handling: invalid parameters, malformed input, error responses.
-/// </summary>
 [Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsErrorHandlingTests : IAsyncLifetime

@@ -16,11 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Publishing.Content;
 
-/// <summary>
-/// Unit tests for <see cref="ContentPublicationService"/> over the in-memory store:
-/// immutable versions, route pointer semantics, rollback/republish, policy/public-link,
-/// generated-app revision preview, dependency validation, and JSON serialization.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationServiceTests
 {

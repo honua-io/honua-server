@@ -5,7 +5,6 @@ using Npgsql;
 
 namespace Honua.TestKit.Postgres.Hosting;
 
-/// <summary>Owns a bounded fixture lease and one canonically provisioned database.</summary>
 public sealed class PostgresComponentDatabase : IAsyncDisposable
 {
     private readonly Lock _disposeGate = new();

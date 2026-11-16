@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Crs;
 
-/// <summary>
-/// Unit tests for <see cref="CrsLinearUnitFactor"/>.
-/// </summary>
 public sealed class CrsLinearUnitFactorTests
 {
     [UnitTest]

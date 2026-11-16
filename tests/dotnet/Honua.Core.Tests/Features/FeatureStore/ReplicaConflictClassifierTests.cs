@@ -7,13 +7,6 @@ using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests for <see cref="ReplicaConflictClassifier"/>: the attach-time refinement of the coarse,
-/// detection-time disconnected-sync conflict classification (#1287). The classifier only promotes the
-/// generic <see cref="ReplicaConflictType.Attribute"/> bucket to
-/// <see cref="ReplicaConflictType.Geometry"/> when the captured states show the attributes agree but
-/// the geometry differs.
-/// </summary>
 public sealed class ReplicaConflictClassifierTests
 {
     [Trait("Tier", "Fast")]

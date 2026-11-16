@@ -11,12 +11,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Integration tests for the scene access envelope issuance endpoint and the
-/// nested asset verification path. Covers the browser-safe <c>?token=</c>
-/// transport, native <c>X-Honua-Token</c> header transport, expiry/tamper
-/// rejection, public-scene preservation, and structured-log redaction.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAccessEnvelopeEndpointTests : IAsyncLifetime

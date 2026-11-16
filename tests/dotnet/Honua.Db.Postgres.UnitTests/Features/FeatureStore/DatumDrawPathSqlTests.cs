@@ -14,10 +14,6 @@ using Microsoft.Extensions.ObjectPool;
 
 namespace Honua.Db.Postgres.UnitTests.Features.FeatureStore;
 
-/// <summary>
-/// Draw paths use the datum catalog. No catalog entry keeps two-argument ST_Transform.
-/// NAD83 to WGS 84 stays the catalog no-operation.
-/// </summary>
 public sealed class DatumDrawPathSqlTests
 {
     private static readonly IDatumTransformationCatalog Catalog = GeoServicesDatumTransformationCatalog.Create();

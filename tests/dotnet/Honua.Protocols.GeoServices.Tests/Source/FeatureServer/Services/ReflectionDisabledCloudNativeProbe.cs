@@ -14,25 +14,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Re-runs the cloud-native writers in a child process with JSON reflection disabled.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>Honua.Server.csproj</c> sets <c>JsonSerializerIsReflectionEnabledByDefault=false</c>, so every
-/// shipped image (AOT and JIT) has no reflection fallback. The xUnit host runs with reflection
-/// enabled, and the switch is read once per process, so an in-process test cannot see a
-/// reflection-based serializer call: the fallback simply succeeds. honua-server#4747 shipped
-/// exactly that — <c>f=parquet</c> returned a 500 envelope on the candidate image while every
-/// unit test stayed green.
-/// </para>
-/// <para>
-/// This type is the test assembly's entry point. <see cref="RunAsync"/> starts
-/// <c>dotnet exec</c> on the test assembly with a copy of its runtimeconfig that turns the switch
-/// off. The child writes the payload to disk and reports the switch state plus a canary that
-/// proves the reflection overload really throws in that process.
-/// </para>
-/// </remarks>
 internal static class ReflectionDisabledCloudNativeProbe
 {
     public const string GeoParquetFormat = "geoparquet";
@@ -45,10 +26,6 @@ internal static class ReflectionDisabledCloudNativeProbe
     // The exact shape the writer used to pass to the reflection-based overload.
     private static readonly string[] CanaryValue = ["Point"];
 
-    /// <summary>
-    /// Independently specified fixture rows. The Z row comes first so the sorted
-    /// <c>geometry_types</c> order is not an accident of row order.
-    /// </summary>
     public static readonly ImmutableArray<ProbeRow> Rows =
     [
         new(1, "Honolulu Harbor", 350000, -157.8583, 21.3069, 12.5),
@@ -99,7 +76,6 @@ internal static class ReflectionDisabledCloudNativeProbe
         return 0;
     }
 
-    /// <summary>Runs <see cref="Main"/> for <paramref name="format"/> in a reflection-disabled child.</summary>
     public static async Task<ProbeRun> RunAsync(string format)
     {
         var directory = Directory.CreateTempSubdirectory("honua-4747-");

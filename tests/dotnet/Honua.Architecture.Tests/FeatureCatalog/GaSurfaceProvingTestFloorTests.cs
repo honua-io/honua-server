@@ -8,28 +8,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Server-side mirror of honua-release's docs gate <c>tools/check_ga_surface.py</c>
-/// (honua-release#100, #379). honua-evidence ingests the committed
-/// <c>docs/gis/data/capability-matrix.v1.json</c> from honua-server trunk, not from the
-/// pinned release SHA, so any trunk commit that leaves a GA-advertised key under the proving-test
-/// floor reddens the release train's <c>ga-surface</c> check with no server-side signal. This test
-/// applies the same corpus and criteria to the committed artifact so the regression fails here,
-/// on the PR that causes it.
-/// </summary>
-/// <remarks>
-/// Corpus (identical to <c>advertised_ga_keys</c>): every capability whose <c>noSurface</c> is
-/// absent/null/false and whose <c>maturity.implemented</c> is greater than zero. A key leaves the
-/// corpus only by an honest demotion (a <c>capability-maturity-overrides.v1.json</c> row, a
-/// registry maturity, or a no-surface annotation), never by lowering the floor here.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class GaSurfaceProvingTestFloorTests
 {
-    /// <summary>
-    /// honua-release <c>docs/capabilities.yaml</c> <c>defaults.minProvingTests</c>. Raising it there
-    /// requires raising it here; lowering it here alone does not move the release gate.
-    /// </summary>
     private const int MinProvingTests = 5;
 
     [ArchitectureTest]

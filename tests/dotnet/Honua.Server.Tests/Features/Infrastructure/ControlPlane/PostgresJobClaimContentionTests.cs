@@ -27,12 +27,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
-    /// <summary>
-    /// The invariant the durable queue exists to provide: one queued job, many workers
-    /// racing for it, exactly one owner. The winner's record must show exactly one
-    /// attempt — a second claim that "wins" and rewrites the record would burn a retry
-    /// and duplicate execution.
-    /// </summary>
     [IntegrationTest]
     public async Task TryClaimAsync_EightWorkersRaceOneJob_ExactlyOneWinsWithOneAttempt()
     {
@@ -308,11 +302,6 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
         };
     }
 
-    /// <summary>
-    /// Records one entry per execution and holds each attempt at a test-controlled gate,
-    /// so "did the recovered attempt really run?" and "did the stale attempt's side effects
-    /// escape?" are both directly assertable rather than inferred.
-    /// </summary>
     private sealed class LedgerExecutor : IJobExecutor
     {
         private readonly ConcurrentDictionary<int, TaskCompletionSource> _gates = new();
@@ -328,11 +317,6 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
 
         public void ReleaseAttempt(int attempt) => Gate(attempt).TrySetResult();
 
-        /// <summary>
-        /// Completes once <see cref="ExecuteAsync"/> for <paramref name="attempt"/> has recorded
-        /// its invocation. Callers assert invocation counts against this signal instead of
-        /// against the Running transition, which the worker persists before it dispatches.
-        /// </summary>
         public Task WhenAttemptStarted(int attempt) => Started(attempt).Task;
 
         public Task WhenAttemptCompleted(int attempt) => Completion(attempt).Task;

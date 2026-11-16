@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Unit tests for the I3S SceneServer descriptor builder (#1202). The builder
-/// is a pure mapping from a hosted scene + extent to I3S service/layer JSON.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sSceneServiceBuilderTests
 {

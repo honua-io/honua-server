@@ -67,11 +67,6 @@ internal readonly record struct GeoTiffRegressionCase(
     bool ExpectedToParse,
     bool ExpectedToBeGeoreferenced);
 
-/// <summary>
-/// Builds small, deterministic TIFF structures without a decoder dependency.
-/// The builders deliberately describe only metadata and a bounded 64-byte
-/// storage region: pixel decoding is outside the georeferencing reader's scope.
-/// </summary>
 internal static class GeoTiffFuzzCorpus
 {
     private const ushort TagImageWidth = 256;

@@ -10,13 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Durable post-activation observation/recovery window coverage (honua-server#4618). Proves the
-/// reconciler no longer drops a promoted deploy out of reconciliation the instant cutover completes:
-/// it opens a bounded, persisted observation window, keeps evaluating the same deterministic rollback
-/// signals during it, and only finalizes (retiring any backend-retained recovery capacity through
-/// <see cref="IDeployBackend.CompleteProtectionAsync"/>) once the window elapses without a trigger.
-/// </summary>
 public sealed class DeployWorkflowReconcilerPostActivationObservationTests
 {
     [Fact]

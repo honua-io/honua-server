@@ -12,11 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the admin layer-authoring endpoints (popup-info, drawing-info, and
-/// relationships) that write into the Metadata v2 graph and are read back by the GeoServices /
-/// OGC / OData emitters.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime

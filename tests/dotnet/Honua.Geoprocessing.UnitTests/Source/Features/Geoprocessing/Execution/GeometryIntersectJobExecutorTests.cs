@@ -17,9 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-2 <c>geometry.intersect</c> executor.
-/// </summary>
 public sealed class GeometryIntersectJobExecutorTests
 {
     [UnitTest]

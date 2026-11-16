@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterSpectralIndexJobExecutor"/>: preset
-/// band-role binding, the trusted Float32 calc expression projection, and the
-/// required-band guards (#2239).
-/// </summary>
 public sealed class GdalRasterSpectralIndexExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-spectral-test";

@@ -10,12 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for the submit-time owner-snapshot capture (Phase 0 auth spine,
-/// Deliverable 1): it pins the submitter's tenant/roles/declared scope, validates
-/// the declared scope is ⊆ the submitter, and preserves existing behavior for jobs
-/// that declare no scope.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

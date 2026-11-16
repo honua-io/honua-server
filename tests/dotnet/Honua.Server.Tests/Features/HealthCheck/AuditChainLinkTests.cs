@@ -14,10 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
 
-/// <summary>
-/// Replay rules for the audit hash chain: an unhashed row after the chain has started
-/// does not verify, and a hashed chain does not verify without a configured key.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class AuditChainLinkTests
 {

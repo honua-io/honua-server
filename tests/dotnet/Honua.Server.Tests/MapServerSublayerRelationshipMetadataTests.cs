@@ -11,13 +11,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Regression tests for #1923: a MapServer sublayer's metadata must surface the same
-/// <c>relationships</c> and <c>hasAttachments</c> that the equivalent FeatureServer layer
-/// advertises, so ArcGIS clients consuming the MapServer can discover related records and
-/// attachments. The seeded test layer 0 declares a relationship class and opts into
-/// attachments, so both protocol surfaces are expected to report them.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class MapServerSublayerRelationshipMetadataTests : IAsyncLifetime

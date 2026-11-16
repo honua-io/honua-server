@@ -12,11 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// The per-invocation decisions <see cref="ControlPlaneLambdaEventTargets"/> makes on a host with and
-/// without the Redis-backed durable control plane. On honua-release run 38242272260 (aws-serverless,
-/// Redis-off) the targets were not registered at all and every event answered 500.
-/// </summary>
 public sealed class ControlPlaneLambdaEventTargetsTests
 {
     [UnitTest]

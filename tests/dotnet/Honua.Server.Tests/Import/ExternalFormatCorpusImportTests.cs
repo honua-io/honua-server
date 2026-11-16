@@ -10,30 +10,11 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Uploads the GDAL-authored fixtures in <c>tests/fixtures/external-format-corpus/v1</c> through
-/// the real <c>POST /api/v1/admin/import/upload</c> endpoint and reads the created table back from
-/// PostGIS, asserting the feature count, the exact ordinates, the stored SRID and an attribute
-/// value for each format (honua-server#4419).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The existing per-format HTTP import tests assert only that the JSON response echoes the table
-/// name and the detected format; the GeoJSON case at <c>StreamingImportTests</c> is the sole one
-/// that queries the created table. An importer that dropped every row after the first, transposed
-/// longitude and latitude, or stored the wrong SRID passed all of the others.
-/// </para>
-/// <para>
-/// Every fixture here was written by GDAL/OGR rather than by the library under test, so a shared
-/// misinterpretation between Honua's writer and Honua's reader cannot hide inside a round trip.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
 {
-    /// <summary>The three source points, in source order, from <c>survey-sites.source.geojson</c>.</summary>
     private static readonly (double X, double Y, string Name)[] ExpectedSites =
     [
         (-122.4194, 37.7749, "San Francisco"),
@@ -198,11 +179,6 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
         return document.RootElement.TryGetProperty("success", out var success) && success.GetBoolean();
     }
 
-    /// <summary>
-    /// Reads the created table back. <c>honua.ensure_import_table</c> creates
-    /// <c>(id, geometry, properties, created_at)</c>, so the geometry is asserted directly and the
-    /// attribute lookup goes through <c>to_jsonb(row)</c> instead of naming columns directly.
-    /// </summary>
     private async Task<ImportedRow[]> ReadRowsAsync(string tableName)
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");

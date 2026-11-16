@@ -18,7 +18,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>Exercises the unqualified managed writer when the first search-path schema is empty.</summary>
 [Collection("Database")]
 public sealed class FeatureCacheSearchPathIntegrationTests(PostgresFixture fixture)
 {

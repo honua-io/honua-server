@@ -12,10 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// A masked owner must survive a GeoServices replace update without being copied onto the
-/// caller-visible feature (honua-server#5426).
-/// </summary>
 public sealed class OwnerMaskEditPreservationTests
 {
     [UnitTest]

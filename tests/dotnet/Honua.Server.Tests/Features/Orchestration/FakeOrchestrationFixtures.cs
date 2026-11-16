@@ -13,10 +13,6 @@ using Honua.Core.Features.Orchestration.Domain;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
-/// <summary>
-/// In-memory test doubles for orchestration unit tests. Avoid I/O and keep behavior
-/// predictable under concurrent reconciliation ticks.
-/// </summary>
 internal sealed class FakeWorkflowRunStore : IWorkflowRunStore
 {
     private readonly ConcurrentDictionary<string, WorkflowRun> _runs = new(StringComparer.Ordinal);
@@ -36,11 +32,6 @@ internal sealed class FakeWorkflowRunStore : IWorkflowRunStore
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// When set, the next <see cref="TryCreateAsync"/> call raises this exception and
-    /// clears itself. Used to simulate a transient store failure so the scheduler's
-    /// retry-preserving behaviour can be exercised without a live Redis.
-    /// </summary>
     public Exception? NextTryCreateFailure { get; set; }
 
     public Task<bool> TryCreateAsync(WorkflowRun run, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
@@ -161,10 +152,6 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
         return Task.FromResult(result);
     }
 
-    /// <summary>
-    /// When set, <see cref="AdvanceScheduleCursorAsync"/> raises this exception on the next
-    /// call and clears itself. Used to exercise the pending-cursor retry path.
-    /// </summary>
     public Exception? NextAdvanceCursorFailure { get; set; }
 
     public Task AdvanceScheduleCursorAsync(string workflowId, DateTimeOffset fireTime, CancellationToken cancellationToken = default)
@@ -184,10 +171,6 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// When set, <see cref="SetPendingScheduleCursorAsync"/> raises this exception on the
-    /// next call and clears itself. Used to exercise the missing-pending-cursor durability path.
-    /// </summary>
     public Exception? NextPendingCursorFailure { get; set; }
 
     public Task SetPendingScheduleCursorAsync(string workflowId, DateTimeOffset fireTime, CancellationToken cancellationToken = default)
@@ -202,10 +185,6 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Test-only helper: pre-seed the durable scheduler cursor so harnesses can simulate
-    /// the state a prior process left behind before a restart.
-    /// </summary>
     public void SeedScheduleCursor(string workflowId, DateTimeOffset cursor)
         => _scheduleCursors[workflowId] = cursor.ToUniversalTime();
 
@@ -253,11 +232,6 @@ internal sealed class FakeProgressStore : IUniversalProgressStore
 
     public IReadOnlyDictionary<string, IOperationProgress> Snapshot => _progress;
 
-    /// <summary>
-    /// When set, <see cref="SetProgressAsync"/> raises this exception on the next call
-    /// and clears itself. Used to verify that progress projection failures are treated
-    /// as best-effort after the authoritative run write succeeds.
-    /// </summary>
     public Exception? NextSetProgressFailure { get; set; }
 
     public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
@@ -328,23 +302,10 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 
     public Func<AnalysisPlan, string?, ExecutionJobRecord>? OnSubmit { get; set; }
 
-    /// <summary>
-    /// Plan ids for which <see cref="EnsurePlanExecutionAuthorizedAsync"/> throws, simulating a
-    /// mutating-process tier denial evaluated against the requesting principal at workflow run
-    /// creation (#2798).
-    /// </summary>
     public HashSet<string> DenyExecutionAuthorizationForPlanIds { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Optional role required by a plan's fake execution gate. Used to prove that live role
-    /// membership, rather than the publication snapshot, controls a triggered firing.
-    /// </summary>
     public Dictionary<string, string> RequiredExecutionRoleForPlanIds { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Plans passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so tests
-    /// can assert the requesting principal was gated before any step job was submitted.
-    /// </summary>
     public IReadOnlyList<AnalysisPlan> ExecutionAuthorizationChecked
     {
         get
@@ -356,11 +317,6 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         }
     }
 
-    /// <summary>
-    /// Principals passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so
-    /// tests can assert WHICH identity the gate evaluated — a triggered run must be authorized
-    /// as the workflow's author, not as the admin-carrying orchestrator (#3046).
-    /// </summary>
     public IReadOnlyList<ClaimsPrincipal> ExecutionAuthorizationPrincipals
     {
         get
@@ -375,11 +331,6 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     private readonly List<AnalysisPlan> _executionAuthChecked = [];
     private readonly List<ClaimsPrincipal> _executionAuthPrincipals = [];
 
-    /// <summary>
-    /// When set, rewrites the plan the gate returns, standing in for the per-layer bindings the
-    /// real gate stamps. Run creation must persist THIS instance, not the one it passed in
-    /// (honua-server#3043 review).
-    /// </summary>
     public Func<AnalysisPlan, AnalysisPlan>? OnBindExecutionPlan { get; set; }
 
     public Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
@@ -409,26 +360,12 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         return Task.FromResult(OnBindExecutionPlan?.Invoke(plan) ?? plan);
     }
 
-    /// <summary>
-    /// When set, <see cref="GetJobAsync"/> raises this exception on the first call and clears
-    /// itself so subsequent reconcile ticks can succeed. Used to verify that transient
-    /// observation failures do not terminalise a workflow step.
-    /// </summary>
     public Exception? NextGetJobFailure { get; set; }
 
-    /// <summary>
-    /// When set, <see cref="CancelJobAsync"/> raises this exception on the next call so
-    /// cascade-cancel warning behavior can be exercised.
-    /// </summary>
     public Exception? NextCancelJobFailure { get; set; }
 
     public ExecutionJobStatus CancellationStatus { get; set; } = ExecutionJobStatus.Cancelled;
 
-    /// <summary>
-    /// When set, <see cref="GetJobResultsAsync"/> raises this exception on the next call
-    /// and clears itself. Lets tests exercise the "job succeeded but result package is
-    /// unavailable" transient path without hitting a real store.
-    /// </summary>
     public Exception? NextGetJobResultsFailure { get; set; }
 
     public IReadOnlyList<AnalysisPlan> Submitted
@@ -512,11 +449,6 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         };
     }
 
-    /// <summary>
-    /// Submitter security contexts passed alongside each step submission, in call order, so
-    /// tests can assert the workflow engine replays the RUN REQUESTER's row/field security
-    /// identity rather than the admin-carrying orchestrator principal's (#3068).
-    /// </summary>
     public IReadOnlyList<JobSecurityContext?> SubmittedSecurityContexts
     {
         get

@@ -10,20 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Architecture guards for the audit finding (#1144): the server lacked an
-/// explicit error-handling policy test. This suite asserts three invariants:
-/// <list type="bullet">
-///   <item><description>The global exception middleware exists and is wired in <c>Program.cs</c>.</description></item>
-///   <item><description>Every endpoint file either funnels errors through that middleware,
-///     uses one of the project's error-formatting helpers, or includes its own
-///     <c>try/catch</c>. Endpoint files that do none of those are flagged because
-///     they would surface raw exceptions to clients.</description></item>
-///   <item><description>No file under <c>src/Honua.Server</c> uses <c>throw new Exception(...)</c>
-///     or has an empty <c>catch (Exception) { }</c> — both are anti-patterns that
-///     obscure failure modes.</description></item>
-/// </list>
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class ErrorHandlingPolicyTests
 {
@@ -33,12 +19,6 @@ public sealed class ErrorHandlingPolicyTests
         "src/Honua.Hosting/Features/Middleware/GlobalExceptionMiddleware.cs";
     private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
 
-    /// <summary>
-    /// Markers that indicate an endpoint file has *some* error-handling
-    /// scaffolding above and beyond the global middleware. The presence of
-    /// any one of these is enough to satisfy the policy; the test is a smoke
-    /// detector, not a code-quality grader.
-    /// </summary>
     private static readonly string[] ErrorHandlingMarkers =
     {
         "try",
@@ -58,12 +38,6 @@ public sealed class ErrorHandlingPolicyTests
         "ErrorResponse",
     };
 
-    /// <summary>
-    /// Empty endpoint shells (purely a <c>MapXxx</c> wiring file that
-    /// forwards to a service) get a pass on the per-file scaffolding check.
-    /// These are documented exceptions, not loopholes — the global middleware
-    /// is sufficient when the file holds no inline logic.
-    /// </summary>
     private static readonly HashSet<string> EndpointFilesWithoutInlineErrorHandling = new(System.StringComparer.Ordinal)
     {
         // Pure route-table partials and dispatcher files whose handlers live

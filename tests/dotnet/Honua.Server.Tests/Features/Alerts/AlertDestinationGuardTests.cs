@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Covers the shared classification every alert delivery sink relies on: a destination that cannot
-/// be vetted is always blocked, but only a permanently disallowed destination is non-retryable
-/// (#3057). Every case injects a resolver, so no test touches live DNS (#3056).
-/// </summary>
 public sealed class AlertDestinationGuardTests
 {
     [UnitTest]

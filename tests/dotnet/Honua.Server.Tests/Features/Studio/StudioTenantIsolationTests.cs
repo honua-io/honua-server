@@ -34,28 +34,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Regression proof for honua-server#4905: in the shipped multi-tenancy posture
-/// (<c>MultiTenancy:Enabled=true</c>, <c>SchemaRouting:Enabled=false</c>, so every tenant shares
-/// one set of <c>studio_*</c> tables) a tenant-scoped administrator of one tenant could
-/// enumerate, read and propose publication for another tenant's Studio content, because the
-/// <c>admin</c> role bypassed the ownership check and nothing else bound the content to a tenant.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The tokens are deliberately issuer-bearing and carry a <c>tid</c> claim, exactly as the
-/// honua-sdk-js#1426 governed-lifecycle replay's did: that is what makes
-/// <c>TenantContextMiddleware</c> resolve a real per-request tenant. <c>admin</c> is not one of
-/// the default <c>MultiTenancy:MultiTenantAdminRoles</c>, so both principals are tenant-scoped
-/// administrators and must stay inside their own tenant.
-/// </para>
-/// <para>
-/// Nothing here injects an authorization decision: both callers are genuine bearer principals
-/// authenticated by the running host, the generic operator gate is admitted so the assertions
-/// isolate the tenant boundary rather than an operator-grant denial, and every assertion is an
-/// HTTP/MCP response from the real Studio lifecycle endpoints over the durable Postgres store.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
@@ -287,10 +265,6 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
             .Which.PublishedVersionId.Should().Be(seeded.VersionId);
     }
 
-    /// <summary>
-    /// Creates a draft and saves it as an immutable version as tenant A, through the real REST
-    /// lifecycle endpoints, so the content records tenant A exactly as production would.
-    /// </summary>
     private async Task<SeededContent> SeedTenantAContentAsync()
     {
         var packageKey = $"tenant-isolation-{Guid.NewGuid():N}";
@@ -428,11 +402,6 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
         SpatialReferenceId = 4326,
     };
 
-    /// <summary>
-    /// Asserts the honua-server#4905 refusal shape: <c>404 Not Found</c> (never <c>403</c>, which
-    /// would confirm that another tenant's id exists) carrying the machine-readable
-    /// <c>studio_authorization/cross_tenant_denied</c> code.
-    /// </summary>
     private static async Task AssertCrossTenantNotFoundAsync(Task<HttpResponseMessage> pending)
     {
         using var response = await pending.ConfigureAwait(false);

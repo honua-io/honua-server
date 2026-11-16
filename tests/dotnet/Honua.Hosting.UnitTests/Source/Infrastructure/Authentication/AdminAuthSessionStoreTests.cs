@@ -15,12 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for <see cref="AdminAuthSessionStore"/> covering session lifecycle
-/// and the BH-028 distributed-cache exception fallback regression, plus the
-/// <see cref="AdminAuthClaimsProjector"/> that decides which validated claims reach
-/// an admin session and the principal projected back out of one.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

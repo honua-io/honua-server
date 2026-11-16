@@ -7,10 +7,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// Project discovery (#6217): a scaffolded custom task reports its own prerequisites.
-/// A catalog registration is not a substitute, and a missing dependency is never a remote submit.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpProjectDiscoveryTests
 {

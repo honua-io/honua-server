@@ -19,21 +19,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for OAuth 2.1 scope narrowing on the <c>/mcp</c> transport
-/// (honua-server#2851). Building on the bearer-token acceptance of #2850, these prove that a
-/// validated token's scopes are intersected with the canonical operator grant model — scopes
-/// can only ever narrow, never widen, what the principal's grants already permit.
-/// </summary>
-/// <remarks>
-/// Every token minted here carries the <c>admin</c> role, so the operator grant check always
-/// <em>passes</em> (admin bypass). That isolates the scope decision: a denial can only come
-/// from scope narrowing, which is exactly the invariant #2851 requires — narrowing cannot be
-/// escalated even for a caller whose grants would allow the operation. The suite exercises the
-/// full ASP.NET Core pipeline with a configured OIDC authority (a symmetric-key generic
-/// provider) and the dev-auth bypass disabled, so authorization is decided purely by the
-/// token's scopes.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]

@@ -8,9 +8,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for WKB geometry to Skia path conversion.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class WkbToSkiaConverterTests
 {

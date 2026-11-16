@@ -19,12 +19,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Spec;
 
-/// <summary>
-/// Integration tests for gRPC <c>geospatial.v1.SpecService</c> exercised through
-/// the full ASP.NET Core pipeline via <see cref="TestWebApplicationFactory"/>.
-/// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not
-/// support HTTP/2. Proves the gRPC apply/plan/cancel surface ships end-to-end.
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcSpecServiceIntegrationTests : IDisposable
 {
@@ -583,11 +577,6 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
-    /// <summary>
-    /// Wraps a spec fragment in the <c>ParameterValue.string_value</c> branch. Geospatial.Grpc
-    /// 0.2.0-alpha.1 retyped <c>CanonicalSpecNode.inputs</c> / <c>.parameters</c> from
-    /// <c>map&lt;string, string&gt;</c> to <c>map&lt;string, ParameterValue&gt;</c>.
-    /// </summary>
     private static Proto.ParameterValue StringParameter(string value)
         => new() { StringValue = value };
 

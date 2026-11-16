@@ -15,10 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// Import and applyEdits share <see cref="AntimeridianCutter"/>. A date-line ring is stored
-/// on the short side. A ring that does not cross, including one that only touches ±180, is not rewritten.
-/// </summary>
 public sealed class AntimeridianCutTests
 {
     private const string Crossing = "POLYGON ((170 0, -170 0, -170 10, 170 10, 170 0))";

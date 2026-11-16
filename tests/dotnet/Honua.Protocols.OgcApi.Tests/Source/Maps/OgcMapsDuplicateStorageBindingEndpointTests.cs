@@ -22,21 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Endpoint coverage for a numeric layer id published through both a raster and a vector
-/// storage binding that share the same StorageLayerId (the browser-compat pattern in
-/// honua-server#2759 / #2799).
-/// </summary>
-/// <remarks>
-/// The raster binding is declared first, so it wins the deliberately one-to-one, first-wins
-/// <c>ResourcesByStorageLayerId</c> index. Only the vector service enables OGC API - Maps.
-/// These tests use the <b>real</b> <see cref="Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer"/>
-/// (the vector-aware decorator over the provider raster renderer) — they do not mock it — so
-/// the handler-resolved resource identity must flow into the renderer, otherwise the renderer
-/// re-resolves first-wins to the raster resource, finds no geometry, and 404s. Only the
-/// feature reader is stubbed so the vector Skia path renders deterministically without seeded
-/// geometry.
-/// </remarks>
 [Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime

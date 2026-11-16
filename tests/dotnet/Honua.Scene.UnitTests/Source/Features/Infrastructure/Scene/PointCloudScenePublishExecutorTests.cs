@@ -17,13 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Hermetic unit tests for the wired LAS point-cloud ingest executor (#1201).
-/// They exercise the full decode → tile → register → promote pipeline against a
-/// temp output root and an in-memory registration stub, proving the produced
-/// <c>.pnts</c> tileset is written to a servable asset root with point-cloud
-/// dataset semantics without standing up Postgres or an HTTP host.
-/// </summary>
 public sealed class PointCloudScenePublishExecutorTests : IDisposable
 {
     private readonly string _outputRoot;

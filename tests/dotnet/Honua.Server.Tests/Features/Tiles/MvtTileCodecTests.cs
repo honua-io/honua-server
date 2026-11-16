@@ -6,32 +6,9 @@ using Honua.TestKit.Formats;
 
 namespace Honua.Server.Tests.Features.Tiles;
 
-/// <summary>
-/// Validates the vector-tile codec the tile proofs depend on (honua-server#4421). The decoder is
-/// the instrument every other tile assertion reads through, so it is checked here against a
-/// byte sequence derived by hand from the Mapbox Vector Tile 2.1 wire specification — not against
-/// the builder's own output, which would only prove the two agree with each other.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class MvtTileCodecTests
 {
-    /// <summary>
-    /// One layer named <c>l</c>, extent 4096, one POINT feature at (5, 6) with <c>name=a</c>,
-    /// encoded field by field from the specification:
-    /// <code>
-    /// 1A 22                            Tile.layers, length 34
-    ///   78 02                          Layer.version = 2
-    ///   0A 01 6C                       Layer.name = "l"
-    ///   12 0D                          Layer.features, length 13
-    ///     08 01                        Feature.id = 1
-    ///     12 02 00 00                  Feature.tags = [0, 0]  (keys[0] -> values[0])
-    ///     18 01                        Feature.type = POINT
-    ///     22 03 09 0A 0C               Feature.geometry = [MoveTo(1), zigzag(5), zigzag(6)]
-    ///   1A 04 6E 61 6D 65              Layer.keys = ["name"]
-    ///   22 03 0A 01 61                 Layer.values = [Value{ string_value = "a" }]
-    ///   28 80 20                       Layer.extent = 4096
-    /// </code>
-    /// </summary>
     private static readonly byte[] HandEncodedTile =
     [
         0x1A, 0x22,

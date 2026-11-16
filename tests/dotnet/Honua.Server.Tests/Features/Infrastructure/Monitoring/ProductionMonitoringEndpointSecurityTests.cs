@@ -14,9 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Integration tests for production monitoring security hardening.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class ProductionMonitoringEndpointSecurityTests
 {

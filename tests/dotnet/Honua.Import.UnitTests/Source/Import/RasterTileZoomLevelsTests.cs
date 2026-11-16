@@ -6,10 +6,6 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Raster import zoom-level parsing (#6177). An out-of-range token is a 400,
-/// not an unhandled overflow.
-/// </summary>
 public sealed class RasterTileZoomLevelsTests
 {
     [Trait("Tier", "Fast")]

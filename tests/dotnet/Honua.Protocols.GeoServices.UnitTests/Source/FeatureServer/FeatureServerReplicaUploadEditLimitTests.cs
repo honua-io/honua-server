@@ -9,12 +9,6 @@ using Honua.Protocols.GeoServices.FeatureServer;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// synchronizeReplica validates the whole upload against the shared edit limits before the sync
-/// pipeline runs, because under manual review the conflicting rows never reach the shared edits
-/// handler and its own limit checks would not see them. That pre-check must use the same semantics
-/// the shared handler does, or a valid upload is rejected at the replica boundary (#2430).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerReplicaUploadEditLimitTests
 {

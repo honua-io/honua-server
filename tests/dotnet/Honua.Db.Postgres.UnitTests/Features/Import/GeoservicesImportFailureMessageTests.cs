@@ -8,10 +8,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// #4827 REQ-003: a failed ArcGIS import reports a specific, stable reason the operator can act on,
-/// and never echoes the raw exception text, which can carry SQL, hosts, tokens or credentials.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesImportFailureMessageTests
 {

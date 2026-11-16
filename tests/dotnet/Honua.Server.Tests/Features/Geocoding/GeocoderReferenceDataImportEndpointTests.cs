@@ -12,12 +12,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-/// <summary>
-/// Integration coverage for the geocoder reference data import: CSV reference data is loaded into
-/// the local PostGIS geocoder and then served through GeocodeServer (forward, structured, reverse,
-/// suggest) fully offline; every CSV column lands in an explicit report and invalid rows are
-/// skipped with reasons. Fixtures are deterministic in-test payloads.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Geocoding)]
 public sealed class GeocoderReferenceDataImportEndpointTests : IAsyncLifetime

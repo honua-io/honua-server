@@ -19,7 +19,6 @@ using static Honua.TestKit.DockerHostGateway;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>Public HTTP execution over the durable runtime and production native executor (#4401).</summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)

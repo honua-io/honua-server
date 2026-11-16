@@ -7,37 +7,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Fast, container-free guard for the DbUp migration runner's variable
-/// substitution. The runner (<c>PostgresDatabaseMigrationRunner</c>) executes the
-/// embedded <c>*.sql</c> migrations through DbUp with variable substitution
-/// ENABLED, which treats a dollar-delimited token that has an inner word — a
-/// NAMED dollar-quote tag such as <c>$ddl$</c> or <c>$func$</c> — as a variable
-/// reference and fails the whole migration when the variable is not explicitly bound with
-/// "Variable &lt;name&gt; has no value defined" BEFORE the SQL ever runs. The
-/// substitution scans the entire script text, including comments.
-/// </summary>
-/// <remarks>
-/// This class of bug is invisible to a local <c>psql</c> check (psql does not do
-/// DbUp substitution) and to the integration-test hosts (which skip migrations),
-/// so it can only surface once the server actually boots with migrations against
-/// a real database. This static convention check catches it instantly — no
-/// container, no database — and runs in the architecture-tests job (which is not
-/// subject to the server-test matrix's fail-fast cancellation).
-///
-/// The fix when this fails: bind an intentional migration variable in the runner, or use
-/// ONLY the anonymous <c>$$</c> dollar-quote (which DbUp ignores, as it has no inner word)
-/// for any plpgsql <c>DO</c>/function body and write the inner DDL as direct statements or
-/// single-quoted <c>EXECUTE</c> strings. See <c>043_CreatePgRoutingTopology.sql</c> for the
-/// canonical pattern.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class MigrationScriptDbUpSafetyTests
 {
-    /// <summary>
-    /// Migration directories whose <c>*.sql</c> scripts are executed through DbUp
-    /// (with variable substitution enabled). Rooted at the repository root.
-    /// </summary>
     private static readonly string[] _migrationDirectories =
     {
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Migrations"),

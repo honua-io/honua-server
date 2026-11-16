@@ -21,13 +21,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the MCP opaque-cursor pagination contract (#1953): list paging over
-/// <c>tools/list</c> / <c>resources/list</c> / <c>resources/templates/list</c> /
-/// <c>prompts/list</c>, the windowed chunking of large <c>resources/read</c>
-/// documents, and the dispatcher plumbing that surfaces <c>nextCursor</c> and
-/// rejects an invalid cursor with JSON-RPC <c>-32602</c> invalid-params.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPaginationTests
 {

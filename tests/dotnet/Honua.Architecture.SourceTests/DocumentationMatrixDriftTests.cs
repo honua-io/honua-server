@@ -7,10 +7,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards documentation matrices whose mechanical route, parameter, and evidence claims
-/// are projections of generated repository artifacts.
-/// </summary>
 public sealed class DocumentationMatrixDriftTests
 {
     private static readonly Regex RouteParameterPattern = new(@"\{[^}]+\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);

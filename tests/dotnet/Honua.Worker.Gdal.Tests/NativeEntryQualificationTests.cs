@@ -9,7 +9,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>Pins the opt-in boundary: ordinary execution never acquires loader or handshake settings.</summary>
 public sealed class NativeEntryQualificationTests
 {
     [UnitTest]

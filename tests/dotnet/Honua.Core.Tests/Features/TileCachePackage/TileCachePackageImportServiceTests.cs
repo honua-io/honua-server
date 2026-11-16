@@ -9,10 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.TileCachePackage;
 
-/// <summary>
-/// Package re-import replaces tile bytes and drops coordinates the new package
-/// no longer contains (#6175).
-/// </summary>
 public sealed class TileCachePackageImportServiceTests
 {
     [Trait("Tier", "Fast")]

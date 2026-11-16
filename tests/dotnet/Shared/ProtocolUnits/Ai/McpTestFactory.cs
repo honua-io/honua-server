@@ -18,10 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Shared helpers for MCP unit tests. Creates authenticated HTTP contexts,
-/// canonical plan inputs, and JSON-element wrappers for tool arguments.
-/// </summary>
 internal static class McpTestFactory
 {
     public static DefaultHttpContext AuthenticatedHttpContext(
@@ -39,18 +35,6 @@ internal static class McpTestFactory
             RequestServices = CreateRequestServices(edition)
         };
 
-    /// <summary>
-    /// Authenticated HTTP context whose <c>RequestServices</c> additionally
-    /// registers <paramref name="configureServices"/> — for tools that resolve
-    /// collaborators per-request from <c>httpContext.RequestServices</c>
-    /// instead of taking them as constructor dependencies (the pattern the
-    /// Studio tools use for services registered <c>Scoped</c>, to avoid a
-    /// singleton tool capturing a scoped service as a captive dependency;
-    /// PR #3016 review). Tools whose collaborators are stateless singletons —
-    /// <c>CreateMapPackageTool</c> and <c>CreateAppPackageTool</c> since
-    /// ADR-0076 — take them by constructor injection instead, so a missing
-    /// registration fails at startup rather than silently.
-    /// </summary>
     public static DefaultHttpContext AuthenticatedHttpContextWithServices(
         Action<IServiceCollection> configureServices,
         string user = "test-user",
@@ -91,11 +75,6 @@ internal static class McpTestFactory
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// Adds a permissive Studio owner-policy test double for legacy tool tests
-    /// whose subject is lifecycle delegation rather than authorization. New
-    /// authorization tests register an explicit policy decision instead.
-    /// </summary>
     public static void AddAllowingStudioAuthorization(IServiceCollection services) =>
         services.AddSingleton<IStudioAuthorizationService, AllowingStudioAuthorizationService>();
 
@@ -117,10 +96,6 @@ internal static class McpTestFactory
         return services.BuildServiceProvider();
     }
 
-    /// <summary>
-    /// Explicit test-only adapter for legacy MCP unit fixtures. Production composition registers
-    /// the durable operation runtime and can never reach this direct lifecycle adapter.
-    /// </summary>
     private sealed class DirectStudioDraftMutationTestRuntime(IStudioPackageLifecycleService lifecycle)
         : IStudioDraftMutationRuntime
     {

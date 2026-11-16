@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 
-/// <summary>
-/// Acceptance and refusal matrix for forward-compatibility declarations (#6477): an older reader
-/// accepts an unknown journal entry only when it re-derives an expand-only declaration itself.
-/// </summary>
 public sealed class MigrationReaderCompatibilityTests
 {
     private const string Name = "Honua.Server.Migrations.140_AddFutureNote.sql";

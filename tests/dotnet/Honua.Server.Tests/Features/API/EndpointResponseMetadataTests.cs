@@ -17,9 +17,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.API;
 
-/// <summary>
-/// Verifies response metadata advertised on endpoints matches runtime-supported media types.
-/// </summary>
 public sealed class EndpointResponseMetadataTests : IDisposable
 {
     private static readonly Regex RouteConstraintRegex =

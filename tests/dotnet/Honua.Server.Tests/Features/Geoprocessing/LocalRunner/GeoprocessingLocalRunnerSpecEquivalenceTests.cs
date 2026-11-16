@@ -11,24 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.LocalRunner;
 
-/// <summary>
-/// Proves the GP Devkit native-profile fidelity contract (issue #2180): the
-/// <see cref="ExecutionJobSpec"/> the local runner builds for a single
-/// <c>(processId, inputs)</c> invocation is IDENTICAL to the spec the production
-/// submit path (<c>GeoprocessingJobService.BuildSpec</c> → the no-registered-workload
-/// case) produces for the equivalent single-step plan — so <c>gp run</c>/<c>gp plan</c>
-/// is a true dry-run of the real submit spec, not a parallel representation.
-///
-/// <para>
-/// Both paths route through the single source of truth
-/// (<see cref="GeoprocessingSpecBuilder"/>): the submit path calls
-/// <see cref="GeoprocessingSpecBuilder.BuildNoWorkloadSpec"/> for the no-workload case,
-/// and the local runner's <see cref="GeoprocessingLocalRunner.BuildJobRecord"/> models
-/// its invocation as the same single-step plan and calls the same builder. These tests
-/// pin that equivalence so a future divergence (a parameter key, the runtime-profile
-/// stamp, or an envelope field drifting on one path) fails loudly.
-/// </para>
-/// </summary>
 public sealed class GeoprocessingLocalRunnerSpecEquivalenceTests
 {
     [UnitTest]

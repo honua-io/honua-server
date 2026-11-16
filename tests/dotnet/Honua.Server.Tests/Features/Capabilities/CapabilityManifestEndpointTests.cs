@@ -47,9 +47,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// Integration coverage for the public server capability manifest endpoint (#1186).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]

@@ -8,34 +8,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet for #2732: keeps geographic-SRID and Web Mercator alias classification unified behind
-/// the canonical <see cref="GeographicSridClassifier"/> and
-/// <see cref="SpatialReferenceExtensions.IsWebMercatorSrid(int)"/> /
-/// <see cref="SpatialReferenceExtensions.NormalizeWebMercatorSrid(int)"/> helpers, and prevents new
-/// local SRID allowlists from re-fragmenting the classification (the exact drift the audit found:
-/// four independent "is this SRID geographic?" lists and three duplicated Web Mercator alias tables
-/// that silently disagreed).
-/// </summary>
-/// <remarks>
-/// The scan is a source-text ratchet in the spirit of the other arch tests
-/// (<c>ThrowingDefaultInterfaceMethodRatchetTests</c>): it reads the shipped <c>src/**/*.cs</c> and
-/// flags the two anti-patterns — an <c>is X or Y</c> chain of geographic EPSG codes, and a Web
-/// Mercator alias table (the tell-tale <c>900913</c> alias juxtaposed with <c>or</c>/<c>,</c>/
-/// <c>||</c>). New code must call <see cref="GeographicSridClassifier.IsGeographicSrid(int)"/> (or
-/// the geodesic-safe variant) and <see cref="SpatialReferenceExtensions.IsWebMercatorSrid(int)"/>
-/// instead of open-coding a literal list. The canonical files and a small set of deliberately-narrow
-/// / protocol-specific heuristics are allowlisted below, each justified.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class GeographicSridClassifierGuardTests
 {
-    /// <summary>
-    /// Source files permitted to contain SRID-classification literals. Every entry is either the
-    /// canonical classifier itself or a documented, behaviour-locked heuristic that intentionally
-    /// diverges from the canonical list (see #2732). Adding to this list requires a justification
-    /// comment at the call site.
-    /// </summary>
     private static readonly string[] AllowlistedRelativePaths =
     {
         // Canonical classifiers — the single sources of truth.
@@ -51,46 +26,15 @@ public sealed class GeographicSridClassifierGuardTests
         "src/Honua.Core/Core/Features/FileImport/Services/ImportSchemaSuggestionService.cs",
     };
 
-    /// <summary>
-    /// Web Mercator SRID/alias codes. A local table equating two or more of these is the alias-table
-    /// anti-pattern the guard flags (regardless of whether the deprecated <c>900913</c> alias is one
-    /// of them).
-    /// </summary>
     private static readonly int[] WebMercatorAliasCodes = { 3857, 900913, 102100, 102113, 3785 };
 
-    /// <summary>
-    /// An <c>is X or Y</c> chain of two geographic EPSG codes drawn from the canonical list. The
-    /// alternation is built from <see cref="GeographicSridClassifier.GeographicSrids"/> so the guard
-    /// tracks the canonical list automatically.
-    /// </summary>
     private static readonly Regex GeographicChainRegex = BuildGeographicChainRegex();
 
-    /// <summary>
-    /// An equality-chain allowlist: two canonical geographic EPSG codes compared with <c>==</c> and
-    /// joined by <c>||</c> or <c>or</c> (e.g. <c>srid == 4326 || srid == 4269</c>) — the same
-    /// fragmentation as <see cref="GeographicChainRegex"/> but expressed with equality operators.
-    /// A single geographic code combined with a non-code boolean (<c>srid == 4326 || transformed</c>)
-    /// does not match; two codes are required.
-    /// </summary>
     private static readonly Regex GeographicEqualityChainRegex = BuildGeographicEqualityChainRegex();
 
-    /// <summary>
-    /// A Web Mercator alias table: the alias code <c>900913</c> juxtaposed with an <c>or</c>,
-    /// comma, or <c>||</c> operator (the historical <c>is 3857 or 900913 or ...</c> /
-    /// <c>{ 3857, 900913, ... }</c> shapes). Error-message strings use <c>/</c> separators and are
-    /// not matched.
-    /// </summary>
     private static readonly Regex WebMercatorAliasTableRegex =
         new(@"900913\s*(?:\bor\b|,|\|\|)|(?:\bor\b|,|\|\|)\s*900913", RegexOptions.Compiled);
 
-    /// <summary>
-    /// A Web Mercator alias table keyed on <b>any</b> two of <see cref="WebMercatorAliasCodes"/>
-    /// (not just <c>900913</c>), joined by an <c>or</c> or <c>||</c> boolean alternation — the
-    /// <c>srid is 3857 or 102100</c> / <c>== 102100 || == 102113</c> shapes that the
-    /// <c>900913</c>-keyed regex above misses. Deliberately excludes the bare comma so object
-    /// initializers and dictionaries that legitimately co-locate distinct Web Mercator wkids
-    /// (e.g. Esri <c>wkid = 102100, latestWkid = 3857</c>) are not false-flagged.
-    /// </summary>
     private static readonly Regex WebMercatorMultiAliasRegex = BuildWebMercatorMultiAliasRegex();
 
     [ArchitectureTest]

@@ -17,13 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-4 <c>geometry.convex-hull</c> executor. Pins
-/// the same failure surfaces as the earlier vector executors plus the
-/// happy-path GeoJSON Polygon Feature shape produced over a MultiPoint
-/// collection: the hull of five points (four corners of a 10x10 box plus
-/// the centroid) is the 10x10 box itself, area 100.
-/// </summary>
 public sealed class GeometryConvexHullJobExecutorTests
 {
     private const string FeatureDataUriPrefix = "data:application/geo+json;base64,";

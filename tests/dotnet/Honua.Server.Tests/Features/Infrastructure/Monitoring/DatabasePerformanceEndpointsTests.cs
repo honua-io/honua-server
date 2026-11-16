@@ -15,9 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Integration tests for database performance monitoring endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>

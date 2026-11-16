@@ -502,10 +502,6 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
         }
     }
 
-    /// <summary>
-    /// Deterministic tile-export producer that counts generations, so a reuse of the completed
-    /// package checkpoint is observable as the absence of a second invocation.
-    /// </summary>
     private sealed class CountingTileExportProducer : ITileExportPackageProducer
     {
         private int _invocations;
@@ -534,11 +530,6 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    /// <summary>
-    /// Minimal thread-safe in-memory <see cref="ICloudFileStorage"/> that honours the object-key
-    /// override, retention TTL, and identity metadata the tile-export executor relies on for
-    /// content-addressed checkpoint reuse and presigned result delivery.
-    /// </summary>
     private sealed class RecordingCloudFileStorage(TimeProvider timeProvider) : ICloudFileStorage
     {
         private readonly ConcurrentDictionary<string, CloudFile> _files = new(StringComparer.Ordinal);
@@ -571,7 +562,6 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
             return UploadResult.CreateSuccess(file);
         }
 
-        /// <summary>Expires a stored artifact in place to certify the expiry-driven result response.</summary>
         public void Expire(string fileId)
         {
             if (_files.TryGetValue(fileId, out var file))

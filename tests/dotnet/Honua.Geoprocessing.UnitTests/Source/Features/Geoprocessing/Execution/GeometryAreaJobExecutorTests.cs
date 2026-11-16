@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-3 <c>geometry.area</c> executor. Pins the same
-/// failure surfaces slice 1/2 introduced (unsupported process id, malformed
-/// inputs, oversized artifact guardrail) plus the happy-path scalar measure
-/// payload shape.
-/// </summary>
 public sealed class GeometryAreaJobExecutorTests
 {
     private const string ScalarDataUriPrefix = "data:application/json;base64,";

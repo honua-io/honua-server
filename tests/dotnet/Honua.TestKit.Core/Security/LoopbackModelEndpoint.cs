@@ -7,7 +7,6 @@ using System.Text;
 
 namespace Honua.TestKit.Security;
 
-/// <summary>Real local HTTP endpoint for retry and streaming-lifetime tests; never contacts a model service.</summary>
 public sealed class LoopbackModelEndpoint : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);

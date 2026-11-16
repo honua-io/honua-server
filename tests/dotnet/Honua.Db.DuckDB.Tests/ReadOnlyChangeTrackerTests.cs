@@ -5,10 +5,6 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Verifies that the shared no-op change tracker reports no changes
-/// (as registered by the DuckDB provider).
-/// </summary>
 public class ReadOnlyChangeTrackerTests
 {
     private readonly NoOpChangeTracker _tracker = new();

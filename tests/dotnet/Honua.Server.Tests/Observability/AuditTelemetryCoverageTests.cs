@@ -50,11 +50,6 @@ using StatusCode = Grpc.Core.StatusCode;
 
 namespace Honua.Server.Tests.Observability;
 
-/// <summary>
-/// Regression coverage for the server-20261004 telemetry audit (A3-001..A3-004): every
-/// assertion observes a recorded serving sample, an emitted span, or an exported OTLP payload
-/// rather than inspecting configuration.
-/// </summary>
 [Collection("HonuaTelemetry")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed class AuditTelemetryCoverageTests

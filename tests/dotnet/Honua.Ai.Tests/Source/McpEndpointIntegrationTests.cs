@@ -15,12 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for the MCP operator surface exercised through the full
-/// ASP.NET Core pipeline. Covers JSON-RPC framing, method dispatch, and
-/// error mapping so the public <c>POST /mcp</c> contract is validated end
-/// to end, not just at the handler level.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpEndpointIntegrationTests : IAsyncLifetime

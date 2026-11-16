@@ -12,13 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// PA-021: <see cref="VersionJobRunner"/> detaches reconcile/post execution onto
-/// <c>Task.Run</c>, which flows the ambient <see cref="ExecutionContext"/> by default. Without
-/// an explicit fix, the job's span would silently become a child of the HTTP request's activity
-/// — one that has already ended by the time the background job finishes. These tests assert the
-/// job's span is instead a root span carrying an <see cref="ActivityLink"/> back to the caller.
-/// </summary>
 public sealed class VersionJobRunnerTelemetryTests
 {
     [UnitTest]

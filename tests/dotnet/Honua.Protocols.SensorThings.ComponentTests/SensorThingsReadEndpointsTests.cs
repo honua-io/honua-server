@@ -9,11 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Integration tests for the OGC SensorThings API (STA v1.1) read endpoints.
-/// The synthetic datastream (id=1) seeded by migration 059 makes the read path
-/// demoable end-to-end: list/by-id, navigation, and $filter/$orderby/$expand.
-/// </summary>
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsReadEndpointsTests : IClassFixture<SensorThingsComponentFixture>
 {

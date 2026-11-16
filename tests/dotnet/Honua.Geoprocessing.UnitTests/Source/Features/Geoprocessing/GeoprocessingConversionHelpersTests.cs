@@ -11,9 +11,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for geoprocessing proto/domain conversion helpers.
-/// </summary>
 public sealed class GeoprocessingConversionHelpersTests
 {
     // -----------------------------------------------------------------------

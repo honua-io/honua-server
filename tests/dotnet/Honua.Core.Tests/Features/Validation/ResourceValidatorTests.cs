@@ -11,14 +11,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Core.Tests.Features.Validation;
 
-/// <summary>
-/// Tests for <see cref="ResourceValidator"/> integer-collection-id resolution, in
-/// particular the case where one storage layer index is published more than once
-/// (a feature dataset and a raster sidecar that share the same layer id, as the
-/// client-compat seed does for layer 2000). The integer-collection-id contract must
-/// resolve to the storage-backed feature resource so callers such as OGC API Maps can
-/// resolve an integer storage-layer handle instead of 404-ing on the raster sidecar.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ResourceValidatorTests
 {
@@ -505,11 +497,6 @@ public sealed class ResourceValidatorTests
         };
     }
 
-    /// <summary>
-    /// Builds a graph where storage layer index 2000 is published twice: a raster
-    /// sidecar publication (ordered first, no integer StorageLayerId) and a
-    /// storage-backed feature publication. Mirrors the client-compat seed shape.
-    /// </summary>
     private static MetadataV2Graph SharedLayerIndexGraph()
     {
         return new MetadataV2Graph

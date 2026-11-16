@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// SQL shape for two-band PNG display: unsigned gray-plus-alpha keeps band two,
-/// and every other one- or two-band raster still synthesizes opacity from band one.
-/// </summary>
 public sealed class TileDisplayRasterExpressionTests
 {
     [UnitTest]

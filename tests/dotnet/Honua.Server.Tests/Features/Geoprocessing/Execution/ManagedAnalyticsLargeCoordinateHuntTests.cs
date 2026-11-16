@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Regression coverage for finite coordinates whose squared distance overflows.
-/// </summary>
 public sealed class ManagedAnalyticsLargeCoordinateHuntTests
 {
     [UnitTest]

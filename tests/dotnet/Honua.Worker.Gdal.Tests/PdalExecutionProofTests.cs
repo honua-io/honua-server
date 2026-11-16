@@ -15,7 +15,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>Production PDAL executor, real LAS fixtures, and an independent binary reader.</summary>
 [Trait("Category", "PdalExecutionProof")]
 public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDisposable
 {

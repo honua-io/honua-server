@@ -9,21 +9,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces that every protocol surface called out by the modularization plan
-/// has a corresponding <see cref="IHonuaProtocolModule"/> implementation so the
-/// plugin host has something to discover.
-/// </summary>
-/// <remarks>
-/// The <see cref="IHonuaProtocolModule"/> contract lives in <c>Honua.Hosting</c>
-/// after the audit-A1 relocation, but the concrete modules still ship in
-/// <c>Honua.Server</c> (and, as protocols are physically extracted, in their
-/// own <c>Honua.Protocols.&lt;X&gt;</c> assemblies). The discovery surface is
-/// therefore the Server assembly unioned with every loaded
-/// <c>Honua.Protocols.*</c> assembly — anchoring on the interface's own
-/// assembly would scan Hosting, which holds the contract but no
-/// implementations.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class ProtocolModuleCoverageTests
 {
@@ -35,13 +20,6 @@ public sealed class ProtocolModuleCoverageTests
         "GeoServices",
     };
 
-    /// <summary>
-    /// Assemblies that may host protocol-module implementations: the Server
-    /// composition root (anchored on a known module type to force-load it)
-    /// plus any extracted <c>Honua.Protocols.*</c> assemblies already loaded
-    /// into the AppDomain. Server references every protocol module, so loading
-    /// the Server assembly transitively loads the extracted ones.
-    /// </summary>
     private static List<Assembly> DiscoveryAssemblies()
     {
         var server = typeof(ODataProtocolModule).Assembly;

@@ -8,10 +8,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Tests.Configuration;
 
-/// <summary>
-/// Unit tests for <see cref="MigrationSafetyOptions"/> defaults — the safe single-node upgrade policy
-/// (#2565) gated closed by default (#2812) so a schema-narrowing migration is never applied unattended.
-/// </summary>
 public sealed class MigrationSafetyOptionsTests
 {
     [Theory]

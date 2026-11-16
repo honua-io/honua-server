@@ -9,10 +9,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// The paged GetFeature fast path follows the reader the publication resolves to.
-/// A non-paging source reader must stay on the ordinary query path (#6356).
-/// </summary>
 public sealed class Wfs20PagedReaderFastPathTests
 {
     [UnitTest]

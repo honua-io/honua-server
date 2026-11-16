@@ -7,54 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Content-aware validation of the public-interface proof ledger's evidence.
-///
-/// <para>
-/// History: the ledger used to validate every <c>evidenceLocations</c> entry with a bare
-/// <see cref="File.Exists(string)"/> check. Existence is not evidence — the check passed
-/// identically for a workflow that proves the claim and a document that merely happens to exist,
-/// which is how a fabricated GeoServices route (<c>computeClass</c>) rode a green architecture gate
-/// to <c>contract-governance: implemented</c> (honua-server#2861/#2864). This is the ADR-0058
-/// "fake gate that manufactures confidence", literally. honua-server#2877 replaces the existence
-/// check with the gate-aware model below.
-/// </para>
-///
-/// <para>
-/// <b>What the model requires.</b> An evidence location falls into one of two tiers:
-/// <list type="bullet">
-///   <item><b>Gate evidence</b> — an artifact that an <i>automated</i> lane actually executes and
-///   that exercises the claim: a test file (architecture / dotnet / python / js), a governance or
-///   conformance workflow, a build-enforced source-generated wire contract, or the published gRPC
-///   proto schema.</item>
-///   <item><b>Corroborating evidence</b> — prose docs (<c>*.md</c>), published data artifacts
-///   (<c>*.json</c>), non-gate source, and support files. Necessary context, but never sufficient.</item>
-/// </list>
-/// Every <c>implemented</c> proof that declares an automated <c>executionLane</c> must cite at least
-/// one gate-evidence location <i>whose kind the declared lane runs</i> (an <c>architecture</c> lane
-/// must cite an architecture test; a <c>nightly:</c> lane must cite the like-named workflow; and so
-/// on). A proof on a purely manual lane (<c>docs+review</c>, <c>release:*</c>) is only admissible as
-/// <i>corroboration</i> of a surface that also carries a real automated gate — manual/doc evidence
-/// can never be the sole substantiation of a surface.
-/// </para>
-///
-/// <para>
-/// <b>False proof prevented.</b> "A document (or model) that merely exists stands in for proof":
-/// the exact <c>computeClass</c> failure. A doc/data/plain-source-only proof, or a proof whose cited
-/// gate the declared lane does not run, now fails the suite red.
-/// </para>
-///
-/// <para>
-/// <b>False proof still admitted (stated deliberately, not silently).</b> This model verifies that a
-/// gate the lane runs <i>exists and is of the right kind</i>; it cannot mechanically judge that the
-/// gate's assertions are <i>strong enough</i> to cover the full claim, nor that a prose doc's
-/// sentences are true. A test that runs in the right lane but asserts less than it should, or a
-/// source-generated contract whose companion doc drifts from runtime behaviour, would still pass.
-/// Closing that residue requires a claim-specific gate (as honua-server#2879 built for the
-/// GeoServices parity matrix), not a generic ledger check. This limitation is documented in
-/// <c>docs/internal/contributor/public-interface-quality-model.md</c>.
-/// </para>
-/// </summary>
 public sealed partial class PublicInterfaceProofLedgerTests
 {
     [ArchitectureTest]

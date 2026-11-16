@@ -12,22 +12,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Experimental;
 
-/// <summary>
-/// Unit tests for the fail-closed startup gates on experimental data providers
-/// (Redshift: PA-181, Snowflake: PA-182, Databricks: #2436). When a provider is
-/// explicitly enabled via its legacy <c>X:Enabled=true</c> flag but the corresponding
-/// experimental feature gate is not set, startup must throw <see cref="InvalidOperationException"/>
-/// with a clear diagnostic pointing at the required flag. When neither the legacy
-/// flag nor the experimental gate is set, startup must succeed silently.
-///
-/// <para>
-/// All three warehouse providers must gate identically. Databricks was un-gated
-/// until #2436: an operator could enable it by configuring a host alone, while the
-/// identical action on Redshift threw. <see cref="EveryWarehouseProviderGatesIdentically"/>
-/// is the regression guard, so a fourth warehouse provider cannot be added with the
-/// gate quietly omitted.
-/// </para>
-/// </summary>
 [Trait("Category", "ExperimentalGate")]
 public sealed class ExperimentalProviderGateTests
 {

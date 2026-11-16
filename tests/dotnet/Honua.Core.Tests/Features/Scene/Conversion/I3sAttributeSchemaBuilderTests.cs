@@ -7,13 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
-/// <summary>
-/// Unit tests for the I3S attribute schema builder (#1811): the
-/// <c>attributeStorageInfo</c> field list an ArcGIS SceneLayer client reads to
-/// discover the identify-able fields. The schema must always lead with the
-/// synthetic OBJECTID field, assign stable <c>f_{n}</c> keys in deterministic
-/// order, and pick the value type that matches the served attribute file.
-/// </summary>
 public sealed class I3sAttributeSchemaBuilderTests
 {
     [UnitTest]

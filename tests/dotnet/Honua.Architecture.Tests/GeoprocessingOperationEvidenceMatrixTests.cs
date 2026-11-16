@@ -14,22 +14,11 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the whole-catalog geoprocessing execution-evidence denominator adopted
-/// for 2026.1. A catalog addition cannot land without an explicit evidence verdict.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class GeoprocessingOperationEvidenceMatrixTests
 {
     private const string ManifestRelativePath = "eng/gp-operation-matrix.v1.json";
 
-    /// <summary>
-    /// Source files whose content decides whether a 'proven' verdict still applies.
-    /// honua-server#4408: pinned by content digest (<see cref="ComputeCatalogSourceContentDigest"/>)
-    /// rather than by a recorded git revision, so an executor change cannot silently
-    /// outlive the audit that certified it — the guard fails loudly instead of trusting
-    /// a <c>catalogSourceRevision</c> string nothing ever re-checks against the tree.
-    /// </summary>
     private static readonly string[] CatalogSourceRoots =
     [
         "src/Honua.Geoprocessing/Core/Features/Geoprocessing/BuiltInProcessCatalog.cs",
@@ -128,13 +117,6 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
             "partial and unproven operations require one-issue-per-operation follow-up");
     }
 
-    /// <summary>
-    /// The 2026-09-06 entry-point ruling (#4409): GA is defined per entry point, so a
-    /// verdict is only meaningful together with the entry point it was proved through.
-    /// A row that claims <c>proven</c> through an entry point the catalog does not declare
-    /// for that operation is not a proof of the shipped capability — it is a proof of a
-    /// path callers cannot take — so the gate refuses it.
-    /// </summary>
     [Fact]
     public void ManifestRows_ProveTheirVerdictThroughADeclaredEntryPoint()
     {
@@ -237,14 +219,6 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
             + "audit.catalogSourceContentDigest");
     }
 
-    /// <summary>
-    /// Finds the xunit test method named <paramref name="testName"/> in
-    /// <paramref name="evidencePath"/> and returns the source text the proof actually
-    /// runs: the method body, or — for a thin <c>=&gt; Helper(args)</c> forwarder, the
-    /// common shape for parameterized proof pairs — that expression plus the body of
-    /// the helper it calls (chased up to 4 levels). Returns <see langword="null"/> when
-    /// no method with that name exists.
-    /// </summary>
     internal static string? ResolveTestMethodBody(string evidencePath, string testName)
     {
         var text = File.ReadAllText(evidencePath);
@@ -296,10 +270,6 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
         return text;
     }
 
-    /// <summary>
-    /// honua.gp-catalog-source-digest/v1: sha256sum-shaped lines for every <c>.cs</c> file
-    /// under <see cref="CatalogSourceRoots"/>, ordered by repo-relative path, hashed once more.
-    /// </summary>
     internal static string ComputeCatalogSourceContentDigest(string repositoryRoot)
     {
         var files = new List<string>();

@@ -13,7 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>Subscriber projection and fail-closed event image authorization.</summary>
 [Protocol(TestProtocols.Streaming)]
 public sealed class StreamSubscriberSecurityTests
 {

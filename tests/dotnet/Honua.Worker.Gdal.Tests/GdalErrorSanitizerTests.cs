@@ -8,11 +8,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalErrorSanitizer"/> and end-to-end coverage
-/// that every native executor's client-visible failure message routes through
-/// the sanitizer so scratch workspace paths never leak onto job.ErrorMessage.
-/// </summary>
 public sealed class GdalErrorSanitizerTests
 {
     [UnitTest]

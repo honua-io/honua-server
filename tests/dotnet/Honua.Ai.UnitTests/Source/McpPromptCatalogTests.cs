@@ -13,11 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the curated MCP prompt catalog (#1953): the advertised <c>prompts/list</c>
-/// roster, the descriptor shape, and the <c>prompts/get</c> rendering/argument
-/// validation contract.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPromptCatalogTests
 {

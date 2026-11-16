@@ -8,29 +8,12 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Anti-drift coverage for the catalog-level value domains (#3048): every finite token set the
-/// canonical <see cref="ProcessPlanValidator"/> enforces must be published as the owning
-/// parameter's <c>AllowedValues</c>, and every published value must be one the validator
-/// accepts. The assertions are BEHAVIORAL — they drive the real validator and the real
-/// <see cref="BuiltInProcessCatalog"/> rather than comparing two hand-maintained lists — so a
-/// future process that adds an enum rule without publishing it fails here instead of silently
-/// under-describing the parameter and forcing the translation lane back onto its conservative
-/// answer. Fully offline: no Docker, no Redis, no job store.
-/// </summary>
 public sealed class ProcessValueDomainDriftTests
 {
     private const string StepId = "domain-probe";
 
     private readonly BuiltInProcessCatalog _catalog = new();
 
-    /// <summary>
-    /// Structurally different, individually legal-looking values. A closed token set rejects
-    /// all three; a format rule (a GUID, an identifier, a numeric list) accepts at least one or
-    /// rejects it for a reason other than set membership. Mirrors the sentinels
-    /// <c>ProcessConditionalInputProbe</c> uses, so this test classifies parameters exactly the
-    /// way the probe does.
-    /// </summary>
     private static readonly string[] ForeignTokens =
     [
         "honuaProbeSentinel",
@@ -38,11 +21,6 @@ public sealed class ProcessValueDomainDriftTests
         "0,0,1,1"
     ];
 
-    /// <summary>
-    /// Token sets the validator enforces that are deliberately NOT published as
-    /// <c>AllowedValues</c>. Each entry needs a reason that survives review, because an
-    /// unpublished domain costs the translation lane its exact per-branch answer.
-    /// </summary>
     private static readonly (string ProcessId, string Parameter, string Reason)[] UnpublishedDomains =
     [
         ("raster.zonal-statistics", "statistics",
@@ -176,12 +154,6 @@ public sealed class ProcessValueDomainDriftTests
             string.Equals(entry.ProcessId, definition.ProcessId, StringComparison.Ordinal)
             && string.Equals(entry.Parameter, parameter.Name, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Runs the canonical validator with <paramref name="value"/> as the ONLY supplied input and
-    /// reports whether the parameter was refused for falling outside a closed token set (as
-    /// opposed to a type, format, range or structural complaint). Other parameters' failures are
-    /// irrelevant here and are filtered out by field path.
-    /// </summary>
     private bool RejectsAsClosedValueSet(ProcessDefinition definition, string parameterName, string value)
     {
         var plan = new AnalysisPlan

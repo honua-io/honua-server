@@ -175,26 +175,15 @@ internal static class CrossServerConsumeTestSupport
     }
 }
 
-/// <summary>
-/// xUnit fixture that starts the GeoServer reference container and a Honua test host
-/// for cross-server consume checks.
-/// </summary>
 public sealed class CrossServerConsumeGeoServerFixture : IAsyncLifetime
 {
     private readonly GeoServerFixture _geoServer = new(seedCuratedData: true);
     private readonly WebAppFixture _honua = new();
 
-    /// <summary>
-    /// Gets the base URL of the GeoServer reference instance.
-    /// </summary>
     public string BaseUrl => _geoServer.BaseUrl;
 
-    /// <summary>
-    /// Gets the Honua HTTP client used to route source-server reads through Honua.
-    /// </summary>
     public HttpClient HonuaClient => _honua.Client;
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         if (!CrossServerConsumeTestSupport.IsEnabled())
@@ -220,7 +209,6 @@ public sealed class CrossServerConsumeGeoServerFixture : IAsyncLifetime
         }
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         if (!CrossServerConsumeTestSupport.IsEnabled())
@@ -239,31 +227,17 @@ public sealed class CrossServerConsumeGeoServerFixture : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// xUnit fixture that starts the MapServer reference container and a Honua test host
-/// for cross-server consume checks.
-/// </summary>
 public sealed class CrossServerConsumeMapServerFixture : IAsyncLifetime
 {
     private readonly MapServerFixture _mapServer = new();
     private readonly WebAppFixture _honua = new();
 
-    /// <summary>
-    /// Gets the MapServer OGC endpoint URL for the reference mapfile.
-    /// </summary>
     public string EndpointUrl => _mapServer.EndpointUrl;
 
-    /// <summary>
-    /// Gets the MapCache-backed WMTS endpoint URL for the MapServer reference layer.
-    /// </summary>
     public string WmtsEndpointUrl => _mapServer.WmtsEndpointUrl;
 
-    /// <summary>
-    /// Gets the Honua HTTP client used to route source-server reads through Honua.
-    /// </summary>
     public HttpClient HonuaClient => _honua.Client;
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         if (!CrossServerConsumeTestSupport.IsEnabled())
@@ -289,7 +263,6 @@ public sealed class CrossServerConsumeMapServerFixture : IAsyncLifetime
         }
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         if (!CrossServerConsumeTestSupport.IsEnabled())

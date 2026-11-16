@@ -20,9 +20,6 @@ using NSubstitute;
 
 namespace Honua.Protocols.OgcApi.UnitTests.Edr;
 
-/// <summary>
-/// EDR advertises storage-layer ids and binds collection, position, and cube queries to those ids.
-/// </summary>
 public sealed class EdrStorageCollectionTests
 {
     private const int SharedStorageId = 42;

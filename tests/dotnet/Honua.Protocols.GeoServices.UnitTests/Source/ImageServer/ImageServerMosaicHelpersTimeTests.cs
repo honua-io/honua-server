@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for the ImageServer <c>time</c> parser (#4061). Esri clients send epoch-millisecond
-/// instants and <c>start,end</c> extents (the forms the service advertises in
-/// <c>timeInfo.timeExtent</c>); every ImageServer operation shares this parser.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerMosaicHelpersTimeTests
 {

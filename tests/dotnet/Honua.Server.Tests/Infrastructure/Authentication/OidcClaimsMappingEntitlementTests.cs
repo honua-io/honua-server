@@ -84,11 +84,6 @@ public sealed class OidcClaimsMappingEntitlementTests
             CanonicalSecurityActor.FindStampedValue(result, CanonicalSecurityActor.AuthenticationSchemeClaim));
     }
 
-    /// <summary>
-    /// Claim types minted by the server's own authentication handlers and then read as
-    /// authoritative by shared authorization (SEC-10). Nothing outside the process may
-    /// populate them.
-    /// </summary>
     private static readonly string[] FrameworkAuthorityClaimTypes =
     [
         "permission", "auth_type", "api_key_id", "api_key_name", "plan", "honua_plan",
@@ -368,10 +363,6 @@ public sealed class OidcClaimsMappingEntitlementTests
         Assert.True(result.IsInRole("user"));
     }
 
-    /// <summary>
-    /// Builds a transformation whose PRIMARY role claim type is a provider-specific claim,
-    /// with no other custom mapping configured.
-    /// </summary>
     private static OidcClaimsTransformation CreateRoleClaimTypeTransformation(HonuaEdition edition)
     {
         var options = Options.Create(new OidcAuthenticationOptions
@@ -391,11 +382,6 @@ public sealed class OidcClaimsMappingEntitlementTests
             services);
     }
 
-    /// <summary>
-    /// Mirrors what the JWT/OIDC handlers produce when
-    /// <c>TokenValidationParameters.RoleClaimType</c> is the configured custom type: the
-    /// identity itself resolves <c>IsInRole</c> against <c>groups</c>.
-    /// </summary>
     private static ClaimsPrincipal CreateGroupsPrincipal() => new(new ClaimsIdentity(
         [
             new Claim("sub", "user-123"),

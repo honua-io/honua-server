@@ -3,67 +3,35 @@
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// The kind of substantiation an <c>evidenceLocations</c> entry in the public-interface proof
-/// ledger provides. The classification is what lets the ledger tell a gate an automated lane runs
-/// from a document that merely happens to exist (honua-server#2877).
-/// </summary>
 internal enum EvidenceKind
 {
-    /// <summary>Path does not exist on disk.</summary>
     Missing,
 
-    /// <summary>A test under <c>tests/dotnet/Honua.Architecture.Tests/</c> — the architecture gate.</summary>
     ArchitectureTest,
 
-    /// <summary>A <c>*Tests.cs</c> file under <c>tests/dotnet/</c> — runs in the dotnet test lanes.</summary>
     DotnetTest,
 
-    /// <summary>A python/js/js-browser test file — runs in an integration or browser lane.</summary>
     ForeignTest,
 
-    /// <summary>A <c>.github/workflows/*.yml</c> governance or conformance workflow.</summary>
     Workflow,
 
-    /// <summary>
-    /// A source-generated <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>: a
-    /// build-enforced wire contract. The warnings-as-errors Release build fails if the context and
-    /// its model diverge, so the shape is gated at compile time in the build/test lanes.
-    /// </summary>
     SourceGenContract,
 
-    /// <summary>The published gRPC proto schema on <c>github.com/honua-io/geospatial-grpc</c>.</summary>
     GrpcProtoUrl,
 
-    /// <summary>Non-gate source (compiles, but does not by itself gate the claim).</summary>
     Source,
 
-    /// <summary>Prose documentation (<c>*.md</c>). Corroborating, never a gate.</summary>
     Doc,
 
-    /// <summary>A published data artifact (<c>*.json</c>, cert envelopes). Corroborating, never a gate.</summary>
     Data,
 
-    /// <summary>An external artifact URL that is not the gRPC proto schema.</summary>
     ExternalUrl,
 
-    /// <summary>Anything else — support/config files under a test tree, scripts, etc.</summary>
     Other,
 }
 
-/// <summary>
-/// Validates that a proof's evidence actually substantiates its claim rather than merely existing.
-/// Extracted so the guarantee can be exercised directly with synthetic proofs (see
-/// <see cref="PublicInterfaceProofLedgerTests"/>) as well as swept over the committed ledger.
-/// </summary>
 internal static class ProofEvidenceValidator
 {
-    /// <summary>
-    /// Returns the human-readable reasons <paramref name="proof"/> fails content validation, or an
-    /// empty list when the proof is substantiated. <paramref name="surface"/> supplies sibling
-    /// proofs so a manual/review-lane proof can be checked for a real automated gate elsewhere on
-    /// the surface.
-    /// </summary>
     public static IReadOnlyList<string> Validate(
         PublicInterfaceSurface surface,
         PublicInterfaceProof proof,
@@ -127,10 +95,6 @@ internal static class ProofEvidenceValidator
         return failures;
     }
 
-    /// <summary>
-    /// True when <paramref name="proof"/> is implemented, declares an automated lane, and cites a
-    /// gate that lane runs. Used to decide whether a manual sibling proof is genuinely corroborated.
-    /// </summary>
     private static bool HasAutomatedGate(PublicInterfaceProof proof, string repoRoot)
     {
         var automatedTokens = SplitLane(proof.ExecutionLane).Where(IsAutomatedLaneToken).ToArray();
@@ -153,10 +117,6 @@ internal static class ProofEvidenceValidator
         automatedTokens.Any(token =>
             classified.Any(entry => IsGateCompatible(token, entry.Kind, proof.ProofClass, entry.Location)));
 
-    /// <summary>
-    /// True when an evidence location of the given <paramref name="kind"/> is a gate the automated
-    /// lane <paramref name="laneToken"/> actually runs.
-    /// </summary>
     private static bool IsGateCompatible(string laneToken, EvidenceKind kind, string proofClass, string location)
     {
         // Order matters: "ci:test-all+architecture" splits into "ci:test-all" and "architecture";
@@ -200,11 +160,6 @@ internal static class ProofEvidenceValidator
         return false;
     }
 
-    /// <summary>
-    /// True when the cited workflow file's name corresponds to the nightly lane it is claimed to run
-    /// in. Prevents a nightly proof from citing an unrelated workflow (the "workflow that answers an
-    /// unrelated question" failure).
-    /// </summary>
     private static bool WorkflowMatchesLane(string workflowPath, string laneCore)
     {
         var stem = Path.GetFileNameWithoutExtension(workflowPath);
@@ -222,10 +177,6 @@ internal static class ProofEvidenceValidator
     private static string[] SplitLane(string executionLane) =>
         executionLane.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>
-    /// Classifies one evidence location by kind, reading file content only where necessary to
-    /// distinguish a build-enforced source-generated contract from ordinary source.
-    /// </summary>
     public static EvidenceKind Classify(string evidenceLocation, string repoRoot)
     {
         if (Uri.TryCreate(evidenceLocation, UriKind.Absolute, out var uri)

@@ -16,10 +16,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Comprehensive;
 
-/// <summary>
-/// Comprehensive API surface compliance tests ensuring 100% endpoint coverage
-/// with security, performance, and edge case validation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Comprehensive)]
 public class ApiSurfaceComplianceTests : IAsyncLifetime
@@ -45,9 +41,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Tests all health check endpoints for availability and response format.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.HealthCheck)]
     [Endpoint("GET /healthz/live")]
@@ -75,9 +68,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests FeatureServer service and layer metadata endpoints.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
@@ -108,9 +98,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         await invalidResponse.AssertGeoServicesErrorAsync(404);
     }
 
-    /// <summary>
-    /// Tests OGC API Features landing page and conformance.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/features")]
@@ -136,9 +123,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         conformanceContent.Should().Contain("http://www.opengis.net/spec/ogcapi-features-1");
     }
 
-    /// <summary>
-    /// Tests all query endpoints with various parameter combinations.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -176,9 +160,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests error handling across all endpoints with invalid parameters.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -226,9 +207,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests content negotiation across all endpoints.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContentNegotiation)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -261,9 +239,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests spatial query operations with various geometries.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -297,9 +272,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests security measures across all endpoints.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -324,9 +296,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
 
     }
 
-    /// <summary>
-    /// Tests pagination across query endpoints.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -358,9 +327,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests OpenAPI specification endpoint.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /openapi.json")]
@@ -379,9 +345,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         _output.WriteLine($"OpenAPI spec length: {content.Length} characters");
     }
 
-    /// <summary>
-    /// Performance benchmark test across critical endpoints.
-    /// </summary>
     [IntegrationTest]
     [Trait("Category", "Performance")]
     [Operation(Operations.Performance)]

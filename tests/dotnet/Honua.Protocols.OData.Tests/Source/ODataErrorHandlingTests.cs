@@ -16,11 +16,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData v4 error handling tests for invalid filters, unsupported functions,
-/// malformed geometry, and other error scenarios.
-/// Implements parity with OGC API Features test matrices per issue #200.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataErrorHandlingTests : IAsyncLifetime

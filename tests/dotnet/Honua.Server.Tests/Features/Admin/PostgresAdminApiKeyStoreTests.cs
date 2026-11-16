@@ -9,11 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Two independently constructed stores over one PostgreSQL schema stand in for two Lambda
-/// execution environments that have no Redis (honua-server#6487, #6490). A key minted through one
-/// must be known to the other, and revocation and rotation must take effect across both.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Infrastructure)]

@@ -7,9 +7,6 @@ using Honua.Core.Features.Styling.Services;
 
 namespace Honua.Core.Tests.Features.Styling;
 
-/// <summary>
-/// Unit tests for classification algorithms used by style suggestions.
-/// </summary>
 public sealed class ClassificationAlgorithmsTests
 {
     // ──────────────────── EqualInterval ────────────────────

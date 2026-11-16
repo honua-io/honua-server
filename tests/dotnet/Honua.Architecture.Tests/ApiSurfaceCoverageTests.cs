@@ -8,9 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ensures every registered endpoint has at least one integration test.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class ApiSurfaceCoverageTests
 {

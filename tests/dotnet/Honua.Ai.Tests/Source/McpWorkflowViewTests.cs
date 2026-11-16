@@ -30,15 +30,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the server-authored workflow discovery view (honua-server#3428): the
-/// <c>setup</c> view's derivation from the canonical live catalog, the explicit
-/// request/session/profile negotiation contract, the deterministic
-/// revision/membership/descriptor digests, the descriptor budget gate with
-/// measured bytes and estimated tokens, and the invariants that keep a view
-/// discovery-only — full-catalog parity, no authority granted, no client-side
-/// source list.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class McpWorkflowViewTests
 {
@@ -1275,11 +1266,6 @@ public sealed partial class McpWorkflowViewTests
             .Select(t => t.GetString()!)
             .ToArray();
 
-    /// <summary>
-    /// Lists tools, following <c>nextCursor</c> to the end so an unnarrowed call
-    /// yields the COMPLETE paginated catalog (the escape hatch), while a
-    /// view-narrowed call yields the whole bounded view in its single page.
-    /// </summary>
     private static async Task<ToolsListView> ListToolsAsync(
         McpDataAccessSurface surface,
         string? view,
@@ -1351,10 +1337,6 @@ public sealed partial class McpWorkflowViewTests
             Meta.ValueKind == JsonValueKind.Object ? Meta.GetProperty("membershipDigest").GetString()! : string.Empty;
     }
 
-    /// <summary>
-    /// Stands in for <c>PublishedOperationToolSource</c>: the runtime seam through
-    /// which an eligible server operation reaches the catalog.
-    /// </summary>
     private sealed class StubToolSource : IMcpToolSource
     {
         private readonly IReadOnlyList<IMcpTool> _tools;

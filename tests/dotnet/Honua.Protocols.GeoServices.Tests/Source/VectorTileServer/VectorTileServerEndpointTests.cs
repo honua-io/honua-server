@@ -624,9 +624,6 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
 
     private sealed record DecodedGlyphStack(string Name, string Range, List<DecodedGlyph> Glyphs);
 
-    /// <summary>
-    /// Decodes a glyph range protobuf (<c>glyphs</c> &gt; <c>fontstack</c> &gt; <c>glyph</c>).
-    /// </summary>
     private static List<DecodedGlyphStack> DecodeGlyphStacks(byte[] payload)
     {
         var stacks = new List<DecodedGlyphStack>();

@@ -6,10 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Retains server exceptions for failed publication/readback assertions without
-/// exposing internal exception details through the public MCP error envelope.
-/// </summary>
 internal sealed class McpPublicationErrorCapture : ILoggerProvider
 {
     private readonly ConcurrentQueue<string> _exceptions = new();

@@ -14,14 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for the optional server-initiated <c>GET /mcp</c> SSE stream
-/// with <c>Mcp:ServerInitiatedStreamEnabled=true</c> (opt-in; off by default per
-/// #2537). Proves the stream opens for a valid session and — the core #2537
-/// regression — that tearing the stream down never invalidates the session, so a
-/// spec-compliant SDK client behind a non-streaming ingress keeps working on the
-/// same <c>Mcp-Session-Id</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpServerInitiatedStreamTests : IAsyncLifetime

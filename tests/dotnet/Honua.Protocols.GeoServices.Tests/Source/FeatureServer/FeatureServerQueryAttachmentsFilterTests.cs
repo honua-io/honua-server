@@ -13,13 +13,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the Esri <c>queryAttachments</c> parameter surface
-/// (<c>attachmentTypes</c>, <c>keywords</c>, <c>size</c>, <c>definitionExpression</c>,
-/// and the explicit <c>globalIds</c> rejection). The seed fixture attaches two files to
-/// the test feature: <c>test1.txt</c> (text/plain, 17 bytes, keywords "test,document")
-/// and <c>test2.jpg</c> (image/jpeg, 4 bytes, keywords "test,image").
-/// </summary>
 public sealed class FeatureServerQueryAttachmentsFilterFixture : IAsyncLifetime
 {
     private const int TestLayerId = 0;
