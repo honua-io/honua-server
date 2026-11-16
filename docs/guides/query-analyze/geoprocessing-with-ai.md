@@ -105,12 +105,22 @@ does not replace checking the executed result.
 Pass the same `plan` to `honua_execute_plan`. For retry-safe submission, supply
 an `idempotencyKey` unique to this logical request and retain it across retries.
 
-The response includes `jobId` and `resourceUri`. Poll `honua_list_jobs` for that
-`jobId`, following `nextCursor` when present, until status is `Succeeded`, `Failed`,
-or `Cancelled`. Call `honua_get_job_results` with the same `jobId` for the terminal
-result package. The returned status/result resources remain available to clients
-using `resources/read`. Use a
-bounded wait; on timeout inspect the job or request cancellation with
+The response includes `jobId` and `resourceUri`; retain both. Call
+`honua_list_jobs` with arguments such as `{"limit": 50}` and match the retained
+`jobId` against the returned `jobs` entries. Its supported inputs are `status`,
+`limit`, and `cursor`; `jobId` is an output field, not a list filter. Omit `status`
+so the job remains visible as it moves between active and terminal states.
+If the job is absent and `nextCursor` is present, repeat the call with the same
+limit and that cursor. Restart from the first page for each polling cycle until
+the matching job is `Succeeded`, `Failed`, or `Cancelled`. An absent entry does
+not establish completion.
+
+Call `honua_get_job_results` with arguments `{"jobId": "<retained jobId>"}` for
+the terminal result package, including when the job failed or was cancelled.
+Inspect its `status` and `errors`; retrieving a package does not imply success.
+Clients using `resources/read` can instead read the returned status resource
+directly and then the result resource. Use a bounded wait; on timeout inspect
+the job or request cancellation with
 `honua_cancel_job` rather than submitting duplicates. Progress notifications can
 supplement polling when supported by the client session.
 
