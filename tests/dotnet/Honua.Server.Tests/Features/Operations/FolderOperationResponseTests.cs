@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
+using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,7 @@ public sealed class FolderOperationResponseTests
     public async Task MutationRefusal_PreservesHttpStatusAndProblemBody(int status)
     {
         var refusal = new FolderMutationFailure(status, "The catalog cannot accept this mutation.");
-        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var services = new ServiceCollection().AddLogging().AddHonuaJsonContexts().BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         await using var body = new MemoryStream();
         context.Response.Body = body;
