@@ -84,7 +84,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(actions[-5:], [("stop", "server", "server-peer", "worker"),
                                        ("stop", "postgres"), ("down", "--volumes", "--remove-orphans"),
                                        ("create", "postgres"), ("up", "-d")])
-        self.assertFalse(any("redis" in arg for call in calls for arg in call))
+        self.assertEqual({"server", "server-peer", "worker", "postgres"},
+                         {action[2] for action in actions if action[:2] == ("ps", "-q")})
         archive = next(i for i, c in enumerate(calls) if c[-1] == "tar -C /volume -cpf - .")
         self.assertLess(next(i for i, c in enumerate(calls) if c[-2:] == ("stop", "postgres")), archive)
         destroyed = next(i for i, c in enumerate(calls) if c[-3:] == ("down", "--volumes", "--remove-orphans"))

@@ -25,7 +25,9 @@ class GpQualificationHarnessTests(unittest.TestCase):
         completed, receipts, summary = self.run_harness("lifecycle", HONUA_SERVER_IMAGE="unattested:latest")
         self.assertNotEqual(0, completed.returncode)
         self.assertEqual(27, summary["declared_scenario_count"])
-        self.assertFalse(any(name.startswith("restart-redis-") for name in summary["declared_scenarios"]))
+        self.assertEqual({"worker", "server", "postgres"},
+                         {name.split("-")[1] for name in summary["declared_scenarios"]
+                          if name.startswith("restart-")})
         self.assertIn("mcp-cancel-native-process-started", summary["declared_scenarios"])
         self.assertEqual("fail", receipts["mcp-cancel-native-process-started"]["outcome"])
         self.assertEqual([], summary["missing_scenarios"])

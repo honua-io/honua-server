@@ -125,7 +125,7 @@ class CandidateBindingTests(unittest.TestCase):
             elif mutation == "changed-inventory":
                 proof["recovery"]["substrates"][1]["files_after"] = "changed"
             elif mutation == "legacy-store":
-                proof["recovery"]["substrates"].append({"store": "redis"})
+                proof["recovery"]["substrates"].append({"store": "unsupported-store"})
             elif mutation == "corrupt-bytes":
                 proof["artifact"]["sha256_after"] = "b" * 64
             elif mutation == "wrong-worker":
@@ -192,7 +192,7 @@ class CandidateBindingTests(unittest.TestCase):
             "uncommitted-transaction": lambda p, s: p["fence"].__setitem__("postgres_transaction_status", "T"),
             "failed-transaction": lambda p, s: p["fence"].__setitem__("postgres_transaction_status", "E"),
             "legacy-receipt": lambda p, s: (p["fence"].pop("postgres_command_tag"),
-                                             p["fence"].__setitem__("redis_reply", ":1")),
+                                             p["fence"].__setitem__("unexpected_reply", ":1")),
             "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
             "fence-record": lambda p, s: p["fence"]["terminal_record"].__setitem__("version", 5),
             "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 5),
