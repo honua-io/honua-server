@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Metadata;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -15,11 +16,13 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
     private readonly string _rlsTable;
+    private readonly string? _schemaName;
 
     public PostgresFieldMaskPolicyStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;
+        _schemaName = schemaName;
         _table = SchemaSearchPath.QualifyTable("rbac_field_mask_policies", schemaName);
         _rlsTable = SchemaSearchPath.QualifyTable("rbac_rls_policies", schemaName);
     }
@@ -69,7 +72,10 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
+        await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("policy_id", NpgsqlDbType.Uuid, policy.PolicyId);
         command.Parameters.AddWithValue("role", NpgsqlDbType.Varchar, policy.Role);
         command.Parameters.AddWithValue("service", NpgsqlDbType.Varchar, policy.Service);
@@ -82,6 +88,7 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         try
         {
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -98,9 +105,13 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         var sql = $"DELETE FROM {_table} WHERE policy_id = @policy_id";
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
+        await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("policy_id", NpgsqlDbType.Uuid, policyId);
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
     }
 

@@ -339,6 +339,8 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
             : null;
         MetadataV2PathReservations.EnsureActivationPreservesReservations(active?.Graph ?? new(), target.Graph);
 
+        await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
+
         // A bootstrap write can clear sidecars for every retained revision before it
         // activates its new snapshot. Rebuild the target revision's derived indexes from
         // the immutable document before repointing current so the activated graph and its
@@ -441,6 +443,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
+        await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
         const string sql = "SELECT pg_advisory_xact_lock(@namespace, hashtext(@environment))";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@namespace", MetadataWriteLockNamespace);

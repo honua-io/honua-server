@@ -224,6 +224,61 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
 
     private ICombinedReadPolicyStore Combined() => Assert.IsAssignableFrom<ICombinedReadPolicyStore>(_rows);
 
+    [IntegrationTheory]
+    [InlineData("pending", "row-create")]
+    [InlineData("ready", "row-create")]
+    [InlineData("pending", "row-delete")]
+    [InlineData("ready", "row-delete")]
+    [InlineData("pending", "field-create")]
+    [InlineData("ready", "field-create")]
+    [InlineData("pending", "field-delete")]
+    [InlineData("ready", "field-delete")]
+    public async Task PolicyChange_PublicGenerationWithoutRevoker_PreservesPolicyAndCleanup(string state, string operation)
+    {
+        await AddAsync("alpha", "reader", "parcels", "region");
+        var row = Assert.Single(await _rows.ListPoliciesAsync());
+        var field = Assert.Single(await _fields.ListPoliciesAsync());
+        await fixture.ExecuteAsync($"""
+            CREATE TABLE {_schema}.public_publication_generations (state text);
+            INSERT INTO {_schema}.public_publication_generations VALUES ('{state}');
+            """);
+
+        async Task ChangeAsync()
+        {
+            switch (operation)
+            {
+                case "row-create":
+                    await _rows.CreatePolicyAsync(new RlsPolicy
+                    {
+                        Role = "other", Service = "alpha", Layer = "parcels", Attribute = "region", ClaimType = "region"
+                    });
+                    break;
+                case "row-delete":
+                    await _rows.DeletePolicyAsync(row.PolicyId);
+                    break;
+                case "field-create":
+                    await _fields.CreatePolicyAsync(new FieldMaskPolicy
+                    {
+                        Role = "other", Service = "alpha", Layer = "parcels", Attribute = "region"
+                    });
+                    break;
+                case "field-delete":
+                    await _fields.DeletePolicyAsync(field.PolicyId);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(operation));
+            }
+        }
+
+        await Assert.ThrowsAsync<InvalidOperationException>(ChangeAsync);
+        Assert.Equal(row.PolicyId, Assert.Single(await _rows.ListPoliciesAsync()).PolicyId);
+        Assert.Equal(field.PolicyId, Assert.Single(await _fields.ListPoliciesAsync()).PolicyId);
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {_schema}.public_publication_generations";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+    }
+
     private async Task ResetAsync()
     {
         _provider.Opens = 0;

@@ -165,6 +165,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
     private async Task<MetadataV2GraphSnapshot> PublishGraphAsync(
         NpgsqlTransaction transaction, MetadataV2Graph graph, CancellationToken cancellationToken)
     {
+        await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
         var connection = transaction.Connection!;
         var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
