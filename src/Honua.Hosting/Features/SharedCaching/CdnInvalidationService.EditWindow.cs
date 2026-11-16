@@ -68,11 +68,6 @@ internal sealed partial class CdnInvalidationService
             // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
             if (batches.BusyPaths.Count > 0)
             {
-                if (cause.Kind is CdnPurgeKind.Settle)
-                {
-                    _delivery.SettleOnly(batches.BusyPaths);
-                }
-
                 DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow(), cause);
             }
 
@@ -136,10 +131,17 @@ internal sealed partial class CdnInvalidationService
     {
         foreach (var path in paths)
         {
-            if (!_pendingEditPaths.TryGetValue(path, out var pending) || pending.Reason == "edit")
+            if (!_pendingEditPaths.TryGetValue(path, out var pending))
             {
                 _pendingEditPaths[path] = cause;
+                continue;
             }
+
+            var stated = pending.Reason != "edit" && (cause.Reason == "edit" || pending.Kind is CdnPurgeKind.Change)
+                ? pending : cause;
+            // A new change needs its own repeat even when it joins an exempt settle retry.
+            _pendingEditPaths[path] = pending.Kind is CdnPurgeKind.Change || cause.Kind is CdnPurgeKind.Change
+                ? stated.AsChange() : stated;
         }
     }
 

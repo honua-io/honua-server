@@ -350,6 +350,8 @@ internal sealed record CdnPurgeCause(string Reason, string ChangeId)
     // a purge is handled.
     internal CdnPurgeKind Kind { get; private init; } = CdnPurgeKind.Change;
 
+    internal CdnPurgeCause AsChange() => this with { Kind = CdnPurgeKind.Change };
+
     // The repeat of a purge after the settle delay; it is not repeated again.
     internal CdnPurgeCause AsSettle() => this with { Kind = CdnPurgeKind.Settle };
 

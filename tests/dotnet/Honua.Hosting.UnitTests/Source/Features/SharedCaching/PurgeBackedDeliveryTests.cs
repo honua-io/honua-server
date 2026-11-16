@@ -193,7 +193,9 @@ public sealed class PurgeBackedDeliveryTests
         var delivery = new PurgeBackedDelivery(_time);
         var admin = CdnPurgeCause.Admin("admin-123");
         var due = delivery.ScheduleSettle(["#a"], admin);
-        delivery.ScheduleSettle(["#a", "#b"], CdnPurgeCause.Edit("edit-456"));
+        admin = CdnPurgeCause.Admin("admin-456");
+        delivery.ScheduleSettle(["#a"], admin);
+        delivery.ScheduleSettle(["#a", "#b"], CdnPurgeCause.Edit("edit-789"));
         _time.Advance(PurgeBackedDelivery.SettleDelay);
 
         var batch = delivery.TakeDueSettles(due!.Value);
@@ -281,20 +283,6 @@ public sealed class PurgeBackedDeliveryTests
         plan.Paths.Should().Equal("#a");
         plan.Abandoned.Should().Be(0);
         plan.Delay.Should().Be(PurgeBackedDelivery.RetryDelay(2));
-    }
-
-    [UnitTest]
-    public void Delivery_SettleOnlyPath_DoesNotSettleAgain_UnlessAnEditQueuesItAgain()
-    {
-        var delivery = new PurgeBackedDelivery(_time);
-        delivery.SettleOnly(["#a", "#b"]);
-        delivery.EditQueued(["#b"]);
-
-        var due = delivery.ScheduleSettle(["#a", "#b"]);
-        _time.Advance(PurgeBackedDelivery.SettleDelay);
-
-        due.Should().NotBeNull();
-        delivery.TakeDueSettles(due!.Value).Due.Should().Equal("#b");
     }
 
     [UnitTest]

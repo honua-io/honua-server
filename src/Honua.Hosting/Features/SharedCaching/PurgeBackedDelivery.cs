@@ -17,7 +17,6 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
     private readonly Lock _gate = new();
     private readonly Dictionary<string, FailedPath> _failed = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ScheduledPurge> _settleAfter = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _settleOnly = new(StringComparer.Ordinal);
     private DateTimeOffset? _settleDueAt;
 
     // 5, 10, 20, 40 minutes, then hourly.
@@ -27,8 +26,7 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
         return delay < MaximumRetryDelay ? delay : MaximumRetryDelay;
     }
 
-    // An edit restarts a failing path's give-up clock, since copies stored after it live a full lifetime from then, and
-    // turns a path held only for its settle repeat back into an ordinary one.
+    // An edit restarts a failing path's give-up clock, since copies stored after it live a full lifetime from then.
     internal void EditQueued(IEnumerable<string> paths)
     {
         var now = clock.GetUtcNow();
@@ -40,8 +38,6 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
                 {
                     _failed[path] = failed with { Since = now };
                 }
-
-                _settleOnly.Remove(path);
             }
         }
     }
@@ -87,15 +83,6 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
         }
     }
 
-    // Paths left over from a settle repeat (busy CDN) are still sent, but do not settle again.
-    internal void SettleOnly(IEnumerable<string> paths)
-    {
-        lock (_gate)
-        {
-            _settleOnly.UnionWith(paths);
-        }
-    }
-
     // Returns the time a new settle timer must fire, or null when one is already waiting or nothing needs to settle.
     internal DateTimeOffset? ScheduleSettle(IEnumerable<string> sent, CdnPurgeCause? cause = null)
     {
@@ -105,13 +92,10 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
         {
             foreach (var path in sent)
             {
-                if (!_settleOnly.Remove(path))
-                {
-                    // A later edit postpones the repeat, but cannot remove an earlier exemption.
-                    var stated = _settleAfter.TryGetValue(path, out var pending) && pending.Cause.Reason != "edit"
-                        ? pending.Cause : repeat;
-                    _settleAfter[path] = new ScheduledPurge(due, stated);
-                }
+                // A later edit postpones the repeat, but cannot remove an earlier exemption.
+                var stated = repeat.Reason == "edit" && _settleAfter.TryGetValue(path, out var pending) && pending.Cause.Reason != "edit"
+                    ? pending.Cause : repeat;
+                _settleAfter[path] = new ScheduledPurge(due, stated);
             }
 
             if (_settleDueAt is not null || _settleAfter.Count == 0)
@@ -155,7 +139,6 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
         {
             var batches = PurgeBatch.Group(_settleAfter.Select(entry => new KeyValuePair<string, CdnPurgeCause>(entry.Key, entry.Value.Cause)));
             _settleAfter.Clear();
-            _settleOnly.Clear();
             _failed.Clear();
             _settleDueAt = null;
             return batches;
