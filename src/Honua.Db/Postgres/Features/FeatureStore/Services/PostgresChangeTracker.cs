@@ -31,8 +31,10 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         // puller can advance to without skipping an in-flight write; migration 067 takes a
         // generation-allocation advisory lock in the change-tracking triggers so generation order
         // equals commit order and this committed-MAX watermark is gap-free. Mirrors the proven
-        // honua.fieldcollection_changes pattern (PostgresFieldCollectionSyncStore).
-        const string sql = "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes";
+        // honua.fieldcollection_changes pattern (PostgresFieldCollectionSyncStore). The horizon comes
+        // from honua.feature_change_read_horizon() (migration 213), so a release that narrows the
+        // writer lock can replace the horizon for every running release's readers.
+        const string sql = "SELECT honua.feature_change_read_horizon()";
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
