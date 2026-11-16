@@ -370,7 +370,9 @@ internal static class StacFilterHelpers
 
     private static bool HasExplicitRfc3339TimeZone(string value)
     {
-        if (value.Length <= 11 || value[10] != 'T')
+        if (value.Length < 20 || value[10] != 'T' ||
+            value[13] != ':' || value[16] != ':' ||
+            !char.IsAsciiDigit(value[17]) || !char.IsAsciiDigit(value[18]))
         {
             return false;
         }
