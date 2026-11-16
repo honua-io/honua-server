@@ -467,7 +467,7 @@ def markdown_link_targets(repo_root, files):
     return reached
 
 
-def named_elsewhere(repo_root, files, pages, docs_prefix):
+def named_elsewhere(repo_root, files, page_paths):
     """Pages whose path or file name appears in another of the given files."""
     texts = []
     for path in files:
@@ -476,9 +476,9 @@ def named_elsewhere(repo_root, files, pages, docs_prefix):
             with open(full, "r", encoding="utf-8", errors="ignore") as fh:
                 texts.append((path, fh.read()))
     named = set()
-    for page in pages:
+    for page, relative_page in page_paths.items():
         name = os.path.basename(page)
-        forms = [page, page.removeprefix(docs_prefix)] + ([name] if name not in ("README.md", "index.md") else [])
+        forms = [page, relative_page] + ([name] if name not in ("README.md", "index.md") else [])
         pattern = re.compile("|".join(r"(?<![\w./-])" + re.escape(form) for form in forms))
         if any(path != page and pattern.search(text) for path, text in texts):
             named.add(page)
@@ -492,7 +492,8 @@ def check_reachability(docs_root, repo_root, dated_debt):
     pages = {path for path in files if path.startswith(docs_prefix) and path.endswith(".md")}
     watched = [path for path in files if any(fnmatch.fnmatchcase(path, pattern) for pattern in NAME_SOURCES)]
     unreached = pages - markdown_link_targets(repo_root, watched) - {docs_prefix + "README.md", docs_prefix + "SUMMARY.md"}
-    unreached -= named_elsewhere(repo_root, watched, unreached, docs_prefix)
+    page_paths = {page: page.removeprefix(docs_prefix) for page in unreached}
+    unreached -= named_elsewhere(repo_root, watched, page_paths)
     errors = [f"{page} is linked from no page and named by no file the Docs Link Gate watches (NAME_SOURCES): link it from an index or delete it"
               for page in sorted(unreached)]
     for page in sorted(pages):

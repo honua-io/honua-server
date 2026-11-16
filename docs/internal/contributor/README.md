@@ -46,6 +46,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 ## CI/CD
 
+- [Merge coordination runbook](merge-coordination-runbook.md) — merge admission and recovery
 - [CI Gate Model](../ci/gate-model.md) — five-tier quality gate definitions and governing rules
 - [CI Workflow Inventory](../ci/workflow-inventory.md) — every workflow, its tier, triggers, and merge-blocking status
 - [CI Config Conventions](../ci/config-conventions.md) — env vars, cache keys, artifact naming, and composite actions

@@ -61,12 +61,15 @@ def write(root: Path, relative: str, payload: str) -> None:
     path.write_text(payload, encoding="utf-8")
 
 
-def run(root: Path, *extra: str, reachability: bool = False) -> tuple[int, str, str]:
+def run_with_reachability(root: Path, *extra: str) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
-    flags = [] if reachability else ["--skip-reachability"]
     with redirect_stdout(out), redirect_stderr(err):
-        code = MODULE.main(["--repo-root", str(root), *flags, *extra])
+        code = MODULE.main(["--repo-root", str(root), *extra])
     return code, out.getvalue(), err.getvalue()
+
+
+def run(root: Path, *extra: str) -> tuple[int, str, str]:
+    return run_with_reachability(root, "--skip-reachability", *extra)
 
 
 def tracked(root: Path) -> None:
@@ -355,19 +358,19 @@ def test_unlinked_page_fails_until_linked_or_named(stack) -> None:
     write(root, "docs/internal/orphan.md", "# Orphan\n\nSee [myself](orphan.md#orphan).\n")
     write(root, "docs/guides/deploy/index.md", "[Monitor](monitoring.md)\n")
     tracked(root)
-    code, _, err = run(root, "--skip-manifest", reachability=True)
+    code, _, err = run_with_reachability(root, "--skip-manifest")
     assert_that(code == 1, "a page linked from nowhere, even by itself, must fail")
     assert_that("docs/internal/orphan.md is linked from no page" in err, err)
     assert_that("docs/guides/deploy/index.md" in err and "monitoring.md is linked" not in err, err)
     write(root, "docs/README.md", "Home. Mentions my-orphan.md and scripts/orphan.md only.\n")
     write(root, "scripts/check.py", "PAGE = 'docs/internal/orphan.md'\n")
     tracked(root)
-    code, _, err = run(root, "--skip-manifest", reachability=True)
+    code, _, err = run_with_reachability(root, "--skip-manifest")
     assert_that("docs/internal/orphan.md is linked" in err, "a longer name or a script reference keeps nothing alive")
     write(root, "docs/guides/deploy/monitoring.md", "# Monitor\n\nSee internal/orphan.md.\n")
     write(root, "docs/SUMMARY.md", "- [Deploy](guides/deploy/index.md)\n")
     tracked(root)
-    code, out, err = run(root, "--skip-manifest", reachability=True)
+    code, out, err = run_with_reachability(root, "--skip-manifest")
     assert_that(code == 0, f"a page named by another docs page or linked from SUMMARY.md is reachable: {err}")
     assert_that("Reachability:" in out, out)
 
@@ -379,7 +382,7 @@ def test_links_from_files_the_gate_ignores_do_not_count(stack) -> None:
     write(root, "AGENTS.md", "[Setup](docs/internal/setup.md)\n")
     write(root, "tests/fixtures/README.md", "See docs/internal/setup.md.\n")
     tracked(root)
-    code, _, err = run(root, "--skip-manifest", reachability=True)
+    code, _, err = run_with_reachability(root, "--skip-manifest")
     assert_that(code == 1 and "docs/internal/setup.md is linked from no page" in err,
                 f"a page reached only from files outside the gate's paths must fail: {err}")
 
@@ -392,7 +395,7 @@ def test_untracked_page_is_not_graded_and_dated_name_fails(stack) -> None:
     write(root, "docs/guides/deploy/2026.1-capacity.md", "# Capacity\n")
     tracked(root)
     write(root, "docs/internal/scratch.md", "# Not tracked\n")
-    code, _, err = run(root, "--skip-manifest", reachability=True)
+    code, _, err = run_with_reachability(root, "--skip-manifest")
     assert_that(code == 1, "a dated page name must fail")
     assert_that("status-2026-11-15.md has a date in its name" in err, err)
     assert_that("review-2026-Q4.md has a date in its name" in err, err)
@@ -408,7 +411,7 @@ def test_dated_name_debt_passes_and_only_shrinks(stack) -> None:
     write(root, "docs/guides/deploy/index.md", "[Monitor](monitoring.md)\n")
     write(root, "docs/SUMMARY.md", "- [Deploy](guides/deploy/index.md)\n")
     tracked(root)
-    code, _, err = run(root, "--skip-manifest", reachability=True)
+    code, _, err = run_with_reachability(root, "--skip-manifest")
     assert_that(code == 1, "a dated-name entry for a deleted page must fail")
     assert_that("status-2026-11-15.md has a date" not in err, "a listed dated page passes")
     assert_that("datedNames entry docs/internal/gone-2026-01-01.md is gone" in err, err)
@@ -418,7 +421,7 @@ def test_dated_name_debt_passes_and_only_shrinks(stack) -> None:
 
 
 def test_live_repository_is_green() -> None:
-    code, out, err = run(REPO_ROOT, reachability=True)
+    code, out, err = run_with_reachability(REPO_ROOT)
     assert_that(code == 0, f"the live documentation link/anchor gate must be green:\n{err}")
     assert_that("gate passed" in out, out)
 
