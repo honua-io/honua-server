@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Infrastructure.Authentication;
 
-// Preserve the existing Redis representation: default property names, numeric
+// Preserve the stored record representation: default property names, numeric
 // enums, null values and byte-array encoding.
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(OAuthClientRecord))]
