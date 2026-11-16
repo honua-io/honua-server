@@ -111,6 +111,10 @@
       "description": "Server-managed API key lifecycle and effective permissions"
     },
     {
+      "name": "Agent Authority",
+      "description": "Per-agent authority ceilings that bound what an agent principal may do without a human approval."
+    },
+    {
       "name": "Proposals",
       "description": "Operation-proposal approval surface: list, inspect, approve, and reject guardrail-routed operation proposals."
     },
@@ -483,6 +487,141 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/agent-authority": {
+      "get": {
+        "tags": [
+          "Agent Authority"
+        ],
+        "summary": "Get Agent Authority Ceiling",
+        "description": "Returns the stored authority ceiling for an agent principal. An agent with no stored ceiling may run read-only operations; its state-changing operations become proposals that need one human approval.",
+        "operationId": "getAgentAuthorityCeiling",
+        "parameters": [
+          {
+            "name": "principalId",
+            "in": "query",
+            "required": true,
+            "description": "Agent principal the ceiling applies to.",
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "description": "Tenant scope; omit for the deployment-wide ceiling.",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored ceiling.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAuthorityCeiling"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Agent Authority"
+        ],
+        "summary": "Set Agent Authority Ceiling",
+        "description": "Creates or replaces the authority ceiling for an agent principal. Operations outside an enabled ceiling are denied to that agent; setting Enabled to false revokes the agent's authority. Agent callers cannot change ceilings directly: the request becomes a proposal for human approval.",
+        "operationId": "setAgentAuthorityCeiling",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAuthorityCeiling"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Ceiling stored."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agent Authority"
+        ],
+        "summary": "Delete Agent Authority Ceiling",
+        "description": "Removes the stored ceiling, returning the agent to the default (read-only operations direct, state-changing operations by approved proposal). Agent callers cannot delete ceilings directly.",
+        "operationId": "deleteAgentAuthorityCeiling",
+        "parameters": [
+          {
+            "name": "principalId",
+            "in": "query",
+            "required": true,
+            "description": "Agent principal the ceiling applies to.",
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "description": "Tenant scope; omit for the deployment-wide ceiling.",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Ceiling removed."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -9766,7 +9905,7 @@
           "Deploy"
         ],
         "summary": "Approve Coordinated Release Gate",
-        "description": "Approves the exact reviewed container-swap or data-affecting gate so the coordinated-release conductor can advance. The optional request body carries only an operator reason. Requires one authorized human in a verified interactive OIDC code/PKCE session and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503.",
+        "description": "Approves the exact reviewed container-swap or data-affecting gate so the coordinated-release conductor can advance. The optional request body carries only an operator reason. Requires one authorized human in a verified interactive browser session established by password sign-in or OIDC code/PKCE and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503.",
         "operationId": "approveCoordinatedReleaseGate",
         "parameters": [
           {
@@ -10637,7 +10776,7 @@
           "Proposals"
         ],
         "summary": "Approve Operation Proposal",
-        "description": "Approves the exact reviewed proposal and applies its underlying operation through the gateway. Requires one authorized human in a verified interactive OIDC code/PKCE session and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503. A proposal state conflict returns 409. Takes no request body.",
+        "description": "Approves the exact reviewed proposal and applies its underlying operation through the gateway. Requires one authorized human in a verified interactive browser session established by password sign-in or OIDC code/PKCE and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503. A proposal state conflict returns 409. Takes no request body.",
         "operationId": "approveOperationProposal",
         "parameters": [
           {
@@ -22721,7 +22860,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "honua_admin_session",
-        "description": "Verified interactive OIDC code/PKCE session for human approval. API keys and bearer tokens cannot substitute for this session."
+        "description": "Verified interactive browser session established by password sign-in or OIDC code/PKCE for human approval. API keys and bearer tokens cannot substitute for this session."
       },
       "HumanApprovalCapability": {
         "type": "apiKey",
@@ -52029,6 +52168,59 @@
           "area": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "AgentAuthorityCeiling": {
+        "type": "object",
+        "required": [
+          "PrincipalId"
+        ],
+        "description": "Upper bound on what an agent principal may do. Enum fields are serialized as integers.",
+        "properties": {
+          "TenantId": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 256
+          },
+          "PrincipalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "AllowedOperationIds": {
+            "type": "array",
+            "maxItems": 512,
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Exact operation id; wildcards are rejected."
+            }
+          },
+          "MaximumBlastRadius": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "0 None, 1 ResourceScope, 2 ServiceScope, 3 DeploymentScope."
+          },
+          "MaximumSideEffect": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "0 ReadOnly, 1 CreatesMetadata, 2 MutatesMetadata, 3 MutatesData, 4 DestroysState."
+          },
+          "Enabled": {
+            "type": "boolean",
+            "default": true
           }
         }
       },

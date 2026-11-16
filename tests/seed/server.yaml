@@ -469,6 +469,8 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_analysis_content_items_kind_updated ON honua.analysis_content_items (kind, updated_at DESC, item_id);"
   - "CREATE INDEX IF NOT EXISTS idx_analysis_content_items_owner_updated ON honua.analysis_content_items (owner_id, updated_at DESC, item_id);"
+  # Migration 199: owning tenant of an analysis content item; NULL = the default tenant.
+  - "ALTER TABLE honua.analysis_content_items ADD COLUMN IF NOT EXISTS tenant_id TEXT;"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_versions (
           version_id    TEXT        PRIMARY KEY,
