@@ -34,8 +34,8 @@
     <!-- ArcGIS source protocol client for import discovery/query/attachments (#4599). -->
     <PackageReference Include="Honua.Sdk.GeoServices" />
 
-    <!-- COG tile decode: managed zstd port, no native dependency (see Directory.Packages.props). -->
-    <PackageReference Include="ZstdSharp.Port" />
+    <!-- .NET 10 plugins retain the managed codec; .NET 11 uses the runtime implementation. -->
+    <PackageReference Include="ZstdSharp.Port" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="SharpZipLib" />
 
     <!--
@@ -63,6 +63,7 @@
     <InternalsVisibleTo Include="Honua.ServiceDefaults" />
     <InternalsVisibleTo Include="Honua.Geometry" />
     <InternalsVisibleTo Include="Honua.Io" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />

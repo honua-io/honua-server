@@ -22592,6 +22592,58 @@
           }
         }
       }
+    },
+    "/live": {
+      "get": {
+        "tags": [
+          "Observability"
+        ],
+        "operationId": "GetAdminLive",
+        "summary": "Stream administrator live events",
+        "description": "Requires administrator authorization. Streams server-sent events for selected admin topics. A status frame precedes events; heartbeat comments keep the connection active. Supply Last-Event-ID to resume within the 24-hour replay window. On a reset frame, refresh the corresponding REST state. Slow consumers may be disconnected; reconnect using the last processed event ID.",
+        "parameters": [
+          {
+            "name": "topics",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated selection of proposals, ops-health, operate-events and deploy-operations. Omission selects all topics.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "description": "Replay cursor from a previously processed event, formatted admin:<sequence>.",
+            "schema": {
+              "type": "string",
+              "pattern": "^admin:[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent events containing status, topic event and reset frames. Delivery is at least once; deduplicate events by ID.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid topic selection or replay cursor."
+          },
+          "401": {
+            "description": "Administrator authentication required."
+          },
+          "403": {
+            "description": "Administrator authorization or live-stream access denied."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -50146,6 +50198,49 @@
         }
       },
       "MetadataV2ResourceEditing": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "description": "UUID field used as an edit-stable identifier."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creating user."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creation timestamp."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last editing user."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last update timestamp."
+          },
+          "canModify": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false
+          },
+          "supportsRelatedRecords": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "MetadataV2ObjectEditing": {
         "type": "object",
         "nullable": true,
         "properties": {

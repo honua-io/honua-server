@@ -35,7 +35,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcApiProtocolModule.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcClassicProtocolModule.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcClassicProtocolModule.cs;Features/Protocols/Wfs20/**/*.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeOData)' != 'true'">
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
@@ -137,6 +137,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
     <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcClassicProtocolModule.cs" />
+    <Compile Remove="Features\Protocols\Wfs20\**\*.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeOData)' != 'true'">
     <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />
@@ -158,10 +159,8 @@
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.AspNetCore.Web" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
-    <!-- Force the audited-safe MessagePack (2.5.301) over the vulnerable 2.5.187 that the SignalR Redis
-         backplane pulls transitively (transitive pinning is not enabled repo-wide). See #2554. -->
-    <PackageReference Include="MessagePack" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.Environment" />

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Middleware;
@@ -75,6 +76,18 @@ internal static class AuditContextResolver
 
         actorType = AuditActorType.Anonymous;
         return AuditEvent.AnonymousActor;
+    }
+
+    public static string? ResolveAgent(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.User.Identity?.IsAuthenticated != true || !AgentPrincipal.IsAgent(context.User))
+        {
+            return null;
+        }
+
+        var (actor, actorType) = ResolveCanonicalActor(context);
+        return actorType == AuditActorType.Anonymous ? null : actor;
     }
 
     // Studio authorization audits use the actor tenant resolution stamps, even when it has not run

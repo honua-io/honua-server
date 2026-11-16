@@ -351,7 +351,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var attachmentSchema = usesCanonicalMigrationRoots ? await PostgresAttachmentSchema.ResolveAsync(
                 lockConnection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false) : null;
-            var upgrader = BuildUpgrader(
+            UpgradeEngine CreateUpgrader() => BuildUpgrader(
                 migrationConnectionString,
                 migrationsAssembly,
                 _metadataSchemaVariable,
@@ -359,6 +359,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments);
+            var upgrader = CreateUpgrader();
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
                 upgrader, migrationsAssembly, usesCanonicalMigrationRoots, lockConnection,
@@ -413,7 +414,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 }
             }
 
-            var result = upgrader.PerformUpgrade();
+            var result = await PostgresMigrationDeadlockRetry.RunAsync(CreateUpgrader, cancellationToken)
+                .ConfigureAwait(false);
             var appliedScripts = result.Scripts.Select(script => script.Name).ToArray();
 
             if (!result.Successful)
@@ -422,9 +424,11 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 return DatabaseMigrationResult.Failed(error, SafeMigrationFailureMessage, appliedScripts);
             }
 
-            // Record, beside each journal entry this image ships, the forward-compatibility
-            // declaration an older rollback reader re-verifies before accepting it (#6477).
-            await RecordReaderCompatibilityDeclarationsAsync(lockConnection, upgrader, cancellationToken)
+            // Record the forward-compatibility declaration an older rollback reader re-verifies.
+            // The planning engine still has the pre-upgrade journal cache, so load the journal
+            // the successful attempt committed.
+            var upgraded = CreateUpgrader();
+            await RecordReaderCompatibilityDeclarationsAsync(lockConnection, upgraded, cancellationToken)
                 .ConfigureAwait(false);
 
             // A successful DbUp result is not sufficient evidence by itself: guarded migrations

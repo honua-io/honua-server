@@ -55,6 +55,7 @@ internal static class RealtimeServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
         services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton<IRealtimeTransactionWriter, RealtimeTransactionWriter>();
         services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();
 

@@ -127,9 +127,15 @@ def console_image_settings(directory, lock, values):
 
 def console_profile_settings(directory, lock, values):
     separator = values.get('COMPOSE_PATH_SEPARATOR', ':')
-    files = [name for name in values['COMPOSE_FILE'].split(separator) if name != 'compose.console.yaml']
-    managed_image = 'compose.executor.image.yaml'
-    files.insert(files.index(managed_image) if managed_image in files else len(files), 'compose.console.yaml')
+    files = values['COMPOSE_FILE'].split(separator)
+    if 'compose.console.yaml' not in files:
+        # Customer overrides listed after the base files must keep winning, so the overlay goes right after
+        # the base files and an existing entry is never moved.
+        base = [name for name in ('compose.executor.yaml', 'compose.yaml') if name in files]
+        managed_image = 'compose.executor.image.yaml'
+        position = (files.index(base[0]) + 1 if base
+                    else files.index(managed_image) if managed_image in files else len(files))
+        files.insert(position, 'compose.console.yaml')
     profiles = [name for name in values.get('COMPOSE_PROFILES', '').split(',') if name]
     if 'console' not in profiles:
         profiles.append('console')
@@ -273,7 +279,10 @@ def initialize(directory, profiles=()):
     """Creates or migrates the install. Returns only non-secret settings."""
     directory = Path(directory).resolve()
     lock = json.loads((directory / 'images.json').read_text())
-    if not all(IMMUTABLE.fullmatch(lock[name]) for name in ('server', 'executor', 'worker')):
+    if not isinstance(lock, dict):
+        raise ValueError('The image lock must be a JSON object')
+    if not all(isinstance(lock.get(name), str) and IMMUTABLE.fullmatch(lock[name])
+               for name in ('server', 'executor', 'worker')):
         raise ValueError('The image lock must contain immutable sha256 references')
     env_file = directory / '.env'
     existing = env_file.read_text() if env_file.exists() else ''
@@ -387,8 +396,9 @@ def main():
     except (OSError, ValueError, RuntimeError, KeyError) as error:
         print('Quickstart initialization failed; check the image lock, Docker socket, OpenSSL and private install directory.',
               file=sys.stderr)
-        # These messages name settings and tools only, never a secret value.
-        if isinstance(error, RuntimeError):
+        # Plain validation errors name settings, never their values. Decoding errors
+        # are ValueError subclasses whose messages can expose private file contents.
+        if type(error) is ValueError or isinstance(error, RuntimeError):
             print(str(error), file=sys.stderr)
         return 1
 

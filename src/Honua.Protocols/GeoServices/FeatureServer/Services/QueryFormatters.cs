@@ -9,11 +9,11 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.GeoJson;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -22,26 +22,7 @@ using NtsGeometryType = NetTopologySuite.IO.GeometryType;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-internal interface IQueryFormatter
-{
-    ValueTask<(object response, string contentType)> FormatQueryResultAsync(
-        QueryResult<Feature> result,
-        MetadataV2Object resource,
-        string format,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        int? geometryPrecision,
-        double? maxAllowableOffset,
-        string[]? outFields = null,
-        bool suppressObjectId = false,
-        bool returnCentroid = false,
-        int? requestedOutputSrid = null,
-        QuantizationTransform? quantizationTransform = null);
-}
-
-internal sealed class QueryFormatter : IQueryFormatter
+internal sealed class QueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
     private readonly GeoParquetLimits _geoParquetLimits;

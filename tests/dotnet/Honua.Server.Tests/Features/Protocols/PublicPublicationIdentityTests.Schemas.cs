@@ -58,6 +58,7 @@ public sealed partial class PublicPublicationIdentityTests
     public async Task DescribeFeatureType_MixedNamespaces_ImportsResolvablePublicationSchema(string version)
     {
         ConfigureDistinctStyleResources();
+        ConfigureDistinctStorageLayers();
         ConfigureSchemaPublication("Other", "Other");
         var schema = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION={version}");
         XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
@@ -70,6 +71,18 @@ public sealed partial class PublicPublicationIdentityTests
 
         imported.Root!.Attribute("targetNamespace")!.Value.Should().Be(dataNamespace);
         imported.Root.Elements(xsd + "element").Should().Contain(element => element.Attribute("name")!.Value == "Other");
+    }
+
+    private void ConfigureDistinctStorageLayers()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var secondary = graph.Publications.Single(publication => publication.Metadata.Id == SecondPublicationId);
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == secondary.StorageBindingId
+                ? binding with { StorageLayerId = 42 } : binding).ToArray(),
+        });
     }
 
     private void ConfigureSchemaPublication(string resourceName, string publicationId)
