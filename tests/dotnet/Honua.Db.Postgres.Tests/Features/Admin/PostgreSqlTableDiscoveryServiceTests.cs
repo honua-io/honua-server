@@ -2,10 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
@@ -22,6 +24,24 @@ public sealed class PostgreSqlTableDiscoveryServiceTests
     public PostgreSqlTableDiscoveryServiceTests(PostgresFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [Fact]
+    public async Task DiscoverPostGisTablesAsync_InvalidCredentials_ThrowsServiceUnavailable()
+    {
+        var connectionString = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
+        {
+            Username = "missing_discovery_user",
+            Password = "do-not-disclose",
+            Pooling = false
+        }.ConnectionString;
+        var service = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance);
+
+        var discover = () => service.DiscoverPostGisTablesAsync(connectionString);
+
+        var failure = await discover.Should().ThrowAsync<ServiceUnavailableException>();
+        failure.Which.Message.Should().NotContain("do-not-disclose").And.NotContain("missing_discovery_user");
+        failure.Which.InnerException.Should().BeAssignableTo<NpgsqlException>();
     }
 
     [Fact]

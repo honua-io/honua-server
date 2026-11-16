@@ -192,6 +192,17 @@ internal static class AdminEndpoints
                 TableDiscoveryJsonContext.Default.TableDiscoveryResponse,
                 context.RequestAborted);
         }
+        catch (ServiceUnavailableException ex)
+        {
+            AdminLog.TableDiscoveryFailed(logger, ex, id);
+
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status503ServiceUnavailable,
+                    "Database Connection Unavailable",
+                    "Unable to connect to the database. Test the connection and check its host, port, credentials, network access, and TLS settings.")
+                .ExecuteAsync(context);
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
