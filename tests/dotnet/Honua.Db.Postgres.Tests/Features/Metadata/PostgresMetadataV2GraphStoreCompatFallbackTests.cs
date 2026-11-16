@@ -430,6 +430,43 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
+    public async Task GetCurrentAsync_LayerMetadataProtocolObjects_AreCarriedIntoResourceExtensions()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await CreateV1CatalogTablesAsync(fixture.DataSource, schema);
+            await ExecuteAsync(fixture.DataSource, schema, $$"""
+                INSERT INTO "{{schema}}".layers (
+                    layer_id, layer_name, description, table_schema, table_name,
+                    geometry_type, srid, extent, default_visibility, metadata
+                )
+                VALUES
+                    (0, 'Declared', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE,
+                     '{"wms":{"dimensions":[{"name":"elevation","units":"m","extent":"0/10/1"}]},"wmts":{"queryable":false},"wfs":{"namespace":{"prefix":"ex","uri":"https://example.test/x"} } }'::jsonb),
+                    (1, 'Plain', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, '{"wms":"not-an-object"}'::jsonb),
+                    (2, 'NoMetadata', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, NULL);
+                """);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+
+            var resources = (await store.GetCurrentAsync()).Graph.Resources.ToDictionary(r => r.Metadata.Id, r => r.Extensions);
+
+            resources["res-layer-0"].Keys.Should().BeEquivalentTo("wms", "wmts", "wfs");
+            resources["res-layer-0"]["wfs"].GetProperty("namespace").GetProperty("prefix").GetString().Should().Be("ex");
+            resources["res-layer-0"]["wms"].GetProperty("dimensions")[0].GetProperty("extent").GetString().Should().Be("0/10/1");
+            resources["res-layer-0"]["wmts"].GetProperty("queryable").GetBoolean().Should().BeFalse();
+            resources["res-layer-1"].Should().BeEmpty();
+            resources["res-layer-2"].Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetCurrentAsync_NoV2SnapshotAndEmptyV1Catalog_ReturnsEmptySnapshot()
     {
         // Before honua-server#1619 this threw InvalidOperationException and caused every

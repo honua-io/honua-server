@@ -207,28 +207,12 @@ jobs:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
-      - id: policy
-        name: Bind the immutable review-first measurement policy
-        if: steps.subject.outputs.superseded != 'true'
-        run: |
-          node scripts/ci/review-first-evidence-ledger.js policy-digest \
-            --root . \
-            --policy-sha '${{ github.workflow_sha }}' \
-            --github-output "${GITHUB_OUTPUT}"
-
       - name: Attest current PR head
         id: attest
         if: steps.subject.outputs.superseded != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          REVIEW_FIRST_POLICY_DIGEST: ${{ steps.policy.outputs.measurement_policy_digest }}
-          REVIEW_FIRST_POLICY_SHA: ${{ steps.policy.outputs.policy_sha }}
-          REVIEW_FIRST_PRODUCER_EVENT: ${{ github.event_name }}
-          REVIEW_FIRST_PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
-          REVIEW_FIRST_PRODUCER_RUN_ID: ${{ github.run_id }}
         with:
           script: |
-            const fs = require('fs');
             const { evaluateCodexEvidence, isAttestingReviewer } = require('./scripts/ci/review-gate-evidence');
             const { fetchPullRequestSnapshot } = require('./scripts/ci/review-gate-snapshot');
             const {
@@ -236,9 +220,6 @@ jobs:
               selectExactAdmissionRun,
               stabilizeReviewFirstEvaluation,
             } = require('./scripts/ci/review-first-dispatch');
-            const {
-              createReviewFirstObservation,
-            } = require('./scripts/ci/review-first-evidence-ledger');
             const prNumber = Number('${{ needs.resolve.outputs.pr }}');
 
             const evaluateCurrentReview = async () => {
@@ -437,7 +418,7 @@ jobs:
 
             // Take the complete review snapshot and canonical admission state
             // together twice. Only two identical joint evaluations may reach
-            // the irreversible receipt/rerun boundary.
+            // the irreversible dispatch boundary.
             let finalState;
             try {
               finalState = await stabilizeReviewFirstEvaluation(async () => {
@@ -465,7 +446,7 @@ jobs:
               await failFinalRevalidation('Final admission snapshot is missing.');
               return;
             }
-            const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
+            const { decision } = finalAdmission;
             if (decision.action === 'block') {
               await reportDecision(decision);
               core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
@@ -477,31 +458,6 @@ jobs:
             }
 
             if (decision.action === 'observe') {
-              const producerRunId = Number(process.env.REVIEW_FIRST_PRODUCER_RUN_ID);
-              const producerRunAttempt = Number(
-                process.env.REVIEW_FIRST_PRODUCER_RUN_ATTEMPT);
-              const observation = createReviewFirstObservation({
-                measurementPolicyDigest: process.env.REVIEW_FIRST_POLICY_DIGEST,
-                policySha: process.env.REVIEW_FIRST_POLICY_SHA,
-                producerRunId,
-                producerRunAttempt,
-                producerEvent: process.env.REVIEW_FIRST_PRODUCER_EVENT,
-                observedAt: new Date().toISOString(),
-                prNumber,
-                head,
-                associatedPullNumbers,
-                runs: runPage.workflow_runs,
-                jobs,
-                decision,
-                reviewRevalidated: true,
-                admissionRevalidated: true,
-              });
-              fs.mkdirSync('review-first-evidence', { recursive: true });
-              fs.writeFileSync(
-                'review-first-evidence/review-first-observation.json',
-                `${JSON.stringify(observation, null, 2)}\n`,
-                'utf8');
-              core.setOutput('receipt_present', 'true');
               await reportDecision(decision);
               return;
             }
@@ -528,12 +484,3 @@ jobs:
               }
               throw error;
             }
-
-      - name: Retain immutable review-first observation
-        if: always() && steps.attest.outputs.receipt_present == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: review-first-observation-v1
-          path: review-first-evidence/review-first-observation.json
-          retention-days: 30
-          if-no-files-found: error
