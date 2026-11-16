@@ -36,14 +36,14 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
 
 2. Update the style with a MapLibre document. The body is validated against the MapLibre v8 schema (400 on errors), and each successful write increments `styleVersion`:
 
-   Run `PUT /api/v1/admin/metadata/layers/{storageLayerId}/style` with this body, replacing the host and layer id in the tile URL:
+   Run `PUT /api/v1/admin/metadata/layers/{storageLayerId}/style` with this body, replacing `1` with your layer id in the source name and the tile URL. The style layer must use the source named `layer-{storageLayerId}`, as the default style from step 1 does; otherwise the server answers `400 MapLibre style must include a layer using the Honua tile source.` The server sets that source's `tiles` to its own tile path, so the host you write there is not kept:
 
    ```json
    {
      "mapLibreStyle": {
        "version": 8,
        "sources": {
-         "layer": {
+         "layer-1": {
            "type": "vector",
            "tiles": ["http://localhost:8080/tiles/1/{z}/{x}/{y}.mvt"]
          }
@@ -52,7 +52,7 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
          {
            "id": "fill",
            "type": "fill",
-           "source": "layer",
+           "source": "layer-1",
            "source-layer": "layer",
            "paint": { "fill-color": "#2D69A5", "fill-opacity": 0.6 }
          }
@@ -69,9 +69,9 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
 
    Run `POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style` with `{"preferredMethod":"Quantile","preferredPalette":"Viridis","classCount":5}`.
 
-   The response contains a ready-to-apply `mapLibreStyle`, a matching `drawingInfo`, and legend metadata. All request fields are optional (`preferredField`, `preferredMethod` of `EqualInterval`/`Quantile`/`NaturalBreaks`/`UniqueValue`, `preferredPalette` of `Viridis`/`CartoBold`/`RdBu`, `classCount` 2–12). Field-based classification requires the Pro `styling.auto-suggest` entitlement; Community editions get geometry-aware defaults.
+   The response contains a ready-to-apply `mapLibreStyle`, a matching `drawingInfo`, and legend metadata. All request fields are optional (`preferredField`, `preferredMethod` of `EqualInterval`/`Quantile`/`NaturalBreaks`/`UniqueValue`, `preferredPalette` of `Viridis`/`CartoBold`/`RdBu`, `classCount` 2–12); a value outside those is ignored, not refused. Field-based classification requires the Pro `styling.auto-suggest` entitlement; Community editions get geometry-aware defaults.
 
-4. Serve themed variants from the public style endpoint. Themes are derived on read — the stored style is untouched:
+4. Serve themed variants from the style endpoint. Themes are derived on read — the stored style is untouched. On a default install the endpoint answers 401 without credentials, so the client needs read access ([authentication](../secure/authentication.md)):
 
    Open the `style` URL advertised by TileJSON and append `?theme=dark`. Its `publicationId` is the graph Layer ID, independent of the numeric tile selector.
 
