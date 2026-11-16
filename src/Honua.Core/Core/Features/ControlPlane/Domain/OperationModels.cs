@@ -134,8 +134,6 @@ public enum DeployTargetKind
 
     AwsLambda = 3,
 
-    SelfHostedRolling = 5,
-
     LocalCompose = 6
 }
 

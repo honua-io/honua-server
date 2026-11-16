@@ -269,7 +269,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "test": "QueryClusters_Dbscan_PerFeature_ReturnsClusterAssignments",
           "assertion": "Real layer execution returns the expected DBSCAN membership/noise assignments.",
-          "bodyDigest": "sha256:d8b74b31cd41220aa290c02b9c7fed5e6617c2f35a31ec4e9f8bf3e0de24a8b6"
+          "bodyDigest": "sha256:597b138caf7ae063d4ff270b04f09f627ef03589b5d68e065234e72be0d69ae0"
         }
       ]
     },
@@ -557,7 +557,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "test": "QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints",
           "assertion": "Real layer execution returns exact cells/counts for seeded points.",
-          "bodyDigest": "sha256:dc6e85a9dd6a28106aef3b83ca078682f1087494910c1b42467b94c1a371dca1"
+          "bodyDigest": "sha256:8cdb6f237920a1f9276dad20a1b99713a9d95a82201a837e7b1e955359dd0d6e"
         }
       ]
     },
