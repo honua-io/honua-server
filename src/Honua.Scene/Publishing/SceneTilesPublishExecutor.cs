@@ -784,10 +784,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         if (!string.IsNullOrEmpty(cacheText))
         {
             // The docs bound cacheMaxAgeSeconds to [0, 86400] and require
-            // SCENE_OPTIONS_INVALID for invalid values. The previous code
-            // silently swallowed parse failures and negative values into the
-            // 3600-second default, which then passed SceneDatasetValidator's
-            // range check downstream. Reject the parse/negative case here so
+            // SCENE_OPTIONS_INVALID for invalid values. Reject the parse/negative case here so
             // the contract holds; SceneDatasetValidator continues to enforce
             // the upper bound after a successful parse.
             if (!int.TryParse(cacheText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCache)
