@@ -25,7 +25,8 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
     public AdminAuthorizationTests(AnonymousHost host) => _unauthenticatedClient = host.UnauthenticatedClient;
 
     // Every case sends an anonymous request and expects it to be refused or answered
-    // without side effects, so one host serves the class.
+    // without side effects, so one host serves the class. No case sends credentials, so
+    // the authentication-failure limiter never counts against the shared host.
     public sealed class AnonymousHost : IAsyncLifetime
     {
         private readonly WebAppFixture _fixture = new WebAppFixture()
