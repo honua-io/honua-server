@@ -109,8 +109,9 @@ scripts/ci/workflow-inventory.template.md for narrative and per-workflow notes. 
 
 > Canonical inventory of every workflow in `.github/workflows/`. File, name and
 > trigger columns are derived from YAML. New workflows appear automatically.
-> Feature PRs edit workflow YAML and the source template; trunk automation
-> publishes this page. Run `python3 scripts/ci/generate-workflow-inventory.py`
+> Feature PRs edit workflow YAML and the source template; submitted projections
+> require canonical verification. Trunk automation also publishes this page.
+> Run `python3 scripts/ci/generate-workflow-inventory.py`
 > to preview it locally before validation.
 
 **Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged
@@ -185,7 +186,13 @@ cancel current work and then shed without replacement. Draft and title/body-only
 edits use isolated groups because they cannot generate a replacement envelope.
 Trusted consumer admission resolves the live PR and cancels only older producer
 generations before per-attempt validation. Observe mode retains envelope
-validation and drift reporting; trunk regeneration publishes generated documents.
+validation and drift reporting. Source PRs commit regenerated projections, and
+the existing architecture job verifies submitted bytes and modes after regeneration.
+The MCP roster retains its existing valid-provenance contract; its generated body
+and file mode must still match exactly.
+Trusted ownership admission requires the current validator and required invocation;
+older branches must adopt the repair. Generated-only publications retain canonical
+trunk-producer proof. No runner job or required aggregate dependency changes.
 Live-head checks and compare-and-swap remain required before branch mutation.
 
 Auto-merge keeps `cancel-in-progress: false` and `queue: max` so live eligibility
@@ -809,11 +816,21 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (16 Nov 2026): every measured `dispatch_rank` is the median passing
-job duration over ten full trunk runs, counting a run only when the shard's filter at
-its head equals the current filter (gate-model.md, "Measured ranks"). 171 of 219
-shards are measured, ranks sum to 1,644.0 runner-minutes and 189 shards fit the
-10-minute PR shard budget.
+Measured ranks (16 Nov 2026): each recorded `dispatch_rank` is the median passing
+job duration over eleven full trunk runs, counting a sample only when its filter
+and project selection match the current definition (gate-model.md, "Measured
+ranks"). Full run 43819793722 supplies 205 passing child samples. On the timing
+repair's 225-child layout, 209 definitions have matching passing measurements;
+the ten replacement children and six other definitions retain their prior ranks
+or estimates. Remove 39 obsolete child estimates; eleven split-child estimates
+remain until passing measurements exist. Migration 3 inherits its parent's
+rank after an admission change; File and Raster Import 1–3 keep prior trunk
+ranks after filter edits. Ranks sum to 1,581.4 runner-minutes,
+previously 1,696.9 on the repaired layout; 196 children fit the unchanged
+10-minute PR shard budget. These are scheduling estimates, not runtime savings.
+Temporal's explicit source override uses `prioritize: true` as a tie-breaker
+after changed-test and path-hit counts; candidate admission and caps still apply.
+Override priorities must be boolean; malformed values fail schema validation.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
@@ -1335,6 +1352,113 @@ are unmeasured.
 All cases remain in their existing shards on selected PR runs and twice-daily
 full trunk runs. This changes no runner count, required check name, required
 aggregate dependency, workflow or shard definition.
+
+### OData error-handling and advanced-feature host lifetime
+
+`ODataErrorHandlingTests` and `ODataAdvancedFeaturesTests` build their Pro-licensed,
+`odata.yaml`-seeded application once per class through a `ReadOnlyProHost` class
+fixture, as `ODataEndpointTests` does. Read-only GET cases use that host's client.
+Every case that sends a POST, PATCH or `$batch`, inserts features or reads the
+database still builds, seeds and disposes a private Pro host; cases that already
+built their own host are unchanged. Assertions and case counts are unchanged.
+
+Paired build-host runs of both classes on trunk f0483ffc72 passed the same 109
+cases (53 error-handling, 56 advanced) with no skips. VSTest execution fell from
+30m11s to 4m22s and the TRX interval from 1812.9 to 324.0 seconds on a heavily
+loaded host. Full run 43709972683 spent 336 seconds of per-case fixture time in the
+two classes; about two thirds of their cases now share the host, so the expected CI
+saving is roughly 220 seconds. Full CI job savings are unmeasured.
+All cases remain in their existing OData shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### I3S scene server host lifetime
+
+`I3sSceneServerEndpointTests` builds its enterprise and community applications, the
+authenticated client and the two database-backed scene registrations once per class
+through the `SceneHosts` class fixture instead of for every case. Every case only
+reads, and the scene registry rows the cases see are the same rows each case used
+to register after its hosts seeded. Test bodies and assertions are unchanged.
+
+Paired build-host runs of the class on trunk f52d27ce02 passed the same 35 cases with
+no skips. VSTest execution fell from 18m37s to 6s and the TRX interval from 1118.1 to
+77.6 seconds on a heavily loaded host. Full run 43709972683 spent 222 seconds of
+per-case fixture time in this class (6.3 seconds per case), the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the Scene I3S Resources 2 shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Spatial analytics REST host lifetime
+
+`SpatialAnalyticsRestTests` builds its Pro-licensed application once per class
+through a `ReadOnlyProHost` class fixture. The clusters, density, buffer-aggregate
+and spatial-join query cases only read, so they use that host's client; the three
+cases that seed extra rows still build, seed and dispose a private Pro host.
+Assertions and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 0afc7ba8ba passed the same 47 cases
+with no skips. VSTest execution fell from 4m41s to 20s, saving 261 seconds (4.35
+runner-minutes), and the TRX interval from 302.5 to 41.5 seconds, with one test
+process each. Full run 43709972683 spent 174 seconds of per-case fixture time in
+this class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Analytics Studio Export and
+Reporting shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow or shard
+definition.
+
+### FeatureServer maintenance host lifetime
+
+`FeatureServerMaintenanceTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The validate-SQL, domain and relationship GET cases only read and use that
+host's client. Every case that POSTs (append, calculate and POST validate-SQL) or
+inserts or reads rows still builds and disposes a private Pro host. Assertions and
+case counts are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 42 cases
+with no skips. VSTest execution fell from 10m44s to 2m14s and the TRX interval from
+646.7 to 151.8 seconds. Full run 43709972683 spent 139 seconds of per-case fixture
+time in this class; about four sevenths of its cases now share the host. Full CI
+job savings are unmeasured.
+All cases remain in their existing FeatureServer shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Admin authorization host lifetime
+
+`AdminAuthorizationTests` builds its application (server seed, development
+authentication off, an admin password set) and its unauthenticated client once per
+class through the `AnonymousHost` class fixture. Every case sends an anonymous
+request with no credentials, so the authentication-failure limiter never counts it;
+every write case expects 401, and the anonymous 200 cases only read. Test bodies and
+assertions are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 58 cases with
+no skips. VSTest execution fell from 6m16s to 3s, saving 373 seconds (6.2
+runner-minutes), and the TRX interval from 395.2 to 21.8 seconds, with one test
+process each. Full run 43709972683 spent 196 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Admin Authorization shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow or shard definition.
+
+### Query related records host lifetime
+
+`QueryRelatedRecordsEndpointTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The related-record GET cases use it. The case that inserts and deletes
+features, and the POST, PUT and DELETE cases, first switch to a private Pro host of
+their own. Test bodies and assertions are otherwise unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 35 cases with
+no skips. VSTest execution fell from 3m20s to 46s, saving 154 seconds (2.6
+runner-minutes), and the TRX interval from 214.0 to 74.3 seconds, with one test
+process each. Full run 43709972683 spent 124 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing shard on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
 
 ## Additional workflows
 

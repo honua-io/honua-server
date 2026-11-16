@@ -820,11 +820,13 @@ Measured ranks (16 Nov 2026): each recorded `dispatch_rank` is the median passin
 job duration over eleven full trunk runs, counting a sample only when its filter
 and project selection match the current definition (gate-model.md, "Measured
 ranks"). Full run 43819793722 supplies 205 passing child samples. On the timing
-repair's 225-child layout, 213 definitions have matching passing measurements;
-the ten replacement children and two other definitions retain their prior ranks
+repair's 225-child layout, 209 definitions have matching passing measurements;
+the ten replacement children and six other definitions retain their prior ranks
 or estimates. Remove 39 obsolete child estimates; eleven split-child estimates
-remain until passing measurements exist. Ranks sum to 1,566.2 runner-minutes,
-previously 1,696.9 on the repaired layout; 197 children fit the unchanged
+remain until passing measurements exist. Migration 3 inherits its parent's
+rank after an admission change; File and Raster Import 1–3 keep prior trunk
+ranks after filter edits. Ranks sum to 1,581.4 runner-minutes,
+previously 1,696.9 on the repaired layout; 196 children fit the unchanged
 10-minute PR shard budget. These are scheduling estimates, not runtime savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.

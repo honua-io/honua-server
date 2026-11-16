@@ -1064,10 +1064,13 @@ failed, skipped and cancelled children do not supply timing samples.
 The latest completed run, [43819793722](https://github.com/honua-io/honua-server/actions/runs/43819793722),
 contains all 219 then-current server children: 205 passed and 14 failed. After
 the separately owned timing repair replaces four definitions with ten children,
-213 of 225 current definitions have matching passing samples: 1 to 7 each,
-median 3; 53 have one sample. The ten replacement children retain their repair's
+209 of 225 current definitions have matching passing samples: 1 to 7 each,
+median 3; 49 have one sample. The ten replacement children retain their repair's
 conservative estimates until matching passing full-run measurements exist.
-Server Features Miscellaneous 8 and Migration Source Imports also have no
+Migration 3 and File and Raster Import 1–3 changed filters after these runs;
+their old samples are excluded. Migration 3 inherits its parent's 21.8-minute
+rank; File and Raster Import 1–3 retain trunk's prior ranks pending fresh
+measurements. Server Features Miscellaneous 8 and Migration Source Imports also have no
 matching passing sample. Migration Source Imports changed project selection;
 its predecessor's timing cannot be reused. Failed duration is not a successful
 completion estimate, and failures remain gating.
@@ -1086,8 +1089,8 @@ counts tie. It changes ranking only: candidate admission, the six-job cap and
 time budgets still apply. Unmarked overrides retain their previous ranking.
 The schema accepts only boolean override priorities; malformed values fail validation.
 
-Ranks sum to 1,566.2 runner-minutes, previously 1,696.9 on the repaired layout;
-197 of 225 children fit the unchanged 10-minute PR shard budget. These are
+Ranks sum to 1,581.4 runner-minutes, previously 1,696.9 on the repaired layout;
+196 of 225 children fit the unchanged 10-minute PR shard budget. These are
 scheduling estimates, not measured runtime savings. The separate tiny-shard
 consolidation measurement remains 75.38 to 12.11 runner-minutes (63.27 saved).
 Single-sample ranks and new partition estimates need subsequent passing full-run evidence.

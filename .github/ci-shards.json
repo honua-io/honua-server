@@ -1395,7 +1395,7 @@
     {
       "name": "Migration 3",
       "shard_name": "Migration 3",
-      "dispatch_rank": 8.6,
+      "dispatch_rank": 21.8,
       "artifact_suffix": "migration-3",
       "log_name": "server-tests-migration-3",
       "timeout_minutes": 39,
@@ -1455,7 +1455,7 @@
     {
       "name": "File and Raster Import 1",
       "shard_name": "File and Raster Import 1",
-      "dispatch_rank": 5.1,
+      "dispatch_rank": 6.1,
       "artifact_suffix": "file-and-raster-import-1",
       "log_name": "server-tests-file-and-raster-import-1",
       "timeout_minutes": 38,
@@ -1518,7 +1518,7 @@
     {
       "name": "File and Raster Import 2",
       "shard_name": "File and Raster Import 2",
-      "dispatch_rank": 6.2,
+      "dispatch_rank": 10.2,
       "artifact_suffix": "file-and-raster-import-2",
       "log_name": "server-tests-file-and-raster-import-2",
       "timeout_minutes": 38,
@@ -1581,7 +1581,7 @@
     {
       "name": "File and Raster Import 3",
       "shard_name": "File and Raster Import 3",
-      "dispatch_rank": 11.0,
+      "dispatch_rank": 8.0,
       "artifact_suffix": "file-and-raster-import-3",
       "log_name": "server-tests-file-and-raster-import-3",
       "timeout_minutes": 38,
