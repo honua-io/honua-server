@@ -25,8 +25,7 @@ public sealed class NetworkTopologyRebuildSubmissionServiceTests
         var error = await Assert.ThrowsAsync<NetworkTopologyRebuildUnavailableException>(
             () => service.SubmitAsync("dataset", 1, 1, 1, 4326));
 
-        Assert.Contains("durable job orchestration", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Redis", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Topology rebuild requires durable job orchestration to be configured on this deployment.", error.Message);
         Assert.Empty(rebuildStore.ReceivedCalls());
     }
 }

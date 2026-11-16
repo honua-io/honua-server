@@ -1565,8 +1565,10 @@ public sealed partial class OpsFindingsServiceTests
 
         Assert.Equal(OpsFindingProposalStatus.GatewayUnavailable, result.Status);
         Assert.Equal(finding.Id, result.FindingId);
-        Assert.Contains("system database", result.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Redis", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "The durable control-plane operation gateway is unavailable "
+                + "(it requires a configured system database); the recommended action cannot be proposed.",
+            result.Message);
     }
 
     [UnitTest]
