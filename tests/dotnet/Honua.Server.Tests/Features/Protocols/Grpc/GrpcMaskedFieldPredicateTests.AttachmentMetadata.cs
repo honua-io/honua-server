@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Grpc.AspNetCore.Server;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -94,6 +95,26 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         layer.AttachmentLimits.MaxAttachmentsPerFeature.Should().Be(3);
         layer.AttachmentLimits.MaxTotalBytesPerFeature.Should().Be(9000000);
         layer.AttachmentLimits.AllowedContentTypes.Should().Equal("image/*", "application/pdf", "text/plain");
+        AssertNoRead();
+    }
+
+    [UnitTheory]
+    [InlineData(524288, 0, 524160)]
+    [InlineData(786432, 262144, 786304)]
+    [InlineData(2097152, 1048576, 1048576)]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeLayer")]
+    public async Task DescribeLayer_ReducedGrpcReceiveLimit_ReservesProtobufEnvelope(
+        int receiveBytes, long unaryBytes, long chunkBytes)
+    {
+        using var context = CreateCallContext(services => services.AddSingleton(
+            Options.Create(new GrpcServiceOptions { MaxReceiveMessageSize = receiveBytes })));
+
+        var layer = (await _sut.DescribeLayer(new() { ServiceId = "test", LayerId = 0 }, context)).Layer;
+
+        layer.AttachmentLimits.MaxUnaryUploadBytes.Should().Be(unaryBytes);
+        layer.AttachmentLimits.MaxChunkBytes.Should().Be(chunkBytes);
+        layer.AttachmentLimits.MaxFileBytes.Should().Be(5242880);
         AssertNoRead();
     }
 

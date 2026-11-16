@@ -23,7 +23,7 @@ internal sealed partial class HonuaFeatureService
     public override async Task<Proto.UploadAttachmentResponse> UploadAttachment(
         Proto.UploadAttachmentRequest request, ServerCallContext context)
     {
-        if (request.Content.Length > AttachmentChunkBytes || request.Upload is null ||
+        if (request.Content.Length > AttachmentPayloadLimit(context, AttachmentUnaryEnvelopeBytes) || request.Upload is null ||
             request.Upload.SizeBytes != request.Content.Length || request.Upload.Sha256.Length != SHA256.HashSizeInBytes ||
             !CryptographicOperations.FixedTimeEquals(SHA256.HashData(request.Content.Span), request.Upload.Sha256.Span))
         {
@@ -78,6 +78,11 @@ internal sealed partial class HonuaFeatureService
     private async Task<AttachmentUploadSession> BeginAttachmentSessionAsync(Proto.AttachmentUpload? upload, string operation, ServerCallContext context)
     {
         ValidateAttachmentUpload(upload, context);
+        var maxChunkBytes = AttachmentPayloadLimit(context, AttachmentChunkEnvelopeBytes);
+        if (maxChunkBytes == 0)
+        {
+            throw AttachmentError(StatusCode.ResourceExhausted, "The gRPC receive limit cannot accommodate an upload chunk.");
+        }
         var target = await ResolveAttachmentParentAsync(upload!.Parent, context).ConfigureAwait(false);
         await EnsureAttachmentEditAccessAsync(target, context, AuthorizationOperation.Update).ConfigureAwait(false);
         return await AttachmentService<IAttachmentUploadSessionStore>(context).BeginAsync(new AttachmentUploadRequest
@@ -95,7 +100,7 @@ internal sealed partial class HonuaFeatureService
             ExpectedSize = upload.SizeBytes,
             Sha256 = upload.Sha256.ToByteArray(),
             ReplaceAttachmentId = upload.HasReplaceAttachmentId ? upload.ReplaceAttachmentId : null,
-            MaxChunkBytes = AttachmentChunkBytes,
+            MaxChunkBytes = maxChunkBytes,
             Lifetime = AttachmentSessionLifetime
         }, context.CancellationToken).ConfigureAwait(false);
     }
@@ -108,6 +113,7 @@ internal sealed partial class HonuaFeatureService
             string.IsNullOrWhiteSpace(upload.IdempotencyKey) || System.Text.Encoding.UTF8.GetByteCount(upload.IdempotencyKey) > 256 ||
             upload.Sha256.Length != SHA256.HashSizeInBytes || upload.SizeBytes < 0 ||
             upload.HasReplaceAttachmentId && upload.ReplaceAttachmentId <= 0 ||
+            upload.CalculateSize() > AttachmentUnaryEnvelopeBytes - 10 ||
             upload.Keywords.Count > 100 || upload.Keywords.Any(value => value.Length > 1024 || value.Contains('\0')))
         {
             throw AttachmentError(StatusCode.InvalidArgument, "Valid attachment metadata and an idempotency key are required.");
