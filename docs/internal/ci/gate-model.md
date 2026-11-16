@@ -1761,6 +1761,6 @@ with no skips. VSTest execution fell from 16m16s to 48s and the TRX interval fro
 cost about 15 seconds there; full run 43709972683 spent 183 seconds of per-case
 fixture time in this class (2.8 seconds per case), which is the expected CI saving.
 Full CI job savings are unmeasured.
-All cases remain in the OData core endpoints shard on selected PR runs and
+All cases remain in the OData Core Endpoints shard on selected PR runs and
 twice-daily full trunk runs. This changes no runner count, required check name,
 required aggregate dependency, workflow or shard definition.
