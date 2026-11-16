@@ -251,5 +251,9 @@
       "expression": "all(workloads[dimensions.gpQueueDepth] == 100)",
       "sha256": "82d11f84c14f7f88933d306c5744cbcc0f3f9a3a0d9dc4625eec401cff3ccdef"
     }
-  }
+  },
+  "capacityComponents": [
+    "worker",
+    "database"
+  ]
 }
