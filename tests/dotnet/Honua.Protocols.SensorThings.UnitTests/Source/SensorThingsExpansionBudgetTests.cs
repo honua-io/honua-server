@@ -1,10 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
 using Honua.Protocols.SensorThings;
 using Honua.Protocols.SensorThings.Services;
 using Honua.TestKit.Attributes;
@@ -15,7 +19,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>Proves one anonymous <c>$expand</c> cannot fan out without a request-wide budget.</summary>
+/// <summary>Proves one <c>$expand</c> cannot fan out without a request-wide budget.</summary>
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsExpansionBudgetTests
 {
@@ -102,7 +106,14 @@ public sealed class SensorThingsExpansionBudgetTests
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("sensor.example.test");
         context.Request.QueryString = new QueryString(query);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "sensor-reader")], "Test"));
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("default");
+        tenant.Source.Returns(TenantContextSource.Default);
         context.RequestServices = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator())
+            .AddSingleton(tenant)
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?> { ["SensorThings:ConformantProfile"] = "false" }).Build())
             .BuildServiceProvider();
