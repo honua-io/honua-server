@@ -12,10 +12,12 @@ namespace Honua.Core.Tests.Features.Edit;
 
 public sealed class EditorTrackingBatchTests
 {
+    public enum BatchShape { Split, Ordered }
+
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Tracking_IsServerOwned_InBothBatchShapes(bool ordered)
+    [InlineData(BatchShape.Split)]
+    [InlineData(BatchShape.Ordered)]
+    public void Tracking_IsServerOwned_InBothBatchShapes(BatchShape shape)
     {
         var resource = new MetadataV2Object
         {
@@ -27,7 +29,7 @@ public sealed class EditorTrackingBatchTests
         {
             ExplicitAttributeRemovals = ["CREATOR", "updated", "other"],
         };
-        var batch = FeatureEditBatch.Create(creates: [feature], updates: [feature], deletes: [9], operations: ordered
+        var batch = FeatureEditBatch.Create(creates: [feature], updates: [feature], deletes: [9], operations: shape == BatchShape.Ordered
             ? [FeatureEditOperation.Create(feature), FeatureEditOperation.Update(feature), FeatureEditOperation.Delete(9)] : default);
 
         var omitted = EditorTrackingBatch.OmitClientValues(resource, batch);
@@ -41,7 +43,7 @@ public sealed class EditorTrackingBatchTests
         stamped.Creates[0].Attributes.Should().Contain("creator", "alice").And.Contain("created", 123L);
         stamped.Updates[0].Attributes.Should().Contain("editor", "alice").And.Contain("updated", 123L).And.NotContainKey("created").And.NotContainKey("creator");
         stamped.Deletes.Should().Equal(9);
-        if (ordered)
+        if (shape == BatchShape.Ordered)
         {
             stamped.Operations[0].Feature!.Value.Attributes.Should().Contain("creator", "alice");
             stamped.Operations[1].Feature!.Value.Attributes.Should().Contain("editor", "alice").And.NotContainKey("creator");

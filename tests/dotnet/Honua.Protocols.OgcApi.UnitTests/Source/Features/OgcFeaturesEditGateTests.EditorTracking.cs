@@ -15,15 +15,7 @@ public sealed partial class OgcFeaturesEditGateTests
     [UnitTest]
     public async Task EditorTracking_ItemAndTransactionEdits_IgnoreForgeriesAndPreserveCreationFields()
     {
-        var resource = Resource() with
-        {
-            Editing = new() { CreatorField = "creator", CreatedAtField = "created", EditorField = "editor", UpdatedAtField = "updated" },
-            SchemaFields = [.. Resource().SchemaFields,
-                new() { Name = "creator", Type = MetadataV2FieldType.String, Editable = true },
-                new() { Name = "created", Type = MetadataV2FieldType.DateTime, Editable = true },
-                new() { Name = "editor", Type = MetadataV2FieldType.String, Editable = true },
-                new() { Name = "updated", Type = MetadataV2FieldType.DateTime, Editable = true }],
-        };
+        var resource = TrackingResource();
         foreach (var transaction in new[] { false, true })
         foreach (var insert in new[] { false, true })
         {
@@ -59,4 +51,14 @@ public sealed partial class OgcFeaturesEditGateTests
             }
         }
     }
+
+    private static MetadataV2Object TrackingResource() => Resource() with
+    {
+        Editing = new() { CreatorField = "creator", CreatedAtField = "created", EditorField = "editor", UpdatedAtField = "updated" },
+        SchemaFields = [.. Resource().SchemaFields,
+            new() { Name = "creator", Type = MetadataV2FieldType.String, Editable = true },
+            new() { Name = "created", Type = MetadataV2FieldType.DateTime, Editable = true },
+            new() { Name = "editor", Type = MetadataV2FieldType.String, Editable = true },
+            new() { Name = "updated", Type = MetadataV2FieldType.DateTime, Editable = true }],
+    };
 }
