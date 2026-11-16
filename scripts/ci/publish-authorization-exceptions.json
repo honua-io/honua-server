@@ -1,0 +1,55 @@
+{
+  "cite-evidence-report.yml:deploy-pages": {
+    "authorization": "Deploys only on a direct dispatch with publish_pages (no caller passes it); the github-pages environment admits only trunk and gh-pages."
+  },
+  "deploy-platform-images.yml:build-and-push": {
+    "environment": "Assumes the image publish role; the environment is added once that role's trust accepts it.",
+    "authorization": "Its publishing steps run only when PUBLISH_IMAGES is true, and its first step then refuses any ref but refs/heads/trunk or a v* tag, compared exactly in shell; publish-manifests needs authorize-publish. Branch scan_only dispatches skip that step and publish nothing; the GHCR login serves only the build cache."
+  },
+  "deploy-platform-images.yml:publish-manifests": {
+    "environment": "Assumes the image publish role; the environment is added once that role's trust accepts it."
+  },
+  "deploy.yml:build-and-push": {
+    "environment": "Assumes the image publish role; the environment is added once that role's trust accepts it."
+  },
+  "deploy.yml:publish-manifests": {
+    "environment": "Assumes the image publish role; the environment is added once that role's trust accepts it."
+  },
+  "nightly-container-build.yml:build-aot": {
+    "authorization": "The job runs only when select-candidate sets publish (job-level if), which select-candidate's shell allows only for refs/heads/trunk or the nightly-candidate tag of a certified commit, compared exactly."
+  },
+  "nightly-container-build.yml:build-jit": {
+    "authorization": "The job runs only when select-candidate sets publish (job-level if), which select-candidate's shell allows only for refs/heads/trunk or the nightly-candidate tag of a certified commit, compared exactly."
+  },
+  "nightly-container-build.yml:build-lambda-aot": {
+    "authorization": "Runs on other refs as a proof and pushes untagged candidate digests; tags are assigned only when select-candidate sets publish. Proof pushes move to a proof-scoped repository with the nightly environment change.",
+    "environment": "Added with the nightly proof-scope change, so that proof runs do not need the publish environment."
+  },
+  "nightly-container-build.yml:compose-executor": {
+    "authorization": "The job runs only when select-candidate sets publish (job-level if), which select-candidate's shell allows only for refs/heads/trunk or the nightly-candidate tag of a certified commit, compared exactly."
+  },
+  "nightly-container-build.yml:manifest-aot": {
+    "authorization": "The job runs only when select-candidate sets publish (job-level if), which select-candidate's shell allows only for refs/heads/trunk or the nightly-candidate tag of a certified commit, compared exactly."
+  },
+  "nightly-container-build.yml:manifest-jit": {
+    "authorization": "The job runs only when select-candidate sets publish (job-level if), which select-candidate's shell allows only for refs/heads/trunk or the nightly-candidate tag of a certified commit, compared exactly."
+  },
+  "nightly-container-build.yml:manifest-lambda-aot": {
+    "authorization": "The job runs only when select-candidate sets publish (job-level if), which select-candidate's shell allows only for refs/heads/trunk or the nightly-candidate tag of a certified commit, compared exactly."
+  },
+  "nightly-container-build.yml:mirror-base-images": {
+    "authorization": "Proof runs mirror into a proof-scoped repository (BASE_REPO). That expression compares without case, so a branch named like trunk would mirror into the production base repository, which holds only digest-pinned copies of public base images.",
+    "environment": "Added with the nightly proof-scope change, so that proof runs do not need the publish environment."
+  },
+  "nightly-container-build.yml:verify-functions-aot": {
+    "authorization": "Runs on other refs as a proof and pushes untagged candidate digests; tags are assigned only when select-candidate sets publish. Proof pushes move to a proof-scoped repository with the nightly environment change.",
+    "environment": "Added with the nightly proof-scope change, so that proof runs do not need the publish environment."
+  },
+  "release-bundle.yml:promote": {
+    "authorization": "Runs only for a trunk candidate (release-context) and in the release-promote environment."
+  },
+  "release-bundle.yml:rc-image": {
+    "authorization": "Off-trunk runs publish only test-off-trunk tags (scripts/release/validate-release-bundle-ref-policy.py).",
+    "environment": "Off-trunk test publication cannot use the publish environment; it moves to a proof-scoped repository first."
+  }
+}

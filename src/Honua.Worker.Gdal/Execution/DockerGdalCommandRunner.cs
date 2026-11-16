@@ -59,14 +59,15 @@ internal sealed partial class DockerGdalCommandRunner(
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
 
         var opts = options.Value;
-        var referencesRemoteVsi = GdalRuntimeHardening.ArgumentsReferenceVsi(arguments);
+        var remoteInputs = GdalRemoteInputScope.Classify(arguments);
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            referencesRemoteVsi,
+            remoteInputs.Remote,
             s3Options.Value,
             azureOptions.Value,
-            GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
-            GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
+            remoteInputs.S3,
+            remoteInputs.Azure);
+        var referencesRemoteVsi = remoteInputs.Remote;
         var network = referencesRemoteVsi ? opts.RemoteVsiNetwork : opts.Network;
         if (referencesRemoteVsi
             && (string.IsNullOrWhiteSpace(network)

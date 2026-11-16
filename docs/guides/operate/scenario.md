@@ -50,7 +50,7 @@ substitute a floating image tag or manufacture a candidate from trunk.
 
 Scope the proposer credential to its target operation; the observation seat needs
 `ops:read`. Approval requires one authorized human with read and approval authority
-in the original Server's verified OIDC session, using Console's private review
+in the original Server's verified browser session (password or OIDC), using Console's private review
 flow. The requester may approve. API keys, operator bearers and MCP tokens cannot
 approve. Never pass the private human session or review capability to the model.
 Retain the server-resolved requester and approver identities.
@@ -210,7 +210,7 @@ missing prior identity in a sealed finding proposal.
 Only after those checks, one authorized human signs in to the original Server
 through Console and opens that proposal in the approval inbox. Review the exact
 version, sealed target, diff, risk, policy, scope and evidence before approving.
-The requester may perform this step. The private OIDC session and one-use review
+The requester may perform this step. The private browser session and one-use review
 capability authorize the decision; a CLI confirmation or API key does not.
 
 The proposal read maps to `GET /api/v1/admin/proposals/{id}`. The private approval

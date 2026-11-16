@@ -419,6 +419,7 @@ jobs:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-aot-${{ matrix.arch }}
       cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
+    environment: publish-images
     # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
     # is self-perpetuating. buildx exports the registry layer cache in `cache-to`, which only runs
     # after a successful build — so a job killed at the ceiling exports nothing, the next run starts
@@ -809,6 +810,7 @@ jobs:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-lambda-index
       cancel-in-progress: false
     runs-on: ubuntu-24.04
+    environment: publish-images
     timeout-minutes: 15
     needs: [select-candidate, build-lambda-aot, mirror-base-images]
     if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-lambda-aot.result == 'success' }}
@@ -1046,6 +1048,7 @@ jobs:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit${{ matrix.store_suffix }}-${{ matrix.arch }}
       cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
+    environment: publish-images
     timeout-minutes: 90
     needs: [select-candidate, mirror-base-images]
     strategy:
@@ -1174,6 +1177,7 @@ jobs:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-aot-index
       cancel-in-progress: false
     runs-on: ubuntu-24.04
+    environment: publish-images
     timeout-minutes: 15
     needs: [select-candidate, build-aot, mirror-base-images]
     outputs:
@@ -1274,6 +1278,7 @@ jobs:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-executor
       cancel-in-progress: false
     runs-on: ubuntu-24.04
+    environment: publish-images
     timeout-minutes: 30
     needs: [select-candidate, manifest-jit]
     if: needs.select-candidate.outputs.publish == 'true'
@@ -1409,6 +1414,7 @@ jobs:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit${{ matrix.store_suffix }}-index
       cancel-in-progress: false
     runs-on: ubuntu-24.04
+    environment: publish-images
     timeout-minutes: 15
     needs: [select-candidate, build-jit, mirror-base-images]
     if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-jit.result == 'success' }}

@@ -65,6 +65,18 @@ internal static class ImageServerMosaicHelpers
             "Temporal raster mosaic");
     }
 
+    // Web Mercator envelope of one tile in the standard XYZ pyramid, as WKB.
+    internal static byte[] CreateTileEnvelope(int level, int row, int col)
+    {
+        const double worldExtent = 20037508.342789244;
+        var tileSpan = (worldExtent * 2d) / (1 << level);
+        var minX = -worldExtent + (col * tileSpan);
+        var maxX = minX + tileSpan;
+        var maxY = worldExtent - (row * tileSpan);
+        var minY = maxY - tileSpan;
+        return CreateEnvelopeGeometry(minX, minY, maxX, maxY);
+    }
+
     internal static byte[] CreateEnvelopeGeometry(double minX, double minY, double maxX, double maxY)
     {
         var envelope = new Envelope(minX, maxX, minY, maxY);

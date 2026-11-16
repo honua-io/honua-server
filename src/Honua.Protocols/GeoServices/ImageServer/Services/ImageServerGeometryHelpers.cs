@@ -373,7 +373,7 @@ internal static class ImageServerGeometryHelpers
         }
     }
 
-    private static bool TryReadNumber(JsonElement element, string property, out double value)
+    internal static bool TryReadNumber(JsonElement element, string property, out double value)
     {
         value = 0;
         if (element.TryGetProperty(property, out var prop) && prop.ValueKind == JsonValueKind.Number)
@@ -384,7 +384,7 @@ internal static class ImageServerGeometryHelpers
         return false;
     }
 
-    private static int? ReadWkid(JsonElement root)
+    internal static int? ReadWkid(JsonElement root)
     {
         if (!root.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
         {

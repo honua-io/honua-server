@@ -10,7 +10,7 @@
          GPServer / NAServer / Catalog / GeometryService). The largest
          protocol surface; the audit called it out as the most-entangled. -->
     <RootNamespace>Honua.Server.Tests.Features.Protocols.GeoServices</RootNamespace>
-    <!-- honua-server#4747: the test assembly supplies its own entry point so a test can re-run
+    <!-- The test assembly supplies its own entry point so a test can re-run
          the cloud-native writers in a child process with JSON reflection disabled, the way the
          shipped server runs. See ReflectionDisabledCloudNativeProbe. -->
     <GenerateProgramFile>false</GenerateProgramFile>
@@ -29,8 +29,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
-    <!-- Real JSON Schema validation for the server↔SDK GeoParquet interop conformance lane
-         (#2845): validates emitted geo metadata against the authoritative GeoParquet 1.1.0 /
+    <!-- Real JSON Schema validation for the server↔SDK GeoParquet interop conformance lane:
+         validates emitted geo metadata against the authoritative GeoParquet 1.1.0 /
          PROJJSON v0.7 schemas rather than the server's own encoder. -->
     <PackageReference Include="Newtonsoft.Json.Schema" />
   </ItemGroup>
@@ -39,7 +39,7 @@
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Bundled authoritative schemas for the GeoParquet interop conformance lane (#2845). -->
+    <!-- Bundled authoritative schemas for the GeoParquet interop conformance lane. -->
     <None Update="Source\FeatureServer\Services\Conformance\geoparquet-v1.1.0.schema.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

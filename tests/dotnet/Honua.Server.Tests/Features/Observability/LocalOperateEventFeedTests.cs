@@ -302,6 +302,18 @@ public sealed class LocalOperateEventFeedTests
     }
 
     [UnitTest]
+    public async Task ListAsync_IncidentKindRequested_ReportsTheSourceAsUnavailable()
+    {
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, null, new FakeAuditReader());
+
+        var page = await feed.ListAsync(new OperateEventFilter { Kinds = [OperateEventKind.Incident] });
+
+        page.Items.Should().BeEmpty();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Incident);
+    }
+
+    [UnitTest]
     public async Task ListAsync_AppliesMinimumSeverityFilter()
     {
         var alertQuery = new FakeAlertQuery
