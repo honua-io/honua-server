@@ -243,13 +243,13 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
 
     private async Task ApplyIncidentMigrationAsync()
     {
-        var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "208_CreateAiIncidentSpend.sql"));
+        var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "208_CreateAiIncidentSpend.sql"));
         await ExecuteAsync(migration.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal));
     }
 
     private async Task<(AiAdmissionPolicy Policy, Guid Episode)> InitializeIncidentAsync(AiFinancialLimits? limits = null)
     {
-        var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "172_CreateOpsIncidentEpisodes.sql"));
+        var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "172_CreateOpsIncidentEpisodes.sql"));
         await ExecuteAsync(migration.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal));
         var episode = Guid.NewGuid();
         await ExecuteAsync($$"""
