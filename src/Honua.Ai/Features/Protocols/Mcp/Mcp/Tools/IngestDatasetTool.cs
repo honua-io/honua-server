@@ -38,6 +38,10 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     private const int GeocodedSourceSrid = 4326;
 
+    internal const string AgentReplaceGuidance =
+        "An agent can only create a new dataset with this tool. To replace an existing dataset, "
+        + "submit dataset.stage.import; it becomes a proposal for one human approval.";
+
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
 
@@ -108,6 +112,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         }
 
         var csvOptions = BuildCsvOptions(httpContext, validated);
+        // An agent may stage a new dataset but never replace rows a person may already rely on.
+        var agent = AgentPrincipal.IsAgent(principal);
 
         ImportResult importResult;
         using (var dataStream = new MemoryStream(Encoding.UTF8.GetBytes(validated.Data), writable: false))
@@ -120,7 +126,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 SourceKind = "mcp-inline",
                 SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? GeocodedSourceSrid : null),
                 TargetSrid = validated.TargetSrid,
-                OverwriteExisting = true,
+                OverwriteExisting = !agent,
+                LoadMode = agent ? ImportLoadMode.CreateOnly : ImportLoadMode.Replace,
                 CsvOptions = csvOptions
             };
 
@@ -137,6 +144,11 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
         var output = await ProjectAsync(importResult, validated, httpContext.RequestServices, cancellationToken)
             .ConfigureAwait(false);
+        if (agent && !output.Success)
+        {
+            output.ErrorMessage = $"{output.ErrorMessage} {AgentReplaceGuidance}";
+        }
+
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpIngestDatasetOutput);
     }
 

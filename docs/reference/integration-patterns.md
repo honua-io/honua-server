@@ -57,11 +57,11 @@ Extract with OData or OGC API Features, transform to GeoJSON, load through Featu
 ```python
 import requests
 
-SERVICE_ID = "..."  # the service id
-LAYER_ID = ...  # an id from the `layers` list of FeatureServer?f=json
+SERVICE = "parcels"
+LAYER_INDEX = 1  # the layer's id from /rest/services/parcels/FeatureServer?f=json
 
 resp = requests.post(
-    f"http://localhost:8080/rest/services/{SERVICE_ID}/FeatureServer/{LAYER_ID}/addFeatures",
+    f"http://localhost:8080/rest/services/{SERVICE}/FeatureServer/{LAYER_INDEX}/addFeatures",
     json={"features": features},
     headers={"X-API-Key": API_KEY},
 )

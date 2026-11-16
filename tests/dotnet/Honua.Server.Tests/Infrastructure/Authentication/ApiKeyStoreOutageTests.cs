@@ -11,8 +11,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-// A timeout or database outage in the API-key store must not throw and must not lock out the
-// bootstrap admin password.
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -86,7 +84,42 @@ public sealed class ApiKeyStoreOutageTests
     }
 
     [UnitTest]
-    public async Task InvalidOperation_IsNotTreatedAsStoreOutage()
+    public async Task InvalidOperationFault_IsNotRetried_OnHeaderAndPortalPaths()
+    {
+        // The registry is a database table, so a client-pipe fault is not retried: each path
+        // makes one store call and the fault surfaces, leaving the queued key unread.
+        var store = new ScriptedStore();
+        store.Enqueue(new InvalidOperationException("header fault"));
+        store.Enqueue(new InvalidOperationException("portal fault"));
+        store.Enqueue(ManagedKey());
+
+        var header = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
+                new ApiKeyPresentation("managed-key", "ApiKey", null),
+                Dependencies(store), NullLogger.Instance, CancellationToken.None));
+        var portal = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            PortalVerifier(store).VerifyAsync("journey", "managed-key", CancellationToken.None));
+
+        Assert.Equal("header fault", header.Message);
+        Assert.Equal("portal fault", portal.Message);
+        Assert.Equal(2, store.Calls);
+    }
+
+    [UnitTest]
+    public async Task Cancellation_IsNotTreatedAsStoreOutage_OnHeaderAndPortalPaths()
+    {
+        var store = UnavailableStore(new OperationCanceledException("caller cancelled"));
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
+                new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
+                Dependencies(store), NullLogger.Instance, CancellationToken.None));
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            PortalVerifier(store).VerifyAsync("journey", BreakGlassPassword, CancellationToken.None));
+    }
+
+    [UnitTest]
+    public async Task OtherInvalidOperation_IsNotTreatedAsStoreOutage()
     {
         var store = UnavailableStore(new InvalidOperationException("changed on every attempt"));
 
@@ -106,6 +139,76 @@ public sealed class ApiKeyStoreOutageTests
 
         Assert.Equal(StatusCodes.Status500InternalServerError, other.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, identityModel.StatusCode);
+    }
+
+    private static AdminPortalCredentialVerifier PortalVerifier(IAdminApiKeyStore store)
+        => new(
+            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
+            adminApiKeyStore: store,
+            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
+
+    private static AdminApiKeyValidationResult ManagedKey()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new AdminApiKeyValidationResult(new AdminApiKeyRecord(
+            Guid.NewGuid(),
+            "journey",
+            "hnua_testkey",
+            new byte[32],
+            ["admin:*"],
+            now,
+            now,
+            ExpiresAt: null,
+            LastUsedAt: null,
+            RotatedAt: null,
+            RevokedAt: null,
+            CreatedBy: "test"));
+    }
+
+    /// <summary>
+    /// Returns the scripted result for each <see cref="IAdminApiKeyStore.ValidateAsync"/> call.
+    /// An exception factory faults that call. Other store methods are unused.
+    /// </summary>
+    private sealed class ScriptedStore : IAdminApiKeyStore
+    {
+        private readonly Queue<Func<AdminApiKeyValidationResult?>> _results = new();
+
+        public int Calls { get; private set; }
+
+        public void Enqueue(Exception failure)
+            => _results.Enqueue(() => throw failure);
+
+        public void Enqueue(AdminApiKeyValidationResult? result)
+            => _results.Enqueue(() => result);
+
+        public Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(_results.Dequeue()());
+        }
+
+        public Task<IReadOnlyList<AdminApiKeyRecord>> ListAsync(CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public Task<AdminApiKeyCreateResult> CreateAsync(
+            string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public Task<AdminApiKeyCreateResult> CreateAsync(
+            string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, AdminApiKeyRestrictions? restrictions, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(Guid id, AdminApiKeyRestrictions restrictions, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 
     private static IAdminApiKeyStore UnavailableStore(Exception? failure = null)

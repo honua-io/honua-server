@@ -324,13 +324,10 @@ internal static class EntitlementProbeRegistry
                 "when unentitled — a deliberate 'route doesn't exist' posture, not the standard " +
                 "402 problem-detail shape this sweep checks."),
             new("dr.backup-automation",
-                "Dormant scaffolding (ADR-0048-style): Honua.Core/Features/DisasterRecovery has " +
-                "domain records only (BackupSchedule, RecoveryObjectives, BackupRecord, " +
-                "RecoveryReadiness) with zero consumers outside FeatureCatalog.cs — no admin " +
-                "endpoint, no worker, nothing implemented yet to gate."),
-            new("dr.failover", "Same dormant-scaffolding state as dr.backup-automation above."),
-            new("dr.cache-backup", "Same dormant-scaffolding state as dr.backup-automation above."),
-            new("dr.rto-rpo-reporting", "Same dormant-scaffolding state as dr.backup-automation above."),
+                "Catalog entry only: no admin endpoint, no worker, nothing implemented to gate."),
+            new("dr.failover", "Same catalog-only state as dr.backup-automation above."),
+            new("dr.cache-backup", "Same catalog-only state as dr.backup-automation above."),
+            new("dr.rto-rpo-reporting", "Same catalog-only state as dr.backup-automation above."),
             new(FeatureCatalog.OutputCacheKey,
                 "Enforced as a pipeline branch (#2998): Program wires UseOutputCache() inside an " +
                 "app.UseWhen(...) branch whose predicate reads the live license snapshot, so the " +

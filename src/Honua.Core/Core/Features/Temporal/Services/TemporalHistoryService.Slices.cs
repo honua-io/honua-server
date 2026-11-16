@@ -142,7 +142,14 @@ public sealed partial class TemporalHistoryService
         var afterGeneration = DecodeGenerationCursor(request.Cursor);
 
         var rows = await _historyStore
-            .GetFeatureRevisionsAsync(storageLayerId, request.ObjectId, afterGeneration, limit + 1, cancellationToken)
+            .GetFeatureRevisionsAsync(new TemporalFeatureRevisionQuery
+            {
+                StorageLayerId = storageLayerId,
+                ObjectId = request.ObjectId,
+                AfterGeneration = afterGeneration,
+                ThroughGeneration = currentGeneration,
+                Limit = limit + 1
+            }, cancellationToken)
             .ConfigureAwait(false);
 
         var hasMore = rows.Count > limit;
