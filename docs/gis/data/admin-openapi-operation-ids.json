@@ -1239,6 +1239,12 @@
       "path": "/observability/ops-health"
     },
     {
+      "operationId": "getOpsIncidentContext",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/incidents/{incidentId}"
+    },
+    {
       "operationId": "getPlatformLicenseStatus",
       "catalogOperationId": null,
       "method": "GET",
