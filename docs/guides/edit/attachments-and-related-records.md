@@ -8,7 +8,7 @@ resource: "honua://capability/editing.featureserver-edits"
 
 Attach files to individual features, query and download them, and traverse layer relationships — all through the GeoServices FeatureServer surface.
 
-**Prerequisites:** A writable FeatureServer layer and at least one feature in it (see [Edit features](edit-features.md)). The layer must also be published with attachment support: set `supportsAttachments` to `true` in the publish request (it defaults to `false`, and it does not enable editing by itself). The layer's metadata then reports `hasAttachments: true`; without it, every attachment operation returns "Attachments are not supported for this layer." Writes honor the same access policy and write-role checks as feature edits, so authenticate the mutation commands if the layer is protected.
+**Prerequisites:** A writable FeatureServer layer and at least one feature in it (see [Edit features](edit-features.md)). The layer must also be published with attachment support: set `supportsAttachments` to `true` in the publish request (it defaults to `false`, and it does not enable editing by itself). The layer's metadata then reports `hasAttachments: true`; without the flag, attachment requests return "Attachments are not supported for this layer." Writes honor the same access policy and write-role checks as feature edits, so authenticate the mutation commands if the layer is protected.
 
 Attachments are keyed by integer object IDs (`globalIds` filters are rejected) and are size- and type-limited by `Limits__Attachments__*` (defaults: 5 MB per file, 5 per feature, 50 MB total per feature, MIME allowlist `image/*,application/pdf,text/plain,text/csv,application/json`).
 
@@ -63,9 +63,9 @@ Relationships are defined per layer by the publisher (`GET /rest/services/{servi
 | Upload rejected by size or type | Raise `Limits__Attachments__MaxAttachmentSize` / `MaxAttachmentsPerFeature` / `MaxTotalAttachmentSize` or extend `Limits__Attachments__AllowedMimeTypes`. |
 | `globalIds is not supported` | Honua attachments are keyed by integer object IDs only; query with `objectIds`. |
 | `401` / `403` on mutation | Attachment writes require write access to the layer, same as feature edits — see [Control access](../secure/access-control.md). |
-| `Attachments are not supported for this layer.` | The layer was published without `supportsAttachments`. Check `hasAttachments` in the layer metadata (`FeatureServer/{layerId}?f=json`) and republish with `supportsAttachments: true`. |
-| `Relationship {id} not found for layer {layerId}` (code 404) on `queryRelatedRecords` | The layer has no relationship with that id. List the defined ones with `GET .../FeatureServer/relationships`; an empty `relationships` list means the publisher has not defined any. Relationship ids are not assumed to start at `0`. |
-| Empty `queryRelatedRecords` result | The relationship exists but no related rows match; confirm the related layer is published and holds rows for those object ids. |
+| `Attachments are not supported for this layer.` | The layer was published without `supportsAttachments`. Check `hasAttachments` in the layer metadata (`FeatureServer/{layerId}?f=json`) and publish the layer with `supportsAttachments: true`. |
+| `Relationship {id} not found for layer {layerId}` (error code 404) on `queryRelatedRecords` | The layer has no relationship with that id. List the defined ones with `GET .../FeatureServer/relationships`; an empty `relationships` list means the publisher has not defined any. Do not assume id `0` exists; use an id from that list. |
+| Empty `queryRelatedRecords` result | Usually the relationship exists but no related rows match; confirm the related layer is published and holds rows for those object ids. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 
