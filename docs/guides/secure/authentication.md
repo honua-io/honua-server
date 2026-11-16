@@ -434,7 +434,7 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
-Redis shares replay registrations across nodes. When a configured Redis connection is disconnected or faults, the default fallback is per-node memory; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses that fallback. Without a Redis connection, memory tracks registrations on the current node. Independent replicas need the same shared replay store for cross-node isolation.
+The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the default is to admit the token without recording a replay registration. Set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse that admission. A PostgreSQL failure does not switch replay tracking to per-node memory.
 
 #### Human operation approval
 
