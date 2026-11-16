@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the managed (NetTopologySuite) spatial-join
-/// executor — the job-dispatchable counterpart to trunk's PostGIS-protocol
-/// analytics.spatial-join. Aggregate mode summarizes every matched join feature
-/// into per-target JOIN_COUNT + numeric SUM/MEAN/MIN/MAX statistics, preserving
-/// zero-match targets one-to-one. Pure managed geometry; no native dependency,
-/// no Docker.
-/// </summary>
 public sealed class ManagedSpatialJoinExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

@@ -11,11 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Deterministic <see cref="AnalysisResultPackage"/> fixtures used by the
-/// golden-file renderer tests. All timestamps are pinned to 2026-04-24 so
-/// rendered output is byte-stable for golden comparisons.
-/// </summary>
 internal static class ReportingFixtures
 {
     public static readonly DateTimeOffset ExecutedAt =

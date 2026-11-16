@@ -18,12 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// HTTP integration tests for the Console Operate alert endpoints (#1168). Uses
-/// in-memory stubs of <see cref="IAlertEventQuery"/>, <see cref="IAlertLifecycleStore"/>,
-/// and <see cref="IAuditLog"/> so wiring + DTO shape are exercised without
-/// migrating the alert tables in the test database.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

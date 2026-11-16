@@ -36,7 +36,7 @@ internal sealed partial class StreamingFileImportService
     {
         await using var lease = await OpenConnectionAsync(cancellationToken);
         // The whole import holds the replace session lock below. On Lambda it runs on an unpooled
-        // connection, so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        // connection, so closing it ends the RDS Proxy-pinned session.
         await using var session = await _sessionLockConnections
             .OpenAsync(lease, cancellationToken, hasCallerTransaction: lease.Transaction is not null)
             .ConfigureAwait(false);
@@ -48,9 +48,9 @@ internal sealed partial class StreamingFileImportService
             connection, targetSchema, request.TableName, cancellationToken);
         var loadMode = request.EffectiveLoadMode;
 
-        // Every load mode shares one staging name per logical target. Hold the historical
-        // replace advisory lock for append and upsert too, so a concurrent replace cannot drop
-        // an in-flight append's staging table or its live rows (#4003, SRV-IMP-008).
+        // Every load mode shares one staging name per logical target. Hold the replace
+        // advisory lock for append and upsert too, so a concurrent replace cannot drop
+        // an in-flight append's staging table or its live rows.
         ImportedDatasetSpatialMetadata.SessionLock? replaceLock = null;
         var dataCommitted = false;
         var appendUsesStaging = false;
@@ -86,7 +86,7 @@ internal sealed partial class StreamingFileImportService
             // the live table. Before this try, the only path that ever reclaimed that sibling on
             // failure was the NEXT replace's CreateStagingTableAsync (DROP TABLE IF EXISTS ...
             // CREATE TABLE), so a thrown exception or a cancellation anywhere below left it and
-            // its indexes behind indefinitely (#4422). DROP TABLE IF EXISTS makes the cleanup safe
+            // its indexes behind indefinitely. DROP TABLE IF EXISTS makes the cleanup safe
             // to call even when the failure happened after a successful promotion (nothing left to
             // drop, since SwapStagingTableAsync already renamed it away) or before the staging
             // table was created (nothing ever existed).
@@ -96,7 +96,7 @@ internal sealed partial class StreamingFileImportService
                 // 2-D default writer. CreateWkb upgrades to an emitZ and/or emitM writer per
                 // geometry when the source geometry actually carries Z and/or M ordinates
                 // (see SelectWkbWriter / DetectZm), so GPX/KML/3-D GeoJSON altitudes and
-                // FileGDB/shapefile XYM/XYZM measures are preserved (#1981) without forcing
+                // FileGDB/shapefile XYM/XYZM measures are preserved without forcing
                 // every 2-D coordinate through an emitZ/emitM writer (which serializes NaN
                 // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
                 var wkbWriter = new WKBWriter();
@@ -121,6 +121,9 @@ internal sealed partial class StreamingFileImportService
                 var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
                 string? csvSourceIdAlias = null;
                 var hiddenSourceWarnings = new Dictionary<string, string>(StringComparer.Ordinal);
+                var incompatibleCsvAliases = format == SupportedFileFormat.Csv && hadExistingTarget && loadMode != ImportLoadMode.Replace
+                    ? await ReadIncompatibleCsvAliasesAsync(connection, (targetSchema, allowedTableName), cancellationToken)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
                 // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
@@ -137,9 +140,9 @@ internal sealed partial class StreamingFileImportService
                 await foreach (var feature in featureStream.WithCancellation(cancellationToken))
                 {
                     // FileGDB included: the resolved/explicit source SRID must win over whatever the
-                    // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
+                    // reader's geometry factory carried. CSV is the exception: an EWKT/EWKB
                     // value already carries its own SRID, and stamping the 4326 default here stored
-                    // projected coordinates as degrees (#6171). An explicit SourceSrid still wins.
+                    // projected coordinates as degrees. An explicit SourceSrid still wins.
                     if (format is SupportedFileFormat.Csv or SupportedFileFormat.Wkt &&
                         !request.SourceSrid.HasValue && HasConflictingSourceSrid(feature, sourceSrid))
                     {
@@ -153,8 +156,8 @@ internal sealed partial class StreamingFileImportService
 
                     if (format == SupportedFileFormat.Csv)
                     {
-                        var alias = PreserveCsvSourceId(feature, typedColumnInference, csvGeometryDiagnostics!.Headers);
-                        csvSourceIdAlias ??= alias;
+                        csvSourceIdAlias ??= ResolveCsvSourceIdAlias(csvGeometryDiagnostics!.Headers, incompatibleCsvAliases);
+                        PreserveCsvSourceId(feature, typedColumnInference, csvSourceIdAlias);
                     }
 
                     ObserveHiddenSourceProperties(feature, hiddenSourceWarnings, format);
@@ -257,7 +260,7 @@ internal sealed partial class StreamingFileImportService
                 // live target unless doing so would destroy a prior COMPLETE dataset: when a target
                 // already existed and this load dropped rows (skip/continue), promoting the
                 // incomplete staging sibling would silently replace a complete dataset with a
-                // partial one (#4006). A first-ever replace into a brand-new target has nothing to
+                // partial one. A first-ever replace into a brand-new target has nothing to
                 // protect, so it still promotes imported rows even with dropped rows — that is a
                 // normal partial import, not data loss. A load with no imported rows is discarded.
                 // Append into an owned target uses the same sibling and merges only after the
@@ -372,8 +375,8 @@ internal sealed partial class StreamingFileImportService
                 }
 
                 // Surface per-row geometry repair accounting so the shared validity gate never silently
-                // rewrites input geometry (#2743). Default gate mode is Repair, so previously-invalid
-                // geometry is fixed (ST_MakeValid-equivalent) instead of stored as-is.
+                // rewrites input geometry. Default gate mode is Repair, so invalid geometry
+                // is fixed (ST_MakeValid-equivalent) instead of stored as-is.
                 if (repairTally.Repaired > 0)
                 {
                     completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));
@@ -421,6 +424,11 @@ internal sealed partial class StreamingFileImportService
                         completionWarningsBuilder.Add(
                             "Table statistics could not be refreshed after the import was committed; the imported rows were kept.");
                     }
+                }
+
+                if (dataCommitted && csvSourceIdAlias is not null)
+                {
+                    completionWarningsBuilder.Add(BuildCsvSourceIdWarning(csvSourceIdAlias, typedColumns));
                 }
 
                 if (dataCommitted && cancellationToken.IsCancellationRequested)

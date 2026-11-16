@@ -27,8 +27,7 @@ public static class SpatialConstants
 
     public const int DefaultSrid = 4326;
 
-    // The former SpatialConstants.GeographicSrids shim was removed in #2732 follow-ups: it held the
-    // narrow geodesic-safe subset under a misleadingly broad name and had no production consumers.
-    // Call GeographicSridClassifier.GeodesicDistanceSafeSrids / IsGeodesicDistanceSafeSrid (geodesic
+    // There is deliberately no geographic-SRID list here: call
+    // GeographicSridClassifier.GeodesicDistanceSafeSrids / IsGeodesicDistanceSafeSrid (geodesic
     // routing) or GeographicSridClassifier.IsGeographicSrid (axis order / degree routing) directly.
 }

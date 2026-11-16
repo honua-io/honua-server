@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Spec.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="TypeRef"/> — the type checker's assignability
-/// rules and the intrinsic-cache fast path. These rules are user-observable
-/// through spec diagnostic messages, so they need to be pinned down (#1144).
-/// </summary>
 public sealed class TypeRefTests
 {
     [UnitTest]

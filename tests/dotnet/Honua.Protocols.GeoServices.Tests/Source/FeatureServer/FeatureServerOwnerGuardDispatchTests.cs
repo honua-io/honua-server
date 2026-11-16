@@ -21,11 +21,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// The GeoServices handler must carry each authorized row's stored owner into the actual
-/// writer batch. The provider uses that value in its mutation statement to reject a
-/// later ownership transfer; a pre-read authorization alone cannot close the race.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime

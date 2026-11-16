@@ -16,10 +16,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Client-shaped integration tests for the GPServer adapter. These tests keep
-/// route binding real while exercising the endpoint sequence a typed SDK would use.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixture>

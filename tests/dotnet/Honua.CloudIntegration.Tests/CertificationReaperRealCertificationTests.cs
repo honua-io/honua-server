@@ -12,31 +12,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164) — the run-scoped resource REAPER. A guaranteed
-/// <c>finally</c>/teardown protects the happy path, but a crashed runner (OOM, cancelled workflow,
-/// power loss between create and delete) can still orphan a resource. This sweeper is the
-/// belt-and-braces backstop: it reaps <c>honua-cert-run</c>-tagged resources older than a TTL so
-/// cost stays bounded even when a run dies mid-flight.
-///
-/// SCOPE (do not overstate): the reaper covers exactly the two CREATED, tag-able resource kinds —
-/// the ephemeral per-run Batch job definitions (<c>honua-certrun-*</c>) and the S3 artifact objects.
-/// It does NOT (and must not) touch the ECS/ALB listener rule weights, the Lambda alias, or in-flight
-/// Batch jobs: those are IN-PLACE mutations of STANDING resources, not created ones, so there is
-/// nothing to tag or reap. Their standing state is protected instead by each cell's guaranteed
-/// baseline-restore in a <c>finally</c> (ECS/ALB and Lambda cells), not by this reaper.
-///
-/// It keys STRICTLY off the <see cref="RealAwsCertificationFixture.RunTagKey"/> tag (never a name
-/// prefix), so it can NEVER touch the standing certification-stack resources — those share the
-/// <c>honua-cert-*</c> NAME prefix but carry no <c>honua-cert-run</c> TAG (and the per-run job
-/// definitions live in the disjoint <c>honua-certrun-*</c> namespace). Budget is describe/list +
-/// get-tagging + delete only.
-///
-/// The reaper runs LAST: it is filtered into a dedicated <c>always()</c> workflow step by
-/// <c>FullyQualifiedName~Reaper</c> AFTER the main certification step (which excludes it with
-/// <c>FullyQualifiedName!~Reaper</c>), so it sweeps this run's leftovers plus any prior run's
-/// leaked, aged-out resources without racing the cells that create them.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class CertificationReaperRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {
@@ -78,21 +53,10 @@ public sealed class CertificationReaperRealCertificationTests : IClassFixture<Re
     }
 }
 
-/// <summary>
-/// Tag-driven sweeper for leaked real-AWS certification resources (#2164). Reaps only resources
-/// carrying <see cref="RealAwsCertificationFixture.RunTagKey"/> that are older than a TTL, so it can
-/// never touch the standing certification stack (which shares the name prefix but not the run tag).
-/// </summary>
 internal static class CertificationResourceReaper
 {
-    /// <summary>S3 key prefix under which certification artifacts are written and swept.</summary>
     public const string ArtifactPrefix = "cert/";
 
-    /// <summary>
-    /// Deregisters every ACTIVE Batch job definition tagged <see cref="RealAwsCertificationFixture.RunTagKey"/>
-    /// whose <see cref="RealAwsCertificationFixture.CreatedTagKey"/> stamp is older than <paramref name="ttl"/>.
-    /// Job definitions expose no native creation timestamp, so the created-tag is the TTL clock.
-    /// </summary>
     public static async Task<int> ReapJobDefinitionsAsync(
         IAmazonBatch batch,
         TimeSpan ttl,
@@ -129,12 +93,6 @@ internal static class CertificationResourceReaper
         return reaped;
     }
 
-    /// <summary>
-    /// Deletes every object under <paramref name="prefix"/> in <paramref name="bucket"/> that is
-    /// older than <paramref name="ttl"/> (by S3 <c>LastModified</c>) AND carries the
-    /// <see cref="RealAwsCertificationFixture.RunTagKey"/> tag. Object tagging is only fetched for
-    /// aged objects to keep the request budget low.
-    /// </summary>
     public static async Task<int> ReapArtifactsAsync(
         IAmazonS3 s3,
         string bucket,

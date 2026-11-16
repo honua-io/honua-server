@@ -3,42 +3,19 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Interface-level integration tests for <c>honua_studio_set_layer_visibility</c>
-/// (honua-server#3199), driven through the real <c>POST /mcp</c> JSON-RPC surface and
-/// read back through the REST Studio draft surface a client actually syncs from
-/// (<c>GET /api/v1/studio/package-drafts/{draftId}</c>).
-/// </summary>
-/// <remarks>
-/// The defect this covers is a persistence gap, not a handler bug: <c>visible</c> is part of
-/// the stored <c>StudioCompositionLayer</c> wire shape but <c>honua_studio_add_layer</c> was its
-/// only writer (and rejects duplicate ids), so a client-local table-of-contents toggle was
-/// overwritten by the next draft sync. Proving that requires the real write path AND the real
-/// read path, which is why these run against the composed host rather than a tool harness.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureServices(services =>
-        {
-            // Same in-memory Studio store StudioPackageEndpointsTests uses: this suite exercises
-            // the HTTP write/read round trip, not the Postgres store's persistence.
-            services.RemoveAll<IStudioPackageStore>();
-            services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        });
+    private readonly WebAppFixture _fixture = StudioMcpFixtures.CreateCompositionFixture();
 
     private StudioMcpHttpClient _mcp = null!;
 
@@ -217,20 +194,14 @@ public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
     private static bool LayerVisibility(StudioCompositionBody body, string layerId) =>
         body.Layers.Single(layer => layer.Id == layerId).Visible;
 
-    /// <summary>
-    /// Creates a map-family draft carrying the <c>parcels</c> and <c>zoning</c> layers every
-    /// case here toggles, entirely through the public <c>POST /mcp</c> tool surface.
-    /// </summary>
     private async Task<(Guid DraftId, long Generation)> CreateMapDraftWithParcelsLayerAsync()
     {
-        var created = await CallToolAsync(
-            "honua_studio_create_draft",
-            """{"packageKey":"parcels-visibility-map","family":"map","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
+        var created = await StudioMcpFixtures.SeedMapDraftAsync(_fixture, "parcels-visibility-map");
+        var draftId = created.DraftId;
 
         var withParcels = await CallToolAsync(
             "honua_studio_add_layer",
-            $$"""{"draftId":"{{draftId}}","generation":{{created.GetProperty("generation").GetInt64()}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"} }""");
+            $$"""{"draftId":"{{draftId}}","generation":{{created.Generation}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"} }""");
         var withZoning = await CallToolAsync(
             "honua_studio_add_layer",
             $$"""{"draftId":"{{draftId}}","generation":{{withParcels.GetProperty("generation").GetInt64()}},"layer":{"id":"zoning","type":"fill"} }""");
@@ -238,10 +209,6 @@ public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
         return (draftId, withZoning.GetProperty("generation").GetInt64());
     }
 
-    /// <summary>
-    /// Reads the draft back through the REST surface a Studio client syncs from and returns its
-    /// composition projection — the read half of "a visibility toggle survives a draft sync".
-    /// </summary>
     private async Task<StudioCompositionBody> SyncCompositionAsync(Guid draftId) =>
         StudioCompositionBodyEditor.ReadBody(await _mcp.SyncEnvelopeAsync(draftId));
 

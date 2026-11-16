@@ -18,11 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Integration tests for <see cref="Honua.Infrastructure.Middleware.TenantContextMiddleware"/>
-/// covering claim-based resolution, header overrides gated on multi-tenant admin role,
-/// default-tenant fallback for anonymous reads, and per-request isolation.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public class TenantContextMiddlewareTests
 {

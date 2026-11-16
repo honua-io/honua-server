@@ -13,10 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// A REST applyEdits response stored under an Idempotency-Key replays only to the same scheme- and
-/// issuer-qualified actor, matching the gRPC ApplyEdits scope.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ApplyEditsIdempotencyCallerScopeTests
 {

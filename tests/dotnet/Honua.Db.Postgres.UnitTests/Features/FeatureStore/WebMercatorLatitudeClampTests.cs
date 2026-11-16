@@ -10,10 +10,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Proves feature-query call sites pass the source SRID into <see cref="DatumTransformSql"/>
-/// so a geographic layer or filter reprojected to Web Mercator is clipped first.
-/// </summary>
 public sealed class WebMercatorLatitudeClampTests
 {
     [UnitTheory]

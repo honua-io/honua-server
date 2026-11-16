@@ -11,20 +11,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164) — the S3 artifact cell. Round-trips a small artifact through
-/// the SAME production S3 code path the LocalStack cell
-/// (<see cref="S3ArtifactRoundTripCloudIntegrationTests"/>) exercises — an <see cref="AmazonS3Client"/>
-/// configured exactly as <c>AwsS3FileStorage.CreateClient</c> does (region-scoped client, default
-/// credential chain, no ServiceURL override) — but against the LIVE certification-stack bucket
-/// (<c>cert_artifact_bucket</c>) instead of an emulator. It certifies the S3 seam every GP
-/// input/output and certification-evidence artifact rides.
-///
-/// SAFETY / BUDGET: a single tiny object under the run-scoped <c>cert/{runId}/</c> key prefix,
-/// tagged <c>honua-cert-run={runId}</c>, deleted in a guaranteed <c>finally</c> block. The tag lets
-/// the reaper reclaim any leaked object without ever matching non-certification bucket contents.
-/// OFF unless <see cref="RealAwsCertificationFixture.S3ArtifactConfigured"/>; skips otherwise.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class S3ArtifactRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {

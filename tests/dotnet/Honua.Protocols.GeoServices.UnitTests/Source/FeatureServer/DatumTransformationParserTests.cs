@@ -9,12 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit tests for <see cref="DatumTransformationParser"/> and
-/// <see cref="VerticalCoordinateSystemHelpers"/> (issue #1274). Validates parsing of the
-/// Esri <c>datumTransformation</c> parameter (bare WKID + composite geoTransforms) and
-/// detection of vertical-CS requests.
-/// </summary>
 public sealed class DatumTransformationParserTests
 {
     [UnitTest]

@@ -8,10 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.OperateStatus;
 
-/// <summary>
-/// Unit tests for the operate-status SLO posture. The replica-local reservoir is retained as a
-/// diagnostic, but must never be projected as platform availability or an error budget.
-/// </summary>
 public sealed class OperateSloEvaluatorTests
 {
     private static ServingLatencySnapshot Snapshot(long requestCount, long errorCount, double windowSeconds = 300)

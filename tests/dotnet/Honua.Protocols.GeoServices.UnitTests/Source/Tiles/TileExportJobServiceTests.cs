@@ -26,10 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 
-/// <summary>
-/// Focused tests for the protocol-neutral tile-export lifecycle service: submission,
-/// idempotency, admission, ownership/binding isolation, cancellation, and result delivery.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed partial class TileExportJobServiceTests
 {

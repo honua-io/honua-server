@@ -130,7 +130,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             auditId: request.AuditId,
             proposalId: request.ProposalId) with
         {
-            // honua-server#5916: this service is the in-process runner for long-lived hosts.
+            // This service is the in-process runner for long-lived hosts.
             Runner = ImportJobRunners.InProcess,
             InstanceId = _instanceId
         };
@@ -300,7 +300,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
             // The background path must perform the same canonical snapshot refresh as the
             // synchronous upload path. The importer stores file targets under its physical
-            // imported_* name, while callers submit the logical table name (#22).
+            // imported_* name, while callers submit the logical table name.
             // A cancel after the import returned must not skip this refresh or rewrite a
             // committed result as Cancelled.
             if (result.Success)

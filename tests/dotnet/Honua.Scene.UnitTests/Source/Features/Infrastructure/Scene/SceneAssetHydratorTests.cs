@@ -11,12 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Unit tests for the scene asset read-through materialization cache (#2459,
-/// ADR-0060). A fake in-memory object store stands in for S3/Azure so the
-/// hydrate / no-op / re-hydrate / single-download behaviours are exercised
-/// without Docker.
-/// </summary>
 public sealed class SceneAssetHydratorTests : IDisposable
 {
     private readonly string _workRoot;
@@ -234,12 +228,6 @@ public sealed class SceneAssetHydratorTests : IDisposable
             .Should().NotContain(d => d.Contains(".replaced-", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// Writes a small tileset tree to a staging directory and uploads it through
-    /// the production uploader so the stored keys/manifest match exactly what the
-    /// hydrator expects. Returns the storage prefix and the (relativePath, bytes)
-    /// contents (excluding the manifest).
-    /// </summary>
     private async Task<(string Prefix, IReadOnlyList<(string Relative, byte[] Bytes)> Files)> SeedSceneAsync(
         InMemoryCloudFileStorage storage,
         string sceneId)

@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Caching;
 
-/// <summary>
-/// Unit tests for CacheOptionsValidator to ensure proper validation of cache configuration.
-/// </summary>
 public class CacheOptionsValidatorTests
 {
     private readonly CacheOptionsValidator _validator = new();

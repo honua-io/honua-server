@@ -21,10 +21,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.OData.TestHost;
 
-/// <summary>
-/// Test-only OData composition over a provisioned database. It deliberately does
-/// not run migration/startup catalog jobs or expose other protocol endpoints.
-/// </summary>
 public static class ODataTestApplication
 {
     public static WebApplication Build(string[] args, Action<WebApplicationBuilder>? configure = null)

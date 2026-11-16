@@ -20,9 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Tests for MCP principal key derivation and session-binding identity selection.
-/// </summary>
 public sealed class McpAuthorizationHelperTests
 {
     [UnitTest]

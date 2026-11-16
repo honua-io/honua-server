@@ -9,13 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Verifies on-the-fly overview selection (#1793) against a real PostGIS raster: at low
-/// zoom the dynamic tile query reduces the source toward the tile's ground resolution and
-/// feeds materially fewer pixels into the final resample than the full-resolution baseline,
-/// while still rendering a 256x256 / EPSG:3857 tile whose pixel content matches the full-res
-/// render. At native/finer zoom the substitution is a strict no-op.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreOverviewIntegrationTests(PostgresFixture fixture)
 {

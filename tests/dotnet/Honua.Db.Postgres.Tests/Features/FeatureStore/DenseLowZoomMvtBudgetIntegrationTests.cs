@@ -20,10 +20,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// A dense zoom-0 tile whose full <c>ST_AsMVT</c> encode exceeds the byte budget must come
-/// back within that budget, still decodable, with valid geometry. One byte is still a refusal.
-/// </summary>
 [Collection("Database")]
 public sealed class DenseLowZoomMvtBudgetIntegrationTests : IAsyncLifetime
 {

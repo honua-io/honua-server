@@ -7,14 +7,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Performance;
 
-/// <summary>
-/// Integration tests verifying query execution plans and index usage.
-/// These tests validate that queries use expected indexes and have efficient execution plans.
-///
-/// Targets from Issue #46:
-/// - Query execution plan analysis to identify inefficiencies
-/// - Index usage verification to ensure proper database indexing
-/// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Performance")]
 [Collection("Database")]
@@ -37,9 +29,6 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Verifies that spatial queries use the GIST index on geometry column.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "QueryPlan")]
     public async Task SpatialQuery_UsesGistIndex()
@@ -89,9 +78,6 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
         Assert.Contains("Index", planText, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Verifies that attribute queries on JSONB use the GIN index.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "QueryPlan")]
     public async Task JsonbQuery_UsesGinIndex()
@@ -139,9 +125,6 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
         Assert.True(usesIndex, $"Expected index usage in plan: {planText}");
     }
 
-    /// <summary>
-    /// Verifies that layer_id filtering uses the appropriate index.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "QueryPlan")]
     public async Task LayerIdQuery_UsesIndex()
@@ -184,9 +167,6 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
         Assert.Contains("Index", planText, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Verifies query execution plan shows reasonable cost for paginated queries.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "QueryPlan")]
     public async Task PaginatedQuery_HasReasonableCost()
@@ -227,9 +207,6 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
         Assert.Contains("Execution Time", planText, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Verifies that combined spatial + attribute queries use appropriate indexes.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "QueryPlan")]
     public async Task CombinedQuery_UsesMultipleIndexes()
@@ -277,10 +254,6 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
         Assert.Contains("Index", planText, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Documents typical query execution times for baseline measurement.
-    /// This test captures execution statistics for performance baselines.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "QueryPlan")]
     public async Task QueryExecution_MeetsPerformanceBaseline()

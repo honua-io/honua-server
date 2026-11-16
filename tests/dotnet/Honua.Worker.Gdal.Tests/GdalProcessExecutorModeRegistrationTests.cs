@@ -14,15 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Verifies the mode gating of the native GDAL executor registration seam
-/// (<see cref="GdalWorkerServiceCollectionExtensions.AddGdalProcessExecutors(IServiceCollection, IConfiguration, GdalProcessExecutorMode)"/>,
-/// issue #2180): the default / <see cref="GdalProcessExecutorMode.InProcess"/> mode
-/// keeps the fast host-CLI runner (no regression to the sub-second managed loop),
-/// while <see cref="GdalProcessExecutorMode.Container"/> swaps in the container-exec
-/// runner — registering the IDENTICAL executor set either way, so only the
-/// <see cref="IGdalCommandRunner"/> implementation differs.
-/// </summary>
 public sealed class GdalProcessExecutorModeRegistrationTests
 {
     [UnitTest]

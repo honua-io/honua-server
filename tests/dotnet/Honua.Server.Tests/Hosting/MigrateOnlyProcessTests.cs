@@ -10,13 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Hosting;
 
-/// <summary>
-/// Starts the real server entry point out of process with <c>HONUA_MIGRATE_ONLY=true</c>
-/// (honua-server#6470) in the Production environment, with no admin password, encryption key,
-/// licence or Redis configured. The process must take the migrate-only branch before the web host
-/// is built: no listener, one JSON summary line on standard output, and the typed exit code. The
-/// applying path against a real database is proven by <c>LocalSubstrateMigrateOnlyTests</c>.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class MigrateOnlyProcessTests
 {

@@ -140,9 +140,22 @@ class OptionalInputTests(unittest.TestCase):
         # No ref: a pull request run checks out its merge into trunk, so a head cut
         # before a checker existed is still judged by the checkers this workflow calls.
         self.assertEqual(checkout["with"], {"fetch-depth": "0"})
-        self.assertEqual(step("Regenerate trunk-owned documentation for validation")["run"].split(),
-                         ["python3", "scripts/ci/generate-workflow-inventory.py",
-                          "python3", "scripts/ci/generate-capability-concepts.py"])
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            scripts = work / "scripts/ci"
+            scripts.mkdir(parents=True)
+            for name in ("generate-workflow-inventory.py", "generate-capability-concepts.py"):
+                (scripts / name).write_text(
+                    "from pathlib import Path\n"
+                    "with Path('generation-order').open('a') as output:\n"
+                    f"    output.write({name!r} + '\\n')\n")
+            (scripts / "workflow-inventory.template.md").write_text("fixture")
+            completed = subprocess.run(
+                ["bash", "-e", "-c", step("Regenerate trunk-owned documentation for validation")["run"]],
+                cwd=work, capture_output=True, text=True, env=fixture_environment(), check=False)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual((work / "generation-order").read_text().splitlines(),
+                             ["generate-workflow-inventory.py", "generate-capability-concepts.py"])
         self.assertIn("""--base "${{ github.event_name == 'pull_request' && 'HEAD^1' || 'origin/trunk' }}\"""",
                       step("Reject raw curl additions in documentation")["run"])
 

@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Service-area polygons are cumulative disks labeled from 0 to each break (#6026).
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class PgRoutingServiceAreaBreakTests
 {

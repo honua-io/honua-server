@@ -12,18 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// honua-release#202: the GeoServices GP surface on a Redis-less install. Redis is optional
-/// (PostGIS is not), so submitting a job without a durable job store must be refused up front
-/// with a machine-readable receipt rather than hanging or accepting a job that can never drain.
-/// The Esri error envelope has no extension members, so the receipt rides the
-/// <c>error.details[]</c> array using its existing <c>Key: value</c> convention.
-/// </summary>
-/// <remarks>
-/// The <see cref="WebAppFixture"/> runs without Redis and registers no
-/// <c>IExecutionJobStore</c> — that is the degraded composition under test.
-/// <c>GPServerEndpointTests</c> substitutes an in-memory store to cover the composed path.
-/// </remarks>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerDegradedJobStoreTests : IAsyncLifetime

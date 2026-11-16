@@ -39,7 +39,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         // Null is a database-only host. Feature-store resolution includes this store for
-        // row cleanup (#6137) and must not require object storage that the host never registered.
+        // row cleanup and must not require object storage that the host never registered.
         _fileStorage = fileStorage;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;

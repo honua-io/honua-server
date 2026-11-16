@@ -15,11 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Publishing;
 
-/// <summary>
-/// Postgres integration tests for the content publication store: round-trip,
-/// route-slug uniqueness, optimistic concurrency, append-only version rows,
-/// event ordering, revision reads, and public-link hash JSONB round-trip.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture)
 {

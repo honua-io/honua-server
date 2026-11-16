@@ -188,7 +188,6 @@ public sealed class PortalTokenAuthenticationMiddlewareTests
         public ValueTask DisposeAsync() => Provider.DisposeAsync();
     }
 
-    /// <summary>Response feature that runs OnStarting callbacks in server (LIFO) order.</summary>
     private sealed class OnStartingResponseFeature : HttpResponseFeature
     {
         private readonly Stack<(Func<object, Task> Callback, object State)> _callbacks = new();

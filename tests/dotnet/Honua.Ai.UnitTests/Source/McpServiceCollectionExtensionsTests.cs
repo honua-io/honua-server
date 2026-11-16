@@ -21,15 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the DI shape for the MCP operator surface and the opt-in promotion
-/// surface. The hosted-promotion resources (<c>honua://published-services*</c>,
-/// <c>honua://deployments*</c>, <c>honua://map-packages*</c>,
-/// <c>honua://app-packages*</c>) are intentionally gated behind
-/// <see cref="McpServiceCollectionExtensions.AddMcpPromotionSurface"/> so the
-/// default server composition cannot advertise promotion URIs backed only by
-/// process-local empty state.
-/// </summary>
 public sealed partial class McpServiceCollectionExtensionsTests
 {
     [UnitTest]
@@ -74,17 +65,6 @@ public sealed partial class McpServiceCollectionExtensionsTests
                 + "on IOperationInvoker at invocation time, so it is always advertised.");
     }
 
-    /// <summary>
-    /// Regression test for PR #3016 review (P1): in the real server composition
-    /// root (<c>FeatureRegistrationExtensions.AddServerFeatures</c>),
-    /// <c>AddMcpDataAccessSurface</c> runs BEFORE <c>AddStudioPackageLifecycle</c>.
-    /// A descriptor-presence gate at registration time (<c>services.Any(d =&gt;
-    /// d.ServiceType == typeof(IStudioPackageLifecycleService))</c>) would never
-    /// see the lifecycle service in that order and silently drop the twelve
-    /// Studio tools from <c>tools/list</c>. The tools must be registered
-    /// unconditionally and resolve <c>IStudioPackageLifecycleService</c> per
-    /// request instead, so registration order never matters.
-    /// </summary>
     [UnitTest]
     public void AddMcpDataAccessSurface_RegistersStudioTools_EvenWhenLifecycleServiceIsRegisteredAfter()
     {
@@ -114,11 +94,6 @@ public sealed partial class McpServiceCollectionExtensionsTests
             + "because they resolve the scoped lifecycle service per-request rather than via constructor injection");
     }
 
-    /// <summary>
-    /// Companion to the order-independence test above: the tools must also be
-    /// registered when the lifecycle service is composed FIRST (today's actual
-    /// order is irrelevant to correctness either way).
-    /// </summary>
     [UnitTest]
     public void AddMcpDataAccessSurface_RegistersStudioTools_WhenLifecycleServiceIsRegisteredFirst()
     {
@@ -129,20 +104,6 @@ public sealed partial class McpServiceCollectionExtensionsTests
         RegisteredToolHandlers(services).Should().Contain(typeof(CreateStudioDraftTool));
     }
 
-    /// <summary>
-    /// Regression test for PR #3016 review (P2): the Studio tool descriptors
-    /// are registered Singleton (like every other <c>/mcp</c> tool), while
-    /// <c>AddStudioPackageLifecycle</c> registers <c>IStudioPackageLifecycleService</c>
-    /// and <c>IStudioPackageValidator</c> Scoped. Activating each Studio tool
-    /// type from the ROOT provider (exactly what constructing the singleton
-    /// catalog at host startup does) must not throw — which it would if a
-    /// tool's constructor still required a Scoped service instead of
-    /// resolving it per-request from <c>httpContext.RequestServices</c>.
-    /// Scoped to <c>AddStudioPackageLifecycle</c> + the tools' own
-    /// dependencies (not the full <c>AddMcpDataAccessSurface</c> graph, which
-    /// pulls in unrelated collaborators — grounding, package review, etc. —
-    /// this test has no interest in constructing).
-    /// </summary>
     [UnitTest]
     public void StudioToolSingletons_ActivateFromTheRootProvider_WithoutCapturingScopedServices()
     {

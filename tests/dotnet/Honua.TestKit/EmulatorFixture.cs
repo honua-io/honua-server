@@ -7,10 +7,6 @@ using Xunit;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Shared emulator fixture for cloud storage tests.
-/// Manages LocalStack (S3) and Azurite (Azure Blob) containers.
-/// </summary>
 public sealed class EmulatorFixture : IAsyncLifetime
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.

@@ -5,27 +5,8 @@ using System.Text.Json;
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Shared interface-level smoke assertions run against every primary-provider
-/// (DuckDB/MySql) web-app fixture (honua-server#2947). Both providers are primary
-/// <c>DataSource:Provider</c> replacements, so the seeded "parcels" layer
-/// (<see cref="ProviderSmokeGraph.LayerId"/>, see <see cref="ProviderSmokeData"/>) is
-/// reachable through every read/query GA
-/// surface it documents support for: GeoServices FeatureServer, OGC API Features,
-/// OData, and tiles (TileJSON + a raster PNG tile; vector MVT is out of scope —
-/// both providers' <c>FeatureProviderCapabilities.SupportsNativeMvt</c> is
-/// <see langword="false"/> by design, see docs/reference/configuration/data-sources).
-/// </summary>
-/// <remarks>
-/// xunit runs <c>[Fact]</c>-attributed methods declared on a base class once per
-/// concrete subclass, so this base class's test bodies execute independently
-/// against the DuckDB fixture (<see cref="DuckDbProviderSmokeTests"/>) and the
-/// MySql fixture (<see cref="MySqlProviderSmokeTests"/>) — real, separate test
-/// results per provider, not a single shared run.
-/// </remarks>
 public abstract class PrimaryProviderSmokeTestsBase
 {
-    /// <summary>HTTP client bound to the concrete subclass's provider-backed host.</summary>
     protected abstract HttpClient Client { get; }
 
     [IntegrationTest]

@@ -11,13 +11,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// honua-server#5510: an OGC API Features client reading the Records catalogue starts at the
-/// landing page's API definition link and then pages <c>items</c> with a large <c>limit</c>.
-/// OGC API - Records Part 1 <c>/req/core/root-success</c> (inherited from OGC API - Common)
-/// requires the landing page to link the API definition, and OGC API - Features Part 1 §7.15.4
-/// requires a <c>limit</c> above the maximum to be served at the maximum, not rejected.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class RecordsLandingAndLimitTests : IClassFixture<OgcRecordsEndpointTestsFixture>

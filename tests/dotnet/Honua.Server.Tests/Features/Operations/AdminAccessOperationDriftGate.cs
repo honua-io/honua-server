@@ -11,22 +11,14 @@ using Honua.TestKit;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// Schema and exclusion-roster drift gate for the WS2 lane-C access family (#3361). The family is
-/// defined by the Admin OpenAPI tags, not by a snapshot of today's catalog, so a new access
-/// operation, a hand-forked descriptor, an unaudited secret-bearing operation or an unexpected MCP
-/// publication each produce a finding without anyone updating an expected list.
-/// </summary>
 internal static class AdminAccessOperationDriftGate
 {
-    /// <summary>Admin OpenAPI tags that define the lane-C access family.</summary>
     public static readonly IReadOnlySet<string> AccessTags = new HashSet<string>(StringComparer.Ordinal)
     {
         "API Keys", "Roles", "Users", "Tenants", "OIDC", "OAuth Clients", "OAuth Scopes",
         "Rate Limits", "Field Mask Policies", "RLS Policies",
     };
 
-    /// <summary>One Admin OpenAPI operation as the gate reads it from the contract.</summary>
     public sealed record OpenApiOperation(
         string OperationId,
         string Method,
@@ -75,7 +67,6 @@ internal static class AdminAccessOperationDriftGate
         return operations;
     }
 
-    /// <summary>Returns every drift finding; an empty list means the gate passes.</summary>
     public static IReadOnlyList<string> Evaluate(
         JsonElement root,
         IReadOnlyList<AdminAccessOperationCatalog.Definition> definitions,

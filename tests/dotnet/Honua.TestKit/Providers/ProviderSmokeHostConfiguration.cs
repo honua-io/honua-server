@@ -5,14 +5,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.TestKit.Providers;
 
-/// <summary>
-/// Common in-memory app-configuration entries shared by the standalone provider-smoke
-/// fixtures (<see cref="DuckDbProviderWebAppFixture"/>, <see cref="MySqlProviderWebAppFixture"/>).
-/// Mirrors the provider-neutral subset of
-/// <c>Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary</c> —
-/// duplicated rather than shared because that mixin's dictionary hard-codes
-/// <c>ConnectionStrings:*</c> to a Postgres connection string these fixtures never have.
-/// </summary>
 internal static class ProviderSmokeHostConfiguration
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
@@ -21,24 +13,6 @@ internal static class ProviderSmokeHostConfiguration
     private const string TestEncryptionSalt =
         "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
 
-    /// <summary>
-    /// Applies the merged provider-smoke settings to <paramref name="builder"/> via
-    /// <see cref="IWebHostBuilder.UseSetting(string, string?)"/> rather than
-    /// <c>ConfigureAppConfiguration</c>.
-    /// </summary>
-    /// <remarks>
-    /// This distinction matters: <c>Program.cs</c> reads several of these keys (notably
-    /// <c>DataSource:Provider</c>, <c>HONUA_REGISTER_TEST_INFRASTRUCTURE</c>, and
-    /// <c>HONUA_SKIP_MIGRATIONS</c>) directly off <c>builder.Configuration</c> as top-level
-    /// statements executed while the <c>WebApplicationBuilder</c> is still being assembled —
-    /// before <c>WebApplicationFactory</c>'s <c>ConfigureAppConfiguration</c> callback has run.
-    /// <c>UseSetting</c> values, by contrast, are folded into the host's configuration at
-    /// construction time (the same mechanism <c>UseEnvironment</c>/<c>HONUA_DEV_AUTH</c> rely
-    /// on in <c>WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings</c>), so Program.cs's
-    /// early reads see them. A standalone (non-<c>WebAppFixture</c>) provider host that needs
-    /// the composition root to read a non-default <c>DataSource:Provider</c> must use this path,
-    /// not <c>ConfigureAppConfiguration</c>.
-    /// </remarks>
     internal static void ApplySettings(IWebHostBuilder builder, IDictionary<string, string?> providerSettings)
     {
         foreach (var (key, value) in Build(providerSettings))
@@ -47,10 +21,6 @@ internal static class ProviderSmokeHostConfiguration
         }
     }
 
-    /// <summary>
-    /// Builds the merged settings dictionary for a standalone (non-Postgres-primary)
-    /// provider-smoke host, merging in the caller's provider-specific settings.
-    /// </summary>
     private static Dictionary<string, string?> Build(IDictionary<string, string?> providerSettings)
     {
         var attachmentsPath = Path.Join(Directory.GetCurrentDirectory(), "tmp", "attachments");

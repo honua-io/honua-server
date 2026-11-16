@@ -9,11 +9,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Admin;
 
-/// <summary>
-/// Captured source metadata on a publish request is held to the Esri import capture caps
-/// (honua-server#4854 REQ-006): anything the import parsers produce passes, and anything
-/// larger or malformed is rejected with a specific reason.
-/// </summary>
 public sealed class LayerPublishSourceMetadataBoundsTests
 {
     [Trait("Tier", "Fast")]

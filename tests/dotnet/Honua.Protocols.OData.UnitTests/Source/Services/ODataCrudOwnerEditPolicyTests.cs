@@ -22,9 +22,6 @@ using NSubstitute;
 
 namespace Honua.Protocols.OData.UnitTests.Services;
 
-/// <summary>
-/// OData create, update, and delete go through the same owner-edit gate as FeatureServer.
-/// </summary>
 public sealed partial class ODataCrudOwnerEditPolicyTests
 {
     private const int RouteLayerId = 1;

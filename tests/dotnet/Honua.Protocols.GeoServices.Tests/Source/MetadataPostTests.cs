@@ -27,10 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
-/// <summary>
-/// Verifies the GeoServices metadata endpoints accept POST (Esri SDK hydration
-/// path) and return metadata identical to the GET form.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class MetadataPostTests : IClassFixture<WebAppFixture>
