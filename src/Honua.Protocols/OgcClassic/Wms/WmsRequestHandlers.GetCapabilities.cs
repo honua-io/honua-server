@@ -40,8 +40,11 @@ internal static partial class WmsRequestHandlers
         {
             AppendWms111DeclaredDimension(sb, definition, indent);
         }
+    }
 
-        foreach (var definition in definitions)
+    private static void AppendWms111DeclaredExtents(StringBuilder sb, WmsLayer layer, string indent)
+    {
+        foreach (var definition in OgcClassicDeclaredDimensions.ReadWmsDimensions(layer.Resource))
         {
             AppendWms111DeclaredExtent(sb, definition, indent);
         }
@@ -490,13 +493,13 @@ internal static partial class WmsRequestHandlers
             var layerExtent = prepared.Extent ?? rootExtent;
             await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ") { IsWms111 = isWms111, DeclaredCrs = crsNames }, context).ConfigureAwait(false);
 
-            // Dimensions declared in resource metadata come first, then the
-            // data-derived time dimension for layers that did not declare one.
             if (isWms111)
                 AppendWms111DeclaredDimensions(sb, layer, "        ");
             else
                 AppendWmsDeclaredDimensions(sb, layer, "        ");
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, prepared.TemporalRanges);
+            if (isWms111)
+                AppendWms111DeclaredExtents(sb, layer, "        ");
 
             var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, service);
             var metadataLink = governance.Links.FirstOrDefault(link =>

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
@@ -28,6 +29,34 @@ public sealed class WmsDeclaredDimensionTests : IAsyncLifetime
 
     private static string GetMapQuery(string time)
         => $"REQUEST=GetMap&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME={time}";
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities111_DeclaredElevationAndDerivedTime_OrdersDimensionsBeforeExtents()
+    {
+        _fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsElevation);
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "timestamp" });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var layer = XDocument.Parse(content).Descendants("Layer")
+            .Single(element => element.Element("Name")?.Value == WebAppFixture.TestLayerId.ToString());
+        var dimensions = layer.Elements("Dimension").ToArray();
+        var extents = layer.Elements("Extent").ToArray();
+
+        dimensions.Select(element => element.Attribute("name")?.Value).Should().BeEquivalentTo("elevation", "time");
+        extents.Select(element => element.Attribute("name")?.Value).Should().BeEquivalentTo("elevation", "time");
+        layer.Elements().Where(element => element.Name.LocalName is "Dimension" or "Extent")
+            .Select(element => element.Name.LocalName)
+            .Should().Equal("Dimension", "Dimension", "Extent", "Extent");
+        extents.Single(element => element.Attribute("name")?.Value == "time").Value.Should().EndWith("/0");
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
