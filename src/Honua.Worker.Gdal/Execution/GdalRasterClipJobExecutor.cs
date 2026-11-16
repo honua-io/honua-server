@@ -126,6 +126,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
             // All three second segments are fixed relative literal filenames, so
             // they can never be rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
             var cutlinePath = Path.Join(workspace, "cutline.geojson");
             var outputPath = Path.Join(workspace, "output.tif");
             var warpedPath = Path.Join(workspace, "warped.tif");

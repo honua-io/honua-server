@@ -249,7 +249,7 @@ internal static partial class ServiceCollectionExtensions
         services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
-        services.AddKeyedScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres", (provider, _) =>
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(provider =>
             new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
 

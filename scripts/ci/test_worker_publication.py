@@ -135,7 +135,8 @@ class WorkerPublicationTests(unittest.TestCase):
                      "github.repository == 'honua-io/honua-server'", "github.ref == 'refs/heads/trunk'",
                      "needs.build-and-scan.result == 'success'", "needs.publish-sarif.result == 'success'"):
             self.assertIn(term, publish["if"])
-        self.assertEqual(["build-and-scan", "publish-sarif"], publish["needs"])
+        self.assertEqual(["authorize-publish", "build-and-scan", "publish-sarif"], publish["needs"])
+        self.assertEqual("./.github/workflows/publish-authorization.yml", jobs["authorize-publish"]["uses"])
         self.assertNotIn("id-token", workflow["permissions"])
         self.assertNotIn("attestations", workflow["permissions"])
         self.assertEqual("write", publish["permissions"]["id-token"])

@@ -217,6 +217,9 @@ var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
     builder.Environment.IsProduction());
+// Responses do not name the web server implementation.
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(
+    options => options.AddServerHeader = false);
 var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
@@ -335,9 +338,8 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
 {
     // The key ring lives in the system database so that every node unprotects what any node
     // protected: an operation secret consumed on another node is deleted before it is
-    // unprotected. Native AOT cannot run EncryptedXml, so there each key is wrapped with the
-    // certificate using RSA-OAEP and AES-GCM instead.
-    var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
+    // unprotected. Both runtimes wrap new keys with the certificate using RSA-OAEP and AES-GCM,
+    // so a JIT and a native AOT node (or an upgrade or rollback between them) read one ring.
     builder.Services.AddSingleton(static provider => new PostgresDataProtectionKeyRepository(
         provider.GetRequiredService<Npgsql.NpgsqlDataSource>(),
         provider.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>()));
@@ -379,14 +381,7 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
         new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
 
-    if (nativeAot)
-    {
-        keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
-    }
-    else
-    {
-        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
-    }
+    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
@@ -1029,7 +1024,7 @@ builder.Services.AddAdminAccessOperations();
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
 #endif
-builder.Services.AddAdminRealtime(builder.Configuration);
+builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
@@ -1848,7 +1843,7 @@ app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 app.MapConsoleJobEndpoints();
 app.MapShareAdminEndpoints();
-app.MapAdminRealtimeHub();
+app.MapAdminLive();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();

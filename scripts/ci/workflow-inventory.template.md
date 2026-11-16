@@ -612,6 +612,7 @@ candidate context.
 | `deploy.yml` | Build & Publish Images | `push` (`v*` tags), `workflow_dispatch` | Multi-arch (and AOT) images. After `publish-manifests`, `dispatch-geobench` sends a `repository_dispatch` to `honua-io/geobench` with the tag and image ref; skips with a notice when `GEOBENCH_DISPATCH_TOKEN` is absent (#1596). Every leg pushes its candidate by digest only; on `v*` tags `scripts/ci/trivy-release-gate.sh` scans that digest before any per-architecture tag is promoted, so a finding stops that leg's tags and all multi-arch manifests (`publish-manifests`), and the geobench dispatch; other legs (`fail-fast: false`) still promote their own scanned digests. The gate blocks only HIGH/CRITICAL findings with an upstream fix (unfixed ones are ignored by design, unlike the `release-bundle.yml` container scan) and honours `.trivyignore-release`; Trivy is pinned by digest. |
 | `deploy-platform-images.yml` | Build & Publish Platform Images | `push` (`v*` tags), weekly `schedule`, `workflow_dispatch` | Platform image deployment. Every publishing leg pushes its candidate by digest only; on `v*` tag pushes `scripts/ci/trivy-release-gate.sh` scans that digest before any per-architecture tag is promoted, so a finding stops that leg's tags and all multi-arch manifests (`publish-manifests`); other legs (`fail-fast: false`) still promote their own scanned digests. `scan_only` dispatches stay advisory. The gate blocks only HIGH/CRITICAL findings with an upstream fix (unfixed ones are ignored by design, unlike the `release-bundle.yml` container scan) and honours `.trivyignore-release`; Trivy is pinned by digest. |
 | `nuget-publish.yml` | Publish Honua.Core Package | `push` (`honua-core-v*`, `v*.*.*`), `workflow_dispatch` | Release-only publishing. |
+| `publish-authorization.yml` | Publish authorization | `workflow_call` | Called first by every publishing workflow: fails unless the run is on `refs/heads/trunk` exactly or on a tag matching the caller's literal globs (no `/`), before any registry login. `scripts/ci/check-publish-authorization.py` (CI router validation) requires every publishing job to depend on it and to name an environment; exceptions and their reasons are in `scripts/ci/publish-authorization-exceptions.json`. |
 | `release-bundle.yml` | Release Bundle (Compatibility Train) | `workflow_dispatch` | Foundation-first release-train orchestrator: one Native AOT RC image, integration/conformance and Esri-SDK evidence against that exact digest, every SDK cut against the same candidate (dry-run by default), then the release-train manifest plus the honua-devops validator. |
 | `release-security-assets.yml` | Release Security Assets | `workflow_dispatch` (trunk only) | Per published release image: binds the digest, writes the release OpenVEX document, SPDX SBOM, Trivy verdict with VEX applied and the attestation-free platform manifest reference as one artifact, plus the `eng/security/supported-images.json` change that registers the digest (committed by the release owner). See `docs/internal/security/security-patch-releases.md`. |
 | `rc-channel-tag.yml` | Release candidate channel tag | `workflow_dispatch` (trunk only) | Moves `ghcr.io/honua-io/honua-server:2026.1-rc` to the one honua-server image pinned by the label's release record: a minted honua-release `nightly-lock/<label>` whose `platform-lock.json` verifies with cosign as honua-release's trunk `nightly-certification.yml`, or else the `rc-release.yml` pre-release whose attached `platform-manifest.yaml` digest its notes also name (owner decision 17, honua-release#376). Moves no other channel. |
@@ -1103,3 +1104,110 @@ needed to verify it.
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### GPServer default application lifetime
+
+`GPServerEndpointTests` shares one seeded application through a class fixture.
+The sequential default-host cases clear their in-memory job store before use,
+so job listings and persisted-plan checks retain per-case state. Cases that
+replace authorization, metadata or geoprocessing services own separate hosts.
+All assertions and method filters remain unchanged; the GPServer/NAServer
+shards still run on selected PRs and full trunk runs.
+
+Paired build-host class runs passed the same 71/71 cases. VSTest reported
+342 seconds before and 132 seconds after (210 seconds saved). The wider TRX
+start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 seconds
+(3.40 test-run runner-minutes). Each used one test process with the same filter.
+No runner, workflow, required check, aggregate dependency or shard definition
+changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+### Admin authentication default application lifetime
+
+`AdminAuthEndpointsTests` initializes its default `WebAppFixture` only when a
+case requests its default client. Cases that build a separately configured OIDC
+or client-certificate host no longer start an unused default host first. Each
+case retains its own application, database schema, authentication configuration
+and assertions. Of the current 47 discovered test methods (64 cases), 32
+methods (49 cases) do not use the default application.
+
+All cases remain in the Server Features Admin Authentication and Credentials
+shard on selected PR runs and twice-daily full trunk runs. Runner count, required
+check names, aggregate dependencies, workflows and shard definitions are unchanged.
+
+Paired Release build-host runs passed the identical 64 cases with one test
+process each. VSTest reported execution fell from 437 to 306 seconds, saving
+131 seconds (2.18 execution runner-minutes). The wider TRX start-to-finish
+interval fell from 446.067028 to 314.676740 seconds, saving 131.390288 seconds
+(2.19 test-run runner-minutes). Queue and build time are excluded. Full-shard
+job savings remain unmeasured: the shard also includes
+`OperatorBearerTokenServiceTests` and CI setup.
+
+### ImageServer raw pixel host lifetime
+
+`ImageServerRawPixelExportTests` retains the default shared web host through a
+class-scoped `WebAppFixture`. Each case still creates and disposes its own fixture,
+client and schema, resets the raster samples, and holds the schema-mutation lock
+through every request. This avoids rebuilding the default web host between cases
+without sharing case data or changing assertions.
+
+Paired full-class build-host runs passed the same 45 cases with no skips. VSTest
+execution fell from 230 to 20 seconds, saving 210 seconds (3.50 execution
+runner-minutes). The wider TRX start-to-finish interval fell from 235.864591 to
+33.210444 seconds, saving 202.654147 seconds (3.38 test-run runner-minutes).
+Each run used one test process; full CI shard job savings remain unmeasured.
+The selected PR shard and twice-daily full trunk runs retain all cases and their
+existing budgets.
+No workflow, shard selection, runner count, required check or aggregate dependency
+changes are made.
+
+### ImageServer mosaic default host lifetime
+
+`ImageServerMosaicIntegrationTests` retains the default web host through a
+class-scoped `WebAppFixture`. Each case still creates and disposes its own fixture
+and schema, and holds the schema-mutation lock through its raster seed and
+requests. Explicit license configurations retain private hosts. The warm raster
+query performance assertion and all response assertions remain unchanged.
+All cases remain in selected PR raster rendering shards and twice-daily full
+trunk runs, with no workflow, shard, runner count, required check or aggregate
+dependency changes.
+
+Paired build-host runs passed the same 20 cases with no failures or skips.
+VSTest execution fell from 115 to 46 seconds (69 seconds, or 1.15 execution
+runner-minutes saved). The fixture-inclusive TRX interval fell from 133.049096
+to 73.394077 seconds (59.655019 seconds saved). Both runs used one test
+process; complete CI shard/job savings remain unmeasured.
+
+### Secure connection endpoint test host reuse
+
+`SecureConnectionEndpointsTests` lazily starts one class-owned application for
+its unchanged default admin authentication and database seed. Each case keeps
+its own authenticated client and uses unique connection names and IDs. Cases
+with substituted registries, connection drivers, audit logs, encryption failures
+or host-allowlist settings retain their private application hosts. No host is
+started when a shard selects only those custom cases. Assertions, test selection,
+parallelism and required checks remain unchanged.
+
+A paired build-host run passed the exact same 56 cases with zero skips in
+306 seconds before and 181 seconds after: 125 seconds (2.08 runner-minutes)
+saved with one test process in each run. TRX test-run duration fell from
+317.974 to 193.183 seconds. The 21 default-host case bodies took 103.834 versus
+8.437 seconds; the 35 private-host case bodies took 193.064 versus 172.680
+seconds. Ambient variation affects both groups, so the complete duration change
+is an observation rather than an attribution to fixture reuse alone. These are
+class execution measurements, excluding compilation, admission and copyback.
+
+A separate pair using the complete existing Platform and Connections shard
+filter passed identical 91-case/class/method/outcome multisets with zero skips.
+Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
+(1.58 runner-minutes); fixture-inclusive TRX duration fell from 470.055 to
+376.298 seconds. The other three classes are unchanged. This overlaps the
+class measurement and is not added to it. Complete CI-job setup and build
+duration remain unmeasured.
+
+### PrintingTools endpoint application lifetime
+
+`PrintingToolsEndpointTests` keeps one default application for the class. Each case creates its own admin client, as the per-case application did. Jobs are addressed by generated id, and every assertion stays. The class remains in Server Features Spec Printing and Static Maps 3. No runner count, required check name, required aggregate dependency, workflow, or shard definition changes.
+
+A paired build-host run passed the same 22 cases with zero skips, one process each. VSTest case time was 1 minute 41 seconds before and 2 seconds after, because the one application start is now class-fixture time. Fixture-inclusive TRX duration fell from 110.869 to 24.444 seconds, saving 86.424 seconds (1.44 test-run runner-minutes). Compilation, admission and copyback are excluded.
+
+The whole Spec Printing and Static Maps 3 filter passed the same 142 cases with zero skips in both runs. VSTest reported 4 minutes 29 seconds before and 2 minutes 7 seconds after. TRX wall time fell from 281.6 to 152.9 seconds, saving 128.7 seconds (2.15 runner-minutes) per shard run.

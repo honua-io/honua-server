@@ -73,14 +73,14 @@ internal sealed partial class ProcessGdalCommandRunner(
         // (VRT, WMS, …) and — for a pure local-scratch invocation — neutralize the
         // remote virtual-filesystem handlers. Applied by overwriting the inherited
         // environment so a value set on the worker process cannot weaken the policy.
-        var referencesRemoteVsi = GdalRuntimeHardening.ArgumentsReferenceVsi(arguments);
+        var remoteInputs = GdalRemoteInputScope.Classify(arguments);
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            referencesRemoteVsi,
+            remoteInputs.Remote,
             s3Options.Value,
             azureOptions.Value,
-            GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
-            GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
+            remoteInputs.S3,
+            remoteInputs.Azure);
         ApplyHardenedEnvironment(
             startInfo.Environment,
             hardeningEnv,

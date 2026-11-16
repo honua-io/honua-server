@@ -42,6 +42,7 @@ class HygieneCancellationTests(unittest.TestCase):
         self.assertIn('retired-cache-mentions', self.job['needs'])
         self.assertIn('generated-file-ownership', self.job['needs'])
         self.assertIn('shard-identities', self.job['needs'])
+        self.assertIn('surface-vocabulary', self.job['needs'])
         self.assertIn('shared-hygiene', self.job['needs'])
         self.assertEqual(len(self.job['steps'][0]['env']), len(self.job['needs']))
 
