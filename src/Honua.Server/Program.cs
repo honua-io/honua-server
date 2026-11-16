@@ -208,7 +208,7 @@ var serveApiDocs = builder.Configuration.GetValue(
 // material.
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
-    builder.Environment.IsProduction());
+    builder.Environment.EnvironmentName);
 // Responses do not name the web server implementation.
 builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(
     options => options.AddServerHeader = false);
