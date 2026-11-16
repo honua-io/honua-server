@@ -1081,9 +1081,28 @@ internal static partial class ServiceCollectionExtensions
             .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName));
 
         // Register database compatibility checker for PostGIS preflight validation
-        services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
+        services.AddSingleton<IDatabaseCompatibilityChecker>(provider =>
+            new PostgresDatabaseCompatibilityChecker(
+                provider.GetRequiredService<ILogger<PostgresDatabaseCompatibilityChecker>>(),
+                (connectionString, cancellationToken) => CreateCompatibilityConnectionAsync(provider, connectionString, cancellationToken)));
 
         return services;
+    }
+
+    private static async ValueTask<NpgsqlConnection> CreateCompatibilityConnectionAsync(
+        IServiceProvider provider, string connectionString, CancellationToken cancellationToken)
+    {
+        // Migrate-only composition has no serving pool. Explicit alternate targets retain their
+        // connection string; only the resolved serving configuration shares its managed budget.
+        var cache = provider.GetService<PostgresConnectionStringCache>();
+        if (cache is not null && string.Equals(connectionString,
+                await cache.ResolvedConnectionStringTask.WaitAsync(cancellationToken).ConfigureAwait(false),
+                StringComparison.Ordinal))
+        {
+            return provider.GetRequiredService<NpgsqlDataSource>().CreateConnection();
+        }
+
+        return new NpgsqlConnection(connectionString);
     }
 
     private static void AddAttachmentUploadServices(

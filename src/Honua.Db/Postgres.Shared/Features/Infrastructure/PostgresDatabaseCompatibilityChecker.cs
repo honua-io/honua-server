@@ -17,9 +17,13 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
     private readonly ILogger<PostgresDatabaseCompatibilityChecker> _logger;
 
-    public PostgresDatabaseCompatibilityChecker(ILogger<PostgresDatabaseCompatibilityChecker> logger)
+    private readonly Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? _connectionFactory;
+
+    public PostgresDatabaseCompatibilityChecker(ILogger<PostgresDatabaseCompatibilityChecker> logger,
+        Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? connectionFactory = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _connectionFactory = connectionFactory;
     }
 
     public async Task<DatabaseCompatibilityResult> CheckCompatibilityAsync(
@@ -41,7 +45,9 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
         try
         {
-            await using var connection = new NpgsqlConnection(connectionString);
+            await using var connection = _connectionFactory is null
+                ? new NpgsqlConnection(connectionString)
+                : await _connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // 1. Get engine version
