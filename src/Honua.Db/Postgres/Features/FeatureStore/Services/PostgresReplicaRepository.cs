@@ -10,9 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Postgres-backed persistent storage for replica state
-/// </summary>
 internal sealed class PostgresReplicaRepository : IReplicaRepository
 {
     // Shared with tests/seed/demo-stac-imagery-v1.sql. Key 1 serializes the

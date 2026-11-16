@@ -8,14 +8,6 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Postgres-backed store for isolated shadow-topology rebuild attempts (#2718) and their
-/// multi-node fencing lease (#2720), over the tables provisioned by migration 087. Every
-/// mutation that must be fenced (checkpoint write, completion, failure) verifies the
-/// caller's fencing token inside a single atomic SQL statement rather than a separate
-/// check-then-write round trip, so a stale writer's mutation can never slip in between a
-/// verification read and the write it gates.
-/// </summary>
 internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebuildStore
 {
     private const string AttemptColumns =
@@ -29,13 +21,9 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresNetworkTopologyRebuildStore"/> class.
-    /// </summary>
     public PostgresNetworkTopologyRebuildStore(IDatabaseSessionFactory sessionFactory)
         => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyRebuildAttempt> CreateAttemptAsync(
         string datasetId,
         long generation,
@@ -172,7 +160,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return saved;
     }
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyRebuildAttempt?> GetAttemptAsync(
         string datasetId,
         long generation,
@@ -190,7 +177,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyRebuildAttempt?> GetLatestAttemptAsync(
         string datasetId,
         long generation,
@@ -211,7 +197,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<NetworkTopologyRebuildAttempt>> ListExpiredLeasesAsync(
         DateTimeOffset asOf,
         CancellationToken cancellationToken = default)
@@ -238,7 +223,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyRebuildAttempt?> TryAcquireOrTakeoverLeaseAsync(
         string datasetId,
         long generation,
@@ -279,7 +263,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryHeartbeatAsync(
         string datasetId,
         long generation,
@@ -313,7 +296,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return affected > 0;
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryWriteCheckpointAsync(
         string datasetId,
         long generation,
@@ -353,7 +335,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return affected > 0;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<NetworkTopologyRebuildCheckpoint>> ListCheckpointsAsync(
         string datasetId,
         long generation,
@@ -386,7 +367,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryCompleteAsync(
         string datasetId,
         long generation,
@@ -443,7 +423,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return true;
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryFailAsync(
         string datasetId,
         long generation,
@@ -492,7 +471,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return true;
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryAbandonUnclaimedAttemptAsync(
         string datasetId,
         long generation,
@@ -546,7 +524,6 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         return true;
     }
 
-    /// <inheritdoc />
     public async Task CleanupOrphanShadowArtifactsAsync(
         string datasetId,
         long generation,

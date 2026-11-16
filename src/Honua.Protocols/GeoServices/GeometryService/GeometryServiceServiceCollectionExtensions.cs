@@ -14,6 +14,7 @@ internal static class GeometryServiceServiceCollectionExtensions
     {
         services.TryAddScoped<SpatialReferenceResolver>();
         services.AddScoped<GeometryServiceHandler>();
+        services.TryAddSingleton<GeometryServiceAdmission>();
 
         // Shared Esri datum-transformation catalog (WKID -> PROJ pipeline) used by the
         // project operation. TryAdd keeps a single instance shared with the FeatureServer

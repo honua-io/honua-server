@@ -357,6 +357,12 @@
       "path": "/oauth-scopes"
     },
     {
+      "operationId": "deleteAgentAuthorityCeiling",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/agent-authority"
+    },
+    {
       "operationId": "deleteAlertRule",
       "catalogOperationId": null,
       "method": "DELETE",
@@ -673,6 +679,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/version"
+    },
+    {
+      "operationId": "getAgentAuthorityCeiling",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/agent-authority"
     },
     {
       "operationId": "getAlertRule",
@@ -2209,6 +2221,12 @@
       "catalogOperationId": "admin.layer.spatial.set",
       "method": "PUT",
       "path": "/metadata/layers/{storageLayerId}/spatial"
+    },
+    {
+      "operationId": "setAgentAuthorityCeiling",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/agent-authority"
     },
     {
       "operationId": "setAlertRuleEnabled",

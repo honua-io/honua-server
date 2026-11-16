@@ -219,9 +219,9 @@ internal static class ConsoleContentEndpoints
             ConsoleEndpointsLog.ContentItemCreated(logger, stored.Id, stored.ItemType);
             return TypedResults.Created($"/api/v1/console/content/{stored.Id}", ApiResponse<ConsoleContentItem>.CreateSuccess(withActions));
         }
-        catch (InvalidOperationException ioe)
+        catch (ConsoleContentIdConflictException conflict)
         {
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ioe.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(conflict.Message));
         }
         catch (OperationCanceledException)
         {

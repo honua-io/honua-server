@@ -72,8 +72,9 @@ observe that same proposal. Do not give it an approval API key or ask it to
 impersonate your Console session.
 
 An MCP client that supports URL-mode elicitation can take you straight to the
-proposal: when the server sets `Mcp:ApprovalConsoleUrl`, the client offers to
-open the Console approval page for that proposal. Opening it is not approval.
+proposal: when the server sets `Mcp:ApprovalConsoleUrl` (the quickstart with
+Console sets it), the client offers to open the Console approval page for that
+proposal. Opening it is not approval.
 Review and decide in Console as above, and the agent then reads the result. An
 MCP client's local tool-consent dialog is never proof of a Honua approval. See
 [Clarification and approval in the client](../connect/ai-agents-mcp.md#clarification-and-approval-in-the-client).

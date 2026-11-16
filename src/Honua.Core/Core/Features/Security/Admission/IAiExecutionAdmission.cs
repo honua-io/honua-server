@@ -39,6 +39,7 @@ public sealed class AiAdmissionException : Exception
             or "stopped" or "recovering" or "budget_exceeded" or "concurrency_exceeded"
             or "financial_unsupported" or "financial_basis_invalid" or "financial_basis_expired"
             or "financial_budget_exceeded" or "financial_ledger_full" or "financial_stop"
+            or "financial_monthly_actor_exceeded"
             or "ledger_full" or "disclosure_denied" or "duplicate_attempt" or "duplicate_invocation" or "invalidated"
             ? code : "unavailable";
         RetryAfterSeconds = Math.Clamp(retryAfterSeconds, 1, AiAdmissionPolicy.MaximumWindowSeconds);

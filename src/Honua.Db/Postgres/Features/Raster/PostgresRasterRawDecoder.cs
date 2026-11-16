@@ -6,7 +6,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>Reads in-db PostGIS raster WKB into lossless, little-endian planar samples.</summary>
 internal static class PostgresRasterRawDecoder
 {
     private const int HeaderLength = 61;

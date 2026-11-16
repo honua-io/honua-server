@@ -11,9 +11,6 @@ using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Core metadata endpoints for OGC API Features (landing page, conformance, OpenAPI)
-/// </summary>
 internal static class CoreEndpoints
 {
     private const string GmlApplicationSchema = """
@@ -44,9 +41,6 @@ internal static class CoreEndpoints
 </xs:schema>
 """;
 
-    /// <summary>
-    /// Maps core metadata endpoints for OGC API Features
-    /// </summary>
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/ogc/features", HandleGetLandingPage)
@@ -119,9 +113,6 @@ internal static class CoreEndpoints
     private static IResult HandleGetGmlApplicationSchema()
         => Results.Text(GmlApplicationSchema, "application/xml");
 
-    /// <summary>
-    /// Handles the OGC API Features landing page request
-    /// </summary>
     private static IResult HandleGetLandingPage(
         HttpContext context,
         string? f,
@@ -205,9 +196,6 @@ internal static class CoreEndpoints
         return OgcCommonUtilities.FormatMetadataResponse(landingPage, OgcJsonContext.Default.LandingPage, outputFormat, "Landing page");
     }
 
-    /// <summary>
-    /// Handles the OGC API Features conformance declaration request
-    /// </summary>
     private static IResult HandleGetConformance(
         HttpContext context,
         string? f,
@@ -270,9 +258,6 @@ internal static class CoreEndpoints
         return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
     }
 
-    /// <summary>
-    /// Handles the OpenAPI 3.0 specification request using pre-generated static content for AOT compatibility
-    /// </summary>
     private static async Task<IResult> HandleGetOpenApiSpec(
         HttpContext context,
         string? f,

@@ -6,14 +6,6 @@ using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Import.FileImport.Durable;
 
-/// <summary>
-/// The <see cref="Honua.Core.Features.ControlPlane.Domain.ExecutionJobSpec.Parameters"/> contract
-/// of a <c>FileImport</c> execution job (honua-server#5916). The accepting host writes it; the
-/// worker reads it back into the <see cref="ImportRequest"/> the in-process path would have run.
-/// The source is either the staged shared file (<c>import.cloud_file_id</c>) or a customer
-/// object pinned by ETag (<c>import.object_store_uri</c>). A worker on another machine cannot
-/// read the accepting host's local disk.
-/// </summary>
 internal static class FileImportJobParameters
 {
     public const string CloudFileId = "import.cloud_file_id";
@@ -38,23 +30,16 @@ internal static class FileImportJobParameters
     public const string AuditId = "import.audit_id";
     public const string ProposalId = "import.proposal_id";
 
-    /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
 
-    /// <summary>ETag pinned by the accepting host's HeadObject. The worker sends it as <c>If-Match</c>.</summary>
     public const string ObjectStoreETag = "import.object_store_etag";
 
-    /// <summary>Allow-listed role ARN, when the worker must assume a role. Never an external id.</summary>
     public const string ObjectStoreRoleArn = "import.object_store_role_arn";
 
-    /// <summary>Content type observed by HeadObject.</summary>
     public const string ObjectStoreContentType = "import.object_store_content_type";
 
-    /// <summary>The runner the accepting host routed the job to (<c>batch</c> or <c>in-process</c>).</summary>
     public const string Runner = "import.runner";
 
-    /// <summary>Projects a staged or customer-object import request onto job parameters.</summary>
-    /// <exception cref="InvalidOperationException">The request has no shared file and no pinned object.</exception>
     public static Dictionary<string, string> Build(ImportRequest request, long fileSizeBytes)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -113,7 +98,6 @@ internal static class FileImportJobParameters
         return parameters;
     }
 
-    /// <summary>Reads the import request back from job parameters.</summary>
     public static bool TryParse(
         IReadOnlyDictionary<string, string> parameters,
         out ImportRequest? request,

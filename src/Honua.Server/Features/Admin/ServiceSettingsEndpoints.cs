@@ -16,9 +16,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for managing per-service protocol toggles and MapServer settings.
-/// </summary>
 internal static partial class ServiceSettingsEndpoints
 {
     private const int DefaultMapServerMaxImageWidth = 4096;
@@ -29,9 +26,6 @@ internal static partial class ServiceSettingsEndpoints
     private const string DefaultMapServerFormat = "png";
     private const int DefaultMapServerMaxFeaturesPerLayer = 10_000;
 
-    /// <summary>
-    /// Log category for service settings endpoints.
-    /// </summary>
     internal sealed class ServiceSettingsEndpointsLog;
 
     public static void MapServiceSettingsEndpoints(this IEndpointRouteBuilder endpoints)
@@ -478,19 +472,6 @@ internal static partial class ServiceSettingsEndpoints
         }
     }
 
-    /// <summary>
-    /// Looks up every V2 service whose <c>Metadata.Name</c> matches
-    /// <paramref name="serviceName"/> (case-insensitive). Multiple V2 services may share
-    /// a display name when the same logical service is exposed under multiple protocols
-    /// (FeatureServer / MapServer / Stac all named "test"); the v1 admin contract was
-    /// service-name-keyed, so we collapse those entries the same way at response time.
-    /// </summary>
-    /// <summary>
-    /// Resolves the graph snapshot used to look up <paramref name="serviceName"/>. The cached read
-    /// path is tried first; on a miss the persisted store is consulted before answering 404, because
-    /// the cached snapshot can predate a write that just committed (on another node, or within the
-    /// snapshot TTL if the cross-node invalidation message was lost). A hit costs nothing extra.
-    /// </summary>
     private static async ValueTask<MetadataV2GraphSnapshot> GetSnapshotForServiceAsync(
         IMetadataV2GraphProvider graphProvider,
         IMetadataV2GraphStore? graphStore,
@@ -792,13 +773,6 @@ internal static partial class ServiceSettingsEndpoints
         }
     }
 
-    /// <summary>
-    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to the
-    /// uniquely resolved canonical resource, and persists the result. The immutable
-    /// resource id is carried across optimistic-concurrency retries, and the current
-    /// FeatureServer publication is revalidated before each attempt so a relink cannot
-    /// redirect or orphan the patch.
-    /// </summary>
     private static async Task<(MetadataV2Object? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
         string serviceName,

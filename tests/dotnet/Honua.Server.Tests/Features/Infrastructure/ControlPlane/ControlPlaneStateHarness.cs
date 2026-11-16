@@ -38,6 +38,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
         "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
         "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql",
+        "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql",
         "Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql"
     ];
 
@@ -114,6 +115,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
     public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);
+    public JobStoreDatabase Database => _jobs.Database;
     public PostgresOidcProviderStore CreateOidcStore() => new(CreateConfigurationDocuments());
     public PostgresRateLimitPolicyStore CreateRateStore() => new(CreateConfigurationDocuments());
     public PostgresClientCertificateTrustStore CreateTrustStore() => new(CreateConfigurationDocuments());

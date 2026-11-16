@@ -11,11 +11,6 @@ namespace Honua.Db.Postgres.Features.Migration;
 internal sealed partial class GeoservicesImportService
 {
 
-    /// <summary>
-    /// Single-layer import has not run the separate relationship-apply stage. Retain every
-    /// source declaration as an explicit omission, including malformed/null declarations,
-    /// instead of silently reporting that a row transfer migrated its dependencies.
-    /// </summary>
     internal static MigrationRelationshipApplyOutcome[] DescribeUnappliedSourceRelationships(
         GeoservicesLayerInfo layerInfo, int? publishedLayerId)
         => layerInfo.Relationships.Select((relationship, index) =>
@@ -39,7 +34,6 @@ internal sealed partial class GeoservicesImportService
             };
         }).ToArray();
 
-    /// <inheritdoc />
     public async Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
         MigrationManifestArtifact manifest,
         IReadOnlyDictionary<string, int> publishedLayerMap,

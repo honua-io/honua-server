@@ -7,9 +7,9 @@
 > decision below was recorded in ADR-0074: the branch trigger pointed at a
 > merged experiment branch and nothing else could reach the lane. The measured
 > result and the decision it produced are unchanged. Later producer designs are
-> measured by `server-test-reuse-benchmark.yml` and
-> `server-test-prebuild-benchmark.yml`, which share
-> `scripts/ci/benchmark-server-test-transfer.sh`.
+> measured by `server-test-reuse-benchmark.yml`, which uses
+> `scripts/ci/benchmark-server-test-transfer.sh`; the server-test prebuild
+> experiment was retired under #7880.
 
 Issue #2722 is the decision gate between the bounded project payload contract
 in #2721 and any production orchestration change in #2708. The benchmark is an
