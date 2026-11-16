@@ -21,7 +21,14 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
         if (authority is null)
             return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: "Folder operation replay authorization failed. Submit a fresh proposal.");
         var transportPrincipal = context.User;
-        context.Features.Set(new FolderReplayServicePrincipal(authority.RequesterPrincipal, authority.Proposal));
+        context.Features.Set(new FolderReplayServicePrincipal(authority.RequesterPrincipal, authority.Proposal,
+            new FolderReplayAdmission
+            {
+                Principal = transportPrincipal, OperationId = authority.Proposal.OperationId!,
+                ProposalId = context.Request.Headers[OperationLineageHeaders.ProposalId].ToString(),
+                OperationInstanceId = context.Request.Headers[OperationLineageHeaders.OperationInstanceId].ToString(),
+                TenantId = context.RequestServices.GetRequiredService<ITenantContext>().TenantId
+            }));
         context.User = authority.OperatorPrincipal;
         try
         {
@@ -51,4 +58,5 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
     }
 }
 
-internal sealed record FolderReplayServicePrincipal(ClaimsPrincipal Principal, OperationProposal Proposal);
+internal sealed record FolderReplayServicePrincipal(
+    ClaimsPrincipal Principal, OperationProposal Proposal, FolderReplayAdmission? Admission = null);

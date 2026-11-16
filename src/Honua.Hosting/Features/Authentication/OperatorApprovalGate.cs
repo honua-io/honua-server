@@ -84,16 +84,22 @@ internal sealed class OperatorApprovalGate(
             ApprovalReasonCodes = approvalReasonCodes ?? Array.Empty<string>()
         };
 
-        var approval = CheckApproval(context.User, request);
-        if (!approval.IsRequired) return null;
+        return CreateApprovalDeniedResult(context, request, CheckApproval(context.User, request));
+    }
 
+    internal IResult? CreateApprovalDeniedResult(
+        HttpContext context, OperatorAuthorizationRequest request, ApprovalRequirement approval)
+    {
+        if (!approval.IsRequired) return null;
+        var resourceType = request.ResourceType;
+        var operation = request.Operation;
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? context.User.FindFirstValue("sub");
 
         OperatorAuthorizationLog.ApprovalGateDenied(
             logger, userId, resourceType, operation, approval.PolicyRef);
 
-        if (isDestructive)
+        if (request.IsDestructive)
         {
             OperatorAuthorizationLog.DestructiveActionGated(
                 logger, userId, resourceType, operation, approval.PolicyRef);

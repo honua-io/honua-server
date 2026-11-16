@@ -65,40 +65,23 @@ internal static class FolderEndpoints
     {
         var scopeError = ValidateScope(context);
         if (scopeError is not null) return scopeError;
-        var denied = await AuthorizeMutation(context).ConfigureAwait(false);
-        if (denied is not null) return denied;
-        if (context.Request.Headers.IfMatch.Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers.IfMatch))
-            return FolderMutationFailure.MissingPrecondition.ToResult();
-        var store = context.RequestServices.GetService<IMetadataV2GraphStore>();
-        if (store is null)
-            return FolderMutationFailure.ReadOnlyCatalog.ToResult();
-        try
-        {
-            return await CommitMutationAsync(context, command, store).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (FolderMutationFailure.Handles(exception))
-        {
-            return FolderMutationFailure.From(exception).ToResult();
-        }
-    }
-
-    private static async Task<IResult> CommitMutationAsync(
-        HttpContext context, FolderMutationCommand command, IMetadataV2GraphStore store)
-    {
         var operation = context.GetEndpoint()?.Metadata.GetMetadata<AdminApiOperationCatalog.Definition>()
             ?? throw new InvalidOperationException("Folder mutation is missing its operation definition.");
         if (operation.OperationId != command.OperationId)
             throw new InvalidOperationException("Folder mutation does not match its operation definition.");
-        if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
-            !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
-            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
-        var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
-            return FolderMutationFailure.SnapshotChanged.ToResult();
-        var changed = command.Apply(snapshot.Graph, Tenant(context));
-        var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
-        if (denial is not null) return denial;
-        var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
+        var replay = context.Features.Get<FolderReplayServicePrincipal>();
+        var execution = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
+        {
+            Services = context.RequestServices, Principal = replay?.Admission?.Principal ?? context.User,
+            Command = command,
+            ExpectedEtag = context.Request.Headers.IfMatch.Count == 1 ? context.Request.Headers.IfMatch.ToString() : null,
+            Namespace = context.Request.Query.ContainsKey("namespace") ? context.Request.Query["namespace"].ToString() : null,
+            Replay = replay?.Admission, RequestCache = replay is null ? context.Items : null
+        }, context.RequestAborted).ConfigureAwait(false);
+        if (execution.Failure is not null) return MapFailure(context, execution.Failure);
+        var saved = execution.Saved ?? throw new InvalidOperationException("Folder mutation did not return a saved snapshot.");
+        var changed = execution.Mutation ?? throw new InvalidOperationException("Folder mutation did not return its result.");
+        if (execution.Authorization is not null) MapServiceAuthorization(context, execution.Authorization);
         context.Response.Headers.ETag = saved.Etag;
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations");
         FolderAuditLog.Mutated(logger, operation.OperationId, saved.Graph.Revision);
@@ -109,12 +92,19 @@ internal static class FolderEndpoints
             FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
     }
 
-    private static async Task<IResult?> AuthorizeMutation(HttpContext context)
+    private static IResult MapFailure(HttpContext context, FolderExecutionFailure failure) => failure switch
     {
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var denied = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.Catalog, OperatorOperation.Publish).ConfigureAwait(false);
-        return denied ?? gate.EvaluateApproval(context, OperatorResourceType.Catalog, OperatorOperation.Publish);
-    }
+        FolderExecutionFailure.Replay => Results.Problem(statusCode: 403, detail: FolderApprovalAuthorization.FreshProposalRequired),
+        FolderExecutionFailure.Mutation mutation => mutation.Refusal.ToResult(),
+        FolderExecutionFailure.Authorization authorization => OperatorApprovalGate.CreateAuthorizationDeniedResult(context, authorization.Decision)!,
+        FolderExecutionFailure.Approval approval => context.RequestServices.GetRequiredService<OperatorApprovalGate>()
+            .CreateApprovalDeniedResult(context, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Catalog, Operation = OperatorOperation.Publish
+            }, approval.Requirement)!,
+        FolderExecutionFailure.AffectedServices affected => MapServiceAuthorization(context, affected.Result)!,
+        _ => throw new InvalidOperationException("Unknown folder execution failure.")
+    };
 
     internal static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, FolderMutation mutation)
     {
@@ -127,6 +117,11 @@ internal static class FolderEndpoints
             RequesterAccess = ServiceAccess(context),
             FolderTenant = Tenant(context)
         }, context.RequestAborted).ConfigureAwait(false);
+        return MapServiceAuthorization(context, authorization);
+    }
+
+    private static IResult? MapServiceAuthorization(HttpContext context, FolderAuthorizationResult authorization)
+    {
         foreach (var evaluation in authorization.RequesterEvaluations)
         {
             var denied = AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, evaluation);
