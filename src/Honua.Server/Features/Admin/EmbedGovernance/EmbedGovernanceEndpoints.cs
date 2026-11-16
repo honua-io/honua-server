@@ -60,7 +60,7 @@ internal static partial class EmbedGovernanceEndpoints
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<EmbedKeyResponse>>>> HandleListKeys(
-        [FromServices] InMemoryEmbedKeyStore store,
+        [FromServices] IEmbedKeyStore store,
         HttpContext context)
     {
         var now = DateTimeOffset.UtcNow;
@@ -72,7 +72,7 @@ internal static partial class EmbedGovernanceEndpoints
     private static async Task<Results<Created<ApiResponse<EmbedKeySecretResponse>>, BadRequest<ApiResponse<object>>>>
         HandleCreateKey(
             CreateEmbedKeyRequest request,
-            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] IEmbedKeyStore store,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedGovernanceEndpointsLog> logger,
             HttpContext context)
@@ -102,7 +102,7 @@ internal static partial class EmbedGovernanceEndpoints
 
     private static async Task<Results<Ok<ApiResponse<EmbedKeyResponse>>, NotFound<ApiResponse<object>>>> HandleGetKey(
         Guid id,
-        [FromServices] InMemoryEmbedKeyStore store,
+        [FromServices] IEmbedKeyStore store,
         HttpContext context)
     {
         var record = await store.GetAsync(id, context.RequestAborted);
@@ -117,7 +117,7 @@ internal static partial class EmbedGovernanceEndpoints
     private static async Task<Results<Ok<ApiResponse<EmbedKeySecretResponse>>, NotFound<ApiResponse<object>>>>
         HandleRotateKey(
             Guid id,
-            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] IEmbedKeyStore store,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedGovernanceEndpointsLog> logger,
             HttpContext context)
@@ -143,7 +143,7 @@ internal static partial class EmbedGovernanceEndpoints
 
     private static async Task<Results<Ok<ApiResponse<EmbedKeyResponse>>, NotFound<ApiResponse<object>>>> HandleRevokeKey(
         Guid id,
-        [FromServices] InMemoryEmbedKeyStore store,
+        [FromServices] IEmbedKeyStore store,
         [FromServices] IAuditLog auditLog,
         [FromServices] ILogger<EmbedGovernanceEndpointsLog> logger,
         HttpContext context)
