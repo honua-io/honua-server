@@ -1153,8 +1153,9 @@ Derived Artifact Normalization runs on pull requests only when its own recipe
 can change: the producer workflow, the .NET setup action, the envelope builder,
 every generator input the envelope pins (`GENERATOR_INPUTS` in
 `scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
-is observe-only since feature PRs stopped committing these projections (14 Nov),
-so an envelope for an ordinary source change produced no result anyone used.
+remains observe-only. Source PRs carry their regenerated projections; the required
+architecture job verifies submitted output directly, so an envelope for an
+ordinary source change does not publish or repair its branch.
 That generation still runs: PR Gate's architecture job regenerates the same
 projections and reports drift on every ready PR, ci.yml's foundation job does
 the same on affected trunk and twice-daily full runs, and the nightly
@@ -1639,9 +1640,9 @@ cancel superseded PR runs through their per-PR concurrency groups.
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
 validation; late same-SHA metadata or draft skips cannot cancel useful work.
-Publication of generated documents stays with the trunk producer: feature PRs
-keep envelope validation and drift reporting, and the consumer stays in observe
-mode. Trusted admission cancels only consumers of older producer generations
+Generated-only publication stays with the trunk producer. Feature PRs commit
+regeneration with their source changes and retain envelope validation and drift
+reporting; the consumer stays in observe mode. Trusted admission cancels only consumers of older producer generations
 associated with that PR; delayed old completions cannot cancel newer work. Only
 admission has Actions write permission for cancellation. Validation retains
 read-only Actions, Contents and Pull requests permissions, and its existing
@@ -2055,3 +2056,32 @@ class. Full CI job savings are unmeasured.
 All cases remain in their existing shard on selected PR runs and twice-daily full
 trunk runs. This changes no runner count, required check name, required aggregate
 dependency, workflow or shard definition.
+
+## Generated projections alongside source changes
+
+The required generated-file ownership check admits protected outputs alongside
+source inputs that force the architecture gate. It compares the candidate's
+validator, policy, PR workflow, classifiers, fast-test selector, regeneration
+wrapper and architecture action with trusted trunk blobs. Older branches must
+adopt the repair before mixing source and
+output; changing or removing verification remains blocked. Generated-only PRs
+still require the canonical producer's exact commit/tree artifact proof.
+
+Before strict regeneration, the existing architecture job removes submitted
+protected outputs so only freshly produced bytes and modes can pass. Unproduced
+additions cannot survive the checkout, and symlink parents fail closed.
+After regeneration, the job checks every protected
+path submitted by the PR against its committed bytes and executable mode. Added
+and deleted outputs are included, and symlinks fail. The MCP roster retains its
+existing drift contract: its valid source SHA and UTC generation timestamp can
+differ between local and CI generation; every other byte and the file mode must
+match freshly generated output. No other projection receives that normalization.
+It requires the PR merge
+checkout and uses its target parent; unreadable Git state fails closed. Output
+that the PR did not change retains advisory drift reporting. No job, required
+context or aggregate dependency is added or removed.
+
+The repair itself lands without protected generated output because the old
+trusted checker cannot admit its own replacement. Its authored workflow inventory
+template changes here; the existing trunk generator publishes that projection
+afterward. Subsequent source PRs can carry their generated inventory normally.
