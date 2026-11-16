@@ -41,8 +41,10 @@ public sealed class FolderMutationServiceTests
             .AddSingleton(new OperatorApprovalGate(authorization, approvals, NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
         var execution = new FolderMutationExecution
         {
-            Services = services, Principal = principal,
-            Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "before"
+            Services = services,
+            Principal = principal,
+            Command = new FolderMutationCommand.Create("survey", default),
+            ExpectedEtag = "before"
         };
 
         var first = await FolderMutationService.ExecuteAsync(execution);
@@ -66,8 +68,10 @@ public sealed class FolderMutationServiceTests
 
         var result = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
         {
-            Services = services, Principal = principal,
-            Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "revision"
+            Services = services,
+            Principal = principal,
+            Command = new FolderMutationCommand.Create("survey", default),
+            ExpectedEtag = "revision"
         });
 
         result.Failure.Should().BeOfType<FolderExecutionFailure.Replay>();
@@ -82,11 +86,16 @@ public sealed class FolderMutationServiceTests
         var principal = new ClaimsPrincipal();
         var result = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
         {
-            Services = services, Principal = principal,
-            Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "revision",
+            Services = services,
+            Principal = principal,
+            Command = new FolderMutationCommand.Create("survey", default),
+            ExpectedEtag = "revision",
             Replay = new FolderReplayAdmission
             {
-                Principal = principal, OperationId = "folder.create", ProposalId = "proposal", OperationInstanceId = "instance"
+                Principal = principal,
+                OperationId = "folder.create",
+                ProposalId = "proposal",
+                OperationInstanceId = "instance"
             },
             OperationReplay = new FolderOperationReplayAdmission(
                 new OperationRequest { OperationId = "folder.create" }, new OperationPolicyContext())
@@ -114,8 +123,10 @@ public sealed class FolderMutationServiceTests
 
         var result = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
         {
-            Services = services, Principal = principal,
-            Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "old-revision"
+            Services = services,
+            Principal = principal,
+            Command = new FolderMutationCommand.Create("survey", default),
+            ExpectedEtag = "old-revision"
         });
 
         if (approvalRequired)

@@ -58,15 +58,20 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         var destination = before.Graph.Folders.Single().Metadata.Id;
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "service.move", TenantId = "public", SchemaName = _fixture.CurrentSchema,
-            ServiceName = "test", Parameters = new() { ["folderId"] = destination, ["If-Match"] = before.Etag }
+            OperationId = "service.move",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
+            ServiceName = "test",
+            Parameters = new() { ["folderId"] = destination, ["If-Match"] = before.Etag }
         };
         await WithRequesterContextAsync(payload, async context =>
         {
             var accepted = await CreateRequesterProposalAsync(context, new()
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange,
-                TenantId = payload.TenantId, RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
+                RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 Plan = new OperationProposalPlan
                 {
                     Summary = "Move service using current requester membership",
@@ -90,10 +95,14 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         return await store.SaveAsync(current.Graph with
         {
             Services = current.Graph.Services.Select(service => service.Metadata.Name == "test"
-                ? service with { AccessPolicy = new AccessPolicy
+                ? service with
                 {
-                    AllowedRoles = ["original-membership"], AllowedWriteRoles = ["original-membership"]
-                } } : service).ToArray()
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowedRoles = ["original-membership"],
+                        AllowedWriteRoles = ["original-membership"]
+                    }
+                } : service).ToArray()
         }, current.Etag);
     }
 

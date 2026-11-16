@@ -36,9 +36,11 @@ public sealed class FolderServiceAuthorizationTests
         var context = new DefaultHttpContext { RequestServices = services, User = operatorPrincipal };
         var proposal = new OperationProposal
         {
-            ProposalId = "proposal", Kind = OperationClass.AdminConfigChange,
+            ProposalId = "proposal",
+            Kind = OperationClass.AdminConfigChange,
             Status = OperationProposalStatus.Executing,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
         };
         context.Features.Set(new FolderReplayServicePrincipal(requester, proposal));
         ClaimsPrincipal? observedHttpPrincipal = null;
@@ -83,9 +85,11 @@ public sealed class FolderServiceAuthorizationTests
             .Should().BeNull();
         context.Features.Set(new FolderReplayServicePrincipal(requester, new OperationProposal
         {
-            ProposalId = "proposal", Kind = OperationClass.AdminConfigChange,
+            ProposalId = "proposal",
+            Kind = OperationClass.AdminConfigChange,
             Status = OperationProposalStatus.Executing,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
         }));
 
         var result = await FolderEndpoints.RequireServiceAccessAsync(context, service);
@@ -124,7 +128,8 @@ public sealed class FolderServiceAuthorizationTests
             OperatorPrincipal = operatorPrincipal,
             RequesterAccess = new ServiceAccessContext
             {
-                Services = services, Principal = requester,
+                Services = services,
+                Principal = requester,
                 // The folder policy must enforce admin access regardless of caller-supplied scope.
                 Operation = AuthorizationOperation.Read
             }
@@ -163,7 +168,10 @@ public sealed class FolderServiceAuthorizationTests
             FolderTenant = tenantMismatch ? "tenant-b" : "tenant-a",
             RequesterAccess = new ServiceAccessContext
             {
-                Services = services, Principal = principal, Operation = AuthorizationOperation.Admin, TenantId = "tenant-a"
+                Services = services,
+                Principal = principal,
+                Operation = AuthorizationOperation.Admin,
+                TenantId = "tenant-a"
             }
         });
 

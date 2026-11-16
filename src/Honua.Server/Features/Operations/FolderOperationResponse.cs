@@ -48,10 +48,14 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
         FolderExecutionFailure.Authorization authorization => Authorization(authorization.Decision),
         FolderExecutionFailure.Approval approval => new(403, JsonSerializer.Serialize(new ApprovalDeniedProblemDetails
         {
-            Type = "urn:honua:approval-required", Title = "Approval required", Status = 403,
+            Type = "urn:honua:approval-required",
+            Title = "Approval required",
+            Status = 403,
             Detail = $"This operation requires approval (policy: {approval.Requirement.PolicyRef}).",
-            PolicyRef = approval.Requirement.PolicyRef, ReasonCodes = approval.Requirement.ReasonCodes,
-            ResourceType = "Catalog", Operation = "Publish"
+            PolicyRef = approval.Requirement.PolicyRef,
+            ReasonCodes = approval.Requirement.ReasonCodes,
+            ResourceType = "Catalog",
+            Operation = "Publish"
         }, ApprovalGateJsonContext.Default.ApprovalDeniedProblemDetails)),
         FolderExecutionFailure.AffectedServices affected => AffectedServices(affected.Result),
         _ => throw new InvalidOperationException("Unknown folder execution failure.")
@@ -81,7 +85,9 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
     internal static FolderOperationResponse Problem(int status, string detail)
         => Problem(new Microsoft.AspNetCore.Mvc.ProblemDetails
         {
-            Status = status, Detail = detail, Type = "https://honua.io/problems/admin",
+            Status = status,
+            Detail = detail,
+            Type = "https://honua.io/problems/admin",
             Title = Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(status)
         });
 

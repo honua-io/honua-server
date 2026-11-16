@@ -59,7 +59,8 @@ internal static class FolderMutationService
         var gate = services.GetRequiredService<OperatorApprovalGate>();
         var request = new OperatorAuthorizationRequest
         {
-            ResourceType = OperatorResourceType.Catalog, Operation = OperatorOperation.Publish
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Publish
         };
         var access = await gate.CheckAuthorizationAsync(principal, request, cancellationToken).ConfigureAwait(false);
         if (!access.IsAllowed) return new FolderExecutionFailure.Authorization(access);
@@ -88,12 +89,17 @@ internal static class FolderMutationService
         var mutation = execution.Command.Apply(snapshot.Graph, folderTenant);
         var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
         {
-            Original = snapshot.Graph, Mutation = mutation, Services = services,
-            OperatorPrincipal = operatorPrincipal, FolderTenant = folderTenant,
+            Original = snapshot.Graph,
+            Mutation = mutation,
+            Services = services,
+            OperatorPrincipal = operatorPrincipal,
+            FolderTenant = folderTenant,
             RequesterAccess = new ServiceAccessContext
             {
-                Services = services, Principal = requester,
-                TenantId = tenant, Operation = AuthorizationOperation.Admin,
+                Services = services,
+                Principal = requester,
+                TenantId = tenant,
+                Operation = AuthorizationOperation.Admin,
                 RequestCache = replay is null ? execution.RequestCache : null
             }
         }, cancellationToken).ConfigureAwait(false);
@@ -128,8 +134,10 @@ internal static class FolderMutationService
         }
         return replay is not null && replay.MatchesExecution(new FolderReplayExecution
         {
-            Command = execution.Command, ExpectedEtag = execution.ExpectedEtag ?? string.Empty,
-            Namespace = execution.Namespace, SchemaName = execution.Services.GetService<ISchemaContext>()?.CurrentSchema
+            Command = execution.Command,
+            ExpectedEtag = execution.ExpectedEtag ?? string.Empty,
+            Namespace = execution.Namespace,
+            SchemaName = execution.Services.GetService<ISchemaContext>()?.CurrentSchema
         }) ? replay : null;
     }
 

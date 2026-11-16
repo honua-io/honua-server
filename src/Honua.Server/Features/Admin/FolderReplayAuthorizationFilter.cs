@@ -24,7 +24,8 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
         context.Features.Set(new FolderReplayServicePrincipal(authority.RequesterPrincipal, authority.Proposal,
             new FolderReplayAdmission
             {
-                Principal = transportPrincipal, OperationId = authority.Proposal.OperationId!,
+                Principal = transportPrincipal,
+                OperationId = authority.Proposal.OperationId!,
                 ProposalId = context.Request.Headers[OperationLineageHeaders.ProposalId].ToString(),
                 OperationInstanceId = context.Request.Headers[OperationLineageHeaders.OperationInstanceId].ToString(),
                 TenantId = context.RequestServices.GetRequiredService<ITenantContext>().TenantId

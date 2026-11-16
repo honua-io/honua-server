@@ -61,8 +61,10 @@ internal sealed class FolderOperationExecutor(
         return new OperationHandle
         {
             OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
-            OperationId = OperationId, CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-            CreatedAt = now, UpdatedAt = now,
+            OperationId = OperationId,
+            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+            CreatedAt = now,
+            UpdatedAt = now,
             Status = success ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
             Reason = success ? null : $"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).",
             Result = new OperationResultSummary

@@ -38,7 +38,8 @@ public sealed class FolderOperationExecutorTests
 
         var handle = await executor.SubmitAsync(new OperationRequest
         {
-            OperationId = requestedOperationId, DryRun = dryRun,
+            OperationId = requestedOperationId,
+            DryRun = dryRun,
             Parameters = new Dictionary<string, string?> { ["name"] = "survey", ["If-Match"] = "revision" }
         }, new OperationPolicyContext { OperationInstanceId = "instance", CorrelationId = "correlation" });
 
@@ -69,15 +70,22 @@ public sealed class FolderOperationExecutorTests
 
         var handle = await executor.SubmitAsync(new OperationRequest
         {
-            OperationId = operationId, ServiceName = "parcels",
+            OperationId = operationId,
+            ServiceName = "parcels",
             Parameters = new Dictionary<string, string?>
             {
-                ["name"] = "survey", ["id"] = "folder", ["folderId"] = null, ["If-Match"] = "revision"
+                ["name"] = "survey",
+                ["id"] = "folder",
+                ["folderId"] = null,
+                ["If-Match"] = "revision"
             }
         }, new OperationPolicyContext
         {
-            ApprovedProposalId = "forged", ApprovedPlanHash = "forged", PrincipalId = "requester",
-            OperationInstanceId = "instance", CorrelationId = "correlation"
+            ApprovedProposalId = "forged",
+            ApprovedPlanHash = "forged",
+            PrincipalId = "requester",
+            OperationInstanceId = "instance",
+            CorrelationId = "correlation"
         });
 
         handle.Status.Should().Be(OperationHandleStatus.Failed);

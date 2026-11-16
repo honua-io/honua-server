@@ -25,7 +25,7 @@ public sealed class FolderMutationCommandTests
             body.Title = title;
         }
         var sealedCommand = FolderMutationCommand.FromRequest(new OperationRequest
-            { OperationId = "folder.create", Parameters = parameters });
+        { OperationId = "folder.create", Parameters = parameters });
         var httpCommand = new FolderMutationCommand.Create(body.Name,
             body.TitleSpecified ? new FolderTitleChange(body.Title) : default);
 
@@ -54,7 +54,7 @@ public sealed class FolderMutationCommandTests
             body.Title = title;
         }
         var sealedCommand = FolderMutationCommand.FromRequest(new OperationRequest
-            { OperationId = "folder.update", Parameters = parameters });
+        { OperationId = "folder.update", Parameters = parameters });
         var httpCommand = new FolderMutationCommand.Update("folder", body.Name,
             body.TitleSpecified ? new FolderTitleChange(body.Title) : default);
 
@@ -75,7 +75,7 @@ public sealed class FolderMutationCommandTests
         var parameters = new Dictionary<string, string?>();
         if (specified) parameters["folderId"] = null;
         var command = FolderMutationCommand.FromRequest(new OperationRequest
-            { OperationId = "service.move", ServiceName = "survey", Parameters = parameters });
+        { OperationId = "service.move", ServiceName = "survey", Parameters = parameters });
 
         var apply = () => command.Apply(graph, null);
 

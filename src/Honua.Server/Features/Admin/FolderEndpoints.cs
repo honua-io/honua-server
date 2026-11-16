@@ -72,11 +72,13 @@ internal static class FolderEndpoints
         var replay = context.Features.Get<FolderReplayServicePrincipal>();
         var execution = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
         {
-            Services = context.RequestServices, Principal = replay?.Admission?.Principal ?? context.User,
+            Services = context.RequestServices,
+            Principal = replay?.Admission?.Principal ?? context.User,
             Command = command,
             ExpectedEtag = context.Request.Headers.IfMatch.Count == 1 ? context.Request.Headers.IfMatch.ToString() : null,
             Namespace = context.Request.Query.ContainsKey("namespace") ? context.Request.Query["namespace"].ToString() : null,
-            Replay = replay?.Admission, RequestCache = replay is null ? context.Items : null
+            Replay = replay?.Admission,
+            RequestCache = replay is null ? context.Items : null
         }, context.RequestAborted).ConfigureAwait(false);
         if (execution.Failure is not null) return MapFailure(context, execution.Failure);
         var saved = execution.Saved ?? throw new InvalidOperationException("Folder mutation did not return a saved snapshot.");
@@ -98,7 +100,8 @@ internal static class FolderEndpoints
         FolderExecutionFailure.Approval approval => context.RequestServices.GetRequiredService<OperatorApprovalGate>()
             .CreateApprovalDeniedResult(context, new OperatorAuthorizationRequest
             {
-                ResourceType = OperatorResourceType.Catalog, Operation = OperatorOperation.Publish
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Publish
             }, approval.Requirement)!,
         FolderExecutionFailure.AffectedServices affected => MapServiceAuthorization(context, affected.Result)!,
         _ => throw new InvalidOperationException("Unknown folder execution failure.")
