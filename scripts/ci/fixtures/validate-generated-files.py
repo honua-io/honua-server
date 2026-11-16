@@ -245,6 +245,10 @@ class GeneratedFilesContracts(unittest.TestCase):
         step = contract[contract.index(generate):].split('\n      - name:', 1)[0]
         self.assertNotIn('if:', step)
         self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release', step)
+        parity = 'bash scripts/ci/generate-admin-operation-parity-exports.sh --configuration Release'
+        roster = 'bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release'
+        self.assertIn(parity, step)
+        self.assertLess(step.index(parity), step.index(roster))
         self.assertLess(contract.index(generate),
                         contract.index('- name: Invoke every advertised tool and audit its inputs and discovery'))
 

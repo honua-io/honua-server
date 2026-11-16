@@ -52,7 +52,9 @@ jobs:
       # PRs may not commit the roster and the nightly writer lands it after
       # merge, so every event projects it before the strict drift test.
       - name: Generate the roster projection before the strict roster test
-        run: bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release
+        run: |
+          bash scripts/ci/generate-admin-operation-parity-exports.sh --configuration Release
+          bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release
       - name: Invoke every advertised tool and audit its inputs and discovery
         run: |
           set -euo pipefail
