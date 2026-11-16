@@ -869,19 +869,52 @@ jobs:
             const { findings } = JSON.parse(fs.readFileSync('release-private.json', 'utf8'));
             const run = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });
+            const days = { HIGH: 30, CRITICAL: 7 };
+            const date = value => {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '') ||
+                  !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value) {
+                throw new Error('Finding has an invalid detection or deadline date');
+              }
+              return value;
+            };
+            const shift = (value, offset) => new Date(Date.parse(date(value)) + offset * 86400000).toISOString().slice(0, 10);
             for (const f of findings) {
+              if (!days[f.Severity]) throw new Error('Finding has an unsupported severity');
+              const detected = shift(f.dueBy, -days[f.Severity]);
               const title = `[release image] ${f.release} ${f.platform}: ${f.VulnerabilityID} in ${f.PkgName}`;
-              if (open.some(issue => issue.title === title)) continue;
-              open.push({ title });
+              const existing = open.find(issue => issue.title === title && !issue.pull_request);
+              if (existing) {
+                const body = existing.body || '';
+                const previousSeverity = body.match(/^Advisory: .* \((HIGH|CRITICAL)\)$/m)?.[1];
+                const previousDue = date(body.match(/^Fix due by: (\d{4}-\d{2}-\d{2})/m)?.[1]);
+                if (!previousSeverity) throw new Error('Existing finding has no recognized severity');
+                const recorded = body.match(/^First detected: (.*)$/m)?.[1];
+                const first = [detected, date(existing.created_at.slice(0, 10))];
+                first.push(recorded ? date(recorded) : shift(previousDue, -days[previousSeverity]));
+                const firstDetected = first.sort()[0];
+                const severity = days[f.Severity] < days[previousSeverity] ? f.Severity : previousSeverity;
+                const dueBy = [previousDue, f.dueBy, shift(firstDetected, days[severity])].sort()[0];
+                let updated = body.replace(/^(Advisory: .* )\((HIGH|CRITICAL)\)$/m, `$1(${severity})`)
+                  .replace(/^(Fix due by: )\d{4}-\d{2}-\d{2}/m, `$1${dueBy}`);
+                if (recorded) updated = updated.replace(/^First detected: .*$/m, `First detected: ${firstDetected}`);
+                else updated += `\nFirst detected: ${firstDetected}`;
+                if (updated !== body) {
+                  await github.rest.issues.update({ owner, repo, issue_number: existing.number, body: updated });
+                  existing.body = updated;
+                }
+                continue;
+              }
               const body = [
                 `Release: ${f.release}`, `Image: ${f.image}`, `Platform: ${f.platform}`,
                 `Advisory: ${f.VulnerabilityID} (${f.Severity})`,
                 `Package: ${f.PkgName} ${f.InstalledVersion}, fixed in ${f.FixedVersion}`,
                 `Fix due by: ${f.dueBy} (SECURITY.md: critical 7 days, high 30 days from detection)`,
+                `First detected: ${detected}`,
                 `Detected by: ${run}`, '',
                 'Close by shipping a patch release (docs/internal/security/security-patch-releases.md) or by recording a reasoned not_affected decision in eng/security/vex-statements.json.',
               ].join('\n');
-              await github.rest.issues.create({ owner, repo, title, body });
+              const { data: created } = await github.rest.issues.create({ owner, repo, title, body });
+              open.push(created);
             }
       - name: Open a public maintenance issue without finding detail
         if: steps.report.outputs.needing_patch != '0' && env.HAS_FINDINGS_BRIDGE != 'true'
