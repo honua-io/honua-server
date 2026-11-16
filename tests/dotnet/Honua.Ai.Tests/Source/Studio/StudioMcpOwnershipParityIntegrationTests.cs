@@ -36,6 +36,7 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
         })
