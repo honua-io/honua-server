@@ -12,26 +12,6 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Infrastructure.Caching;
 
-public interface IQueryResultCacheManager
-{
-    Task<T> GetOrExecuteAsync<T>(
-        string cacheKey,
-        Func<Task<T>> queryExecutor,
-        QueryCacheOptions? options = null);
-
-    Task<T> GetOrExecuteAsync<T>(
-        string cacheKey,
-        Func<QueryExecutionContext, Task<T>> queryExecutor,
-        QueryExecutionContext context,
-        QueryCacheOptions? options = null);
-
-    Task<int> InvalidateAsync(string? pattern = null, IEnumerable<string>? tags = null);
-
-    QueryCacheStatistics GetStatistics();
-
-    CacheEffectivenessMetrics GetEffectivenessMetrics();
-}
-
 public sealed class QueryCacheOptions
 {
     public TimeSpan? Expiration { get; set; }
@@ -74,7 +54,7 @@ public sealed class QueryResultCacheOptions
     public bool EnableDetailedMetrics { get; set; } = true;
 }
 
-internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager, IDisposable
+internal sealed partial class QueryResultCacheManager : IDisposable
 {
     private readonly IMemoryCache _cache;
     private readonly ILogger<QueryResultCacheManager> _logger;

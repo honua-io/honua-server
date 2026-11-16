@@ -22,9 +22,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
+public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture;
 
     public async Task InitializeAsync()
     {

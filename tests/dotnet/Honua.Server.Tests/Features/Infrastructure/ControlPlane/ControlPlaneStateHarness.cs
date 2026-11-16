@@ -78,8 +78,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public Task<T?> ScalarAsync<T>(string sql, params NpgsqlParameter[] parameters) => _jobs.ScalarAsync<T>(sql, parameters);
 
-    public PostgresOperationProposalStore CreateProposalStore()
-        => new(new ControlPlaneStorage(_jobs.Database, Leases), Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
+    public PostgresOperationProposalStore CreateProposalStore(IControlPlaneRealtimeWriter? realtime = null)
+        => new(new ControlPlaneStorage(_jobs.Database, Leases) { Realtime = realtime }, Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
 
     public PostgresOpsNotificationStore CreateNotificationStore()
         => new(_jobs.Database, Options.Create(Retention));
@@ -90,9 +90,9 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresOperationSecretStore CreateSecretStore(IDataProtectionProvider dataProtectionProvider)
         => new(DataSource, _jobs.Database, dataProtectionProvider);
 
-    public PostgresWorkflowOperationStore CreateWorkflowOperationStore()
+    public PostgresWorkflowOperationStore CreateWorkflowOperationStore(IControlPlaneRealtimeWriter? realtime = null)
         => new(
-            new ControlPlaneStorage(_jobs.Database, Leases),
+            new ControlPlaneStorage(_jobs.Database, Leases) { Realtime = realtime },
             new WorkflowOperationRetention(Options.Create(Retention), Options.Create(new MetadataReleaseOperationOptions())),
             NullLogger<PostgresWorkflowOperationStore>.Instance);
 

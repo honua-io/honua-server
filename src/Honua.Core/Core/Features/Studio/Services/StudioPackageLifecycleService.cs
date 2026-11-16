@@ -21,7 +21,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
 
     private static readonly ActivitySource ActivitySource = new(ActivitySourceName);
     private readonly IStudioPackageStore _store;
-    private readonly IStudioPackageFamilyRegistry _registry;
+    private readonly StudioPackageFamilyRegistry _registry;
     private readonly IStudioPackageValidator _validator;
     private readonly TimeProvider _timeProvider;
     private readonly ITenantContext? _tenantContext;
@@ -47,7 +47,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     /// </param>
     public StudioPackageLifecycleService(
         IStudioPackageStore store,
-        IStudioPackageFamilyRegistry registry,
+        StudioPackageFamilyRegistry registry,
         IStudioPackageValidator validator,
         TimeProvider timeProvider,
         StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null,

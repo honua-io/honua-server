@@ -18,12 +18,7 @@ namespace Honua.Db.Databricks.Features.Infrastructure;
 /// <param name="Rows">Row data; each row aligns positionally with <paramref name="Columns"/>.</param>
 internal sealed record DatabricksResultSet(IReadOnlyList<string> Columns, IReadOnlyList<JsonElement[]> Rows);
 
-internal interface IDatabricksStatementClient
-{
-    Task<DatabricksResultSet> ExecuteAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
-}
-
-internal sealed class DatabricksStatementClient : IDatabricksStatementClient
+internal sealed class DatabricksStatementClient
 {
     private const string SubmitPath = "/api/2.0/sql/statements/";
     private const string StatusPathPrefix = "/api/2.0/sql/statements/";

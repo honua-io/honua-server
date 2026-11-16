@@ -2009,6 +2009,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/live",
+      "operationId": "GetAdminLive",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-live"
+    },
+    {
+      "spec": "admin-api",
       "method": "POST",
       "path": "/api/v1/admin/metadata/coordinated-releases/operations",
       "operationId": "createCoordinatedReleaseOperation",
@@ -3066,16 +3076,6 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-operations-cache-invalidate"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
-      "path": "/api/v1/admin/operations/cache/redis",
-      "operationId": "getOperationsCacheRedisMetrics",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-operations-cache-redis"
     },
     {
       "spec": "admin-api",
