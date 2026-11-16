@@ -14,16 +14,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services.FileGdb;
 
-/// <summary>
-/// Reads FileGDB geometry blobs and converts them to NTS Geometry objects.
-/// </summary>
-/// <remarks>
-/// FileGDB geometry blobs encode coordinates using origin/scale parameters from the
-/// geometry field definition. Coordinates are stored as variable-length integers:
-/// point types use unsigned varints for absolute coordinates; multi-vertex types
-/// (polyline, polygon, multipoint) use zigzag-encoded signed varints where the
-/// first coordinate pair is absolute and subsequent pairs are delta-encoded.
-/// </remarks>
 internal sealed class GdbGeometryReader
 {
     // FileGDB geometry type codes stored in geometry blobs.
@@ -51,20 +41,12 @@ internal sealed class GdbGeometryReader
     private readonly GeometryFactory _factory;
     private readonly GdbGeometryDef _geomDef;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="GdbGeometryReader"/> class.
-    /// </summary>
     public GdbGeometryReader(GeometryFactory factory, GdbGeometryDef geomDef)
     {
         _factory = factory;
         _geomDef = geomDef;
     }
 
-    /// <summary>
-    /// Reads a geometry from a FileGDB geometry blob.
-    /// </summary>
-    /// <param name="blob">The raw geometry blob bytes (after the varuint length prefix).</param>
-    /// <returns>The parsed geometry, or null for null/empty/unsupported geometries.</returns>
     public NtsGeometry? ReadGeometry(ReadOnlySpan<byte> blob)
     {
         if (blob.IsEmpty)
@@ -346,11 +328,6 @@ internal sealed class GdbGeometryReader
         return mValues;
     }
 
-    /// <summary>
-    /// Promotes plain XY coordinates to XYZ/XYM/XYZM in place, picking the NTS
-    /// coordinate type so the resulting geometry's coordinate sequence advertises
-    /// the extra ordinates and the WKB writer can emit them (#1981).
-    /// </summary>
     private static void ApplyZm(Coordinate[] coordinates, double[]? zValues, double[]? mValues)
     {
         if (zValues == null && mValues == null)
@@ -366,11 +343,6 @@ internal sealed class GdbGeometryReader
         }
     }
 
-    /// <summary>
-    /// Builds the narrowest NTS coordinate type that carries the supplied
-    /// ordinates: <see cref="CoordinateZM"/> for XYZM, <see cref="CoordinateM"/>
-    /// for XYM, <see cref="CoordinateZ"/> for XYZ, otherwise plain XY.
-    /// </summary>
     private static Coordinate BuildCoordinate(double x, double y, double? z, double? m)
     {
         if (z.HasValue && m.HasValue)

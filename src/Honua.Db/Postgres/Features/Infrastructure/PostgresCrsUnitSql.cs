@@ -6,16 +6,8 @@ using Honua.Core.Features.Infrastructure.Crs;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// SQL for the linear unit of a projected CRS, read from PostGIS <c>spatial_ref_sys</c>.
-/// </summary>
 internal static class PostgresCrsUnitSql
 {
-    /// <summary>
-    /// Scalar SQL for metres per projected unit of <paramref name="srid"/>. Preference matches
-    /// <see cref="CrsLinearUnitFactor"/>: <c>+to_meter</c>, then <c>+units</c>, otherwise 1 (also
-    /// when the CRS has no <c>spatial_ref_sys</c> row).
-    /// </summary>
     public static string MetersPerProjectedUnit(int srid)
     {
         var usFoot = CrsLinearUnitFactor.UsSurveyFootMeters.ToString("R", CultureInfo.InvariantCulture);

@@ -5,11 +5,6 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers source-generated <see cref="JsonTypeInfoResolver"/> entries with ASP.NET Core's
-/// minimal-API JSON pipeline. Splitting this off keeps <c>Program.cs</c> manageable while
-/// preserving the exact resolver order (the first matching context wins per type).
-/// </summary>
 internal static class JsonContextRegistration
 {
     public static IServiceCollection AddHonuaJsonContexts(this IServiceCollection services)
@@ -105,6 +100,7 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
         Honua.Infrastructure.Licensing.LicenseFileJsonContext.Default,
         Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Configuration.SharedConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,

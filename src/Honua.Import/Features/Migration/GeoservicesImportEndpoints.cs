@@ -23,14 +23,8 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Endpoints for importing data from ArcGIS Server services.
-/// </summary>
 internal static partial class GeoservicesImportEndpoints
 {
-    /// <summary>
-    /// Map Geoservices import endpoints to the web application with formal API versioning.
-    /// </summary>
     public static void MapGeoservicesImportEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/geoservices")
@@ -42,7 +36,8 @@ internal static partial class GeoservicesImportEndpoints
         // Discover layers from an ArcGIS service URL
         _ = group.MapPost("/discover", HandleDiscoverService)
             .WithName("DiscoverGeoservicesService")
-            .WithSummary("Discover available layers from an ArcGIS Server service URL");
+            .WithSummary("Discover available layers from an ArcGIS Server service URL")
+            .WithRouteAgentRule("Reads a source service and changes nothing.");
 
         // Start a background import job
         _ = group.MapPost("/start", HandleStartImport)
@@ -65,9 +60,6 @@ internal static partial class GeoservicesImportEndpoints
             .WithSummary("Cancel an Geoservices import job");
     }
 
-    /// <summary>
-    /// Discover layers from an ArcGIS Server service URL.
-    /// </summary>
     private static async Task HandleDiscoverService(HttpContext context)
     {
         var entitlementGate = LicenseGate.RequireEntitlement(
@@ -219,9 +211,6 @@ internal static partial class GeoservicesImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Start a background import job.
-    /// </summary>
     private static async Task HandleStartImport(HttpContext context)
     {
         var entitlementGate = LicenseGate.RequireEntitlement(
@@ -324,29 +313,10 @@ internal static partial class GeoservicesImportEndpoints
 
         string? jobId = null;
         IDistributedImportJobManager? jobManager = null;
-        var jobQueued = false;
 
         try
         {
             jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
-            // Probe recovery before refusing: the cached health flags only clear through
-            // component operations, so gating first would keep admission closed after
-            // Redis returns (#4877). Still-unavailable coordination is refused below.
-            if (jobManager is IImportCoordinationHealth coordinationHealth &&
-                !await ImportCoordinationRecovery.TryAdmitAsync(
-                    coordinationHealth,
-                    jobManager.JobQueue,
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    cancellationToken).ConfigureAwait(false))
-            {
-                await AdminResponseWriter.WriteErrorAsync(
-                    context,
-                    "Distributed import coordination is unavailable. Retry when Redis is healthy.",
-                    StatusCodes.Status503ServiceUnavailable);
-                return;
-            }
-
             // Generate job ID
             jobId = Guid.NewGuid().ToString("N")[..12];
 
@@ -391,24 +361,7 @@ internal static partial class GeoservicesImportEndpoints
                 ServiceName = importRequest.ServiceName
             };
 
-            if (!await ImportEndpointCoordinationHelper.PersistQueuedJobStateAsync(
-                    context,
-                    jobManager is not IImportCoordinationHealth { CanAcceptNewJobs: false },
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    importRequest,
-                    progress,
-                    TimeSpan.FromHours(24),
-                    "Distributed import coordination became unavailable while the job was being enqueued. Retry when Redis is healthy.",
-                    cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            // Queue the job
-            await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken);
-            jobQueued = true;
+            await jobManager.SubmitAsync(importRequest, progress, cancellationToken).ConfigureAwait(false);
 
             Log.ImportJobQueued(GetLogger(context), jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
@@ -427,56 +380,25 @@ internal static partial class GeoservicesImportEndpoints
         }
         catch (LayerPublishingException ex)
         {
-            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
             await GeoservicesImportPlanning.WriteErrorAsync(context, ex).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import", StringComparison.OrdinalIgnoreCase) && ex.Message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
+        catch (InvalidOperationException ex) when (ex.Message == ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.DurableQueueUnavailableMessage)
         {
-            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
-
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "Distributed import queue is temporarily unavailable. Retry when Redis is healthy.",
+                "Durable import storage is unavailable. Configure the system database and job worker.",
                 StatusCodes.Status503ServiceUnavailable);
         }
-        // Intentionally generic: top-level endpoint boundary after the specific
-        // coordination-unavailable case above; any remaining unexpected failure rolls back
-        // the queued state and maps to a generic 500 rather than leaking exception details.
+        // Intentionally generic: the endpoint maps unexpected admission failures to a
+        // generic 500 rather than exposing storage exception details.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
-
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task TryRollbackQueuedStateAsync(
-        IDistributedImportJobManager? jobManager, string? jobId, bool jobQueued)
-    {
-        if (jobManager == null || string.IsNullOrWhiteSpace(jobId) || jobQueued)
-        {
-            return;
-        }
-
-        try
-        {
-            await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                jobManager.RequestStore,
-                jobManager.ProgressStore,
-                jobId,
-                CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
-        {
-            System.Diagnostics.Debug.WriteLine(caughtException);
-        }
-    }
-
-    /// <summary>
-    /// Get Geoservices import job status.
-    /// </summary>
     private static async Task HandleGetJobStatus(HttpContext context)
     {
         var jobId = context.GetRouteValue("jobId")?.ToString();
@@ -500,9 +422,6 @@ internal static partial class GeoservicesImportEndpoints
             .ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Cancel an Geoservices import job.
-    /// </summary>
     private static async Task HandleCancelJob(HttpContext context)
     {
         var jobId = context.GetRouteValue("jobId")?.ToString();
@@ -530,6 +449,8 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
+        await jobManager.RequestCancellationAsync(jobId, cancellationToken);
+
         var cancelledProgress = progress with
         {
             Status = GeoservicesImportStatus.Cancelled,
@@ -538,7 +459,6 @@ internal static partial class GeoservicesImportEndpoints
         };
 
         await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromHours(24), cancellationToken);
-        await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken);
 
         Log.ImportJobCancelled(GetLogger(context), jobId);
 
@@ -552,9 +472,6 @@ internal static partial class GeoservicesImportEndpoints
             .ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// List active Geoservices import jobs.
-    /// </summary>
     private static async Task HandleListJobs(HttpContext context)
     {
         var cancellationToken = context.RequestAborted;
@@ -586,7 +503,6 @@ internal static partial class GeoservicesImportEndpoints
     private static ILogger<GeoservicesImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<GeoservicesImportEndpointsLog>>();
 
-    /// <summary>Log category marker for Geoservices import endpoint operations.</summary>
     internal sealed class GeoservicesImportEndpointsLog;
 
     private static partial class Log
@@ -612,167 +528,71 @@ internal static partial class GeoservicesImportEndpoints
 
 // Request/Response DTOs for the API
 
-/// <summary>
-/// Request to discover an ArcGIS service.
-/// </summary>
 internal sealed record GeoservicesDiscoverRequest
 {
-    /// <summary>
-    /// URL of the ArcGIS service to discover.
-    /// </summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>
-    /// Timeout in seconds for the discovery request.
-    /// </summary>
     public int? TimeoutSeconds { get; init; }
 
-    /// <summary>
-    /// Optional ArcGIS credential descriptor for discovery.
-    /// </summary>
     public GeoservicesCredentialRequest? Credentials { get; init; }
 }
 
-/// <summary>
-/// Response from service discovery.
-/// </summary>
 internal sealed record GeoservicesDiscoverResponse
 {
-    /// <summary>
-    /// The service URL.
-    /// </summary>
     public required string ServiceUrl { get; init; }
 
-    /// <summary>
-    /// Name of the service.
-    /// </summary>
     public required string ServiceName { get; init; }
 
-    /// <summary>
-    /// Service description.
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Spatial reference WKID.
-    /// </summary>
     public int? SpatialReferenceWkid { get; init; }
 
-    /// <summary>
-    /// Maximum records per query.
-    /// </summary>
     public int? MaxRecordCount { get; init; }
 
-    /// <summary>
-    /// Available layers.
-    /// </summary>
     public GeoservicesLayerSummary[] Layers { get; init; } = [];
 }
 
-/// <summary>
-/// Summary of a layer from discovery.
-/// </summary>
 internal sealed record GeoservicesLayerSummary
 {
-    /// <summary>
-    /// Layer ID.
-    /// </summary>
     public int Id { get; init; }
 
-    /// <summary>
-    /// Layer name.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Layer description.
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Geometry type.
-    /// </summary>
     public string? GeometryType { get; init; }
 
-    /// <summary>
-    /// Estimated feature count.
-    /// </summary>
     public int? FeatureCount { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports attachments.
-    /// </summary>
     public bool HasAttachments { get; init; }
 }
 
-/// <summary>
-/// Request to start an import job.
-/// </summary>
 internal sealed record GeoservicesStartImportRequest
 {
-    /// <summary>
-    /// URL of the ArcGIS service.
-    /// </summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>
-    /// ID of the layer to import.
-    /// </summary>
     public int LayerId { get; init; }
 
-    /// <summary>
-    /// Target table name in PostGIS.
-    /// </summary>
     public string? TableName { get; init; }
 
-    /// <summary>
-    /// Optional target schema for imported operational data.
-    /// </summary>
     public string? TargetSchema { get; init; }
 
-    /// <summary>
-    /// Target SRID (default: 4326).
-    /// </summary>
     public int? TargetSrid { get; init; }
 
-    /// <summary>
-    /// Whether to overwrite existing table.
-    /// </summary>
     public bool? OverwriteExisting { get; init; }
 
-    /// <summary>
-    /// Optional WHERE clause to filter features.
-    /// </summary>
     public string? WhereClause { get; init; }
 
-    /// <summary>
-    /// Optional list of fields to import.
-    /// </summary>
     public string[]? OutputFields { get; init; }
 
-    /// <summary>
-    /// Batch size for pagination.
-    /// </summary>
     public int? BatchSize { get; init; }
 
-    /// <summary>
-    /// Request timeout in seconds.
-    /// </summary>
     public int? RequestTimeoutSeconds { get; init; }
 
-    /// <summary>
-    /// Maximum retry attempts.
-    /// </summary>
     public int? MaxRetries { get; init; }
 
-    /// <summary>
-    /// Whether to auto-publish the layer.
-    /// </summary>
     public bool? AutoPublish { get; init; }
 
-    /// <summary>
-    /// Optional target Honua service name for auto-publishing.
-    /// </summary>
     public string? ServiceName { get; init; }
 
     public string? PublicName { get; init; }
@@ -784,60 +604,27 @@ internal sealed record GeoservicesStartImportRequest
 
     public GeoservicesImportPlan? Plan { get; init; }
 
-    /// <summary>
-    /// Optional ArcGIS credential descriptor. Queued imports must use secret references.
-    /// </summary>
     public GeoservicesCredentialRequest? Credentials { get; init; }
 }
 
-/// <summary>
-/// Inbound ArcGIS credential descriptor for API requests.
-/// </summary>
 internal sealed record GeoservicesCredentialRequest
 {
-    /// <summary>
-    /// Authentication mode label.
-    /// </summary>
     public string? Mode { get; init; }
 
-    /// <summary>
-    /// Secret reference for an ArcGIS token or OAuth access token.
-    /// </summary>
     public string? AccessTokenSecretReference { get; init; }
 
-    /// <summary>
-    /// Inline ArcGIS token or OAuth access token for immediate discovery-only use.
-    /// </summary>
     public string? AccessToken { get; init; }
 
-    /// <summary>
-    /// Username for HTTP Basic authentication.
-    /// </summary>
     public string? Username { get; init; }
 
-    /// <summary>
-    /// Secret reference for the HTTP Basic password.
-    /// </summary>
     public string? PasswordSecretReference { get; init; }
 
-    /// <summary>
-    /// Inline HTTP Basic password for immediate discovery-only use.
-    /// </summary>
     public string? Password { get; init; }
 
-    /// <summary>
-    /// Optional OAuth client identifier associated with the token reference.
-    /// </summary>
     public string? OAuthClientId { get; init; }
 
-    /// <summary>
-    /// Optional OAuth token endpoint used to identify the token issuer.
-    /// </summary>
     public string? OAuthTokenEndpoint { get; init; }
 
-    /// <summary>
-    /// Converts this inbound API model to the secret-redacting domain descriptor.
-    /// </summary>
     public GeoservicesCredentialDescriptor ToDescriptor()
         => new()
         {
@@ -852,57 +639,27 @@ internal sealed record GeoservicesCredentialRequest
         };
 }
 
-/// <summary>
-/// Response when a job is queued.
-/// </summary>
 internal sealed record GeoservicesImportJobResponse
 {
     public GeoservicesImportPlan? Plan { get; init; }
 
-    /// <summary>
-    /// Job ID.
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Status message.
-    /// </summary>
     public required string Message { get; init; }
 
-    /// <summary>
-    /// URL to check job status.
-    /// </summary>
     public required string StatusUrl { get; init; }
 
-    /// <summary>
-    /// URL to cancel the job.
-    /// </summary>
     public required string CancelUrl { get; init; }
 }
 
-/// <summary>
-/// Response containing active Geoservices import jobs.
-/// </summary>
 internal sealed record GeoservicesImportJobsResponse
 {
-    /// <summary>
-    /// List of active jobs.
-    /// </summary>
     public required GeoservicesImportProgress[] Jobs { get; init; }
 }
 
-/// <summary>
-/// Response for cancel Geoservices import job request.
-/// </summary>
 internal sealed record GeoservicesImportCancelResponse
 {
-    /// <summary>
-    /// Job identifier that was cancelled.
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Confirmation message.
-    /// </summary>
     public required string Message { get; init; }
 }

@@ -32,7 +32,9 @@ def verify(original, children, estimates):
     # A child keeps its parent's rank until a full run measures it (fixtures/measured-dispatch-ranks.json);
     # a contract may instead record an estimate from the parent's TRX. Estimates may not shrink the parent's cost.
     assert set(estimates) <= {child["name"] for child in children}, "Estimated rank for a foreign shard."
-    assert not estimates or sum(estimates.values()) >= original["dispatch_rank"], "Estimates shrink the parent."
+    # The bound holds while every child is estimated; a measured child replaces its estimate (see expected_rank).
+    fully_estimated = set(estimates) == {child["name"] for child in children}
+    assert not fully_estimated or sum(estimates.values()) >= original["dispatch_rank"], "Estimates shrink the parent."
     for child in children:
         expected = expected_rank(child["name"], original["dispatch_rank"], estimates)
         assert child["dispatch_rank"] == expected, f"Dispatch rank differs from its measurement: {child['name']}"

@@ -19,7 +19,7 @@ namespace Honua.Db.Postgres.Tests.Features.Observability;
 /// migration 034 inside an isolated per-test schema.
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
+public sealed partial class PostgresInvestigationStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task CreateAndGet_RoundTripsRecord()
@@ -199,7 +199,7 @@ public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
                 pin_id BIGSERIAL PRIMARY KEY,
                 investigation_id TEXT NOT NULL REFERENCES "{schema}".investigations(investigation_id) ON DELETE CASCADE,
                 event_ref TEXT NOT NULL,
-                event_kind SMALLINT NOT NULL,
+                event_kind SMALLINT NOT NULL CHECK (event_kind BETWEEN 1 AND 7),
                 occurred_at TIMESTAMPTZ NOT NULL,
                 note TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -209,13 +209,27 @@ public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
             CREATE TABLE IF NOT EXISTS "{schema}".investigation_links (
                 link_id BIGSERIAL PRIMARY KEY,
                 investigation_id TEXT NOT NULL REFERENCES "{schema}".investigations(investigation_id) ON DELETE CASCADE,
-                resource_kind SMALLINT NOT NULL,
+                resource_kind SMALLINT NOT NULL CHECK (resource_kind BETWEEN 1 AND 4),
                 resource_id TEXT NOT NULL,
                 note TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 created_by TEXT NOT NULL
             );
             """);
+        await ApplyIncidentReferenceMigrationAsync(schema);
+    }
+
+    private async Task ApplyIncidentReferenceMigrationAsync(string schema)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        var migration = await File.ReadAllTextAsync(Path.Join(directory!.FullName,
+            "src/Honua.Server/Migrations/193_AllowIncidentInvestigationReferences.sql"));
+        await fixture.ExecuteAsync(migration.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal));
     }
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schema) : IAdoNetDatabaseConnectionProvider

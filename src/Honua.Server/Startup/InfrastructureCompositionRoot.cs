@@ -268,6 +268,7 @@ internal static class InfrastructureCompositionRoot
             .ValidateOnStart();
 
         services.AddMemoryCache();
+        services.AddDistributedMemoryCache();
 
         services.AddSingleton<InMemoryCacheService>();
         services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());

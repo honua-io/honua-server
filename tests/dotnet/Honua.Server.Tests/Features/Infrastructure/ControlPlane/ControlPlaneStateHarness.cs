@@ -37,7 +37,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
         "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
         "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
-        "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql"
+        "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql",
+        "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -55,6 +56,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public ControlPlaneRetentionOptions Retention { get; } = new();
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
+
+    public PostgresExecutionJobStore CreateJobStore() => _jobs.CreateNodeJobStore();
 
     public static async Task<ControlPlaneStateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
     {
@@ -107,6 +110,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
     public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);
+    public JobStoreDatabase Database => _jobs.Database;
     public PostgresOidcProviderStore CreateOidcStore() => new(CreateConfigurationDocuments());
     public PostgresRateLimitPolicyStore CreateRateStore() => new(CreateConfigurationDocuments());
     public PostgresClientCertificateTrustStore CreateTrustStore() => new(CreateConfigurationDocuments());

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Server.Features.Admin.PairedPublications;
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -250,7 +251,6 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
-var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
@@ -273,21 +273,6 @@ var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled
 if (tracingSection.Exists() || tracingEnabled)
 {
     builder.AddTelemetryDefaults();
-}
-
-// Add Redis if configured, otherwise fallback to in-memory cache
-if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-{
-    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = redisCacheConnectionString;
-        options.InstanceName = cacheKeyPrefix;
-    });
-}
-else
-{
-    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
@@ -352,13 +337,15 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a database reader or backup cannot carry both halves. Lambda
-    // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
-    System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
+    // certificate, or a random secret where no certificate can be made, is mandatory so a database
+    // reader or backup cannot carry both halves. Lambda cannot mount the file, so a Secrets Manager
+    // bundle is written to a private temp file first.
+    OperationKeyRingProtector keyRingProtector;
     try
     {
         await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
-        keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+        await StartupConfigurationHelpers.EnsureKeyRingSecretResolvedAsync(builder.Configuration);
+        keyRingProtector = OperationSecretKeyRingProtection.ResolveProtector(builder.Configuration);
     }
     catch (System.Security.Cryptography.CryptographicException ex)
     {
@@ -371,17 +358,23 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     }
     catch (InvalidOperationException ex)
     {
-        // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
+        // A missing or unreadable certificate, or a short secret, is an operator error. Left unhandled it aborts the
         // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
         // (honua-server#6500). Report it and leave with a plain exit status.
         Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
         return;
     }
 
-    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
-        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    if (keyRingProtector.Certificate is { } keyRingCertificate)
+    {
+        builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+            new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    }
 
-    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
+    keyRing.ProtectKeysWith(keyRingProtector);
+    builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+        .Configure<PostgresDataProtectionKeyRepository>((_, keyRepository) =>
+            keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector));
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
@@ -753,6 +746,9 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+builder.Services.AddScoped<Honua.Infrastructure.Attachments.AttachmentUploadContentVerifier>();
+builder.Services.AddScoped<Honua.Core.Features.Attachments.Abstractions.IAttachmentUploadPublisher,
+    Honua.Infrastructure.Attachments.AttachmentUploadPublisher>();
 
 // Federated-query planning and source configuration (#341).
 // Experimental gate (PA-001): federated query is off by default. Set
@@ -911,42 +907,21 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
     // request after an idle gap so no Redis read path fails on the teardown (#6753).
     Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
-// Embed governance (#1191): authoritative embed key issuance/scoping, policy
-// evaluation, rate accounting, and redacted analytics ingestion. In-memory stores.
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
-    new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
+// Embed analytics ingestion is redacted, and the usage report reads a bounded buffer in this task's memory.
 builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
-// Console metadata v2 content + RBAC baseline (#1162). Persistent store lands in #1163.
-builder.Services.AddSingleton<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>(sp =>
-    new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
-        sp.GetService<TimeProvider>() ?? TimeProvider.System));
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>());
+// Console content, share, open-data and embed-key state: in the system database when there is one,
+// otherwise in the memory of the single task.
+builder.Services.AddConsoleStateStores();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
-// Console Share access: public-link + embed state (#1215). In-memory store
-// shares the persistent-store follow-on (#1163); validator depends on the
-// content + share stores to walk the provenance closure.
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleShareStore>(sp =>
-    new Honua.Server.Features.Console.Services.InMemoryConsoleShareStore(
-        sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
-// Console open-data DCAT + STAC publication state (#1214). In-memory store shares
-// the persistent-store follow-on (#1163) with the content/share stores.
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleOpenDataStore>(sp =>
-    new Honua.Server.Features.Console.Services.InMemoryConsoleOpenDataStore(
-        sp.GetService<TimeProvider>() ?? TimeProvider.System));
-// Process-local stores are not durable and are not shared across replicas (SRV-AUTH-002).
-// The session bootstrap reports that, and startup fails when a replica count above 1 is configured.
-builder.Services.AddSingleton(Honua.Core.Features.Console.Domain.ConsolePersistenceNotice.InMemory);
-builder.Services.AddHostedService<Honua.Server.Features.Console.ConsoleInMemoryStoreStartupGuard>();
 // Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
@@ -1704,6 +1679,10 @@ app.UseWhen(
     });
 #endif
 
+// An agent changes admin and Console state only through the operations API or MCP. Runs after
+// the lineage attestation and the audit log, so a refusal is audited.
+app.UseMiddleware<Honua.Server.Features.Admin.AgentRouteAdmissionMiddleware>();
+
 // Runs after every credential type is hydrated and before tenant and schema resolution.
 app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
@@ -1937,6 +1916,7 @@ app.MapFeatureOverviewEndpoints();
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
+app.MapAgentAuthorityEndpoints();
 
 // Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
 // the per-tenant billing usage export. Admin-authorized.
@@ -2018,7 +1998,8 @@ app.MapServerFeatureEndpoints();
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
-    .RequireAdminAuthorization();
+    .RequireAdminAuthorization()
+    .WithRouteAgentRule("/PlanSpec", "Changes nothing.");
 if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "scene.catalog"))
 {
     app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
@@ -2094,6 +2075,7 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
+app.MapPairedPublicationReadEndpoints();
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();

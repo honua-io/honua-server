@@ -11,6 +11,9 @@ services:
       ForwardedHeaders__KnownProxies__0: ${HONUA_CONSOLE_EDGE_ADDRESS:-172.31.250.242}
       # Used when OIDC is enabled; register this exact URI with the identity provider.
       Oidc__AdminAuthCallbackUri: "https://localhost:${HONUA_CONSOLE_PORT:-18083}/admin/auth/callback"
+      # MCP clients that support URL-mode elicitation open the proposal in the Console inbox
+      # (MRTR approval). Opening it is not approval; a person still decides there.
+      Mcp__ApprovalConsoleUrl: "https://localhost:${HONUA_CONSOLE_PORT:-18083}/console/"
     networks:
       default: {}
       # Both members have fixed addresses, so the server can never take the edge's.

@@ -17,27 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Scene;
 
-/// <summary>
-/// Publishing executor that converts an uploaded CityGML building document into a
-/// deterministic Building Scene Layer (BSL) 3D Tiles tileset and registers it
-/// with the hosted scene registry (#1207). This is the wired ingest path on top
-/// of the <see cref="CityGmlReader"/> + <see cref="BuildingSceneLayerBuilder"/>
-/// vertical slice: it stages the generated <c>tileset.json</c> and GLB tile,
-/// registers the dataset (the canonical collision authority), then atomically
-/// promotes the staged bytes to the final scene asset root so the standard scene
-/// serving path can stream them.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The executor reuses <see cref="SceneTilesetStaging"/> for the stage → register
-/// → promote → compensate mechanics so its durability semantics match the
-/// feature-layer generation path. CRS handling is intentionally conservative for
-/// v1: geographic source documents (EPSG:4326/4979 or OGC CRS84, in either axis
-/// order) pass through to the ellipsoid; projected documents are rejected with
-/// <see cref="SceneGenerationErrorCodes.LayerCrsUnknown"/> and are a documented
-/// follow-up.
-/// </para>
-/// </remarks>
 internal sealed partial class CityGmlScenePublishExecutor
 {
     private readonly IHostEnvironment _environment;
@@ -60,15 +39,6 @@ internal sealed partial class CityGmlScenePublishExecutor
         _storage = storage;
     }
 
-    /// <summary>
-    /// Parses, tiles, registers, and promotes a CityGML document into a servable
-    /// Building Scene Layer scene.
-    /// </summary>
-    /// <param name="request">The ingest request carrying the document bytes and target metadata.</param>
-    /// <param name="cancellationToken">Cancels the ingest before promotion.</param>
-    /// <returns>The ingest outcome with the resolved scene id, asset root, and BSL summary.</returns>
-    /// <exception cref="CityGmlFormatException">The document is malformed or carries no parseable building geometry.</exception>
-    /// <exception cref="ValidationException">An option is invalid, the source CRS is unsupported, or the scene id/name collides with an existing dataset.</exception>
     public async Task<CityGmlSceneIngestOutcome> IngestAsync(
         CityGmlSceneIngestRequest request,
         CancellationToken cancellationToken)
@@ -214,15 +184,8 @@ internal sealed partial class CityGmlScenePublishExecutor
         }
     }
 
-    /// <summary>Default scene cache <c>max-age</c> when the request omits one.</summary>
     private const int DefaultCacheMaxAgeSeconds = 3600;
 
-    /// <summary>
-    /// Builds the geographic projection delegate for the parsed document. v1
-    /// supports geographic source CRS only (EPSG:4326/4979 or OGC CRS84); axis
-    /// order is taken from the reader's <see cref="CityGmlModel.LatitudeFirst"/>
-    /// flag. A projected/unknown CRS is rejected as a documented limitation.
-    /// </summary>
     private static CityGmlGeoTransform BuildGeoTransform(CityGmlModel model)
     {
         if (!IsGeographic(model.SourceCrs))
@@ -511,18 +474,6 @@ internal sealed partial class CityGmlScenePublishExecutor
     }
 }
 
-/// <summary>
-/// Request to ingest a CityGML document into a servable Building Scene Layer
-/// scene (#1207).
-/// </summary>
-/// <param name="Document">The CityGML document bytes (UTF-8 or BOM-prefixed).</param>
-/// <param name="SceneId">Optional explicit scene slug; derived from the first building when omitted.</param>
-/// <param name="DisplayName">Optional display name; derived from the first building when omitted.</param>
-/// <param name="Description">Optional human-readable description.</param>
-/// <param name="EditionGate">Optional edition gate slug recorded on the dataset.</param>
-/// <param name="CacheMaxAgeSeconds">Optional cache <c>max-age</c>; defaults to 3600 when omitted.</param>
-/// <param name="RequiresAuth">When true, the registered scene requires authentication instead of being public.</param>
-/// <param name="CreatedBy">Optional audit identity for the registration record.</param>
 internal sealed record CityGmlSceneIngestRequest(
     byte[] Document,
     string? SceneId = null,
@@ -533,18 +484,6 @@ internal sealed record CityGmlSceneIngestRequest(
     bool RequiresAuth = false,
     string? CreatedBy = null);
 
-/// <summary>
-/// Outcome of a CityGML scene ingest: the resolved scene id, on-disk asset root,
-/// and the Building Scene Layer summary surfaced to the admin response.
-/// </summary>
-/// <param name="SceneId">Resolved scene slug used in the tileset URL.</param>
-/// <param name="AssetRoot">Final on-disk directory holding the promoted tileset.</param>
-/// <param name="BoundsDegrees">Dataset envelope [west, south, east, north] in degrees.</param>
-/// <param name="BuildingCount">Number of buildings ingested.</param>
-/// <param name="SurfaceCount">Number of boundary-surface components emitted.</param>
-/// <param name="TileCount">Number of tile content files written.</param>
-/// <param name="Disciplines">Distinct BSL disciplines / sub-layers present, sorted.</param>
-/// <param name="Warnings">Non-fatal warnings raised during tiling.</param>
 internal sealed record CityGmlSceneIngestOutcome(
     string SceneId,
     string AssetRoot,

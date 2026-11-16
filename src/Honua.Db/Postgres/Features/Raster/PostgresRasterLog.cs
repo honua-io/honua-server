@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Structured logging for PostgreSQL raster store operations.
-/// Event ID range: 7800-7899 (following the memory guidelines).
-/// </summary>
 internal static partial class PostgresRasterLog
 {
     [LoggerMessage(

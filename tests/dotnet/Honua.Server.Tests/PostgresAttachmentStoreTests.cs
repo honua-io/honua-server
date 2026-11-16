@@ -32,7 +32,7 @@ namespace Honua.Server.Tests;
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
-public class PostgresAttachmentStoreTests : IAsyncLifetime
+public partial class PostgresAttachmentStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
     private readonly ITestOutputHelper _output;
@@ -73,7 +73,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
             _schemaName,
-            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
+            schemaOptions: new AttachmentStoreSchemaOptions(null, _schemaName));
 
         // Use the exact production attachment migrations instead of an incomplete
         // hand-authored import shape. The schema remains isolated per test.
@@ -81,11 +82,13 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         var assembly = typeof(Program).Assembly;
         var scripts = new AttachmentSchemaScriptProvider(
             new EmbeddedScriptProvider(assembly,
-                name => name == contract.CreateMigration || name == contract.ImportMigration),
+                name => name == contract.CreateMigration || name == contract.ImportMigration ||
+                    name.EndsWith("182_CreateAttachmentNativeMetadata.sql", StringComparison.Ordinal) ||
+                    name.EndsWith("206_CreateAttachmentCleanupRetries.sql", StringComparison.Ordinal)),
             _schemaName, assembly, contract);
         foreach (var script in scripts.GetScripts(null!))
         {
-            await _fixture.ExecuteAsync(script.Contents);
+            await _fixture.ExecuteAsync(script.Contents.Replace("$HonuaSchema$", $"\"{_schemaName}\"", StringComparison.Ordinal));
         }
 
         _output.WriteLine($"Created isolated schema: {_schemaName}");

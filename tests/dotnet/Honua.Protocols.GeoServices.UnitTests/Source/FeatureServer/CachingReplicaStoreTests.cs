@@ -148,6 +148,41 @@ public sealed class CachingReplicaStoreTests
         (await repository.GetAsync(replica.ReplicaId))!.Value.LastSyncGeneration.Should().Be(3);
     }
 
+    [Fact]
+    public async Task GetAsync_WhenAnotherHostUnregistersReplica_DoesNotReturnWarmLocalCopy()
+    {
+        var repository = new RecordingReplicaRepository();
+        var firstHost = CreateStore(repository, CreateCache().Store);
+        var secondHost = CreateStore(repository, CreateCache().Store);
+        var replica = CreateReplicaState("replica-cross-host-remove");
+        await firstHost.SetAsync(replica);
+        (await firstHost.GetAsync(replica.ReplicaId)).Should().NotBeNull();
+
+        (await secondHost.RemoveAsync(replica.ReplicaId)).Should().BeTrue();
+
+        (await firstHost.GetAsync(replica.ReplicaId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAsync_WhenAnotherHostAdvancesCursor_ReturnsAuthoritativeCursor()
+    {
+        var repository = new RecordingReplicaRepository();
+        var firstHost = CreateStore(repository, CreateCache().Store);
+        var secondHost = CreateStore(repository, CreateCache().Store);
+        var replica = CreateReplicaState("replica-cross-host-sync");
+        await firstHost.SetAsync(replica);
+        (await firstHost.GetAsync(replica.ReplicaId)).Should().NotBeNull();
+        var updated = replica with { LastSyncGeneration = 8, UploadBaseGeneration = 8 };
+
+        (await secondHost.TrySetSyncStateAsync(updated, replica.LastSyncGeneration, replica.UploadBaseGeneration))
+            .Should().BeTrue();
+
+        var observed = await firstHost.GetAsync(replica.ReplicaId);
+        observed.Should().NotBeNull();
+        observed!.LastSyncGeneration.Should().Be(8);
+        observed.UploadBaseGeneration.Should().Be(8);
+    }
+
     private static CachingReplicaStore CreateStore(RecordingReplicaRepository repository, DistributedReplicaStore cache)
     {
         return new CachingReplicaStore(
@@ -246,8 +281,8 @@ public sealed class CachingReplicaStoreTests
 
         public Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
         {
-            _records.TryGetValue(replicaId, out var record);
-            return Task.FromResult<ReplicaRecord?>(record);
+            return Task.FromResult<ReplicaRecord?>(
+                _records.TryGetValue(replicaId, out var record) ? record : null);
         }
 
         public Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)

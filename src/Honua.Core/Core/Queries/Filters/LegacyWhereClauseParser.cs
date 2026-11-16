@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Honua.Core.Queries.Filters;
@@ -131,6 +132,41 @@ internal static partial class LegacyWhereClauseParser
     }
 
     internal static MatchCollection MatchInValues(string values) => WarehouseInValueRegex().Matches(values);
+
+    // Splits a PostgreSQL IN list on commas outside single-quoted literals; '' stays an escaped quote.
+    internal static List<string> SplitValueTokens(string values)
+    {
+        var tokens = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        for (var index = 0; index < values.Length; index++)
+        {
+            var value = values[index];
+            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
+            {
+                current.Append("''");
+                index++;
+            }
+            else if (value == '\'')
+            {
+                inQuotes = !inQuotes;
+                current.Append(value);
+            }
+            else if (value == ',' && !inQuotes)
+            {
+                tokens.Add(current.ToString().Trim());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(value);
+            }
+        }
+
+        tokens.Add(current.ToString().Trim());
+        return tokens;
+    }
 
     [GeneratedRegex(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",

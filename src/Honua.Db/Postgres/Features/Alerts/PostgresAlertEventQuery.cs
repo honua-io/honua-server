@@ -12,9 +12,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
-/// <summary>
-/// PostgreSQL read model for alert events plus operator lifecycle state (#1168).
-/// </summary>
 internal sealed class PostgresAlertEventQuery : IAlertEventQuery
 {
     internal const int MinPageSize = 1;
@@ -257,9 +254,6 @@ internal sealed class PostgresAlertEventQuery : IAlertEventQuery
     }
 }
 
-/// <summary>
-/// Cursor encoding for alert-event pagination.
-/// </summary>
 internal sealed record AlertEventCursor(DateTimeOffset OccurredAt, long EventId)
 {
     public static string Encode(DateTimeOffset occurredAt, long eventId)
@@ -279,10 +273,6 @@ internal sealed record AlertEventCursor(DateTimeOffset OccurredAt, long EventId)
     }
 }
 
-/// <summary>
-/// Helpers for converting <see cref="AlertLifecycleStatus"/> values to/from the
-/// SMALLINT representation used in <c>honua.alert_event_lifecycle</c>.
-/// </summary>
 internal static class AlertLifecycleConversions
 {
     public static AlertLifecycleStatus ToLifecycleStatus(short value) => value switch

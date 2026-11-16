@@ -21,4 +21,4 @@ concurrency:
 
 jobs:
   runner-label-lint:
-    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@ee6ad1b3db454828b77d8765f8770316b2f2db84 # runner-label lint
+    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # runner-label lint

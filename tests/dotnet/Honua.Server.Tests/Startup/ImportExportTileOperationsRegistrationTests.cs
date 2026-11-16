@@ -4,7 +4,9 @@
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Admin;
@@ -22,6 +24,28 @@ namespace Honua.Server.Tests.Startup;
 
 public sealed class ImportExportTileOperationsRegistrationTests
 {
+    [UnitTest]
+    public async Task AddTileOperations_WithLocalCache_AdmitsProgressAtomicallyWithoutSharingAcrossHosts()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDistributedMemoryCache();
+        services.AddHonuaImportExportAndTileOperations(configuration);
+        await using var firstHost = services.BuildServiceProvider();
+        await using var secondHost = services.BuildServiceProvider();
+        var firstStore = firstHost.GetRequiredService<IUniversalProgressStore>();
+        var secondStore = secondHost.GetRequiredService<IUniversalProgressStore>();
+        var progress = UploadProgress.CreateInitial("local-upload", "data.bin", 100);
+
+        (await firstStore.TryReplaceProgressAsync(new OperationProgressWrite("local-upload", progress), null))
+            .Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await firstStore.TryReplaceProgressAsync(new OperationProgressWrite("local-upload", progress), null))
+            .Outcome.Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+        (await firstStore.GetProgressAsync("local-upload")).Should().NotBeNull();
+        (await secondStore.GetProgressAsync("local-upload")).Should().BeNull();
+    }
+
     [UnitTest]
     public void AddTileOperations_WithoutSystemDatabase_ComposesNoSharedLeaseStore()
     {

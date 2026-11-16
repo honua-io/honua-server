@@ -50,7 +50,8 @@ internal sealed record CoordinatedReleaseApprovalBinding(
             && evidence.WorkflowId == operation.OperationId && evidence.Gate == gate
             && evidence.WorkflowVersion >= 0 && evidence.WorkflowVersion < operation.Version
             && evidence.TenantId == operation.Audit.TenantId && evidence.TenantId == context.RequesterTenantId
-            && evidence.Channel == OperationHumanApprovalEvidence.InteractiveOidcChannel
+            && evidence.Channel is OperationHumanApprovalEvidence.InteractiveOidcChannel
+                or OperationHumanApprovalEvidence.InteractivePasswordChannel
             && !string.IsNullOrWhiteSpace(evidence.ActorId)
             && IsReference(evidence.SessionReference) && IsReference(evidence.CapabilityReference)
             && evidence.PlanHash == ComputePlanHash(operation, gate);

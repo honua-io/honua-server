@@ -122,7 +122,7 @@ The shard retry supervisor captures cancellation before spawning a test process.
 
 ## Governing Rules
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Optional verification cancels its previous run on conversion back to draft. PR Gate concurrency separates draft and ready events for each PR, so a delayed draft event cannot cancel the full ready gate; newer events in the same readiness state still cancel superseded runs. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Optional verification cancels its previous run on conversion back to draft. PR Gate concurrency separates draft and ready events for each PR, so a delayed draft event cannot cancel the full ready gate; newer events in the same readiness state still cancel superseded runs. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. Manual and trunk verification retain their existing coverage.
 
 NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 
@@ -1040,24 +1040,33 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (14 Nov 2026): every `dispatch_rank` with a passing job is the
+Measured ranks (16 Nov 2026): every `dispatch_rank` with a passing job is the
 median passing job duration of full trunk runs 43348507021, 43471044721,
-43540829683, 43564575677, 43580101834 and 43612492209. A run counts for a shard
-only when that shard's filter at the run's head equals the current filter, so
-re-split children are never ranked by their predecessor. 159 of 164 shards are
-measured (1 to 6 samples, median 3); `scripts/ci/fixtures/measured-dispatch-ranks.json`
+43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
+43709972683 and 43726623779. The four newest runs were cancelled before they
+finished: only 43709972683 has passing shard jobs, so seven runs supply samples. A run counts for a shard only when
+that shard's filter at the run's head equals the current filter, so re-split
+children are never ranked by their predecessor. 171 of 219 shards are measured
+(1 to 7 samples, median 2); `scripts/ci/fixtures/measured-dispatch-ranks.json`
 records the values and runs, and `test-full-run-capacity-partitions.py` fails when
 a rank drifts from it. Split-contract tests require each child to carry its
-measured rank, else its contract estimate, else its parent's rank. Unmeasured:
-Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
-their parent's rank; the two Packages and Temporal children carry estimates. Ranks
-sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
-shard budget (was 84 of 163). Many unsplit shards measured slower than on 11 Nov
-(for example Core Endpoint Mutations 9.8 to 14.5): 20 shards, the replaced Packages
-and Temporal parent among them, leave the budget and 34, most of them split
-children, enter it. Of 794 shard source paths, 666 now have an owner that fits the
-budget (was 583): 140 gained one and 57 lost their last one, all owned by 15 shards
-now above 10 minutes, whose split is tracked in #7678.
+measured rank, else its contract estimate, else its parent's rank. A measured
+child's estimate is removed from its contract, and the rule that estimates may
+not add up to less than the parent applies only while every child of a split is
+still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
+well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
+estimate: 16 are a still-unmeasured child of an earlier split and 28 are children of the
+nine shards split in #7678, which no full run has executed yet. STAC Protocol 4 (no passing job yet) keeps its parent's
+13.6. Three changed their filter after the newest run and so leave the record,
+keeping their previous rank until a run measures the new filter: Server Features
+Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
+Runtime Operations (renamed publishing test method, 49518429d9). Ranks sum to
+1,644.0 runner-minutes (was 1,894.8); 189 of 219 shards fit the 10-minute PR
+shard budget (was 178). Run 43709972683 is the only sample for 41 shards and ran
+at a median 0.63 times the duration of the older runs on the 56 shards they share,
+for a cause not yet identified. A single-sample rank between 6.5 and 9.3 minutes
+may therefore prove over 10 on the next full run; the cost is a PR shard of about
+12 minutes, not lost coverage, and the next refresh settles it. The 14 Nov refresh is superseded.
 
 ### Standalone tooling in affected producer builds
 
@@ -1658,6 +1667,81 @@ After the existing scoped restore, each test analyzer job evaluates `IsTestProje
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
 
+### SensorThings collection host lifetime
+
+The SensorThings `Database` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial default-configuration classes (query options, paging, ingest, ingest
+identity, navigation and review regressions) no longer rebuild that host for
+every case. Each case still creates its own `WebAppFixture`, schema and seed.
+Classes with their own configuration, such as core CRUD with development
+authentication off and the multi-tenant streams, keep their private hosts.
+The expiring portal credential in the stream authorization theory now lives 20
+seconds instead of 45; connect, publish and the first observation take about 3
+seconds, and the case still asserts the observation arrives before expiry and the
+stream then ends with `authorization-ended`.
+
+Paired build-host runs of the complete SensorThings test project on trunk
+c06ce1031a passed the same 135 cases with no skips. VSTest execution fell from
+13m08s to 7m55s, saving 313 seconds (5.2 runner-minutes); the TRX interval fell
+from 789.2 to 477.2 seconds. Query options fell from 116.7 to 11.0 seconds of
+fixture-inclusive time and paging from 57.8 to 6.4. The baseline shared the build
+host with another lane job, so part of the difference may be load; the per-case
+fixture time removed (about 5 seconds per default-host case) accounts for most of
+it. Full CI job savings are unmeasured.
+All cases remain in the SensorThings shard on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+### GeoServices MapServer collection host lifetime
+
+The `Database.GeoServicesMapServer` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial MapServer, export and identify classes no longer rebuild that host for
+every case after the previous case releases it. Each case still creates its own
+`WebAppFixture`, schema and seed, and the KML cleanup in
+`MapServerEndpointTestBase` is unchanged. Cases that change the metadata graph
+(service governance, protocol-duplicate publications and the KML seed) now write
+their own schema partition instead of the shared baseline, so those changes end
+with the case. Classes that replace services keep their private hosts.
+
+Paired build-host runs on trunk c06ce1031a used the three CI shard filters with
+one test process each and passed the same cases with no skips. TRX intervals:
+GeoServices MapServer 562.3 to 33.3 seconds (56 cases), MapServer Export 804.2 to
+34.0 seconds (65 cases), MapServer Identify 625.5 to 32.0 seconds (52 cases). The
+build host was heavily loaded, so its per-case host rebuild (about 10 seconds)
+exceeds CI's: full run 43709972683 spent 212 and 225 seconds of per-case fixture
+time in the MapServer and Export classes (3.5 to 3.8 seconds per case), which is
+the expected CI saving for those shards. Full CI job savings are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+### Catalog endpoint SOAP raster host lifetime
+
+`GeoservicesCatalogEndpointTests` lazily starts one SOAP raster application per
+class for six read-only tests that use the default raster store. Only Catalog
+Support 5 and 6 contain these cases; the other four shards do not start this host.
+The existing database collection serializes the tests; the class fixture owns
+startup and disposal.
+Cases that customize raster metadata, inspect substitute call counts, mutate
+catalog state or override host configuration retain their private applications.
+Every request, response assertion and discovered case remains in place.
+
+All cases remain in the existing GeoServices Catalog Support shards on selected
+PR runs and twice-daily full trunk runs. Runner count, required check names,
+aggregate dependencies, workflows and shard definitions are unchanged. A paired
+build-host class run passed the same 59 cases without skips: VSTest execution
+185 to 140 seconds; fixture-inclusive TRX interval 214.73 to 159.48 seconds.
+This saves 0.75 execution runner-minutes in one unchanged test process. The six
+shared cases' body total fell from 34.50 to 4.99 seconds; other cases also varied,
+so the observed whole-class reduction is not entirely attributed to host reuse.
+Build and admission time are excluded. The complete existing Support 6 test
+invocation passed the same 24 cases without skips: VSTest 81 to 63 seconds,
+saving 18 seconds (0.30 execution runner-minutes) with one process unchanged;
+fixture-inclusive TRX interval 83.24 to 66.93 seconds. Full CI-job time, including
+setup and build, remains unmeasured.
+
 ### GPServer default application lifetime
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
@@ -1737,3 +1821,15 @@ Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
 376.298 seconds. The other three classes are unchanged. This overlaps the
 class measurement and is not added to it. Complete CI-job setup and build
 duration remain unmeasured.
+
+## Native-image observer retirement (#7880)
+
+The disabled Native Image Impact Observation workflow and its report-only policy
+were retired after the measured graph-derived selector showed no routing savings.
+The workflow had been disabled since 9 November, so retirement saves 0 current
+runner-minutes.
+Image-input selection, policy/trigger drift checks, and v3 content digests remain
+in `scripts/ci/native-image-impact.py` for authoritative serving-image verification.
+No required check or nightly/release/deploy verification moved. Content-addressed
+skip promotion still requires an audit of authoritative serving-image run evidence;
+the retired observer cannot supply it.

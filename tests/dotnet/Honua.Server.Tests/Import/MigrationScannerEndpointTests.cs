@@ -22,17 +22,20 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Extensions;
+using Honua.Server.Tests.Infrastructure;
 
 namespace Honua.Server.Tests.Import;
 
 /// <summary>
 /// Integration tests for the unified migration source scanner endpoint.
 /// </summary>
-[Collection("Database")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class MigrationScannerEndpointTests : IAsyncLifetime
 {
+    private readonly DatabaseFixtureAdapter _database;
     private readonly WebAppFixture _fixture;
     private readonly FakeGeoServerScanService _geoServerService = new();
     private readonly FakeGeoservicesScanService _geoservicesService = new();
@@ -40,8 +43,9 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
     private readonly FakeOgcApiFeaturesScanService _ogcApiFeaturesService = new();
     private HttpClient _client = null!;
 
-    public MigrationScannerEndpointTests()
+    public MigrationScannerEndpointTests(DatabaseFixtureAdapter database)
     {
+        _database = database;
         _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IGeoServerImportService>(_geoServerService)
             .ReplaceService<IGeoservicesImportService>(_geoservicesService)
@@ -131,8 +135,11 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity(bool explicitRoot)
     {
-        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise)
-            .ReplaceService<IGeoservicesImportService>(_geoservicesService);
+        // Queued imports need the durable job store; the hosted workers stay off so the job is only queued.
+        await _database.DataSource.ClearJobSubstrateAsync();
+        await using var fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IGeoservicesImportService>(_geoservicesService)
+            .ConfigureServices(ImportWorkerTestServices.RemoveHostedImportWorkers);
         await fixture.InitializeAsync();
         var client = fixture.Client;
         const string sourceUrl = "https://example.com/arcgis/rest/services/Survey/Parcels/FeatureServer";
@@ -166,6 +173,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         var initialFolderId = plan.TryGetProperty("folderId", out var firstId) ? firstId.GetString() : null;
         var acceptedFolderId = acceptedPlan.TryGetProperty("folderId", out var nextId) ? nextId.GetString() : null;
         acceptedFolderId.Should().Be(initialFolderId);
+        await _database.DataSource.ClearJobSubstrateAsync();
     }
 
     [IntegrationTest]

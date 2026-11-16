@@ -186,31 +186,28 @@ public sealed partial class ProposalEndpointsTests
         await AssertRejectionDenialAuditedAsync(proposal.ProposalId);
     }
 
-    // The bootstrap password signs in a browser session, but not an interactive OIDC one: it can
-    // neither approve nor reject.
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/session")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
-    public async Task RejectProposal_PasswordSession_IsRefusedLikeApproval()
+    public async Task RejectProposal_PasswordSession_MarksRejected()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
-        using var browser = _fixture.CreateClient();
-        browser.BaseAddress = new Uri("https://localhost");
-        await BrowserCsrf.SetHeaderAsync(browser);
-        using var signIn = await browser.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = AdminPassword });
-        signIn.StatusCode.Should().Be(HttpStatusCode.NoContent, await signIn.Content.ReadAsStringAsync());
-        await BrowserCsrf.SetHeaderAsync(browser);
+        using var human = await HumanApprovalHttpClient.AuthenticateWithPasswordAsync(_fixture, AdminPassword);
 
-        using var response = await browser.PostAsJsonAsync(
+        using var response = await human.Client.PostAsJsonAsync(
             $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",
-            new { reason = "a password session is not a verified person" });
+            new { reason = "not safe right now" });
 
         var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
-        body.Should().Contain(ProposalEndpoints.HumanRejectionRequiredMessage);
-        (await _proposalStore.GetAsync(proposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
-        _notifier.ResolvedCount.Should().Be(0);
-        await AssertRejectionDenialAuditedAsync(proposal.ProposalId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("status").GetString().Should().Be("Rejected");
+        document.RootElement.GetProperty("resolutionReason").GetString().Should().Be("not safe right now");
+        var stored = (await _proposalStore.GetAsync(proposal.ProposalId))!;
+        stored.Status.Should().Be(OperationProposalStatus.Rejected);
+        stored.ResolvedAt.Should().NotBeNull();
+        _executor.ExecutionCount.Should().Be(0);
+        _notifier.ResolvedCount.Should().Be(1);
     }
 
     private async Task AssertRejectionDenialAuditedAsync(string proposalId)

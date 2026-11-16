@@ -23,6 +23,8 @@ public readonly record struct Attachment
 
     public string? Keywords { get; init; }
 
+    public AttachmentNativeMetadata? NativeMetadata { get; init; }
+
     public static Attachment Create(
         long id,
         long featureId,

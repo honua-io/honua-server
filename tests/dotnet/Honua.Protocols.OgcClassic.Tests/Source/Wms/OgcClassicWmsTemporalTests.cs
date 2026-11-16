@@ -285,9 +285,8 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosLayer_WithTimeCurrent_BypassesGenericParser()
     {
-        // The generic OgcTemporalFilterParser is bypassed when the request
-        // targets CITE Autos, so CITE-supported tokens like "current" are not
-        // rejected for that layer.
+        // The generic OgcTemporalFilterParser must be bypassed when the request
+        // targets cite:Autos, or it would reject tokens like "current".
         // V2 cutover: the bypass keys on the V2 resource name.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
@@ -318,9 +317,8 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosMixedWithRegularLayer_RejectsUnparseableTime()
     {
-        // The CITE Autos parse-error bypass lets TIME forms like "current" or
-        // CSV instants pass unchanged when the *entire*
-        // request targets cite:Autos. A mixed request (cite:Autos + a normal
+        // The CITE Autos parse-error bypass leaves TIME forms like "current" or
+        // CSV instants unparsed when the *entire* request targets cite:Autos. A mixed request (cite:Autos + a normal
         // layer) cannot rely on the bypass — TIME=current does not apply to a
         // regular layer's temporal column, so silently dropping TIME for the
         // normal layer would diverge from the documented temporal contract.

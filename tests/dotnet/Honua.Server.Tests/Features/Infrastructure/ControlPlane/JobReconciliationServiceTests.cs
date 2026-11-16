@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// between the sweep snapshot and the handler invocation.
 /// </summary>
 [Collection("ControlPlaneTransitionTelemetry")]
-public sealed class JobReconciliationServiceTests
+public sealed partial class JobReconciliationServiceTests
 {
     private static ExecutionJobRecord CreateRunningJob(
         string operationId = "job-1",
@@ -62,8 +62,13 @@ public sealed class JobReconciliationServiceTests
         };
     }
 
-    [UnitTest]
-    public async Task SweepActiveJobs_InterruptedLocalSubmission_RepairsMissingDeliveryWithoutRestartingClaimedJobs()
+    [UnitTheory]
+    [InlineData(ExecutionJobKind.Geoprocessing)]
+    [InlineData(ExecutionJobKind.Export)]
+    [InlineData(ExecutionJobKind.TileCache)]
+    [InlineData(ExecutionJobKind.GeoservicesImport)]
+    [InlineData(ExecutionJobKind.GeoServerImport)]
+    public async Task SweepActiveJobs_InterruptedLocalSubmission_RepairsMissingDeliveryWithoutRestartingClaimedJobs(ExecutionJobKind kind)
     {
         var queued = CreateRunningJob() with
         {
@@ -72,7 +77,8 @@ public sealed class JobReconciliationServiceTests
             ClaimedBy = null,
             ClaimedAt = null,
             LastHeartbeatAt = null,
-            Priority = OperationPriority.High
+            Priority = OperationPriority.High,
+            Spec = CreateRunningJob().Spec with { Kind = kind }
         };
         var store = Substitute.For<IExecutionJobStore>().WithTrySet();
         store.ListActiveAsync(null, null, Arg.Any<CancellationToken>()).Returns([queued]);

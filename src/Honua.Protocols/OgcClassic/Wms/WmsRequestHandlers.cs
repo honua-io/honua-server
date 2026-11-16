@@ -429,8 +429,7 @@ internal static partial class WmsRequestHandlers
         var timeParam = GetQueryValue(query, "TIME");
         var allCiteAutos = layers.Length > 0 && layers.All(layer => IsCiteLayerNamed(layer, CiteAutosLayerTitle));
 
-        // CITE Autos uses a synthetic rendering path with its own TIME parser.
-        // Do not let the normal temporal resolver consume its values.
+        // cite:Autos layers are never TIME-filtered.
         if (allCiteAutos)
         {
             return (null, [], null);
@@ -493,8 +492,7 @@ internal static partial class WmsRequestHandlers
         {
             var layer = layers[i];
 
-            // CITE Autos is not filtered by TIME; only its slot stays null so the
-            // other layers in a mixed request keep their TIME filter.
+            // cite:Autos stays unfiltered without dropping TIME for the other layers.
             if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
             {
                 temporalFilters[i] = null;

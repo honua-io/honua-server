@@ -8,91 +8,25 @@ using Honua.Core.Features.Scene.Generation;
 
 namespace Honua.Core.Features.Scene.Conversion;
 
-/// <summary>
-/// Transcodes Honua scene geometry (the same <see cref="SceneFeature"/> source
-/// the 3D Tiles <see cref="GeometryTileBuilder"/> consumes) into an Esri I3S
-/// <c>nodes/{id}/geometries/0</c> binary buffer (OGC 19-008 Indexed Scene
-/// Layers, "Default" geometry, uncompressed <c>PerAttributeArray</c> layout). This is the
-/// first concrete glTF/3D-Tiles → I3S geometry slice (#1810): it lets an ArcGIS
-/// SceneLayer / I3S client actually render a hosted Honua scene rather than only
-/// discover its descriptor.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Layout.</b> The emitted buffer is the I3S 1.7 <c>PerAttributeArray</c>
-/// geometry the layer advertises in <c>store.defaultGeometrySchema</c> and
-/// <c>geometryDefinitions[0]</c> (Esri i3s-spec
-/// <c>defaultGeometrySchema</c> / <c>geometryBuffer</c>): an 8-byte header
-/// (<c>vertexCount</c> + <c>featureCount</c>, both little-endian UInt32)
-/// followed by contiguous attribute arrays in the fixed order
-/// <c>position</c> (Float32×3), <c>normal</c> (Float32×3), <c>uv0</c> (Float32×2),
-/// <c>color</c> (UInt8×4), then contiguous feature arrays <c>id</c> (UInt64) and
-/// <c>faceRange</c> (UInt32×2). <c>faceRange</c> is the inclusive first and last
-/// triangle index of that feature (<c>vertexIndex = faceIndex * 3</c> for this
-/// un-indexed mesh). Triangles are emitted in the deterministic source-feature /
-/// fan-triangulation order, so the output is byte-identical across runs for
-/// identical input. A feature that produces no triangles is omitted: an inclusive
-/// face range cannot represent an empty span.
-/// </para>
-/// <para>
-/// <b>vertexCRS + per-node MBS offset.</b> Positions are ECEF (EPSG:4978) metres
-/// recentred about the node's Minimum Bounding Sphere (MBS) centre — the same
-/// relative-to-centre (RTC) scheme the GLB path uses — so the Float32 stream
-/// keeps sub-centimetre precision instead of quantising absolute ~6.3e6 m ECEF
-/// to ~1 m. The absolute MBS centre is returned in
-/// <see cref="I3sTranscodedGeometry.MbsCenterEcef"/> so the node descriptor /
-/// node page can publish it; the client reconstructs absolute ECEF as
-/// <c>mbsCenter + position</c>. <c>normalReferenceFrame</c> is the I3S default
-/// <c>earth-centered</c> (normals are unit ECEF vectors, not east-north-up).
-/// </para>
-/// <para>
-/// <b>Scope (#1810 increment).</b> This slice transcodes the <b>3D Object
-/// polygon / extruded-prism</b> geometry profile (triangles) — the profile the
-/// hosted Honua building/scene pipeline produces and the one the descriptor
-/// advertises. Point and line scene kinds, Draco compression, real UV unwrapping
-/// (UVs are emitted as zero placeholders), textures binary serving, and re-parsing
-/// an already-baked GLB back into I3S are deliberately deferred; see the ticket.
-/// The transcoder is a <b>pure function</b> with no I/O so it is equally usable
-/// from a bake-time pipeline or the per-request serving path; this increment
-/// wires the simpler per-request path for the single whole-scene node.
-/// </para>
-/// </remarks>
 public static class I3sGeometryTranscoder
 {
-    /// <summary>Bytes of one position value (Float32×3).</summary>
     public const int PositionBytesPerVertex = 12;
 
-    /// <summary>Bytes of one normal value (Float32×3).</summary>
     public const int NormalBytesPerVertex = 12;
 
-    /// <summary>Bytes of one uv0 value (Float32×2).</summary>
     public const int Uv0BytesPerVertex = 8;
 
-    /// <summary>Bytes of one color value (UInt8×4).</summary>
     public const int ColorBytesPerVertex = 4;
 
-    /// <summary>
-    /// Combined per-vertex attribute bytes (position + normal + uv0 + color).
-    /// The vertex section is four contiguous arrays, not an interleaved record;
-    /// its size is <c>vertexCount * VertexStrideBytes</c>.
-    /// </summary>
     public const int VertexStrideBytes =
         PositionBytesPerVertex + NormalBytesPerVertex + Uv0BytesPerVertex + ColorBytesPerVertex;
 
-    /// <summary>Header bytes: vertexCount(4) + featureCount(4), little-endian UInt32.</summary>
     public const int HeaderBytes = 8;
 
-    /// <summary>Bytes of one feature id (UInt64).</summary>
     public const int FeatureIdBytes = 8;
 
-    /// <summary>Bytes of one faceRange (inclusive first and last triangle index, UInt32×2).</summary>
     public const int FaceRangeBytes = 8;
 
-    /// <summary>
-    /// Combined per-feature attribute bytes (id + faceRange). The feature section
-    /// is two contiguous arrays, not an interleaved record; its size is
-    /// <c>featureCount * FeatureRecordBytes</c>.
-    /// </summary>
     public const int FeatureRecordBytes = FeatureIdBytes + FaceRangeBytes;
 
     private const byte OpaqueWhiteR = 255;
@@ -100,27 +34,6 @@ public static class I3sGeometryTranscoder
     private const byte OpaqueWhiteB = 255;
     private const byte OpaqueWhiteA = 255;
 
-    /// <summary>
-    /// Transcodes the supplied triangle-producing scene features into an I3S
-    /// Default geometry buffer for a single node.
-    /// </summary>
-    /// <param name="features">
-    /// Ordered features. All must share <see cref="SceneGeometryKind.Polygon"/>
-    /// (flat or extruded); a tile of mixed/point/line kinds is rejected because
-    /// the I3S Default 3D Object geometry is triangle-only.
-    /// </param>
-    /// <param name="extrusion">
-    /// Optional extrusion that turns polygons into vertical prisms (top, bottom,
-    /// and wall triangles), matching the GLB path's extrusion handling.
-    /// </param>
-    /// <returns>
-    /// The transcoded geometry: the binary buffer plus the node's MBS centre and
-    /// radius (absolute ECEF metres) the position stream is relative to.
-    /// </returns>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="features"/> is empty, carries a non-polygon kind, or
-    /// produces no renderable triangle vertices.
-    /// </exception>
     public static I3sTranscodedGeometry Transcode(
         IReadOnlyList<SceneFeature> features,
         MetadataV2ExtrusionInfo? extrusion = null)
@@ -301,12 +214,6 @@ public static class I3sGeometryTranscoder
         return Math.Sqrt(maxSq);
     }
 
-    /// <summary>
-    /// Computes one unit ECEF face normal per triangle (the normalised cross
-    /// product of two edges) and replicates it across the triangle's three
-    /// vertices. Degenerate triangles (collinear vertices) fall back to a unit
-    /// radial normal so the stream never carries NaN.
-    /// </summary>
     private static float[] ComputeFaceNormals(List<double> positions)
     {
         var vertexCount = positions.Count / 3;

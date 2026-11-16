@@ -16,7 +16,8 @@ public enum OperationInitiationChannel
     InteractiveOidc,
     Mcp,
     NoninteractiveHttp,
-    InternalAgent
+    InternalAgent,
+    InteractivePassword
 }
 
 public sealed record OperationInitiationEvidence
@@ -37,6 +38,7 @@ public sealed record OperationHumanApprovalEvidence
 {
     public const int CurrentVersion = 1;
     public const string InteractiveOidcChannel = "console-interactive-oidc";
+    public const string InteractivePasswordChannel = "console-interactive-password";
 
     public int Version { get; init; }
     public required string ActorId { get; init; }

@@ -137,7 +137,7 @@ internal sealed partial class AdminAuthSessionStore(
         string? sessionId, CancellationToken cancellationToken)
     {
         var session = await GetAuthenticatedSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return session?.Origin == AdminAuthSessionOrigin.InteractiveOidc ? session : null;
+        return session?.Origin is AdminAuthSessionOrigin.InteractiveOidc or AdminAuthSessionOrigin.Builtin ? session : null;
     }
 
     // A session another node will not see must not look created, so a store failure reaches the caller.
