@@ -12,7 +12,7 @@ public sealed class MigrationSourceUrlsTests
     [InlineData("https://other.example/items?offset=2#page", "https://other.example/items?offset=2#page")]
     [InlineData("items?offset=2", "https://demo.example/ogcapi/items?offset=2")]
     [InlineData("../items", "https://demo.example/items")]
-    [InlineData("/items", "https://demo.example/items")]
+    [InlineData("/items", "file:///items")]
     [InlineData("?offset=2", "https://demo.example/ogcapi/?offset=2")]
     [InlineData("", null)]
     [InlineData(" ", null)]

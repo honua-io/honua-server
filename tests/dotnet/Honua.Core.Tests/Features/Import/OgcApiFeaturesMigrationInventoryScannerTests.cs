@@ -286,11 +286,11 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData("https://demo.example")]
+    [InlineData("https://demo.example/ogcapi/")]
     [InlineData("")]
-    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems(string linkOrigin)
+    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems(string landingLinkPrefix)
     {
-        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler { LinkOrigin = linkOrigin })
+        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler { LandingLinkPrefix = landingLinkPrefix })
         {
             BaseAddress = new Uri("https://demo.example")
         };
@@ -442,7 +442,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
     private sealed class FixtureOgcApiFeaturesHandler : HttpMessageHandler
     {
-        public string LinkOrigin { get; init; } = "https://demo.example";
+        public string LandingLinkPrefix { get; init; } = "https://demo.example/ogcapi/";
 
         public List<Uri> RequestUris { get; } = [];
 
@@ -549,9 +549,9 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
                 });
             }
 
-            if (json != null)
+            if (json != null && pathAndQuery == "/ogcapi/")
             {
-                json = json.Replace("https://demo.example", LinkOrigin, StringComparison.Ordinal);
+                json = json.Replace("https://demo.example/ogcapi/", LandingLinkPrefix, StringComparison.Ordinal);
             }
 
             return Task.FromResult<HttpResponseMessage>(json == null
