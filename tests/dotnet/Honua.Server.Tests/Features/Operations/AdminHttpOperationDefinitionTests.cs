@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Text.Json;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
@@ -63,6 +64,31 @@ public sealed class AdminHttpOperationDefinitionTests
 
         definition.SideEffect.Should().NotBe(OperationSideEffectClass.ReadOnly);
         definition.ApprovalModel.Should().Be(OperationApprovalModel.None);
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(Catalogs))]
+    public void Descriptors_RecoveryNotImplemented_ExplicitlyDescribeUnavailableCompensation(string catalog)
+    {
+        var (_, descriptors) = GetCatalog(catalog);
+        var snapshot = new OperationCatalogSnapshot
+        {
+            CatalogVersion = "test",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            Operations = descriptors
+        };
+        var published = JsonSerializer.SerializeToElement(snapshot, OperationsJsonContext.Default.OperationCatalogSnapshot);
+        foreach (var operation in published.GetProperty("operations").EnumerateArray())
+        {
+            var descriptor = descriptors.Single(item => item.OperationId == operation.GetProperty("operationId").GetString());
+            operation.TryGetProperty("compensation", out var compensation).Should().BeTrue(descriptor.OperationId);
+            var readOnly = descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
+            compensation.GetProperty("availability").GetString().Should().Be(readOnly ? "NotApplicable" : "Unavailable");
+            if (!readOnly)
+            {
+                compensation.GetProperty("reason").GetString().Should().NotBeNullOrWhiteSpace(descriptor.OperationId);
+            }
+        }
     }
 
     private static (IEnumerable<object> Definitions, IReadOnlyList<OperationDescriptor> Descriptors) GetCatalog(string catalog) =>
