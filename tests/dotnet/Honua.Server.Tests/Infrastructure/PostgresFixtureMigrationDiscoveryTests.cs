@@ -30,6 +30,14 @@ public class PostgresFixtureMigrationDiscoveryTests
         auditStore.Should().BeGreaterThanOrEqualTo(0);
         observabilityStore.Should().BeGreaterThan(alertStore).And.BeGreaterThan(auditStore);
         incidentReferences.Should().BeGreaterThan(observabilityStore).And.BeGreaterThan(alertSource);
+        var adminKeyExpansion = Array.IndexOf(migrations, "Honua.Server.Migrations.200_ExpandAdminApiKeyStorage.sql");
+        var adminKeyStore = Array.IndexOf(migrations, "Honua.Server.Migrations.136_CreateAdminApiKeys.sql");
+        var adminKeyRestrictions = Array.IndexOf(migrations, "Honua.Server.Migrations.139_AddAdminApiKeyRestrictions.sql");
+        var adminKeyExpiry = Array.IndexOf(migrations, "Honua.Server.Migrations.152_IndexAdminApiKeyExpiry.sql");
+        adminKeyStore.Should().BeGreaterThanOrEqualTo(0);
+        adminKeyRestrictions.Should().BeGreaterThan(adminKeyStore);
+        adminKeyExpiry.Should().BeGreaterThan(adminKeyRestrictions);
+        adminKeyExpansion.Should().BeGreaterThan(adminKeyExpiry);
         var lastStore = Array.IndexOf(migrations, "Honua.Server.Migrations.167_CreateWorkflowStores.sql");
         var firstImportFunction = Array.IndexOf(migrations, "Honua.Server.Migrations.070_AddImportLoadModes.sql");
         var typedColumns = Array.IndexOf(migrations, "Honua.Server.Migrations.143_PromoteImportTypedColumns.sql");
