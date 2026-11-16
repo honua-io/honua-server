@@ -16,7 +16,14 @@ internal static class AdminConnectImportOperationCatalog
 {
     internal sealed record Definition(string OperationId, string Title, HttpMethod Method, string Path,
         string OpenApiOperationId, OperationSideEffectClass SideEffect, string? ContentType = null,
-        bool SupportsDryRun = false, string? DryRunPath = null);
+        bool SupportsDryRun = false, string? DryRunPath = null) : IAdminHttpOperationDefinition
+    {
+        public OperationBlastRadiusClass BlastRadius => OperationBlastRadiusClass.ResourceScope;
+        public OperationApprovalModel? ApprovalModel => OperatorJourneyApproval.ForMutation(
+            OperationId, SideEffect != OperationSideEffectClass.ReadOnly);
+        public HttpMethod? DryRunMethod => null;
+        public OperationClass OperationClass => OperationClass.AdminConfigChange;
+    }
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -72,12 +79,10 @@ internal static class AdminConnectImportOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = OperatorJourneyApproval.ForMutation(
-                definition.OperationId,
-                definition.SideEffect != OperationSideEffectClass.ReadOnly),
+            ApprovalModel = definition.ApprovalModel!.Value,
             Policy = new OperationPolicyMetadata
             {
-                BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
+                BlastRadiusClass = definition.BlastRadius,
                 SideEffectClass = definition.SideEffect,
                 Determinism = OperationDeterminism.RuntimeDynamic,
                 SupportsDryRun = definition.SupportsDryRun
@@ -202,7 +207,7 @@ internal sealed class AdminConnectImportApprovalRequestMapper(
         {
             OperationInstanceId = context.OperationInstanceId,
             OperationId = OperationId,
-            Kind = OperationClass.AdminConfigChange,
+            Kind = definition.OperationClass,
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,
             CorrelationId = context.CorrelationId,

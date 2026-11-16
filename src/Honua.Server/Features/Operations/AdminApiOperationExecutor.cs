@@ -111,7 +111,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
 
         if (_definition.Method != HttpMethod.Get)
         {
-            if (_definition.OpenApiOperationId == "importLayerSldStyle")
+            if (_definition.ContentType == "application/xml")
             {
                 message.Content = new StringContent(request.Parameters.GetValueOrDefault("body") ?? string.Empty, Encoding.UTF8, "application/xml");
             }

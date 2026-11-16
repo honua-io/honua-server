@@ -6,6 +6,6 @@ namespace Honua.Server.Features.Operations;
 internal static class AdminOperationEndpointExtensions
 {
     public static RouteHandlerBuilder WithAdminOperation(
-        this RouteHandlerBuilder endpoint, AdminApiOperationCatalog.Definition definition)
+        this RouteHandlerBuilder endpoint, IAdminHttpOperationDefinition definition)
         => endpoint.WithName(definition.OpenApiOperationId).WithMetadata(definition);
 }

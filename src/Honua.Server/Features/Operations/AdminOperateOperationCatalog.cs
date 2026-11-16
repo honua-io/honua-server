@@ -11,23 +11,6 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-internal interface IAdminHttpOperationDefinition
-{
-    string OperationId { get; }
-    string Title { get; }
-    HttpMethod Method { get; }
-    string Path { get; }
-    string OpenApiOperationId { get; }
-    OperationSideEffectClass SideEffect { get; }
-    OperationBlastRadiusClass BlastRadius { get; }
-    bool SupportsDryRun { get; }
-    string? DryRunPath { get; }
-    HttpMethod? DryRunMethod { get; }
-    string? ContentType { get; }
-    OperationApprovalModel? ApprovalModel { get; }
-    OperationClass OperationClass { get; }
-}
-
 internal static class AdminOperateOperationCatalog
 {
     internal sealed record Definition(
