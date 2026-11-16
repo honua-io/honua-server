@@ -6,20 +6,10 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Single-node fallback <see cref="IVersionLock"/> (#1553) used when Redis is not configured. Serializes
-/// reconcile/post per (service, version) within one process using a keyed semaphore. Correct for
-/// single-node and development/test deployments; the Redis-backed implementation supersedes it across
-/// replicas. The lease duration is accepted for API parity but is a no-op in-process (the lock is
-/// released when the handle is disposed, and a crash tears down the whole process anyway).
-/// Gate entries are reference-counted and removed from the dictionary when the last holder releases,
-/// so the map does not grow with every version ever locked.
-/// </summary>
 public sealed class InProcessVersionLock : IVersionLock
 {
     private readonly ConcurrentDictionary<string, Gate> _gates = new(StringComparer.Ordinal);
 
-    /// <inheritdoc />
     public Task<IVersionLockHandle?> TryAcquireAsync(
         string service,
         Guid versionId,
@@ -77,11 +67,6 @@ public sealed class InProcessVersionLock : IVersionLock
         }
     }
 
-    /// <summary>
-    /// A keyed semaphore with a reference count. The count tracks every in-flight acquirer plus every
-    /// outstanding handle; a transition to the retired state (-1) happens exactly once, when the count
-    /// drops back to zero, and gates can never be revived afterwards.
-    /// </summary>
     private sealed class Gate
     {
         private int _refCount;
@@ -105,7 +90,6 @@ public sealed class InProcessVersionLock : IVersionLock
             }
         }
 
-        /// <summary>Drops one reference; returns <see langword="true"/> when this call retired the gate.</summary>
         public bool ReleaseRef()
         {
             return Interlocked.Decrement(ref _refCount) == 0 &&

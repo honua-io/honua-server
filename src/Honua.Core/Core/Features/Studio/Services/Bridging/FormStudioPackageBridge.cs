@@ -10,21 +10,11 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services.Bridging;
 
-/// <summary>
-/// Bridges the Studio <c>form</c> package family onto the native forms package store
-/// (ADR-0069, honua-server#3004). Envelope bodies are native <c>honua.form-package.v1</c>
-/// documents serialized with the family's own <see cref="FormPackageJsonContext"/>, so JSON
-/// value kinds, <c>ruleId</c>s, and domain codes round-trip exactly as they do through
-/// <c>/api/v1/admin/forms/packages</c>. Saves append a new native draft version (never an
-/// in-place overwrite), so console editors using ETag/If-Match are never clobbered; publishes
-/// run the native <see cref="FormPackageValidator"/> publish gate.
-/// </summary>
 public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
 {
     private const string IdNamespace = "form";
     private const string VersionIdNamespace = "form-version";
 
-    /// <summary>Native package format for bridged form packages.</summary>
     public const string NativeFormat = "honua.form-package.v1";
 
     private static readonly StudioPackageOperation[] Operations =
@@ -52,7 +42,6 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
     private readonly IFormPackageStore _store;
     private readonly FormPackageValidator _validator;
 
-    /// <summary>Initializes the form family bridge.</summary>
     public FormStudioPackageBridge(IFormPackageStore store, FormPackageValidator validator)
     {
         ArgumentNullException.ThrowIfNull(store);
@@ -61,22 +50,16 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
         _validator = validator;
     }
 
-    /// <inheritdoc />
     public StudioPackageFamily Family => StudioPackageFamily.Form;
 
-    /// <inheritdoc />
     public string Format => NativeFormat;
 
-    /// <inheritdoc />
     public bool PublishSupported => true;
 
-    /// <inheritdoc />
     public IReadOnlyList<StudioPackageOperation> SupportedOperations => Operations;
 
-    /// <inheritdoc />
     public IReadOnlyList<string> Limitations => BridgeLimitations;
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentItemSummary>> ListItemSummariesAsync(CancellationToken cancellationToken = default)
     {
         var packages = await _store.ListPackagesAsync(cancellationToken).ConfigureAwait(false);
@@ -86,7 +69,6 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
             .ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         var formId = await ResolveFormIdAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -114,7 +96,6 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
         };
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         var formId = await ResolveFormIdAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -130,14 +111,12 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
             .ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
     {
         var resolved = await ResolveVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false);
         return resolved is not { } match ? null : ToContentVersion(itemId, match.FormId, match.Version);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentVersion> SaveVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -180,7 +159,6 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
         };
     }
 
-    /// <inheritdoc />
     public async Task<StudioPublicationRequest> PublishAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

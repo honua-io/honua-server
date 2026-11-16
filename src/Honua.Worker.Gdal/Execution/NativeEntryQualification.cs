@@ -7,7 +7,6 @@ using Honua.Core.Features.ControlPlane;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>Image-bound, opt-in actual ELF entry pause; this is not mid-operation GDAL proof.</summary>
 internal sealed class NativeEntryQualification
 {
     internal const string LibraryPath = "/app/libhonua_gp_entry.so";

@@ -21,19 +21,11 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-/// <summary>
-/// Service for detecting coordinate reference systems from various sources
-/// Behavior reference: ../Honua.Server/src/platform/core/Query/Filter/CqlFilterParser.cs
-/// Implements CRS detection from .prj files, WKT, EPSG codes, and GeoJSON
-/// </summary>
 internal sealed partial class CrsDetectionService : ICrsDetectionService
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<CrsDetectionService> _logger;
 
-    /// <summary>
-    /// Common EPSG codes and their variations for quick lookup
-    /// </summary>
     private static readonly FrozenDictionary<string, int> _wellKnownEpsgCodes =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
@@ -65,55 +57,22 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
         .ToFrozenDictionary();
 
-    /// <summary>
-    /// Regex patterns for extracting EPSG codes from various string formats
-    /// </summary>
     private static readonly Regex _epsgCodeRegex = new(
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{3,6})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>
-    /// Extracts the EPSG code from a WKT authority node in either WKT1
-    /// (<c>AUTHORITY["EPSG","25832"]</c>) or WKT2 / PROJ-6 (<c>ID["EPSG",25832]</c>) form.
-    /// Detection runs against a single CRS scope (see <see cref="ScopeToPrimaryCrs"/>): for a plain
-    /// PROJCS/PROJCRS the projected authority node is the <em>last</em> match in the string and,
-    /// for projected WKT, one that sits <em>after</em> the inner base-geographic block — so a
-    /// projected CRS is not misread as its base geographic CRS, and WKT2 <c>ID[]</c> nodes
-    /// (PROJ-6 <c>.prj</c>, FlatGeobuf) are honored. Compound (COMPD_CS/COMPOUNDCRS) and bound
-    /// (BOUNDCRS) WKT are scoped to their horizontal / source CRS member before this runs so a
-    /// trailing vertical (5703-family) or transform authority never wins (#2743).
-    /// </summary>
     private static readonly Regex _wktAuthorityNodeRegex = new(
         @"(?:AUTHORITY|ID)\s*\[\s*""EPSG""\s*,\s*""?(\d{3,6})""?\s*\]",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>
-    /// Extracts the projected CRS name from the opening of a <c>PROJCS[...]</c> (WKT1) or
-    /// <c>PROJCRS[...]</c> (WKT2) node so common ESRI projected names can be matched when the
-    /// file carries no AUTHORITY/ID node (typical of ArcGIS-authored <c>.prj</c> sidecars).
-    /// </summary>
     private static readonly Regex _projectedNameRegex = new(
         @"PROJC(?:S|RS)\s*\[\s*""([^""]+)""",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>
-    /// Matches ESRI UTM projected-CRS names (e.g. <c>NAD_1983_UTM_Zone_17N</c>,
-    /// <c>WGS_1984_UTM_Zone_32N</c>, <c>ETRS_1989_UTM_Zone_32N</c>) so the EPSG code can be
-    /// computed from the datum + zone + hemisphere. Datum realizations (e.g. <c>NAD_1983_HARN</c>,
-    /// <c>NAD_1983_2011</c>, <c>NAD_1983_CSRS</c>) are deliberately NOT matched here: their zone
-    /// arithmetic differs from plain NAD83 (26900+zone), so mapping <c>NAD_1983_HARN_UTM_Zone_17N</c>
-    /// through this branch would silently pick the wrong datum. Realization names fall through to
-    /// the spatial_ref_sys WKT match (or an explicit source SRID) instead (#2743).
-    /// </summary>
     private static readonly Regex _esriUtmNameRegex = new(
         @"^(?<datum>WGS_1984|NAD_1983|ETRS_1989|ETRS89)_UTM_Zone_(?<zone>\d{1,2})(?<hemi>[NS])$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>
-    /// Small, deliberately-limited table of common ESRI projected-CRS names to EPSG codes for
-    /// files that carry no authority node. Full PROJ WKT parsing is a non-goal (#2743); UTM
-    /// families are handled by <see cref="_esriUtmNameRegex"/> instead of enumerating them here.
-    /// </summary>
     private static readonly FrozenDictionary<string, int> _esriProjectedNameCodes =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
@@ -129,7 +88,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)
     {
         // A .prj sidecar is a single WKT string (WKT1 or WKT2 / PROJ-6). The WKT detection
@@ -142,7 +100,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return DetectFromWktAsync(prjContent.Trim(), cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<int?> DetectFromWktAsync(string wktContent, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(wktContent))
@@ -278,18 +235,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return null;
     }
 
-    /// <summary>
-    /// Narrows a WKT string to the single CRS whose authority code describes the data's horizontal
-    /// coordinates, before any authority extraction runs (#2743):
-    /// <list type="bullet">
-    /// <item>COMPD_CS / COMPOUNDCRS → the first projected (PROJCS/PROJCRS) member, else the first
-    /// geographic (GEOGCS/GEOGCRS) member. This avoids resolving to the trailing vertical CRS,
-    /// whose EPSG authority (e.g. 5703) also validates in <c>spatial_ref_sys</c>.</item>
-    /// <item>BOUNDCRS → the SOURCECRS member. This avoids resolving to TARGETCRS or the abridged
-    /// transformation, which carry different (transform/target) authority codes.</item>
-    /// <item>Plain PROJCS/GEOGCS (and anything unrecognized) is returned unchanged.</item>
-    /// </list>
-    /// </summary>
     private static string ScopeToPrimaryCrs(string wkt)
     {
         if (StartsWithKeyword(wkt, "COMPD_CS") || StartsWithKeyword(wkt, "COMPOUNDCRS"))
@@ -309,11 +254,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return wkt;
     }
 
-    /// <summary>
-    /// Returns the index of the closing bracket of the first base-geographic block
-    /// (GEOGCS / BASEGEOGCRS / GEOGCRS) in the WKT, or <c>-1</c> when none is present. Used to
-    /// decide whether an authority node sits inside the base-geographic member of a projected CRS.
-    /// </summary>
     private static int FindGeographicBaseBlockEnd(string wkt)
     {
         if (TryFindMember(wkt, "GEOGCS", out _, out var wkt1End))
@@ -332,20 +272,11 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     private static bool StartsWithKeyword(string wkt, string keyword) =>
         wkt.AsSpan().TrimStart().StartsWith(keyword, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Extracts the substring of the first <paramref name="keyword"/>[...] member of the WKT via a
-    /// balanced-bracket scan, or <see langword="null"/> when the keyword is not present as a node.
-    /// </summary>
     private static string? ExtractFirstMember(string wkt, string keyword) =>
         TryFindMember(wkt, keyword, out var start, out var end)
             ? wkt.Substring(start, end - start + 1)
             : null;
 
-    /// <summary>
-    /// Finds the first <paramref name="keyword"/>[...] node in the WKT and reports the index of the
-    /// keyword and of its matching closing bracket via a balanced-bracket scan that ignores brackets
-    /// inside quoted strings.
-    /// </summary>
     private static bool TryFindMember(string wkt, string keyword, out int start, out int end)
     {
         start = -1;
@@ -377,10 +308,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return false;
     }
 
-    /// <summary>
-    /// Returns the index of the <c>]</c> matching the <c>[</c> at <paramref name="openIndex"/>, or
-    /// <c>-1</c> when the brackets are unbalanced. Brackets inside double-quoted strings are ignored.
-    /// </summary>
     private static int FindMatchingBracket(string s, int openIndex)
     {
         var depth = 0;
@@ -416,7 +343,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return -1;
     }
 
-    /// <inheritdoc />
     public int? DetectFromEpsgCode(string epsgCode)
     {
         if (string.IsNullOrWhiteSpace(epsgCode))
@@ -436,7 +362,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return null;
     }
 
-    /// <inheritdoc />
     public async Task<int?> DetectFromGeoJsonCrsAsync(string crsObject, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(crsObject))
@@ -479,7 +404,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return null;
     }
 
-    /// <inheritdoc />
     public async Task<int?> DetectFromShapefilePrjAsync(string shapefilePath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shapefilePath))
@@ -508,7 +432,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> ValidateSridAsync(int srid, CancellationToken cancellationToken = default)
     {
         try
@@ -537,9 +460,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
     }
 
-    /// <summary>
-    /// Attempt to find SRID by matching WKT against PostGIS spatial_ref_sys table.
-    /// </summary>
     private async Task<int?> FindSridByWktMatchAsync(string wktContent, CancellationToken cancellationToken)
     {
         try

@@ -22,27 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Scene;
 
-/// <summary>
-/// Publishing executor that converts a feature layer into a deterministic
-/// OGC 3D Tiles 1.1 tileset and registers it with the hosted scene registry.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This is the v1 implementation of the <c>FeatureLayer → SceneService</c>
-/// publishing path described in #842. The executor is intentionally
-/// conservative: small/medium datasets, a single-tile output (no LOD), and a
-/// hard 50 000-feature cap. Enterprise-scale tiling and streaming
-/// optimization are deferred to future tickets.
-/// </para>
-/// <para>
-/// Outputs are written under <c>{OutputRoot}/{sceneId}/</c>. The executor
-/// emits one <c>tileset.json</c> plus one <c>tile_0000.glb</c> binary
-/// containing the projected mesh, per-vertex feature ids, and per-feature
-/// attribute table. Determinism is guaranteed by ordering features by
-/// primary key, applying a stable triangulation, and serializing JSON
-/// through a source-generated context with no dictionary keys.
-/// </para>
-/// </remarks>
 internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 {
     internal const string TargetConfigSceneId = "sceneId";
@@ -80,7 +59,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         _storage = storage;
     }
 
-    /// <inheritdoc />
     public async Task<PublishedServiceRecord> ExecuteAsync(
         PublishIntent intent,
         CancellationToken cancellationToken = default)
@@ -93,12 +71,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return record with { Warnings = outcome.Result.Warnings };
     }
 
-    /// <summary>
-    /// Direct entry point used by the admin endpoint to run a generation job
-    /// inline and return the rich summary in addition to the published-service
-    /// record. The summary includes the resolved scene id, output path, and
-    /// bounding region degrees so the response can avoid re-derivation.
-    /// </summary>
     internal async Task<SceneGenerationOutcome> RunDirectAsync(
         PublishIntent intent,
         CancellationToken cancellationToken)
@@ -460,14 +432,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
     }
 
-    /// <summary>
-    /// Partitions the collected features into a quadtree LOD hierarchy (#1200),
-    /// writes one GLB per content-bearing node, and emits the multi-level
-    /// <c>tileset.json</c> tree. Node content uris are assigned in a stable
-    /// pre-order walk (<c>tile_0000.glb</c>, <c>tile_0001.glb</c>, ...) so the
-    /// output is byte-identical across runs for identical input. Returns the
-    /// number of GLB tiles written.
-    /// </summary>
     private static async Task<int> WriteLodTilesetAsync(
         IReadOnlyList<SceneFeature> features,
         IReadOnlyList<SceneAttributeSchema> attributeSchemas,
@@ -558,13 +522,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
     }
 
-    /// <summary>
-    /// Returns true when at least one feature in the node will contribute
-    /// renderable vertices, mirroring <see cref="GeometryTileBuilder"/>'s per-kind
-    /// emission thresholds via <see cref="WillProduceVertices"/>. Used to drop
-    /// all-degenerate leaves from LOD content emission instead of letting
-    /// <see cref="GeometryTileBuilder.BuildGlb"/> throw.
-    /// </summary>
     private static bool NodeWillProduceVertices(IReadOnlyList<SceneFeature> features)
     {
         for (var i = 0; i < features.Count; i++)
@@ -577,11 +534,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return false;
     }
 
-    /// <summary>
-    /// Computes a node's vertical extent (meters) for its bounding region.
-    /// Mirrors the extrusion-aware min/max-Z accounting used for the whole
-    /// dataset so each LOD tile's region encloses both prism faces.
-    /// </summary>
     private static (double Min, double Max) ComputeNodeHeightExtent(
         IReadOnlyList<SceneFeature> features,
         MetadataV2ExtrusionInfo? extrusion)
@@ -730,11 +682,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return collected;
     }
 
-    /// <summary>
-    /// Mirrors <see cref="GeometryTileBuilder"/>'s per-kind vertex-emission
-    /// criteria so the executor can short-circuit the all-degenerate case
-    /// with a 400 instead of letting the build phase throw.
-    /// </summary>
     private static bool WillProduceVertices(SceneFeature feature)
     {
         var vertices = feature.Geometry.Vertices;
@@ -747,12 +694,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         };
     }
 
-    /// <summary>
-    /// Returns the polygon ring's vertex count, dropping a duplicate closing
-    /// vertex if the ring is closed — matching <see cref="GeometryTileBuilder"/>'s
-    /// internal accounting so the executor's degeneracy check stays in sync
-    /// with the build phase's silent-skip threshold.
-    /// </summary>
     private static int CountDistinctRingVertices(IReadOnlyList<SceneVertex> ring)
     {
         if (ring.Count < 3)
@@ -866,12 +807,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         };
     }
 
-    /// <summary>
-    /// Resolves the per-feature 3D symbology (color / opacity / visibility) for
-    /// every collected feature, indexed parallel to <paramref name="features"/>.
-    /// Returns null when the layer declares no symbology so the GLB builder
-    /// keeps its legacy single-material path.
-    /// </summary>
     private static ResolvedSymbology[]? ResolvePerFeatureSymbology(
         Symbology3D? symbology,
         IReadOnlyList<SceneFeature> features)
@@ -1139,14 +1074,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
     }
 
-    /// <summary>
-    /// Maps the source layer's access policy onto the
-    /// <see cref="SceneDatasetRecord"/> public/protected fields. The registry
-    /// expects exactly one of <c>IsPublic</c> / <c>RequiresAuth</c> to be
-    /// true — anonymous reads on the source layer fold into a public scene,
-    /// while a non-anonymous source layer protects the generated tileset and
-    /// forwards the role allow-list verbatim.
-    /// </summary>
     private static (bool IsPublic, bool RequiresAuth, string[]? AllowedRoles) ResolveSceneAccess(
         AccessPolicy? layerAccessPolicy)
     {
@@ -1252,19 +1179,11 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         public double[] Bounds => [MinLon, MinLat, MaxLon, MaxLat];
     }
 
-    /// <summary>
-    /// Outcome returned by the executor's direct entry point, capturing both
-    /// the registry-facing result and the published-service identifier
-    /// derived from the generated scene id.
-    /// </summary>
     internal sealed class SceneGenerationOutcome
     {
         public SceneGenerationResult Result { get; init; } = new();
     }
 
-    /// <summary>
-    /// Lightweight summary returned by the executor's direct entry-point.
-    /// </summary>
     internal sealed class SceneGenerationResult
     {
         public string SceneId { get; init; } = string.Empty;

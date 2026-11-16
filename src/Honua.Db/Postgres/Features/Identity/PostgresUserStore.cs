@@ -9,26 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Identity;
 
-/// <summary>
-/// PostgreSQL-backed managed-user store (#3141). Persists user identities, their role
-/// assignments, and activation state to the <c>honua.managed_users</c> /
-/// <c>honua.managed_user_roles</c> tables created by migration 106, so managed-identity
-/// membership survives process restart and is shared across scaled nodes. Backs both the
-/// admin <see cref="IUserStore"/> surface and the SCIM 2.0 provisioning surface
-/// (<see cref="IScimUserStore"/>, #510) over the same record set, replacing the
-/// process-local <c>InMemoryUserStore</c> as the registered implementation on Postgres
-/// profiles.
-/// </summary>
-/// <remarks>
-/// Identifier resolution (finding 2 of #3141): administrative <see cref="GetUserAsync"/>
-/// calls prefer the record id (the SCIM <c>userName</c>), while authentication membership
-/// calls use <see cref="GetUserByPrincipalIdAsync"/> and match the indexed, case-sensitive
-/// pair of <c>external_issuer</c> plus <c>external_id</c> (the validated OIDC issuer and
-/// subject). The separate namespace prevents both record-id and cross-issuer subject
-/// collisions from resolving security membership to the wrong user. Because this store is
-/// shared, a resolution miss is authoritative — the #3119 fail-closed managed-membership
-/// marker remains as defense in depth for identifier drift and store outages.
-/// </remarks>
 internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 {
     private const string UserColumns =
@@ -53,12 +33,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
     private readonly string _groupsTable;
     private readonly string _groupMembersTable;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresUserStore"/> class.
-    /// </summary>
-    /// <param name="dataSource">The Npgsql data source.</param>
-    /// <param name="schemaName">Optional schema override (used by tests for isolated
-    /// schemas); defaults to the application schema.</param>
     public PostgresUserStore(NpgsqlDataSource dataSource, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
@@ -69,12 +43,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         _groupMembersTable = SchemaSearchPath.QualifyTable("scim_group_members", schemaName);
     }
 
-    /// <summary>
-    /// Seeds (upserts) a user into the store, replacing activation state and roles (for
-    /// testing — the durable counterpart of <c>InMemoryUserStore.Seed</c>, so fixture-based
-    /// integration tests can restore a deterministic baseline before each test against the
-    /// shared <c>honua.managed_users</c> record set).
-    /// </summary>
     internal async Task SeedAsync(ManagedUser user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(user);
@@ -119,7 +87,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
     // ---- IUserStore ------------------------------------------------------------------
 
-    /// <inheritdoc />
     public async Task<UserListResult> ListUsersAsync(UserListFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
@@ -191,16 +158,9 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         }
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Resolves <paramref name="userId"/> against the record id (SCIM <c>userName</c>)
-    /// first, then an unambiguous exact external subject (<c>external_id</c>).
-    /// Authentication membership uses the dedicated issuer-scoped principal lookup below.
-    /// </remarks>
     public Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
         => GetUserByIdentifierAsync(userId, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<ManagedUser?> GetUserByPrincipalIdAsync(
         string principalId,
         string? issuer = null,
@@ -272,7 +232,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(roles);
@@ -297,7 +256,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         return updated;
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeprovisionUserAsync(string userId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -319,7 +277,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
     // ---- IScimUserStore (#510) -------------------------------------------------------
 
-    /// <inheritdoc />
     public async Task<ManagedUser?> CreateUserAsync(ScimUserProvisioning provisioning, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provisioning);
@@ -378,7 +335,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ManagedUser?> FindByUserNameAsync(string userName, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userName))
@@ -406,7 +362,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ScimUserPage> ListUsersAsync(ScimUserQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -464,7 +419,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ManagedUser?> ReplaceUserAsync(string userId, ScimUserProvisioning provisioning, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provisioning);
@@ -551,7 +505,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ManagedUser?> SetActiveAsync(string userId, bool active, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -603,7 +556,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         return updated;
     }
 
-    /// <inheritdoc />
     public Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
         => DeprovisionUserAsync(userId, cancellationToken);
 
@@ -633,11 +585,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         Roles = reader.GetFieldValue<string[]>(10),
     };
 
-    /// <summary>
-    /// Resolves the canonical record id for a caller-supplied identifier: exact record id
-    /// (SCIM <c>userName</c>) wins over an exact external-subject match.
-    /// Returns <see langword="null"/> when no record matches or the tables do not exist.
-    /// </summary>
     private async Task<string?> ResolveCanonicalUserIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -759,10 +706,6 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Deactivates a user and revokes every role — deactivation must deterministically stop
-    /// deferred work authorized by this identity on any replica (#3141 acceptance 1).
-    /// </summary>
     private async Task DeactivateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

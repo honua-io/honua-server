@@ -305,7 +305,6 @@ internal sealed partial class PostgresObservationStore
     private static JsonObject ParseBody(JsonElement body) => body.ValueKind == JsonValueKind.Object
         ? JsonNode.Parse(body.GetRawText())!.AsObject() : throw new SensorThingsValidationException("An entity must be a JSON object.");
 
-    /// <summary>Accepts only a positive integer <c>@iot.id</c>. Objects and arrays are client errors.</summary>
     internal static long RequirePositiveEntityId(JsonNode key)
     {
         if (key is not JsonValue value || !value.TryGetValue<long>(out var id) || id <= 0)

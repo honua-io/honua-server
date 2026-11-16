@@ -14,11 +14,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-/// <summary>
-/// Read-only reconciliation between the DbUp journal and the physical objects owned by the
-/// audited core migrations. This component never executes DDL: divergence is an operator-visible,
-/// terminal failure rather than permission to replay part of a migration from a store.
-/// </summary>
 internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 {
     internal const string RasterTablesMigration =
@@ -402,7 +397,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
         => VerifyAsync(connection, _noReaderVerifiedMigrations, cancellationToken);
 
-    /// <inheritdoc />
     public async Task VerifyAsync(
         DbConnection connection,
         IReadOnlySet<string> readerVerifiedMigrations,
@@ -487,7 +481,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
         => VerifyConsistencyAsync(connection, _noReaderVerifiedMigrations, cancellationToken);
 
-    /// <inheritdoc />
     public async Task VerifyConsistencyAsync(
         DbConnection connection,
         IReadOnlySet<string> readerVerifiedMigrations,
@@ -530,7 +523,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
-    /// <inheritdoc />
     public async Task VerifyFirstMigrationAdoptionAsync(
         DbConnection connection,
         CancellationToken cancellationToken = default)
@@ -606,7 +598,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
-    /// <inheritdoc />
     public async Task<string?> TryAdoptMatchingRasterBaselineAsync(
         string connectionString,
         CancellationToken cancellationToken = default)
@@ -1507,10 +1498,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             IsApplied(RasterLayerStatisticsMigration) ||
             _rasterTables.Any(Tables.Contains);
 
-        /// <summary>
-        /// postgis_raster is installed, so the canonical runner will discover the provider root,
-        /// but its baseline has never been journaled: the extension was enabled after first boot.
-        /// </summary>
         public bool IsAwaitingRasterProviderRoot =>
             HasPostGisRaster && !IsApplied(RasterTablesMigration);
 
@@ -1520,10 +1507,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         public bool IsApplied(string migration) => AppliedScripts.Contains(migration);
 
-        /// <summary>
-        /// No migration has ever been journaled: either a genuinely fresh database or one whose
-        /// migration-owned tables were created by something other than the migration runner.
-        /// </summary>
         public bool JournalIsEmpty => AppliedScripts.Count == 0;
 
         public List<string> MissingRasterBaselineTables()
