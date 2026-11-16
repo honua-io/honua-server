@@ -530,14 +530,10 @@ internal sealed class CapabilityManifestService(
             Capability("collaboration.feature-locks", "collaboration", context,
                 configured: runtimeInventory.FeatureLockAuthorizerConfigured,
                 requiresAuthentication: true),
-            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
-            // lease is node-local, and GeoServices applyEdits honours no client-supplied
-            // version token. Same wire shape as an unimplemented file-format writer. The
-            // version-token row is scoped to GeoServices because OGC API Features does
-            // enforce If-Match/412 — a global name would under-report the working surfaces.
             Capability("collaboration.feature-locks.cross-node", "collaboration", context,
-                maturity: CapabilityMaturity.Planned,
-                supported: false),
+                configured: runtimeInventory.HasCrossNodeFeatureLocks && runtimeInventory.FeatureLockAuthorizerConfigured,
+                requiresAuthentication: true),
+            // GeoServices has no client-supplied version token; OGC API Features enforces If-Match.
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -717,6 +713,11 @@ internal sealed class CapabilityManifestService(
             ["collaboration.feature-locks"] = new()
             {
                 Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
+                RequiresAuthentication = true,
+            },
+            ["collaboration.feature-locks.cross-node"] = new()
+            {
+                Configured = runtimeInventory.HasCrossNodeFeatureLocks && runtimeInventory.FeatureLockAuthorizerConfigured,
                 RequiresAuthentication = true,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
@@ -905,7 +906,9 @@ internal sealed class CapabilityManifestService(
             return false;
         }
 
-        return runtimeInventory.RoutedCapabilities.TryGetRoutedCapability(manifestId, out var capability)
+        var routedId = manifestId == "collaboration.feature-locks.cross-node"
+            ? "collaboration.feature-locks" : manifestId;
+        return runtimeInventory.RoutedCapabilities.TryGetRoutedCapability(routedId, out var capability)
             && Array.IndexOf(profile.EnabledCapabilities, capability) < 0;
     }
 

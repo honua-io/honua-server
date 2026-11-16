@@ -5,6 +5,8 @@ namespace Honua.Core.Features.Collaboration.FeatureLocks;
 
 public interface IFeatureLockService
 {
+    bool SupportsCrossNode => false;
+
     ValueTask<FeatureLockClaimResponse> ClaimAsync(
         FeatureRef feature,
         LockHolder holder,

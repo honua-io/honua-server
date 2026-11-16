@@ -29,7 +29,7 @@ underlying feature data.
 | Are leases enforced on writes? | **Yes** — FeatureServer `applyEdits`, OGC API Features writes and OData writes all consult the lease store before mutating a feature. |
 | Is claiming a lease mandatory? | **No.** The enforced policy is *honour an active lease*: an edit is refused only while **another** editor holds one. A client that never claims a lease behaves exactly as before. |
 | Are expected-version tokens enforced on GeoServices `applyEdits`? | **No — not implemented.** Optimistic concurrency on that surface is provided by the server-side precondition path, not by a client-supplied version token. OGC API Features enforces `If-Match`/`412` on `PUT`, merge-`PATCH` and `DELETE`. |
-| Are leases enforced across nodes? | **No — not implemented.** The only lease store that ships is in-process. See [Single-node scope](#single-node-scope). |
+| Are leases enforced across nodes? | **Yes, with PostgreSQL.** Nodes sharing the same database and schema share leases. See [Store scope](#store-scope). |
 | Is lease authorization configured out of the box? | **No.** The shipped authorizer denies every claim, so until you supply your own no lease is granted at all (see [Authorization](#authorization)). |
 | Is a lease atomic with the write it guards? | **No.** The check happens immediately before the mutation, not inside the writer transaction. See [What a lease does not promise](#what-a-lease-does-not-promise). |
 
@@ -41,7 +41,7 @@ page:
 | Manifest capability | What it reports |
 | --- | --- |
 | `collaboration.feature-locks` | `supported: true` — enforcement ships on every feature-write path. `available` is `true` only once you supply an [authorizer](#authorization) and, when a [deployment profile](../../guides/deploy/capability-deployment-profiles.md) is configured, that profile enables `collaboration.map-sessions`. Until an authorizer is supplied it is `false` with `reasonCode: disabled-by-configuration`, because a lease that can never be granted is not an available capability. A profile that omits `collaboration.map-sessions` removes the routes and reports `available: false` with `reasonCode: deployment-profile-excluded`. |
-| `collaboration.feature-locks.cross-node` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — leases do not span nodes. See [Single-node scope](#single-node-scope). |
+| `collaboration.feature-locks.cross-node` | `supported: true`, `lifecycle: implemented`; available when the PostgreSQL store and a deployment authorizer are configured. See [Store scope](#store-scope). |
 | `edit.geoservices-version-tokens` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — the GeoServices `applyEdits` surface honours no client-supplied version token. The row is named for that surface on purpose: OGC API Features **does** enforce `If-Match`/`412`, and a generically-named row would tell you to disable optimistic concurrency where it works. |
 
 That is the same shape the manifest already uses for an unimplemented file-format writer,
@@ -151,19 +151,17 @@ lock. Two limits follow, and neither is hidden from you:
 
 Creates are never blocked: a feature that does not exist yet cannot be leased.
 
-## Single-node scope
+## Store scope
 
-`InMemoryFeatureLockService` is the only lease store that ships. Leases live in the memory
-of the node that granted them, which has two consequences you must plan for:
+PostgreSQL deployments use a shared lease table in the configured Honua schema. Nodes
+connected to the same database and schema see the same leases, so a lease claimed on one
+node blocks conflicting writes on another. Leases survive application restarts and remain
+active until released or expired. PostgreSQL's clock determines expiry; expired leases can
+be replaced without waiting for background pruning. Tenant schemas keep their leases separate.
 
-- **A lease does not survive a restart.** After a node restarts, its leases are gone and the
-  features are editable again.
-- **A lease does not cross nodes.** In a multi-node deployment, a lease held on node A does
-  not block a write routed to node B.
-
-If you need leases to hold across a cluster, either pin collaborative editing sessions to a
-single node with sticky routing, or supply your own `IFeatureLockService` backed by a shared
-store. A distributed lease store is not part of 2026.1.
+Hosts without PostgreSQL retain the `InMemoryFeatureLockService` fallback. Its leases are
+local to one process and disappear on restart. The capability manifest reports cross-node
+locking unavailable for that store. A deployment authorizer is still required with either store.
 
 ## Authorization
 

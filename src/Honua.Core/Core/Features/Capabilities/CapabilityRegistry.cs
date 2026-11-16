@@ -348,16 +348,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // rather than as support — the shipped authorizer grants no lease at all.
             ("collaboration.feature-locks", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // The two recorded 2026.1 feature-lock gaps (#4402), declared here so a client
-            // reads them off the manifest instead of off the docs page: a lease is node-local,
-            // and the GeoServices applyEdits surface honours no client-supplied version token.
-            // The version-token gap is named for the ONE surface that has it: OGC API Features
-            // enforces If-Match/412 on PUT, merge-PATCH and DELETE and the store-level
-            // precondition path is untouched, so a generically-named "edit.version-tokens"
-            // would tell a client to disable optimistic concurrency where it works.
-            // Planned maturity + the KnownGap status below is the same shape the unimplemented
-            // file-format writers already publish (supported=false, lifecycle "planned").
-            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
+            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // GeoServices has no client-supplied version token; OGC API Features enforces If-Match.
             ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
             // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).

@@ -11,6 +11,8 @@ namespace Honua.Db.Postgres.Features.Collaboration.FeatureLocks;
 
 internal sealed class PostgresFeatureLockService : IFeatureLockService
 {
+    public bool SupportsCrossNode => true;
+
     private const long FeatureLockMutexNamespace = 0x484F4E55;
     private const string DeniedReason = "Feature lock mutation requires authorized write access.";
     private const string Columns = "lock_id, holder_id, display_name, session_id, tenant_id, principal_name, acquired_at, expires_at, renewed_at";
