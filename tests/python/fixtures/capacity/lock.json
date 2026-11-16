@@ -192,7 +192,7 @@
     "saturationRatio": {
       "language": "honua-observation-query",
       "version": "1",
-      "expression": "max(metrics[worker], metrics[database], metrics[redis])",
+      "expression": "max(metrics[worker], metrics[database])",
       "sha256": "7d78e5d70bb0b90691cb51b0f6b0a66b95c1744980278c79f0a088228ffd0211"
     },
     "recoveryTimeSeconds": {

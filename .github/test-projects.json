@@ -541,9 +541,7 @@
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
+      "resources": [],
       "isolated": false,
       "coverageRequired": true,
       "shardRouted": true
@@ -625,8 +623,7 @@
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [
-        "docker",
-        "redis"
+        "docker"
       ],
       "isolated": false,
       "coverageRequired": true

@@ -48,18 +48,18 @@ def observations():
                 observedRevision=REVISION, window=window, lockSha256=emitter.digest(LOCK_PATH.read_bytes()),
                 topology=dict(replicas=[dict(id="honua", failureDomain="local-docker-host", imageDigest=IMAGE)],
                               database=dict(kind="postgres", failureDomain="local-docker-host"),
-                              redis=dict(kind="redis", failureDomain="local-docker-host"), gpWorkers=1),
+                              gpWorkers=1),
                 producer=dict(repository="honua-io/honua-server", workflowPath=".github/workflows/capacity-soak-candidate.yml",
                               workflowRef="honua-io/honua-server/.github/workflows/capacity-soak-candidate.yml@refs/heads/candidate",
                               sourceRevision=REVISION, runId=123, runAttempt=1, predicateType="https://slsa.dev/provenance/v1"),
                 samplingFailures=[], populationMode="complete-disjoint-intervals", samplePeriodSeconds=60,
                 requestCount=4320000, requests=ledger,
-                metrics=[dict(at=at, worker=.2, database=.4, redis=.3, queueAgeSeconds=7) for at in times],
+                metrics=[dict(at=at, worker=.2, database=.4, queueAgeSeconds=7) for at in times],
                 workloads=[dict(at=at, dimensions=copy.deepcopy(LOCK["supportedEnvelope"]), executionMode="candidate-topology", proxy=False) for at in times],
                 recoveries=[dict(dependency=name, failure="stop-start", probe="dependency-and-serving-query",
                                  injectedAt=collector_module.iso(start+timedelta(minutes=30)), detectedAt=collector_module.iso(start+timedelta(minutes=30, seconds=1)),
                                  recoveredAt=collector_module.iso(start+timedelta(minutes=30, seconds=seconds)))
-                            for name, seconds in (("worker", 2), ("database", 3), ("redis", 4))])
+                            for name, seconds in (("worker", 2), ("database", 3))])
 
 
 def emit(source=None):
@@ -71,12 +71,12 @@ def emit(source=None):
 def test_analytical_population_values_and_metadata():
     result, payload = emit()
     expected = dict(availability=4319998/4320000, errorRate=2/4320000, p95LatencyMs=200, p99LatencyMs=600,
-                    throughputRps=1200, queueAgeSeconds=7, saturationRatio=.4, recoveryTimeSeconds=4)
+                    throughputRps=1200, queueAgeSeconds=7, saturationRatio=.4, recoveryTimeSeconds=3)
     assert {name: value["value"] for name, value in result["signals"].items()} == expected
     assert result["status"] == "completed"
     assert result["steadyStateSeconds"] == 3600
     assert result["rawArtifacts"][0]["sha256"] == emitter.digest(payload)
-    assert result["signals"]["saturationRatio"]["observationPopulation"] == {"kind": "gauge", "sampleCount": 183}
+    assert result["signals"]["saturationRatio"]["observationPopulation"] == {"kind": "gauge", "sampleCount": 122}
     assert result["signals"]["throughputRps"]["observationPopulation"] == {"kind": "ratio", "numerator": 4320000, "denominator": 3600, "sampleCount": 4320000}
     for signal in result["signals"].values():
         assert signal["window"] == result["window"]
@@ -117,7 +117,7 @@ def test_zip_contains_exact_receipt_and_cited_raw_bytes(tmp_path):
         assert json.loads(archive.read("capacity-soak-receipt.json")) == result
 
 
-@pytest.mark.parametrize("field", ["worker", "database", "redis", "queueAgeSeconds"])
+@pytest.mark.parametrize("field", ["worker", "database", "queueAgeSeconds"])
 def test_missing_metric_is_not_defaulted_to_zero(field):
     source = observations()
     source["metrics"][5][field] = None
@@ -268,10 +268,7 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
             return "40.00%"
         if args[:2] == ("docker", "info"):
             return "4"
-        if "INFO" in args:
-            return "# Clients\nconnected_clients:25\nblocked_clients:0\n"
-        assert "maxclients" in args
-        return "maxclients\n100"
+        raise AssertionError(f"Unexpected dependency command: {args}")
 
     monkeypatch.setattr(collector_module, "command", docker)
 
@@ -307,7 +304,7 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
             async with httpx.AsyncClient() as client:
                 at = await collector.sample(client)
             assert collector.failures == []
-            assert collector.metrics == [dict(at=collector_module.iso(at), worker=.1, database=.4, redis=.25, queueAgeSeconds=7)]
+            assert collector.metrics == [dict(at=collector_module.iso(at), worker=.1, database=.4, queueAgeSeconds=7)]
             # A configured target of 170 users / 100 queued jobs must not replace
             # two live users / three actually observed queued jobs.
             assert collector.workloads[0]["dimensions"] == dict(tenants=1, services=1, layersPerService=4, featuresPerLayer=10000,

@@ -288,7 +288,7 @@ def _drill_collector(monkeypatch, job_states):
     async def faults(client):
         # Drill-time traffic goes through the recording client but must not join the window.
         await client.get("http://fixture/rest/services/test/FeatureServer/0/query?f=json")
-        collector.recoveries.extend(dict(dependency=name) for name in ("worker", "database", "redis"))
+        collector.recoveries.extend(dict(dependency=name) for name in ("worker", "database"))
 
     async def integrity(client):
         return dict(passed=True)
