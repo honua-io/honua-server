@@ -32,7 +32,7 @@ public sealed partial class GrpcGlobalIdEditTests
         {
             Publication = second.Publication with
             {
-                Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true }
+                Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true }
             },
             StorageLayerId = 1
         };
@@ -63,7 +63,7 @@ public sealed partial class GrpcGlobalIdEditTests
         }
         using var receipts = new GrpcServiceEditsReceipts(durable ? store : null);
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
         var context = GrpcFeatureServiceTests.CreateCallContext(
             GrpcFeatureServiceTests.CreateAuthenticatedUser("editor"), tenantId: null,

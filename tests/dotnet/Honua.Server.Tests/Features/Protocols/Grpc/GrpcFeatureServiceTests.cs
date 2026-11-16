@@ -384,7 +384,7 @@ public sealed partial class GrpcFeatureServiceTests
         {
             Publication = second.Publication with
             {
-                Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true },
+                Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true },
                 Capabilities = denyAccess ? ["Query", "Create"] : ["Query"]
             },
             StorageLayerId = 1
