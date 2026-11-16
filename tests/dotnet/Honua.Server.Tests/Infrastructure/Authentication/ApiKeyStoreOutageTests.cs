@@ -12,10 +12,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// A Redis timeout talking to the API-key store must not throw and must not lock out
-/// the bootstrap admin password.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -71,8 +67,8 @@ public sealed class ApiKeyStoreOutageTests
     [UnitTest]
     public async Task DatabaseOutage_BreakGlassPasswordStillAuthenticates_OnHeaderAndPortalPaths()
     {
-        // The PostgreSQL registry used on multi-instance Redis-off hosts (#6487) fails with a
-        // DbException, which must degrade exactly like a Redis outage.
+        // The PostgreSQL registry fails with a DbException, which must degrade exactly like a
+        // store timeout.
         var store = UnavailableStore(new Npgsql.NpgsqlException("database unavailable"));
 
         var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
@@ -89,51 +85,42 @@ public sealed class ApiKeyStoreOutageTests
     }
 
     [UnitTest]
-    public async Task CompletedReaderOnce_ManagedKeyAuthenticates_OnHeaderAndPortalPaths()
+    public async Task InvalidOperationFault_IsNotRetried_OnHeaderAndPortalPaths()
     {
+        // The registry is a database table, so a client-pipe fault is not retried: each path
+        // makes one store call and the fault surfaces, leaving the queued key unread.
         var store = new ScriptedStore();
-        var record = ManagedKey();
-        store.Enqueue(new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
-        store.Enqueue(record);
-        store.Enqueue(new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
-        store.Enqueue(record);
+        store.Enqueue(new InvalidOperationException("header fault"));
+        store.Enqueue(new InvalidOperationException("portal fault"));
+        store.Enqueue(ManagedKey());
 
-        var validation = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            new ApiKeyPresentation("managed-key", "ApiKey", null),
-            Dependencies(store), NullLogger.Instance, CancellationToken.None);
-        var verifier = new AdminPortalCredentialVerifier(
-            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
-            adminApiKeyStore: store,
-            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
-        var principal = await verifier.VerifyAsync("journey", "managed-key", CancellationToken.None);
+        var header = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
+                new ApiKeyPresentation("managed-key", "ApiKey", null),
+                Dependencies(store), NullLogger.Instance, CancellationToken.None));
+        var portal = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            PortalVerifier(store).VerifyAsync("journey", "managed-key", CancellationToken.None));
 
-        Assert.Equal(ApiKeyRejection.None, validation.Rejection);
-        Assert.NotNull(validation.Success);
-        Assert.True(validation.Success!.Succeeded);
-        Assert.NotNull(principal);
-        Assert.Equal(4, store.Calls);
+        Assert.Equal("header fault", header.Message);
+        Assert.Equal("portal fault", portal.Message);
+        Assert.Equal(2, store.Calls);
     }
 
     [UnitTest]
-    public async Task CompletedReaderPersists_UnknownKeyFailsClosed_BreakGlassStillAuthenticates()
+    public async Task Cancellation_IsNotTreatedAsStoreOutage_OnHeaderAndPortalPaths()
     {
-        var fault = new InvalidOperationException(RedisClientFault.CompletedReaderMessage);
-        var store = UnavailableStore(fault);
+        var store = UnavailableStore(new OperationCanceledException("caller cancelled"));
 
-        var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
-            Dependencies(store), NullLogger.Instance, CancellationToken.None);
-        var unknown = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            new ApiKeyPresentation("not-the-admin-password", "ApiKey", null),
-            Dependencies(store), NullLogger.Instance, CancellationToken.None);
-
-        Assert.Equal(ApiKeyRejection.None, bootstrap.Rejection);
-        Assert.Equal(ApiKeyRejection.CredentialStoreUnavailable, unknown.Rejection);
-        Assert.Null(unknown.Success);
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
+                new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
+                Dependencies(store), NullLogger.Instance, CancellationToken.None));
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            PortalVerifier(store).VerifyAsync("journey", BreakGlassPassword, CancellationToken.None));
     }
 
     [UnitTest]
-    public async Task OtherInvalidOperation_IsNotTreatedAsRedis()
+    public async Task OtherInvalidOperation_IsNotTreatedAsStoreOutage()
     {
         var store = UnavailableStore(new InvalidOperationException("changed on every attempt"));
 
@@ -157,6 +144,12 @@ public sealed class ApiKeyStoreOutageTests
         Assert.Equal(StatusCodes.Status500InternalServerError, other.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, identityModel.StatusCode);
     }
+
+    private static AdminPortalCredentialVerifier PortalVerifier(IAdminApiKeyStore store)
+        => new(
+            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
+            adminApiKeyStore: store,
+            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
 
     private static AdminApiKeyValidationResult ManagedKey()
     {
@@ -226,7 +219,7 @@ public sealed class ApiKeyStoreOutageTests
     {
         var store = Substitute.For<IAdminApiKeyStore>();
         store.ValidateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(failure ?? new TimeoutException("redis timeout"));
+            .ThrowsAsync(failure ?? new TimeoutException("store timeout"));
         return store;
     }
 
