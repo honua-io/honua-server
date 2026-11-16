@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Security.Admission;
 
@@ -28,6 +28,8 @@ public sealed record AiFinancialPolicy
     public int PeriodSeconds { get; init; }
     public AiFinancialLimits Deployment { get; init; } = new();
     public AiFinancialLimits Actor { get; init; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AiFinancialLimits? MonthlyActor { get; init; }
     public AiFinancialLimits Cohort { get; init; } = new();
     public AiFinancialLimits Workflow { get; init; } = new();
     // JournalCapacity is a lifetime cap. Exhaustion denies admission and does not evict liability history.
@@ -39,7 +41,8 @@ public sealed record AiFinancialPolicy
         && PeriodAnchorUtc >= DateTimeOffset.UnixEpoch && PeriodAnchorUtc.Offset == TimeSpan.Zero
         && PeriodSeconds is >= 60 and <= 2_678_400 && JournalCapacity is > 0 and <= 8192
         && Deployment is { IsValid: true } && Actor is { IsValid: true } && Cohort is { IsValid: true }
-        && Workflow is { IsValid: true } && Basis is { IsValid: true };
+        && Workflow is { IsValid: true } && Basis is { IsValid: true }
+        && (MonthlyActor is null || MonthlyActor.IsValid);
 
     public bool HasSameAccountingIdentity(AiFinancialPolicy other) => Currency == other.Currency && MoneyScale == other.MoneyScale
         && PeriodAnchorUtc == other.PeriodAnchorUtc && PeriodSeconds == other.PeriodSeconds;

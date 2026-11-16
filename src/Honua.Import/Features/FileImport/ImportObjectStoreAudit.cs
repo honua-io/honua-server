@@ -8,10 +8,6 @@ using Honua.Infrastructure.Security;
 
 namespace Honua.Import.FileImport;
 
-/// <summary>
-/// Writes one audit record for an object-store import. Credentials, session tokens, and
-/// external ids are not fields on <see cref="ImportObjectStoreAuditPayload"/>.
-/// </summary>
 internal static class ImportObjectStoreAudit
 {
     public const string ActionName = "import.object-store";
