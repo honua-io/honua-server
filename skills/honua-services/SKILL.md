@@ -15,7 +15,7 @@ Read the install `AGENTS.md`. Call serving MCP at `http://127.0.0.1:<HONUA_HTTP_
 4. Verify with [a feature query](references/query.md).
 5. Success is the new layer in `honua_list_layers` and a query whose features or `count` match the filter you sent. Say when the count could not be checked.
 
-Common failure: missing tools means the configure view was not selected. HTTP 401 means authentication failed: the key was missing or invalid. Stop. A refusal for missing admin authority or scope is permanent; another view does not grant it. Stop. A timeout after ingest leaves the outcome uncertain; retain the original operation identity and inspect its status. Publish from that table only after the operation, proposal, and job show that publication did not finish. Do not ingest it again.
+Common failure: missing tools means the configure view was not selected. HTTP 401 means authentication failed: the key was missing or invalid. Stop. A refusal for missing admin authority or scope is permanent; another view does not grant it. Stop. An ingest timeout leaves the outcome uncertain and returns no operation identity to poll. Stop and report that supported verification is needed before continuing; do not ingest it again or publish from that table. For a submitted publication request that returned an operation, proposal, or job identity, retain that identity and inspect its status before continuing.
 
 Leave service access unchanged unless the user asked to change it.
 
