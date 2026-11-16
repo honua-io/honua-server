@@ -48,6 +48,10 @@ public sealed class McpGetJobResultsToolTests
         structured.GetProperty("artifacts")[0].GetProperty("referenceSha256").GetString().Should().Be(
             "77f060ef7da5b14247281f6dcef6e97f7438771d975254291c659cc84c96f5ec");
         structured.GetProperty("artifactsTruncated").GetBoolean().Should().BeFalse();
+        var jsonText = result.GetProperty("content").EnumerateArray()
+            .Last(block => block.GetProperty("type").GetString() == "text").GetProperty("text").GetString()!;
+        using var textDocument = JsonDocument.Parse(jsonText);
+        JsonElement.DeepEquals(structured, textDocument.RootElement).Should().BeTrue();
         captured.Should().NotBeNull();
         captured!.Identity!.Name.Should().Be("test-user");
         ServiceCalls().Should().Equal(nameof(IGeoprocessingJobService.GetJobResultsAsync));
