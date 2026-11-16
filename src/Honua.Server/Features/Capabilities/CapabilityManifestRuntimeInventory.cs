@@ -19,7 +19,7 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IEnumerable<IFeatureDataProvider> featureDataProviders,
     IEnumerable<IFeatureLockAuthorizer> featureLockAuthorizers,
-    IFeatureLockService featureLockService,
+    IEnumerable<IFeatureLockService> featureLockServices,
     IWebHostEnvironment hostEnvironment,
     IServiceProviderIsService serviceInventory,
     IFeatureOutputFormatRegistry outputFormats,
@@ -37,7 +37,7 @@ internal sealed class CapabilityManifestRuntimeInventory(
 
     public bool HasFieldCollectionSyncStore { get; } = fieldCollectionSyncStores.Any();
 
-    public bool HasCrossNodeFeatureLocks { get; } = featureLockService.SupportsCrossNode;
+    public bool HasCrossNodeFeatureLocks { get; } = featureLockServices.LastOrDefault()?.SupportsCrossNode == true;
 
     public bool FeatureLockAuthorizerConfigured { get; } = featureLockAuthorizers
         .Any(static authorizer => authorizer is not Collaboration.FeatureLocks.FailClosedFeatureLockAuthorizer);
