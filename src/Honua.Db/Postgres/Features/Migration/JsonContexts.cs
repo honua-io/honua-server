@@ -16,9 +16,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// JSON serialization context for import operations - AOT compatible
-/// </summary>
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(sbyte))]

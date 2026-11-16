@@ -7,7 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>Reads committed gRPC edit receipts from the metadata schema.</summary>
 internal sealed class PostgresFeatureEditIdempotencyReceipts(
     NpgsqlDataSource dataSource,
     string? schemaName) : IFeatureEditIdempotencyReceipts
@@ -27,7 +26,6 @@ internal sealed class PostgresFeatureEditIdempotencyReceipts(
             }, scope, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<ReadOnlyMemory<byte>?> TryReadAsync(string scope, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

@@ -17,24 +17,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Spec;
 
-/// <summary>
-/// Service registration helpers for the declarative Honua spec language.
-/// <see cref="AddSpecGrammar"/> wires the grammar, canonical AST, and
-/// validator (<see cref="ISpecParser"/>, <see cref="ISpecCanonicalizer"/>,
-/// <see cref="ISpecValidator"/>). <see cref="AddSpecCore"/> wires the plan
-/// / apply engine: planner, apply engine, content-hash cache, and reserved
-/// resource-state stores. Consumers may call one or both from their
-/// composition roots.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the spec parser, canonicalizer, validator, and default S1
-    /// operator catalog. Idempotent — safe to call from multiple composition
-    /// roots.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddSpecGrammar(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -46,12 +30,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the spec planner, apply engine, content-hash cache, and
-    /// reserved S1 resource-state stores. Does not register a
-    /// <see cref="ISpecComputeExecutor"/>; callers must provide one before
-    /// the engine is resolved.
-    /// </summary>
     public static IServiceCollection AddSpecCore(
         this IServiceCollection services,
         IConfiguration configuration)

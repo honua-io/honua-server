@@ -6,14 +6,6 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// S1 placeholder implementation for durable resource kinds
-/// (<see cref="SpecResourceKind.Dataset"/>, <see cref="SpecResourceKind.Service"/>,
-/// <see cref="SpecResourceKind.App"/>). Read calls return <c>null</c> so the
-/// planner can surface missing resources as <c>unknown-service</c>; writes
-/// raise <see cref="SpecExecutionException"/> with
-/// <see cref="SpecDiagnosticCodes.SpecKindNotInS1"/>.
-/// </summary>
 internal sealed class ReservedSpecResourceStateStore
 {
     public ReservedSpecResourceStateStore(SpecResourceKind kind)

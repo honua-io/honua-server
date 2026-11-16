@@ -11,24 +11,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the catalog
-/// <c>raster.statistics</c> and <c>raster.histogram</c> processes, backed by
-/// real <c>gdalinfo</c> metadata and a shared, bounded GDAL band scan for exact
-/// counts and moments. Histograms retain <c>gdalinfo -json -stats -hist</c>.
-/// </summary>
 internal sealed partial class GdalRasterStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterStatisticsJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>Process id for per-band statistics.</summary>
     public const string StatisticsProcessId = "raster.statistics";
 
-    /// <summary>Process id for per-band histograms.</summary>
     public const string HistogramProcessId = "raster.histogram";
 
-    /// <summary>The set of process ids this executor routes.</summary>
     public static readonly IReadOnlySet<string> SupportedProcessIds =
         new HashSet<string>(StringComparer.Ordinal) { StatisticsProcessId, HistogramProcessId };
 
@@ -37,16 +28,12 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds => SupportedProcessIds;
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -253,10 +240,6 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         return true;
     }
 
-    /// <summary>
-    /// Extracts {min, max, mean, stddev, validCount} per band from the gdalinfo
-    /// JSON document. Filters to the requested band list when one was supplied.
-    /// </summary>
     internal static string ProjectStatisticsScalar(string gdalinfoJson, HashSet<int>? bandFilter, string validCountsJson)
     {
         using var document = JsonDocument.Parse(gdalinfoJson);
@@ -328,14 +311,6 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    /// <summary>
-    /// Extracts the histogram block per band from the gdalinfo JSON document
-    /// (gdalinfo embeds <c>histogram</c> inside each band when <c>-hist</c> is
-    /// passed). Filters to the requested band list when one was supplied. The
-    /// bucket count is fixed by gdalinfo (the CLI has no rebucketing switch)
-    /// and recorded on the artifact alongside the buckets so downstream
-    /// callers know not to assume a configurable bucketing.
-    /// </summary>
     internal static string ProjectHistogramScalar(string gdalinfoJson, HashSet<int>? bandFilter)
     {
         using var document = JsonDocument.Parse(gdalinfoJson);

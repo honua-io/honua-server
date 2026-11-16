@@ -9,25 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>conversion.polygonize</c>
-/// process: vectorizes a raster into polygon features (one per connected region of
-/// equal pixel value), backed by the GDAL <c>gdal_polygonize.py</c> CLI (#2240).
-///
-/// <para>
-/// Reads a base64-encoded GeoTIFF from <c>source</c> and publishes a GeoJSON
-/// FeatureCollection of polygons carrying the pixel value in the <c>fieldName</c>
-/// attribute (default <c>DN</c>), using the requested band and connectedness.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalPolygonizeJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalPolygonizeJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "conversion.polygonize";
 
     private const string GeoJsonContentType = "application/geo+json";
@@ -35,17 +21,13 @@ internal sealed partial class GdalPolygonizeJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

@@ -8,22 +8,11 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// Computes the content hash for a spec node. The hash is the single source
-/// of truth for cache identity; it is derived from grammar + process-family
-/// versions, the canonical node fragment, and the sorted hashes of the
-/// node's inputs.
-/// </summary>
 internal static class SpecContentHashCalculator
 {
     private const char Separator = ''; // ASCII unit separator
     private const char ItemSeparator = ''; // ASCII record separator
 
-    /// <summary>
-    /// Computes the content hash for <paramref name="node"/> given its input
-    /// hashes. Inputs are sorted by key to guarantee stability across input
-    /// reorderings.
-    /// </summary>
     public static string Compute(
         string grammarVersion,
         string processFamilyVersion,
@@ -116,10 +105,6 @@ internal static class SpecContentHashCalculator
         }
     }
 
-    /// <summary>
-    /// Computes a raw sha256 hex digest over the given UTF-8 bytes. Used by
-    /// the in-memory artifact cache when it needs to verify content.
-    /// </summary>
     public static string HashBytes(ReadOnlySpan<byte> bytes)
     {
         Span<byte> hash = stackalloc byte[32];

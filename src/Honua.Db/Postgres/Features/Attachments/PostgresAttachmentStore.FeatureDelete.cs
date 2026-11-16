@@ -8,7 +8,6 @@ namespace Honua.Db.Postgres.Features.Attachments;
 
 internal sealed partial class PostgresAttachmentStore
 {
-    /// <inheritdoc />
     public async Task<IReadOnlyList<DeletedAttachmentBlob>> DeleteRowsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -46,7 +45,6 @@ internal sealed partial class PostgresAttachmentStore
         return blobs;
     }
 
-    /// <inheritdoc />
     public async Task DeleteBlobsAsync(
         IReadOnlyList<DeletedAttachmentBlob> blobs,
         CancellationToken cancellationToken)

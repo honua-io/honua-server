@@ -12,35 +12,6 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// Catalog-database implementation of <see cref="IHonuaLayerSink"/>. Loads pre-encoded
-/// feature rows into a named layer table in the Honua catalog using the catalog's own
-/// <see cref="NpgsqlDataSource"/>. This type â€” not the geoprocessing dispatcher â€” owns the
-/// dependency on the catalog data source, so it is registered only by the Postgres provider
-/// and is simply absent in lean deployments (#2210).
-/// </summary>
-/// <remarks>
-/// The load runs inside a single transaction so a failure leaves the destination table
-/// untouched; on success every row carries the reserved <c>__pipeline_batch_id</c> key in
-/// its attributes JSONB (supplied by the caller) so a completed load can be soft-deleted by
-/// batch id. Identifiers are re-validated here as defense in depth even though the executor
-/// already validates them, because they are interpolated into DDL/DML.
-/// </remarks>
-/// <remarks>
-/// <para>
-/// <b>Repeat-safety (server#4626):</b> a commit receipt keyed on
-/// (<c>table_name</c>, <c>batch_id</c>) is written in the <em>same</em> transaction as the
-/// data rows, in a reserved <c>__honua_layer_sink_receipts</c> table living alongside the
-/// destination table. Because the receipt and the data mutation share one atomic commit,
-/// there is no window in which the data can be durably committed while the receipt is not
-/// (or vice versa) — the two states can never observably diverge. A crash between this
-/// method returning and the job being marked terminal (including a hard process kill, which
-/// no cancellation token observes) therefore leaves a durable, checkable fact behind: a
-/// retry that replays the same request re-opens a transaction, finds the existing receipt
-/// before touching any row, and returns the receipt's reconstructed outcome without
-/// repeating the append/replace/upsert effect or performing a second data write.
-/// </para>
-/// </remarks>
 internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource) : IHonuaLayerSink
 {
     private const char KeyFieldSeparator = '\u001F';
@@ -50,7 +21,6 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
     private readonly NpgsqlDataSource _dataSource = dataSource
         ?? throw new ArgumentNullException(nameof(dataSource));
 
-    /// <inheritdoc />
     public async Task<HonuaLayerSinkOutcome> LoadAsync(
         HonuaLayerSinkRequest request,
         IReadOnlyList<HonuaLayerSinkRow> rows,
