@@ -138,7 +138,7 @@ internal sealed class ImageServerFindHandler
         maxCount = DefaultMaxCount;
         error = null;
 
-        var inSrRaw = GetString(values, "inSR") ?? GetString(values, "inSr");
+        var inSrRaw = ImageServerRequestValues.GetString(values, "inSR") ?? ImageServerRequestValues.GetString(values, "inSr");
         var inSrid = ImageServerGeometryHelpers.TryParseSrid(inSrRaw);
         if (!string.IsNullOrWhiteSpace(inSrRaw) && !inSrid.HasValue)
         {
@@ -146,31 +146,31 @@ internal sealed class ImageServerFindHandler
             return false;
         }
 
-        if (!TryParsePoint(GetString(values, "toGeometry"), "toGeometry", inSrid, out target, out error))
+        if (!TryParsePoint(ImageServerRequestValues.GetString(values, "toGeometry"), "toGeometry", inSrid, out target, out error))
         {
             return false;
         }
 
-        var fromGeometry = GetString(values, "fromGeometry");
+        var fromGeometry = ImageServerRequestValues.GetString(values, "fromGeometry");
         if (!string.IsNullOrWhiteSpace(fromGeometry) &&
             !TryParsePoint(fromGeometry, "fromGeometry", inSrid, out _, out error))
         {
             return false;
         }
 
-        var where = GetString(values, "where");
+        var where = ImageServerRequestValues.GetString(values, "where");
         if (where is { Length: > 2000 })
         {
             error = "where clause exceeds the maximum length of 2000 characters.";
             return false;
         }
 
-        if (!TryParseObjectIds(GetString(values, "objectIds"), out var objectIds, out error))
+        if (!TryParseObjectIds(ImageServerRequestValues.GetString(values, "objectIds"), out var objectIds, out error))
         {
             return false;
         }
 
-        if (!TryParseMaxCount(GetString(values, "maxCount"), out maxCount, out error))
+        if (!TryParseMaxCount(ImageServerRequestValues.GetString(values, "maxCount"), out maxCount, out error))
         {
             return false;
         }
@@ -232,7 +232,7 @@ internal sealed class ImageServerFindHandler
                 z = parsedZ;
             }
 
-            var srid = explicitSrid ?? ReadWkid(root);
+            var srid = explicitSrid ?? ImageServerGeometryHelpers.ReadWkid(root);
             point = new FindPoint(x, y, z, srid);
             return true;
         }
@@ -385,30 +385,6 @@ internal sealed class ImageServerFindHandler
         return (dx * dx) + (dy * dy);
     }
 
-    private static int? ReadWkid(JsonElement root)
-    {
-        if (!root.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (sr.TryGetProperty("latestWkid", out var latest) &&
-            latest.ValueKind == JsonValueKind.Number &&
-            latest.TryGetInt32(out var latestWkid))
-        {
-            return latestWkid;
-        }
-
-        if (sr.TryGetProperty("wkid", out var wkid) &&
-            wkid.ValueKind == JsonValueKind.Number &&
-            wkid.TryGetInt32(out var wkidValue))
-        {
-            return wkidValue;
-        }
-
-        return null;
-    }
-
     private static bool TryGetJsonDouble(JsonElement element, string propertyName, out double value)
     {
         value = 0d;
@@ -416,7 +392,4 @@ internal sealed class ImageServerFindHandler
                property.ValueKind == JsonValueKind.Number &&
                property.TryGetDouble(out value);
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

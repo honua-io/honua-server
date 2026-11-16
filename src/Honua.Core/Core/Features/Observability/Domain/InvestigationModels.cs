@@ -21,6 +21,8 @@ public enum InvestigationResourceKind
     Release = 3,
 
     ChangeSet = 4,
+
+    Incident = 5,
 }
 
 public sealed record InvestigationPin

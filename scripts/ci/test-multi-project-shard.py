@@ -143,7 +143,8 @@ class MultiProjectTests(unittest.TestCase):
         self.assert_deadline_cleanup(detach=True)
 
     def test_shared_deadline_stops_test_when_discovery_times_out(self):
-        with patch.object(multi, 'descendant_pids', side_effect=lambda parent: {parent}):
+        # Discovery failure falls back to the pids already known (shard_processes.descendant_depths).
+        with patch('shard_processes.descendant_depths', side_effect=lambda seeds, *_: dict(seeds)):
             self.assert_deadline_cleanup(detach=False)
 
     def assert_deadline_cleanup(self, detach):

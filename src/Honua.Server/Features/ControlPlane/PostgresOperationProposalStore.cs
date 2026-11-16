@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -49,19 +50,30 @@ internal sealed partial class PostgresOperationProposalStore(
         var inserted = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
+                await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand(
                     $"""
                     INSERT INTO {_proposals} (proposal_id, version, kind, active, updated_at, expires_at, record)
                     VALUES (@proposal_id, @version, @kind, @active, @updated_at, now() + @retention, @record)
                     ON CONFLICT (proposal_id) DO NOTHING
                     """,
-                    connection);
+                    connection, transaction);
                 AddRecordParameters(command, created, ttl);
                 command.Parameters.Add(new NpgsqlParameter("updated_at", NpgsqlDbType.TimestampTz)
                 {
                     Value = created.UpdatedAt.ToUniversalTime()
                 });
-                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                var changed = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                if (changed && storage.Realtime is { } realtime)
+                {
+                    await realtime.AppendProposalAsync(created, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
+                }
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                if (changed)
+                {
+                    storage.Realtime?.NotifyCommitted();
+                }
+                return changed;
             },
             StatementRepeat.NotAfterSend,
             cancellationToken).ConfigureAwait(false);
@@ -109,6 +121,7 @@ internal sealed partial class PostgresOperationProposalStore(
         var updated = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
+                await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand(
                     $"""
                     WITH updated AS (
@@ -138,7 +151,7 @@ internal sealed partial class PostgresOperationProposalStore(
                     )
                     SELECT EXISTS (SELECT 1 FROM updated)
                     """,
-                    connection);
+                    connection, transaction);
                 AddRecordParameters(command, next, ttl);
                 command.Parameters.Add(new NpgsqlParameter("next_status", NpgsqlDbType.Integer) { Value = (int)next.Status });
                 command.Parameters.Add(new NpgsqlParameter("executing", NpgsqlDbType.Boolean)
@@ -150,7 +163,17 @@ internal sealed partial class PostgresOperationProposalStore(
                 {
                     Value = proposal.Status == OperationProposalStatus.Succeeded
                 });
-                return (bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
+                var changed = (bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
+                if (changed && storage.Realtime is { } realtime)
+                {
+                    await realtime.AppendProposalAsync(next, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
+                }
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                if (changed)
+                {
+                    storage.Realtime?.NotifyCommitted();
+                }
+                return changed;
             },
             StatementRepeat.NotAfterSend,
             cancellationToken).ConfigureAwait(false);

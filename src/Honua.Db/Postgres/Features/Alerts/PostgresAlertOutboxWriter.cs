@@ -11,14 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
-/// <summary>
-/// Atomic writer that appends an alert event and enqueues its per-channel dispatch rows in a
-/// SINGLE transaction on a SINGLE connection. This closes the alert-loss window that existed when
-/// the event append and the dispatch enqueue ran on two separate, non-transactional connections:
-/// a crash between the two committed the event but lost the dispatch, so the alert was persisted
-/// yet never delivered — concentrated exactly when the host was unstable. Deriving the dispatch
-/// rows from the just-committed event row inside one transaction makes the pair all-or-nothing.
-/// </summary>
 internal sealed class PostgresAlertOutboxWriter : IAlertOutboxWriter
 {
     private const string UpsertStateSql = """

@@ -260,7 +260,7 @@ internal static class InvestigationEndpoints
 
         if (!QueryFilterParsers.TryParseDefinedEnum<InvestigationResourceKind>(body.ResourceKind, out var kind))
         {
-            return BadRequest($"'resourceKind' must be one of alert, job, release, changeSet.");
+            return BadRequest($"'resourceKind' must be one of alert, job, release, changeSet, incident.");
         }
 
         if (body.Note is { Length: > MaxNoteLength })

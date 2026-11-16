@@ -8,11 +8,6 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-internal interface IImageServerRasterFunctionPlanner
-{
-    RasterFunctionPlan Plan(RasterFunctionDocument document);
-}
-
 internal readonly record struct RasterFunctionPlan(
     int ChainDepth,
     string[] ExecutedFunctions,
@@ -53,7 +48,7 @@ internal sealed class ImageServerRasterFunctionException : Exception
     }
 }
 
-internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunctionPlanner
+internal sealed class ImageServerRasterFunctionPlanner
 {
     public const int MaxChainDepth = 8;
 
@@ -73,6 +68,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     private static readonly string SupportedFunctionsText =
         "Identity, Stretch, Colormap, Clip, ExtractBand, BandArithmetic, Hillshade, Slope, Aspect.";
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the instance API used by dependency-injected consumers.")]
     public RasterFunctionPlan Plan(RasterFunctionDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);

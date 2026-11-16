@@ -39,7 +39,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(context.Source, delimiterOverride: null, context.CsvDiagnostics, context.Request.CsvOptions, cancellationToken),
             SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(context.Source, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(context.ShapefilePath!, cancellationToken),
-            SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(context.Source, cancellationToken),
+            SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(context.Source, context.Request.SourceLayer, cancellationToken),
             SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(context.FileGdbPath!, cancellationToken),
             SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(context.Source, _limits, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {context.Format}")

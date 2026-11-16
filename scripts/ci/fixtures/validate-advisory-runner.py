@@ -21,7 +21,7 @@ class AdvisoryRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             heartbeat = {'version': 1, 'instance': options.get('instance', 'i-123abc'), 'at': int(time.time()) - options.get('age', 0),
-                         'heavy': {'version': 1, 'idle': options.get('idle', 1)}}
+                         'heavy': {'version': 1, 'idle': options.get('idle', 3)}}
             (path / 'heartbeat').write_text(json.dumps(heartbeat))
             (path / 'aws').write_text('''#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$MOCK_DIR/calls"
@@ -60,6 +60,14 @@ esac
                 self.assertEqual(selected, selector)
                 self.assertEqual(len(calls.splitlines()), 2)
 
+    def test_advisory_work_leaves_two_idle_heavy_runners_for_required_jobs(self):
+        for idle in (1, 2):
+            with self.subTest(idle=idle):
+                self.assertEqual(self.select({'idle': idle})[0], 'ubuntu-24.04')
+        for idle in (3, 8):
+            with self.subTest(idle=idle):
+                self.assertEqual(self.select({'idle': idle})[0], ['self-hosted', 'honua-heavy'])
+
     def test_busy_stale_mismatched_or_future_heartbeat_falls_back(self):
         for options in ({'idle': 0}, {'age': 100}, {'age': -100}, {'instance': 'i-old'}, {'idle': 9}):
             with self.subTest(options=options):
@@ -95,6 +103,32 @@ esac
             self.assertLessEqual(step['timeout-minutes'], 2)
         for step in job['steps'][1:]:
             self.assertIn("steps.trusted-base.outcome == 'success' &&", step['if'])
+
+    def test_codeql_extraction_obeys_the_runner_slice_budget(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/codeql.yml').read_text())
+        steps = workflow['jobs']['analyze']['steps']
+        limits = next(step for step in steps if step.get('name') == 'Bound self-hosted CodeQL resources')
+        self.assertEqual(limits['if'], "${{ runner.environment == 'self-hosted' }}")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'environment'
+            subprocess.run(['bash', '-eu', '-c', limits['run']], check=True,
+                           env={**os.environ, 'GITHUB_ENV': str(output)})
+            budget = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        self.assertGreater(int(budget['CODEQL_RAM']), 0)
+        self.assertLessEqual(int(budget['CODEQL_RAM']), 8 * 1024)
+        self.assertGreater(int(budget['CODEQL_THREADS']), 0)
+        self.assertLessEqual(int(budget['CODEQL_THREADS']), 4)
+        self.assertEqual(budget['DOTNET_PROCESSOR_COUNT'], budget['CODEQL_THREADS'])
+        initializers = [step for step in steps if step.get('uses', '').startswith('github/codeql-action/init@')]
+        self.assertEqual(len(initializers), 2)
+        for step in initializers:
+            self.assertLess(steps.index(limits), steps.index(step))
+            self.assertEqual(step['with']['ram'], '${{ env.CODEQL_RAM }}')
+            self.assertEqual(step['with']['threads'], '${{ env.CODEQL_THREADS }}')
+        # Analysis inherits the budget from initialization; an input here would override it.
+        analysis = [step for step in steps if step.get('uses', '').startswith('github/codeql-action/analyze@')]
+        self.assertEqual(len(analysis), 1)
+        self.assertFalse({'ram', 'threads'} & set(analysis[0].get('with', {})))
 
     def test_store_native_checks_support_unprivileged_heavy_runners(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/store-image-size.yml').read_text())

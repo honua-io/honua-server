@@ -144,6 +144,7 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
             EventType = AuditEventType.Authorization,
             Actor = actor,
             ActorType = actorType,
+            ActorAgent = AuditContextResolver.ResolveAgent(context),
             ResourceType = "studio",
             ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
             Action = "studio.lifecycle",

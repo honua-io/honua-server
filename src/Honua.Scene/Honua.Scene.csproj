@@ -11,7 +11,7 @@
       Honua.Core.Features.Scene and Honua.Server.Features.Infrastructure.Scene.
       It owns 3D Tiles generation, the scene dataset registry/abstractions, the
       publishing executor, and the gRPC scene/tile/elevation service
-      implementations (honua-server#1195). Carving the surface into its own
+      implementations. Carving the surface into its own
       assembly lets the protocol adapters (Honua.Protocols.Scene) and the
       Server host consume the scene surface without it living inside the Core
       or Server graphs, mirroring the Honua.Geoprocessing carve (ADR-0047).

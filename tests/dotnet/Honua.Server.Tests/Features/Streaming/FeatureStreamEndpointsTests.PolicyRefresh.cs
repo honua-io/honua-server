@@ -100,9 +100,8 @@ public sealed partial class FeatureStreamEndpointsTests
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
             long nextObjectId = 500;
-            Task PublishAsync() => publisher.PublishAsync(new FeatureChangeEventRequest
+            Task PublishAsync() => fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = "test",
                 LayerId = 0,

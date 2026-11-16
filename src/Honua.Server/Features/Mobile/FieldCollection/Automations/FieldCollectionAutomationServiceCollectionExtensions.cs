@@ -31,7 +31,7 @@ internal static class FieldCollectionAutomationServiceCollectionExtensions
         services.TryAddSingleton<IFieldCollectionActionDispatcher>(
             sp => sp.GetRequiredService<ChannelFieldCollectionActionDispatcher>());
 
-        services.TryAddScoped<IFieldCollectionAutomationTrigger, FieldCollectionAutomationTrigger>();
+        services.TryAddScoped<FieldCollectionAutomationTrigger>();
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IFieldCollectionActionHandler, WebhookFieldCollectionActionHandler>());

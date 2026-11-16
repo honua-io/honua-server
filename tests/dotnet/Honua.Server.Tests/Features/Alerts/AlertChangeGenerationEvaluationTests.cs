@@ -34,7 +34,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 [Protocol(ProtocolNames.Infrastructure)]
 [Operation(Operations.ContractTesting)]
 [Collection("Database.Alerts")]
-public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter database)
+public sealed partial class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter database)
 {
     private const string ServiceId = "alert-burst-3864";
     private const int ThresholdLayerId = 386410;

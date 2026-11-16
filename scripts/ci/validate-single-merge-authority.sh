@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 is_allowlisted() {
   case "$1" in
-    scripts/ci/merge-train/land.sh|scripts/ci/merge-train/recovery.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/merge-train/fixtures/validate-timeout-retry.sh|scripts/ci/validate-single-merge-authority.sh)
+    scripts/ci/validate-single-merge-authority.sh)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -13,7 +13,7 @@ is_allowlisted() {
 
 is_dispatch_allowlisted() {
   case "$1" in
-    .github/workflows/claude-review.yml|.github/workflows/merge-train.yml|scripts/ci/merge-train/recovery.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/validate-single-merge-authority.sh)
+    scripts/ci/validate-single-merge-authority.sh)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -235,157 +235,21 @@ source_has_forbidden_authority() {
   grep -Eiq "${cli_forbidden}" <<<"${canonical}"
 }
 
-function_source() {
-  local file="$1" function_name="$2"
-  normalized_function_source "${file}" | awk -v wanted="${function_name}" '
-    function declaration(s, is_function, name, rest) {
-      sub(/^[[:space:]]*/, "", s)
-      is_function = sub(/^function[[:space:]]+/, "", s)
-      if (match(s, /^[A-Za-z_][A-Za-z0-9_]*/) == 0) return ""
-      name = substr(s, RSTART, RLENGTH); rest = substr(s, RLENGTH + 1)
-      sub(/^[[:space:]]*/, "", rest)
-      if (rest ~ /^\([[:space:]]*\)[[:space:]]*\{/) return name
-      if (is_function && rest ~ /^\{/) return name
-      return ""
-    }
-    function brace_delta(s, i, c, previous, sq, dq, esc, delta) {
-      sq = 0; dq = 0; esc = 0; delta = 0
-      for (i = 1; i <= length(s); i++) {
-        c = substr(s, i, 1); previous = (i == 1 ? "" : substr(s, i - 1, 1))
-        if (esc) { esc = 0; continue }
-        if (c == "\\" && !sq) { esc = 1; continue }
-        if (c == "\047" && !dq) { sq = !sq; continue }
-        if (c == "\042" && !sq) { dq = !dq; continue }
-        if (c == "#" && !sq && !dq && (i == 1 || previous ~ /[[:space:]]/)) break
-        if (!sq && !dq && c == "{") delta++
-        if (!sq && !dq && c == "}") delta--
-      }
-      return delta
-    }
-    { declared = declaration($0) }
-    declared == wanted && !found { found=1; depth=0 }
-    found && !complete {
-      print
-      depth += brace_delta($0)
-      if (depth == 0) complete=1
-    }
-  '
-}
-
-# Join only a syntactically complete shell function header with a following
-# brace-only line. This is lexical normalization; no source is evaluated.
-normalized_function_source() {
-  logical_shell_source "$1" | awk '
-    function header(s) {
-      sub(/^[[:space:]]*/, "", s)
-      return s ~ /^(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(\([[:space:]]*\))?[[:space:]]*$/ &&
-        (s ~ /^function[[:space:]]+/ || s ~ /\([[:space:]]*\)[[:space:]]*$/)
-    }
-    NR == 1 { previous = $0; next }
-    {
-      current = $0
-      if (header(previous) && current ~ /^[[:space:]]*\{/) {
-        print previous " " current
-        previous = ""
-        next
-      }
-      if (previous != "") print previous
-      previous = current
-    }
-    END { if (previous != "") print previous }
-  '
-}
-
-# Prove the post-CAS finalizer and every same-file helper reachable from it are
-# observation-only with respect to trunk. This closes helper-indirection gaps
-# while keeping the one intentional pre-CAS/CAS push authority in land.sh.
-scan_post_cas_call_graph() {
-  local file="$1" root="train_finalize_landed_members" current body candidate heredoc_surface
-  local -a functions queue
-  mapfile -t functions < <(normalized_function_source "${file}" | awk '
-    function declaration(s, is_function, name, rest) {
-      sub(/^[[:space:]]*/, "", s)
-      is_function = sub(/^function[[:space:]]+/, "", s)
-      if (match(s, /^[A-Za-z_][A-Za-z0-9_]*/) == 0) return ""
-      name = substr(s, RSTART, RLENGTH); rest = substr(s, RLENGTH + 1)
-      sub(/^[[:space:]]*/, "", rest)
-      if (rest ~ /^\([[:space:]]*\)[[:space:]]*\{/) return name
-      if (is_function && rest ~ /^\{/) return name
-      return ""
-    }
-    { name = declaration($0); if (name != "") print name }
-  ')
-  queue=("${root}")
-  declare -A seen=()
-  while [[ "${#queue[@]}" -gt 0 ]]; do
-    current="${queue[0]}"; queue=("${queue[@]:1}")
-    [[ -z "${seen[${current}]:-}" ]] || continue
-    seen["${current}"]=1
-    body="$(function_source "${file}" "${current}")"
-    [[ -n "${body}" ]] || { echo "missing post-CAS function ${current}" >&2; return 1; }
-    heredoc_surface="${body//<<</ }"
-    if grep -Fq '<<' <<<"${heredoc_surface}"; then
-      echo "post-CAS heredoc reachable through ${current}; refusing ambiguous call-graph proof" >&2
-      return 1
-    fi
-    if source_has_forbidden_authority "${body}" 1; then
-      echo "post-CAS merge-capable primitive reachable through ${current}" >&2
-      return 1
-    fi
-    for candidate in "${functions[@]}"; do
-      [[ -z "${seen[${candidate}]:-}" ]] || continue
-      grep -Eq "(^|[^[:alnum:]_])${candidate}([^[:alnum:]_]|$)" <<<"${body}" && queue+=("${candidate}")
-    done
-  done
-  return 0
-}
-
-# smart-ci may publish only an immutable train batch ref to the same remote ref.
-# Prove that narrow primitive structurally rather than allowlisting the file.
-scan_smart_ci_authority() {
-  local file="$1" body source canonical body_canonical non_push line
-  local -a pushes body_pushes
-  body="$(function_source "${file}" train_smart_ci_run)"
-  [[ -n "${body}" ]] || { echo "missing train_smart_ci_run" >&2; return 1; }
-  grep -Fq '[[ "${batch}" != train/batch/* && "${batch}" != train/attribute-probe/* ]]' <<<"${body}" || {
-    echo "smart-ci batch namespace guard missing" >&2; return 1;
-  }
-  source="$(normalized_source "${file}")"
-  canonical="$(canonical_cli_source <<<"${source}")"
-  body_canonical="$(canonical_cli_source <<<"${body}")"
-  mapfile -t pushes < <(grep -Ei '^git[[:space:]]+push([[:space:]]|$)' <<<"${canonical}" || true)
-  mapfile -t body_pushes < <(grep -Ei '^git[[:space:]]+push([[:space:]]|$)' <<<"${body_canonical}" || true)
-  [[ "${#pushes[@]}" == 2 && "${#body_pushes[@]}" == 2 ]] || {
-    echo "smart-ci must contain exactly two pushes inside train_smart_ci_run" >&2; return 1;
-  }
-  for line in "${pushes[@]}"; do
-    grep -Eq '^git[[:space:]]+push[[:space:]]+[^[:space:]]+[[:space:]]+\$\{batch\}:\$\{batch\}[[:space:]]*$' <<<"${line}" || {
-      echo "smart-ci push is not a batch self-ref push" >&2; return 1;
-    }
-  done
-  non_push="$(grep -Eiv '^git[[:space:]]+push([[:space:]]|$)' <<<"${canonical}" || true)"
-  source_has_forbidden_authority "${non_push}" 0 && {
-    echo "smart-ci contains another merge-capable primitive" >&2; return 1;
-  }
-  return 0
-}
-
 scan_authorities() {
   local root="$1" workflows
   workflows="${root}/.github/workflows"
   [[ ! -e "${workflows}/pr-merge-train.yml" ]] || {
     echo "legacy merge authority still exists" >&2; return 1;
   }
-  [[ -f "${workflows}/merge-train.yml" ]] &&
-    grep -Fq 'scripts/ci/merge-train/train.sh' "${workflows}/merge-train.yml" || {
-      echo "merge-train.yml does not invoke the canonical controller" >&2; return 1;
-    }
+  # The batch merge train was retired (simplify A4); GitHub ruleset auto-merge
+  # is the only landing path, so no repository workflow or script may merge.
+  [[ ! -e "${workflows}/merge-train.yml" && ! -e "${root}/scripts/ci/merge-train" ]] || {
+    echo "retired merge-train authority still exists" >&2; return 1;
+  }
 
-  scan_post_cas_call_graph "${root}/scripts/ci/merge-train/land.sh" || return 1
-
-  # Dispatching the live-capable train is itself a merge authority regardless
-  # of how train_apply is spelled or valued. Canonical locations are separately
-  # allowlisted; every other executable source must be unable to wake this flow.
+  # The retired train stays forbidden: dispatching a resurrected merge-train.yml
+  # would be a merge authority regardless of how train_apply is spelled or valued,
+  # so no executable source may reference that flow.
   local live_dispatch="gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
   # A variable workflow selector cannot be proven non-authoritative statically.
   # Reject it everywhere except the explicit dispatch authority allowlist.
@@ -407,10 +271,6 @@ scan_authorities() {
     rel="${file#${root}/}"
     is_safe_exclusion "${rel}" && continue
     is_allowlisted "${rel}" && continue
-    if [[ "${rel}" == "scripts/ci/merge-train/smart-ci.sh" ]]; then
-      scan_smart_ci_authority "${file}" || found=1
-      continue
-    fi
     source="$(normalized_source "${file}")"
     # This workflow may request ruleset-governed auto-merge, never merge directly.
     if [[ "${rel}" == ".github/workflows/auto-merge-ready.yml" ]]; then
@@ -429,7 +289,7 @@ scan_authorities() {
       echo "forbidden merge-capable primitive in ${rel}" >&2; found=1
     fi
     if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${live_dispatch}" <<<"${source}"; then
-      echo "forbidden live merge-train dispatch in ${rel}" >&2; found=1
+      echo "forbidden merge-train dispatch in ${rel}" >&2; found=1
     fi
     if ! is_dispatch_allowlisted "${rel}" && has_forbidden_workflow_run "${source}"; then
       echo "forbidden live or dynamic workflow dispatch in ${rel}" >&2; found=1
@@ -439,33 +299,13 @@ scan_authorities() {
     fi
   done <<<"${candidates}"
   [[ "${found}" == 0 ]] || {
-    echo "merge authority exists outside the explicit batch-train allowlist" >&2; return 1;
+    echo "merge authority exists in repository source; only ruleset auto-merge may land" >&2; return 1;
   }
 }
 
 self_test() {
   local scratch; scratch="$(mktemp -d)"; trap 'rm -rf "${scratch}"' RETURN
-  mkdir -p "${scratch}/.github/workflows" "${scratch}/scripts/ci/merge-train"
-  printf 'jobs:\n  train:\n    steps:\n      - run: scripts/ci/merge-train/train.sh\n      - run: gh workflow run merge-train.yml -f train_apply=true\n' >"${scratch}/.github/workflows/merge-train.yml"
-  cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
-train_land_pr_info() { gh pr view "$1"; }
-train_finalize_landed_members() { train_land_pr_info "$1"; }
-train_land() { git push origin batch:trunk; }
-SH
-  cat >"${scratch}/scripts/ci/merge-train/smart-ci.sh" <<'SH'
-train_smart_ci_run() {
-  local batch="$1"
-  if [[ "${batch}" != train/batch/* && "${batch}" != train/attribute-probe/* ]]; then return 1; fi
-  train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  git push "${TRAIN_REMOTE}" "${batch}:${batch}"
-}
-SH
-  cat >"${scratch}/scripts/ci/merge-train/recovery.sh" <<'SH'
-gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-  -f train_apply=true -f max_batch="${MAX_BATCH}" -f recovery_key="${key}"
-gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches \
-  -f inputs[train_apply]=${mode}
-SH
+  mkdir -p "${scratch}/.github/workflows"
   cat >"${scratch}/.github/workflows/read-only.yml" <<'YAML'
 jobs:
   inspect:
@@ -484,10 +324,10 @@ YAML
     && { echo "direct merge escaped auto-merge exception" >&2; return 1; }
   sed -i '$d' "${scratch}/.github/workflows/auto-merge-ready.yml"
 
-  printf '\ngit push origin HEAD:trunk\n' >>"${scratch}/scripts/ci/merge-train/smart-ci.sh"
+  printf 'jobs:\n  train:\n    steps:\n      - run: echo retired\n' >"${scratch}/.github/workflows/merge-train.yml"
   scan_authorities "${scratch}" >/dev/null 2>&1 \
-    && { echo "smart-ci trunk push escaped" >&2; return 1; }
-  sed -i '$d' "${scratch}/scripts/ci/merge-train/smart-ci.sh"
+    && { echo "retired merge-train workflow escaped" >&2; return 1; }
+  rm -f "${scratch}/.github/workflows/merge-train.yml"
 
   local fixture n=0
   fixtures=(
@@ -566,65 +406,9 @@ YAML
   scan_authorities "${scratch}" >/dev/null 2>&1 \
     && { echo "continued ANSI-C fixture escaped" >&2; return 1; }
   rm -f "${scratch}/.github/workflows/other.yml"
-  cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
-  function train_post_cas_writer { gh -R o/r pr merge 1 --merge; }
-  train_finalize_landed_members ()
-  {
-    nested_same_line() { gh pr merge 1 --merge; }
-    nested_next_line()
-    { git push origin HEAD:trunk; }
-    nested_same_line
-    nested_next_line
-    train_post_cas_writer
-  }
-train_land() { git push origin batch:trunk; }
-SH
-  scan_authorities "${scratch}" >/dev/null 2>&1 \
-    && { echo "post-CAS helper indirection escaped" >&2; return 1; }
-  local heredoc_fixture
-  for heredoc_fixture in \
-    $'cat <<EOF\n}\nEOF' \
-    $'cat <<'"'"'EOF'"'"'\n}\nEOF' \
-    $'cat <<-EOF\n\t}\n\tEOF'; do
-    cat >"${scratch}/scripts/ci/merge-train/land.sh" <<SH
-train_finalize_landed_members() {
-  ${heredoc_fixture}
-  hidden_writer
-}
-hidden_writer() { gh pr merge 1 --merge; }
-train_land() { git push origin batch:trunk; }
-SH
-    scan_authorities "${scratch}" >/dev/null 2>&1 \
-      && { echo "post-CAS heredoc fixture escaped" >&2; return 1; }
-  done
-  cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
-train_finalize_landed_members() {
-  cat <\
-<EOF
-}
-EOF
-  hidden_writer
-}
-hidden_writer() { gh pr merge 1 --merge; }
-train_land() { git push origin batch:trunk; }
-SH
-  scan_authorities "${scratch}" >/dev/null 2>&1 \
-    && { echo "post-CAS continued heredoc fixture escaped" >&2; return 1; }
-  for heredoc_fixture in \
-    $'cat <<\\EOF\n}\nEOF' \
-    $'cat <<$'"'"'EOF'"'"'\n}\nEOF'; do
-    cat >"${scratch}/scripts/ci/merge-train/land.sh" <<SH
-train_finalize_landed_members() {
-  ${heredoc_fixture}
-}
-train_land() { git push origin batch:trunk; }
-SH
-    scan_authorities "${scratch}" >/dev/null 2>&1 \
-      && { echo "post-CAS escaped heredoc fixture escaped" >&2; return 1; }
-  done
-  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 scoped smart-ci, 1 transitive, 6 heredoc"
+  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 retired train"
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then self_test; exit; fi
 scan_authorities "${MERGE_AUTHORITY_ROOT:-${repo_root}}"
-echo "single merge authority: merge-train.yml"
+echo "single merge authority: GitHub ruleset auto-merge (no repository merge authority)"

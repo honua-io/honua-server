@@ -48,7 +48,8 @@ internal static class OperationHumanApprovalEvidenceValidation
             && initiation.PrincipalId == proposal.RequestedBy && initiation.TenantId == proposal.TenantId
             && initiation.PlanHash == proposal.SealedPlanHash
             && initiation.PolicyRevision == OperationGateway.ComputePolicyRevision(policy)
-            && approval.Channel == OperationHumanApprovalEvidence.InteractiveOidcChannel
+            && approval.Channel is OperationHumanApprovalEvidence.InteractiveOidcChannel
+                or OperationHumanApprovalEvidence.InteractivePasswordChannel
             && !string.IsNullOrWhiteSpace(approval.ActorId) && approval.ActorId == proposal.ResolvedBy
             && approval.PlanHash == proposal.SealedPlanHash
             && approval.ProposalVersion >= 0 && approval.ProposalVersion < proposal.Version

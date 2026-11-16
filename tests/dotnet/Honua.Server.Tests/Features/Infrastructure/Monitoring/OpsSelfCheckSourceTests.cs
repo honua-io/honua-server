@@ -1,0 +1,236 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using Honua.Core.Features.Identity.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+
+namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
+
+[Protocol(TestProtocols.TestQuality)]
+public sealed class OpsSelfCheckSourceTests
+{
+    [UnitTheory]
+    [InlineData("https://127.0.0.1")]
+    [InlineData("https://10.0.0.1")]
+    [InlineData("https://169.254.169.254")]
+    [InlineData("http://8.8.8.8")]
+    [InlineData("https://user:password@8.8.8.8")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadProviders_UnsafeAuthority_NeverSendsRequest(string authority)
+    {
+        using var factory = new FakeClients("{}");
+        var source = Create(factory, [Provider(authority)]);
+        Assert.False(Assert.Single(await source.ReadIdentityProvidersAsync(default)).IsReachable);
+        Assert.Equal(0, factory.Requests);
+    }
+
+    [UnitTheory]
+    [InlineData("{\"issuer\":\"https://8.8.8.8\"}", true)]
+    [InlineData("{\"issuer\":\"https://8.8.8.8/\"}", true)]
+    [InlineData("{\"issuer\":\"https://other.example\"}", false)]
+    [InlineData("{\"issuer\":42}", false)]
+    [InlineData("[]", false)]
+    [InlineData("invalid", false)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadProviders_Discovery_RequiresMatchingIssuer(string body, bool expected)
+    {
+        using var factory = new FakeClients(body);
+        var source = Create(factory, [Provider("https://8.8.8.8")]);
+        Assert.Equal(expected, Assert.Single(await source.ReadIdentityProvidersAsync(default)).IsReachable);
+        Assert.Equal("https://8.8.8.8/.well-known/openid-configuration", factory.LastUri?.AbsoluteUri);
+        Assert.Null(factory.Authorization);
+    }
+
+    [UnitTheory]
+    [InlineData("{\"issuer\":\"https://8.8.8.8\"}", true)]
+    [InlineData("{\"issuer\":\"https://other.example\"}", false)]
+    [InlineData("{}", false)]
+    [InlineData("[]", false)]
+    [InlineData("invalid", false)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AdminAndScheduledDiscovery_UseTheSameHealthContract(string body, bool expected)
+    {
+        using var factory = new FakeClients(body);
+        var provider = new OidcProviderConfiguration
+        {
+            Name = "Test",
+            ProviderType = "Generic",
+            Authority = "https://8.8.8.8",
+            ClientId = "client"
+        };
+        var admin = await OidcProviderDiscoveryProbe.TestAsync(provider, factory, default);
+        var scheduled = Assert.Single(await Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(default));
+        Assert.Equal(expected, admin.IsReachable);
+        Assert.Equal(admin.IsReachable, scheduled.IsReachable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AdminAndScheduledDiscovery_OversizedDocument_FailsClosed()
+    {
+        using var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
+        var provider = new OidcProviderConfiguration
+        {
+            Name = "Test",
+            ProviderType = "Generic",
+            Authority = "https://8.8.8.8",
+            ClientId = "client"
+        };
+        Assert.False((await OidcProviderDiscoveryProbe.TestAsync(provider, factory, default)).IsReachable);
+        Assert.False(Assert.Single(await Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(default)).IsReachable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AdminAndScheduledDiscovery_CallerCancelled_PropagatesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        using var factory = new FakeClients("{}");
+        var provider = new OidcProviderConfiguration
+        {
+            Name = "Test",
+            ProviderType = "Generic",
+            Authority = "https://8.8.8.8",
+            ClientId = "client"
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            OidcProviderDiscoveryProbe.TestAsync(provider, factory, cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(cancellation.Token));
+    }
+
+    [UnitTheory]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/organizations/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/consumers/v2.0", "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.us/organizations/v2.0", "https://login.microsoftonline.us/{tenantid}/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://other.example/{tenantid}/v2.0", false)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/other-tenant/v2.0", false)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/consumers/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", false)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/643bcfd3-a3d1-470c-a659-f9547d6d3447/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", false)]
+    [InlineData("Generic", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", false)]
+    [InlineData("Generic", "https://example.com", "https://example.com/", true)]
+    [InlineData("Generic", "https://example.com", "https://other.example", false)]
+    [InlineData("Generic", "https://example.com", null, false)]
+    [Operation(Operations.TestInfrastructure)]
+    public void DiscoveryIssuer_RecognizesEntraAliasesAndPreservesStrictGenericMatching(
+        string type, string authority, string? issuer, bool expected)
+    {
+        Assert.Equal(expected, OidcProviderDiscoveryProbe.IsExpectedIssuer(authority, type, issuer));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadProviders_DisabledOrInvalid_OnlyEnabledProviderReported()
+    {
+        using var factory = new FakeClients("{}");
+        var source = Create(factory,
+            [Provider("https://8.8.8.8") with { Enabled = false }, Provider("https://8.8.8.8") with { IsValid = false }]);
+        Assert.False(Assert.Single(await source.ReadIdentityProvidersAsync(default)).IsReachable);
+        Assert.Equal(0, factory.Requests);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadRelease_ValidMetadata_UsesPublicFeedWithoutCredentials()
+    {
+        using var factory = new FakeClients("{\"tag_name\":\"v2026.2\",\"html_url\":\"https://github.com/honua-io/honua-server/releases/tag/v2026.2\"}");
+        var release = await Create(factory).ReadLatestReleaseAsync(default);
+        Assert.Equal("v2026.2", release?.Version);
+        Assert.Equal("https://api.github.com/repos/honua-io/honua-server/releases/latest", factory.LastUri?.AbsoluteUri);
+        Assert.Null(factory.Authorization);
+    }
+
+    [UnitTheory]
+    [InlineData("https://evil.example/releases/tag/v2026.2")]
+    [InlineData("https://github.com/other/repo/releases/tag/v2026.2")]
+    [InlineData("https://github.com/honua-io/honua-server/releases/tag/v2026.2?redirect=evil")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadRelease_UntrustedNotes_RejectsMetadata(string url)
+    {
+        using var factory = new FakeClients(JsonSerializer.Serialize(new { tag_name = "v2026.2", html_url = url }));
+        await Assert.ThrowsAsync<JsonException>(() => Create(factory).ReadLatestReleaseAsync(default));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadRelease_MissingPublicRelease_ProducesNoRelease()
+    {
+        using var factory = new FakeClients("{}") { Status = HttpStatusCode.NotFound };
+        Assert.Null(await Create(factory).ReadLatestReleaseAsync(default));
+    }
+
+    [UnitTheory]
+    [InlineData(HttpStatusCode.Redirect)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadRelease_UnsuccessfulResponse_FailsClosed(HttpStatusCode status)
+    {
+        using var factory = new FakeClients("{}") { Status = status };
+        await Assert.ThrowsAsync<HttpRequestException>(() => Create(factory).ReadLatestReleaseAsync(default));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadRelease_OversizedResponse_RejectsBeforeParsing()
+    {
+        using var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
+        var source = Create(factory);
+        await Assert.ThrowsAsync<HttpRequestException>(() => source.ReadLatestReleaseAsync(default));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadRelease_CallerCancelled_PropagatesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        using var factory = new FakeClients("{}");
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Create(factory).ReadLatestReleaseAsync(cancellation.Token));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Handler_Defaults_RejectRedirectsCookiesAndProxy()
+    {
+        using var primaryHandler = PublicHealthCheckHttpHandler.Create();
+        var handler = Assert.IsType<SocketsHttpHandler>(primaryHandler);
+        Assert.False(handler.AllowAutoRedirect);
+        Assert.False(handler.UseCookies);
+        Assert.False(handler.UseProxy);
+        Assert.NotNull(handler.ConnectCallback);
+    }
+
+    private static OpsSelfCheckSource Create(FakeClients factory, IReadOnlyList<OidcProviderRegistration>? providers = null)
+        => new(factory, _ => Task.FromResult<IReadOnlyList<OidcProviderRegistration>>(providers ?? []), new(null, "2026.1"));
+
+    private static OidcProviderRegistration Provider(string authority)
+        => new("643bcfd3-a3d1-470c-a659-f9547d6d3447", "Generic", "Test", authority,
+            "client", "never-send-secret", ["openid"], null, true, true);
+
+    private sealed class FakeClients(string body) : HttpMessageHandler, IHttpClientFactory
+    {
+        public int Requests { get; private set; }
+        public Uri? LastUri { get; private set; }
+        public string? Authorization { get; private set; }
+        public HttpStatusCode Status { get; init; } = HttpStatusCode.OK;
+        public HttpClient CreateClient(string name) => new(this, disposeHandler: false);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests++;
+            LastUri = request.RequestUri;
+            Authorization = request.Headers.Authorization?.ToString();
+            return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+        }
+    }
+}

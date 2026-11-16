@@ -9,11 +9,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditLogIntegrityVerifier"/> (#350).
-/// Replays the tamper-evident hash chain stored by <see cref="PostgresAuditLog"/>
-/// and reports the first divergence.
-/// </summary>
 internal sealed class PostgresAuditLogIntegrityVerifier : IAuditLogIntegrityVerifier
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -34,7 +29,7 @@ internal sealed class PostgresAuditLogIntegrityVerifier : IAuditLogIntegrityVeri
     {
         var sql = $"""
             SELECT audit_id, timestamp, event_type, actor, actor_type, resource_type, resource_id,
-                   action, outcome, correlation_id, remote_ip, user_agent, details, prev_hash, entry_hash
+                   action, outcome, correlation_id, remote_ip, user_agent, details, prev_hash, entry_hash, actor_agent
             FROM {_table}
             ORDER BY audit_id ASC
             """;
@@ -66,6 +61,7 @@ internal sealed class PostgresAuditLogIntegrityVerifier : IAuditLogIntegrityVeri
                 Details = reader.IsDBNull(12) ? string.Empty : reader.GetString(12),
                 PreviousHash = reader.IsDBNull(13) ? null : reader.GetString(13),
                 EntryHash = reader.IsDBNull(14) ? null : reader.GetString(14),
+                ActorAgent = reader.IsDBNull(15) ? null : reader.GetString(15),
             };
 
             var failure = cursor.Observe(link, _chainKey);

@@ -17,9 +17,16 @@ concurrency:
   group: native-tools-publication
   cancel-in-progress: false
 jobs:
+  # Same condition as the publishing job; the shared job then compares the ref exactly.
+  authorize-publish:
+    if: github.repository == 'honua-io/honua-server' && github.ref == 'refs/heads/trunk'
+    uses: ./.github/workflows/publish-authorization.yml
+
   publish:
+    needs: authorize-publish
     if: github.repository == 'honua-io/honua-server' && github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
+    environment: publish-images
     timeout-minutes: 50
     permissions:
       contents: read

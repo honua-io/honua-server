@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
@@ -16,11 +15,11 @@ namespace Honua.Core.Features.Portal.Services;
 public sealed class PortalItemProjector : IPortalItemProjector
 {
     private readonly PublishedMetadataProjection _catalogProjection;
-    private readonly IGeoServicesConstructCapabilityRegistry _capabilityRegistry;
+    private readonly GeoServicesConstructCapabilityRegistry _capabilityRegistry;
 
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
-        IGeoServicesConstructCapabilityRegistry capabilityRegistry,
+        GeoServicesConstructCapabilityRegistry capabilityRegistry,
         IPortalResourceReadAuthorizer readAuthorizer)
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);

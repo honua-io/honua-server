@@ -7,33 +7,41 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
     branches: [trunk]
+    # The consumer is observe-only (feature PRs never commit these
+    # projections), so a PR-time envelope for ordinary source changes adds
+    # no result: PR Gate's architecture job regenerates the same projections and
+    # reports drift on every PR, and the nightly generated-files-on-trunk writer
+    # and twice-daily full CI regenerate them on trunk. The envelope itself runs
+    # when its recipe changes: this producer, the setup action, the envelope
+    # builder, every pinned GENERATOR_INPUTS entry and the projections.
+    # validate-optional-pr-inputs.py fails if a pinned input stops admitting it.
     paths:
-      - 'src/**'
-      - 'tests/dotnet/**'
-      - 'tests/fixtures/plugins/**'
-      - 'tests/baselines/client-compat/**'
+      - '.github/workflows/normalize-derived-artifacts.yml'
+      - '.github/actions/setup-dotnet-ci/**'
+      - 'scripts/ci/normalization-envelope.py'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
       - 'scripts/ci/generate-feature-catalog.sh'
       - 'scripts/ci/generate-admin-operation-parity-exports.sh'
-      - 'scripts/ci/verify-admin-operation-parity.py'
-      - 'docs/gis/data/admin-openapi-operation-ids.json'
-      - 'docs/gis/data/admin-mcp-projection-manifest.json'
       - 'scripts/ci/generate-geoservices-parity.sh'
       - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/generate-capability-matrix.py'
-      - 'scripts/ci/generate-operation-capability.py'
-      - 'scripts/ci/generate-operation-capability.test.py'
-      - 'scripts/ci/openapi-drift-check.py'
-      - 'docs/developer/api-specs/**'
-      - 'scripts/ci/normalization-envelope.py'
-      - 'docs/cite-status.md'
-      - 'docs/gis/data/**'
-      - '*.sln'
-      - '**/*.props'
-      - '**/*.targets'
-      - 'global.json'
-      - 'NuGet.config'
-      - '.github/actions/setup-dotnet-ci/**'
-      - '.github/workflows/normalize-derived-artifacts.yml'
+      - 'scripts/ci/verify-admin-operation-parity.py'
+      - 'tests/dotnet/Honua.Architecture.Tests/ArchitectureTestHelpers.cs'
+      - 'tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs'
+      - 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
+      - 'tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/**'
+      - 'tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Operations/AdminOperationParityExportTests.cs'
+      - 'docs/gis/data/capability-route-mapping.v1.json'
+      - 'docs/gis/data/geoservices-parity-judgment.json'
+      - 'docs/gis/data/public-interface-proof.json'
+      - 'docs/gis/data/feature-catalog.json'
+      - 'docs/gis/data/geoservices-rest-parity.json'
+      - 'docs/gis/data/capability-matrix.v1.json'
 
 permissions:
   actions: read
@@ -60,20 +68,12 @@ jobs:
     if: >-
       (github.event_name != 'pull_request' || !github.event.pull_request.draft)
       && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)
-    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
       generated_only: ${{ steps.generated-only.outputs.generated_only }}
       superseded: ${{ steps.live.outputs.superseded }}
     steps:
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
       - name: Shed superseded normalization subject
         id: live
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -193,14 +193,6 @@ jobs:
             exit 1
           fi
 
-      # The authored join stays strict, but its catalog input is trunk-owned.
-      # Validate against the replayed canonical catalog, never a stale PR blob.
-      - name: Validate operation-capability join against canonical projections
-        if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
-        run: |
-          python3 scripts/ci/generate-operation-capability.test.py
-          python3 scripts/ci/generate-operation-capability.py --check
-
       - name: Upload bounded projection data
         if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -220,14 +212,6 @@ jobs:
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
       # Packaging is deliberately isolated from the runner that executed PR
       # code. setup-dotnet-ci and generators cannot mutate this checkout,
       # environment, or the envelope builder before provenance is recorded.

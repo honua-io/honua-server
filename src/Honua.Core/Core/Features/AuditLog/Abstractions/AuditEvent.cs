@@ -18,6 +18,9 @@ public sealed record AuditEvent
 
     public required AuditActorType ActorType { get; init; }
 
+    // Agent identity is independent of the credential type stored in ActorType.
+    public string? ActorAgent { get; init; }
+
     public required string ResourceType { get; init; }
 
     public string? ResourceId { get; init; }

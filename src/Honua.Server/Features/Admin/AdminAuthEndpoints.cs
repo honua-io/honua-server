@@ -42,14 +42,16 @@ internal static class AdminAuthEndpoints
                 AdminOidcCallbackEndpoint endpoint, IHttpClientFactory clients) => endpoint.HandleAsync(context, clients))
             .WithDisplayName("Complete Browser Administrator Sign In")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache());
 
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/auth")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin Auth")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache());
 
         _ = group.MapGet("/config", HandleGetAuthConfig)
             .WithDisplayName("Get Admin Auth Configuration")
@@ -77,6 +79,7 @@ internal static class AdminAuthEndpoints
 
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
+            .WithMetadata(new UsesBrowserSessionMetadata())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for auth initiation
 
@@ -87,11 +90,13 @@ internal static class AdminAuthEndpoints
 
         _ = group.MapPost("/bearer", HandleIssueOperatorBearer)
             .WithDisplayName("Issue Console Operator Bearer")
+            .WithMetadata(new UsesBrowserSessionMetadata())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(new RateLimitAttribute(10)); // 10 requests per minute for bearer issuance
 
         _ = group.MapPost("/logout", HandleLogout)
             .WithDisplayName("Logout Admin Auth Session")
+            .WithMetadata(new UsesBrowserSessionMetadata())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         _ = group.MapGet("/providers/{providerKey}/logout-url", HandleGetLogoutUrl)
@@ -192,6 +197,12 @@ internal static class AdminAuthEndpoints
         if (context.User.Identity is { IsAuthenticated: true, AuthenticationType: OidcAuthenticationExtensions.OperatorBearerScheme })
         {
             return TypedResults.Ok(CreateSessionResponse(context.User, "operator-bearer", null));
+        }
+
+        if (context.User.Identity?.IsAuthenticated != true
+            && (context.Request.Headers.ContainsKey("X-API-Key") || context.Request.Headers.ContainsKey("Authorization")))
+        {
+            return TypedResults.Ok(new AdminAuthSessionResponse());
         }
 
         var sessionId = context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName];

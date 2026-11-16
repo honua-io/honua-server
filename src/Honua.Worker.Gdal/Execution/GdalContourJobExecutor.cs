@@ -9,25 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>surface.contour</c>
-/// process: generates contour LINES from a DEM, backed by the GDAL
-/// <c>gdal_contour</c> CLI (#2240).
-///
-/// <para>
-/// Reads a base64-encoded GeoTIFF DEM from <c>source</c> and emits a GeoJSON
-/// FeatureCollection of contour lines carrying an <c>ELEV</c> elevation attribute,
-/// at the requested <c>interval</c> and optional elevation <c>base</c> offset.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalContourJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalContourJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "surface.contour";
 
     private const string GeoJsonContentType = "application/geo+json";
@@ -35,17 +21,13 @@ internal sealed partial class GdalContourJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -104,6 +86,7 @@ internal sealed partial class GdalContourJobExecutor(
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
             var outputPath = Path.Join(workspace, "output.geojson");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a

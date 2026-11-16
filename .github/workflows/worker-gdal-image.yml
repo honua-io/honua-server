@@ -433,9 +433,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Runs only for a publishing dispatch; the shared job then compares the ref exactly.
+  authorize-publish:
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name == 'workflow_dispatch' && inputs.publish_nightly == true && github.repository == 'honua-io/honua-server' && github.ref == 'refs/heads/trunk')
+    uses: ./.github/workflows/publish-authorization.yml
+
   publish-nightly:
     name: Publish verified nightly GDAL worker
-    needs: [build-and-scan, publish-sarif]
+    needs: [authorize-publish, build-and-scan, publish-sarif]
     if: >-
       (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
       (github.event_name == 'workflow_dispatch' &&
@@ -445,6 +450,7 @@ jobs:
       needs.build-and-scan.result == 'success' &&
       needs.publish-sarif.result == 'success')
     runs-on: ubuntu-24.04
+    environment: publish-images
     timeout-minutes: 20
     permissions:
       contents: read

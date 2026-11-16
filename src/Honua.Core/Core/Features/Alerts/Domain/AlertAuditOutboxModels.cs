@@ -60,6 +60,8 @@ public static class AlertAuditActions
 
 public sealed record AlertLifecycleTransition
 {
+    public string? RefusalReason { get; init; }
+
     public AlertEventLifecycle? Lifecycle { get; init; }
 
     public AlertAuditOutboxEntry? Intent { get; init; }

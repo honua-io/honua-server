@@ -166,13 +166,6 @@ internal interface IPriorImageStarter
     Task<string?> StartAsync(OperationGatewayRequest request, string? executionPayload, CancellationToken cancellationToken);
 }
 
-internal interface IDurablePriorImageStarter : IPriorImageStarter
-{
-    Task<string?> StartRestoredAsync(OperationGatewayRequest request, string payload, int expectedSchema, string restoredHostHash, CancellationToken cancellationToken);
-
-    Task<bool> CheckpointRdsAsync(string phase, string instanceId, string? resourceId, int expectedSchema, CancellationToken cancellationToken);
-}
-
 internal sealed class PreMigrationRestoreCoordinator(
     PreMigrationRestoreAssessmentService assessment,
     PreMigrationRestoreExecutionService execution)
@@ -191,7 +184,7 @@ internal sealed class PreMigrationRestoreCoordinator(
     }
 
     public Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
-        IDurablePriorImageStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
+        DurableRestoreWorker.CheckpointStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
         => execution.ResumeCloudAsync(payload, request, starter, instanceId, resourceId, expectedSchema, submittedAt, cancellationToken);
 }
 
@@ -330,7 +323,7 @@ internal sealed class PreMigrationRestoreExecutionService(
         {
             var started = await starter.StartAsync(request, payload.Serialize(), cancellationToken).ConfigureAwait(false);
             var operationId = string.IsNullOrWhiteSpace(started) ? null : started;
-            if (starter is IDurablePriorImageStarter && operationId is not null)
+            if (starter is DurableRestoreWorker.CheckpointStarter && operationId is not null)
                 return new RestoreCompletion { Decision = RestoreDecisionKind.NotRequired, OperationId = operationId };
             var persisted = await WriteAsync(payload, request, operationId, ok: operationId != null, code: operationId == null ? PreMigrationRestoreCodes.ProviderFailed : null, schema: null, readback: false, cancellationToken).ConfigureAwait(false);
             return new RestoreCompletion
@@ -427,7 +420,7 @@ internal sealed class PreMigrationRestoreExecutionService(
 
         var instanceId = NewInstanceId(options.CellPrefix, request.IdempotencyKey ?? decision.BackupId!);
         var restoreRequest = new RdsRestoreRequest(backup.BackupId, instanceId, options.CellPrefix, options.DbSubnetGroupName, options.EnvironmentTag, options.RdsWaitSeconds, options.RdsSecurityGroupIds);
-        if (starter is IDurablePriorImageStarter durableStarter)
+        if (starter is DurableRestoreWorker.CheckpointStarter durableStarter)
         {
             if (!await durableStarter.CheckpointRdsAsync("submitting-rds", instanceId, null, decision.ExpectedSchema!.Value, cancellationToken).ConfigureAwait(false))
                 return new RestoreCompletion { Decision = decision.Kind, Code = PreMigrationRestoreCodes.RestoreIncomplete };
@@ -448,7 +441,7 @@ internal sealed class PreMigrationRestoreExecutionService(
     }
 
     public async Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
-        IDurablePriorImageStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
+        DurableRestoreWorker.CheckpointStarter starter, string instanceId, string resourceId, int expectedSchema, DateTimeOffset submittedAt, CancellationToken cancellationToken)
     {
         var options = restoreOptions.Value;
         var decision = new RestoreDecision { Kind = RestoreDecisionKind.RestoreBeforeStart, ExpectedSchema = expectedSchema, BackupId = payload.BackupId };
@@ -484,10 +477,10 @@ internal sealed class PreMigrationRestoreExecutionService(
             return await FailAsync(PreMigrationRestoreCodes.ProviderFailed, "The serving connection was not observed on the restored database. The prior image was not started.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
         }
 
-        var imageId = starter is IDurablePriorImageStarter durable
+        var imageId = starter is DurableRestoreWorker.CheckpointStarter durable
             ? await durable.StartRestoredAsync(request, payload.Serialize(), decision.ExpectedSchema!.Value, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(endpoint))).ToLowerInvariant(), cancellationToken).ConfigureAwait(false)
             : await starter.StartAsync(request, payload.Serialize(), cancellationToken).ConfigureAwait(false);
-        if (starter is IDurablePriorImageStarter && !string.IsNullOrWhiteSpace(imageId))
+        if (starter is DurableRestoreWorker.CheckpointStarter && !string.IsNullOrWhiteSpace(imageId))
         {
             // The durable reconciler owns protection-window completion and final readback.
             return new RestoreCompletion { Decision = decision.Kind, OperationId = imageId, RestoreInvoked = true, SchemaMatched = true, ServingPointed = true };

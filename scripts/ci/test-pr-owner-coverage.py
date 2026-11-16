@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject source paths that lose their last budgeted PR shard owner."""
+"""Reject source paths whose every shard owner is over the PR time budget."""
 import copy
 import json
 from collections import defaultdict
@@ -18,34 +18,18 @@ def missing_owners(config):
             if all(shard['dispatch_rank'] > limit for shard in shards)}
 
 
-def verify(config, debt):
-    uncovered = missing_owners(config)
-    regressions = uncovered - set(debt)
-    assert not regressions, f'Source paths without a budgeted PR owner: {sorted(regressions)}'
-    return uncovered
-
-
-def reject_loss(config, debt):
-    covered = {path for shard in config['shards'] for path in shard['paths']} - set(debt)
-    path = min(covered)
+def reject_loss(config):
+    path = min(path for shard in config['shards'] for path in shard['paths'])
     broken = copy.deepcopy(config)
     for shard in broken['shards']:
         if path in shard['paths']:
             shard['dispatch_rank'] = config['pr_time_budget']['max_shard_minutes'] + 0.1
-    try:
-        verify(broken, debt)
-    except AssertionError:
-        return
-    raise AssertionError('Accepted loss of the last budgeted source-path owner')
+    if path not in missing_owners(broken):
+        raise AssertionError('Accepted loss of the last budgeted source-path owner')
 
 
 config = json.loads((ROOT / '.github/ci-shards.json').read_text())
-debt = json.loads((ROOT / 'scripts/ci/fixtures/pr-owner-coverage-debt.json').read_text())['paths']
-assert len(set(debt)) == len(debt), 'Duplicate coverage debt path'
-uncovered = verify(config, debt)
-assert uncovered == set(debt), (
-    'Debt list is stale: '
-    f'extra={sorted(set(debt) - uncovered)} '
-    f'missing={sorted(uncovered - set(debt))}')
-reject_loss(config, debt)
-print(f'pr-owner-coverage=ok existing-uncovered-paths={len(uncovered)} regressions=0')
+uncovered = missing_owners(config)
+assert not uncovered, f'Source paths without a budgeted PR owner: {sorted(uncovered)}'
+reject_loss(config)
+print('pr-owner-coverage=ok uncovered-paths=0')

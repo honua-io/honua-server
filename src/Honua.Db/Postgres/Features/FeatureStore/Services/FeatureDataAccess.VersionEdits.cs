@@ -27,11 +27,6 @@ internal sealed partial class FeatureDataAccess
 
     private const string VersionEditsTableName = "honua.version_edits";
 
-    /// <summary>
-    /// Applies an edit batch against a branch version overlay. Always transactional so the GUC
-    /// (<c>SET LOCAL honua.gdb_version</c>) and the overlay upserts commit atomically. DEFAULT batches do
-    /// not reach here (see <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>).
-    /// </summary>
     private async Task<FeatureEditResult> ApplyVersionedEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -247,6 +242,7 @@ internal sealed partial class FeatureDataAccess
             command.Parameters.Add(new NpgsqlParameter { Value = feature.Geometry ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bytea });
             command.Parameters.Add(new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlDbType.Jsonb });
 
+            await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             var newId = await RunRowSecurityCheckedWriteAsync(
                 writeCheck,
                 connection,
@@ -261,8 +257,9 @@ internal sealed partial class FeatureDataAccess
                     return (id, id);
                 },
                 cancellationToken).ConfigureAwait(false);
+            var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             createdIds.Add(newId);
-            createResults.Add(EditOperationResult.Success(newId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            createResults.Add(EditOperationResult.Success(newId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = evidence });
             return true;
         }
         catch (RowSecurityWriteCheckFailedException ex)
@@ -299,6 +296,7 @@ internal sealed partial class FeatureDataAccess
             var update = await PrepareVersionedUpdateAsync(feature, new(
                 new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, feature.Id))), writeCheck), cancellationToken).ConfigureAwait(false);
 
+            await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             await RunRowSecurityCheckedWriteAsync(
                 writeCheck,
                 connection,
@@ -320,7 +318,8 @@ internal sealed partial class FeatureDataAccess
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            updateResults.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            updateResults.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = evidence });
             return true;
         }
         catch (RowSecurityWriteCheckFailedException ex)
@@ -386,6 +385,7 @@ internal sealed partial class FeatureDataAccess
                 return false;
             }
 
+            await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             var rowsAffected = await UpsertOverlayRowAsync(
                 layerId, versionId, objectId, operation: 3, geometry: null, attributes: null,
                 geometryStorageType, layerSrid, isDelete: true, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
@@ -396,7 +396,8 @@ internal sealed partial class FeatureDataAccess
                 return false;
             }
 
-            deleteResults.Add(EditOperationResult.Success(objectId));
+            var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            deleteResults.Add(EditOperationResult.Success(objectId) with { OperationEvidence = evidence });
             return true;
         }
         catch (RowSecurityWriteCheckFailedException ex)
@@ -442,12 +443,6 @@ internal sealed partial class FeatureDataAccess
         return (effective, VersionEditsTableName, versionId);
     }
 
-    /// <summary>
-    /// Upserts a branch overlay row for an existing (layer_id, objectid). On the version's FIRST touch the
-    /// then-current DEFAULT base image is snapshotted into base_geometry/base_attributes; subsequent
-    /// touches keep the captured base. Returns the number of affected overlay rows; 0 when neither a
-    /// DEFAULT row nor a prior overlay row exists (the target feature does not exist for the version).
-    /// </summary>
     private async Task<int> UpsertOverlayRowAsync(
         int layerId,
         Guid versionId,

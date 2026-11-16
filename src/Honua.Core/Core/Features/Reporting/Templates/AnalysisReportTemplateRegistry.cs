@@ -6,7 +6,7 @@ using Honua.Core.Features.Reporting.Abstractions;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-internal sealed class AnalysisReportTemplateRegistry : IAnalysisReportTemplateRegistry
+public sealed class AnalysisReportTemplateRegistry
 {
     private readonly FrozenDictionary<string, IAnalysisReportTemplate> _byProcessId;
     private readonly IAnalysisReportTemplate _fallback;

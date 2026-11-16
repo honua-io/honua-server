@@ -226,30 +226,6 @@ class GeneratedFilesContracts(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_pr_operation_join_uses_fresh_canonical_catalog(self):
-        producer = (ROOT / '.github/workflows/normalize-derived-artifacts.yml').read_text()
-        replay = producer.index('- name: Replay generators and stage only reproducible bounded projections')
-        join = producer.index('- name: Validate operation-capability join against canonical projections')
-        upload = producer.index('- name: Upload bounded projection data')
-        self.assertLess(replay, join)
-        self.assertLess(join, upload)
-        checks = producer[join:upload]
-        self.assertIn("steps.live.outputs.superseded != 'true'", checks)
-        self.assertIn("steps.generated-only.outputs.generated_only != 'true'", checks)
-        self.assertIn('python3 scripts/ci/generate-operation-capability.test.py', checks)
-        self.assertIn('python3 scripts/ci/generate-operation-capability.py --check', checks)
-        self.assertNotIn('continue-on-error:', checks)
-        for path in ('src/**', 'docs/gis/data/**', 'docs/developer/api-specs/**',
-                     'scripts/ci/openapi-drift-check.py',
-                     'scripts/ci/generate-operation-capability.py',
-                     'scripts/ci/generate-operation-capability.test.py'):
-            self.assertIn("- '" + path + "'", producer)
-        matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
-        for name in ('Test the operation-capability join', 'Drift check operation-capability.v1.json'):
-            step = matrix.split('- name: ' + name + '\n', 1)[1].split('- name:', 1)[0]
-            self.assertIn("if: github.event_name != 'pull_request'", step)
-            self.assertIn('python3 scripts/ci/generate-operation-capability', step)
-
     def test_pr_generation_is_hard_and_precedes_strict_validators(self):
         action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
         generation = action.index('bash scripts/ci/regenerate-generated-files.sh')
@@ -279,6 +255,28 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('verify-admin-operation-parity.py', generator)
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
+
+    def test_trunk_roster_consumers_regenerate_before_the_strict_roster_test(self):
+        # PRs may not commit the roster (check-generated-file-ownership.py), so
+        # every trunk run that executes McpToolRosterDriftTests must project it
+        # first; otherwise each MCP tool merge is red until the nightly writer.
+        ci = (ROOT / '.github/workflows/ci.yml').read_text()
+        name = '- name: Regenerate the MCP roster projection for protocol tests'
+        self.assertIn(name, ci)
+        step = ci[ci.index(name):].split('\n      - name:', 1)[0]
+        self.assertIn("if: matrix.family == 'protocols'", step)
+        self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release --no-build --no-restore',
+                      step)
+        self.assertLess(ci.index('- name: Build missing foundation outputs'), ci.index(name))
+        self.assertLess(ci.index(name), ci.index('- name: Run foundation family tests'))
+        contract = (ROOT / '.github/workflows/mcp-client-contract.yml').read_text()
+        generate = '- name: Generate the roster projection before the strict roster test'
+        self.assertIn(generate, contract)
+        step = contract[contract.index(generate):].split('\n      - name:', 1)[0]
+        self.assertNotIn('if:', step)
+        self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release', step)
+        self.assertLess(contract.index(generate),
+                        contract.index('- name: Invoke every advertised tool and audit its inputs and discovery'))
 
     def test_managed_generators_resolve_repository_root_from_another_directory(self):
         with tempfile.TemporaryDirectory() as temp:

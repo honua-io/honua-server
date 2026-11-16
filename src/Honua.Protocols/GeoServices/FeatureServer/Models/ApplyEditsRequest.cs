@@ -81,6 +81,9 @@ public sealed class ApplyEditsResponse
 
 public sealed class EditResult
 {
+    [JsonIgnore]
+    public ImmutableArray<FeatureOperationEvidence> OperationEvidence { get; set; }
+
     [JsonPropertyName("objectId")]
     public long? ObjectId { get; set; }
 

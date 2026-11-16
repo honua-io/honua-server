@@ -59,6 +59,37 @@ class RetiredCacheTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.check().returncode, 0)
 
+    def test_ci_routing_data_mirroring_tests_passes(self):
+        routing = [".github/ci-shards.json", "scripts/ci/fixtures/full-run-capacity-contracts.json",
+                   "scripts/ci/fixtures/live-output-capacity-contracts.json",
+                   "scripts/ci/test-shard-image-selection.py"]
+        for path in routing:
+            self.write(path, "Redis\n")
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_other_ci_files_are_not_routing_data(self):
+        for path in [".github/workflows/ci-shards.yml", "scripts/ci/fixtures/other-contracts.json",
+                     ".github/ci-shards.json.bak"]:
+            self.write(path, "Redis\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for path in [".github/workflows/ci-shards.yml", "scripts/ci/fixtures/other-contracts.json",
+                     ".github/ci-shards.json.bak"]:
+            self.assertIn(f"{path}:1:", result.stdout)
+
+    def test_rename_cannot_move_routing_data_into_source(self):
+        self.write(".github/ci-shards.json", "Redis\n")
+        self.commit()
+        base = self.git("rev-parse", "HEAD").strip()
+        (self.root / "src").mkdir()
+        self.git("mv", ".github/ci-shards.json", "src/shards.json")
+        self.commit()
+        result = self.check(base)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("src/shards.json:1:", result.stdout)
+
     def test_unrelated_words_and_identifiers_pass(self):
         self.write("src/locks.cs", "AcquireDistributedLockAsync();\n")
         self.write("LICENSE.txt", "Redistribution and use are permitted.\nredistribution\n")

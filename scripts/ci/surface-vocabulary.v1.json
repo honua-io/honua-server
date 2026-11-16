@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "source": "docs/concepts/domain/README.md#vocabulary-review-rules",
+  "rules": [
+    {"id": "layer", "object": "Layer", "terms": ["publication", "serving target", "hosted layer", "slot", "feature class"]},
+    {"id": "folder", "object": "Folder or Environment", "terms": ["workspace"]},
+    {"id": "dataset", "object": "Dataset", "terms": ["resource"]},
+    {"id": "map", "object": "Map", "terms": ["web map", "webmap", "saved map", "hosted map", "portal item"]},
+    {"id": "studio-kind", "object": "actual kind, such as Map, App or Dashboard", "terms": ["content item", "item", "package", "composition", "family"]},
+    {"id": "api-key", "object": "API key", "terms": ["api token"]}
+  ]
+}

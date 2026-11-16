@@ -46,8 +46,8 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportTemplate, SurfaceSlopeReportTemplate>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportTemplate, GeneralizationDissolveReportTemplate>());
 
-        services.TryAddSingleton<IAnalysisReportTemplateRegistry, AnalysisReportTemplateRegistry>();
-        services.TryAddSingleton<IAnalysisReportBuilder, AnalysisReportBuilder>();
+        services.TryAddSingleton<AnalysisReportTemplateRegistry>();
+        services.TryAddSingleton<AnalysisReportBuilder>();
         services.TryAddSingleton<IAnalysisReportStore, InMemoryAnalysisReportStore>();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportRenderer, MarkdownReportRenderer>());

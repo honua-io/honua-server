@@ -62,11 +62,7 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
         }
         finally
         {
-            // Release leadership on every exit path for symmetry with
-            // ImportBackgroundServiceCoordinator. This service shares the import leader
-            // election instance, so releasing here removes the implicit dependency on the
-            // import worker coordinator releasing the lease and lets a successor take over
-            // without waiting for the lease to expire.
+            // Release the lease so a successor can take over without waiting for expiry.
             await _jobManager.LeaderElection.ReleaseLeadershipAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

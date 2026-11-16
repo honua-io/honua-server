@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Quarantine expiry and retry completeness must fail closed."""
+from contextlib import redirect_stdout, suppress
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -11,6 +13,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 import xml.etree.ElementTree as ET
@@ -31,6 +34,27 @@ def module(name, filename):
 
 runner = module('retry', 'retry-failed-shard-tests.py')
 publisher = module('publisher', 'quarantine-issues.py')
+
+
+def wait_until(condition, seconds=5):
+    deadline = time.monotonic() + seconds
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return condition()
+
+
+def kill_recorded(path):
+    with suppress(FileNotFoundError, ValueError, ProcessLookupError):
+        os.kill(int(path.read_text()), signal.SIGKILL)
+
+
+def process_alive(pid):
+    """A killed orphan may linger as a zombie until its new parent reaps it."""
+    stat = Path('/proc') / str(pid) / 'stat'
+    try:
+        return stat.read_text().split(') ', 1)[1].split()[0] != 'Z'
+    except (FileNotFoundError, ProcessLookupError):
+        return False
 
 
 def entry(index=0):
@@ -100,10 +124,30 @@ class PolicyTests(unittest.TestCase):
 class DuplicateCoverageTests(unittest.TestCase):
     def test_unfiltered_foundation_command_gets_exact_exclusion(self):
         command = ['dotnet', 'test', PROJECT]
+        output = io.StringIO()
         with patch.dict(os.environ, {'HONUA_TEST_QUARANTINE_FILE': 'snapshot.json'}, clear=True), \
-                patch.object(runner, 'load_snapshot', return_value=[entry()]):
+                patch.object(runner, 'load_snapshot', return_value=[entry()]), redirect_stdout(output):
             filtered = runner.snapshot_filter(command, PROJECT)
         self.assertEqual([*command, '--filter', 'FullyQualifiedName!=Honua.Tests.Case.Test0'], filtered)
+        prefix, payload = output.getvalue().strip().split(' ', 1)
+        self.assertEqual('HONUA_QUARANTINE_FILTER', prefix)
+        evidence = json.loads(payload)
+        self.assertEqual(PROJECT, evidence['project'])
+        self.assertEqual(filtered[-1], evidence['effective_filter'])
+        self.assertEqual([{key: entry()[key] for key in ('test', 'issue', 'expires_at')}],
+                         evidence['exclusions'])
+
+    def test_filter_evidence_only_lists_exclusions_for_the_executed_project(self):
+        command = ['dotnet', 'test', PROJECT, '--filter', 'Tier=Fast|Tier=Unit']
+        other = {**entry(1), 'project': 'other.csproj'}
+        output = io.StringIO()
+        with patch.dict(os.environ, {'HONUA_TEST_QUARANTINE_FILE': 'snapshot.json'}, clear=True), \
+                patch.object(runner, 'load_snapshot', return_value=[other, entry()]), redirect_stdout(output):
+            filtered = runner.snapshot_filter(command, PROJECT)
+        evidence = json.loads(output.getvalue().split(' ', 1)[1])
+        self.assertEqual('(Tier=Fast|Tier=Unit)&FullyQualifiedName!=Honua.Tests.Case.Test0', filtered[-1])
+        self.assertEqual(filtered[-1], evidence['effective_filter'])
+        self.assertEqual(['Honua.Tests.Case.Test0'], [item['test'] for item in evidence['exclusions']])
 
 
 class RetryTests(unittest.TestCase):
@@ -252,6 +296,7 @@ class RunnerTests(unittest.TestCase):
         child.wait.side_effect = wait
         with patch.object(runner.subprocess, 'Popen', return_value=child), \
                 patch.object(runner, 'descendant_pids', return_value={1234}), \
+                patch('shard_processes.descendant_depths', side_effect=lambda seeds, *_: dict(seeds)), \
                 patch.object(runner.os, 'killpg'), patch.object(runner.os, 'kill'):
             self.assertEqual(-signal.SIGTERM, runner.call_test(['fixture']))
 
@@ -263,6 +308,44 @@ class RunnerTests(unittest.TestCase):
 
     def test_timeout_cleans_up_descendant_outside_inherited_group(self):
         self.assert_timeout_cleanup(foreground=False, descendant_setup='os.setsid()')
+
+    def test_cleanup_kills_a_child_forked_after_the_first_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            late = Path(directory) / 'late.pid'
+            # The child forks a detached grandchild from its TERM handler, i.e. after the
+            # supervisor's pre-TERM snapshot; killing only that snapshot orphans the grandchild.
+            # The parent publishes the pid atomically, so a stopped grandchild cannot hide it.
+            source = ('import os, pathlib, signal, sys, time\n'
+                      'def spawn(*_):\n'
+                      '    pid = os.fork()\n'
+                      '    if pid == 0:\n'
+                      '        os.setsid()\n'
+                      '        time.sleep(30)\n'
+                      '        os._exit(0)\n'
+                      '    staging = pathlib.Path(sys.argv[1] + ".tmp")\n'
+                      '    staging.write_text(str(pid))\n'
+                      '    os.replace(staging, sys.argv[1])\n'
+                      'signal.signal(signal.SIGTERM, spawn)\n'
+                      'print("ready", flush=True)\n'
+                      'while True:\n'
+                      '    time.sleep(1)\n')
+            real_kill = runner.kill_descendants
+
+            def kill_after_fork(*parents):
+                # Make "forked after the snapshot" a guarantee rather than a timing assumption.
+                wait_until(late.exists)
+                real_kill(*parents)
+
+            with subprocess.Popen([sys.executable, '-c', source, str(late)], stdout=subprocess.PIPE) as child, \
+                    patch.object(runner, 'kill_descendants', kill_after_fork):
+                try:
+                    self.assertEqual(b'ready\n', child.stdout.readline())
+                    runner.terminate_test(child, signal.SIGTERM)
+                    pid = int(late.read_text())
+                    self.assertTrue(wait_until(lambda: not process_alive(pid)), f'grandchild {pid} survived cleanup')
+                finally:
+                    child.kill()
+                    kill_recorded(late)
 
     def test_timeout_cleans_up_child_forked_after_process_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -302,7 +385,9 @@ class RunnerTests(unittest.TestCase):
                         except ProcessLookupError:
                             # The timeout supervisor may already have reaped this process.
                             pass
-            command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=1', '1', sys.executable,
+            # Production grants a 30 s grace; 5 s keeps a loaded runner's interpreter start-up from
+            # killing the supervisor mid-cleanup. A setsid descendant is still outside timeout's reach.
+            command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=5', '1', sys.executable,
                        str(Path(runner.__file__).with_name('run-quarantine-filtered-tests.py')),
                        'dotnet', 'test', PROJECT]
             with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}',
@@ -316,10 +401,16 @@ class RunnerTests(unittest.TestCase):
                     cleanup()
                     raise
             self.assertEqual(124, result.returncode)
-            for suffix in ('.pid', '.descendant.pid'):
-                process = Path('/proc') / fake.with_suffix(suffix).read_text() / 'stat'
-                if process.exists():
-                    self.assertEqual('Z', process.read_text().split(') ', 1)[1].split()[0])
+            # A process killed before it recorded its pid never reached the fork; any escapee
+            # would still hold the captured pipe and time the run out above.
+            recorded = [path for path in map(fake.with_suffix, ('.pid', '.descendant.pid')) if path.exists()]
+            if not before_fork:
+                # These fakes record both pids at start-up, well before the deadline.
+                self.assertEqual(2, len(recorded), 'fake test never recorded its processes')
+            for path in recorded:
+                # A SIGKILLed process can show as running briefly while a loaded kernel tears it down.
+                pid = int(path.read_text())
+                self.assertTrue(wait_until(lambda: not process_alive(pid)), f'{path.name} {pid} survived cleanup')
 
     def test_retry_is_bounded_by_the_original_outer_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

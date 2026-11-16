@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Capabilities;
+using Honua.Infrastructure.Abstractions;
 using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -27,6 +28,7 @@ internal static class CapabilityManifestServiceCollectionExtensions
         services.Configure<CapabilityManifestFeatureOptions>(options =>
             options.FromRegistry = configuration.GetValue<bool>(
                 CapabilityManifestFeatureOptions.FromRegistryConfigKey));
+        services.TryAddSingleton<RealtimeCapabilityLimits>();
         services.AddSingleton<CapabilityManifestOptionsSnapshot>();
         services.AddSingleton<DeploymentCapabilityProfile>();
         services.AddSingleton<DeploymentIdentity>();

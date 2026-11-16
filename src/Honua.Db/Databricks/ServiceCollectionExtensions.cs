@@ -17,23 +17,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks;
 
-/// <summary>
-/// Public DI entry point for the read-only Databricks feature provider (#1714).
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Databricks SQL Statement Execution read-through provider as an
-    /// additional <see cref="IFeatureDataProvider"/> in the runtime, alongside the
-    /// primary backend (PostGIS, DuckDB, MySQL). Layers whose backing connection
-    /// resolves to provider <c>databricks</c> (aliases <c>databrickssql</c>, <c>dbsql</c>)
-    /// are routed here through the shared <c>FeatureProviderQueryRouter</c>.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Application configuration. Reads the <c>Databricks</c>
-    /// section to bind <see cref="DatabricksOptions"/> (host, warehouse id, token,
-    /// catalog/schema, timeouts, and layer mappings).</param>
-    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddDatabricksFeatureProvider(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -61,7 +46,7 @@ public static class ServiceCollectionExtensions
         // submit/poll/chunk loop survives transient workspace failures (HTTP 408/429/5xx
         // and transient network faults) with exponential backoff and jitter.
         services
-            .AddHttpClient<IDatabricksStatementClient, DatabricksStatementClient>(
+            .AddHttpClient<DatabricksStatementClient>(
                 DatabricksServiceClientName.Default,
                 client =>
                 {
@@ -76,12 +61,10 @@ public static class ServiceCollectionExtensions
                 })
             .AddHttpResiliencePolicy(DatabricksServiceClientName.ResilienceServiceType, BuildResilienceOptions(options));
 
-        services.AddSingleton<IDatabricksFeatureQueryBuilder, DatabricksFeatureQueryBuilder>();
         services.AddScoped<IDatabricksFeatureDataAccess, DatabricksFeatureDataAccess>();
 
         services.AddScoped<DatabricksFeatureStore>(sp => new DatabricksFeatureStore(
             sp.GetRequiredService<DatabricksLayerMappingRegistry>(),
-            sp.GetRequiredService<IDatabricksFeatureQueryBuilder>(),
             sp.GetRequiredService<IDatabricksFeatureDataAccess>(),
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DatabricksFeatureStore>());
@@ -95,10 +78,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Maps the Databricks retry options onto the shared HTTP resilience policy options so the
-    /// Statement Execution client reuses the canonical retry + circuit-breaker pipeline.
-    /// </summary>
     private static ResiliencePolicyOptions BuildResilienceOptions(DatabricksOptions options)
         => new()
         {

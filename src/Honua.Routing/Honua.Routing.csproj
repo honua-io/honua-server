@@ -17,7 +17,7 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
 
     <!--
-      Routing subsystem (issue #1266): pgRouting engine + NAServer route/service-area
+      Routing subsystem: pgRouting engine + NAServer route/service-area
       compatibility. Mirrors the Honua.Geocoding extraction pattern so the routing
       surface (Npgsql-backed solves over the pgRouting "ways"/"ways_vertices_pgr"
       topology) is isolated from non-routing consumers. Honua.Routing depends on

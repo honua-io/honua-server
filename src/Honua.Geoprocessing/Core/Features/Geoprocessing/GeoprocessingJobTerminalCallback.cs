@@ -26,7 +26,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     ILogger<GeoprocessingJobTerminalCallback> logger,
     IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
     GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
-    IExecutionJobStore? executionJobStore = null) : IReplayableJobTerminalCallback
+    IExecutionJobStore? executionJobStore = null) : IJobTerminalCallback
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 

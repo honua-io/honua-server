@@ -22,7 +22,8 @@ internal static partial class AnalysisContentEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Analysis", "Content")
             .WithDescription("Durable saved-query and analysis-package content versions.")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = content.MapPost("/items", HandleCreateItemAsync)
             .WithName("CreateAnalysisContentItem")
@@ -68,7 +69,8 @@ internal static partial class AnalysisContentEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Analysis", "Artifacts")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = artifacts.MapGet("/{artifactId}", HandleGetArtifactAsync)
             .WithName("GetAnalysisArtifact")
@@ -78,7 +80,8 @@ internal static partial class AnalysisContentEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Analysis", "Jobs")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = jobs.MapGet("/{jobId}/logs", HandleGetJobLogsAsync)
             .WithName("GetAnalysisJobLogs")
@@ -93,7 +96,7 @@ internal static partial class AnalysisContentEndpoints
 
     private static async Task<IResult> HandleCreateItemAsync(
         CreateAnalysisContentItemRequest request,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -130,7 +133,7 @@ internal static partial class AnalysisContentEndpoints
 
     private static async Task<IResult> HandleGetItemAsync(
         string itemId,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -157,7 +160,7 @@ internal static partial class AnalysisContentEndpoints
         [FromQuery] string? lifecycle,
         [FromQuery] int? limit,
         [FromQuery] int? offset,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -211,14 +214,13 @@ internal static partial class AnalysisContentEndpoints
     private static async Task<IResult> HandleEstimateAsync(
         string itemId,
         int contentVersion,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
         {
             var result = await service.EstimateVersionAsync(
-                itemId,
-                contentVersion,
+                new AnalysisContentVersionAccess(itemId, contentVersion, context.User),
                 context.RequestAborted).ConfigureAwait(false);
 
             return Results.Json(
@@ -247,21 +249,21 @@ internal static partial class AnalysisContentEndpoints
 
     private static Task<IResult> HandleGetLatestVersionAsync(
         string itemId,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
         => HandleGetVersionCoreAsync(itemId, null, service, context);
 
     private static Task<IResult> HandleGetVersionAsync(
         string itemId,
         int contentVersion,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
         => HandleGetVersionCoreAsync(itemId, contentVersion, service, context);
 
     private static async Task<IResult> HandleGetVersionCoreAsync(
         string itemId,
         int? contentVersion,
-        IAnalysisContentService service,
+        AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -291,7 +293,7 @@ internal static partial class AnalysisContentEndpoints
     private static async Task<IResult> HandleCreateVersionAsync(
         string itemId,
         CreateAnalysisContentVersionRequest request,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -330,14 +332,13 @@ internal static partial class AnalysisContentEndpoints
         string itemId,
         int contentVersion,
         PreviewSavedQueryRequest request,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
         {
             var result = await service.PreviewSavedQueryAsync(
-                itemId,
-                contentVersion,
+                new AnalysisContentVersionAccess(itemId, contentVersion, context.User),
                 request.Limit,
                 context.RequestAborted).ConfigureAwait(false);
             return Results.Json(result, AnalysisContentApiJsonContext.Default.SavedQueryPreviewResult);
@@ -360,7 +361,7 @@ internal static partial class AnalysisContentEndpoints
         string itemId,
         int contentVersion,
         RunAnalysisContentVersionRequest request,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -391,7 +392,7 @@ internal static partial class AnalysisContentEndpoints
         string itemId,
         int contentVersion,
         RerunAnalysisContentVersionRequest request,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -424,7 +425,7 @@ internal static partial class AnalysisContentEndpoints
 
     private static async Task<IResult> HandleGetArtifactAsync(
         string artifactId,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -461,7 +462,7 @@ internal static partial class AnalysisContentEndpoints
     private static async Task<IResult> HandleGetJobLogsAsync(
         string jobId,
         [FromQuery] int? limit,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try
@@ -485,7 +486,7 @@ internal static partial class AnalysisContentEndpoints
 
     private static async Task<IResult> HandleGetJobFailureAsync(
         string jobId,
-        [FromServices] IAnalysisContentService service,
+        [FromServices] AnalysisContentService service,
         HttpContext context)
     {
         try

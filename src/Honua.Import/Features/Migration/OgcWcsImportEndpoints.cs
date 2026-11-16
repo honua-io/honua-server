@@ -5,7 +5,6 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -131,7 +130,7 @@ internal static partial class OgcWcsImportEndpoints
 
         try
         {
-            var service = context.RequestServices.GetRequiredService<IOgcWcsImportService>();
+            var service = context.RequestServices.GetRequiredService<OgcWcsImportService>();
             var result = await service.ImportAsync(importRequest, cancellationToken).ConfigureAwait(false);
 
             await Results.Json(result, OgcWcsImportJsonContext.Default.OgcWcsImportResult)

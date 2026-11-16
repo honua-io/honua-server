@@ -20,13 +20,14 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
 /// <summary>
 /// External parity checks that compare selected ArcGIS layer responses with imported Honua table data.
 /// </summary>
-[Collection("Database")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 [Operation(Operations.Query)]
@@ -159,7 +160,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
             NumericField: "pop2000")
     ];
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Enterprise);
     private readonly HttpClient _sourceClient = new() { Timeout = TimeSpan.FromMinutes(2) };
     private readonly List<string> _importedTables = [];
     private readonly List<ParityScorecardEntry> _scorecardEntries = [];
@@ -170,6 +171,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        await _fixture.Postgres.DataSource.ClearJobSubstrateAsync();
         _adminClient = _fixture.CreateAdminClient();
         // Imports land in the default operational schema; the fixture's isolated schema holds its
         // catalog, which is not an import target. Imported tables are dropped in DisposeAsync.

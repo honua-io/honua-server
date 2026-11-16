@@ -234,11 +234,10 @@ describes this implementation limit. Report an unexpected policy outcome as
 such, rather than adding a review queue to every design turn or changing policy
 to force the operation through.
 
-When publication is requested, the current server distinguishes an authorized
-admin's direct publication from another caller's pending proposal. Inspect the
-returned status and identities; a tool named `propose` can still complete a
-publication for an admin. The [publication workflow](publish-share-map.md)
-describes both outcomes. Protected operational proposal tools retain their own
+When publication is requested over MCP, the server files a proposal that a
+person approves in Console, whoever the caller is. Inspect the returned status
+and identities. The [publication workflow](publish-share-map.md) describes the
+outcome. Protected operational proposal tools retain their own
 separate decision contract. Do not generalize one tool's policy to all AI work.
 
 ## 6. Verify the promised result

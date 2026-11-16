@@ -10,17 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
-/// <summary>
-/// PostgreSQL store for the operator lifecycle row attached to an alert event.
-/// </summary>
-/// <remarks>
-/// <see cref="ApplyAsync"/> is the operator-action path: it writes the lifecycle
-/// mutation and its domain audit intent in ONE transaction so a committed
-/// mutation is never externally observable without either its audit record or a
-/// durable reconciliation record that completes it (#3865). The individual
-/// acknowledge/suppress/resolve methods remain for seeding and internal callers
-/// that are not operator actions.
-/// </remarks>
 internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
 {
     private const string LifecycleProjection =
@@ -88,7 +77,6 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             command => BindResolve(command, actor, note, resolvedAt),
             cancellationToken);
 
-    /// <inheritdoc />
     public async Task<AlertLifecycleTransition> ApplyAsync(
         AlertLifecycleCommand command,
         CancellationToken cancellationToken = default)
@@ -114,6 +102,13 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
                 .ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return new AlertLifecycleTransition { Lifecycle = replayed, Intent = existing, Replayed = true };
+        }
+
+        var refusal = await ReadSuppressionRefusalAsync(command, transaction, cancellationToken).ConfigureAwait(false);
+        if (refusal is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new AlertLifecycleTransition { RefusalReason = refusal };
         }
 
         var lifecycle = await MutateAsync(connection, transaction, command, cancellationToken).ConfigureAwait(false);
@@ -169,7 +164,10 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
         INSERT INTO {_lifecycleTable} (
             event_id, lifecycle_status, suppressed_until, suppressed_by, note, updated_at)
         SELECT @event_id, @status, @suppressed_until, @suppressed_by, @note, @updated_at
-        WHERE EXISTS (SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id)
+        WHERE EXISTS (
+            SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id AND severity <> 'critical' FOR NO KEY UPDATE)
+            AND @suppressed_until > @updated_at
+            AND @suppressed_until <= @updated_at + INTERVAL '168 hours'
         ON CONFLICT (event_id) DO UPDATE SET
             lifecycle_status = EXCLUDED.lifecycle_status,
             acknowledged_at  = NULL,
@@ -182,6 +180,36 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             updated_at       = EXCLUDED.updated_at
         RETURNING {LifecycleProjection}
         """;
+
+    private async Task<string?> ReadSuppressionRefusalAsync(
+        AlertLifecycleCommand command,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (command.Action != AlertLifecycleAction.Suppress)
+        {
+            return null;
+        }
+
+        await using var query = new NpgsqlCommand(
+            $"SELECT severity FROM {_eventsTable} WHERE event_id = @event_id FOR NO KEY UPDATE",
+            transaction.Connection, transaction);
+        query.Parameters.AddWithValue("event_id", command.EventId);
+        var severity = await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (severity is null or DBNull)
+        {
+            return null;
+        }
+        if (severity is "critical")
+        {
+            return "Critical alerts cannot be snoozed.";
+        }
+        if (command.SuppressUntil <= command.OccurredAt || command.SuppressUntil > command.OccurredAt.AddDays(7))
+        {
+            return "'suppressUntil' must be in the future and no more than seven days after the action.";
+        }
+        return null;
+    }
 
     private string ResolveSql() => $"""
         INSERT INTO {_lifecycleTable} (

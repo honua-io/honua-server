@@ -17,12 +17,12 @@ internal static class ElevationServiceCollectionExtensions
         // Scene analysis (sun/shadow + slice/volumetric) builds on the elevation
         // profile sampler and is provider-agnostic, so it is registered wherever
         // an elevation service is available.
-        services.TryAddScoped<ISceneAnalysisService>(sp =>
+        services.TryAddScoped<SceneAnalysisService>(sp =>
             new SceneAnalysisService(sp.GetRequiredService<IElevationService>()));
         // 3D visibility analysis (line-of-sight + viewshed) builds on the
         // elevation profile sampler and is provider-agnostic, so it is
         // registered wherever an elevation service is available.
-        services.TryAddScoped<IVisibilityAnalysisService>(sp =>
+        services.TryAddScoped<VisibilityAnalysisService>(sp =>
             new VisibilityAnalysisService(sp.GetRequiredService<IElevationService>()));
         return services;
     }

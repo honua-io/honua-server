@@ -93,8 +93,13 @@ requires no shell. ECS can use its load balancer's `/healthz/ready` probe.
 `scripts/ci/smoke-serving-formats.sh` starts the server with a read-only root,
 mounts only `/tmp/honua`, and imports fixture files through the upload API.
 
-The `chiseled-extra` base retains certificates, ICU and time-zone data. The image
-adds DejaVu Sans, the GSSAPI dependency closure and libatomic for Parquet.
+The JIT images and the full native-AOT image use the `chiseled-extra` base, which
+retains certificates, ICU and time-zone data. The default (PostGIS) native-AOT image
+runs in invariant globalization mode on the plain `chiseled` base: it has no ICU, and
+the build adds the time-zone data. Only SQL Server and Oracle need ICU, and neither
+is in a PostGIS image. In invariant mode, workflow schedules accept IANA time-zone
+IDs such as `America/New_York` but not Windows IDs such as `Pacific Standard Time`.
+Every image adds DejaVu Sans, the GSSAPI dependency closure and libatomic for Parquet.
 The smoke exercises legend label glyphs, German ICU number formatting,
 Honolulu's UTC offset and New York's winter/summer offsets in the built JIT runtime.
 

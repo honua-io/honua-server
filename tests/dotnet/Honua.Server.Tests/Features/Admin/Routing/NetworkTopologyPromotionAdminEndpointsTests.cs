@@ -7,11 +7,10 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Routing;
-using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
@@ -22,10 +21,11 @@ namespace Honua.Server.Tests.Features.Admin.Routing;
 /// precondition rejections, idempotent replay, a concurrency race proving only one
 /// candidate wins, and rollback to a retired generation.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
+public class NetworkTopologyPromotionAdminEndpointsTests
+    : IClassFixture<NetworkTopologyPromotionAdminEndpointsTests.SharedApplication>, IAsyncLifetime
 {
     private const string AdminPassword = "netpromote-admin-key";
 
@@ -38,32 +38,24 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public NetworkTopologyPromotionAdminEndpointsTests(RedisFixture redis)
+    public NetworkTopologyPromotionAdminEndpointsTests(SharedApplication application)
     {
-        // Reaching a "ready" candidate generation drives a rebuild submission, which creates
-        // a durable ExecutionJobRecord via the shared job infrastructure (#2718). The
-        // production composition root only wires AddJobOrchestration/AddJobWorker when a
-        // Redis connection and a Redis-cache license entitlement are present — mirrors
-        // GpJobWorkerCompositionRootTests.
-        _fixture = new WebAppFixture().WithProductionJobSubstrate()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-            });
+        _fixture = application.Fixture;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
+    public sealed class SharedApplication() : NetworkJobApplication(AdminPassword);
 
     private static string NewId(string suffix) =>
         $"ntp-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
@@ -113,11 +105,8 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         Attributes = new Dictionary<string, string?> { ["cost"] = "1.5" },
     };
 
-    /// <summary>
-    /// Drives a dataset's first draft generation through allocate -&gt; add one edge -&gt;
-    /// submit rebuild -&gt; execute the registered executor directly (bypassing the
-    /// Redis-gated worker loop) so it reaches <c>ready</c>, ready for promotion.
-    /// </summary>
+    // Drives a dataset's first draft generation through allocate, add one edge, submit rebuild
+    // and the registered executor (not the hosted worker loop) until it is ready for promotion.
     private async Task<long> BuildReadyGenerationAsync(string datasetId)
     {
         var allocateResponse = await _client.PostAsync($"/api/v1/admin/network-datasets/{datasetId}/generations", content: null);

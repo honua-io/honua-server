@@ -24,7 +24,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public class NetworkTopologyEditAdminEndpointsTests : IAsyncLifetime
+public class NetworkTopologyEditAdminEndpointsTests
+    : IClassFixture<NetworkTopologyEditAdminEndpointsTests.SharedApplication>, IAsyncLifetime
 {
     private const string AdminPassword = "netedit-admin-key";
 
@@ -35,29 +36,52 @@ public class NetworkTopologyEditAdminEndpointsTests : IAsyncLifetime
     };
 
     private readonly WebAppFixture _fixture;
-    private readonly CapturingLoggerProvider _logCapture = new();
+    private readonly CapturingLoggerProvider _logCapture;
     private HttpClient _client = null!;
 
-    public NetworkTopologyEditAdminEndpointsTests()
+    public NetworkTopologyEditAdminEndpointsTests(SharedApplication application)
     {
-        _fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.ConfigureLogging(logging => logging.AddProvider(_logCapture));
-            });
+        _fixture = application.Fixture;
+        _logCapture = application.LogCapture;
     }
 
-    public async Task InitializeAsync()
+    // Cases use their own random datasets; the log capture is cleared before each case.
+    public sealed class SharedApplication : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
+        public SharedApplication()
+        {
+            Fixture = new WebAppFixture()
+                .UseSeed("tests/seed/server.yaml")
+                .ConfigureWebHost(builder =>
+                {
+                    builder.UseEnvironment("Test");
+                    builder.UseSetting("HONUA_DEV_AUTH", "false");
+                    builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                    builder.ConfigureLogging(logging => logging.AddProvider(LogCapture));
+                });
+        }
+
+        public WebAppFixture Fixture { get; }
+
+        internal CapturingLoggerProvider LogCapture { get; } = new();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    public Task InitializeAsync()
+    {
+        _logCapture.Clear();
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
 
     private static string NewId(string suffix) =>
         $"nte-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
@@ -443,7 +467,7 @@ public class NetworkTopologyEditAdminEndpointsTests : IAsyncLifetime
         Assert.NotNull(span.GetTagItem("honua.routing.edges_added"));
     }
 
-    private sealed class CapturingLoggerProvider : ILoggerProvider
+    internal sealed class CapturingLoggerProvider : ILoggerProvider
     {
         private readonly List<string> _messages = [];
 
@@ -455,6 +479,14 @@ public class NetworkTopologyEditAdminEndpointsTests : IAsyncLifetime
                 {
                     return _messages.ToArray();
                 }
+            }
+        }
+
+        public void Clear()
+        {
+            lock (_messages)
+            {
+                _messages.Clear();
             }
         }
 

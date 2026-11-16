@@ -8,7 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
+internal sealed class Wfs20FeatureFormatConverter
 {
     private static readonly XNamespace GmlNamespace = "http://www.opengis.net/gml/3.2";
     private readonly ILogger<Wfs20FeatureFormatConverter> _logger;
@@ -43,6 +43,7 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         );
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the instance API used by dependency-injected consumers.")]
     public GmlFeature ConvertFeatureToGml(Feature feature)
     {
         // Convert WKB geometry to GML if present
@@ -93,6 +94,7 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the instance API used by dependency-injected consumers.")]
     public Dictionary<string, object?> ExtractAttributes(XElement gmlElement)
     {
         ArgumentNullException.ThrowIfNull(gmlElement);

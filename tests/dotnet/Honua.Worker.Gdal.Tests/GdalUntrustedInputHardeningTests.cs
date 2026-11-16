@@ -399,16 +399,12 @@ public sealed class GdalUntrustedInputHardeningTests
     }
 
     [UnitTest]
-    public void Hardening_ArgumentsReferenceVsi_DetectsVsiPaths()
+    public void Hardening_DisablesGmlSchemaDownload_ForLocalAndRemoteInvocations()
     {
-        GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/vsis3/bucket/x.nc" })
-            .Should().BeTrue();
-        GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/scratch/op/input.tif" })
-            .Should().BeFalse();
-        GdalRuntimeHardening.ArgumentsReferenceS3Vsi(new[] { "/vsis3/bucket/input.tif" })
-            .Should().BeTrue();
-        GdalRuntimeHardening.ArgumentsReferenceAzureVsi(new[] { "/vsiaz/container/input.tif" })
-            .Should().BeTrue();
+        GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: false)
+            ["GML_DOWNLOAD_SCHEMA"].Should().Be("NO");
+        GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: true)
+            ["GML_DOWNLOAD_SCHEMA"].Should().Be("NO");
     }
 
     [UnitTest]

@@ -20,7 +20,6 @@
     <PackageReference Include="Grpc.Net.Client.Web" />
     <PackageReference Include="Honua.Sdk.Admin" />
     <PackageReference Include="Mapsui" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.OData.Client" />
     <PackageReference Include="Moq" />
@@ -47,7 +46,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <ProjectReference Include="..\Honua.StaleAttemptWorker\Honua.StaleAttemptWorker.csproj" />
-    <!-- Sample plugins exercised by the plugin custom-endpoint integration tests (#1562).
+    <!-- Sample plugins exercised by the plugin custom-endpoint integration tests.
          The default host does not compile in plugins, so the contributed routes are only
          present in a test host that explicitly registers a sample plugin. -->
     <ProjectReference Include="..\..\fixtures\plugins\Honua.Sample.UtilityValidationPlugin\Honua.Sample.UtilityValidationPlugin.csproj" />
@@ -88,7 +87,7 @@
     <None Update="Features/Geoprocessing/customcode-harness-jobspec-contract.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- imagery.classify execution proof (#3935): the committed scene, the two
+    <!-- imagery.classify execution proof: the committed scene, the two
          committed models, the model server's inference program, and the decoder. -->
     <None Update="TestData/ImageryClassify/*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

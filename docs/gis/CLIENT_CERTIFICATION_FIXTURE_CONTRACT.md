@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:ce94c24647822a598078de88487cb638607e73e0d23a90115ab13d6cce6eb280` |
+| `fixtureRevision` | `sha256:70339524832217dc7fea24e75901beadae1d827951be670823b789341ada7b80` |
 | `serverConfigRevision` | `sha256:f48cc5a6ac26320a7d181a32ce7a67aa14a627542c13db595fc9b1a6e053bf32` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 

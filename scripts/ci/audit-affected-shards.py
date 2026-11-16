@@ -2,7 +2,7 @@
 """Collect every PR Gate verdict in a fixed seven-day window; fail closed on unknown reds.
 
 Read-only: this tool cannot change workflows, protection, PRs, or runs. Reuses
-the impact-routing collector's complete time-sliced pagination and transport
+the run collector's complete time-sliced pagination and transport
 backoff. A successful report-only check is not evidence that its shards passed.
 """
 

@@ -11,14 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// <c>source.wfs</c> DAG connector. Streams features from a WFS <c>GetFeature</c>
-/// endpoint using the same <c>startIndex</c>/<c>count</c> paging the one-shot WFS
-/// import uses (GeoJSON output, terminate on an empty page, <c>numberMatched</c>
-/// advance check, and a repeated-first-feature guard for servers that ignore
-/// <c>startIndex</c>). Page fetch + GeoJSON projection are reused from
-/// <see cref="GeoJsonPageReader"/>.
-/// </summary>
 internal sealed partial class WfsDagSource : IDagFeatureSource
 {
     private const int DefaultMaxPages = 1000;

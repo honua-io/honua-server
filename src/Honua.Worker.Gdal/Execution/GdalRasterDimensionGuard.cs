@@ -6,57 +6,16 @@ using System.Globalization;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Pre-processing admission control that bounds the DECODED PIXEL FOOTPRINT of an
-/// inbound raster BEFORE any GDAL tool opens it and allocates a
-/// width×height×bands×dtype buffer (#2766).
-///
-/// <para>
-/// The worker already caps the base64/decoded BYTE size of every source
-/// (<see cref="GdalWorkerOptions.MaxArtifactBytes"/>), but a few-KB, highly
-/// compressible GeoTIFF can declare enormous <c>ImageWidth</c>/<c>ImageLength</c>
-/// in its header and force GDAL to materialize an arbitrarily large raster —
-/// a classic decompression bomb → OOM. This guard reads ONLY the TIFF header
-/// (the IFD directory that sits near the front of the already-decoded, byte-
-/// bounded blob — no pixel data, no subprocess, no GDAL dependency) to learn the
-/// DECLARED dimensions and rejects the job up front when they exceed the
-/// configured caps.
-/// </para>
-///
-/// <para>
-/// Known raster containers outside <see cref="GdalWorkerOptions.AllowedRasterInputFormats"/>
-/// are refused, and so is magic the guard cannot classify (<see cref="RasterContainerFormat.Unknown"/>).
-/// An allowlisted TIFF/PNG/JPEG whose dimensions cannot be parsed is still admitted: GDAL
-/// opens that header the same way and either handles it or fails without a full allocation.
-/// The guard's job is to refuse an unidentified or disallowed container, and to catch a
-/// parseable header that DECLARES an oversized raster (the decompression-bomb vector).
-/// </para>
-/// </summary>
 internal static class GdalRasterDimensionGuard
 {
-    /// <summary>Declared dimensions read from a raster header.</summary>
     internal readonly record struct RasterDimensions(long Width, long Height, int Bands, int BitsPerSample)
     {
-        /// <summary>Total declared cell count (width × height).</summary>
         public long PixelCount => checked(Width * Height);
 
-        /// <summary>
-        /// Estimated fully-decoded byte footprint GDAL would allocate:
-        /// width × height × bands × bytes-per-sample. This is the true OOM bound
-        /// the decompression bomb targets.
-        /// </summary>
         public long EstimatedDecodedBytes =>
             checked(Width * Height * Bands * ((BitsPerSample + 7) / 8));
     }
 
-    /// <summary>
-    /// Admits or rejects a decoded raster blob against the configured pixel-
-    /// dimension caps and the positive container allowlist. Returns <c>false</c>
-    /// when the magic is <see cref="RasterContainerFormat.Unknown"/>, when the
-    /// container is outside the allowlist, or when a parsed header declares
-    /// dimensions over a cap. An allowlisted TIFF/PNG/JPEG whose dimensions cannot
-    /// be parsed is admitted.
-    /// </summary>
     public static bool TryAdmit(ReadOnlySpan<byte> raster, GdalWorkerOptions options, out string error)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -83,11 +42,6 @@ internal static class GdalRasterDimensionGuard
         return IsWithinLimits(dims, options, out error);
     }
 
-    /// <summary>
-    /// Admits a classified raster container against the positive worker format allowlist.
-    /// <see cref="RasterContainerFormat.Unknown"/> is refused: an unidentified raster-role
-    /// input must not reach GDAL.
-    /// </summary>
     internal static bool TryAdmitContainerFormat(
         RasterContainerFormat format,
         GdalWorkerOptions options,
@@ -111,49 +65,27 @@ internal static class GdalRasterDimensionGuard
         return false;
     }
 
-    /// <summary>
-    /// A raster container the worker can identify from its leading magic bytes.
-    /// <see cref="Tiff"/> / <see cref="Png"/> / <see cref="Jpeg"/> are the
-    /// dimension-guarded (allowlisted-by-default) formats; the remainder are KNOWN
-    /// raster containers the guard cannot bound and that the positive allowlist refuses
-    /// by default (#2784). <see cref="Unknown"/> is refused for raster-role inputs so an
-    /// unidentified header cannot reach GDAL.
-    /// </summary>
     internal enum RasterContainerFormat
     {
-        /// <summary>Magic not identified as a known raster container.</summary>
         Unknown = 0,
 
-        /// <summary>TIFF / BigTIFF (also the container for GeoTIFF and COG).</summary>
         Tiff,
 
-        /// <summary>PNG.</summary>
         Png,
 
-        /// <summary>JPEG (JFIF/EXIF baseline or progressive).</summary>
         Jpeg,
 
-        /// <summary>JPEG 2000 codestream or JP2 box format.</summary>
         Jpeg2000,
 
-        /// <summary>GIF (87a / 89a).</summary>
         Gif,
 
-        /// <summary>Windows BMP / DIB.</summary>
         Bmp,
 
-        /// <summary>NITF (National Imagery Transmission Format).</summary>
         Nitf,
 
-        /// <summary>Erdas Imagine HFA (<c>.img</c>).</summary>
         Hfa,
     }
 
-    /// <summary>
-    /// Classifies the leading magic bytes into a <see cref="RasterContainerFormat"/>.
-    /// Deliberately covers the dimension-guarded formats PLUS the known un-bounded
-    /// raster bomb vectors named in #2784; anything else is <see cref="RasterContainerFormat.Unknown"/>.
-    /// </summary>
     internal static RasterContainerFormat ClassifyContainer(ReadOnlySpan<byte> data)
     {
         if (data.Length < 4)
@@ -224,7 +156,6 @@ internal static class GdalRasterDimensionGuard
         return RasterContainerFormat.Unknown;
     }
 
-    /// <summary>Canonical allowlist key for a classified format.</summary>
     private static string FormatName(RasterContainerFormat format) => format switch
     {
         RasterContainerFormat.Tiff => "TIFF",
@@ -246,18 +177,6 @@ internal static class GdalRasterDimensionGuard
             && string.Equals(allowed.Trim(), name, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Reads declared dimensions from any of the compressible raster container
-    /// formats the worker ingests and that can be tiny-on-disk yet declare an
-    /// enormous canvas: TIFF / BigTIFF, PNG, and JPEG. Dispatches on the single
-    /// magic-byte classifier <see cref="ClassifyContainer"/> (rather than a second
-    /// copy of the magic table) — the guarded formats route to their per-format
-    /// reader; every other classification (the un-bounded bomb vectors and
-    /// <see cref="RasterContainerFormat.Unknown"/>) returns <c>false</c>. Unknown
-    /// containers are refused by <see cref="TryAdmit"/>; an allowlisted container
-    /// whose own reader fails is admitted. Each per-format reader keeps its own
-    /// internal length guards.
-    /// </summary>
     internal static bool TryReadRasterDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
     {
         dims = default;
@@ -270,11 +189,6 @@ internal static class GdalRasterDimensionGuard
         };
     }
 
-    /// <summary>
-    /// Admits or rejects a set of decoded raster blobs (e.g. the map-algebra /
-    /// mosaic multi-source list). Any single source over a cap rejects the job,
-    /// with the failing source index surfaced in the error.
-    /// </summary>
     public static bool TryAdmitSources(IReadOnlyList<byte[]> sources, GdalWorkerOptions options, out string error)
     {
         ArgumentNullException.ThrowIfNull(sources);
@@ -291,11 +205,6 @@ internal static class GdalRasterDimensionGuard
         return true;
     }
 
-    /// <summary>
-    /// Pure evaluation of already-read <paramref name="dims"/> against the caps.
-    /// Split out from header parsing so it is unit-testable without any raster
-    /// bytes or a GDAL binary.
-    /// </summary>
     public static bool IsWithinLimits(RasterDimensions dims, GdalWorkerOptions options, out string error)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -712,15 +621,6 @@ internal static class GdalRasterDimensionGuard
     private const int TagModelPixelScale = 33550;
     private const int TypeDouble = 12; // 64-bit IEEE double
 
-    /// <summary>
-    /// Reads the GeoTIFF ModelPixelScale (ground units per pixel) for the input-extent
-    /// side of the resample <c>-tr</c> bound (#2793). Defaults <paramref name="scaleX"/> /
-    /// <paramref name="scaleY"/> to <c>1.0</c> — the identity geotransform GDAL assigns a
-    /// raster with no georeferencing — so a non-TIFF or un-georeferenced input yields an
-    /// extent measured in pixels, matching how <c>gdalwarp -tr</c> interprets a target
-    /// cell size against such a raster. Only the first two (X, Y) scales are read; a
-    /// non-positive or non-finite scale is ignored (identity kept for that axis).
-    /// </summary>
     internal static void ReadGeoTiffPixelScale(ReadOnlySpan<byte> data, out double scaleX, out double scaleY)
     {
         scaleX = 1.0;

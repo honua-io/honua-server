@@ -9,19 +9,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 // A timed-out replica upload retries against the cursor the first attempt committed, so the outcome is recorded or the retry would insert the same adds again.
-internal interface IReplicaUploadIdempotencyStore
-{
-    Task<ReplicaUploadRecord?> TryGetAsync(ReplicaUploadIdempotencyScope scope, CancellationToken cancellationToken = default);
-
-    Task<string?> TryReserveAsync(ReplicaUploadIdempotencyScope scope, CancellationToken cancellationToken = default);
-
-    // The receipt is written after the rows commit and takes no cancellation token, because abandoning it would let a retry duplicate those rows.
-    Task<bool> RecordAsync(ReplicaUploadIdempotencyScope scope, string reservationToken, ReplicaUploadRecord record);
-
-    // A reservation is released only when the upload provably committed nothing, so the retry re-attempts it.
-    Task ReleaseAsync(ReplicaUploadIdempotencyScope scope, string reservationToken);
-}
-
 // The upload key is scoped to the service, replica, and caller, and the key and fingerprint prefixes stay in separate spaces so one cannot replay the other.
 internal readonly record struct ReplicaUploadIdempotencyScope(
     string ServiceId,
@@ -57,7 +44,7 @@ internal sealed class ReplicaUploadRecord
     public long ServerGeneration { get; set; }
 }
 
-internal sealed class DistributedReplicaUploadIdempotencyStore : IReplicaUploadIdempotencyStore
+internal sealed class DistributedReplicaUploadIdempotencyStore
 {
     private const string KeyPrefix = "featureserver:replica-upload:idem:";
 

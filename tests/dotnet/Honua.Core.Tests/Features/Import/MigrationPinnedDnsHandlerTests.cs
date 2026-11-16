@@ -26,6 +26,7 @@ public sealed class MigrationPinnedDnsHandlerTests
         using var handler = MigrationPinnedDns.CreateHandler(client, hostAddressResolver: null);
 
         handler.AllowAutoRedirect.Should().BeFalse();
+        handler.UseProxy.Should().BeFalse();
         handler.MaxConnectionsPerServer.Should().Be(7);
         handler.ConnectCallback.Should().NotBeNull();
     }

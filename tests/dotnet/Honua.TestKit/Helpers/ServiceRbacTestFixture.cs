@@ -89,6 +89,10 @@ public static class ServiceRbacTestFixture
                     services.AddSingleton<ICrsRegistry, TestCrsRegistry>();
                     services.AddSingleton<ICoordinateTransformService, TestCoordinateTransformService>();
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
+                    // These authorization tests use a fake feature store and no database. They
+                    // exercise the edit pipeline without starting PostgreSQL stream delivery.
+                    services.RemoveAll<IFeatureChangeEventPublisher>();
+                    services.AddSingleton<IFeatureChangeEventPublisher, ChangeLogOnlyFeatureChangeEventPublisher>();
                     configureServices?.Invoke(services);
 
                     // #1591: FeatureServer applyEdits is Pro-gated. These RBAC suites assert

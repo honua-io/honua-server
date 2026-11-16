@@ -6,15 +6,7 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// S1 placeholder implementation for durable resource kinds
-/// (<see cref="SpecResourceKind.Dataset"/>, <see cref="SpecResourceKind.Service"/>,
-/// <see cref="SpecResourceKind.App"/>). Read calls return <c>null</c> so the
-/// planner can surface missing resources as <c>unknown-service</c>; writes
-/// raise <see cref="SpecExecutionException"/> with
-/// <see cref="SpecDiagnosticCodes.SpecKindNotInS1"/>.
-/// </summary>
-internal sealed class ReservedSpecResourceStateStore : ISpecResourceStateStore
+internal sealed class ReservedSpecResourceStateStore
 {
     public ReservedSpecResourceStateStore(SpecResourceKind kind)
     {
@@ -23,6 +15,7 @@ internal sealed class ReservedSpecResourceStateStore : ISpecResourceStateStore
 
     public SpecResourceKind Kind { get; }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public Task<SpecResourceState?> ReadCurrentAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(resourceName);

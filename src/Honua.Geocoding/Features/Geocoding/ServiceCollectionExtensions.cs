@@ -13,17 +13,8 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Geocoding.Features.Geocoding;
 
-/// <summary>
-/// Service collection extensions for geocoding infrastructure (basic implementation).
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the core geocoding services and configuration.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Application configuration.</param>
-    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddGeocodingCore(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -39,10 +30,10 @@ public static class ServiceCollectionExtensions
         // The limit enforcer holds fixed-window rate counters, so it is a singleton that survives
         // across scoped requests; TimeProvider is resolved from DI (registered if not already present).
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IGeocodeLimitEnforcer, GeocodeLimitEnforcer>();
+        services.TryAddSingleton<GeocodeLimitEnforcer>();
 
         services.AddScoped<IGeocodeProviderRegistry, GeocodeProviderRegistry>();
-        services.AddScoped<IGeocodeProviderFactory>(sp => (GeocodeProviderRegistry)sp.GetRequiredService<IGeocodeProviderRegistry>());
+        services.AddScoped<GeocodeProviderRegistry>(sp => (GeocodeProviderRegistry)sp.GetRequiredService<IGeocodeProviderRegistry>());
         services.AddScoped<IGeocodeCoordinatorService, GeocodeCoordinatorService>();
         services.AddScoped<IGeocodeProviderCoordinator, GeocodeProviderCoordinator>();
 
@@ -54,7 +45,7 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Local"));
         // Factory registration closes over the configuration argument so hosts (and DI
         // validation) do not need IConfiguration itself registered in the container.
-        services.TryAddSingleton<IGeocoderReferenceDataImportService>(sp => new GeocoderReferenceDataImportService(
+        services.TryAddSingleton<GeocoderReferenceDataImportService>(sp => new GeocoderReferenceDataImportService(
             configuration,
             sp.GetRequiredService<IOptionsMonitor<LocalGeocoderProviderConfiguration>>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<GeocoderReferenceDataImportService>>()));
@@ -62,14 +53,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Register a geocoding provider.
-    /// </summary>
-    /// <typeparam name="TProvider">Provider implementation type</typeparam>
-    /// <param name="services">Service collection</param>
-    /// <param name="providerName">Name of the provider</param>
-    /// <param name="lifetime">Service lifetime</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddGeocodeProvider<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(
         this IServiceCollection services,
@@ -85,14 +68,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Register a geocoding provider with a factory.
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="providerName">Name of the provider</param>
-    /// <param name="factory">Factory function</param>
-    /// <param name="lifetime">Service lifetime</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddGeocodeProvider<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(
         this IServiceCollection services,

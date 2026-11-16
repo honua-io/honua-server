@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -51,6 +52,12 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
     private static async ValueTask ApplyVaryByRulesAsync(
         OutputCacheContext context, MetadataV2GraphSnapshot? snapshot, CancellationToken cancellationToken)
     {
+        if (context.HttpContext.RequestServices.GetService<IExternalLayerRevisionSource>() is { } revisions)
+        {
+            context.CacheVaryByRules.VaryByValues["honua-external-generation"] =
+                await revisions.GetRevisionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (context.HttpContext.RequestServices.GetService<IConfigurationGenerationSource>() is { } generations)
         {
             context.CacheVaryByRules.VaryByValues["honua-configuration-generation"] =

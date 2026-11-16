@@ -16,7 +16,6 @@ namespace Honua.Db.Databricks.Tests;
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksFeatureQueryBuilderTests
 {
-    private static readonly DatabricksFeatureQueryBuilder Builder = new();
     private static readonly byte[] PolygonWkb = [0x01, 0x03, 0x00, 0x00];
 
     private static SpatialFilter Envelope(SpatialRelationship relationship) => SpatialFilter.Create(
@@ -60,7 +59,7 @@ public class DatabricksFeatureQueryBuilderTests
             Limit = 2,
             Offset = 1
         };
-        var result = Builder.BuildSelect(Mapping("name", "owner"), query);
+        var result = DatabricksFeatureQueryBuilder.BuildSelect(Mapping("name", "owner"), query);
         Assert.Contains("INSTR(", result.Sql, StringComparison.Ordinal);
         Assert.Contains(" OR ", result.Sql, StringComparison.Ordinal);
         Assert.Contains("NOT ", result.Sql, StringComparison.Ordinal);
@@ -75,7 +74,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_ProjectsIdGeometryHexAndAttributes_WithQualifiedTable()
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery());
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery());
 
         Assert.Contains("`id` AS __honua_id", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("hex(st_asbinary(`geom`)) AS __honua_geom_hex", statement.Sql, StringComparison.Ordinal);
@@ -88,7 +87,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_TranslatesWhereClause_ToParameterizedSparkSql()
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { Where = "owner = 'acme'" });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { Where = "owner = 'acme'" });
 
         // The literal is parameterized (no inline 'acme'); the column is backtick-quoted.
         Assert.Contains("WHERE (`owner` = :f0)", statement.Sql, StringComparison.Ordinal);
@@ -101,7 +100,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_TranslatesNumericComparison_WithTypedParameter()
     {
-        var statement = Builder.BuildSelect(Mapping("name", "owner", "pop"), new FeatureQuery { Where = "pop >= 1000" });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping("name", "owner", "pop"), new FeatureQuery { Where = "pop >= 1000" });
 
         Assert.Contains("`pop` >= :f0", statement.Sql, StringComparison.Ordinal);
         Assert.Equal("1000", statement.Parameters[0].Value);
@@ -111,7 +110,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_TranslatesInList_Parameterized()
     {
-        var statement = Builder.BuildSelect(Mapping("name", "owner", "code"), new FeatureQuery { Where = "code IN (1, 2, 3)" });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping("name", "owner", "code"), new FeatureQuery { Where = "code IN (1, 2, 3)" });
 
         Assert.Contains("`code` IN (:f0, :f1, :f2)", statement.Sql, StringComparison.Ordinal);
         Assert.Equal(3, statement.Parameters.Count);
@@ -120,7 +119,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_TranslatesIsNull()
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { Where = "owner IS NULL" });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { Where = "owner IS NULL" });
 
         Assert.Contains("`owner` IS NULL", statement.Sql, StringComparison.Ordinal);
         Assert.Empty(statement.Parameters);
@@ -132,7 +131,7 @@ public class DatabricksFeatureQueryBuilderTests
         // Unknown fields are a client validation error (ArgumentException -> HTTP 400),
         // distinct from capability rejections (NotSupportedException).
         Assert.Throws<UnknownFilterFieldException>(
-            () => Builder.BuildSelect(Mapping(), new FeatureQuery { Where = "not_a_column = 1" }));
+            () => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { Where = "not_a_column = 1" }));
     }
 
     [Fact]
@@ -140,7 +139,7 @@ public class DatabricksFeatureQueryBuilderTests
     {
         var query = new FeatureQuery { Where = "owner = 'acme'", ObjectIds = [7L] };
 
-        var statement = Builder.BuildSelect(Mapping(), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), query);
 
         Assert.Contains(":f0", statement.Sql, StringComparison.Ordinal);
         Assert.Contains(":oid0", statement.Sql, StringComparison.Ordinal);
@@ -150,7 +149,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_WithObjectIds_BindsNamedParameters()
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { ObjectIds = [10L, 20L] });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { ObjectIds = [10L, 20L] });
 
         Assert.Contains("`id` IN (:oid0, :oid1)", statement.Sql, StringComparison.Ordinal);
         Assert.Equal(2, statement.Parameters.Count);
@@ -170,7 +169,7 @@ public class DatabricksFeatureQueryBuilderTests
             OrderBy = [OrderByClause.Asc("name"), OrderByClause.Desc("owner")],
         };
 
-        var statement = Builder.BuildSelect(Mapping(), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), query);
 
         Assert.Contains("ORDER BY `name` ASC, `owner` DESC", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("LIMIT 50", statement.Sql, StringComparison.Ordinal);
@@ -185,7 +184,7 @@ public class DatabricksFeatureQueryBuilderTests
     {
         var query = new FeatureQuery { OrderBy = [OrderByClause.Asc(field)] };
 
-        var statement = Builder.BuildSelect(Mapping(field), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(field), query);
 
         Assert.Contains($"ORDER BY `{field}` ASC", statement.Sql, StringComparison.Ordinal);
     }
@@ -198,7 +197,7 @@ public class DatabricksFeatureQueryBuilderTests
     {
         var query = new FeatureQuery { OrderBy = [OrderByClause.Asc(field)] };
 
-        Assert.Throws<ArgumentException>(() => Builder.BuildSelect(Mapping(field), query));
+        Assert.Throws<ArgumentException>(() => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(field), query));
     }
 
     [Fact]
@@ -206,7 +205,7 @@ public class DatabricksFeatureQueryBuilderTests
     {
         var query = new FeatureQuery { OutFields = ["name"] };
 
-        var statement = Builder.BuildSelect(Mapping(), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), query);
 
         Assert.Contains("`name`", statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain(", `owner`", statement.Sql, StringComparison.Ordinal);
@@ -215,7 +214,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_ExcludeAttributes_ProjectsNoAttributeColumns()
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { ExcludeAttributes = true });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { ExcludeAttributes = true });
 
         Assert.DoesNotContain("`name`", statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("`owner`", statement.Sql, StringComparison.Ordinal);
@@ -224,15 +223,15 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_EmptyOutFields_ProjectsNoAttributeColumns()
     {
-        var defaults = Builder.BuildSelect(Mapping(), new FeatureQuery());
+        var defaults = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery());
         Assert.Contains("`name`", defaults.Sql, StringComparison.Ordinal);
         Assert.Contains("`owner`", defaults.Sql, StringComparison.Ordinal);
 
-        var unset = Builder.BuildSelect(Mapping(), new FeatureQuery { OutFields = default(ImmutableArray<string>) });
+        var unset = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { OutFields = default(ImmutableArray<string>) });
         Assert.Contains("`name`", unset.Sql, StringComparison.Ordinal);
         Assert.Contains("`owner`", unset.Sql, StringComparison.Ordinal);
 
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { OutFields = ImmutableArray<string>.Empty });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { OutFields = ImmutableArray<string>.Empty });
 
         Assert.DoesNotContain("`name`", statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("`owner`", statement.Sql, StringComparison.Ordinal);
@@ -241,7 +240,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildCount_EmitsCountStarWithFilter()
     {
-        var statement = Builder.BuildCount(Mapping("name", "owner", "x"), new FeatureQuery { Where = "x > 1" });
+        var statement = DatabricksFeatureQueryBuilder.BuildCount(Mapping("name", "owner", "x"), new FeatureQuery { Where = "x > 1" });
 
         Assert.StartsWith("SELECT COUNT(*) AS __honua_count FROM `main`.`gis`.`parcels`", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("WHERE (`x` > :f0)", statement.Sql, StringComparison.Ordinal);
@@ -251,7 +250,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildExtent_EmitsStMinMaxAggregates()
     {
-        var statement = Builder.BuildExtent(Mapping(), null);
+        var statement = DatabricksFeatureQueryBuilder.BuildExtent(Mapping(), null);
 
         Assert.Contains("MIN(st_xmin(`geom`))", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("MAX(st_ymax(`geom`))", statement.Sql, StringComparison.Ordinal);
@@ -260,7 +259,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildObjectIds_SelectsPrimaryKeyOnly()
     {
-        var statement = Builder.BuildObjectIds(Mapping(), new FeatureQuery());
+        var statement = DatabricksFeatureQueryBuilder.BuildObjectIds(Mapping(), new FeatureQuery());
 
         Assert.StartsWith("SELECT `id` AS __honua_id FROM", statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("st_asbinary", statement.Sql, StringComparison.Ordinal);
@@ -269,7 +268,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_EnvelopeSpatialFilter_EmitsStIntersects()
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(SpatialRelationship.Intersects) });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(SpatialRelationship.Intersects) });
 
         Assert.Contains("st_intersects(`geom`, st_geomfromtext('POLYGON((", statement.Sql, StringComparison.Ordinal);
     }
@@ -284,7 +283,7 @@ public class DatabricksFeatureQueryBuilderTests
     [InlineData(SpatialRelationship.Equals, "st_equals(`geom`, st_geomfromtext('POLYGON((")]
     public void BuildSelect_EnvelopeSpatialFilter_UsesMappedRelationship(SpatialRelationship relationship, string expected)
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(relationship) });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(relationship) });
 
         Assert.Contains(expected, statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("st_intersects(", statement.Sql, StringComparison.Ordinal);
@@ -298,7 +297,7 @@ public class DatabricksFeatureQueryBuilderTests
     public void BuildSelect_UnsupportedEnvelopeRelationship_Throws(SpatialRelationship relationship)
     {
         var withCoordinates = new FeatureQuery { SpatialFilter = Envelope(relationship) };
-        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), withCoordinates));
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), withCoordinates));
 
         var withoutCoordinates = new FeatureQuery
         {
@@ -309,7 +308,7 @@ public class DatabricksFeatureQueryBuilderTests
                 isSimpleEnvelope: true,
                 allowEnvelopeOnly: true)
         };
-        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), withoutCoordinates));
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), withoutCoordinates));
     }
 
     [Fact]
@@ -322,7 +321,7 @@ public class DatabricksFeatureQueryBuilderTests
             SqlFilterSupplementsWhere = true
         };
 
-        var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), query));
+        var ex = Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), query));
         Assert.Contains("supplemental", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -335,7 +334,7 @@ public class DatabricksFeatureQueryBuilderTests
             SqlFilter = new SqlFragment("(attributes->>'owner') = @p0", new object?[] { "acme" })
         };
 
-        var statement = Builder.BuildSelect(Mapping(), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), query);
 
         Assert.Contains("WHERE (`owner` = :f0)", statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("->>", statement.Sql, StringComparison.Ordinal);
@@ -349,7 +348,7 @@ public class DatabricksFeatureQueryBuilderTests
     [InlineData(SpatialRelationship.EnvelopeIntersects, "st_intersects(st_envelope(`geom`), st_envelope(st_geomfromwkb(unhex(:geom0), 4326)))")]
     public void BuildSelect_NonEnvelopeSpatialFilter_EmitsBoundPredicate(SpatialRelationship relationship, string expected)
     {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = GeometryFilter(relationship) });
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = GeometryFilter(relationship) });
 
         Assert.Contains(expected, statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("01030000", statement.Sql, StringComparison.OrdinalIgnoreCase);
@@ -367,7 +366,7 @@ public class DatabricksFeatureQueryBuilderTests
 
         static void AssertUsesLayerSrid(int? srid)
         {
-            var statement = Builder.BuildSelect(
+            var statement = DatabricksFeatureQueryBuilder.BuildSelect(
                 Mapping(),
                 new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Intersects, srid) });
 
@@ -391,7 +390,7 @@ public class DatabricksFeatureQueryBuilderTests
             AttributeColumns = ["name", "owner"],
         };
 
-        var statement = Builder.BuildSelect(
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(
             mapping,
             new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Within, 3857) });
 
@@ -408,7 +407,7 @@ public class DatabricksFeatureQueryBuilderTests
         var ewkbType = BinaryPrimitives.ReadUInt32LittleEndian(ewkb.AsSpan(1));
         Assert.NotEqual(0u, ewkbType & 0x20000000u);
 
-        var statement = Builder.BuildSelect(
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(
             Mapping(),
             new FeatureQuery
             {
@@ -429,7 +428,7 @@ public class DatabricksFeatureQueryBuilderTests
     {
         var ewkb = EwkbWithEmbeddedSrid(geometryType: 3, srid: 4326);
 
-        var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
+        var ex = Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(
             Mapping(),
             new FeatureQuery
             {
@@ -469,7 +468,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_NonEnvelopeSpatialFilter_CrossSrid_Throws()
     {
-        var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
+        var ex = Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(
             Mapping(),
             new FeatureQuery { SpatialFilter = GeometryFilter(SpatialRelationship.Intersects, 3857) }));
 
@@ -486,7 +485,7 @@ public class DatabricksFeatureQueryBuilderTests
     [InlineData(SpatialRelationship.Equals)]
     public void BuildSelect_UnsupportedNonEnvelopeRelationship_Throws(SpatialRelationship relationship)
     {
-        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(
             Mapping(),
             new FeatureQuery { SpatialFilter = GeometryFilter(relationship) }));
     }
@@ -494,7 +493,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildCount_NonEnvelopeSpatialFilter_BindsGeometryBesideWhere()
     {
-        var statement = Builder.BuildCount(
+        var statement = DatabricksFeatureQueryBuilder.BuildCount(
             Mapping(),
             new FeatureQuery
             {
@@ -517,7 +516,7 @@ public class DatabricksFeatureQueryBuilderTests
             TemporalFilter = new TemporalFilter { PropertyName = "ts", PropertyType = TemporalPropertyType.DateTime },
         };
 
-        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), query));
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), query));
     }
 
     [Fact]
@@ -532,7 +531,7 @@ public class DatabricksFeatureQueryBuilderTests
             ],
         };
 
-        var statement = Builder.BuildStatistics(Mapping("name", "owner", "pop"), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildStatistics(Mapping("name", "owner", "pop"), query);
 
         Assert.Contains("COUNT(`owner`) AS `owner_count`", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("SUM(`pop`) AS `pop_sum`", statement.Sql, StringComparison.Ordinal);
@@ -552,7 +551,7 @@ public class DatabricksFeatureQueryBuilderTests
             GroupByFields = ["owner"],
         };
 
-        var statement = Builder.BuildStatistics(Mapping("name", "owner", "pop"), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildStatistics(Mapping("name", "owner", "pop"), query);
 
         Assert.Contains("SELECT `owner`, AVG(`pop`) AS `pop_avg`", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("GROUP BY `owner`", statement.Sql, StringComparison.Ordinal);
@@ -570,7 +569,7 @@ public class DatabricksFeatureQueryBuilderTests
             ],
         };
 
-        var statement = Builder.BuildStatistics(Mapping("name", "owner", "pop"), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildStatistics(Mapping("name", "owner", "pop"), query);
 
         Assert.Contains("STDDEV_SAMP(`pop`) AS `pop_sd`", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("VAR_SAMP(`pop`) AS `pop_var`", statement.Sql, StringComparison.Ordinal);
@@ -588,7 +587,7 @@ public class DatabricksFeatureQueryBuilderTests
             ],
         };
 
-        var statement = Builder.BuildStatistics(Mapping(), query);
+        var statement = DatabricksFeatureQueryBuilder.BuildStatistics(Mapping(), query);
 
         Assert.Contains("WHERE (`owner` = :f0)", statement.Sql, StringComparison.Ordinal);
         Assert.Equal("acme", statement.Parameters[0].Value);
@@ -597,7 +596,7 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildStatistics_NoStatistics_ReturnsEmptyResultQuery()
     {
-        var statement = Builder.BuildStatistics(Mapping(), new FeatureQuery());
+        var statement = DatabricksFeatureQueryBuilder.BuildStatistics(Mapping(), new FeatureQuery());
 
         Assert.Equal("SELECT 1 WHERE FALSE", statement.Sql);
         Assert.Empty(statement.Parameters);

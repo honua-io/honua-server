@@ -125,6 +125,10 @@ The identity field must hold a unique, non-empty value for every feature, so eac
 
 Paired publish needs a layer stored in Honua's managed feature table (imported or created in Honua), because the capture check reads that table's edit log; layers that read an external source table are refused. The completed job status carries `publishedPublication` with the version, capture ID, descriptor key and pointer key.
 
+Authenticated `GET` or `HEAD` requests to `/api/v1/publications/{publicationId}/current.json` return a `307` redirect to the current version's `descriptor.json`. Resolve the descriptor's relative artifact links against that immutable URL to keep both files on the same capture when a later publish moves the pointer. Versioned files support byte ranges, `HEAD` and conditional requests with `ETag`.
+
+Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Responses use `private, no-store` so shared caches cannot bypass these checks.
+
 ## Troubleshoot
 
 - **Tile request returns `404`** — the layer id is unknown or disabled; check `GET /api/v1/admin/connections/{id}/layers`.

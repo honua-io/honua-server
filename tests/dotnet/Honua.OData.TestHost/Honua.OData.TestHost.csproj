@@ -10,6 +10,7 @@
     <ProjectReference Include="../../../src/Honua.Db/Postgres/Honua.Postgres.csproj" />
     <!-- Canonical SQL/manifest are linked, never copied or executed by this host.
          Provisioning belongs to the server-independent Postgres test fixture. -->
+    <Compile Include="../Honua.TestKit.Postgres.Hosting/PostgresComponentEventServices.cs" Link="Services/PostgresComponentEventServices.cs" />
     <Compile Include="../../../src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs" Link="Provisioning/ServerCoreSchemaMigrations.cs" />
     <EmbeddedResource Include="../../../src/Honua.Server/Migrations/*.sql" LogicalName="Honua.Server.Migrations.%(Filename)%(Extension)" />
   </ItemGroup>

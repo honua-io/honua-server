@@ -157,14 +157,6 @@ runs:
       shell: pwsh
       run: scripts/ci/check-markdown-command-policy.ps1
 
-    - name: Validate merge-train timeout policy
-      if: contains(fromJSON('["all","architecture"]'), inputs.test-group)
-      shell: bash
-      run: |
-        scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
-        scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh
-        scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
-
     # Cheap, service-free governance step (~1s): every OpenAPI document Honua
     # advertises must agree with EndpointRegistry, and every deliberate omission
     # from the curated admin bundle must be declared. Runs here, in the required

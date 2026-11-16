@@ -4,6 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -383,6 +384,61 @@ public sealed class GdalSurfaceExecutorTests
     /// </summary>
     private const int MinimumSlopeValidCellCount =
         (GdalCli.SampleDemSize - 2) * (GdalCli.SampleDemSize - 2);
+
+    [UnitTest]
+    public async Task Slope_ReferencedObjectStoreCog_RunsGdaldemWithTheDeclaredRemoteInput()
+    {
+        GdalRemoteInputs? classified = null;
+        string? inputArgument = null;
+        var runner = new FakeGdalCommandRunner((_, args, _) =>
+        {
+            classified = GdalRemoteInputScope.Classify(args);
+            inputArgument = args[^2];
+            return new GdalCommandResult { ExitCode = 1, StandardError = "stop" };
+        });
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var descriptor = new ObjectStoreCogRasterSourceDescriptor
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                StoreReference = "imagery",
+                ObjectKey = "dem.tif",
+                DeclaredDimensions = new RasterSourceDimensions(100, 100, 1, 16),
+                DeclaredPixelScale = new RasterSourcePixelScale(30d, 30d),
+                Version = "version-1",
+                Content = new RasterContentIdentity
+                {
+                    SizeBytes = 1024,
+                    MediaType = "image/tiff",
+                    ETag = "etag-1",
+                },
+                SecurityContext = new RasterSecurityContextReference
+                {
+                    TenantId = "tenant-a",
+                    AuthorizationSnapshotReference = "catalog-registration:1",
+                },
+            };
+            var job = GdalJobFactory.Job(GdalSurfaceJobExecutor.SlopeProcessId);
+            var parameters = (Dictionary<string, string>)job.Spec.Parameters;
+            parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor);
+
+            await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            inputArgument.Should().StartWith("/vsis3/");
+            classified.Should().Be(
+                new GdalRemoteInputs(Remote: true, S3: true, Azure: false),
+                "gdaldem must open the executor-declared object-store COG with remote access");
+            GdalRemoteInputScope.Classify(new[] { inputArgument! }).Should().Be(
+                GdalRemoteInputs.None,
+                "the scope closes when the executor returns");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
 
     private static GdalSurfaceJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

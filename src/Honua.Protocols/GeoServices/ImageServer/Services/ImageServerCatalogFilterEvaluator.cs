@@ -2,20 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-internal interface IImageServerCatalogFilterEvaluator
+internal sealed class ImageServerCatalogFilterEvaluator
 {
-    IEnumerable<ImageServerCatalogItem> Apply(
-        IEnumerable<ImageServerCatalogItem> items,
-        string whereClause);
-}
-
-internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFilterEvaluator
-{
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the instance API used by dependency-injected consumers.")]
     public IEnumerable<ImageServerCatalogItem> Apply(
         IEnumerable<ImageServerCatalogItem> items,
         string whereClause)

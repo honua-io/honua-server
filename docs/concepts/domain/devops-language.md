@@ -33,7 +33,7 @@ relations:
 | Release | A declared platform release whose serving and worker artifacts come from its signed release lock |
 | Plan | A comparison of desired and observed state, affected resources, prerequisites, and recovery scope |
 | Apply | An authorized operation against a particular plan and revision, with a returned identity |
-| Converge | Bring eligible serving targets to the already declared release using the current control plane contract |
+| Converge | Bring eligible server deployments to the already declared release using the current control plane contract |
 | Verify | Observe the required behavior and dependent services after the change and during its observation window |
 | Roll back | Request a specific supported recovery to a prior compatible revision, then verify the result |
 
@@ -59,7 +59,7 @@ AI workflows never edit authoritative feature attributes or geometry. Neither op
 
 ## Hosting distinctions that affect meaning
 
-ECS, EKS, and Lambda are serving targets with different rollout mechanisms. Batch is an execution backend, not a map-serving endpoint. A serving rollout does not prove an already running job switched worker images. The current convergence contract explicitly defers workers to subsequent geoprocessing dispatch. Keep job identity and ownership through controller recovery; do not submit a second job merely because observation was interrupted.
+ECS, EKS, and Lambda host server deployments with different rollout mechanisms. Batch is an execution backend, not a map-serving endpoint. A serving rollout does not prove an already running job switched worker images. The current convergence contract explicitly defers workers to subsequent geoprocessing dispatch. Keep job identity and ownership through controller recovery; do not submit a second job merely because observation was interrupted.
 
 "Make it healthy" requires an observable target: readiness, a query, a durable job, or another explicit user outcome. One successful readiness response does not prove all GIS workflows function.
 

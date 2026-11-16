@@ -15,7 +15,7 @@ internal static partial class PairedPublishRequestRules
             return "Paired publish operations require 'serviceId' and 'layerId'.";
         }
 
-        if (request.PublicationId is null || !PublicationIdPattern().IsMatch(request.PublicationId))
+        if (request.PublicationId is null || !IsPublicationId(request.PublicationId))
         {
             return "Property 'publicationId' must be 3-64 lowercase letters, digits or hyphens, starting with a letter or digit.";
         }
@@ -30,6 +30,8 @@ internal static partial class PairedPublishRequestRules
             ? null
             : "Property 'bbox' does not apply to paired publish; tile coverage follows the captured features.";
     }
+
+    public static bool IsPublicationId(string? name) => name is not null && PublicationIdPattern().IsMatch(name);
 
     public static bool IsPortableFieldName(string name) => FieldNamePattern().IsMatch(name);
 
