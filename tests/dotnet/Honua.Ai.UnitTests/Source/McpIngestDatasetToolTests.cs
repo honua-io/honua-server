@@ -29,14 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Coverage for <c>honua_ingest_dataset</c>: the inline CSV/GeoJSON → catalog
-/// table adapter over the canonical <see cref="IFileImportService"/> pipeline.
-/// Runs through the JSON-RPC <c>tools/call</c> dispatcher with the import
-/// service substituted, so it validates argument validation, option plumbing,
-/// per-row error projection, and the publish-chaining output triple without a
-/// database.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpIngestDatasetToolTests
 {
@@ -376,7 +368,7 @@ public sealed class McpIngestDatasetToolTests
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_IngestOversizeInlineData_ReturnsInvalidArgumentPointingAtRestUpload()
+    public async Task ToolsCall_IngestOversizeInlineData_ReturnsInvalidArgumentPointingAtUrlImport()
     {
         var oversize = new string('x', IngestDatasetTool.MaxInlineDataBytes + 1);
         var response = await DispatchAsync(
@@ -386,7 +378,7 @@ public sealed class McpIngestDatasetToolTests
         var structured = AssertToolFailed(response);
         structured.GetProperty("code").GetString().Should().Be("invalid_argument");
         structured.GetProperty("message").GetString().Should()
-            .Contain("/api/v1/admin/import/upload").And.Contain("inline cap");
+            .Contain("honua_admin_import_upload_url").And.Contain("inline cap");
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -554,7 +546,7 @@ public sealed class McpIngestDatasetToolTests
             .Contain("header row").And
             .Contain("lon/lat").And
             .Contain("EPSG:4326").And
-            .Contain("/api/v1/admin/import/upload");
+            .Contain("honua_admin_import_upload_url");
         descriptor.OutputSchema.Should().NotBeNull();
         descriptor.Annotations!.ReadOnlyHint.Should().BeFalse();
         descriptor.Annotations.DestructiveHint.Should().BeFalse();

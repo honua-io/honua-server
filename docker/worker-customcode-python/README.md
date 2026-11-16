@@ -15,7 +15,11 @@ on a GDAL-full base with the geospatial stack + `honua-sdk` baked in.
   python bindings (`osgeo.gdal/ogr/osr`) and the full driver set.
 - Added: `git`, `python3-pip`, `ca-certificates`, build toolchain.
 - Pre-installed (no per-job restore for the common case): `rasterio`,
-  `geopandas`, `shapely`, `pyproj`, `fiona`, `boto3`, and **`honua-sdk==0.1.16`**.
+  `geopandas`, `shapely`, `pyproj`, `fiona`, `boto3`, and **`honua-sdk==0.1.16`**,
+  from [`requirements.lock`](requirements.lock): exact versions with the sha256 of
+  each package's x86_64 and aarch64 wheels, installed with `--require-hashes
+  --no-deps --only-binary=:all:`. The harness is installed with `--no-deps
+  --no-build-isolation`, using the locked `hatchling`.
 
 ### First-class GDAL interop
 
@@ -43,6 +47,37 @@ for the SDK-as-transport / GDAL-as-engine pattern.
 > (`python3 -c "import honua_sdk, rasterio, ... ; import osgeo.gdal"` +
 > `command -v honua-customcode-harness`) fails the build early if a wheel does
 > not link or the entrypoint is missing.
+
+## Updating the Python packages
+
+[`requirements.in`](requirements.in) lists the top-level packages;
+`requirements.lock` is generated from it and must not be edited by hand. To change a
+version, edit `requirements.in` (and the `honua-sdk` pin in `harness/pyproject.toml`,
+which a test keeps equal to the lock), then resolve inside the pinned base image and
+regenerate:
+
+```bash
+base=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-customcode-python/Dockerfile)
+mkdir -p artifacts/pylock
+docker run --rm -u 0 --platform linux/amd64 \
+  -v "$PWD/docker/worker-customcode-python:/in:ro" -v "$PWD/artifacts/pylock:/out" "$base" bash -c \
+  'apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-pip >/dev/null &&
+   python3 -m pip install --break-system-packages --dry-run --quiet --report /out/report.json -r /in/requirements.in'
+python3 docker/worker-customcode-python/lock-requirements.py artifacts/pylock/report.json \
+  > docker/worker-customcode-python/requirements.lock
+```
+
+The resolution runs in the base image so packages its system Python already provides
+(`attrs`, `idna`, `numpy`) stay with the base image, as they would in a build.
+`requirements.in` keeps `numpy<2`: the base image's GDAL bindings (`osgeo.gdal_array`,
+used by `ReadAsArray`) are compiled against its Debian numpy 1.x, pip cannot replace a
+Debian-installed numpy, and numpy 2 next to it breaks those bindings. That is why
+`rasterio` and `geopandas` resolve to their newest numpy-1-compatible releases, and the
+in-build check reads an array through `osgeo.gdal_array`. The generator
+records every installable x86_64 and aarch64 CPython 3.12 wheel for each chosen
+version, and prints a warning for any package without a wheel for one of the two
+architectures. `fiona` 1.10.1 has no aarch64 wheel, so an ARM64 build of this image
+stops at the lock install instead of compiling it from an unverified source download.
 
 ## The contract (job inputs)
 

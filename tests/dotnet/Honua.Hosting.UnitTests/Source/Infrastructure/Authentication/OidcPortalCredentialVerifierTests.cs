@@ -22,14 +22,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for <see cref="OidcPortalCredentialVerifier"/> — the OIDC-backed
-/// portal credential verifier (#1370). Proves a named-user OIDC token validated by
-/// the shared OIDC core projects onto the same <c>PrincipalId</c> / <c>DisplayName</c>
-/// / <c>TenantId</c> / <c>Roles</c> that a direct OIDC session yields, and that the
-/// verifier is off-by-default and rejects invalid tokens. Uses a static symmetric
-/// signing key so validation runs without IdP metadata discovery.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -282,11 +274,6 @@ public sealed class OidcPortalCredentialVerifierTests
     }
 
 
-    /// <summary>
-    /// Service provider carrying an Enterprise-entitled license so claims transformation tests
-    /// exercise the pre-#2997 behavior (custom claims mapping applied); the unentitled path is
-    /// covered by OidcClaimsMappingEntitlementTests.
-    /// </summary>
     private static ServiceProvider EnterpriseEntitledServices()
         => new ServiceCollection()
             .AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(

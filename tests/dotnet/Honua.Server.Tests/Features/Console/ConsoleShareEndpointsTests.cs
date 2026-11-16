@@ -8,7 +8,6 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.Models;
-using Honua.Server.Features.Console.Services;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -17,9 +16,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console Share access public-link and embed API (#1215).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]
@@ -47,7 +43,7 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             })
             .ReplaceService<TimeProvider>(_clock)
-            .ReplaceService<IConsoleShareStore>(new InMemoryConsoleShareStore(_clock));
+            .UseProcessLocalConsoleState(_clock);
     }
 
     public async Task InitializeAsync()

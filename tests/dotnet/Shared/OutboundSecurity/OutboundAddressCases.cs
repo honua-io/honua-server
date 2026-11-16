@@ -5,10 +5,6 @@ using Xunit;
 
 namespace Honua.Tests.OutboundSecurity;
 
-/// <summary>
-/// The address table every outbound destination guard must agree on. Each row is an address and
-/// the range it belongs to.
-/// </summary>
 public static class OutboundAddressCases
 {
     public static TheoryData<string, string> Disallowed => new()

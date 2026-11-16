@@ -7,10 +7,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.AuditLog.Export;
 
-/// <summary>
-/// Unit tests for <see cref="AuditExportDispatcher"/> retry/backoff, dead-letter,
-/// and residency behavior (#2157).
-/// </summary>
 public sealed class AuditExportDispatcherTests
 {
     private readonly InMemoryAuditDeadLetterStore _deadLetters = new();

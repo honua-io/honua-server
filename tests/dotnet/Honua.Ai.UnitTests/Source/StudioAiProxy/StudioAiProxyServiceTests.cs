@@ -19,12 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Orchestration tests for <see cref="StudioAiProxyService"/>: provider/default resolution, request
-/// validation, capability descriptors, and — because <see cref="IStudioAiProxyAdapter"/> is a plugged-in
-/// contract — the defense-in-depth backstop that guarantees exactly one terminal event (and a
-/// correctly populated <see cref="StudioAiProxyCallSummary"/>) even when a fake adapter misbehaves.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class StudioAiProxyServiceTests
 {

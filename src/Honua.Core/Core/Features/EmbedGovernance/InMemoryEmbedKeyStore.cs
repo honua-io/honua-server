@@ -8,7 +8,7 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 
 namespace Honua.Core.Features.EmbedGovernance;
 
-public sealed class InMemoryEmbedKeyStore
+public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
 {
     private readonly ConcurrentDictionary<Guid, EmbedKeyRecord> _keys = new();
     private readonly ConcurrentDictionary<Guid, RateWindow> _windows = new();

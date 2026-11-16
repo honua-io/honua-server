@@ -20,12 +20,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// The control-plane event Lambdas run the server image behind the AWS Lambda Web Adapter, which posts
-/// every EventBridge / Scheduler invocation to <c>POST /events</c> from loopback. On the aws-serverless
-/// cell (honua-release e2e-cloud-aws run 38133126673) that request was rejected by host validation and
-/// no route existed, so reconcile, backstop and scheduled ticks never ran.
-/// </summary>
 public sealed class ControlPlaneLambdaEventEndpointTests
 {
     private const string BatchEvent = """

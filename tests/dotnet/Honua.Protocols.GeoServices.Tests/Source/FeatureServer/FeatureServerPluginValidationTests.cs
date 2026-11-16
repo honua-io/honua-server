@@ -24,13 +24,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the plugin/extension SDK (#347) wired into the FeatureServer applyEdits
-/// path. Registers a custom <see cref="IFeatureValidator"/> through the real <c>AddHonuaPlugins</c>
-/// pipeline under an Enterprise license and asserts that plugin rejections (1) fail the offending
-/// feature, (2) keep it out of the write set, and (3) honour rollback. The rule keys on the
-/// layer's <c>name</c> field so the test is independent of layer schema specifics.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerPluginValidationTests : IAsyncLifetime
@@ -187,7 +180,6 @@ public sealed class FeatureServerPluginValidationTests : IAsyncLifetime
         return parsed!.Count ?? 0;
     }
 
-    /// <summary>Test plugin that rejects features whose <c>name</c> attribute equals "REJECT".</summary>
     [Plugin("test-reject-by-name", "1.0.0")]
     private sealed class RejectByNamePlugin : IFeatureValidator
     {

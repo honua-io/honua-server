@@ -239,12 +239,6 @@ public sealed class ShapefileExportWriterTests
         warnings.Should().NotBeEmpty();
     }
 
-    /// <summary>
-    /// honua-server#4419: every existing call site passed <c>prjWkt: null</c>, so the branch that
-    /// emits the <c>.prj</c> had no coverage at all and no test asserted the sidecar was present in
-    /// the export ZIP. A shapefile shipped without its <c>.prj</c> is a CRS-less file — the classic
-    /// silent-wrong-data shapefile failure, because the consumer guesses.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_WithPrjWkt_WritesThePrjSidecarVerbatimIntoTheArchive()
     {
@@ -285,10 +279,6 @@ public sealed class ShapefileExportWriterTests
         (await reader.ReadToEndAsync()).Should().Be(wkt, "the resolved CRS WKT is written through unaltered");
     }
 
-    /// <summary>
-    /// The complementary negative: with no resolvable CRS the writer must omit the sidecar rather
-    /// than emit an empty or placeholder <c>.prj</c>, which a consumer would read as a real CRS.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_WithoutPrjWkt_OmitsThePrjSidecar()
     {
@@ -314,12 +304,6 @@ public sealed class ShapefileExportWriterTests
             entry => entry.FullName.EndsWith(".prj", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// honua-server#4419: no test read a DBF field descriptor, so declared field types were
-    /// unverified — a writer that emitted every attribute as a character column would have passed.
-    /// The expected types are the DBF type codes the shapefile specification defines for each
-    /// <see cref="ExportFieldType"/>.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_MixedFieldTypes_WritesTheDeclaredDbfFieldTypes()
     {
@@ -381,11 +365,6 @@ public sealed class ShapefileExportWriterTests
         }
     }
 
-    /// <summary>
-    /// honua-server#4419: every shapefile fixture in this repository used ASCII strings, so the
-    /// writer's hard-coded UTF-8 DBF encoding was never verified. A non-ASCII attribute that
-    /// round-trips proves the encoding claim rather than assuming it.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_NonAsciiAttribute_RoundTripsThroughTheUtf8Dbf()
     {

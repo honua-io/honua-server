@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Verifies the Console principal-id resolver picks the correct claim for the
-/// authentication schemes that reach Console endpoints (OIDC/JWT with
-/// NameIdentifier/sub, admin API-key with ClaimTypes.Name plus optional
-/// api_key_id / api_key_name claims).
-/// </summary>
 public class ConsolePrincipalTests
 {
     [UnitTest]

@@ -17,15 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Entitlement-gate tests for the OIDC provider admin surface (#2997), mirroring the SAML/SCIM
-/// shape in <see cref="IdentityEntitlementGateTests"/> (#2978). Single-provider OIDC
-/// configuration is Pro (<c>identity.oidc</c> — "no SSO tax for one provider"); configuring a
-/// second provider is Enterprise (<c>identity.oidc-multi-provider</c>). The claims-mapping
-/// entitlement (<c>identity.claims-mapping</c>) has no admin DTO surface and is covered by
-/// <see cref="Honua.Server.Tests.Infrastructure.Authentication.OidcClaimsMappingEntitlementTests"/>.
-/// The token-validation pipeline itself is deliberately not gated (ADR-0024 amendment).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]

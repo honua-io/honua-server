@@ -81,12 +81,6 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
         }
     }
 
-    /// <summary>
-    /// Issue #4600: a lost attachment is lost source data, so the run must not report a successful
-    /// migration. The copy loop still continues past the failure (the rest of the attachments are
-    /// copied), but the fidelity gate routes the run to operator review with an explicit,
-    /// attachment-scoped difference rather than a warning buried in the result.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenAttachmentDownloadFails_CountsFailureAndBlocksSuccess()
     {

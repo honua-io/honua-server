@@ -15,9 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Isolated related-record groups for a query-only composite. No hosted capture is required.
-/// </summary>
 public sealed class QueryOnlyCompositeRelatedRecordGroupTests
 {
     [UnitTest]

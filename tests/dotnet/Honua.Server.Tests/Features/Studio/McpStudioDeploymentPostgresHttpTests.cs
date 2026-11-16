@@ -30,10 +30,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// An actual Studio MCP publication creates the canonical deployment read by a new
-/// MCP request, and a rebuilt host reads the same row from PostgreSQL.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
@@ -75,6 +71,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             // composition but leaves Database:Schema unset. Bind the production stores
             // to this fixture's retained schema before constructing MCP handlers.
             var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
+            ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schema));
@@ -212,10 +209,12 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string name, string arguments)
+    private async Task<JsonElement> CallToolAsync(HttpClient client, string name, string arguments)
     {
         var response = await RpcAsync(client,
             $$$"""{"jsonrpc":"2.0","id":"{{{name}}}","method":"tools/call","params":{"name":"{{{name}}}","arguments":{{{arguments}}}}}""");
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, name, (_fixture, _identityProvider, TenantA, null));
+        if (completed is { } value) return value;
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");
         result.TryGetProperty("isError", out var isError).Should().BeTrue(result.GetRawText());

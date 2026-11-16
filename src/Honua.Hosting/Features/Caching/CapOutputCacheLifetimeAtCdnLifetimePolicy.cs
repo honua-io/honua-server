@@ -32,7 +32,9 @@ internal sealed class CapOutputCacheLifetimeAtCdnLifetimePolicy : IOutputCachePo
             return;
         }
 
-        if (cdnLifetime <= TimeSpan.Zero)
+        // A purge-backed lifetime relies on every copy being fresh when the CDN refills it; this task's copy would not
+        // see another task's edit.
+        if (cdnLifetime <= TimeSpan.Zero || SharedCacheResponse.IsPurgeBacked(context.HttpContext))
         {
             context.AllowCacheStorage = false;
             return;

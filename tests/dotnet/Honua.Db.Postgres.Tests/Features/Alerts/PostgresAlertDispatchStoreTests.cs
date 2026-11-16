@@ -13,12 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAlertDispatchStore"/> backlog counting and
-/// delivered-row retention (#2481). The dispatch store targets the literal
-/// <c>honua.alert_dispatch</c> table (search-path isolation does not scope it), so this
-/// suite mirrors <see cref="PostgresAlertAdminStoreTests"/>'s global-schema pattern.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
 {

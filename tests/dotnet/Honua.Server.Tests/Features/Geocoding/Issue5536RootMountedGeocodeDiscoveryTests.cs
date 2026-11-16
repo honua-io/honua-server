@@ -16,13 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-/// <summary>
-/// The root-mounted GeoServices tree and the <c>/arcgis</c> instance-path alias must answer the
-/// same locator discovery sequence: catalog root, folder, service resource, and REST info.
-/// A client resolves the geocode service from those documents on first contact, so both mounts
-/// publish the conventional instance path in service and SOAP URLs. Portal discovery
-/// retains each actual request root unless an explicit public base URL overrides it.
-/// </summary>
 [Protocol(TestProtocols.Geocoding)]
 public sealed class Issue5536RootMountedGeocodeDiscoveryTests
 {

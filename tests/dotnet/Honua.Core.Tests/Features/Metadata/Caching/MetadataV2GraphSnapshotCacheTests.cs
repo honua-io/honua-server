@@ -10,12 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Metadata.Caching;
 
-/// <summary>
-/// Unit tests for the shared per-instance Metadata v2 graph snapshot cache and its caching
-/// provider decorator (MCP A2 hot-path caching). Proves repeated reads reuse one materialized
-/// snapshot, staleness is TTL-bounded, catalog writes invalidate immediately, disabling the cache
-/// is a transparent pass-through, and failed loads are never cached.
-/// </summary>
 public sealed class MetadataV2GraphSnapshotCacheTests
 {
     private const string Environment = "test-env";
@@ -499,7 +493,6 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         }
     }
 
-    /// <summary>Manually advanced monotonic clock for deterministic TTL tests.</summary>
     private sealed class TestClock : TimeProvider
     {
         private long _ticks = 1_000_000;

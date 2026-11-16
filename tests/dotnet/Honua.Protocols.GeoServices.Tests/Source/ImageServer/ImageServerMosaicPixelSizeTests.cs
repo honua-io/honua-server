@@ -13,9 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Verifies native mosaic resolution through the HTTP metadata contract.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerMosaicPixelSizeTests

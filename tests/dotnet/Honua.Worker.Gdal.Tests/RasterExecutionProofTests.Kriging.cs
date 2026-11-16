@@ -11,29 +11,12 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Additional ordinary-kriging execution proofs for <c>raster.interpolate-kriging</c>
-/// (#3932): withheld-point validation and demonstrated negatives, layered on top of the
-/// closed-form exactness proofs in <see cref="RasterExecutionProofTests"/>. Every
-/// expectation is derived from the ordinary-kriging normal equations applied to the
-/// fixture ordinates by hand — never from a snapshot of the executor's output — and the
-/// negative-control cases show the oracle actually rejects a plausible wrong answer, not
-/// only accepts a right one.
-/// </summary>
 public sealed partial class RasterExecutionProofTests
 {
     private const string KrigingProcessId = "raster.interpolate-kriging";
 
-    /// <summary>Frozen variogram for the withheld-corner and constant-field fixtures.</summary>
     private static readonly KrigingVariogram SquareVariogram = new("spherical", Nugget: 0, Sill: 2, Range: 10);
 
-    /// <summary>
-    /// kriging-survey.geojson carries the four corners of x[0,4] y[0,4] plus a fifth
-    /// sample at (2,2) valued 26 — the "withheld truth" the next test cross-validates
-    /// against. On a 5x5 grid over that extent the cell centres are 0.4/1.2/2.0/2.8/3.6,
-    /// so cell (2,2) (flat index 12) IS the sample: this test proves that fact by running
-    /// the executor, rather than asserting it only as a hardcoded literal.
-    /// </summary>
     [Fact]
     public async Task Kriging_SurveyFixtureCentreSample_ReproducesTheWithheldTruthValueExactly()
     {
@@ -49,15 +32,6 @@ public sealed partial class RasterExecutionProofTests
         error[12].Should().BeApproximately(0, 1e-3, "the kriging variance vanishes at a sample location");
     }
 
-    /// <summary>
-    /// Withholding the survey fixture's centre sample (value 26 at (2,2)) leaves the four
-    /// corners, which are symmetric about the grid centre: the unique kriging solution at
-    /// that cell must be invariant under that symmetry, so every weight is exactly 1/4 —
-    /// giving both the prediction and its standard error closed forms independent of the
-    /// executor's cached-factorization primal solve. The withheld truth then turns the
-    /// same cell into a single-point cross-validation: the prediction's residual against
-    /// it is frozen and must sit well inside the surface's own reported uncertainty.
-    /// </summary>
     [Fact]
     public async Task Kriging_WithheldValidationPoint_MatchesTheSymmetryOracleAndFrozenResidual()
     {
@@ -88,12 +62,6 @@ public sealed partial class RasterExecutionProofTests
         Math.Abs(residual).Should().BeLessThan(2 * error);
     }
 
-    /// <summary>
-    /// Two negative controls the oracle above must reject: substituting IDW for kriging
-    /// over the identical points and grid, and re-tuning the frozen variogram's range.
-    /// Both produce a well-formed raster; neither survives comparison against the
-    /// analytically-derived kriging surface.
-    /// </summary>
     [Fact]
     public async Task Kriging_OracleRejectsASubstitutedAlgorithmAndADifferentVariogram()
     {
@@ -131,11 +99,6 @@ public sealed partial class RasterExecutionProofTests
             .Should().BeTrue("a changed variogram must change the kriged surface");
     }
 
-    /// <summary>
-    /// A constant field reproduces exactly because the ordinary-kriging weights always
-    /// sum to one; its kriging standard error, driven purely by sample geometry, is not
-    /// zero away from the samples even though the field itself is flat everywhere.
-    /// </summary>
     [Fact]
     public async Task Kriging_ConstantField_ReturnsTheConstantExactlyWithNonzeroErrorAwayFromSamples()
     {
@@ -149,7 +112,6 @@ public sealed partial class RasterExecutionProofTests
         Values(output, 1).Should().OnlyContain(value => value > 0);
     }
 
-    /// <summary>An ill-posed variogram (nugget above sill) or an unauthorized model name is rejected before any artifact is published.</summary>
     [Fact]
     public async Task Kriging_RejectsAnIllPosedVariogramWithoutPublishingAnArtifact()
     {
@@ -163,11 +125,6 @@ public sealed partial class RasterExecutionProofTests
     // Oracle
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Isotropic semivariogram, written out from its textbook definition rather than
-    /// shared with the production backend. gamma(0) is zero even when the model carries
-    /// a nugget.
-    /// </summary>
     private static double Gamma(KrigingVariogram variogram, double h)
     {
         if (h <= 0)
@@ -187,11 +144,6 @@ public sealed partial class RasterExecutionProofTests
         return variogram.Nugget + ((variogram.Sill - variogram.Nugget) * structured);
     }
 
-    /// <summary>
-    /// Closed-form ordinary kriging for exactly two samples. Eliminating the Lagrange
-    /// multiplier from the 3x3 system leaves
-    /// <c>w2 - w1 = (gamma01 - gamma02) / gamma12</c> with <c>w1 + w2 = 1</c>.
-    /// </summary>
     private static (double Prediction, double StandardError) ClosedFormPair(
         (double X, double Y, double Z)[] samples, double x, double y, KrigingVariogram variogram)
     {

@@ -10,21 +10,11 @@ using System.Globalization;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// SPATIAL GEOMETRY VALIDATION TESTS
-/// Tests edge cases in geometric validation and boundary box parsing.
-/// Focuses on RasterParsingHelpers and geometric validation functions.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public class SpatialGeometryValidationTests
 {
     #region ANTIMERIDIAN BOUNDING BOX VALIDATION
 
-    /// <summary>
-    /// CRITICAL: Tests validation of legitimate antimeridian-crossing bounding boxes
-    /// These should be ACCEPTED as valid Pacific Ocean regions, not rejected
-    /// Bug Risk: Overly strict validation rejects valid Pacific queries
-    /// </summary>
     [Theory]
     [InlineData("175,-10,-175,10", true, "Central Pacific crossing antimeridian")]
     [InlineData("179.9,-5,-179.9,5", true, "Near-antimeridian crossing")]
@@ -60,10 +50,6 @@ public class SpatialGeometryValidationTests
         }
     }
 
-    /// <summary>
-    /// Tests bounding box validation with coordinates exactly at ±180° boundary
-    /// Verifies edge case handling at exact longitude boundaries
-    /// </summary>
     [Theory]
     [InlineData("-180,-90,180,90", true, "Full world extent")]
     [InlineData("-180,0,180,0", false, "Zero height at full width")]
@@ -86,10 +72,6 @@ public class SpatialGeometryValidationTests
 
     #region POLAR REGION VALIDATION
 
-    /// <summary>
-    /// Tests bounding box validation in polar regions
-    /// Verifies handling of coordinates near ±90° latitude
-    /// </summary>
     [Theory]
     [InlineData("0,89,10,90", true, "Near North Pole")]
     [InlineData("-10,-90,10,-89", true, "Near South Pole")]
@@ -110,10 +92,6 @@ public class SpatialGeometryValidationTests
         result.Should().Be(expectedValid, $"Case: {description}");
     }
 
-    /// <summary>
-    /// Tests coordinate validation with extreme latitude values
-    /// Verifies IsValidCoordinate handles polar extremes correctly
-    /// </summary>
     [Theory]
     [InlineData(90.0, true, "North Pole")]
     [InlineData(-90.0, true, "South Pole")]
@@ -143,10 +121,6 @@ public class SpatialGeometryValidationTests
 
     #region HIGH-PRECISION COORDINATE VALIDATION
 
-    /// <summary>
-    /// Tests coordinate validation with high-precision decimal values
-    /// Verifies precision is preserved and not truncated inappropriately
-    /// </summary>
     [Theory]
     [InlineData("-122.419416667,37.774929167,-122.419316667,37.774979167", true, "Sub-meter precision")]
     [InlineData("-0.127647,51.507389,-0.127547,51.507439", true, "London high precision")]
@@ -180,10 +154,6 @@ public class SpatialGeometryValidationTests
         }
     }
 
-    /// <summary>
-    /// Tests coordinate validation with extreme precision (many decimal places)
-    /// Verifies parser handles very long decimal strings without issues
-    /// </summary>
     [Theory]
     [InlineData(0.123456789012345, true, "15 decimal places")]
     [InlineData(-122.419416666666666, true, "15 decimal places negative")]
@@ -205,10 +175,6 @@ public class SpatialGeometryValidationTests
 
     #region AXIS ORDER HANDLING
 
-    /// <summary>
-    /// Tests bounding box parsing with different axis orders
-    /// Critical for CRS84 (EastNorth) vs EPSG:4326 (traditionally NorthEast) handling
-    /// </summary>
     [Theory]
     [InlineData("37.7749,-122.4194,37.7949,-122.3894", AxisOrder.NorthEast, true, "San Francisco lat,lon order")]
     [InlineData("-122.4194,37.7749,-122.3894,37.7949", AxisOrder.EastNorth, true, "San Francisco lon,lat order")]
@@ -249,10 +215,6 @@ public class SpatialGeometryValidationTests
         }
     }
 
-    /// <summary>
-    /// Tests axis order handling with coordinates that would be invalid if order is wrong
-    /// Uses extreme coordinates where axis swapping would cause obvious validation failure
-    /// </summary>
     [Theory]
     [InlineData("179,-1,-179,1", AxisOrder.EastNorth, true, "Antimeridian crossing (correct order)")]
     [InlineData("-1,179,1,-179", AxisOrder.NorthEast, true, "Antimeridian crossing (swapped input)")]
@@ -283,10 +245,6 @@ public class SpatialGeometryValidationTests
 
     #region SPECIAL FLOAT VALUE HANDLING
 
-    /// <summary>
-    /// Tests coordinate validation with special floating point values
-    /// Verifies proper handling of NaN, Infinity, and edge numeric cases
-    /// </summary>
     [Theory]
     [InlineData(double.NaN, false, "NaN coordinate")]
     [InlineData(double.PositiveInfinity, false, "Positive infinity")]
@@ -305,10 +263,6 @@ public class SpatialGeometryValidationTests
         result.Should().Be(expectedValid, $"Special float case: {description}");
     }
 
-    /// <summary>
-    /// Tests bounding box parsing with coordinates containing special values
-    /// Verifies entire bbox is rejected if any coordinate is invalid
-    /// </summary>
     [Theory]
     [InlineData("NaN,0,1,1", false, "NaN in first coordinate")]
     [InlineData("0,NaN,1,1", false, "NaN in second coordinate")]
@@ -330,10 +284,6 @@ public class SpatialGeometryValidationTests
 
     #region MALFORMED INPUT HANDLING
 
-    /// <summary>
-    /// Tests bounding box parsing with various malformed input strings
-    /// Verifies robust error handling and input validation
-    /// </summary>
     [Theory]
     [InlineData("", false, "Empty string")]
     [InlineData("   ", false, "Whitespace only")]
@@ -358,10 +308,6 @@ public class SpatialGeometryValidationTests
         result.Should().Be(expectedValid, $"Malformed input case: {description}");
     }
 
-    /// <summary>
-    /// Tests coordinate string parsing with various whitespace and formatting
-    /// Verifies parser handles different formatting styles gracefully
-    /// </summary>
     [Theory]
     [InlineData(" 1 , 2 , 3 , 4 ", true, "Extra whitespace")]
     [InlineData("1,2,3,4", true, "No whitespace")]
@@ -393,10 +339,6 @@ public class SpatialGeometryValidationTests
 
     #region SECURITY AND PERFORMANCE VALIDATION
 
-    /// <summary>
-    /// Tests coordinate string length limits to prevent DoS attacks
-    /// Verifies parser rejects excessively long input strings
-    /// </summary>
     [Fact]
     public void ParseBoundingBox_ExcessiveLength_RejectsLongStrings()
     {
@@ -415,10 +357,6 @@ public class SpatialGeometryValidationTests
         result.Should().BeFalse("Excessively long bbox string should be rejected");
     }
 
-    /// <summary>
-    /// Tests coordinate validation performance with rapid repeated calls
-    /// Verifies no performance regression in validation functions
-    /// </summary>
     [Fact]
     [Trait("Category", "Performance")]
     public void IsValidCoordinate_PerformanceStress_HandlesRepeatedCalls()

@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Spec.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="SourceSpan"/> and the <see cref="SpecDiagnostic"/>
-/// severity factories. Diagnostics are part of the public spec API contract —
-/// IDE clients filter on severity and code, so these helpers must stay stable
-/// (#1144).
-/// </summary>
 public sealed class SpecDiagnosticTests
 {
     [UnitTest]

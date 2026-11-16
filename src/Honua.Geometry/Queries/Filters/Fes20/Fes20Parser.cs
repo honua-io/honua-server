@@ -818,7 +818,7 @@ public static class Fes20Parser
     private static Coordinate[] ParsePosList(XElement posListElement, AxisOrder axisOrder)
     {
         // A 3D posList holds (x, y, z) triples. Reading it in pairs would regroup the ordinates
-        // into different horizontal positions (#5463), so step by the declared dimension and keep
+        // into different horizontal positions, so step by the declared dimension and keep
         // the two horizontal ordinates of each position.
         var dimension = ResolveSrsDimension(posListElement) ?? 2;
         var values = posListElement.Value
@@ -1050,7 +1050,7 @@ public static class Fes20Parser
         => new(spatialOperator, property, geometry, ParseDistanceLiteral(distanceElement))
         {
             // A uom-qualified distance is metres from here on; translators convert it to a
-            // projected layer's native unit (#5462). A bare value keeps its native reading.
+            // projected layer's native unit. A bare value keeps its native reading.
             DistanceInMeters = !string.IsNullOrEmpty(distanceElement.Attribute("uom")?.Value)
         };
 

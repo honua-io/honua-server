@@ -22,8 +22,6 @@ internal static class OgcClassicRequestHelpers
     // application/vnd.ogc.gml INFO_FORMAT to be advertised and served for the
     // GML FeatureInfo conformance class (ets-wms11 wms:wms-getfeatureinfo).
     internal const string GmlFeatureInfoMimeType = "application/vnd.ogc.gml";
-    internal const string CiteServiceName = "cite";
-    internal const string CiteTerrainLayerTitle = "cite:Terrain";
 
     internal static string? GetQueryValue(IQueryCollection query, string key)
         => query.TryGetValue(key, out var value) ? value.ToString() : null;

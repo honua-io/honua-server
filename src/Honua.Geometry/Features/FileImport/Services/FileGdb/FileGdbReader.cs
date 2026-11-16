@@ -123,7 +123,7 @@ internal static class FileGdbReader
             // An unresolved spatial reference stays SRID 0 (unknown) rather than defaulting to
             // 4326: ESRI WKT without an AUTHORITY node (State Plane, UTM, ...) is resolved by the
             // import service through ICrsDetectionService or an explicit SourceSrid, and a 4326
-            // stamp here would silently store projected coordinates as degrees (#6114).
+            // stamp here would silently store projected coordinates as degrees.
             var geometryFactory = new GeometryFactory(new PrecisionModel(), Math.Max(geomDef.Srid, 0));
             var geomReader = new GdbGeometryReader(geometryFactory, geomDef);
 

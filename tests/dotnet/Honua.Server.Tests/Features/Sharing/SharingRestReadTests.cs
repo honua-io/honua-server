@@ -17,12 +17,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Integration tests for the read-only ArcGIS Portal/Sharing REST surface (#1243):
-/// <c>info</c>, <c>portals/self</c>, <c>community/self</c>, <c>search</c>, and
-/// <c>content/items/{id}</c>. Verifies the Esri response shapes, RBAC-scoped
-/// visibility through <c>IPortalItemProjector</c>, paging, and entitlement gating.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -50,11 +44,6 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Builds a fixture with a fixed Metadata v2 graph: one anonymously-readable
-    /// FeatureServer, one role-restricted FeatureServer, and one non-Esri (OGC)
-    /// service that must never project to a portal item.
-    /// </summary>
     private static WebAppFixture CreateFixture()
     {
         var graph = new TestMetadataV2GraphBuilder()

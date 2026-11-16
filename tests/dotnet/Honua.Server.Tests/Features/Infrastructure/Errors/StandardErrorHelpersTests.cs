@@ -17,9 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
-/// <summary>
-/// Tests for StandardErrorHelpers ensuring consistent error creation across all protocols.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class StandardErrorHelpersTests : IAsyncLifetime

@@ -180,6 +180,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     {
                         Operation = OgcFeaturesEditOperation.Batch,
                         RollbackOnFailure = true,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex,
                         BatchOperations = preparedBatch.PreparedOperations
                             .Select(static operation => new OgcFeaturesBatchEditOperation
                             {
@@ -191,7 +193,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                                     _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
                                 },
                                 Feature = operation.Feature,
-                                ObjectId = operation.ObjectId
+                                ObjectId = operation.ObjectId,
+                                StoredFeature = operation.StoredFeature
                             })
                             .ToImmutableArray()
                     },
@@ -528,7 +531,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Feature = feature,
                         ObjectId = objectId,
                         IfMatch = ifMatch,
-                        ExpectedStateToken = expectedStateToken
+                        ExpectedStateToken = expectedStateToken,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex
                     },
                     cancellationToken,
                     geometryChangedOverride: geometryChangedForReplace);
@@ -912,7 +917,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch,
                         ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
-                        ExpectedStateToken = expectedStateToken
+                        ExpectedStateToken = expectedStateToken,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex
                     },
                     cancellationToken,
                     geometryChangedOverride: patchRequest.HasGeometry);
@@ -1057,22 +1064,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
-            layerId,
-            resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+        var gateTarget = new OgcFeatureEditGate.Target(context, resource, request) { LayerId = layerId, Reader = _featureReader };
+        var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
+            gateTarget,
+            _editProcessor.ToFeatureEditBatch(optimizedEdit, resource),
             cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
+        if (ended is { } stopped)
         {
-            return OwnerEditPolicyFieldAccess.DeniedEditResult(
-                editBatch,
-                prepared.DenialReason ?? "Edit not permitted.");
+            return stopped;
         }
 
-        editBatch = prepared.Batch;
         // Per-row geometry-change semantics: a single-op caller (PATCH, single-op
         // Replace) passes geometryChangedOverride so the attribute-only or replace-of-
         // null cases are tracked precisely without inferring from the merged feature's
@@ -1106,8 +1107,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             geometryChanged: geometryChanged,
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        FeatureEditResult result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData))
+        {
+            result = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+
+        await OgcFeatureEditGate.RunAfterAsync(gateTarget, editBatch, result).ConfigureAwait(false);
+        return result;
     }
 
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
@@ -1173,8 +1180,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return result;
     }
 
+    // A rule or plugin rejection is never "not found", whatever its wording.
     private static bool IsNotFound(EditOperationResult result)
-        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+        => result.ErrorCode != FeatureEditGate.RejectedErrorCode &&
+           !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
            result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     private async Task<IReadOnlyDictionary<string, OgcFeatureIdentifierResolver.ResolvedFeature>> ResolveBatchOperationTargetsAsync(
@@ -1476,7 +1485,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             OperationKind: BatchOperationKind.Delete,
             Operation: operation,
             Feature: null,
-            ObjectId: objectId));
+            ObjectId: objectId)
+        {
+            StoredFeature = resolvedFeature.Feature
+        });
     }
 
     private async Task<PreparedBatchPlan> PrepareBatchOperationsAsync(
@@ -2185,6 +2197,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         // Create operations (no existing row) and is irrelevant for Delete (the
         // outbox payload always defaults to GeometryChanged=false on deletes).
         public bool ExistingHadGeometry { get; init; }
+
+        // The row a delete resolved during prepare, so a delete hook can judge it.
+        public Feature? StoredFeature { get; init; }
     }
 
     private sealed record PreparedBatchValidationResult(

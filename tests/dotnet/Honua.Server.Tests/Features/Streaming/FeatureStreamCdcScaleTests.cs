@@ -14,11 +14,6 @@ using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Scale test for the CDC-to-streaming fan-out pipeline.
-/// Validates that 100 concurrent subscribers receive 1000 edits/sec
-/// with &lt;500ms p95 delivery latency.
-/// </summary>
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
 [Collection("Performance")]

@@ -6,8 +6,8 @@ description: "By default Honua runs geoprocessing (GP) jobs on the local / Kuber
 # Routing geoprocessing jobs to AWS Batch
 
 By default Honua runs geoprocessing (GP) jobs on the **local / Kubernetes Job**
-baseline workload (`geoprocessing-local`). To run GP jobs on **AWS Batch**
-instead — using the Fargate job-definition pool provisioned by the
+baseline workload (`geoprocessing-local`). To enable **AWS Batch** as a GP
+execution workload — using the Fargate job-definition pool provisioned by the
 [honua-iac](https://github.com/honua-io/honua-iac) serverless substrate — you supply the
 substrate ARNs to the `geoprocessing-aws-batch` execution workload that already
 ships (gated off) in `appsettings.json`.
@@ -24,9 +24,11 @@ server itself runs; the standalone GDAL worker cannot write to it yet.
 
 1. A GP job is submitted (GPServer REST, OGC API Processes, or gRPC).
 2. `GeoprocessingJobService` resolves the GP execution workload from
-   `ControlPlane:ExecutionWorkloads`. If a **fully-configured** AWS Batch
-   workload is present it is preferred over the local baseline; otherwise the
-   job falls back to `geoprocessing-local`.
+   `ControlPlane:ExecutionWorkloads` and the required runtime profile. On ECS
+   and other long-lived hosts, managed jobs prefer the local baseline when it
+   is present. Native jobs prefer a compatible remote workload. Serverless
+   managed jobs require a compatible remote workload; the local baseline is
+   not eligible there. Activating Batch alone does not move every GP job to it.
 3. The workload's `Parameters` are merged onto the job's
    `ExecutionJobSpec.Parameters`, and the job is handed to the
    `honua-aws-batch` backend (`AwsBatchComputeBackend`).
@@ -126,6 +128,21 @@ timeout / retry stay per-submit overrides and are unaffected by tier selection.
 > (`batch.job_queue_arn`, `batch.region`, `batch.job_definition_arn`,
 > `batch.job_definition_arn.{s,m,l,xl}`) is identical on both sides.
 
+### Stack tag
+
+Every job the server submits carries the tag `honua:stack` with the install's stack name, taken from
+`ControlPlane__AwsBatch__StackName` or, when that is unset, `Observability__Heartbeat__StackName`.
+Use it to scope the server role: allow `batch:SubmitJob` only with
+`aws:RequestTag/honua:stack` equal to the stack name, and `batch:CancelJob` and `batch:TerminateJob`
+only on jobs whose `aws:ResourceTag/honua:stack` matches. Give `batch:TagResource` a separate
+statement scoped to job ARNs: require the same request tag, restrict `aws:TagKeys` to
+`honua:stack`, and also require `StringEqualsIfExists` on `aws:ResourceTag/honua:stack`
+with the stack name. This permits tagging a new job before its ownership tag exists and
+preserves an existing stack's ownership tag. Do not grant `batch:UntagResource`. A request-tag
+condition alone does not protect existing ownership tags. See the
+[AWS Batch authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_batch.html). Without a stack name the server submits
+untagged jobs and logs a warning from `AwsBatchComputeBackend` ("…is submitted without the honua:stack tag…"); a role scoped this way then refuses the submit.
+
 ## Per-job resource sizing
 
 Per-job sizing is **runtime and instant** — no terraform, no agent in the job
@@ -172,10 +189,22 @@ explicit `telemetry.rollback.consecutive_breaches` still overrides the default.
 
 ### appsettings override
 
+JSON override files merge `ExecutionWorkloads` by array index with the image
+defaults. Keep the local baseline at index `0` and configure AWS Batch at index
+`1`, as in this example. A single Batch entry at index `0` replaces the local
+baseline and leaves the default Batch entry at index `1`.
+
 ```json
 {
   "ControlPlane": {
     "ExecutionWorkloads": [
+      {
+        "WorkloadId": "geoprocessing-local",
+        "Kind": "Geoprocessing",
+        "TargetKind": "KubernetesJob",
+        "Backend": "local",
+        "WorkloadName": "Geoprocessing (local baseline)"
+      },
       {
         "WorkloadId": "geoprocessing-aws-batch",
         "Kind": "Geoprocessing",
@@ -231,12 +260,15 @@ when an entry pairs a built-in backend with another target kind (for example
 
 ## Verifying it routed
 
-Submit a GP job and confirm the job's spec:
+Submit a GP job eligible for the configured remote runtime profile and confirm
+the job's spec. Managed jobs on ECS keep using the local baseline when it is
+present:
 
 - `Spec.Backend == "honua-aws-batch"`
 - `Spec.TargetKind == AwsBatch`
 - `Spec.Parameters` contains `batch.job_queue_arn` and the tier ARNs
 
 A misconfigured workload (e.g. queue ARN present but no job-definition ARN)
-stays gated off and the job runs locally — check startup logs and the resolved
-`Spec.Backend` to confirm which path was taken.
+stays gated off. Long-lived hosts can fall back to the local baseline; a
+serverless managed submission without a compatible remote workload is refused.
+Check startup logs and the resolved `Spec.Backend` to confirm which path was taken.

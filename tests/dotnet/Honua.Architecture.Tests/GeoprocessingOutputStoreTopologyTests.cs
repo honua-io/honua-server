@@ -10,36 +10,10 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Anti-drift gate for referenced geoprocessing output staging topologies
-/// (honua-io/honua-server#3900).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The runtime fails closed when a host binds an unattested store, but nothing
-/// stopped a checked-in topology from enabling staging without a persistence
-/// and backup contract — which is how the qualification harness for #3852 came
-/// to enable staging against a bare container path. These tests make the
-/// denominator mechanical: every deployment topology in the repository that
-/// enables staging must bind a complete store contract on every producer and
-/// consumer, and its declared digest is recomputed here from that topology's
-/// own values rather than trusted.
-/// </para>
-/// <para>
-/// The denominator is the whole repository, not <c>docker/</c>: any deployment
-/// manifest that binds the staging section is discovered wherever it lives. The
-/// manifests are parsed rather than evaluated, so a topology shape this parser
-/// does not understand fails the suite instead of skipping the check.
-/// </para>
-/// </remarks>
 public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
 {
     private const string Prefix = "Geoprocessing__OutputStaging__";
 
-    /// <summary>
-    /// Directories that are not part of the repository's deployment surface: build
-    /// output, package caches, editor state and tool artifacts.
-    /// </summary>
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git", ".vs", ".idea", "bin", "obj", "node_modules", "packages", "artifacts", "TestResults",
@@ -47,7 +21,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
 
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-topology-").FullName;
 
-    /// <summary>Settings a staging-enabled host must bind for the runtime to attest its store.</summary>
     private static readonly string[] RequiredSettings =
     [
         "Provider", "StoreReference", "LocalRootPath", "KeyPrefix", "PersistenceClass",
@@ -65,10 +38,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         AssertAttestedStores(topologies);
     }
 
-    /// <summary>
-    /// The contract every staging-enabled host must declare, shared by the repository
-    /// scan and the discovery fixtures so both hold the topologies to one rule.
-    /// </summary>
     private static void AssertAttestedStores(
         IEnumerable<(string File, string Service, IReadOnlyDictionary<string, string> Settings)> topologies)
     {
@@ -112,12 +81,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// Pins the #3852 qualification store to a digest computed by hand from the
-    /// versioned canonical form rather than from a run of
-    /// <see cref="GeoprocessingOutputStoreAttestation.Create"/>, so the runtime and
-    /// the deployment provisioning scripts cannot drift together.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void QualificationTopology_MatchesTheIndependentlyComputedCanonicalDigest()
@@ -133,12 +96,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// The gate's denominator is the repository, not <c>docker/</c>. A staging-enabled
-    /// topology shipped from any other directory — a Helm chart, a Kubernetes overlay, a
-    /// second Compose lane — must be held to the same store contract, and one that binds
-    /// a bare container path must fail here rather than at a customer's first restart.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void Denominator_UnattestedTopologyOutsideDocker_IsCaught()
@@ -155,11 +112,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
             .WithMessage("*deploy/helm/templates/worker.yaml*");
     }
 
-    /// <summary>
-    /// The same walk must accept a fully attested topology outside <c>docker/</c>,
-    /// including recomputing its declared digest, so widening the denominator adds
-    /// coverage rather than a location rule.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void Denominator_AttestedTopologyOutsideDocker_ResolvesEveryHost()
@@ -179,14 +131,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// A deployment manifest binding the staging section in a shape this gate cannot
-    /// resolve — a Kubernetes <c>env</c> list, or the colon spelling in an
-    /// <c>appsettings</c> override — must fail the suite. Silently skipping it would
-    /// restore the hole the repository-wide walk exists to close.
-    /// </summary>
-    /// <param name="path">Manifest path relative to the constructed repository root.</param>
-    /// <param name="content">Manifest content binding the staging section.</param>
     [Theory]
     [Trait("Category", "Architecture")]
     [InlineData("deploy/k8s/worker.yaml", """
@@ -220,12 +164,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         act.Should().Throw<Xunit.Sdk.XunitException>().WithMessage("*teach this gate the new topology shape*");
     }
 
-    /// <summary>
-    /// Build output, package caches and nested checkouts are not this repository's
-    /// deployment surface. A lane worktree dropped inside the tree carries a whole other
-    /// branch's manifests; letting the walk descend into it would make this gate's
-    /// verdict depend on which worktrees happen to exist on the machine running it.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void Denominator_SkipsBuildOutputAndNestedCheckouts()
@@ -242,12 +180,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         DiscoverStagingManifests(root).Should().BeEmpty();
     }
 
-    /// <summary>
-    /// A manifest the repository does not ship — a developer's own ignored env file —
-    /// must not decide this gate. Otherwise the suite passes or fails on workstation
-    /// state, and the one shape that is both commonly local and unparsable here
-    /// (<c>.env.local</c>) would fail it for everyone who has one.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void Denominator_GitIgnoredManifest_IsNotScanned()
@@ -262,11 +194,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         AssertAttestedStores(LoadTopologies(root));
     }
 
-    /// <summary>
-    /// Configuration keys are case-insensitive, so a topology spelling them in lower case
-    /// stages output exactly like the canonical one. It must be discovered and held to the
-    /// same contract, not quietly dropped from the denominator.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void Denominator_LowercaseConfigurationKeys_AreHeldToTheSameContract()
@@ -286,7 +213,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         }
     }
 
-    /// <summary>Runs a Git command in the constructed tree, failing the test if it errors.</summary>
     private static void Git(string root, string arguments)
     {
         using var git = Process.Start(new ProcessStartInfo("git")
@@ -300,7 +226,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         git.ExitCode.Should().Be(0, error);
     }
 
-    /// <summary>An attested contract for the discovery fixtures.</summary>
     private static GeoprocessingOutputStagingOptions TestContract()
         => new()
         {
@@ -312,7 +237,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
             MaxInlineArtifactBytes = 1024,
         };
 
-    /// <summary>Writes the given files under a fresh temporary repository root.</summary>
     private string CreateTree(params (string Path, string Content)[] files)
     {
         var root = Path.Join(_root, Guid.NewGuid().ToString("n"));
@@ -326,10 +250,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         return root;
     }
 
-    /// <summary>
-    /// A Compose topology binding <paramref name="options"/> on a server and a worker,
-    /// carrying the digest the runtime recomputes from those same values.
-    /// </summary>
     private static string ComposeTopology(GeoprocessingOutputStagingOptions options)
     {
         var settings = string.Join('\n', new[]
@@ -353,18 +273,12 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         return $"services:\n  server:\n    environment: &shared\n{settings}\n\n  worker:\n    environment: *shared\n";
     }
 
-    /// <summary>The defect this gate exists for: staging enabled against a bare container path.</summary>
     private static string BareContainerPathTopology()
         => "services:\n  worker:\n    environment:\n"
             + $"      {Prefix}Enabled: \"true\"\n"
             + $"      {Prefix}Provider: local\n"
             + $"      {Prefix}LocalRootPath: /var/lib/honua/gp-outputs\n";
 
-    /// <summary>
-    /// The bound configuration array, in the index order the options binder uses:
-    /// the inventory is order-sensitive to the digest only after the runtime sorts
-    /// it, so the order here must be the topology's, not a convenient one.
-    /// </summary>
     private static string[] BackupStoreReferences(IReadOnlyDictionary<string, string> settings)
         => settings
             .Where(setting => setting.Key.StartsWith("BackupStoreReferences__", StringComparison.OrdinalIgnoreCase))
@@ -393,11 +307,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
     private static List<(string File, string Service, IReadOnlyDictionary<string, string> Settings)> LoadTopologies()
         => LoadTopologies(ArchitectureTestHelpers.ResolveRepositoryRoot());
 
-    /// <summary>
-    /// Resolves every staging-enabled host in every deployment manifest the repository
-    /// ships, rooted at <paramref name="root"/> so the discovery rules themselves can be
-    /// exercised against a constructed tree.
-    /// </summary>
     internal static List<(string File, string Service, IReadOnlyDictionary<string, string> Settings)> LoadTopologies(
         string root)
     {
@@ -418,27 +327,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         return results;
     }
 
-    /// <summary>
-    /// Returns the repository-relative path of every deployment manifest that mentions
-    /// the referenced-output staging section, in any spelling the .NET configuration
-    /// binder accepts.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The denominator this issue names is <em>every topology that enables referenced
-    /// output staging</em>, so the walk starts at the repository root rather than at
-    /// <c>docker/</c>. A Compose file, Kubernetes manifest, Helm template, env file or
-    /// <c>appsettings</c> override added under any other directory would otherwise enable
-    /// staging against a bare container path with no gate noticing — the exact miss that
-    /// left the #3852 qualification topology unstartable until #4510.
-    /// </para>
-    /// <para>
-    /// Discovery deliberately over-collects: a manifest matched here whose shape
-    /// <see cref="ParseServices"/> cannot resolve fails
-    /// <see cref="LoadTopologies(string)"/> rather than being skipped, so extending the
-    /// deployment surface forces this gate to be extended with it.
-    /// </para>
-    /// </remarks>
     internal static IReadOnlyList<string> DiscoverStagingManifests(string root)
     {
         var results = new List<string>();
@@ -480,18 +368,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         return results;
     }
 
-    /// <summary>
-    /// Returns the subset of <paramref name="candidates"/> that Git ignores under
-    /// <paramref name="root"/>.
-    /// </summary>
-    /// <remarks>
-    /// The gate must judge what the repository ships, not what a workstation happens to
-    /// hold. A developer's own <c>.env.local</c> is exactly the kind of file that both
-    /// mentions the staging section and cannot be parsed as a topology, so without this
-    /// the suite's verdict would depend on the machine running it. Git decides, so the
-    /// answer matches <c>.gitignore</c> exactly rather than a second guess at it. A root
-    /// that is not a Git work tree — the constructed fixtures — ignores nothing.
-    /// </remarks>
     private static HashSet<string> GitIgnoredPaths(string root, List<string> candidates)
     {
         var ignored = new HashSet<string>(StringComparer.Ordinal);
@@ -531,7 +407,6 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         return git.ExitCode is 0 or 1 ? ignored : [];
     }
 
-    /// <summary>File kinds that can carry deployment configuration for a host.</summary>
     private static bool IsDeploymentManifest(string name)
         => name.EndsWith(".yml", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
@@ -542,26 +417,12 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
             || (name.StartsWith("appsettings", StringComparison.OrdinalIgnoreCase)
                 && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// True when the text binds the staging section under any spelling the configuration
-    /// binder resolves: the double-underscore environment form, the colon form used by
-    /// command-line and in-memory sources, or a nested JSON section. Matching is
-    /// case-insensitive because configuration keys are: a host reading
-    /// <c>geoprocessing__outputstaging__enabled=true</c> stages output exactly as one
-    /// reading the canonical casing, so an ordinal match here would let that topology
-    /// out of the denominator entirely.
-    /// </summary>
     private static bool ConfiguresStaging(string text)
         => text.Contains(Prefix, StringComparison.OrdinalIgnoreCase)
             || text.Contains(GeoprocessingOutputStagingOptions.SectionName, StringComparison.OrdinalIgnoreCase)
             || (text.Contains("\"Geoprocessing\"", StringComparison.OrdinalIgnoreCase)
                 && text.Contains("\"OutputStaging\"", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Extracts the staging settings each Compose service resolves, following the
-    /// anchor/alias reuse the qualification topology uses to keep its server
-    /// replicas identical.
-    /// </summary>
     private static List<(string Service, IReadOnlyDictionary<string, string> Settings)> ParseServices(
         string file, string text)
     {

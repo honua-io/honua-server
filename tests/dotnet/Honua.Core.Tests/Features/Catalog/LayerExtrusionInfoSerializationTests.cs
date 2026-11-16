@@ -9,13 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Serialization round-trip tests for <see cref="MetadataV2ExtrusionInfo"/>
-/// through the source-generated <see cref="MetadataV2JsonContext"/>. The
-/// AOT integration depends on these types being registered in the
-/// JSON context; without that registration, deserialization would
-/// silently produce null values in published builds.
-/// </summary>
 [Protocol(ProtocolNames.GeoservicesCatalog)]
 public sealed class MetadataV2ExtrusionInfoSerializationTests
 {

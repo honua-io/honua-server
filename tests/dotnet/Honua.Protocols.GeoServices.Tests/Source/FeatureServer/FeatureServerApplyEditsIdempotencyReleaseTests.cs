@@ -18,21 +18,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Regression coverage for honua-server#3052: the <c>Idempotency-Key</c> reservation the shared
-/// FeatureServer edit pipeline takes before executing an edit must be released when an exception
-/// proves no write occurred, not only replaced on the success exit. This class covers the explicit
-/// read-only provider rejection after the reservation is held on the ordinary Postgres host, so the
-/// guarantee is proven in the primary integration lane rather than only in the read-only provider
-/// smoke lane.
-/// </summary>
-/// <remarks>
-/// The host is the standard fixture with one substitution: <see cref="IFeatureWriter"/> is the
-/// production <see cref="ReadOnlyFeatureWriter"/> that DuckDB and MySQL/MariaDB register, which
-/// rejects every write with <see cref="NotSupportedException"/>. Reads, metadata, authorization and
-/// the idempotency store are untouched, so the request under test travels the real edit pipeline
-/// and fails exactly where a read/query-only provider fails it.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifetime
@@ -114,10 +99,6 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
         return await _fixture.Client.SendAsync(message);
     }
 
-    /// <summary>
-    /// Reads the GeoServices error code from an Esri-shaped error envelope, or <c>-1</c> when the
-    /// response is not an error at all (which the assertions report as a failure).
-    /// </summary>
     internal static int ReadErrorCode(string body)
     {
         using var document = JsonDocument.Parse(body);
@@ -128,10 +109,6 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
     }
 }
 
-/// <summary>
-/// Proves that cancellation of an all-or-nothing edit releases its reservation. Unlike the
-/// default partial-commit path, rollback-on-failure cannot leave a committed prefix behind.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerApplyEditsTransactionalCancellationTests : IAsyncLifetime
@@ -241,10 +218,6 @@ public sealed class FeatureServerApplyEditsTransactionalCancellationTests : IAsy
     }
 }
 
-/// <summary>
-/// Proves that a read-only exception outside the provider dispatch cannot release a reservation
-/// after the writer has reported committed rows.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerApplyEditsPostCommitExceptionTests : IAsyncLifetime
@@ -351,20 +324,6 @@ public sealed class FeatureServerApplyEditsPostCommitExceptionTests : IAsyncLife
     }
 }
 
-/// <summary>
-/// The other half of the honua-server#3052 reservation contract: a write whose outcome is UNKNOWN
-/// must keep the idempotency key, because rows may already be committed.
-/// </summary>
-/// <remarks>
-/// With the default <c>rollbackOnFailure=false</c> the writer commits rows independently, so an
-/// exception out of the provider — a cancellation between rows, a transport fault mid-batch —
-/// unwinds with earlier rows already in the database and no result to inspect. Releasing the key
-/// there would let an immediate same-key retry re-insert them. The fixture substitutes a writer that
-/// throws from <c>ApplyEditsAsync</c> to stand in for that class of failure; contrast
-/// <see cref="FeatureServerApplyEditsIdempotencyReleaseTests"/>, where the read-only provider's
-/// blanket <see cref="NotSupportedException"/> IS proof that nothing was written and the key is
-/// therefore released.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
@@ -528,11 +487,6 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
         return await _fixture.Client.SendAsync(message);
     }
 
-    /// <summary>
-    /// Stands in for a provider that fails part-way through a batch: the write is dispatched and
-    /// then throws a fault the handler cannot classify, exactly like a cancellation between the
-    /// per-row commits of a <c>rollbackOnFailure=false</c> batch.
-    /// </summary>
     private sealed class ThrowingFeatureWriter : IFeatureWriter
     {
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)

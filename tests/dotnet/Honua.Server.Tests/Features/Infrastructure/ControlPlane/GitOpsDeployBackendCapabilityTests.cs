@@ -14,7 +14,6 @@ public sealed class GitOpsDeployBackendCapabilityTests
     [Theory]
     [InlineData("kubernetes")]
     [InlineData("aws-ecs")]
-    [InlineData("azure-container-apps")]
     public async Task GetCapabilitiesAsync_HandOffBackend_DoesNotClaimAutomaticRollback(string backendKind)
     {
         IDeployBackend backend = backendKind switch
@@ -23,8 +22,6 @@ public sealed class GitOpsDeployBackendCapabilityTests
                 NullLogger<KubernetesGitOpsDeployBackend>.Instance),
             "aws-ecs" => new AwsEcsGitOpsDeployBackend(
                 NullLogger<AwsEcsGitOpsDeployBackend>.Instance),
-            "azure-container-apps" => new AzureContainerAppsGitOpsDeployBackend(
-                NullLogger<AzureContainerAppsGitOpsDeployBackend>.Instance),
             _ => throw new InvalidOperationException($"Unknown backend kind '{backendKind}'.")
         };
 

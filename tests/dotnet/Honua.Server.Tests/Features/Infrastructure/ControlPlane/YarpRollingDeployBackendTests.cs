@@ -9,11 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Unit coverage for the substrate-neutral single-host rolling-replace deploy backend (#2460). All
-/// container-runtime, proxy-swap, and health-probe seams are faked so the full start / health-gate /
-/// cutover / rollback lifecycle is verified without Docker or a live proxy.
-/// </summary>
 public sealed class YarpRollingDeployBackendTests
 {
     private const string ActiveAddress = "http://127.0.0.1:18080/";

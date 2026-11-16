@@ -11,12 +11,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Asserts the reconciled GeoETL connector/transform processes are present in the
-/// built-in process catalog and therefore surface automatically as workflow nodes via
-/// ProcessCatalogWorkflowNodeProvider (node type id <c>process:&lt;processId&gt;</c>),
-/// which is the #1185 add-a-capability contract.
-/// </summary>
 public sealed class GeoEtlCatalogReconciliationTests
 {
     private static readonly string[] ReconciledProcessIds =

@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage for the reconciled <c>geometry.difference</c> executor — the
-/// managed NetTopologySuite <see cref="Geometry.Difference(Geometry)"/> overlay
-/// that closes a catalog-honesty gap (advertised, sync-eligible, but previously
-/// unrouted on trunk). Companion to <c>geometry.intersect</c>.
-/// </summary>
 public sealed class GeometryDifferenceJobExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

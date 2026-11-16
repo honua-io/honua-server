@@ -16,9 +16,6 @@ using Xunit;
 
 namespace Honua.LoadTests;
 
-/// <summary>
-/// Exercises real CLI sessions against independently counted HTTP fixtures.
-/// </summary>
 public sealed class LoadHarnessCompletionTests
 {
     [IntegrationTheory]

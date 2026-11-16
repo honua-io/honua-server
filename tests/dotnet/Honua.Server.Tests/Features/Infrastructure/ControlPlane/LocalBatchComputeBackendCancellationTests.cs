@@ -12,10 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Local cancel must reach the execution-job notifier even when a later
-/// <see cref="IJobCancellationNotifier"/> registration would win a single constructor parameter.
-/// </summary>
 public sealed class LocalBatchComputeBackendCancellationTests
 {
     [UnitTheory]

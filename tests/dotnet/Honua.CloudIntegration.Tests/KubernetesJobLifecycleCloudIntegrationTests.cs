@@ -9,16 +9,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Free-tier scenario (#2163): proves the per-target Job submission → run → terminal-result
-/// lifecycle for <c>KubernetesJobBatchComputeBackend</c> against a real kind cluster. Honua is
-/// serverless at every level with no standing compute, and each GP job is a unique per-job
-/// submission, so this validates the per-submission lifecycle rather than a fixed cluster.
-///
-/// kind/k3d is free real Kubernetes-in-Docker, so this is the default CI lane. When no kind
-/// cluster is wired (no <c>HONUA_TEST_K8S_*</c> env vars), the tests skip rather than fail so
-/// the project still runs on boxes without a cluster.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 public sealed class KubernetesJobLifecycleCloudIntegrationTests : IClassFixture<KindClusterFixture>
 {

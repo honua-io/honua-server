@@ -388,7 +388,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     // that does not exist, so the facility/break pair is omitted and
                     // the absence is surfaced via the adapter's no-solve message.
                     // An omitted break does not shift the next polygon's label: every
-                    // polygon is the cumulative disk out to its own break (#6026).
+                    // polygon is the cumulative disk out to its own break.
                     if (string.IsNullOrEmpty(geometry))
                     {
                         continue;

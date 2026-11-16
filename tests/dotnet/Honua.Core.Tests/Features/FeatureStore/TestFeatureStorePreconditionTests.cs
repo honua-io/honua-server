@@ -9,14 +9,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Verifies that the in-memory feature writer honors <see cref="FeatureEditBatch.Preconditions"/>
-/// with compare-and-write semantics equivalent to a SQL writer's
-/// "UPDATE ... WHERE state-token matches; affected rows == 0 means precondition failed":
-/// a stale expected-state token rejects the operation with a typed
-/// <see cref="EditOperationResult.PreconditionFailed"/> result and leaves the stored
-/// feature untouched, while a current token lets the write proceed.
-/// </summary>
 public sealed class TestFeatureStorePreconditionTests
 {
     private const int LayerId = 0;

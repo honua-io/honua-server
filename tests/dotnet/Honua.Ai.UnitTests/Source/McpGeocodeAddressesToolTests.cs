@@ -24,13 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Coverage for <c>honua_geocode_addresses</c>: the batch companion to the
-/// single-address geocode tool. Runs through the JSON-RPC <c>tools/call</c>
-/// dispatcher with the canonical coordinator substituted, so it validates the
-/// per-item result contract (input order preserved, partial failures isolated)
-/// without external geocoder dependencies.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpGeocodeAddressesToolTests
 {

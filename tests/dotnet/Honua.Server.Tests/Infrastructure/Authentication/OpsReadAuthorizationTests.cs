@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the read-only ops-reader permission grammar (A12). Pure, deterministic tests of
-/// <see cref="AdminApiKeyPermission.HasOpsReadGrant"/> and
-/// <see cref="AdminApiKeyPermission.IsOpsReadAuthorized"/> — no database or Docker.
-/// </summary>
 public sealed class OpsReadAuthorizationTests
 {
     private static ClaimsPrincipal Principal(string? role, params string[] permissions)

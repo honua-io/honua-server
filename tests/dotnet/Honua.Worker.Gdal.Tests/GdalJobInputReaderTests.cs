@@ -11,12 +11,6 @@ using Honua.Worker.Gdal.Execution;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalJobInputReader"/>'s base64 decode path,
-/// pinning that the <c>MaxArtifactBytes</c> ceiling is enforced BEFORE the
-/// payload is materialized so an oversized input cannot drive a large
-/// decode-time allocation before rejection.
-/// </summary>
 public sealed class GdalJobInputReaderTests
 {
     private static Dictionary<string, string> Param(string name, string value)
