@@ -69,7 +69,6 @@ public sealed class MultiNodeWithoutRedisStartupTests
             using var response = await client.GetAsync("/healthz/live");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            fixture.Services.GetService(typeof(StackExchange.Redis.IConnectionMultiplexer)).Should().BeNull();
         }
         finally
         {

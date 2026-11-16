@@ -28,10 +28,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-[Collection(RedisFixture.CollectionName)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
+public sealed partial class FolderOperationIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private ReplayServiceAuthorization _authorization = null!;
@@ -47,7 +47,6 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         HumanApprovalHttpClient.ConfigureKestrel(_fixture, _identity).ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
