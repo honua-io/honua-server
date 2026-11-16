@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -14,13 +16,15 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 internal static class StudioMcpFixtures
 {
-    // Composition tools use Pro; draft mutation approval is exercised by separate suites.
+    // These suites exercise composition and persistence. Agent approval has separate suites.
     internal static WebAppFixture CreateCompositionFixture() => new WebAppFixture()
         .ConfigureWebHost(builder => builder.UseSetting("Licensing:DevGrantEdition", "Pro"))
         .ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
             services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+            services.RemoveAll<IOperationPolicyDecisionPoint>();
+            services.AddSingleton<IOperationPolicyDecisionPoint, CompositionTestPolicy>();
         });
 
     // Setup must not invoke approval-gated draft creation or update tools.
@@ -43,5 +47,26 @@ internal static class StudioMcpFixtures
                 Body = body,
             },
         });
+    }
+
+    // Admit only updates of this fixture's own drafts, while retaining the canonical runtime.
+    private sealed class CompositionTestPolicy : IOperationPolicyDecisionPoint
+    {
+        public Task<PolicyDecision> EvaluateAsync(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            var ownedUpdate = descriptor.OperationId == StudioDraftMutationContext.UpdateOperationId
+                && request.OperationId == descriptor.OperationId
+                && context.PrincipalId == WebAppFixture.DevelopmentBypassActorId
+                && request.VerifiedStudioDraftOwnerId == context.PrincipalId;
+            return Task.FromResult(ownedUpdate ? PolicyDecision.Allowed : new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.Deny,
+                Reason = "Composition test policy permits only fixture-owned draft updates.",
+            });
+        }
     }
 }
