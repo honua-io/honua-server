@@ -115,7 +115,7 @@ public sealed class VectorTileSizeLimitTests
         invocations.Should().Be(2, "the smaller budget must invalidate the previous cache lookup");
     }
 
-    private static Task<IResult> ExecuteAsync(HttpContext context, int bytes, long budget, bool providerRejects = false)
+    private static async Task<IResult> ExecuteAsync(HttpContext context, int bytes, long budget, bool providerRejects = false)
     {
         var provider = Substitute.For<ITileProvider>();
         provider.GetMvtTileAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(),
@@ -123,7 +123,8 @@ public sealed class VectorTileSizeLimitTests
             Arg.Any<GridGeometry?>(), Arg.Any<CancellationToken>()).Returns(_ => providerRejects
                 ? Task.FromException<byte[]?>(new TileSizeLimitExceededException())
                 : Task.FromResult<byte[]?>(new byte[bytes]));
-        return VectorTileExecution.ExecuteAsync(context, provider, 1, 0, 0, 0, new FeatureQuery(),
+        var query = await VectorTileQuery.ForLayerAsync(context, TileTestLayer.Resource, new FeatureQuery());
+        return await VectorTileExecution.ExecuteAsync(context, provider, 1, 0, 0, 0, query,
             new TileOptions(), new TileLimits { MaxTileSize = budget }, CancellationToken.None);
     }
 }

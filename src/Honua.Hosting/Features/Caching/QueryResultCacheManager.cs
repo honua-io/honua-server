@@ -408,7 +408,7 @@ internal sealed partial class QueryResultCacheManager : IDisposable
         }
 
         // Add eviction callback to track statistics.  The callback is the authoritative
-        // signal for removing _keyStatistics entries — the idle timer no longer prunes
+        // signal for removing _keyStatistics entries — the idle timer does not prune
         // them so InvalidateAsync sees live keys.
         cacheOptions.RegisterPostEvictionCallback((key, value, reason, state) =>
         {

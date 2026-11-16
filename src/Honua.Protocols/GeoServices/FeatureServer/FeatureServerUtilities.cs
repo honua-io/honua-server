@@ -54,15 +54,15 @@ internal static partial class FeatureServerEndpoints
         // strict allowlist that rejects them returns 400 and makes ArcGIS Pro report
         // the layer as "does not exist or is not supported" (MakeFeatureLayer /
         // Add Data fails). Accept and ignore them, mirroring the layer-query
-        // treatment of unsupported-but-harmless ArcGIS client parameters (#1276).
+        // treatment of unsupported-but-harmless ArcGIS client parameters.
         private static readonly string[] GeoServicesMetadataClientParameters =
         [
             "returnFieldGroups",
             "returnPbfFeatureEncodings",
             // The ArcGIS Maps SDK for .NET appends returnAdvancedSymbols to the
-            // layer/service metadata GET during ServiceFeatureTable.LoadAsync. #1455
-            // accepted it on the layer-query endpoint but not here, so LoadAsync
-            // returned 400 and the entire .NET FeatureServer client was blocked.
+            // layer/service metadata GET during ServiceFeatureTable.LoadAsync.
+            // Rejecting it here makes LoadAsync return 400, which blocks the entire
+            // .NET FeatureServer client.
             "returnAdvancedSymbols",
             // ArcGIS portal-token auth passes the token as a query parameter.
             // Auth middleware consumes it; accept-and-ignore on metadata endpoints
@@ -101,7 +101,7 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment",
                 "attachments",
                 "token",
-                // Accepted and ignored (#4105): no effect on a server without branch-version edit
+                // Accepted and ignored: no effect on a server without branch-version edit
                 // sessions or true curves that always returns per-edit results.
                 "sessionID",
                 "trueCurveClient",
@@ -109,7 +109,7 @@ internal static partial class FeatureServerEndpoints
                 "timeReferenceUnknownClient",
                 "returnEditResults",
                 // Admitted so the edit handler can reject a non-default value with a specific
-                // message instead of an unknown-parameter error (#4105).
+                // message instead of an unknown-parameter error.
                 "assetMaps",
                 "async",
                 "useUniqueIds",
@@ -179,7 +179,7 @@ internal static partial class FeatureServerEndpoints
         // query_top_features() always appends returnIdsOnly (and the other common
         // query flags), so a hand-rolled allowlist that omitted them returned 400
         // ("Unknown query parameter: returnIdsOnly") and made the operation unusable
-        // from real Esri clients (#1906). Derive the set from the shared layer-query
+        // from real Esri clients. Derive the set from the shared layer-query
         // allowlist so the two operations stay in lockstep, then add "topFilter".
         public static readonly FrozenSet<string> QueryTopFeatures =
             GeoServicesRequestValueHelpers.LayerQueryAllowedParameters
@@ -259,7 +259,7 @@ internal static partial class FeatureServerEndpoints
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         // queryTopFeatures supports pbf (mirroring ArcGIS), unlike queryRelatedRecords
-        // which stays json/pjson-only (#1824).
+        // which stays json/pjson-only.
         public static readonly FrozenSet<string> TopFeatures =
             new[] { "json", "pjson", "pbf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
@@ -300,7 +300,7 @@ internal static partial class FeatureServerEndpoints
             // gates queryAttachments({where}) on this nested flag, so it must stay
             // consistent with the root flag (true when the layer has attachments),
             // otherwise a layer that advertises attachments at the root is refused the
-            // operation because the nested flag reported false (#1453).
+            // operation because the nested flag reported false.
             SupportsQueryAttachments = supportsQueryAttachments
         };
     }
@@ -359,7 +359,7 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
-        // T6 (#2342): do not advertise a format the capability registry reports as gated
+        // T6: do not advertise a format the capability registry reports as gated
         // off (an experimental format with its flag unset, or one the edition is not
         // entitled to), so the advertised supportedQueryFormats stays consistent with what
         // the query seam will actually serve. No-op while every format is Implemented.
@@ -479,7 +479,7 @@ internal static partial class FeatureServerEndpoints
     // name (the segment after CapabilityRegistry.DataFormatIdPrefix). Tokens without a
     // format.* descriptor (pbf/geobuf/arrow are encoded exports with no import-format
     // descriptor) are absent and stay ungated. Used only to consult the capability
-    // gate (T6 / #2342) after the static supported-set check; it does not change which
+    // gate (T6) after the static supported-set check; it does not change which
     // tokens are accepted while every format is still Implemented.
     private static readonly FrozenDictionary<string, string> RegistryFormatByWireToken =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -513,8 +513,8 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
-        // T6 (#2342): consult the unified capability registry BEFORE dispatch, so a
-        // format that is flipped experimental (T10 / #2346) with its flag unset — or one
+        // T6: consult the unified capability registry BEFORE dispatch, so a
+        // format that is flipped experimental (T10) with its flag unset — or one
         // the active edition is not entitled to — returns a clear 400 on the `f` value
         // rather than being served. In T6 every format is still Implemented, so this is a
         // no-op today; it wires the seam. Tokens without a format.* descriptor stay ungated.

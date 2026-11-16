@@ -8,10 +8,6 @@ using Honua.Core.Features.Spec.Services;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Covers <see cref="SpecPlanner"/> behaviour: DAG assembly, content-hash
-/// assignment, diagnostic propagation, and warning rules.
-/// </summary>
 public class SpecPlannerTests
 {
     [Trait("Tier", "Fast")]

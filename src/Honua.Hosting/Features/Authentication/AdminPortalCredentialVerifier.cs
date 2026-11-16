@@ -16,7 +16,8 @@ internal sealed class AdminPortalCredentialVerifier(
     IConnectionSecretResolver? secretResolver = null,
     IAdminApiKeyStore? adminApiKeyStore = null,
     ITenantContext? tenantContext = null,
-    ILogger<AdminPortalCredentialVerifier>? logger = null) : IPortalCredentialVerifier
+    ILogger<AdminPortalCredentialVerifier>? logger = null,
+    IHttpContextAccessor? httpContextAccessor = null) : IPortalCredentialVerifier
 {
     private const string AdminUsername = "admin";
     private static readonly string[] AdminRoles = ["admin"];
@@ -49,6 +50,11 @@ internal sealed class AdminPortalCredentialVerifier(
             // the API key as the password under any username so existing clients can
             // pass through without code changes. A store outage returns no principal
             // rather than throwing; only the admin username has a break-glass password.
+            return null;
+        }
+
+        if (!PermitsAdminPasswordFromClient())
+        {
             return null;
         }
 
@@ -93,11 +99,26 @@ internal sealed class AdminPortalCredentialVerifier(
                 Version: PortalCredentialSourceVersion.ForAdminPassword(configuredPassword)));
     }
 
+    private bool PermitsAdminPasswordFromClient()
+    {
+        if (AdminPasswordNetworkPolicy.Permits(_apiKeyOptions, ClientConnection.From(httpContextAccessor?.HttpContext).Reach))
+        {
+            return true;
+        }
+
+        if (_logger is not null)
+        {
+            AuthenticationLog.AdminPasswordRefusedOnNetworkPath(_logger);
+        }
+
+        return false;
+    }
+
     private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)
     {
         // This bridge mints token roles, not API-key permission, layer-write, or
         // approved-operation claims. Refuse credentials whose authority it cannot
-        // preserve rather than widening scoped keys (#4577).
+        // preserve rather than widening scoped keys.
         var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record);
         if (roles is null)
         {

@@ -49,6 +49,8 @@ HONUA_ADMIN_PASSWORD=$ADMIN_PASSWORD
 
 This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitoring endpoints). Clients send it in the `X-API-Key` header; failures return `WWW-Authenticate: ApiKey`. Resolve it from a secret manager and rotate it regularly.
 
+Outside Development and Test the server refuses to start without it, unless `Oidc__Enabled=true` and an OIDC provider is fully configured; administrators then sign in through the identity provider. If you keep the password as a break-glass credential next to OIDC, set `Authentication__AdminPassword__LoopbackOnly=true`. The password is then accepted only on a direct loopback connection, from a shell on the host or in the container, on every path that takes it, including `generateToken`. A request that carries a forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP` and similar) is refused even when its address reads as loopback, so a proxy on the same host must set `X-Forwarded-For`. The setting cannot be used on AWS Lambda. A refusal answers like a wrong password, counts as a failed attempt and is logged at Warning with event id `4123`. Managed API keys are not affected. Tokens and sessions minted from the password on the host stay valid from anywhere until they expire, so sign out or let them expire after break-glass use.
+
 ### 2. Create scoped API keys for automation
 
 Don't share the admin password with CI jobs — mint named keys instead:
@@ -530,6 +532,16 @@ For a true per-application client identity (rather than reusing a human API key)
 | Native operator clients in locked-down environments | Client certificates — [TLS and mTLS](tls-and-mtls.md) |
 
 A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` enforced in production) maps the Basic password to the admin API key; use it only during migrations.
+
+### SensorThings reads (Preview)
+
+`GET /sta/v1.1` and every entity read under it require a signed-in caller. Sensing
+entities carry no access policy of their own, so the rule is the one observation
+streams use: an authenticated caller inside its resolved tenant. Anonymous requests
+receive `401`, and scoped API keys receive `403` because no grant names sensing
+data. A deployment that publishes its sensing data openly sets
+`SensorThings__AllowAnonymousReads=true`; that setting does not open writes or the
+observation stream.
 
 ### SensorThings observation streams (Preview)
 

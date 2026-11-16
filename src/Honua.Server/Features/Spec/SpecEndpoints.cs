@@ -34,9 +34,9 @@ internal static class SpecEndpoints
             // unauthenticated caller could otherwise drive the (expensive)
             // apply DAG, seed the artifact cache, and read cached artifacts by
             // hash. The surface is therefore gated at the edge to admins until
-            // per-node authorization is threaded through the orchestrator
-            // (#1144). This replaces the previous AllowAnonymous early-access
-            // posture (#1984).
+            // per-node authorization is threaded through the orchestrator.
+            // This replaces the previous AllowAnonymous early-access
+            // posture.
             .RequireAdminAuthorization();
 
         group.MapPost("/validate", HandleValidateAsync)
@@ -44,14 +44,16 @@ internal static class SpecEndpoints
             .WithName("SpecValidate")
             .WithDescription("Parses and validates spec DSL or canonical JSON, returning structured diagnostics and optional canonical JSON.")
             .Produces<SpecValidateResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/plan", HandlePlanAsync)
             .WithDisplayName("Spec Plan")
             .WithName("SpecPlan")
             .WithDescription("Compiles a canonical spec document into a plan containing the DAG, per-node cost estimates, and structured warnings.")
             .Produces<SpecPlanResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/apply", HandleApplyAsync)
             .WithDisplayName("Spec Apply")
@@ -232,7 +234,7 @@ internal static class SpecEndpoints
                 "POST /v1/spec/apply requires Accept: text/event-stream.");
         }
 
-        // AI-operations guardrail ladder (#1631): spec apply is the canonical
+        // AI-operations guardrail ladder: spec apply is the canonical
         // agent-initiated change surface, so it crosses the shared edition-driven
         // policy. Community applies directly; Pro requires the validation-layer
         // entitlement; Enterprise additionally requires approval workflows. The

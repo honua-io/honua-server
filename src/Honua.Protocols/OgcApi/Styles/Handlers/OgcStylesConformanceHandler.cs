@@ -6,11 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Styles.Handlers;
 
-/// <summary>
-/// Handler for OGC API - Styles conformance declarations. Declares the conformance
-/// classes implemented by the Phase 1 adapter (ADR-0048): core, mapbox-styles,
-/// sld-10, sld-11, style-validation, and (partial) manage-styles.
-/// </summary>
 internal sealed class OgcStylesConformanceHandler
 {
     private const string ConformanceBase = "http://www.opengis.net/spec/ogcapi-styles-1/1.0/conf/";
@@ -22,9 +17,6 @@ internal sealed class OgcStylesConformanceHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets the conformance classes that this server implements for OGC API - Styles.
-    /// </summary>
     public Task<OgcStylesConformance> GetConformanceAsync(CancellationToken cancellationToken = default)
     {
         OgcStylesLog.ConformanceRequested(_logger);
@@ -48,8 +40,8 @@ internal sealed class OgcStylesConformanceHandler
                 // Style validation (Prefer: handling=strict / ?validate)
                 ConformanceBase + "style-validation",
 
-                // Manage styles - PARTIAL in Phase 1 (PUT only; POST/DELETE arrive with
-                // the Phase 2 independent style catalog, issue #1389).
+                // Manage styles - PARTIAL (PUT only; POST/DELETE need an independent
+                // style catalog).
                 ConformanceBase + "manage-styles"
             ]
         };

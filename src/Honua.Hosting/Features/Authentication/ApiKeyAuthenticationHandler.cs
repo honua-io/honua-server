@@ -145,7 +145,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var passwordValidation = await ValidateAdminPasswordAsync(
-            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.ClientIp),
+            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.Client ?? default),
             dependencies, logger, cancellationToken).ConfigureAwait(false);
         return lookup.StoreUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
             ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable)
@@ -166,13 +166,23 @@ internal sealed class ApiKeyAuthenticationHandler(
             return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
         }
 
-        var validation = await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false);
+        // Refused before the password is resolved or compared, so the answer says nothing about it; it
+        // still counts as a failed attempt, as a wrong password would.
+        var validation = AdminPasswordNetworkPolicy.Permits(dependencies.Options, attempt.Client.Reach)
+            ? await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false)
+            : RefuseNetworkPassword(logger);
         if (validation.CountsAsFailure)
         {
             tracked.CountFailure();
         }
 
         return validation;
+    }
+
+    private static ApiKeyValidation RefuseNetworkPassword(ILogger logger)
+    {
+        AuthenticationLog.AdminPasswordRefusedOnNetworkPath(logger);
+        return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey, CountsAsFailure: true);
     }
 
     private static async Task<StoredKeyLookup> LookUpStoredKeyAsync(
@@ -457,7 +467,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? apiKeyName = null,
         IReadOnlyList<string>? permissions = null)
     {
-        // A key whose grants describe a layer-scoped write credential (#1637) is
+        // A key whose grants describe a layer-scoped write credential is
         // authenticated as a NON-admin principal: it never receives the admin role
         // and so cannot satisfy the admin authorization policy guarding admin
         // endpoints. Its write authority is enforced by the shared
@@ -465,7 +475,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         var isScopedWriteKey = LayerScopedWriteKey.IsScopedWriteKey(permissions);
 
         // A key is granted the blanket "admin" role only when its grants confer full
-        // administrative authority (issue #1985). The password-based bootstrap admin
+        // administrative authority. The password-based bootstrap admin
         // and the development bypass authenticate with null permissions and so remain
         // full admins; an unscoped key (or one carrying admin / * / admin:* grants)
         // likewise passes every admin endpoint. A key whose grants are genuinely

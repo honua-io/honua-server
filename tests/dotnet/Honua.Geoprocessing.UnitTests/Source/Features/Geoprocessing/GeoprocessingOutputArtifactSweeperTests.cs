@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Orphan reconciliation for staged geoprocessing outputs (#3089): the sweeper
-/// reclaims losing-attempt staging, terminal-failure staging, and expired orphans,
-/// while never touching the current attempt of a live job, the published winning
-/// set of a succeeded job, an actively read (leased) object, an object still inside
-/// the sweep grace, or keys outside the canonical scheme. Runs against the real
-/// filesystem store implementation.
-/// </summary>
 public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-sweeper-tests-").FullName;
@@ -130,12 +122,6 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
         (await _store.GetInfoAsync(key)).Should().BeNull();
     }
 
-    /// <summary>
-    /// #3089 review: a COG-catalog registration is permanent while the job record
-    /// expires from Redis. The durable retention hold written at registration must
-    /// exempt the object from sweeping forever — even after the job record is gone
-    /// and the orphan retention window has passed — or the catalog row dangles.
-    /// </summary>
     [UnitTest]
     public async Task Sweep_RegisteredObjectWithExpiredJobRecord_IsNeverDeleted()
     {

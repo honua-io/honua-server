@@ -5,6 +5,14 @@ description: "Client-visible behavior clarified for the 2026.1 rc.2 release."
 ---
 # 2026.1 rc.2 release notes
 
+## Map collaboration routes
+
+Map collaboration endpoints now use `/api/v1/maps/{mapId}/collaboration/`
+in place of `/api/v1/saved-maps/{mapId}/collaboration/`. The change covers
+session join, leave and streaming, feature lock claim, renew and release,
+operation append and replay, and checkpoints. Update integrations to use the
+Map routes; the previous paths have no compatibility aliases.
+
 ## Imported attributes
 
 Published file imports retain their source `properties` document alongside typed

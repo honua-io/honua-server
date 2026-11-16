@@ -5,11 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.TestKit.Eval;
 
-/// <summary>
-/// Source-generated <see cref="JsonSerializerContext"/> for eval scenario definitions
-/// and the emitted <see cref="EvalReport"/>. Keeps loader and reporter AOT/trim-safe
-/// with no runtime reflection.
-/// </summary>
 [JsonSourceGenerationOptions(
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

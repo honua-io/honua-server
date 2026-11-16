@@ -22,11 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// #6359: once a multi-batch calculate commit is acknowledged, a failed idempotency
-/// receipt must not release the reservation. A retry then conflicts instead of
-/// applying the same increment again.
-/// </summary>
 public sealed class FeatureServerCalculateDurableCommitTests
 {
     [UnitTest]
@@ -116,9 +111,6 @@ public sealed class FeatureServerCalculateDurableCommitTests
                 Substitute.For<IFeatureLockService>()),
             NullLogger<FeatureServerEditsHandler>.Instance);
 
-    /// <summary>
-    /// Keeps reservations until <see cref="ReleaseAsync"/> and fails the first receipt write.
-    /// </summary>
     private sealed class ReceiptFailingStore : IApplyEditsIdempotencyStore
     {
         private readonly HashSet<string> _held = new(StringComparer.Ordinal);

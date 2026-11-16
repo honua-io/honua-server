@@ -31,6 +31,7 @@ internal static class AuthenticationOptionsRegistration
             }
 
             options.AdminPassword = adminPassword;
+            options.AdminPasswordLoopbackOnly = configuration.GetValue(AdminPasswordNetworkPolicy.LoopbackOnlyKey, false);
             options.DevAuthBypass = configuration["HONUA_DEV_AUTH"];
             options.DevAuthBypassAcknowledged = configuration["HONUA_DEV_AUTH_ALLOW_BYPASS"];
             options.EnvironmentName = environment.EnvironmentName;
@@ -59,7 +60,7 @@ internal static class AuthenticationOptionsRegistration
             OidcAuthenticationExtensions.ReplaceConfiguredArrays(
                 configuration.GetSection(OidcAuthenticationOptions.SectionName), options));
 
-        // Console-consumable operator bearer (#2258, Option C). Options and validation
+        // Console-consumable operator bearer (Option C). Options and validation
         // service are registered unconditionally so issuance can report a fail-closed
         // 503 when the feature is not configured. Its concrete request-path scheme is
         // also registered independently of external OIDC provider availability.
@@ -79,13 +80,13 @@ internal static class AuthenticationOptionsRegistration
         services.AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>();
         services.AddSingleton<IOperatorApprovalEvaluator, DefaultOperatorApprovalEvaluator>();
 
-        // OAuth 2.1 scope narrowing (#2851): intersects a bearer token's scopes with the
+        // OAuth 2.1 scope narrowing: intersects a bearer token's scopes with the
         // operator grant model so a scope can only narrow, never widen, what the principal's
         // grants already permit. Non-OAuth principals (X-API-Key, interactive) are untouched.
         services.AddSingleton<IOperatorScopeAuthorizer,
             Honua.Core.Features.Authorization.OperatorScopeAuthorizer>();
 
-        // AI-operations guardrail ladder by edition (#1631): the shared,
+        // AI-operations guardrail ladder by edition: the shared,
         // protocol-neutral policy that maps edition -> guardrail level
         // (Community direct, Pro validation layer, Enterprise approval + policy).
         services.AddSingleton<IAgentGuardrailPolicy,

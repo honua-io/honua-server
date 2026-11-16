@@ -14,10 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// WMS FILTER client mistakes are InvalidParameterValue, and a namespaced ValueReference
-/// resolves to the public field the way WFS does (#6183).
-/// </summary>
 [Protocol(TestProtocols.Wms13)]
 public sealed class WmsFilterValidationTests
 {

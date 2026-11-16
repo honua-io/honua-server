@@ -369,7 +369,7 @@ internal static class GPServerOutputReprojection
                 // Copy the source coordinate to preserve its runtime dimension
                 // (CoordinateZ / CoordinateM / CoordinateZM) and only overwrite the
                 // horizontal ordinates; rebuilding a bare Coordinate would silently
-                // drop Z/M through the transformed sequence (#2744).
+                // drop Z/M through the transformed sequence.
                 var projected = original.Copy();
                 projected.X = x;
                 projected.Y = y;

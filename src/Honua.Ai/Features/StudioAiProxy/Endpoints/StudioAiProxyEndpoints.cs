@@ -179,7 +179,7 @@ internal static class StudioAiProxyEndpoints
                 ? StatusCodes.Status429TooManyRequests : StatusCodes.Status503ServiceUnavailable,
                 title: "AI invocation admission is unavailable or denied.",
                 // The code is allowlisted and sanitized by AiAdmissionException, so it is safe to return. It
-                // lets operators tell "ledger not initialized" or "stopped" from a backend outage (#6761).
+                // lets operators tell "ledger not initialized" or "stopped" from a backend outage.
                 extensions: new Dictionary<string, object?> { ["code"] = ex.Code });
         }
         await using var preparedOwner = prepared;

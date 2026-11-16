@@ -17,19 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Regression for honua-server#4980. GeoServices errors are Esri envelopes
-/// (<c>{"error":{"code":N,...}}</c>) sent over HTTP 200, so the framework's status-code rule
-/// stored them on every named output-cache policy and replayed a transient fault to every caller
-/// of the same key for the policy TTL.
-/// </summary>
-/// <remarks>
-/// Each test drives the real policy composition from
-/// <see cref="ObservabilityServiceCollectionExtensions.ConfigureOutputCaching"/> through a host
-/// that always wires <c>UseOutputCache()</c> (output caching is entitlement-gated in
-/// <c>Program</c>). The endpoint fails once through the shared error formatter, exactly as a
-/// GeoServices handler does, and then succeeds; the second response must be the success.
-/// </remarks>
 [Trait("Tier", "Fast")]
 [Trait("Category", "Unit")]
 public sealed class GeoServicesErrorEnvelopeOutputCacheTests

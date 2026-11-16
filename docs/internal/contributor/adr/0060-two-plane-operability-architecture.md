@@ -20,7 +20,7 @@ Operating a GIS server — deploy, upgrade, scale, run geoprocessing, tune, trou
 
 The control plane already abstracts substrates via two backend interfaces (`src/Honua.Core/Core/Features/ControlPlane/Abstractions/OperationInterfaces.cs`):
 
-- **`IDeployBackend`** (serving plane) — implemented by `AwsEcsAlbDeployBackend`, `AwsEcsGitOpsDeployBackend`, `AwsLambdaGitOpsDeployBackend`, `AzureContainerAppsRevisionDeployBackend`, `AzureFunctionsGitOpsDeployBackend`.
+- **`IDeployBackend`** (serving plane) — implemented by `AwsEcsAlbDeployBackend`, `AwsEcsGitOpsDeployBackend`, `AwsLambdaGitOpsDeployBackend`.
 - **`IBatchComputeBackend`** (geoprocessing / execution plane) — implemented by `AwsBatchComputeBackend`, `AzureBatchComputeBackend`, with `IExecutionJobDefinitionRegistry` + `SubmitJobAsync` + `ExecutionJobReconciler`.
 
 GitOps reconcile lives in the server; rollback partly in iac; the AI operator (`honua-devops`) exists but is positioned as private services/implementation-partner tooling. Statelessness is ~70% there (auth/sessions/tokens Redis-backed, jobs reconciled, data in DB/object-store), with local-disk staging leaks (`SceneTilesPublishExecutor`/`SceneTilesetStaging`, `StreamingFileUploadService`, `FileSystemMigrationRunCheckpointStore`). `IDatabaseMigrationRunner` has a `PlanMigrationsAsync` step but no backward-compatibility enforcement. Observability emits OTel/Prometheus but the visualization/UX is half-baked.
@@ -50,7 +50,7 @@ since PostGIS never executes raster GP.
 Because compute is stateless, the primitive is **(statelessness) + (a Honua-owned cutover semantic: rolling replace + health-gate + keep-old-until-healthy) + (a thin executor)** — *not* AWS/K8s-native blue/green. Coupling ops to a cloud's deployment strategy breaks on-prem/air-gapped and is unnecessary given stateless compute.
 
 Executor set (semantics owned by Honua, mechanics by the executor):
-- Serving: **YARP-embedded** (default; single-container, on-prem, air-gapped — the proxy ships *inside* Honua), **Envoy-xDS** (K8s / service-mesh / scale), plus existing ECS/ALB, Lambda, Container Apps, Functions.
+- Serving: **YARP-embedded** (default; single-container, on-prem, air-gapped — the proxy ships *inside* Honua), **Envoy-xDS** (K8s / service-mesh / scale), plus existing ECS/ALB and Lambda.
 - GP: **local process-pool** and **K8s Jobs** (neutral), plus existing AWS Batch, Azure Batch.
 
 ### Four workstreams

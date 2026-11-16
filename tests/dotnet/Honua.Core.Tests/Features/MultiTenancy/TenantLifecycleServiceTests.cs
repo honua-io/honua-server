@@ -10,9 +10,6 @@ using Honua.Core.Features.MultiTenancy.Lifecycle;
 
 namespace Honua.Core.Tests.Features.MultiTenancy;
 
-/// <summary>
-/// Unit tests for the tenant lifecycle state machine and its audit emission (issue #2156).
-/// </summary>
 public sealed class TenantLifecycleServiceTests
 {
     private static readonly TenantLifecycleActor Actor =

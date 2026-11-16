@@ -32,9 +32,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Spec;
 
-/// <summary>
-/// Pins the REST-equivalent admin authorization boundary on every gRPC Spec RPC.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcSpecAuthorizationIntegrationTests

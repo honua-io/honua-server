@@ -20,12 +20,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Federation;
 
-/// <summary>
-/// Unit tests for the remote federated-query executor (issue #341). Remote I/O is provided by
-/// in-memory connectors, so these tests exercise the real executor behaviour — push-down vs
-/// local refinement, timeout, circuit breaker, and multi-source combination — without a live
-/// remote source.
-/// </summary>
 public sealed class FederatedQueryExecutorTests
 {
     private static readonly ResiliencePolicyOptions FastFail = new()

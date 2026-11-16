@@ -18,12 +18,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage (no Testcontainers/Docker needed) for the secure-connection resolution
-/// failure path of <see cref="ExternalPostgisSinkExecutor"/> (#2404 PA-210): a resolver
-/// exception must be logged, not silently swallowed, while still returning a sanitized
-/// job failure to the caller.
-/// </summary>
 public sealed class ExternalPostgisSinkExecutorConnectionResolutionTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

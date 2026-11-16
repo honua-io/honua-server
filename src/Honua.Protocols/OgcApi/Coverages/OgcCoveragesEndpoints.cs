@@ -10,14 +10,8 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Coverages;
 
-/// <summary>
-/// OGC API - Coverages endpoints for raster coverage discovery and retrieval.
-/// </summary>
 public static class OgcCoveragesEndpoints
 {
-    /// <summary>
-    /// Maps OGC API - Coverages endpoints to the application.
-    /// </summary>
     public static void MapOgcCoveragesEndpoints(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

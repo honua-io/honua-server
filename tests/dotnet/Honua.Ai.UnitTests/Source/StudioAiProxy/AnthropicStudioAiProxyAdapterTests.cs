@@ -17,11 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Streaming-parse contract tests for <see cref="AnthropicStudioAiProxyAdapter"/> against canned
-/// Anthropic Messages API SSE fixtures — no live provider call. Covers text streaming, tool-call
-/// start/delta/stop assembly, usage capture, and the HTTP-error / not-configured paths.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class AnthropicStudioAiProxyAdapterTests
 {

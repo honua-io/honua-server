@@ -434,8 +434,7 @@ internal static class Wfs20DispatcherEndpoint
         // Render the typed capabilities model by hand instead of via XmlSerializer:
         // XmlSerializer requires runtime code generation, which is unavailable under
         // PublishAot=true and throws at runtime (HTTP 500) for WfsCapabilities. The
-        // hand-written writer mirrors the exact XmlSerializer output shape (#1505-era
-        // bug hunt: WFS 2.0.0 GetCapabilities 500 in the AOT container only).
+        // hand-written writer mirrors the exact XmlSerializer output shape.
         var xml = BuildCapabilitiesXml(capabilities);
         return Results.Content(xml, "application/xml", System.Text.Encoding.UTF8);
     }

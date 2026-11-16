@@ -12,8 +12,8 @@ Server-owned durable ordering and conflict behavior for multi-user saved-map edi
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/saved-maps/{mapId}/collaboration/operations` | Append one edit operation. |
-| `GET` | `/api/v1/saved-maps/{mapId}/collaboration/operations?since={cursor}` | Replay operations after a known cursor. |
+| `POST` | `/api/v1/maps/{mapId}/collaboration/operations` | Append one edit operation. |
+| `GET` | `/api/v1/maps/{mapId}/collaboration/operations?since={cursor}` | Replay operations after a known cursor. |
 
 Both routes require an authenticated principal **and** a per-map capability grant — see [Authorization](#authorization). Responses use the standard `ApiResponse<T>` envelope (`data`, `success`, `error`).
 
@@ -155,6 +155,6 @@ Durable edits are never accepted on the strength of authentication alone.
 
 ## Related surfaces
 
-- **Session transport** (presence, live cursors, follow): `POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join`, `GET …/sessions/stream`. Ephemeral.
+- **Session transport** (presence, live cursors, follow): `POST /api/v1/maps/{mapId}/collaboration/sessions/join`, `GET …/sessions/stream`. Ephemeral.
 - **Feature-service edit locks/conflicts**: row/geometry edit persistence is a separate seam from saved-map document edits.
 - **Capability discovery**: `GET /api/v1/capabilities/manifest` reports realtime/transport availability — see [integration patterns](integration-patterns.md#runtime-capability-discovery). Discovery only; authorization still happens at the operation endpoint.

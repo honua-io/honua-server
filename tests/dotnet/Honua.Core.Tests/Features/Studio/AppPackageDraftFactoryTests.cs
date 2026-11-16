@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for <see cref="AppPackageDraftFactory"/>, the deterministic
-/// replacement for the retired prompt-driven app generation family (ADR-0076,
-/// honua-server#3255). Alongside determinism they pin the closed-by-default
-/// sharing posture the retained knowledge record (§5) requires never to regress.
-/// </summary>
 public sealed class AppPackageDraftFactoryTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
@@ -177,13 +171,11 @@ public sealed class AppPackageDraftFactoryTests
     private static string Serialize(AppPackage package) =>
         JsonSerializer.Serialize(package, PackagingJsonContext.Default.AppPackage);
 
-    /// <summary>Pinned identifier generator so a draft is reproducible byte for byte.</summary>
     private sealed class StubIdentifierGenerator : IDraftIdentifierGenerator
     {
         public string NewIdentifier(string prefix) => prefix + "_fixed0001";
     }
 
-    /// <summary>Pinned clock.</summary>
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

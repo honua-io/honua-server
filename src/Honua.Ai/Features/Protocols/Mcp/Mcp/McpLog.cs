@@ -92,7 +92,7 @@ internal static partial class McpLog
     [LoggerMessage(8225, LogLevel.Information, "MCP session mode selected: Mode={Mode}, Reason={Reason}")]
     public static partial void SessionModeSelected(ILogger logger, string mode, string reason);
 
-    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or connect Redis. Reason={Reason}")]
+    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or configure the PostgreSQL system database. Reason={Reason}")]
     public static partial void SessionModeDegraded(ILogger logger, string reason);
 
     [LoggerMessage(8192, LogLevel.Warning, "MCP shared session store unavailable: Operation={Operation}")]

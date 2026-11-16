@@ -75,7 +75,7 @@ internal sealed class GeoprocessingLayerAccessGuard
         // the source against the submitting identity, which for the workflow reconcile tick is
         // the orchestrator principal carrying the wildcard `admin` role — so a source layer no
         // live requester ever authorized (a ForEach placeholder resolves to a concrete id only
-        // at run creation) was admitted on admin's authority (honua-server#3043 review).
+        // at run creation) was admitted on admin's authority.
         var hasRequesterSourceBinding = TryReadLayerId(
             step, EnrichmentJobExecutor.AuthorizedSourceLayerInput, out var requesterAuthorizedSourceLayerId);
 

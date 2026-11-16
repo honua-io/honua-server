@@ -13,7 +13,7 @@ internal static class GeoServicesGeometryParser
     private static readonly char[] _coordinateSeparators = { ',', ' ' };
 
     // The Esri geometryType enum (esriGeometryType). An unknown value must be rejected
-    // rather than silently coerced to an envelope based on coordinate count (#1462).
+    // rather than silently coerced to an envelope based on coordinate count.
     private static readonly FrozenSet<string> _knownGeometryTypes = new[]
     {
         "esrigeometrypoint",
@@ -34,7 +34,7 @@ internal static class GeoServicesGeometryParser
 
         // Validate geometryType against the Esri esriGeometryType enum up-front. An unknown
         // value (e.g. esriGeometryBogus) must produce a 400 instead of being silently coerced
-        // to an envelope by coordinate count (#1462).
+        // to an envelope by coordinate count.
         if (!string.IsNullOrWhiteSpace(geometryType) &&
             !_knownGeometryTypes.Contains(geometryType.Trim()))
         {
@@ -82,7 +82,7 @@ internal static class GeoServicesGeometryParser
         // branch whenever the type was esriGeometryEnvelope *regardless of how many
         // coordinates parsed*, so a short list (e.g. "1,2") read xmax/ymax from the
         // zero-initialized stackalloc tail and silently queried a different window instead
-        // of returning 400 (#1990). Require exactly four coordinates for the envelope.
+        // of returning 400. Require exactly four coordinates for the envelope.
         if (coordinateCount == 4 && (normalizedType is null or "esrigeometryenvelope"))
         {
             geometry = new GeoServicesGeometry

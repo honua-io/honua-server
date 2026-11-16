@@ -12,13 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// STAC reads resolve a collection's storage-layer handle from the publication's own graph
-/// entries, never from its protocol-facing layer index (SEC-4). The fixture publishes
-/// <c>resource.parcels</c> as collection <see cref="CollectionLayerIndex"/> while its storage
-/// handle is <see cref="ParcelsStorageLayerId"/>, and <c>resource.permits</c> owns
-/// <see cref="CollectionLayerIndex"/> as its storage handle.
-/// </summary>
 public sealed class StacStorageLayerResolutionTests
 {
     private const int CollectionLayerIndex = 3;
@@ -175,10 +168,6 @@ public sealed class StacStorageLayerResolutionTests
             StorageLayerId = storageLayerId,
         };
 
-    /// <summary>
-    /// A STAC collection publication with no storage binding of its own, so the handle is
-    /// resolved from its resource.
-    /// </summary>
     private static MetadataV2Layer Publication(string id, string resourceId)
         => new()
         {

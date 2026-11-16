@@ -24,10 +24,6 @@ ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af
 
 FROM ${GDAL_BASE_IMAGE} AS runtime
 
-# Pin the SDK + geo stack so the image is reproducible and matches
-# harness/pyproject.toml (honua-sdk==0.1.16).
-ARG HONUA_SDK_VERSION=0.1.16
-
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -52,32 +48,34 @@ RUN apt-get update \
 # Pre-install the geospatial stack + the Honua SDK into the system interpreter so
 # the common tool needs no per-job restore. ``--break-system-packages`` is
 # required on recent Debian/Ubuntu (PEP 668) to install into the system env of
-# the GDAL base image. rasterio/fiona link against the base GDAL.
-# hadolint ignore=DL3013
+# the GDAL base image. The packages come from requirements.lock: exact versions,
+# each with the sha256 of its x86_64 and aarch64 wheels, installed binary-only and
+# without resolving anything further, so the build fetches nothing unverified.
+# requirements.in lists the top-level packages; README.md says how to regenerate.
+COPY docker/worker-customcode-python/requirements.lock /opt/honua-customcode-requirements.lock
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
-      "rasterio>=1.3" \
-      "geopandas>=0.14" \
-      "shapely>=2.0" \
-      "pyproj>=3.6" \
-      "fiona>=1.9" \
-      "boto3>=1.34" \
-      "honua-sdk==${HONUA_SDK_VERSION}"
+      --require-hashes --no-deps --only-binary=:all: \
+      -r /opt/honua-customcode-requirements.lock
 
 # Install the harness package itself (the ENTRYPOINT). Copying only the harness
-# subtree keeps the build context tight and the layer cache stable.
+# subtree keeps the build context tight and the layer cache stable. Its build
+# backend (hatchling) and its one dependency (honua-sdk) come from the lock above,
+# so neither build isolation nor dependency resolution downloads anything.
 COPY docker/worker-customcode-python/harness /opt/honua-customcode-harness
 # hadolint ignore=DL3013
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
-      /opt/honua-customcode-harness
+      --no-deps --no-build-isolation /opt/honua-customcode-harness
 
 # Correctness check: the SDK + geo bindings + the harness must import, and the
 # console script must be on PATH. Fails the build early if a wheel didn't link.
 # The GDAL interop check imports the FULL osgeo binding set (gdal/ogr/osr) AND
 # rasterio, and asserts a driver count > 0 — proving in-process raster/vector GDAL
 # is available to user tools (not just the gdal* CLIs). rasterio/osgeo link against
-# the GDAL-full base, so this fails fast on any ABI/wheel mismatch.
+# the GDAL-full base, so this fails fast on any ABI/wheel mismatch. ReadAsArray
+# through osgeo.gdal_array proves the base image's numpy still matches its GDAL bindings.
 RUN python3 -c "import honua_sdk, rasterio, geopandas, shapely, pyproj, fiona, boto3" \
  && python3 -c "from osgeo import gdal, ogr, osr; gdal.AllRegister(); assert gdal.GetDriverCount() > 0, 'no GDAL raster drivers'; assert ogr.GetDriverCount() > 0, 'no OGR vector drivers'; import rasterio; assert len(rasterio.drivers.raster_driver_extensions()) > 0" \
+ && python3 -c "from osgeo import gdal, gdal_array; assert gdal.GetDriverByName('MEM').Create('', 2, 2).ReadAsArray().shape == (2, 2)" \
  && python3 -c "import honua_customcode_harness as h; assert hasattr(h, 'run')" \
  && command -v honua-customcode-harness
 

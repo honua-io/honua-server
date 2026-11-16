@@ -55,7 +55,7 @@ internal static class AlertsServiceCollectionExtensions
 
         // Alert-pipeline OTel metrics: a singleton that owns its instruments on the shared
         // "Honua" meter (created via IMeterFactory), injected into the writer, dispatcher, and
-        // ops-notification composition instead of a process-global static (#2802).
+        // ops-notification composition instead of a process-global static.
         services.AddSingleton<AlertPipelineMetrics>();
         services.AddScoped<AlertDispatchWriter>();
         services.AddScoped<IAlertPipeline, AlertPipeline>();
@@ -71,6 +71,8 @@ internal static class AlertsServiceCollectionExtensions
 
         // Second outbox consumer: ops notifications (deploy/job terminal events).
         services.AddScoped<Honua.Alerts.Ops.OpsNotificationService>();
+        services.AddScoped<Honua.Alerts.Ops.AiMonthlyActorNoticePublisher>();
+        services.AddSingleton<Honua.Alerts.Ops.AiMonthlyActorNoticeReconciler>();
         services.AddSingleton<ILeaderElectionStrategy>(serviceProvider => new LeaseLeaderElectionStrategy(
             serviceProvider.SharedLeaseStore(),
             serviceProvider.GetRequiredService<IOptions<AlertOptions>>(),
@@ -96,7 +98,7 @@ internal static class AlertsServiceCollectionExtensions
             services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
         }
 
-        // Alert domain audit outbox (#3865). Registered unconditionally: the operator
+        // Alert domain audit outbox. Registered unconditionally: the operator
         // lifecycle endpoints are mapped regardless of the geofence capability flag,
         // and an unreconciled audit intent is a control-plane integrity gap whether or
         // not the evaluation pipeline is running.
@@ -107,6 +109,7 @@ internal static class AlertsServiceCollectionExtensions
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService(sp => sp.GetRequiredService<AlertAuditOutboxReconciler>());
+            services.AddHostedService(sp => sp.GetRequiredService<Honua.Alerts.Ops.AiMonthlyActorNoticeReconciler>());
         }
 
         return services;

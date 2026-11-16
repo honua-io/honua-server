@@ -7,10 +7,6 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
-/// <summary>
-/// Decides whether an object-store import is refused, streamed in this request, or queued.
-/// HeadObject runs before any body read. A background or over-limit object is never opened here.
-/// </summary>
 internal static class ImportObjectStoreCoordinator
 {
     internal const string ReaderUnavailableDetail = "Object store import is not available on this host.";

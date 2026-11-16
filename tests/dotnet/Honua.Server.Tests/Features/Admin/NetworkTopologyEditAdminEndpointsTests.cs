@@ -14,13 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the batched network-topology edge/restriction edit admin
-/// endpoints (#2716). Covers draft-generation allocation, batched apply, optimistic
-/// concurrency (<c>If-Match</c>), idempotency (<c>Idempotency-Key</c> replay and
-/// conflict), validation rejections, all-or-nothing rollback, the active-generation
-/// safety invariant, the anonymous-access auth gate, and audit/telemetry emission.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

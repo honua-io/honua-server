@@ -30,11 +30,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Component controls for Studio-backed deployment resource projection and current authority.
-/// These use the real Studio policy with controlled stores; they do not qualify publication,
-/// database durability, an HTTP host, or an installed candidate.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStudioDeploymentAuthorityTests
 {

@@ -48,7 +48,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             attributes[FieldNames.ObjectId] = visible.Id;
             var raw = Feature.Create(visible.Id,
                 reader.IsDBNull(3) ? null : reader.GetFieldValue<byte[]>(3), attributes.ToImmutableDictionary());
-            return visible with { ReadStateToken = FeatureStateToken.Compute(raw) };
+            return visible with
+            {
+                ReadStateToken = FeatureStateToken.Compute(raw),
+                EditValidationAttributes = raw.Attributes
+            };
         }
         finally
         {

@@ -315,7 +315,7 @@ internal sealed class GeoprocessingJobArtifactService
 
         var synthesizedPackage = GeoprocessingResultPackageFactory.Create(job, _processCatalog);
 
-        // Registration is atomic with result visibility (#3089, ADR-0071): a job with
+        // Registration is atomic with result visibility (ADR-0071): a job with
         // registration intents never yields a Completed package until every intent is
         // durably registered. The registrar is idempotent, so a crash between the
         // terminal transition and this read is healed by replaying it here.

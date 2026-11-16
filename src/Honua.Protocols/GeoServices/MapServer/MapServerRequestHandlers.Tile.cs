@@ -121,7 +121,7 @@ internal static partial class MapServerEndpoints
             // The rendered PNG contains RLS-filtered feature geometry for the *current*
             // principal, so the cloud tile cache key MUST be partitioned by the effective
             // RLS predicate. Without it, principal A's tile would be served to principal B
-            // for the same z/x/y, leaking rows RLS hides from B (#2067).
+            // for the same z/x/y, leaking rows RLS hides from B.
             var rlsFilterSource = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
             var rlsFingerprint = await BuildTileRlsFingerprintAsync(
                 rlsFilterSource,

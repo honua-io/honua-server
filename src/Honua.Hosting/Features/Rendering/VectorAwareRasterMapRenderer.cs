@@ -176,7 +176,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         if (!TryResolveSkiaFormat(request.Format, out var format))
         {
             // TIFF / non-Skia formats stay on the raster path so returned bytes always
-            // match the requested content type (#2365). Signal no vector render.
+            // match the requested content type. Signal no vector render.
             return null;
         }
 
@@ -269,8 +269,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             // image (missing libSkiaSharp / fontconfig / freetype, or a wrong-arch native
             // asset). Log the real cause for operators and translate it into a typed
             // capability failure so callers (e.g. the MCP honua_render_map tool) surface an
-            // actionable failed_precondition instead of a generic internal error
-            // (honua-server#2770).
+            // actionable failed_precondition instead of a generic internal error.
             RasterMapRenderingPipelineLog.RenderingRuntimeUnavailable(
                 _logger, layers.Count, request.Width, request.Height, ex);
             throw new RasterRenderingUnavailableException(ex);

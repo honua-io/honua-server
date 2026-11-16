@@ -4,10 +4,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Guards the capability-to-proving-test-to-CI-shard crosswalk used by the
-/// report-only impact selector.
-/// </summary>
 public sealed class CapabilityImpactCompletenessTests
 {
     [Fact]

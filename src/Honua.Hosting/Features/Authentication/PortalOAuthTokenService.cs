@@ -41,7 +41,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
     private readonly IPrincipalMembershipSource? _membershipSource = membershipSource;
 
-    // Optional JWT access-token format (ADR-0068, #1890): when enabled the issued
+    // Optional JWT access-token format (ADR-0068): when enabled the issued
     // access_token is a signed JWT whose jti is the cache reference, so revocation
     // and the single request-path validator are preserved. Off by default — the
     // opaque path below is byte-for-byte unchanged.
@@ -64,7 +64,7 @@ internal sealed class PortalOAuthTokenService(
             AuthorizationCodeGrant => await ExchangeAuthorizationCodeAsync(request, requestBinding, cancellationToken).ConfigureAwait(false),
             RefreshTokenGrant => await ExchangeRefreshTokenAsync(request, requestBinding, cancellationToken).ConfigureAwait(false),
             // client_credentials is only honored when the operator has explicitly
-            // opted in (ADR-0053, #1860). With the flag off the grant falls through to
+            // opted in (ADR-0053). With the flag off the grant falls through to
             // the unsupported_grant_type default below — byte-for-byte the prior
             // behavior — so no existing deployment gains a credential path implicitly.
             ClientCredentialsGrant when _tokenOptions.OAuth2.EnableClientCredentials
@@ -86,7 +86,7 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_client", "client_secret is required for the client_credentials grant.");
         }
 
-        // Local stores run before federation (#6166). A valid Honua client secret or
+        // Local stores run before federation. A valid Honua client secret or
         // Admin API key is never posted to the external IdP. Federation runs only when
         // both stores miss. IP binding stays after a successful credential check so an
         // unknown secret is invalid_client (RFC 6749 §5.2), never a binding failure.
@@ -94,7 +94,7 @@ internal sealed class PortalOAuthTokenService(
         // still falls through; only a secret the registry or key store accepts is kept
         // on the server.
 
-        // Increment 2 (ADR-0053, #1888): the first-class OAuth client registry. The
+        // Increment 2 (ADR-0053): the first-class OAuth client registry. The
         // secret is matched against the per-application registry (SHA-256-hashed at
         // rest, revocable, expiry-aware). Roles come from the scope catalogue.
         OAuthClientRecord? client = null;
@@ -126,7 +126,7 @@ internal sealed class PortalOAuthTokenService(
         if (validation is not null)
         {
             // A token carries roles only, so the key goes through the same canonical
-            // rule as the generateToken bridge (#4577): a full-admin key maps to the
+            // rule as the generateToken bridge: a full-admin key maps to the
             // admin role; a constrained key, whose authority lives in claims a token
             // cannot hold, is refused rather than having its permission labels
             // turned into roles. Refusal happens before federation so the key is not
@@ -161,7 +161,7 @@ internal sealed class PortalOAuthTokenService(
                     ExpiresAt: validation.Record.ExpiresAt)).ConfigureAwait(false);
         }
 
-        // Increment 3 (ADR-0053, #1889): optional IdP federation, only for a credential
+        // Increment 3 (ADR-0053): optional IdP federation, only for a credential
         // neither store accepted. A successful exchange means the IdP authenticated the
         // machine identity; Honua mints its own token with the operator-configured roles
         // (no second token store — ADR-0049).
@@ -326,7 +326,7 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
-        // Hard PKCE requirement (#1484): when enabled, an authorization code that was
+        // Hard PKCE requirement: when enabled, an authorization code that was
         // issued without a registered code_challenge is rejected outright. Combined
         // with the authorize-endpoint guard this guarantees every code flow has had
         // PKCE — closing the authorization-code interception window for native
@@ -653,8 +653,8 @@ internal sealed class PortalOAuthTokenService(
         {
             // No challenge was registered at authorize time. This branch is only
             // reachable when OAuth2.RequirePkce is disabled (the default-on hard
-            // requirement, #1484, rejects no-challenge codes before this call); in
-            // that explicit opt-out there is nothing to verify.
+            // requirement rejects no-challenge codes before this call); in that
+            // explicit opt-out there is nothing to verify.
             return true;
         }
 
@@ -700,7 +700,7 @@ internal sealed record PortalOAuthTokenResult(
     string? Error,
     string? ErrorDescription,
     // Space-delimited scopes actually granted (RFC 6749 §5.1), set for the
-    // first-class client_credentials grant (#1888). Null when no scope applies.
+    // first-class client_credentials grant. Null when no scope applies.
     string? Scope = null,
     string? Username = null)
 {

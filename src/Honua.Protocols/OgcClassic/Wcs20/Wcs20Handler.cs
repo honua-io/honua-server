@@ -138,8 +138,8 @@ internal sealed partial class Wcs20Handler
 
             // Version selection, mirroring how Wfs20DispatcherEndpoint serves WFS 1.0.0
             // and 1.1.0 beside 2.0.0: the routes, endpoint registry entries and
-            // telemetry classifiers stay as they are, and only the encoding differs
-            // (honua-server#5020). Stock QGIS speaks WCS 1.0/1.1 only, so without this
+            // telemetry classifiers stay as they are, and only the encoding differs.
+            // Stock QGIS speaks WCS 1.0/1.1 only, so without this
             // branch no QGIS client can open a coverage.
             if (isLegacy)
             {
@@ -362,7 +362,7 @@ internal sealed partial class Wcs20Handler
         }
 
         // Additional (non-spatial, non-temporal) dimension axes this coverage declares
-        // via a registered multidimensional (Zarr) store for the layer (#1872). Empty
+        // via a registered multidimensional (Zarr) store for the layer. Empty
         // for plain 2D rasters.
         var additionalAxes = await ResolveAdditionalDimensionAxesAsync(
             coverage.Coverage.Value.LayerId, cancellationToken).ConfigureAwait(false);
@@ -479,7 +479,7 @@ internal sealed partial class Wcs20Handler
         // into query.Bands, but the Zarr slice path renders a single-band grayscale PNG
         // from one range field. Rather than silently ignore the selection and return the
         // primary-variable render with 200, reject it explicitly. Full multi-band Zarr
-        // composition is an explicit non-goal (#2796).
+        // composition is an explicit non-goal.
         if (query.Bands is { Length: > 0 })
         {
             return Wcs20ErrorResults.CreateNotImplemented(
@@ -718,13 +718,13 @@ internal sealed partial class Wcs20Handler
             return new LayerCoverageResult(null, null);
         }
 
-        // The owning service's policy is part of the decision (honua-server#4388). It
-        // was previously passed as null here, so a service-level read restriction was
-        // discarded on this route: a resource with no policy of its own resolved to
-        // "any authenticated principal", and DescribeCoverage/GetCoverage served the
-        // coverage to a caller the service denies. Every other classic surface (WMS
-        // and WMTS via RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async)
-        // evaluates both policies.
+        // The owning service's policy is part of the decision. Passing null here would
+        // discard a service-level read restriction on this route: a resource with no
+        // policy of its own would resolve to "any authenticated principal", and
+        // DescribeCoverage/GetCoverage would serve the coverage to a caller the service
+        // denies. Every other classic surface (WMS and WMTS via
+        // RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async) evaluates
+        // both policies.
         var accessDecision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, owningService);
         if (!accessDecision.IsAllowed)
         {
@@ -1381,7 +1381,7 @@ internal sealed partial class Wcs20Handler
         // and — for multidimensional coverages — additional named dimension axes
         // (e.g. a vertical/elevation axis). Temporal subsets are validated separately
         // against the coverage acquisition time; additional dimension axes are parsed
-        // and validated here (#1872) before spatial parsing so that a well-formed
+        // and validated here before spatial parsing so that a well-formed
         // slice on an axis the coverage does not carry surfaces a precise
         // InvalidAxisLabel, and a malformed one surfaces InvalidSubsetting.
         var allSubsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);

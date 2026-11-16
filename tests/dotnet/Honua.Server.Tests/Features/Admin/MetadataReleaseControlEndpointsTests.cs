@@ -17,10 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// API-surface coverage for the additive metadata-release create endpoint. The lifecycle
-/// stage-machine itself is covered by <see cref="Infrastructure.ControlPlane.MetadataReleaseReconcilerTests"/>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]

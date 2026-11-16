@@ -86,18 +86,13 @@ test('live ineligibility disables existing auto-merge', async () => {
     assert.equal(actions[0].action, 'disable');
   }
 });
-test('live commit-count changes replace the previous merge method', async () => {
-  const actions = await run({ ...ready(), commits: { totalCount: 2 },
-    autoMergeRequest: { mergeMethod: 'SQUASH' } });
-  assert.equal(actions.length, 2);
-  assert.equal(actions[0].action, 'disable');
-  assert.equal(actions[1].action, 'enable');
-  assert.equal(actions[1].mergeMethod, 'MERGE');
-  const single = await run({ ...ready(), autoMergeRequest: { mergeMethod: 'MERGE' } });
-  assert.equal(single.length, 2);
-  assert.equal(single[0].action, 'disable');
-  assert.equal(single[1].action, 'enable');
-  assert.equal(single[1].mergeMethod, 'SQUASH');
+test('existing merge methods survive commit-count changes', async () => {
+  for (const mergeMethod of ['SQUASH', 'MERGE', 'REBASE']) {
+    for (const totalCount of [1, 2, 3]) {
+      assert.deepEqual(await run({ ...ready(), commits: { totalCount },
+        autoMergeRequest: { mergeMethod } }), []);
+    }
+  }
 });
 
 test('already mergeable pull requests stay neutral without direct merging', async () => {
@@ -123,12 +118,13 @@ test('Dependabot PRs are skipped before requesting unavailable App secrets', () 
 test('retargeting away from trunk still revokes admission', () => {
   assert.match(workflow, /\(github\.event\.pull_request\.base\.ref == 'trunk' \|\| github\.event\.action == 'edited'\)/);
 });
-test('already mergeable method changes revoke stale auto-merge', async () => {
-  const actions = await run({ ...ready(), mergeStateStatus: 'CLEAN', commits: { totalCount: 3 },
-    autoMergeRequest: { mergeMethod: 'SQUASH' } });
-  assert.equal(actions.length, 1);
-  assert.equal(actions[0].action, 'disable');
+test('existing merge method survives becoming mergeable or conflicted', async () => {
+  for (const mergeStateStatus of ['CLEAN', 'UNSTABLE', 'HAS_HOOKS', 'DIRTY']) {
+    assert.deepEqual(await run({ ...ready(), mergeStateStatus, commits: { totalCount: 3 },
+      autoMergeRequest: { mergeMethod: 'SQUASH' } }), []);
+  }
 });
+
 test('mergeability computation race stays neutral only for the clean-status API error', async () => {
   const pr = { ...ready(), mergeStateStatus: 'UNKNOWN' };
   await run(pr, 'Pull request is in clean status');

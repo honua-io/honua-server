@@ -13,9 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit coverage for identity-keyed geoprocessing admission (honua-server#5625, SRV-GP-002).
-/// </summary>
 public sealed class GeoprocessingAdmissionIdentityTests
 {
     [UnitTest]

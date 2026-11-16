@@ -15,11 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAuditLogReader"/>. Mirrors
-/// migration 033 inside an isolated per-test schema and exercises filter +
-/// cursor pagination semantics introduced in #1168.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
 {

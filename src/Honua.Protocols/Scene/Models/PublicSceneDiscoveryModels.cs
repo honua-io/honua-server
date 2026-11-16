@@ -93,8 +93,6 @@ internal sealed class PublicSceneAuthRequirements
     public bool RequiresAuthentication { get; init; }
 
     public string[] Schemes { get; init; } = [];
-
-    public string? Policy { get; init; }
 }
 
 internal sealed class PublicSceneBounds

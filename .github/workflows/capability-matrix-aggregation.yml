@@ -102,18 +102,17 @@ jobs:
       - name: Report generated matrix drift (advisory)
         run: bash scripts/ci/report-generated-file-drift.sh docs/gis/data/capability-matrix.v1.json
 
-      # WS2 of the OKF knowledge-graph program: the OpenAPI operation ->
-      # capability correspondence was computed on every run and discarded. It is
-      # now an artifact, and stale means the join moved without anyone saying so.
-      # Proved before it is trusted, like the doc gates: a join that wrongly
-      # reports complete is the failure mode that matters.
+      # PR Gate validates this join after canonical catalog regeneration.
+      # Scheduled/manual runs still audit the committed trunk projections.
       - name: Test the operation-capability join
+        if: github.event_name != 'pull_request'
         run: python3 scripts/ci/generate-operation-capability.test.py
 
       - name: Test the capability-manifest crosswalk
         run: python3 scripts/ci/generate-capability-manifest-crosswalk.test.py
 
       - name: Drift check operation-capability.v1.json
+        if: github.event_name != 'pull_request'
         run: python3 scripts/ci/generate-operation-capability.py --check
 
       # Fails when a manifest id resolves nowhere and nobody adjudicated it,

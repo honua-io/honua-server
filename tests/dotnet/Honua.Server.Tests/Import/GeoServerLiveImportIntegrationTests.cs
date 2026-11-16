@@ -20,9 +20,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests that exercise GeoServer import endpoints against a live GeoServer container.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

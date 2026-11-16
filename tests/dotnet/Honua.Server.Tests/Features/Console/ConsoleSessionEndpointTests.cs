@@ -14,10 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console session bootstrap, content CRUD, action
-/// check, and provenance endpoints (#1162).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]
@@ -43,7 +39,8 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+            })
+            .UseProcessLocalConsoleState();
     }
 
     public async Task InitializeAsync()

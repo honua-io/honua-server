@@ -1,7 +1,7 @@
-// Behavior reference: registration ordering bug #1575 — the durable PostgresRoleStore
-// (registered in AddPostgreSqlServices via RegisterInfrastructureServices, earlier in
-// Program.cs) was shadowed by a later unconditional AddSingleton<IRoleStore, InMemory...>.
-// Using TryAdd makes the in-memory store a true default that durable providers override.
+// Registration ordering: the durable PostgresRoleStore (registered in
+// AddPostgreSqlServices via RegisterInfrastructureServices, earlier in Program.cs) must
+// not be shadowed by a later unconditional AddSingleton<IRoleStore, InMemory...>. Using
+// TryAdd makes the in-memory store a true default that durable providers override.
 
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
@@ -24,12 +24,12 @@ internal static class ControlPlaneIamDefaults
         services.TryAddSingleton<IOidcProviderStore, InMemoryOidcProviderStore>();
 
         // The in-memory user store backs both the admin IUserStore surface and the SCIM
-        // provisioning surface (IScimUserStore, #510). Register the concrete singleton once
+        // provisioning surface (IScimUserStore). Register the concrete singleton once
         // and project all three contracts onto the SAME instance so SCIM-provisioned users
         // are visible to the admin endpoints and group->role sync mutates a single record set.
         // These are no-database/test defaults only: on Postgres profiles the durable
         // PostgresUserStore / PostgresScimGroupStore registered earlier by
-        // AddPostgreSqlServices win (#3141), making managed-identity membership shared
+        // AddPostgreSqlServices win, making managed-identity membership shared
         // across replicas and restarts.
         services.TryAddSingleton<InMemoryUserStore>();
         services.TryAddSingleton<IUserStore>(static sp => sp.GetRequiredService<InMemoryUserStore>());

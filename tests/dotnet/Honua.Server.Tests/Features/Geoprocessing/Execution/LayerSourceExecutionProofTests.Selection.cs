@@ -30,13 +30,6 @@ using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// #4624: the advertised selection family (where, objectIds, geometry/geometryType/inSR/spatialRel,
-/// time/timeRelation) and GeoServices outStatistics proven through the production layer read —
-/// the real PostGIS feature store, the real <c>source.honua-layer</c> connector and the production
-/// <see cref="ILayerSelectionFilterTranslator"/> registration — with row-level security and a field
-/// mask enforced in the same read.
-/// </summary>
 public sealed partial class LayerSourceExecutionProofTests
 {
     // Each seeded row is excluded by exactly ONE constraint, so dropping any single constraint

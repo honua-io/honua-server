@@ -8,9 +8,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for projecting data-driven MapLibre style layers onto discrete legend classes.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class LegendClassifierTests
 {

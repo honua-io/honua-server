@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Verifies the admin configuration-discovery value redactor is deny-by-default: it masks credentials
-/// embedded in generically named fields (ConnectionString/DefaultConnection/Endpoint/Username) and any
-/// value that looks credential-bearing regardless of property name (honua-server#2804), while leaving
-/// innocuous values readable.
-/// </summary>
 public sealed class ConfigurationSecretRedactorTests
 {
     [UnitTest]

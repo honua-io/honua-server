@@ -16,9 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for admin API key lifecycle endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApiKeyManagement)]

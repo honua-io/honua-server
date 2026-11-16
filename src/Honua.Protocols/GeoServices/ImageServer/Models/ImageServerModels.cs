@@ -99,15 +99,15 @@ public sealed class ImageServerServiceInfo
     public bool SupportsStatistics { get; init; } = true;
 
     // Unprefixed Esri vocabulary describing the ordering a rule-less request actually executes
-    // (newest acquisition first), not an aspirational method (#4063).
+    // (newest acquisition first), not an aspirational method.
     [JsonPropertyName("defaultMosaicMethod")]
     public string DefaultMosaicMethod { get; init; } = Services.ImageServerMosaicRule.DefaultMosaicMethod;
 
     // Esri serializes allowedMosaicMethods as a comma-separated STRING, not an
     // array. The ArcGIS Maps SDK for .NET native runtime parses the ImageServer
     // config with a strict reader that rejects an array here ("Invalid
-    // configuration file"), so emit the Esri string form (#1456). The tokens are the unprefixed
-    // Esri names of the methods the mosaic-rule parser executes (#4063).
+    // configuration file"), so emit the Esri string form. The tokens are the unprefixed
+    // Esri names of the methods the mosaic-rule parser executes.
     [JsonPropertyName("allowedMosaicMethods")]
     public string AllowedMosaicMethods { get; init; } = Services.ImageServerMosaicRule.AllowedMosaicMethods;
 
@@ -146,7 +146,7 @@ public sealed class ImageServerServiceInfo
 
     // Dynamic (non-fused-cache) services have no tile scheme. Esri omits tileInfo
     // entirely in that case; emitting "tileInfo":null trips the native .NET
-    // runtime's strict ImageServer config parser, so omit when unset (#1456).
+    // runtime's strict ImageServer config parser, so omit when unset.
     [JsonPropertyName("tileInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
@@ -169,7 +169,7 @@ public sealed class ImageServerServiceInfo
     public string? CacheType { get; init; }
 
     // renderingRule chains are executed by exportImage/identify/computeStatisticsHistograms and
-    // advertised at /rasterFunctionInfos, so the service accepts raster functions (#4063).
+    // advertised at /rasterFunctionInfos, so the service accepts raster functions.
     [JsonPropertyName("allowRasterFunction")]
     public bool AllowRasterFunction { get; init; } = true;
 
@@ -338,7 +338,7 @@ public sealed class SpatialReference
     // Esri omits wkt entirely when a well-known id is present. The ArcGIS Maps
     // SDK for .NET native runtime reads the ImageServer config (descriptor /
     // conf.json) with a strict parser that rejects a null wkt, so omit it when
-    // unset rather than emitting "wkt":null (#1456).
+    // unset rather than emitting "wkt":null.
     [JsonPropertyName("wkt")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Wkt { get; init; }
@@ -611,7 +611,7 @@ public sealed record ExportImageRequest
     // and jpgpng are normalised to a concrete encoding by the handler; bmp and gif are
     // accepted for shape but rejected with a clear 400 because the shared raster export
     // pipeline only emits png/jpeg/tiff containers. bsq, bip and lerc return the raw
-    // pixel block of the stored samples (#5437).
+    // pixel block of the stored samples.
     [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif|bsq|bip|lerc)$",
         ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, gif, bsq, bip, or lerc")]
     public string? Format { get; init; } = "png";
