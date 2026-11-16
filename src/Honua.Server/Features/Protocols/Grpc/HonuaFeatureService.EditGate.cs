@@ -95,7 +95,7 @@ internal sealed partial class HonuaFeatureService
             Updates = [.. request.Updates.Select((feature, index) => feature with { Attributes = prepared.Updates[index].Attributes })],
         };
 
-    private static IReadOnlyDictionary<long, Feature> ValidationSnapshots(IReadOnlyDictionary<long, Feature> storedRows)
+    private static Dictionary<long, Feature> ValidationSnapshots(IReadOnlyDictionary<long, Feature> storedRows)
         => storedRows.ToDictionary(static pair => pair.Key, static pair => pair.Value with
         {
             Attributes = pair.Value.EditValidationAttributes ?? pair.Value.Attributes
