@@ -61,7 +61,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
 
         // Bound the DECLARED pixel footprint before any file is written or GDAL is
         // invoked, so a compressible GeoTIFF declaring enormous dimensions cannot
-        // force a decompression-bomb allocation (#2766).
+        // force a decompression-bomb allocation.
         if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
         {
             Log.InvalidInputs(logger, job.OperationId, dimensionError);

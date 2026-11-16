@@ -43,7 +43,7 @@ public static partial class Extensions
         // PA-112: the SensorThings observation-stream slow-consumer drop counter was
         // tracked in-memory but never exported as an OTel metric.
         "Honua.SensorThings",
-        // #4404: the attachment orphan counter exists so an operator can alert on a
+        // The attachment orphan counter exists so an operator can alert on a
         // storage object that outlived its metadata row; without this entry neither the
         // Prometheus nor the OTLP exporter would ever collect it.
         LoggingAttachmentOrphanLedger.MeterName
@@ -70,16 +70,15 @@ public static partial class Extensions
         "Honua.Snowflake.FeatureStore",
         "Honua.Redshift.FeatureStore",
         "Honua.Oracle.FeatureStore",
-        // PA-016 / PA-017 / PA-018 / PA-019 / PA-020: hot-path ActivitySources added by the
-        // 2026-07 observability audit (#2401) that previously had no span coverage at all.
+        // Hot-path ActivitySources (import jobs, federation, edit, feature store).
         "Honua.Import.Jobs",
         "Honua.Federation",
         "Honua.Core.Edit",
         "Honua.Core.FeatureStore",
         // PA-108: federated ArcGIS REST provider query span (paging loop).
         "Honua.GeoServicesRest",
-        // A3-004 (#5476): replica conflict resolution and the Zarr slice readers declared their
-        // own sources but were never subscribed, so their spans were dropped.
+        // Replica conflict resolution and the Zarr slice readers declare their own sources;
+        // unless they are subscribed here their spans are dropped.
         "Honua.Server.ReplicaConflicts",
         "Honua.Core.Raster.Zarr"
     ];
@@ -133,7 +132,7 @@ public static partial class Extensions
 
         // Ensure IMeterFactory is available in DI so metrics classes can create their
         // instruments on a factory-owned "Honua" meter instead of a process-global static
-        // Meter (#2802). Idempotent (TryAdd-based); the hosting builder usually registers it
+        // Meter. Idempotent (TryAdd-based); the hosting builder usually registers it
         // already, but AddMetrics guarantees it for every host and test factory.
         builder.Services.AddMetrics();
 
@@ -196,7 +195,7 @@ public static partial class Extensions
                 if (useXRay)
                 {
                     tracing.AddXRayTraceId();
-                    // Qualified: the Honua.Sdk.* packages (#4599) put a Honua.Sdk namespace in scope.
+                    // Qualified: the Honua.Sdk.* packages put a Honua.Sdk namespace in scope.
                     OpenTelemetry.Sdk.SetDefaultTextMapPropagator(new AWSXRayPropagator());
                 }
 

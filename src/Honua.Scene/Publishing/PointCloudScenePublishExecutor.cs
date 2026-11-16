@@ -132,7 +132,7 @@ internal sealed partial class PointCloudScenePublishExecutor
 
             // Replicate the staged point-cloud tileset to the shared object store
             // before registering so the recorded storage prefix always implies the
-            // bytes exist and any node can hydrate it (#2459, ADR-0060).
+            // bytes exist and any node can hydrate it (ADR-0060).
             var newDatasetId = Guid.NewGuid();
             var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
                 _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);

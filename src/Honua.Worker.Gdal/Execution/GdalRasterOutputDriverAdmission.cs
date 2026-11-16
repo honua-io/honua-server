@@ -29,7 +29,7 @@ internal static class GdalRasterOutputDriverAdmission
     // TIFF / TIF spellings all mean the GTiff driver and JPG means JPEG. Without the
     // aliases an OGC Processes or GPServer client that picks an advertised value
     // passes catalog and schema validation and then has its job killed at the CLI
-    // boundary with an invalid-format failure (#3048 review). COG stays a distinct
+    // boundary with an invalid-format failure. COG stays a distinct
     // entry because it is a real, separate GDAL driver rather than a spelling of
     // GTiff. GdalRasterConversionExecutorTests pins the correspondence by driving the
     // executor with every value of ProcessValueDomains.RasterFormat.

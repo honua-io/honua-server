@@ -111,7 +111,7 @@ internal sealed partial class GeoservicesImportService
 
     // True only for the ArcGIS Web Mercator alias codes (not canonical 3857 itself), so callers can
     // detect that an incoming WKID needs alias normalization. Routed through the canonical
-    // classifier (#2732): an alias is any Web Mercator SRID other than 3857.
+    // classifier: an alias is any Web Mercator SRID other than 3857.
     private static bool IsKnownGeoServicesAlias(int? wkid)
         => wkid is int w && w != 3857 && SpatialReferenceExtensions.IsWebMercatorSrid(w);
 

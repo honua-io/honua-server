@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 from types import SimpleNamespace
 import unittest
 
@@ -41,6 +42,35 @@ def create_fake_pull_api(base):
 
 
 class GeneratedGraphFreshness(unittest.TestCase):
+    def test_docs_inventory_generation_supports_legacy_heads_without_hiding_errors(self):
+        source = (ROOT / '.github/workflows/docs-link-gate.yml').read_text()
+        step = source.split('- name: Regenerate trunk-owned documentation for validation', 1)[1]
+        block = textwrap.dedent(step.split('run: |\n', 1)[1].split('\n      #', 1)[0])
+        for generator, template, broken, expected in (
+                (False, False, False, 0), (True, True, False, 0),
+                (False, True, False, 1), (True, False, False, 1),
+                (True, True, True, 7)):
+            with self.subTest(generator=generator, template=template, broken=broken):
+                with tempfile.TemporaryDirectory() as directory:
+                    repo = Path(directory)
+                    scripts = repo / 'scripts/ci'
+                    scripts.mkdir(parents=True)
+                    if generator:
+                        (scripts / 'generate-workflow-inventory.py').write_text(
+                            'from pathlib import Path\n'
+                            + ('raise SystemExit(7)\n' if broken else
+                               'Path("inventory-ran").touch()\n'))
+                    if template:
+                        (scripts / 'workflow-inventory.template.md').write_text('template')
+                    (scripts / 'generate-capability-concepts.py').write_text(
+                        'from pathlib import Path\nPath("concepts-ran").touch()\n')
+                    result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', block],
+                                            cwd=repo, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    self.assertEqual((repo / 'concepts-ran').exists(), expected == 0)
+                    self.assertEqual((repo / 'inventory-ran').exists(),
+                                     generator and template and not broken)
+
     def test_graph_callers_declare_the_canonical_yaml_reader(self):
         for path, name, command in (
                 ('.github/workflows/generated-files-on-trunk.yml', 'Regenerate repository projections',
