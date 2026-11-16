@@ -4,6 +4,17 @@ Every source path has at least one shard owner inside the PR time budget. `test-
 
 #7678 split the nine over-budget shards that were still the only owners of 61 source paths (Admin Catalog and Configuration, Admin Network and Jobs, Admin Platform and Connections, OData Mutations and Batch, Miscellaneous 1 and 2, Cloud and Streaming Import, SensorThings, gRPC Protocol and Scene) into 28 children from the TRX class spans of full run `43580101834`. Classes longer than a child's 5.5-minute share are cut at method boundaries, and classes with no shard time in that run (Tier Fast or Slow) stay in the last child, which also owns future tests. Child ranks are estimates in `full-run-capacity-contracts.json` until the next passing full run measures them. Miscellaneous children continue that family's numbering (3 to 8).
 
+Scheduled full run `43819793722` measured four of those children above ten
+minutes including setup: Miscellaneous 3 (841 seconds), Miscellaneous 4 (603),
+gRPC 1 (646), and gRPC 2 (810). They are replaced by Miscellaneous 9–13 and
+gRPC 3–7, bringing the matrix to 225 jobs. The cuts balance TRX start/end
+intervals, including per-test lifecycle time that the reported test duration
+omits. Each estimate includes the previous job's non-interval overhead (at
+least four minutes) plus thirty seconds of margin. Estimated job durations are
+8.3–8.7 minutes; a scheduled full run must still confirm timing, images and TRX
+coverage before the issue closes. Each residual child owns future methods;
+projects, source triggers, timeouts and report ownership are conserved.
+
 Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
 
 The latest full-run capacity audit partitions eleven additional parents into 26
@@ -1056,7 +1067,7 @@ not add up to less than the parent applies only while every child of a split is
 still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
 well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
 estimate: 16 are a still-unmeasured child of an earlier split and 28 are children of the
-nine shards split in #7678, which no full run has executed yet. STAC Protocol 4 (no passing job yet) keeps its parent's
+nine shards split in #7678, before the subsequent full-run timing repair described above. These historical counts predate the six additional children; the repaired children keep estimates until measured. STAC Protocol 4 (no passing job yet) keeps its parent's
 13.6. Three changed their filter after the newest run and so leave the record,
 keeping their previous rank until a run measures the new filter: Server Features
 Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
