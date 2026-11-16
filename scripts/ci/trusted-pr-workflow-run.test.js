@@ -227,8 +227,8 @@ test('accepts only positive safe integer workflow run ids', () => {
   }
 });
 
-// Observation-only consumers (native-image-impact-observe,
-// server-test-prebuild-observe) wake on EVERY completed source run, including the
+// Observation-only consumers (native-image-impact-observe) wake on EVERY completed
+// source run, including the
 // cancelled/superseded ones a fresh push produces. Fail-closed is still correct,
 // but for them the correct fail-closed outcome is a clean skip, not ~93 red runs.
 // Only the superseded class may be downgraded, and each shape reports its code.
@@ -388,7 +388,7 @@ test('recordObservationSkip mirrors the resolver skip surface and bounds its cod
   const written = {};
   recordObservationSkip({
     core,
-    label: 'server-test-prebuild',
+    label: 'example-observer',
     markerPath: '/tmp/draft.json',
     fs: { writeFileSync: (path, body) => { written[path] = body; } },
     code: 'pull-request-draft',

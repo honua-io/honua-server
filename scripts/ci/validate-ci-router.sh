@@ -177,7 +177,6 @@ run_fixture shard-structure validate_shard_structure
 run_fixture scripts/ci/validate-server-test-binary-artifacts.sh scripts/ci/validate-server-test-binary-artifacts.sh
 run_fixture scripts/ci/validate-server-test-shard-cache.sh scripts/ci/validate-server-test-shard-cache.sh
 run_fixture scripts/ci/validate-server-test-reuse-benchmark.sh scripts/ci/validate-server-test-reuse-benchmark.sh
-run_fixture scripts/ci/validate-server-test-prebuild.sh scripts/ci/validate-server-test-prebuild.sh
 
 echo "Validating managed build producer and consumer contracts..."
 if [[ -n "${PYTHON_BIN}" ]]; then
