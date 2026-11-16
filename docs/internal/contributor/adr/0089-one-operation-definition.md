@@ -167,10 +167,14 @@ Classify by the handler and application service before excluding a route:
 | Route or family | Evidence and classification |
 | --- | --- |
 | `POST /alerts/rules/test` | `AlertAdminEndpoints.HandleTestRule` validates a supplied draft and returns findings without storing a rule. Read-only candidate. |
-| `POST /packages/validate` and `/packages/preview` | `PackageReviewEndpoints.HandleReview` delegates to shared package review. Confirm the review service has no persistence before recording an exclusion. |
+| `POST /packages/validate` and `/packages/preview` | `PackageReviewEndpoints.HandleReview` delegates to `PackageReviewService.ReviewAsync`. Its registered requirement and analysis-plan adapters return findings; the latter uses `GeoprocessingJobService.ValidatePlan` and `DryRunPlan`, which inspect plans/catalogs and return estimates without submitting or storing a job. Read-only with the current adapter registrations. |
 | Form package version validation | `FormPackageLifecycleService.ValidateAsync` stores validation for draft versions. Include as a mutation. |
 | Studio draft validation and preview | `StudioPackageLifecycleService.ValidateDraftAsync` updates the draft validation and modification fields; preview calls validation. Include as mutations. |
-| Workflow version validation and dry run | The endpoint uses a mutation-named wrapper, but `WorkflowPackageService` reads a version and computes validation/output schemas. Trace nested services before recording an exclusion. |
+| Workflow version validation and dry run | `WorkflowPackageService.ValidateVersionAsync` and `DryRunVersionAsync` load the version, validate/compile its graph and resolve output schemas. Their geoprocessing calls authorize and return validation/estimates; they do not submit work or save a version. Read-only candidates despite the endpoint wrapper name. |
+
+These classifications describe the current implementation, including its registered
+review adapters. A new adapter or nested service that persists state must update
+the classification and its coverage; a method name is not evidence of purity.
 
 Keep route coverage, descriptor coverage and permission to expose an MCP tool as
 separate checks. A read-only exclusion from the mutation inventory does not grant
