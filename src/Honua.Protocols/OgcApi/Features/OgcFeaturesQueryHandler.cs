@@ -688,8 +688,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // A JSON/GeoJSON hit is a pure function of the request. Serve it before the
             // feature read. Invalid format or CRS falls through, so a missing feature
             // still returns 404 before those parameter errors.
+            var parameterError = OgcCommonUtilities.ValidateQueryParameters(
+                request, OgcFeaturesUtilities.AllowedQueryParameters.Item);
             string? boundItemCacheKey = null;
-            if (OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var earlyFormat, out _)
+            if (parameterError is null
+                && OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var earlyFormat, out _)
                 && (string.Equals(earlyFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(earlyFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase))
                 && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
@@ -747,6 +750,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var objectId = resolvedFeature.Value.ObjectId;
+
+            if (parameterError is not null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, parameterError.Value ?? "Invalid query parameters.");
+            }
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
             {
