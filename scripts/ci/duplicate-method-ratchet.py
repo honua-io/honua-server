@@ -8,6 +8,12 @@ removed before the comparison, so a copy that differs only by commentary
 still pairs. String literals stay, so a one-line message change still
 compares as a near-copy instead of disappearing.
 
+--static-helpers switches to the lower threshold for static helpers: two
+static methods with the same name and parameter types, each 8 to 24 normalized
+lines, pair when their normalized bodies are identical. A copied static helper
+has no instance state to justify the copy, so it moves to one shared
+declaration. That list has its own baseline file.
+
 The architecture test commits the output as a baseline and refuses both new
 pairs and a baseline that lists a pair the scanner no longer finds. Shrink
 the baseline only by deleting the duplicated method.
@@ -16,6 +22,7 @@ Usage:
     python3 scripts/ci/duplicate-method-ratchet.py
     python3 scripts/ci/duplicate-method-ratchet.py --self-test
     python3 scripts/ci/duplicate-method-ratchet.py --write tests/dotnet/Honua.Architecture.Tests/duplicate-method-baseline.txt
+    python3 scripts/ci/duplicate-method-ratchet.py --static-helpers --write tests/dotnet/Honua.Architecture.Tests/duplicate-static-helper-baseline.txt
 """
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ import sys
 from pathlib import Path
 
 MIN_LINES = 25
+STATIC_MIN_LINES = 8
 MIN_RATIO = 0.92
 # 2 * min / (min + max) >= MIN_RATIO implies min/max >= MIN_RATIO / (2 - MIN_RATIO).
 MIN_LENGTH_RATIO = MIN_RATIO / (2.0 - MIN_RATIO)
@@ -307,8 +315,8 @@ def parameter_types(params: str) -> str:
     return ",".join(types)
 
 
-def match_signature(header: str) -> tuple[str, str] | None:
-    """Return (name, parameter-type string) when header ends in a method declaration."""
+def match_signature(header: str) -> tuple[str, str, bool] | None:
+    """Return (name, parameter-type string, is static) when header ends in a method declaration."""
     start = max(header.rfind(";"), header.rfind("{"), header.rfind("}"))
     window = header[start + 1 :]
     where_at = window.find(" where ")
@@ -351,7 +359,7 @@ def match_signature(header: str) -> tuple[str, str] | None:
         return None
     if "new" in prefix and not has_return:
         return None
-    return name, parameter_types(params)
+    return name, parameter_types(params), "static" in prefix
 
 
 def matching_brace(masked: str, open_index: int) -> int | None:
@@ -368,12 +376,15 @@ def matching_brace(masked: str, open_index: int) -> int | None:
 
 
 class Method:
-    def __init__(self, path: str, name: str, types: str, line: int, body: list[str]) -> None:
+    def __init__(
+        self, path: str, name: str, types: str, line: int, body: list[str], static: bool = False
+    ) -> None:
         self.path = path
         self.name = name
         self.types = types
         self.line = line
         self.body = body
+        self.static = static
 
     def endpoint(self, disambiguate: bool) -> str:
         suffix = f"@{self.line}" if disambiguate else ""
@@ -394,9 +405,10 @@ def extract_methods(path: str, text: str) -> tuple[list[Method], bool]:
                 if end is None:
                     return [], False
                 body = normalize_body(text[index : end + 1], masked[index : end + 1])
-                if len(body) >= MIN_LINES:
+                is_static = signature[2]
+                if len(body) >= (STATIC_MIN_LINES if is_static else MIN_LINES):
                     line = text.count("\n", 0, index) + 1
-                    methods.append(Method(path, signature[0], signature[1], line, body))
+                    methods.append(Method(path, signature[0], signature[1], line, body, is_static))
             depth += 1
         elif char == "}":
             depth -= 1
@@ -419,7 +431,7 @@ def iter_source_files(root: Path) -> list[Path]:
     return files
 
 
-def scan(root: Path) -> tuple[list[str], list[str]]:
+def scan(root: Path, static_helpers: bool = False) -> tuple[list[str], list[str]]:
     methods: list[Method] = []
     unbalanced: list[str] = []
     for path in iter_source_files(root):
@@ -429,7 +441,9 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
         if not balanced:
             unbalanced.append(relative)
             continue
-        methods.extend(found)
+        methods.extend(
+            method for method in found if (len(method.body) < MIN_LINES) == static_helpers
+        )
 
     by_endpoint: dict[str, list[Method]] = {}
     for method in methods:
@@ -457,14 +471,21 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
                 # rules out every method after it.
                 if shorter / longer < MIN_LENGTH_RATIO:
                     break
-                if left.body == right.body or difflib.SequenceMatcher(
-                    None, left.body, right.body, autojunk=False
-                ).ratio() >= MIN_RATIO:
+                if is_pair(left, right):
                     left_id = left.endpoint(left.endpoint(False) in collisions)
                     right_id = right.endpoint(right.endpoint(False) in collisions)
                     first, second = sorted((left_id, right_id))
                     pairs.add(f"{first}|{second}")
     return sorted(pairs), unbalanced
+
+
+def is_pair(left: Method, right: Method) -> bool:
+    if len(left.body) < MIN_LINES or len(right.body) < MIN_LINES:
+        # Below the general threshold only an exact static copy counts.
+        return left.types == right.types and left.body == right.body
+    return left.body == right.body or difflib.SequenceMatcher(
+        None, left.body, right.body, autojunk=False
+    ).ratio() >= MIN_RATIO
 
 
 def self_test() -> int:
@@ -521,6 +542,46 @@ internal static class Sample
         print("self-test: raw-string contents leaked into the normalized body", file=sys.stderr)
         return 1
     del root_text
+    helper = '''
+namespace Demo;
+
+internal sealed class Short
+{
+    private static string Trim(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed;
+    }
+
+    private string Label(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed;
+    }
+}
+'''
+    one, _ = extract_methods("src/C.cs", helper)
+    two, _ = extract_methods("src/D.cs", helper.replace("namespace Demo", "namespace Demo.Other"))
+    if [method.name for method in one] != ["Trim"]:
+        print(f"self-test: expected only the static helper, found {[m.name for m in one]}", file=sys.stderr)
+        return 1
+    if not is_pair(one[0], two[0]):
+        print("self-test: an exact static helper copy did not pair", file=sys.stderr)
+        return 1
+    changed, _ = extract_methods("src/E.cs", helper.replace("value.Trim()", "value.TrimEnd()"))
+    if is_pair(one[0], changed[0]):
+        print("self-test: a short static helper with a different body paired", file=sys.stderr)
+        return 1
     print("self-test ok", file=sys.stderr)
     return 0
 
@@ -531,24 +592,32 @@ HEADER = """# Generated by scripts/ci/duplicate-method-ratchet.py. Do not add li
 # pair is gone. The architecture test rejects a new line against trunk.
 """
 
+STATIC_HEADER = """# Generated by scripts/ci/duplicate-method-ratchet.py --static-helpers. Do not add lines.
+# Each line is a pair of static methods under src/ with the same name and
+# parameter types whose normalized bodies are 8 to 24 lines and identical.
+# Delete a line only when that pair is gone: move the helper to one shared
+# declaration. The architecture test rejects a new line against trunk.
+"""
+
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--write", type=Path, help="Write the baseline file here.")
+    parser.add_argument("--static-helpers", action="store_true", help="List exact copies of short static helpers.")
     parser.add_argument("--root", type=Path, default=None)
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
     root = args.root or Path(__file__).resolve().parents[2]
-    pairs, unbalanced = scan(root)
+    pairs, unbalanced = scan(root, args.static_helpers)
     if unbalanced:
         print("unbalanced C# files (scanner skipped them):", file=sys.stderr)
         for path in unbalanced:
             print(path, file=sys.stderr)
         return 2
     if args.write:
-        payload = HEADER + "".join(f"{pair}\n" for pair in pairs)
+        payload = (STATIC_HEADER if args.static_helpers else HEADER) + "".join(f"{pair}\n" for pair in pairs)
         args.write.write_text(payload, encoding="utf-8")
         print(f"wrote {len(pairs)} pairs to {args.write}", file=sys.stderr)
         return 0
