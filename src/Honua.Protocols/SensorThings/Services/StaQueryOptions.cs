@@ -43,7 +43,7 @@ internal sealed record StaQueryOptions
     // $orderby, $select and $expand are interpreted by StaQueryPlan against the target
     // entity's schema: the option's meaning depends on which properties the entity set has,
     // and an option this server cannot honour must fail the request rather than be dropped
-    // here (#4201).
+    // here.
 
     public static StaQueryOptions FromRequest(HttpRequest request)
     {

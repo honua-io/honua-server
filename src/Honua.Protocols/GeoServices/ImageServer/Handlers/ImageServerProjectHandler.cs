@@ -55,8 +55,8 @@ internal sealed class ImageServerProjectHandler
         try
         {
             // The image-coordinate-system `transformation` parameter warps geometries between
-            // image (pixel/sample-line) space and map space using the raster's RPC sensor model
-            // (#1881). When the layer's raster carries RPC metadata, the geometries are treated as
+            // image (pixel/sample-line) space and map space using the raster's RPC sensor model.
+            // When the layer's raster carries RPC metadata, the geometries are treated as
             // image coordinates and mapped to ground (and then reprojected into outSR). When the
             // raster has no RPC metadata, the operation is genuinely unsupported and we keep the
             // 400 with a clear "no image CS metadata" message.

@@ -185,7 +185,7 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, searchExtentError ?? "Invalid searchExtent parameter.");
             }
 
-            // Forward proximity bias (#2148): an optional location/distance pair ranks nearby
+            // Forward proximity bias: an optional location/distance pair ranks nearby
             // candidates higher on providers that support proximity weighting and is gracefully
             // ignored on providers that do not (SupportsBiasing=false). location/distance are
             // validated up front so malformed values are rejected with a clear error.
@@ -196,7 +196,7 @@ internal sealed class GeocodingHandler(
 
             // Structured fields (when no singleLine/magicKey) are carried alongside the flattened
             // query so structured-capable providers build a true structured request while single-line
-            // providers still receive a usable query (#2149).
+            // providers still receive a usable query.
             var structuredAddress = decodedMagicKey is null ? BuildStructuredAddress(values) : null;
 
             var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ForwardGeocodeRequest(
@@ -494,7 +494,7 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, suggestExtentError ?? "Invalid searchExtent parameter.");
             }
 
-            // Forward proximity bias (#2148): location/distance bias suggestions towards a point on
+            // Forward proximity bias: location/distance bias suggestions towards a point on
             // providers that support proximity weighting, gracefully ignored elsewhere.
             if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
             {
@@ -932,7 +932,7 @@ internal sealed class GeocodingHandler(
         }
 
         // An exceeded rate limit is a throttling condition: reject with 429 and a Retry-After hint so
-        // clients back off and retry once the window resets (advertised RateLimitPerMinute, #2150).
+        // clients back off and retry once the window resets (advertised RateLimitPerMinute).
         if (errorMessage.Contains(GeocodeLimitMetadata.RateLimitMarker, StringComparison.OrdinalIgnoreCase) ||
             errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase))
         {
@@ -1069,7 +1069,7 @@ internal sealed class GeocodingHandler(
 
     // Maps the Esri GeocodeServer structured-input fields onto the canonical StructuredAddress so
     // structured-capable providers (Nominatim, Azure Maps, Amazon Location, local PostGIS) can build
-    // a true structured provider request rather than receiving a flattened single line (#2149).
+    // a true structured provider request rather than receiving a flattened single line.
     // Returns null when a singleLine query is present (singleLine takes precedence) or when no
     // structured field was supplied, so single-line behavior is unchanged.
     private static Honua.Geocoding.Features.Geocoding.Domain.StructuredAddress? BuildStructuredAddress(
@@ -1108,7 +1108,7 @@ internal sealed class GeocodingHandler(
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     // Builds the GeocodeServer locatorProperties from the ACTIVE provider's capabilities so the
-    // metadata is fidelity-accurate per provider (#2147): SuggestedBatchSize reflects the provider's
+    // metadata is fidelity-accurate per provider: SuggestedBatchSize reflects the provider's
     // MaxBatchSize, and batch-specific properties are advertised only when the provider supports
     // batch (an unsupported capability is absent/false rather than falsely advertised).
     private GeocodeLocatorProperties BuildLocatorProperties(
@@ -1214,7 +1214,7 @@ internal sealed class GeocodingHandler(
         return true;
     }
 
-    // Parses the forward-geocode proximity-bias parameters (#2148): the Esri `location` point and
+    // Parses the forward-geocode proximity-bias parameters: the Esri `location` point and
     // optional `distance` radius (meters) accepted by findAddressCandidates/suggest. The bias is
     // only meaningful when a location is supplied; the parsed location is stamped with the service's
     // default spatial reference (the GeoServices bias point convention) and the distance reuses the
@@ -1404,7 +1404,7 @@ internal sealed class GeocodingHandler(
     // outSR={"wkid":4326} or {"latestWkid":...} — not just a bare WKID integer.
     // Delegate to the shared SpatialReferenceHelpers parser so both the bare-int
     // and JSON spatial-reference forms are accepted consistently with the rest of
-    // the GeoServices surface (#1263). Missing/blank selects the default WKID.
+    // the GeoServices surface. Missing/blank selects the default WKID.
     private static bool TryParseSpatialReference(string? rawOutSpatialReference, int defaultWkid, out int wkid)
     {
         if (string.IsNullOrWhiteSpace(rawOutSpatialReference))

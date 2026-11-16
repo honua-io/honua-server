@@ -76,7 +76,7 @@ geoprocessing workloads; 512 MiB is the smoke-test allocation.
 | Geoprocessing output | `/tmp/honua/honua-geoprocessing-outputs` | `Geoprocessing__Executors__OutputRootDirectory`; defaults under `TMPDIR` |
 | Geoprocessing import staging | `/tmp/honua/honua-import-staging` | `Geoprocessing__Executors__ImportStagingDirectory`; defaults under `TMPDIR` |
 | Native/user caches | `/tmp/honua/cache` | `XDG_CACHE_HOME` |
-| User home and fallback data-protection keys | `/tmp/honua/.aspnet/DataProtection-Keys` | `HOME`; Redis-backed deployments use the shared Redis key repository |
+| User home and fallback data-protection keys | `/tmp/honua/.aspnet/DataProtection-Keys` | `HOME`; shared production keys are persisted in PostgreSQL |
 | Logs | Standard output/error | An operator-added file sink must use a separately configured writable path |
 
 When moving the root, set `HOME`, `TMPDIR`, `XDG_CACHE_HOME`,

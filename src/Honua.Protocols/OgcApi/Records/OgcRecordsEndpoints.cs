@@ -120,7 +120,7 @@ internal static class OgcRecordsEndpoints
         var basePath = $"{baseUrl}/ogc/records";
         var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
         // OGC API - Records Part 1 /req/core/root-success (via OGC API - Common): the landing page
-        // links the API definition. Clients that start from service-desc stop here without it (#5510).
+        // links the API definition. Clients that start from service-desc stop here without it.
         links.Add(Link.Create($"{basePath}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"));
         links.Add(Link.Create($"{basePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"));
         links.Add(Link.Create($"{basePath}/collections", RelationTypes.Data, MediaTypes.Json, "Record collections"));
@@ -658,7 +658,7 @@ internal static class OgcRecordsEndpoints
             // OGC API - Records defines q as a comma-separated list of search terms
             // with OR semantics. A term may itself contain whitespace; splitting on
             // whitespace made client-generated `q=foo,bar` behave as an AND query and
-            // broke catalog clients (#4152).
+            // broke catalog clients.
             if (terms.Length > 0 &&
                 !terms.Any(term => record.SearchText.Contains(term, StringComparison.OrdinalIgnoreCase)))
             {
@@ -673,7 +673,7 @@ internal static class OgcRecordsEndpoints
             // A record with no temporal value carries no instant to test against the datetime
             // filter. These catalog records currently always have a null Modified, so the old
             // "drop when Modified is null" rule made every datetime query (even an open ../..)
-            // return zero results (#1988). Only exclude records whose known temporal value
+            // return zero results. Only exclude records whose known temporal value
             // falls outside the requested interval; records without a temporal value are not
             // constrained by datetime.
             if (datetime is not null && record.Modified is not null && !datetime.Contains(record.Modified.Value))
@@ -756,7 +756,7 @@ internal static class OgcRecordsEndpoints
         }
 
         // OGC API - Features Part 1 §7.15.4: a limit above the maximum SHALL NOT result in an
-        // error; the maximum is used instead, and the paging links carry the applied value (#5510).
+        // error; the maximum is used instead, and the paging links carry the applied value.
         pageLimit = Math.Min(pageLimit, MaxLimit);
 
         if (pageOffset < 0)

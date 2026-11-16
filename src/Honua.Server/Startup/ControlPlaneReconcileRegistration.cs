@@ -22,8 +22,8 @@ internal static class ControlPlaneReconcileRegistration
         // reconciler), so decorating them once covers them all without scattering notification calls
         // across the reconciler. Two decorators compose over the durable PostgreSQL store:
         //   * TransitionObservingWorkflowOperationStore raises IWorkflowOperationTransitionListener
-        //     observers (created / submitted / promoted / rolled-back / manual-intervention). This ticket
-        //     registers the operate-timeline release producer; the realtime hub (#2554) attaches to the
+        //     observers (created / submitted / promoted / rolled-back / manual-intervention). This file
+        //     registers the operate-timeline release producer; the realtime hub attaches to the
         //     same seam as a second listener.
         //   * NotifyingWorkflowOperationStore raises ops-alert notifications on terminal transitions (it
         //     no-ops when ops notifications are disabled, the default).

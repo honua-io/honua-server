@@ -4,15 +4,15 @@
 // VectorTileServer resources surface for styles, sprites, and glyphs.
 // The GeoServices REST default-style document (root.json) is composed from the
 // canonical MapLibre style stored for the service's primary layer into a Mapbox GL v8 document
-// whose vector source references this service's descriptor (url, #5534) and its
+// whose vector source references this service's descriptor (url) and its
 // tile/{z}/{y}/{x}.pbf route (tiles) (VectorTileStyleComposer). The composed style references sprite/glyphs (pointed at the
 // scoped-minimal resources/sprites and resources/fonts routes below) ONLY when it has symbol
 // layers; otherwise they stay omitted. style sub-resources other than root.json return 404.
 //
-// Sprites are scoped-minimal (honua-server#1780): resources/sprites/sprite[.json|.png|
+// Sprites are scoped-minimal: resources/sprites/sprite[.json|.png|
 // @2x.json|@2x.png] serve an empty sprite index / 1x1 transparent PNG. resources/fonts/
 // {fontstack}/{range}.pbf serves the bundled face's glyphs for the requested fontstack and
-// range, or not-found for an unserved fontstack or range (#5535) (VectorTileEmbeddedAssets).
+// range, or not-found for an unserved fontstack or range (VectorTileEmbeddedAssets).
 
 using System.Diagnostics;
 using Honua.Core.Features.Authorization.Domain;
@@ -140,7 +140,7 @@ internal static partial class VectorTileServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             // Select with the tile route's operation so root.json always styles the publication the
-            // tiles render (honua-server#4112), even under per-layer operation grants.
+            // tiles render, even under per-layer operation grants.
             var primary = await ResolvePrimaryVectorTilePublicationAsync(
                 snapshot, service, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
             if (primary is null)

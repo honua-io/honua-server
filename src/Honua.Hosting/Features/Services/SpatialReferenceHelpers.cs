@@ -17,7 +17,7 @@ internal static class SpatialReferenceHelpers
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     // Accepts the canonical empty-version URN (urn:ogc:def:crs:EPSG::4326), an explicit
     // version segment (urn:ogc:def:crs:EPSG:6.9:25831), and the historical x-ogc authority
-    // (urn:x-ogc:def:crs:EPSG:...) so query srsName parsing matches the FES filter parser (#2737).
+    // (urn:x-ogc:def:crs:EPSG:...) so query srsName parsing matches the FES filter parser.
     private static readonly Regex _epsgUrnPattern = new(
         @"^urn:(?:x-)?ogc:def:crs:EPSG:(?:\d+(?:\.\d+)*)?:(?<code>[1-9]\d*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);

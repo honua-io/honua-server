@@ -19,7 +19,7 @@ internal static class AuditLogServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         // Route-to-action resolver used by the audit middleware to decide which
-        // operations are audited declaratively, from route metadata (#507).
+        // operations are audited declaratively, from route metadata.
         services.AddHonuaAuditActionResolver();
 
         services.TryAddScoped<IAuditLog>(static sp =>

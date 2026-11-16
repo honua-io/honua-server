@@ -258,10 +258,9 @@ internal static class AdminLayerFieldConfigurationEndpoints
         IReadOnlyList<LayerFieldConfiguration> configurations)
     {
         var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
-        // V2 cutover: MetadataV2Field has no Domain/IsHidden — those are now operator-only
-        // overrides held in the configuration store. When no override row exists the
-        // response falls back to Description for alias, null Domain, and Hidden=false
-        // (the V2 baseline; v1 used to read these off the FieldDefinition itself).
+        // MetadataV2Field has no Domain/IsHidden — those are operator-only overrides held
+        // in the configuration store. When no override row exists the response falls back
+        // to Description for alias, null Domain, and Hidden=false (the V2 baseline).
         var fields = resource.SchemaFields
             .Select(field =>
             {

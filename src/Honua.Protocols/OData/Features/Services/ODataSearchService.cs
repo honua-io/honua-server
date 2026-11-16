@@ -284,7 +284,7 @@ internal sealed partial class ODataSearchService
         var resource = resolvedLayer.Resource;
         // Validate the terminal transform of the $apply pipeline (e.g. the groupby in
         // filter(...)/groupby(...)); leading filter segments are field-validated when their
-        // OData filter is translated to SQL during processing (#1636).
+        // OData filter is translated to SQL during processing.
         var segments = ODataAggregationHandler.SplitApplyTransforms(applyExpression);
         var aggregation = ODataAggregationHandler.ParseApplyExpression(segments[^1]);
         ValidateAggregationFields(aggregation, resource);

@@ -156,7 +156,7 @@ internal sealed partial class ODataStreamingQueryHandler
             }
             var current = items.ToArray();
             // Baselines page from Items. Persisting the same array again as Changes
-            // doubled every anonymous receipt (#5615 SRV-OGC-011).
+            // would double every anonymous receipt.
             var changes = continuation is null
                 ? []
                 : ComputeDeltaChanges(continuation.Snapshot.Items, current, query.LayerId);

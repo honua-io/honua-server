@@ -31,7 +31,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SubmitJob_ConcurrentSubmissionsByOnePrincipalWithNoRedis_AreBothAdmittedAndComplete()
     {
         var fixture = CreateDurableFixture(new SuccessfulGpServerJobExecutor());
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -68,7 +68,7 @@ public sealed partial class GPServerDurableRuntimeTests
                 builder.UseSetting("ExecutionAdmission:MaxSubmissionsPerWindow", $"{SubmissionsAllowedPerWindow}");
                 builder.UseSetting("ExecutionAdmission:RateWindowSeconds", $"{RateWindowSeconds}");
             });
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -120,7 +120,7 @@ public sealed partial class GPServerDurableRuntimeTests
     {
         var executor = new HeldGpServerJobExecutor();
         var fixture = CreateDurableFixture(executor);
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();

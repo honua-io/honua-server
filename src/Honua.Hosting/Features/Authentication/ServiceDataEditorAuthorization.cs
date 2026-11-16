@@ -34,7 +34,7 @@ internal static class ServiceDataEditorAuthorization
     {
         ArgumentNullException.ThrowIfNull(service);
 
-        // Layer-scoped write keys (#1637) are enforced here in the shared pipeline:
+        // Layer-scoped write keys are enforced here in the shared pipeline:
         // a scoped key authorizes a write only when one of its grants matches the
         // target service; otherwise the write is forbidden. Scoped keys never fall
         // through to the admin/data-editor role checks below.
@@ -46,7 +46,7 @@ internal static class ServiceDataEditorAuthorization
         // An explicit AccessPolicy write restriction stays authoritative (it is a
         // deliberate per-resource grant/deny and must not be widened by a wildcard
         // RBAC grant). When no explicit write policy applies, a per-operation RBAC
-        // write grant (#1376) authorizes the mutation, bypassing the coarse
+        // write grant authorizes the mutation, bypassing the coarse
         // data-editor role gate; absent any grant, behavior is unchanged.
         var explicitDecision = EvaluateExplicitWritePolicy(context, null, service.AccessPolicy);
         if (explicitDecision is not null)
@@ -115,7 +115,7 @@ internal static class ServiceDataEditorAuthorization
             return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
         }
 
-        // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
+        // Layer-scoped write keys are enforced here in the shared pipeline.
         // The key must carry a grant for the target (service, layer); a service-wide
         // grant authorizes any layer of that service, a layer-specific grant only
         // the named layer. Out-of-scope targets are forbidden.
@@ -133,7 +133,7 @@ internal static class ServiceDataEditorAuthorization
             return explicitDecision.Value;
         }
 
-        // No explicit write policy: a per-operation RBAC write grant (#1376) on
+        // No explicit write policy: a per-operation RBAC write grant on
         // the (service, layer) authorizes the mutation, bypassing the coarse
         // data-editor role gate. When specificOperation is set (per-type edit checks
         // — BH3-001/BH3-014) the bypass is narrowed to that exact operation so a
