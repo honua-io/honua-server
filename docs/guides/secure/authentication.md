@@ -123,8 +123,8 @@ that work and add request restrictions when you create them:
 Referrer restrictions stop other websites from using a key inside a browser; they do
 not stop a non-browser client, which can send any `Origin` or `Referer`. Treat them
 as abuse prevention, pair them with IP restrictions where the callers' networks are
-known, and keep keys used this way read-only. Restrictions are set when a key is
-created; to change them, create a replacement key and revoke the old one.
+known, and keep keys used this way read-only. Use the `PATCH` operation above to
+update restrictions while keeping the same key.
 
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
