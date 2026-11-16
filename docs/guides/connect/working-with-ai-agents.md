@@ -69,7 +69,7 @@ conflicts with a rule, stop and ask.
 ## 3. Use the approval flow; never go around it
 
 - A change that needs approval returns a proposal (`AwaitingApproval` and a `proposalId`). A person
-  approves it in the Console inbox with a live interactive OIDC session. The human requester may
+  approves it in the Console inbox with a live interactive browser session (password or OIDC). The human requester may
   approve their own proposal. API keys and agent tokens cannot approve. Report the proposal id and who
   needs to act.
 - Never approve your own proposal. Don't create or borrow a second credential to approve it. Don't
