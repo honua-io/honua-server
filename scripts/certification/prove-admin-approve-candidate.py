@@ -21,7 +21,6 @@ import uuid
 
 
 POSTGIS_IMAGE = "postgis/postgis@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677"
-REDIS_IMAGE = "redis@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed"
 
 
 def require(condition, message):
@@ -43,7 +42,7 @@ def prove(image, revision):
     image_id = run("docker", "image", "inspect", image, "--format", "{{.Id}}")
     fixtures = {name: {"image": dependency,
                        "imageId": run("docker", "image", "inspect", dependency, "--format", "{{.Id}}")}
-                for name, dependency in [("postgis", POSTGIS_IMAGE), ("redis", REDIS_IMAGE)]}
+                for name, dependency in [("postgis", POSTGIS_IMAGE)]}
     project = "approve-proof-" + uuid.uuid4().hex[:12]
     admin_key = secrets.token_hex(32)
     receipt = {"schemaVersion": "honua.admin-approve-candidate/v1",
@@ -58,7 +57,6 @@ def prove(image, revision):
             "ASPNETCORE_URLS": "http://+:8080",
             "ConnectionStrings__DefaultConnection":
                 f"Host=postgres;Database=honua;Username=honua;Password={admin_key}",
-            "ConnectionStrings__Redis": "redis:6379",
             "HONUA_ADMIN_PASSWORD": admin_key,
             "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
             "HostValidation__AllowedHosts__0": "127.0.0.1",
@@ -69,7 +67,6 @@ def prove(image, revision):
                 "POSTGRES_DB": "honua", "POSTGRES_USER": "honua", "POSTGRES_PASSWORD": admin_key},
                 "healthcheck": {"test": ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U honua -d honua"],
                                 "interval": "2s", "retries": 30}},
-            "redis": {"image": REDIS_IMAGE, "command": ["redis-server", "--appendonly", "yes"]},
             "server": {"image": image, "ports": ["127.0.0.1::8080"],
                        "environment": environment,
                        "depends_on": {"postgres": {"condition": "service_healthy"}}},

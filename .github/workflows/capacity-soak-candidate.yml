@@ -430,12 +430,9 @@ jobs:
       - name: Mint a throwaway key-ring certificate for this run
         run: |
           set -euo pipefail
-          # Since #4722 the Production startup policy composes the Redis-backed durable operation
-          # secret channel and refuses to boot unless an operator certificate encrypts the
-          # data-protection key ring (Operations:SecretChannel:KeyRingCertificatePath); without one
-          # every candidate after #4722 exits before readiness (#4885). The requirement stays: the
-          # run supplies a certificate instead. It guards only this runner's disposable Redis, so it
-          # is generated here, used for this run, and never leaves the runner or enters the repo.
+          # Production requires an operator certificate to encrypt the durable operation
+          # secret channel's data-protection key ring. Generate a disposable certificate
+          # for this run; no key material leaves the runner or enters the repository.
           keyring="$RUNNER_TEMP/keyring"
           install -d -m 0755 "$keyring"
           SOAK_KEYRING_PASSWORD="$(openssl rand -hex 24)"
@@ -509,13 +506,11 @@ jobs:
           set -euo pipefail
           # The server compiles its served metadata-v2 snapshot at startup, so a catalogue seeded
           # after boot is invisible until the snapshot is recompiled. Dropping the compiled
-          # snapshot and restarting makes the server rebuild it from the seeded rows; flushing
-          # Redis clears the response cache (including the 404s cached while the catalogue was
-          # still empty) and starts the job store clean for the geoprocessing measurements.
+          # snapshot and restarting makes the server rebuild it from the seeded rows and
+          # clears the process-local response cache, including cached catalogue 404s.
           docker exec -e PGPASSWORD="$SOAK_DB_PASSWORD" honua-capacity-soak-postgres-1 \
             psql -U "$SOAK_DB_USER" -d "$SOAK_DB_NAME" \
             -c "DELETE FROM honua.metadata_v2_current; DELETE FROM honua.metadata_v2_snapshots;"
-          docker exec honua-capacity-soak-redis-1 redis-cli FLUSHALL
           SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")" \
             docker compose --project-directory . -f docker/compose/docker-compose.soak.yml restart honua
           scripts/soak/capacity-substrate.sh wait
