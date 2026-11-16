@@ -54,6 +54,12 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));
         });
         await _fixture.InitializeAsync();
+        await ApplyStudioMigrationsAsync();
+        _client = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+    }
+
+    private async Task ApplyStudioMigrationsAsync()
+    {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
         {
@@ -76,7 +82,6 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             // Execute 082 unchanged: production keeps the canonical promotion family in honua.
             await _fixture.Postgres.ExecuteAsync(sql);
         }
-        _client = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
     }
 
     public async Task DisposeAsync()
