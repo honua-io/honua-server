@@ -65,26 +65,33 @@ internal static class FolderApprovalAuthorization
             ExpiresAt = await EvidenceExpiryAsync(authenticatedContext).ConfigureAwait(false)
         };
         var revision = (await PolicyRevisionAsync(new(authenticatedContext.RequestServices, authorization, authenticatedContext.User), cancellationToken).ConfigureAwait(false)).Revision;
-        var authorizationContext = new FolderAuthorizationContext
-        {
-            Original = snapshot.Graph,
-            Mutation = mutation,
-            Services = authenticatedContext.RequestServices,
-            OperatorPrincipal = authenticatedContext.User,
-            FolderTenant = request.Parameters.TryGetValue("namespace", out var selectedNamespace) && selectedNamespace is not null ? MetadataV2ServicePaths.NormalizeTenant(operation.TenantId) : null,
-            RequesterAccess = new ServiceAccessContext
-            {
-                Services = authenticatedContext.RequestServices,
-                Principal = authenticatedContext.User,
-                TenantId = TenantScopeHelpers.ResolveRequestTenantId(authenticatedContext),
-                Operation = AuthorizationOperation.Admin
-            }
-        };
+        var authorizationContext = CreateAuthorizationContext((snapshot.Graph, mutation), admission, request);
         if ((await FolderServiceAuthorization.EvaluateAsync(authorizationContext, cancellationToken).ConfigureAwait(false)).Failure is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
         if (revision != (await PolicyRevisionAsync(new(authenticatedContext.RequestServices, authorization, authenticatedContext.User), cancellationToken).ConfigureAwait(false)).Revision)
             throw new FolderProposalRefusal(FreshProposalRequired);
         return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
+    }
+
+    private static FolderAuthorizationContext CreateAuthorizationContext(
+        (MetadataV2Graph Graph, FolderMutation Mutation) mutation, FolderProposalAdmission admission, OperationRequest request)
+    {
+        var context = admission.Context!;
+        return new FolderAuthorizationContext
+        {
+            Original = mutation.Graph,
+            Mutation = mutation.Mutation,
+            Services = context.RequestServices,
+            OperatorPrincipal = context.User,
+            FolderTenant = request.Parameters.TryGetValue("namespace", out var selectedNamespace) && selectedNamespace is not null ? MetadataV2ServicePaths.NormalizeTenant(admission.Operation.TenantId) : null,
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = context.RequestServices,
+                Principal = context.User,
+                TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+                Operation = AuthorizationOperation.Admin
+            }
+        };
     }
 
     private static (CanonicalSecurityActorIdentity Actor, OperationRequest Request) ReadRequesterRequest(
