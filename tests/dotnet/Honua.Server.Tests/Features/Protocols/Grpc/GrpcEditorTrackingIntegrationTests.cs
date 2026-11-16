@@ -86,6 +86,7 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyServiceEdits")]
     public async Task ApplyServiceEdits_ForgedTrackingValues_GetOneStampAcrossLayers()
