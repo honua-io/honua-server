@@ -151,9 +151,12 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             using var query = JsonDocument.Parse(queryPayload);
             var features = query.RootElement.GetProperty("features");
             features.GetArrayLength().Should().Be(1);
-            using var properties = JsonDocument.Parse(
-                features[0].GetProperty("attributes").GetProperty("properties").GetString()!);
-            properties.RootElement.GetProperty("name").GetString().Should().Be("Honolulu");
+            // The GeoJSON property is published as its own field. The raw import
+            // copy in `properties` is bookkeeping and stays out of the default
+            // field selection.
+            var attributes = features[0].GetProperty("attributes");
+            attributes.GetProperty("name").GetString().Should().Be("Honolulu");
+            attributes.TryGetProperty("properties", out _).Should().BeFalse();
             features[0].GetProperty("geometry").GetProperty("x").GetDouble().Should().BeApproximately(-157.86, 1e-6);
             features[0].GetProperty("geometry").GetProperty("y").GetDouble().Should().BeApproximately(21.31, 1e-6);
 

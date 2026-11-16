@@ -233,9 +233,7 @@ required jobs. `PR Gate / Build and tests`, the four `PR Gate / Fast and
 architecture (<group>)` jobs, `PR Gate / Format`, `PR Gate / Analyzers`, `PR Gate / Analyzers (tests)` and
 `PR Gate / Affected shards (select)` still run and conclude success themselves,
 and so do the `PR Gate` and `PR Gate / Affected shards` aggregates. There is no
-`paths` filter, because a skipped required check blocks merge. The observe-only
-`docs-only` class of `scripts/ci/classify-pr-gate-impact.py` is a separate,
-narrower measurement and is unchanged.
+`paths` filter, because a skipped required check blocks merge.
 
 **What counts as docs-only** is defined once, in `scripts/ci/docs-only-diff.sh`
 (its header is the full contract). To see why a documentation change ran the
@@ -511,13 +509,11 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate-impact-observe.yml` | PR Gate Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Trusted default-branch, read-only classification of the exact gate-time diff. Retains bounded docs-only/full receipts and validates PR Gate build metadata plus exact payload artifact identity without downloading or executing the payload. |
 | `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
 | `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
 | `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
-| `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
@@ -634,6 +630,8 @@ candidate context.
 
 | Workflow file | Retired | Why |
 |---|---|---|
+| `pr-gate-impact-observe.yml` | 2026-11-16 (#7880) | Disabled on GitHub since 9 Nov; observe-only docs-only routing classification. The docs-only fast path it measured is enforced through `scripts/ci/docs-only-diff.sh`. Its classifier (`classify-pr-gate-impact.py`) and validator (`validate-pr-gate-impact.sh`) went with it. |
+| `impact-routing-evidence-ledger.yml` | 2026-11-16 (#7880) | Counted observer receipts toward a seven-day promotion bar that disabled observers could no longer reach. `audit-impact-routing-evidence.py`, the promotion and tombstone policies and `impact-routing-evidence.md` went with it. The run-catalog helpers the affected-shard audit uses stay in `collect-impact-routing-runs.py`, without its receipt download path. |
 | `claude-review.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub since the 11-11 review-path ruling; independent review now comes from the lanes and the Codex connector. Its helpers (`claude-review-body.js`, `claude-review-dedupe.js`, `review-catchup.js`) went with it. `review-gate-evidence.js` still grades a Claude bot review if one is posted. |
 | `merge-train.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub; GitHub ruleset auto-merge is the only landing path. `scripts/ci/merge-train/` and its fixtures went with it, and `scripts/ci/validate-single-merge-authority.sh` now rejects any repository merge authority, this workflow included. ADR-0055 is superseded. |
 | `merge-train-rerun-recovery.yml` | 2026-11-15 (simplify A4) | Disabled companion of `merge-train.yml`; resumed a train batch after a green CI rerun. |
@@ -705,19 +703,6 @@ Five composite actions were added to `.github/actions/` for shared CI setup and 
 `cite-conformance.yml` and `cite-tiles-conformance.yml` now call `cite-conformance-common.yml`, matching the single-suite CITE wrappers for GML, GeoPackage, KML, WMS, and WMTS.
 
 **Rationale**: Features and Tiles used the same checkout/build/run/parse/upload/fail skeleton as the reusable CITE workflow. Keeping only suite-specific inputs in the dispatcher files reduces drift in cache scopes, artifact upload behavior, and failure handling.
-
-### Semantic inventory pilot placement
-
-The optional #6051 metadata observation runs in `ci.yml`'s managed `build`
-producer after normal managed compilation and pristine test-output publication.
-The Architecture collector's existing generated coverage references materialize
-OData units, Scene components and GDAL outputs there, together with their project
-reference metadata. The complete collector still gates the downstream foundation
-server consumer. The pilot adds only its small tool build; no additional inspected
-project build or dependency artifact transport is introduced. Fixture regressions
-fail the producer; real-project metadata observation remains advisory and its
-reports are retained separately as `source-inventory-pilot-<attempt>`.
-
 
 ### Grouped unit and component shards
 
@@ -1104,6 +1089,81 @@ needed to verify it.
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### SensorThings collection host lifetime
+
+The SensorThings `Database` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial default-configuration classes (query options, paging, ingest, ingest
+identity, navigation and review regressions) no longer rebuild that host for
+every case. Each case still creates its own `WebAppFixture`, schema and seed.
+Classes with their own configuration, such as core CRUD with development
+authentication off and the multi-tenant streams, keep their private hosts.
+The expiring portal credential in the stream authorization theory now lives 20
+seconds instead of 45; connect, publish and the first observation take about 3
+seconds, and the case still asserts the observation arrives before expiry and the
+stream then ends with `authorization-ended`.
+
+Paired build-host runs of the complete SensorThings test project on trunk
+c06ce1031a passed the same 135 cases with no skips. VSTest execution fell from
+13m08s to 7m55s, saving 313 seconds (5.2 runner-minutes); the TRX interval fell
+from 789.2 to 477.2 seconds. Query options fell from 116.7 to 11.0 seconds of
+fixture-inclusive time and paging from 57.8 to 6.4. The baseline shared the build
+host with another lane job, so part of the difference may be load; the per-case
+fixture time removed (about 5 seconds per default-host case) accounts for most of
+it. Full CI job savings are unmeasured.
+All cases remain in the SensorThings shard on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+### GeoServices MapServer collection host lifetime
+
+The `Database.GeoServicesMapServer` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial MapServer, export and identify classes no longer rebuild that host for
+every case after the previous case releases it. Each case still creates its own
+`WebAppFixture`, schema and seed, and the KML cleanup in
+`MapServerEndpointTestBase` is unchanged. Cases that change the metadata graph
+(service governance, protocol-duplicate publications and the KML seed) now write
+their own schema partition instead of the shared baseline, so those changes end
+with the case. Classes that replace services keep their private hosts.
+
+Paired build-host runs on trunk c06ce1031a used the three CI shard filters with
+one test process each and passed the same cases with no skips. TRX intervals:
+GeoServices MapServer 562.3 to 33.3 seconds (56 cases), MapServer Export 804.2 to
+34.0 seconds (65 cases), MapServer Identify 625.5 to 32.0 seconds (52 cases). The
+build host was heavily loaded, so its per-case host rebuild (about 10 seconds)
+exceeds CI's: full run 43709972683 spent 212 and 225 seconds of per-case fixture
+time in the MapServer and Export classes (3.5 to 3.8 seconds per case), which is
+the expected CI saving for those shards. Full CI job savings are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+### Catalog endpoint SOAP raster host lifetime
+
+`GeoservicesCatalogEndpointTests` lazily starts one SOAP raster application per
+class for six read-only tests that use the default raster store. Only Catalog
+Support 5 and 6 contain these cases; the other four shards do not start this host.
+The existing database collection serializes the tests; the class fixture owns
+startup and disposal.
+Cases that customize raster metadata, inspect substitute call counts, mutate
+catalog state or override host configuration retain their private applications.
+Every request, response assertion and discovered case remains in place.
+
+All cases remain in the existing GeoServices Catalog Support shards on selected
+PR runs and twice-daily full trunk runs. Runner count, required check names,
+aggregate dependencies, workflows and shard definitions are unchanged. A paired
+build-host class run passed the same 59 cases without skips: VSTest execution
+185 to 140 seconds; fixture-inclusive TRX interval 214.73 to 159.48 seconds.
+This saves 0.75 execution runner-minutes in one unchanged test process. The six
+shared cases' body total fell from 34.50 to 4.99 seconds; other cases also varied,
+so the observed whole-class reduction is not entirely attributed to host reuse.
+Build and admission time are excluded. The complete existing Support 6 test
+invocation passed the same 24 cases without skips: VSTest 81 to 63 seconds,
+saving 18 seconds (0.30 execution runner-minutes) with one process unchanged;
+fixture-inclusive TRX interval 83.24 to 66.93 seconds. Full CI-job time, including
+setup and build, remains unmeasured.
 
 ### GPServer default application lifetime
 

@@ -28,7 +28,9 @@ python3 scripts/docs-validation/validate_public_install.py
 It requires a local Linux Docker daemon, Compose, Python 3.11+ with working venv
 and pip, and OpenSSL. It anonymously pulls the advertised image, executes the
 annotated public quickstart, checks the published sample's identities and
-coordinates, and verifies readback after restart. It creates a unique Compose
+coordinates, confirms that the GeoServices layer URL built from the id in the
+service document resolves and returns the same features, and verifies readback
+after restart. It creates a unique Compose
 project with unused loopback ports, tears down only its own resources, and
 writes a secret-free receipt to `artifacts/docs-validation/public-install/`.
 There is no server compilation. The Linux and Windows procedure fences trigger
