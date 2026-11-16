@@ -270,7 +270,7 @@ public sealed partial class ServerJobArtifactImporterTests
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());
         var services = new ServiceCollection()
-            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection().Build())
             .AddSingleton(jobs)
             .AddSingleton(recording.Service)
             .AddSingleton<IServerJobArtifactImportLedger>(new MemoryServerJobArtifactImportLedger())
