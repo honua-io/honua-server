@@ -217,22 +217,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         using var filePreviewBody = ResponseJson(filePreview);
         filePreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
 
-        var malformed = await CallAsync(admin, "honua_admin_import_preview", new
-        {
-            file = Convert.ToBase64String(Encoding.UTF8.GetBytes("{not-json")),
-            fileName = "invalid.geojson",
-        });
-        var malformedResult = malformed.GetProperty("result");
-        var refusal = malformedResult.GetProperty("structuredContent");
-        refusal.GetProperty("status").GetString().Should().Be("Failed");
-        // Operation details keep HTTP status as text, matching the admin executor dictionary.
-        refusal.GetProperty("details").GetProperty("statusCode").GetString().Should().Be("400");
-        var previewResponse = refusal.GetProperty("details").GetProperty("response").GetString();
-        previewResponse.Should().Contain("Failed to preview file");
-        previewResponse.Should().NotContain("JsonException").And.NotContain("BytePositionInLine");
-        var refusalText = malformedResult.GetProperty("content")[0].GetProperty("text").GetString();
-        using var refusalDocument = JsonDocument.Parse(refusalText!);
-        JsonElement.DeepEquals(refusalDocument.RootElement, refusal).Should().BeTrue();
+        await AssertMalformedPreviewRefusedAsync(admin);
 
         var urlPreview = await CallOkAsync(admin, "honua_admin_import_preview_url", new
         {
@@ -251,6 +236,26 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         });
         using var validatedBody = ResponseJson(validated);
         validatedBody.RootElement.GetProperty("data").GetProperty("table").GetString().Should().Be(table);
+    }
+
+    private static async Task AssertMalformedPreviewRefusedAsync(HttpClient admin)
+    {
+        var malformed = await CallAsync(admin, "honua_admin_import_preview", new
+        {
+            file = Convert.ToBase64String(Encoding.UTF8.GetBytes("{not-json")),
+            fileName = "invalid.geojson",
+        });
+        var malformedResult = malformed.GetProperty("result");
+        var refusal = malformedResult.GetProperty("structuredContent");
+        refusal.GetProperty("status").GetString().Should().Be("Failed");
+        // Operation details keep HTTP status as text, matching the admin executor dictionary.
+        refusal.GetProperty("details").GetProperty("statusCode").GetString().Should().Be("400");
+        var previewResponse = refusal.GetProperty("details").GetProperty("response").GetString();
+        previewResponse.Should().Contain("Failed to preview file");
+        previewResponse.Should().NotContain("JsonException").And.NotContain("BytePositionInLine");
+        var refusalText = malformedResult.GetProperty("content")[0].GetProperty("text").GetString();
+        using var refusalDocument = JsonDocument.Parse(refusalText!);
+        JsonElement.DeepEquals(refusalDocument.RootElement, refusal).Should().BeTrue();
     }
 
     private static async Task CallProposalAsync(HttpClient client, string name, object arguments)

@@ -50,6 +50,11 @@ internal sealed record McpPromptDefinition(
 
     private string Substitute(IReadOnlyDictionary<string, string>? arguments)
     {
+        return SubstituteValues(ResolveArgumentValues(arguments));
+    }
+
+    private Dictionary<string, string> ResolveArgumentValues(IReadOnlyDictionary<string, string>? arguments)
+    {
         var values = new Dictionary<string, string>(Arguments.Count, StringComparer.Ordinal);
         foreach (var argument in Arguments)
         {
@@ -68,6 +73,11 @@ internal sealed record McpPromptDefinition(
                 : UnspecifiedOptionalPlaceholder;
         }
 
+        return values;
+    }
+
+    private string SubstituteValues(IReadOnlyDictionary<string, string> values)
+    {
         // One pass over the template. Values are copied as text, so a value
         // that contains a later argument's {name} is not rewritten.
         var template = Template;
