@@ -206,8 +206,8 @@ internal sealed class GeometryServiceAdmission
             caller == GeometryServiceCaller.NotSignedIn ? _bound.Half.RequestBytes : long.MaxValue));
 
     // Limits the body of a request from a caller that is not signed in to half of the byte
-    // bound. False when its declared length is already larger, or when its length is undeclared
-    // and the limit cannot be applied.
+    // bound. False when its declared length is already larger, or when its length is undeclared,
+    // the limit cannot be applied and no earlier step has read the body.
     private bool TryLimitBody(HttpContext context)
     {
         var request = context.Request;
@@ -225,7 +225,7 @@ internal sealed class GeometryServiceAdmission
         var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (feature is not { IsReadOnly: false })
         {
-            return request.ContentLength is not null;
+            return request.ContentLength is not null || ReadFormBytes(context) <= limit;
         }
 
         if (feature.MaxRequestBodySize is null || feature.MaxRequestBodySize > limit)
@@ -244,9 +244,17 @@ internal sealed class GeometryServiceAdmission
             return queryBytes;
         }
 
-        // A body of undeclared length is counted as the largest the server accepts.
-        return queryBytes + Math.Min(request.ContentLength ?? _undeclaredBodyBytes, _undeclaredBodyBytes);
+        // A body of undeclared length is counted as the largest the server accepts, unless an
+        // earlier step has already read it as a form.
+        var bodyBytes = request.ContentLength ?? ReadFormBytes(request.HttpContext) ?? _undeclaredBodyBytes;
+        return queryBytes + Math.Min(bodyBytes, _undeclaredBodyBytes);
     }
+
+    // The size of a form body an earlier step has already read, from its fields.
+    private static long? ReadFormBytes(HttpContext context)
+        => context.Features.Get<IFormFeature>()?.Form is { } form
+            ? form.Sum(static field => (long)field.Key.Length + field.Value.Sum(static value => (long)(value?.Length ?? 0)))
+            : null;
 
     private void Leave(Bound request, GeometryServiceCaller caller)
     {
