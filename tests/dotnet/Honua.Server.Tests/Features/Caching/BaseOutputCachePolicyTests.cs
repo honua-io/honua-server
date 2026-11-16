@@ -17,25 +17,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Behaviour guard for the shared output-cache base policy (SEC-20).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The base policy applies to every matched endpoint, so anything it enables is
-/// enabled for the whole surface. Three properties are asserted here:
-/// </para>
-/// <list type="number">
-///   <item><description>Caching is opt-in: a route that never called <c>CacheOutput</c> is not stored.</description></item>
-///   <item><description>A request carrying an application-defined credential (embed key, API key, portal/scene token) neither populates nor reads the shared cache, whatever named policy the route opted into.</description></item>
-///   <item><description>A response the handler marked <c>Cache-Control: no-store</c> is not stored, on every named policy rather than the three that opted in individually.</description></item>
-/// </list>
-/// <para>
-/// Output caching is entitlement-gated in <c>Program</c>, so these tests drive the
-/// policy composition directly through a host that always wires
-/// <c>UseOutputCache()</c> — the enabled path.
-/// </para>
-/// </remarks>
 [Trait("Tier", "Fast")]
 [Trait("Category", "Unit")]
 public sealed class BaseOutputCachePolicyTests

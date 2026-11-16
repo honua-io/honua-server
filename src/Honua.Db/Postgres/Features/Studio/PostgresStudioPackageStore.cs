@@ -373,7 +373,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         var provenanceJson = JsonSerializer.Serialize(
             provenance.ToArray(),
             StudioJsonContext.Default.StudioProvenanceRefArray);
-        // honua-server#5449: the exact bytes hashed are persisted beside the digest. The envelope
+        // The exact bytes hashed are persisted beside the digest. The envelope
         // column is jsonb, which reorders object keys, so the input cannot be re-derived on read.
         var contentHashInput = StudioPackageHash.ComputeInput(draft.Envelope);
         var contentHash = StudioPackageHash.ComputeFromInput(contentHashInput);
@@ -965,7 +965,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
 
             if (request.Status == StudioPublicationRequestStatus.Accepted)
             {
-                // honua-server#3980: the published-pointer move carries the approval's
+                // The published-pointer move carries the approval's
                 // expected current_version_id as a SQL predicate, evaluated in the same
                 // transaction as the request insert. Under Read Committed the UPDATE row lock
                 // makes this a genuine compare-and-set: a draft saved after the proposal was
@@ -1315,7 +1315,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
     {
         // owner_id is intentionally set only on INSERT and left out of the ON CONFLICT UPDATE
         // clause: ownership is populated once, on create, from the authenticated principal
-        // (honua-server#3001) and is immutable thereafter -- a later draft/version upsert for
+        // and is immutable thereafter -- a later draft/version upsert for
         // the same item must never silently transfer ownership.
         var sql = $"""
             INSERT INTO {_itemsTable}
@@ -1359,7 +1359,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
         // tenant_id follows owner_id: recorded once on INSERT and never rewritten by a later
-        // draft/version upsert, so an item cannot be moved between tenants (honua-server#4905).
+        // draft/version upsert, so an item cannot be moved between tenants.
         command.Parameters.AddWithValue("@tenant_id", (object?)tenantId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_owner_id", (object?)expectedExistingOwnerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_item_present", expectedExistingItemPresent);
@@ -1412,7 +1412,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         var governingClause = governingPublicationRequestId is null
             ? string.Empty
             : "governing_publication_request_id = @governing_publication_request_id,";
-        // Compare-and-set predicate (honua-server#3980). Only appended when the caller supplies an
+        // Compare-and-set predicate. Only appended when the caller supplies an
         // expectation, so pointer writes with no approved-pointer contract keep their prior SQL.
         var expectedClause = expectedCurrentVersionId is null
             ? string.Empty
@@ -1654,7 +1654,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         };
     }
 
-    // The canonical hash input is read only by the single-version read (honua-server#5449); list
+    // The canonical hash input is read only by the single-version read; list
     // and checkpoint reads leave it out so enumerations do not ship every envelope twice.
     private static StudioContentVersion ReadVersion(NpgsqlDataReader reader, bool includeHashInput = false)
     {

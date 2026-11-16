@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// The 2026.1 import contract keeps source attributes in one JSON <c>properties</c> column;
-/// the catalog must not advertise a typed-layer flattening the pipeline does not perform
-/// (typed-layer flattening is honua-server#6640).
-/// </summary>
 public sealed class ImportDatasetCatalogContractTests
 {
     [UnitTest]

@@ -7,13 +7,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Builds minimal single/dual-layer GeoPackage files on disk for import and preview tests,
-/// including spec-legal local <c>srs_id</c> numbering resolved through
-/// <c>gpkg_spatial_ref_sys</c> (#2743). The geometry blob header SRID is controlled
-/// independently of the declared layer <c>srs_id</c> so tests can mirror real writers, which
-/// stamp the file-local id (not an EPSG code) into every blob.
-/// </summary>
 internal static class GeoPackageTestFiles
 {
     public static void Create(

@@ -11,12 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData $filter built-in functions that were previously untested:
-/// - String functions: length, indexof, trim, replace, toupper
-/// - Numeric functions: round, floor, ceiling, abs
-/// - Temporal functions: month, day, hour, minute, second
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataFilterFunctionTests : IAsyncLifetime

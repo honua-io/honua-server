@@ -6,11 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Crs;
 
-/// <summary>
-/// Unit tests for <see cref="ProjPipelineInverter"/>. A reverse-direction datum
-/// transformation must apply the geodetic shift the opposite way; emitting the forward
-/// pipeline corrupts coordinates (~2x the intended NADCON correction, #2069).
-/// </summary>
 public sealed class ProjPipelineInverterTests
 {
     [UnitTest]

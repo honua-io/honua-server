@@ -44,10 +44,6 @@ public sealed class AzureEventGridAlertDeliverySinkTests
         Assert.Equal(AlertChannelType.AzureEventGrid, sink.ChannelType);
     }
 
-    /// <summary>
-    /// Creates a dummy client pointing at a non-existent endpoint for unit tests
-    /// that only exercise configuration guard paths.
-    /// </summary>
     private static EventGridPublisherClient CreateDummyClient()
     {
         return new EventGridPublisherClient(

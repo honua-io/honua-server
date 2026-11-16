@@ -12,11 +12,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Guards the DI lifetime of <see cref="IStudioDeliverableExporter"/>. The exporter captures the
-/// scoped <see cref="IStudioPackageLifecycleService"/>, so a singleton registration is a captive
-/// dependency that fails host-build scope validation (regression guard for PR #1754).
-/// </summary>
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
 public sealed class StudioDeliverableExporterRegistrationTests

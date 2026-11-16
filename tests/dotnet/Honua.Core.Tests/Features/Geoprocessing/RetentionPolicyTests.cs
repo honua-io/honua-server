@@ -5,9 +5,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Tests for retention policy defaults and workspace quota evaluation.
-/// </summary>
 public class RetentionPolicyTests
 {
     [Trait("Tier", "Fast")]

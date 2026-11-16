@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Contract tests for the shared-filesystem staged output store (#3089): immutable
-/// create-once keys, streaming checksum identity, containment of object keys inside
-/// the staging root, and read-lease behavior.
-/// </summary>
 public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-store-tests-").FullName;
@@ -105,11 +100,6 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         (await _store.HasActiveReadLeaseAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
     }
 
-    /// <summary>
-    /// #3089 review: an EXISTING lease sidecar that cannot be parsed (torn concurrent
-    /// refresh) must count as ACTIVE — failing open would let the sweeper delete an
-    /// object that is being read right now.
-    /// </summary>
     [UnitTest]
     public async Task ReadLease_UnparsableExistingSidecar_CountsAsActive()
     {

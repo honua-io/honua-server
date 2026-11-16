@@ -496,7 +496,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             // PostgreSQL does not fold repeated PostGIS calls. Selecting the decoded or
             // reprojected geometry once in a materialized CTE keeps ST_Extent and the SRID
-            // aggregates from evaluating that expression up to six times per row (#6070).
+            // aggregates from evaluating that expression up to six times per row.
             sql.Append(CultureInfo.InvariantCulture, $@"
             WITH extent_rows AS MATERIALIZED (
                 SELECT {extentExpression} AS geom
@@ -553,8 +553,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         // The same date/datetime attribute can be persisted as ISO-8601 text (seeded
         // rows) or as epoch-milliseconds rendered as text (Esri applyEdits). A bare
         // ::timestamptz/::date cast on epoch-ms text raises SQLSTATE 22008 and 500s the
-        // WMS/WMTS GetCapabilities document (honua-server#1911) and the temporalExtent
-        // resource (honua-server#1910). Use the same epoch-aware cast the order-by/filter
+        // WMS/WMTS GetCapabilities document and the temporalExtent
+        // resource. Use the same epoch-aware cast the order-by/filter
         // paths already apply so MIN/MAX over the configured time field succeeds
         // regardless of the on-disk encoding.
         var fieldExpression = propertyType switch
@@ -622,7 +622,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     {
         GuardVersionedReadSupported(query, "mvt-tile");
 
-        // Operator-defined custom gridset (#1839): the caller only supplies a gridGeometry for
+        // Operator-defined custom gridset: the caller only supplies a gridGeometry for
         // custom gridsets (the two built-in pyramids are passed as null), so the tile envelope and
         // target SRID come from the gridset geometry. The built-in pyramids keep the original
         // byte-identical path below so the OGC CITE snapshot guard stays green.
@@ -683,8 +683,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 if (layerSrid != targetTileSrid)
                 {
                     // Route through the shared clamp so a polar vertex in a geographic layer
-                    // cannot abort the Web Mercator tile statement (#6109). The catalog
-                    // selection is the grid whose area contains this tile (#5194).
+                    // cannot abort the Web Mercator tile statement. The catalog
+                    // selection is the grid whose area contains this tile.
                     var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
                     geometryForTile = DatumTransformSql.BuildTransformExpression(
                         geometryOperand, targetTileSrid, selection, layerSrid);
@@ -699,7 +699,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             }
             else
             {
-                // Layer SRID unknown: clamp geographic rows by their runtime SRID (#6109).
+                // Layer SRID unknown: clamp geographic rows by their runtime SRID.
                 geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
@@ -831,8 +831,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
-            // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
-            // The catalog selection matches feature query output (#5194).
+            // A geographic layer aimed at a Web Mercator gridset is clamped first.
+            // The catalog selection matches feature query output.
             var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
             var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
                 ? DatumTransformSql.BuildTransformExpression(

@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Unit coverage for <see cref="MetadataV2VerticalUnits.TryNormalize"/>. The canonical
-/// vertical-unit token participates in the extrusion metadata wire contract,
-/// so case-folding and the meters-default fallback need pinned behaviour
-/// (#1144).
-/// </summary>
 public sealed class MetadataV2VerticalUnitsTests
 {
     [Trait("Tier", "Fast")]

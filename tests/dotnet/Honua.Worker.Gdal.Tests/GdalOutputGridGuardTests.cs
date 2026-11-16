@@ -8,12 +8,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalOutputGridGuard"/> — the pre-spawn bound on the
-/// attacker-controlled OUTPUT grid of the rasterize / interpolate executors (#2782).
-/// Proves an over-cap requested output size is rejected with a clear message before
-/// any GDAL allocation, reusing the same caps as the input dimension guard.
-/// </summary>
 public sealed class GdalOutputGridGuardTests
 {
     private static GdalWorkerOptions Options() => new();

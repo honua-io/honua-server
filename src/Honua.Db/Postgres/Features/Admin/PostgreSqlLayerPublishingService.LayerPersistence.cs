@@ -215,11 +215,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? featuresSchema,
         CancellationToken cancellationToken)
     {
-        // TODO(honua-server#974): replace this snapshot copy with the settled
+        // TODO: replace this snapshot copy with the settled
         // publish refresh/CDC path once source-of-truth policy is finalized.
         // The copy stays inside the publication transaction. Tables, partitioned
         // tables, and materialized views page by (tableoid, ctid) so a gateway
-        // timeout is not what bounds the statement (honua-server#5948). Views have
+        // timeout is not what bounds the statement. Views have
         // no ctid and keep the single INSERT...SELECT.
         var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
         var canonicalGeometry = string.IsNullOrWhiteSpace(geometryColumn)

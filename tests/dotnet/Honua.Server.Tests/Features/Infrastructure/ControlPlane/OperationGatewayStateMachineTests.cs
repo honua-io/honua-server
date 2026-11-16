@@ -20,20 +20,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for the OperationGateway state-machine gaps identified in
-/// BH6-032 and BH6-033.
-///
-/// BH6-032: <see cref="OperationGateway"/> ExecuteDirectAsync silently returned
-/// <see cref="OperationGatewayOutcome.Executed"/> when no <see cref="IOperationExecutor"/>
-/// was registered for the requested <see cref="OperationClass"/>, causing Community/Pro
-/// editions to silently do nothing for MetadataRelease and Seed operations.
-///
-/// BH6-033: <see cref="OperationGateway"/> ApplyApprovedProposalAsync left the proposal
-/// in the non-terminal <see cref="OperationProposalStatus.Submitted"/> state when no
-/// executor was registered for the operation class, preventing the reconciler from
-/// ever advancing the proposal.
-/// </summary>
 public sealed partial class OperationGatewayStateMachineTests
 {
     // ── BH6-032: ExecuteDirectAsync with unregistered operation class ─────────
@@ -397,9 +383,6 @@ public sealed partial class OperationGatewayStateMachineTests
         return CanonicalOperationGatewayTestComposition.Build(store, resolvedLadder, executors, configure);
     }
 
-    /// <summary>
-    /// Executor that handles only <see cref="OperationClass.Deploy"/> and records a fixed operation ID.
-    /// </summary>
     private sealed class DeployExecutor : IOperationExecutor
     {
         public const string OperationId = "deploy-op-id";
@@ -418,7 +401,6 @@ public sealed partial class OperationGatewayStateMachineTests
             => Task.FromResult<string?>(OperationId);
     }
 
-    /// <summary>Executor that always throws on Execute.</summary>
     private sealed class ThrowingExecutor : IOperationExecutor
     {
         public OperationClass OperationClass => OperationClass.Deploy;
@@ -523,10 +505,6 @@ public sealed partial class OperationGatewayStateMachineTests
         }
     }
 
-    /// <summary>
-    /// Thread-safe in-memory proposal store with CAS semantics, shared with
-    /// <see cref="OperationGatewayApprovalConcurrencyTests"/>.
-    /// </summary>
     private sealed class InMemoryProposalStore(OperationProposal? initialProposal = null) : IOperationProposalStore
     {
         private OperationProposal? _proposal = initialProposal;

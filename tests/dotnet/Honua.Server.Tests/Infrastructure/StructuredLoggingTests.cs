@@ -9,10 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for structured logging with Serilog and source generators
-/// Validates AOT-compatible logging methods and event IDs
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StructuredLoggingTests
 {
@@ -140,9 +136,6 @@ public sealed class StructuredLoggingTests
     }
 }
 
-/// <summary>
-/// Simple test logger implementation for testing structured logging
-/// </summary>
 internal sealed class TestLogger : ILogger
 {
     public List<LogEntry> LogEntries { get; } = [];
@@ -172,13 +165,6 @@ internal sealed class TestLogger : ILogger
     }
 }
 
-/// <summary>
-/// Log entry for testing
-/// </summary>
-/// <param name="LogLevel">The log level</param>
-/// <param name="EventId">The event ID</param>
-/// <param name="Message">The formatted message</param>
-/// <param name="Exception">The exception, if any</param>
 internal sealed record LogEntry(
     LogLevel LogLevel,
     EventId EventId,

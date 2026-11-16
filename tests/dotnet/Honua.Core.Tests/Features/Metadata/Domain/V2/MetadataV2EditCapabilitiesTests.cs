@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Covers the shared edit-capability resolver the Esri GeoServices and OGC API Features write
-/// surfaces both consult (honua-server#4073, honua-server#4707).
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2EditCapabilitiesTests
 {

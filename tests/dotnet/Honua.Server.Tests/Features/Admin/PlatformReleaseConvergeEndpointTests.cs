@@ -19,13 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// API-surface integration tests for the platform-release converge endpoint (#2564). Converge is
-/// exercised through the REAL <see cref="Honua.ControlPlane.OperationGateway"/> and
-/// <see cref="Honua.ControlPlane.Executors.DeployOperationExecutor"/> — only the guardrail tier,
-/// the proposal store, and the durable workflow store are stubbed so each routing path is
-/// deterministic without an Enterprise license or Redis.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -543,10 +536,8 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     {
         private readonly Dictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
 
-        /// <summary>Target ids for which a NON-seeded deploy operation was durably created.</summary>
         public List<string> CreatedDeployTargets { get; } = [];
 
-        /// <summary>Seeds a pre-existing operation without recording it as a converge-created deploy.</summary>
         public void Seed(WorkflowOperationRecord operation) => _operations[operation.OperationId] = operation;
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)

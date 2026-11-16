@@ -5,9 +5,6 @@ using Honua.Core.Features.Infrastructure.Resilience;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Unit tests for <see cref="HttpResiliencePolicies"/>.
-/// </summary>
 public sealed class HttpResiliencePoliciesTests
 {
     [Trait("Tier", "Fast")]

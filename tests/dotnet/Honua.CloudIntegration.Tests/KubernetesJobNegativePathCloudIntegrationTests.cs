@@ -8,19 +8,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Free-tier emulated scenarios (#2166) that broaden the cloud-integration matrix beyond the
-/// happy-path <see cref="KubernetesJobLifecycleCloudIntegrationTests"/> into the failure and
-/// cancellation paths of <c>KubernetesJobBatchComputeBackend</c> against a real kind cluster.
-/// These are the GP-job analogue of the deploy-safety "failure-of-failure" coverage: a worker
-/// that exits non-zero must surface terminally as <see cref="ExecutionJobStatus.Failed"/> (the
-/// backend pins <c>backoffLimit: 0</c> so a failed Pod is not silently retried in-cluster), and a
-/// cancellation of a still-running Job must surface <see cref="ExecutionJobStatus.Cancelled"/>.
-///
-/// Gated identically to the lifecycle test: when no kind cluster is wired (no
-/// <c>HONUA_TEST_K8S_*</c> env vars) every test skips rather than fails, so the project still
-/// builds and runs (skipping) on boxes without a cluster.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 public sealed class KubernetesJobNegativePathCloudIntegrationTests : IClassFixture<KindClusterFixture>
 {

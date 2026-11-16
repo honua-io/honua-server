@@ -5,9 +5,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Serializes tests that listen to the shared execution-transition meter.
-/// </summary>
 [CollectionDefinition("ControlPlaneTransitionTelemetry", DisableParallelization = true)]
 public sealed class ControlPlaneTransitionTelemetryDefinition
 {

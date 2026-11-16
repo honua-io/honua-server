@@ -15,14 +15,6 @@ public sealed class NoHonuaServerGeoServicesVersionTests
 {
     private static readonly string[] ForbiddenWireNames = ["currentVersion", "fullVersion"];
 
-    /// <summary>
-    /// Types that legitimately carry a <c>currentVersion</c> wire field whose meaning is a
-    /// per-record DATA version (optimistic-concurrency / edit versioning), NOT an ArcGIS Server
-    /// software release. These are exempted by exact full name so the guard stays fail-safe: any
-    /// NEW type that introduces <c>currentVersion</c>/<c>fullVersion</c> is caught by default and
-    /// must either drop the field (if it impersonates an ArcGIS release) or be added here with a
-    /// justification. Keep this list minimal and documented.
-    /// </summary>
     private static readonly HashSet<string> DataVersionExemptTypes = new(StringComparer.Ordinal)
     {
         // Optimistic-concurrency conflict payload: CurrentVersion is the feature's stored edit

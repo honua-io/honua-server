@@ -9,10 +9,6 @@ using Honua.Core.Features.Compliance.Services;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="DefaultComplianceReportExporter"/>. The exporter
-/// orchestrates a fresh evidence collection and dispatches to the right renderer.
-/// </summary>
 public sealed class ComplianceReportExporterTests
 {
     [Trait("Tier", "Fast")]

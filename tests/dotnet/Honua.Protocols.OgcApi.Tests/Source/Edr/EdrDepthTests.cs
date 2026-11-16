@@ -14,15 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr;
 
-/// <summary>
-/// Depth tests for the OGC API - EDR surface (#2983): exact conformance classes,
-/// position extent/coords validation, parameter-name band filtering, default temporal
-/// instant resolution, nodata handling, cube grid sizing (default, resolution-x
-/// clamping, single-sample), cube bbox validation, and unknown-collection handling for
-/// the cube query. Complements the happy-path coverage in <see cref="EdrEndpointsTests"/>.
-/// Raster reads are mocked so all sampling rides the canonical point-sample pipeline
-/// deterministically; tests share one server (read-only requests).
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiCoverages)]
 public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
@@ -455,17 +446,10 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
     }
 }
 
-/// <summary>
-/// Shared server fixture for <see cref="EdrDepthTests"/>: a mocked <see cref="IRasterStore"/>
-/// serving a 3-band coverage with a fixed creation timestamp (so the default EDR time
-/// instant is deterministic) and a designated nodata longitude that yields no band values.
-/// </summary>
 public sealed class EdrDepthTestsFixture : IAsyncLifetime
 {
-    /// <summary>Longitude at which the mocked raster store reports a nodata pixel.</summary>
     public const double NoDataLongitude = -122.31;
 
-    /// <summary>The mocked raster's creation instant in EDR ISO-8601 form.</summary>
     public const string RasterCreatedAtIso = "2026-01-05T00:00:00Z";
 
     private const long TestRasterId = 741;
@@ -482,7 +466,6 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
 
     public WebAppFixture App { get; }
 
-    /// <summary>The mocked raster store, exposed so tests can assert no sample was read.</summary>
     public IRasterStore RasterStore { get; }
 
     public Task InitializeAsync() => App.InitializeAsync();
@@ -535,18 +518,9 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
             });
     }
 
-    /// <summary>
-    /// The fixture raster's synthetic pixel function. Band index, longitude and latitude each
-    /// carry different weights, so the tested coordinates distinguish band selection and axis swaps.
-    /// </summary>
     public static double ExpectedBandValue(int band, double x, double y)
         => (band * 1000.0) + (Math.Round(x, 6) * 10.0) + Math.Round(y, 6);
 
-    /// <summary>
-    /// Asserts that every value of <paramref name="parameterName"/> in a cube response is the
-    /// pixel function evaluated at the corresponding advertised grid coordinate in row-major order. A handler that sampled the wrong
-    /// coordinates, transposed the axes or reused one sample for the whole cube fails here.
-    /// </summary>
     public static void AssertCubeValuesDerivedFromDomain(
         JsonElement root,
         int band,

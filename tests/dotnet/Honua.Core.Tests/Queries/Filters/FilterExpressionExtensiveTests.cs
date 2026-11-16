@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Queries.Filters;
 
-/// <summary>
-/// Comprehensive tests for filter expression AST construction and structure.
-/// </summary>
 public class FilterExpressionExtensiveTests
 {
     [UnitTest]

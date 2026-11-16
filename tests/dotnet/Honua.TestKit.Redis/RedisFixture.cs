@@ -6,22 +6,8 @@ using Xunit;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Shared Redis fixture for integration tests.
-/// Uses Testcontainers to manage container lifecycle.
-/// </summary>
-/// <remarks>
-/// The container runs the durable configuration the server's startup attestation requires
-/// (honua-server#3903): AOF persistence with a bounded fsync and <c>noeviction</c>. Without it
-/// the composition root refuses to advertise the durable job substrate, so every test that
-/// submits a durable job through the real host gets HTTP 503 instead of exercising the path
-/// under test. An external <c>HONUA_TEST_REDIS_URL</c> server must be configured the same way.
-/// </remarks>
 public sealed class RedisFixture : IAsyncLifetime
 {
-    /// <summary>
-    /// Canonical xUnit collection name for tests that share this fixture.
-    /// </summary>
     public const string CollectionName = "Redis";
 
     // The state object is process-wide and every mutation is serialized by _sharedLock.

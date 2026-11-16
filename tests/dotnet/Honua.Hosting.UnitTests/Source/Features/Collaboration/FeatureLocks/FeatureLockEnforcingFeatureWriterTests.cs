@@ -15,18 +15,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 
-/// <summary>
-/// Proves the shared edit-pipeline backstop: a write that reaches
-/// <see cref="IFeatureWriter"/> without any protocol handler having consulted the lease
-/// store is still refused, and the provider writer is never called (#4402).
-/// </summary>
-/// <remarks>
-/// This is the guard for the surfaces that do not have their own handler check — the OData
-/// atomic change-set path, WFS-T, and the gRPC feature service all call
-/// <c>ApplyEditsAsync</c> directly — and for any write path added later. The inner writer
-/// here records whether it was invoked, so "nothing was written" is asserted rather than
-/// inferred.
-/// </remarks>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed partial class FeatureLockEnforcingFeatureWriterTests
 {
@@ -180,7 +168,6 @@ public sealed partial class FeatureLockEnforcingFeatureWriterTests
 
     private const string AliasedServiceName = "permits";
 
-    /// <summary>Storage handle the aliased publication's <em>index</em> names on another resource.</summary>
     private const int AliasedCollidingStorageLayerId = 3;
 
     [UnitTest]
@@ -349,10 +336,6 @@ public sealed partial class FeatureLockEnforcingFeatureWriterTests
         return (new FeatureLockEnforcingFeatureWriter(inner, locks, guard, metadata, accessor), locks, inner);
     }
 
-    /// <summary>
-    /// One service named <c>parcels</c> publishing the storage layer under test, so the
-    /// writer can map its integer layer handle back to the client-facing lease namespace.
-    /// </summary>
     private static MetadataV2GraphSnapshot BuildSnapshot()
     {
         var graph = new MetadataV2Graph
@@ -397,11 +380,6 @@ public sealed partial class FeatureLockEnforcingFeatureWriterTests
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
     }
 
-    /// <summary>
-    /// Stands in for the provider writer and records whether it was reached. Nothing about
-    /// the lease decision depends on it, which is the point: the assertions above prove the
-    /// decorator stopped short of the provider rather than that the provider declined.
-    /// </summary>
     private sealed class RecordingFeatureWriter : IFeatureWriter
     {
         public ReceiptRecordingTransaction Transaction { get; } = new();

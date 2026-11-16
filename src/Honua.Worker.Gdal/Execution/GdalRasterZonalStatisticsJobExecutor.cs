@@ -107,7 +107,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         // Bound the cumulative per-zone work BEFORE the loop runs: each zone drives
         // its own clip + statistics subprocess pair, so an unbounded zone count
         // (or a handful of pathologically dense polygons) is a resource DoS even
-        // under the per-invocation ToolTimeout (#2766).
+        // under the per-invocation ToolTimeout.
         if (!GdalZoneAdmission.TryAdmit(zones, opts, out var zoneError))
         {
             Log.InvalidInputs(logger, job.OperationId, zoneError);
@@ -163,7 +163,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
 
             // Bound the DECLARED pixel footprint before any native tool runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);

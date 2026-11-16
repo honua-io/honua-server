@@ -158,7 +158,7 @@ internal static class TileJsonEndpoints
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var geometryField = resource.FindPrimaryGeometryField();
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.VisibleSchemaFields())
         {
             if (geometryField is not null &&
                 string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase))
