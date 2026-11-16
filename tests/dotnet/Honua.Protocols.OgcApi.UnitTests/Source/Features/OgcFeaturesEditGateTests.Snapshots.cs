@@ -23,10 +23,7 @@ public sealed partial class OgcFeaturesEditGateTests
             foreach (var transaction in new[] { false, true })
             {
                 var reader = Substitute.For<IFeatureReader>();
-                var snapshot = Row(42, "red", "S") with
-                {
-                    Attributes = Row(42, "red", "S").Attributes.Add("other", "stored editable value"),
-                };
+                var snapshot = ReplacementSnapshot();
                 reader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
                     .Returns(QueryResult<Feature>.Create(1, [snapshot]));
                 var writer = new CountingWriter();
@@ -58,6 +55,12 @@ public sealed partial class OgcFeaturesEditGateTests
             }
         }
     }
+    private static Feature ReplacementSnapshot()
+        => Row(42, "red", "S") with
+        {
+            Attributes = Row(42, "red", "S").Attributes.Add("other", "stored editable value"),
+        };
+
     private static MetadataV2Object ResourceWithProtectedSize()
     {
         var resource = ResourceWithNullSize();
