@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,27 @@ public sealed class FolderMutationServiceTests
             Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "revision"
         });
 
+        result.Failure.Should().BeOfType<FolderExecutionFailure.Replay>();
+        await store.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_ConflictingReplayAdmissions_RefusesBeforeCatalogRead()
+    {
+        var store = Substitute.For<IMetadataV2GraphStore>();
+        await using var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
+        var principal = new ClaimsPrincipal();
+        var result = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
+        {
+            Services = services, Principal = principal,
+            Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "revision",
+            Replay = new FolderReplayAdmission
+            {
+                Principal = principal, OperationId = "folder.create", ProposalId = "proposal", OperationInstanceId = "instance"
+            },
+            OperationReplay = new FolderOperationReplayAdmission(
+                new OperationRequest { OperationId = "folder.create" }, new OperationPolicyContext())
+        });
         result.Failure.Should().BeOfType<FolderExecutionFailure.Replay>();
         await store.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
     }
