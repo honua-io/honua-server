@@ -18,15 +18,16 @@ public static class ConsoleStoreReplicaPolicy
         string? deploymentReplicaCount,
         string? serverReplicas)
     {
+        var expectedReplicas = 1;
         foreach (var raw in new[] { consoleExpectedReplicaCount, deploymentReplicaCount, serverReplicas })
         {
             if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0)
             {
-                return value;
+                expectedReplicas = Math.Max(expectedReplicas, value);
             }
         }
 
-        return 1;
+        return expectedReplicas;
     }
 
     // More than one replica with a process-local store would serve different content, share tokens, and open-data pages.

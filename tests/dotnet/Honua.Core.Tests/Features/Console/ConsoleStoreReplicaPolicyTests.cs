@@ -9,9 +9,9 @@ namespace Honua.Core.Tests.Features.Console;
 public sealed class ConsoleStoreReplicaPolicyTests
 {
     [UnitTest]
-    public void Issue5635_ResolveExpectedReplicas_PrefersTheFirstPositiveValue()
+    public void ResolveExpectedReplicas_UsesTheLargestPositiveValue()
     {
-        ConsoleStoreReplicaPolicy.ResolveExpectedReplicas("2", "4", "8").Should().Be(2);
+        ConsoleStoreReplicaPolicy.ResolveExpectedReplicas("2", "4", "8").Should().Be(8);
         ConsoleStoreReplicaPolicy.ResolveExpectedReplicas("0", "nope", "3").Should().Be(3);
         ConsoleStoreReplicaPolicy.ResolveExpectedReplicas(null, "", null).Should().Be(1);
     }
