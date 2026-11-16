@@ -273,7 +273,7 @@ A batch worker cannot read the API instance's local disk, so this path needs sha
 - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on that bucket for the API function's role, and the same for the Batch job role (`gp_batch_data_bucket_enabled` and `gp_batch_data_bucket_arn` in the `aws-serverless` module);
 - Redis (`ConnectionStrings__redis`) on both, as GP jobs already require.
 
-Without Redis, without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously.
+Without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously.
 
 On ECS, background imports use the shared PostgreSQL job store and the servers' own job workers (`runner: in-process`). Configure the system database and shared operation key ring. With multiple tasks, staged files must also be accessible to the task that executes the import.
 
