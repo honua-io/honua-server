@@ -42,8 +42,9 @@ Keep `HONUA_SERVING_IMAGE_SKIP` absent or `false` until all of these are true:
    an earlier successful authoritative leg;
 4. zero missing/malformed-marker cases produce a skip in fixtures or retained
    run summaries;
-5. the Impact Routing Evidence Ledger is green for seven consecutive days with
-   receipt loss below its 5% budget; and
+5. a seven-day receipt audit of the native-image observer shows receipt loss
+   below 5% (the earlier Impact Routing Evidence Ledger was retired under
+   #7880, so this audit has to be rebuilt first); and
 6. a reviewer confirms PR Gate path filters, fork handling, permissions,
    publication lanes, and nightly/release/deploy re-verification are unchanged.
 
