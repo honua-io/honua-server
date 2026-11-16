@@ -3,36 +3,10 @@
 
 namespace Honua.Db.Postgres.Features.Metadata;
 
-/// <summary>
-/// SQL that synthesizes a canonical Metadata v2 graph document directly from the
-/// legacy V1 catalog (<c>honua.services</c> / <c>honua.layers</c> /
-/// <c>honua.service_layers</c> / <c>honua.layer_fields</c>) for a single
-/// environment, returning the document as one <c>jsonb</c> value.
-///
-/// This mirrors <c>honua.seed_metadata_v2_compat_snapshot()</c>
-/// (<c>tests/seed/base-schema.sql</c>) so a deployment that has never activated a
-/// Metadata v2 snapshot still serves every protocol (OGC API Features, WMS, WFS,
-/// GeoServices, OData, STAC) from the V1 catalog instead of returning HTTP 500.
-/// The caller binds the <c>@environment</c> parameter. (honua-server#1412.)
-/// </summary>
 internal static class MetadataV2CompatSnapshotSql
 {
-    /// <summary>
-    /// Placeholder token for the V1 catalog schema. The caller replaces it with a
-    /// validated, quoted schema identifier before executing the query so the synthesis
-    /// reads the catalog from the same schema the store qualifies its v2 tables with
-    /// (the conventional <c>honua</c> schema in production). Not a
-    /// <see cref="string.Format(string,object?)"/> placeholder because the SQL contains
-    /// many literal <c>{}</c> empty-JSONB tokens.
-    /// </summary>
     internal const string CatalogSchemaPlaceholder = "__CATALOG_SCHEMA__";
 
-    /// <summary>
-    /// Read-only query template returning a single <c>jsonb</c> column: the synthesized
-    /// Metadata v2 graph document for the bound <c>@environment</c>. Returns <c>NULL</c>
-    /// when the V1 catalog has no published service layers. The
-    /// <see cref="CatalogSchemaPlaceholder"/> token must be substituted before use.
-    /// </summary>
     internal const string BuildDocumentFromV1Catalog =
         """
             WITH

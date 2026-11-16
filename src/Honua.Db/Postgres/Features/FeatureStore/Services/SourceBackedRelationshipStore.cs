@@ -13,12 +13,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Routes related-record queries that involve a source-backed resource (for example an imported
-/// table) through the same storage-bound readers that serve direct queries, so both sides read
-/// their actual table and connection and each side's read policy is enforced by its own reader.
-/// Relationships between managed resources keep using the managed relationship store unchanged.
-/// </summary>
 internal sealed class SourceBackedRelationshipStore(
     IRelationshipStore managedStore,
     IMetadataV2GraphProvider? metadata,
@@ -26,7 +20,6 @@ internal sealed class SourceBackedRelationshipStore(
     IFilterExpressionService? filters,
     IFieldMaskSource? fieldMasks = null) : IRelationshipStore
 {
-    /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
         if (metadata is null || router is null)
@@ -123,10 +116,6 @@ internal sealed class SourceBackedRelationshipStore(
         return (reader, DataProviderNames.Normalize(binding.Provider.ProviderName) == DataProviderNames.Postgis);
     }
 
-    /// <summary>
-    /// Reads the origin rows' join keys, then the destination rows carrying those keys, and stamps
-    /// each destination row with every origin object id that shares its key.
-    /// </summary>
     internal static async Task<QueryResult<Feature>> QueryReadersAsync(
         IFeatureReader originReader,
         IFeatureReader destinationReader,

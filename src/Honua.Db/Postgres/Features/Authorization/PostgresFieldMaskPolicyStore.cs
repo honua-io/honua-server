@@ -10,12 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Authorization;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IFieldMaskPolicyStore"/> (#1940). Persists field-level
-/// security (column masking) policies to the <c>honua.rbac_field_mask_policies</c> table
-/// created by migration 068 so per-layer attribute-masking rules survive process restart
-/// and are shared across scaled nodes. Mirrors <c>PostgresRlsPolicyStore</c> (#502).
-/// </summary>
 internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -35,7 +29,6 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
     internal bool HasSameCatalog(IAdoNetDatabaseConnectionProvider provider, string rlsTable)
         => ReferenceEquals(_connectionProvider, provider) && _rlsTable == rlsTable;
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<FieldMaskPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -49,7 +42,6 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         return await ReadPoliciesAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<FieldMaskPolicy?> GetPolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -65,7 +57,6 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         return policies.Count == 0 ? null : policies[0];
     }
 
-    /// <inheritdoc />
     public async Task<FieldMaskPolicy> CreatePolicyAsync(FieldMaskPolicy policy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(policy);
@@ -102,7 +93,6 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         return policy;
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_table} WHERE policy_id = @policy_id";
@@ -114,7 +104,6 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         return affected > 0;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<FieldMaskPolicy>> GetEffectivePoliciesAsync(
         IReadOnlyList<string> roles,
         string service,

@@ -5,40 +5,8 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Shared SQL fragments for raster mosaic aggregation. Centralised here so
-/// every Postgres raster pipeline (catalog mosaic, terrain tiles, elevation
-/// query/profile) speaks the same merge semantics.
-/// </summary>
 internal static class RasterMosaicSql
 {
-    /// <summary>
-    /// Returns an <c>ST_Union</c> aggregate expression that resolves overlapping
-    /// rasters in a deterministic order driven by the requested
-    /// <see cref="RasterMergeStrategy"/> and <see cref="RasterMosaicOrdering"/>. The
-    /// expression assumes the source CTE projects <c>rast</c>, <c>id</c>,
-    /// <c>created_at</c>, and <c>effective_acquisition</c> columns.
-    /// </summary>
-    /// <param name="mergeStrategy">
-    /// Pixel-resolution operation. Only the LAST/FIRST operations (Newest/Oldest) honour
-    /// <paramref name="ordering"/>; MEAN/MAX/MIN combine overlapping values without regard
-    /// to raster order and ignore it.
-    /// </param>
-    /// <param name="ordering">
-    /// Ordering applied to the LAST/FIRST union so a single raster wins each contested pixel.
-    /// </param>
-    /// <param name="attributeSort">
-    /// Optional non-date attribute ordering for an <c>esriMosaicAttribute</c> mosaic. Used only
-    /// when <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>; names the
-    /// allowlisted catalog column and direction that resolve a contested pixel.
-    /// </param>
-    /// <param name="alignToSourceCte">
-    /// When set, the name of the CTE (or table) the aggregate reads <c>rast</c> from. Every input
-    /// raster that does not share the pixel grid of a reference raster drawn from that source is
-    /// resampled onto it before the union (see <see cref="CreateAlignedRasterExpression"/>), so a
-    /// layer that mixes native resolutions or grid origins can be unioned at all. When null the
-    /// aggregate reads <c>rast</c> unchanged; use that only for inputs already warped onto one grid.
-    /// </param>
     public static string CreateMosaicAggregateExpression(
         RasterMergeStrategy mergeStrategy,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
@@ -63,45 +31,6 @@ internal static class RasterMosaicSql
         };
     }
 
-    /// <summary>
-    /// Returns a per-row raster expression that puts <c>rast</c> on one pixel grid shared by every
-    /// row of <paramref name="sourceCte"/>, for use as the input of an <c>ST_Union</c> aggregate.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>ST_Union</c> requires every input to share scale, skew and a grid origin a whole number
-    /// of pixels apart; otherwise PostGIS raises <c>rt_raster_from_two_rasters: The two rasters
-    /// provided do not have the same alignment</c>. A layer that mixes native resolutions (national
-    /// imagery patched with finer local tiles) or grid origins therefore failed every mosaic
-    /// operation (honua-server#4792). This is the same resample-to-a-reference-grid step the
-    /// dataset map renderer applies before its union (honua-server#2487).
-    /// </para>
-    /// <para>
-    /// Already-aligned inputs keep their native grid. Otherwise the reference is a deterministic
-    /// axis-aligned grid with the finest horizontal and vertical source sampling. Skewed inputs also
-    /// bound both axes by their smallest affine singular value, so no direction is coarsened.
-    /// A 256-fold per-source amplification limit prevents pathological intermediate allocations;
-    /// the query fails explicitly if it is exceeded.
-    /// Inputs are resampled with nearest-neighbour, which invents no pixel values. An aligned
-    /// layer passes through untouched, so its mosaics are byte-identical to the pre-#4792 result.
-    /// The reference lookup is an uncorrelated scalar subquery evaluated once per statement;
-    /// the source must project
-    /// <c>rast</c> and <c>id</c>, which every mosaic source already does.
-    /// </para>
-    /// <para>
-    /// Snapping to the reference grid widens a raster to whole reference pixels. For any band
-    /// without NoData, the padding value PostGIS supplies can also be valid source data (zero
-    /// for unsigned, signed and floating bands). If an unaligned mosaic has such a band, every
-    /// input is converted to 64BF before union and reserves the lowest finite double as NoData.
-    /// That value lies outside every integer and 32BF source range. Double precision exactly
-    /// represents every source integer pixel type, and a uniform output type prevents ST_Union
-    /// from narrowing back to its first input's pixel type.
-    /// A valid 64BF pixel equal to that reserved value instead raises an explicit collision
-    /// error; one NoData marker cannot also represent that valid value.
-    /// Existing NoData bands retain their marker through resampling. Already-aligned layers
-    /// retain their original pixel types and values.
-    /// </para>
-    /// </remarks>
     internal static string CreateAlignedRasterExpression(string sourceCte)
     {
         var reference = CreateReferenceGridExpression(sourceCte);
@@ -152,7 +81,6 @@ internal static class RasterMosaicSql
             """;
     }
 
-    /// <summary>Returns the same header-derived reference used by mosaic alignment.</summary>
     internal static string CreateReferenceGridExpression(string sourceCte)
     {
         const string Determinant = "(ST_ScaleX(candidate.rast) * ST_ScaleY(candidate.rast) - ST_SkewX(candidate.rast) * ST_SkewY(candidate.rast))";
@@ -244,21 +172,6 @@ internal static class RasterMosaicSql
         _ => "effective_acquisition ASC, created_at ASC, id ASC"
     };
 
-    /// <summary>
-    /// Scalar <c>bigint[]</c> of the rasters that supplied an identified mosaic pixel.
-    /// The subquery reads the <c>source</c> CTE and the same aligned grid
-    /// <see cref="CreateMosaicAggregateExpression"/> unions. <c>ST_Union</c> resolves each
-    /// band on its own, so the array is the union of the per-band winners. One id means
-    /// one raster supplied every band that has data. Catalog order is not the contribution:
-    /// a raster that is NoData on a band does not win that band just because it sorts first.
-    /// </summary>
-    /// <param name="mergeStrategy">Pixel-resolution operation used by the union.</param>
-    /// <param name="ordering">Ordering applied to a FIRST/LAST selection.</param>
-    /// <param name="attributeSort">Allowlisted attribute sort for <see cref="RasterMosaicOrdering.Attribute"/>.</param>
-    /// <param name="samplePointSql">
-    /// Geometry expression for the identify point, in the raster SRID. It may reference
-    /// <c>candidate.aligned_rast</c> when the selected rasters do not share one SRID.
-    /// </param>
     internal static string CreateIdentifyContributorArraySql(
         RasterMergeStrategy mergeStrategy,
         RasterMosaicOrdering ordering,

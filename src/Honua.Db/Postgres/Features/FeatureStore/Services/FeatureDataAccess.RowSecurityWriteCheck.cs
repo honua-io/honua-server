@@ -9,11 +9,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Internal signal that a created or updated row does not satisfy the caller's row-level
-/// security predicate (the <c>WITH CHECK</c> half of RLS, honua-server#6103). The write was
-/// undone before this was thrown; edit paths translate it into a not-permitted operation result.
-/// </summary>
 internal sealed class RowSecurityWriteCheckFailedException : ResourceAccessDeniedException
 {
     public RowSecurityWriteCheckFailedException(long objectId)
@@ -26,7 +21,6 @@ internal sealed class RowSecurityWriteCheckFailedException : ResourceAccessDenie
 
 internal sealed partial class FeatureDataAccess
 {
-    /// <summary>Client-safe message for a row rejected by the row-level security write check.</summary>
     internal const string RowSecurityWriteCheckFailedMessage =
         "Edit not permitted: the feature would fall outside the row-level security scope of the caller.";
 
@@ -36,23 +30,6 @@ internal sealed partial class FeatureDataAccess
     private sealed record RowSecurityContext(NpgsqlConnection Connection, NpgsqlTransaction? Transaction, RowSecurityTarget Target);
 
 
-    /// <summary>
-    /// Runs one row write under the caller's row-level security <c>WITH CHECK</c> predicate
-    /// (honua-server#6103). With no predicate the write runs unchanged. Otherwise the write
-    /// runs behind a savepoint, the written row is re-selected inside the same transaction
-    /// with the same parameterized predicate readers apply, and a row that is not visible is
-    /// rolled back to the savepoint and reported as <see cref="RowSecurityWriteCheckFailedException"/>.
-    /// Re-selecting (instead of evaluating the predicate in memory) honours every predicate
-    /// shape the RLS source can translate, against the row exactly as stored.
-    /// </summary>
-    /// <param name="writeCheck">The caller's RLS predicate, or null when no policy applies.</param>
-    /// <param name="connection">Connection the write runs on.</param>
-    /// <param name="transaction">Transaction the write runs in; required when a predicate applies.</param>
-    /// <param name="tableName">Table the written row lives in (base features or the version overlay).</param>
-    /// <param name="layerId">Storage layer id.</param>
-    /// <param name="versionId">Branch version id when the row lives in the version overlay.</param>
-    /// <param name="write">The row write; returns the written row's object id with its result.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     private async Task<TResult> RunRowSecurityCheckedWriteAsync<TResult>(
         SqlFragment? writeCheck,
         NpgsqlConnection connection,

@@ -10,50 +10,8 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditRetentionPruner"/> backing the
-/// configurable audit retention policy (#509). Removes audit records that have
-/// aged past the retention window from <c>honua.audit_log</c>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The audit trail is append-only and tamper-evident: migration 033 installs an
-/// <c>audit_log_no_delete</c> rule (<c>DO INSTEAD NOTHING</c>) that blocks ordinary
-/// deletes, and migration 069 builds a hash chain over the rows. Retention is the
-/// sanctioned, privileged maintenance path the migration explicitly allows
-/// ("rotate / archive via partition swap or explicit DROP RULE in a maintenance
-/// window"). This pruner performs that rotation safely and â€” critically â€”
-/// <em>without holding a long-lived lock</em>:
-/// </para>
-/// <list type="number">
-/// <item>It establishes a single head-prefix safety boundary up front
-/// (<c>MIN(audit_id)</c> among still-retained rows). Everything below that
-/// boundary is, by construction, an expired contiguous prefix of the chain.
-/// Because the integrity verifier treats the first surviving hashed row as the
-/// chain genesis, pruning a head prefix never breaks verification â€” unlike a
-/// mid-chain delete. Concurrent inserts only ever add rows <em>above</em> the
-/// boundary (higher <c>audit_id</c>, newer timestamps), so they can never be
-/// caught by the prune and the boundary stays valid for the whole sweep.</item>
-/// <item>It then deletes those expired rows in small <em>bounded chunks</em>,
-/// each in its own short transaction, looping until none remain. The
-/// append-only guard is lifted and restored <em>inside each batch transaction</em>
-/// rather than once around the entire sweep. <c>DISABLE/ENABLE RULE</c> take an
-/// <c>ACCESS EXCLUSIVE</c> lock on the table; holding that across a multi-million
-/// row first sweep would block every inline audit insert (OperationGateway,
-/// admin endpoints) for the sweep's full duration. Scoping the lift to a single
-/// small batch means the lock is held only for milliseconds at a time and is
-/// fully released between batches, so inline audit writes interleave with
-/// pruning instead of stalling.</item>
-/// </list>
-/// <para>
-/// Each batch transaction is atomic: a crash or error mid-batch rolls back and
-/// restores the rule (DDL is transactional in PostgreSQL), and between batches
-/// the committed state always has the guard enabled.
-/// </para>
-/// </remarks>
 internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
 {
-    /// <summary>Default rows deleted per batch when no explicit size is configured.</summary>
     internal const int DefaultBatchSize = 5_000;
 
     private const string NoDeleteRule = "audit_log_no_delete";

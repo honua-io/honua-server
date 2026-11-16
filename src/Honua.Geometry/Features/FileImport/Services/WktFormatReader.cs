@@ -16,21 +16,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming WKT (Well-Known Text) format reader. Parses geometry records into features
-/// using streaming for memory-efficient processing. Understands plain WKT, EWKT
-/// (<c>SRID=&lt;n&gt;;</c> prefix), and WKB/EWKB hex via <see cref="GeometryValueParser"/>,
-/// and accumulates records that span multiple physical lines (a single geometry whose
-/// coordinate list is pretty-printed across several lines).
-/// </summary>
 internal static class WktFormatReader
 {
-    /// <summary>
-    /// Streams features from a WKT file. A record is a single geometry; it may occupy one
-    /// line or span several lines. Records are delimited by parenthesis balance so that a
-    /// multi-line geometry is accumulated before it is parsed, and hex/EMPTY geometries
-    /// (which have no parentheses) are parsed as soon as they are read.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -41,11 +28,6 @@ internal static class WktFormatReader
         }
     }
 
-    /// <summary>
-    /// Streams features from a WKT file, recording any record that cannot be parsed into the
-    /// supplied <paramref name="diagnostics"/> sink so the loss is surfaced as an import warning
-    /// rather than silently swallowed (honua-server#2363).
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         WktGeometryDiagnostics? diagnostics,
@@ -130,19 +112,9 @@ internal static class WktFormatReader
     }
 }
 
-/// <summary>
-/// Collects diagnostics emitted while streaming a WKT file so the import pipeline can surface a
-/// warning instead of silently dropping records it cannot parse. A single instance is passed to
-/// <see cref="WktFormatReader"/> and read after enumeration completes (honua-server#2363).
-/// </summary>
 internal sealed class WktGeometryDiagnostics
 {
-    /// <summary>
-    /// Number of non-empty records whose content could not be parsed as WKT, EWKT, or WKB/EWKB
-    /// hex. Such records are skipped; counting them keeps the loss visible.
-    /// </summary>
     public int UnparseableRecords { get; private set; }
 
-    /// <summary>Records that a WKT record could not be parsed.</summary>
     public void RecordUnparseableRecord() => UnparseableRecords++;
 }

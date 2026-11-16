@@ -11,11 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditLogReader"/> backing the Console
-/// audit query surface (#1168). Uses the (timestamp DESC, audit_id DESC) index
-/// added by migration 034 for stable cursor pagination.
-/// </summary>
 internal sealed class PostgresAuditLogReader : IAuditLogReader
 {
     internal const int MinPageSize = 1;
@@ -224,9 +219,6 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
         => Enum.TryParse<AuditOutcome>(value, ignoreCase: false, out var parsed) ? parsed : AuditOutcome.Failure;
 }
 
-/// <summary>
-/// Cursor encoding for audit-log pagination.
-/// </summary>
 internal sealed record AuditLogCursor(DateTimeOffset Timestamp, long AuditId)
 {
     public static string Encode(DateTimeOffset timestamp, long auditId)

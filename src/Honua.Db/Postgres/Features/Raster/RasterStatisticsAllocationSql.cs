@@ -3,7 +3,6 @@
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>Header-only admission before any dense full-catalog mosaic allocation.</summary>
 internal static class RasterStatisticsAllocationSql
 {
     internal static string CreateCtes()
