@@ -173,7 +173,7 @@ internal static partial class FeatureServerEndpoints
                 ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = resource.Type == MetadataV2ObjectType.Table ? null : spatialReference,
             // Advertise hasZ/hasM from the authored Metadata v2 display flags so 3D/measured
-            // layers self-describe to Esri clients (#1877 Part C). Both default to false and are
+            // layers self-describe to Esri clients. Both default to false and are
             // omitted from the response when unset to keep 2D documents CITE/byte-stable.
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,

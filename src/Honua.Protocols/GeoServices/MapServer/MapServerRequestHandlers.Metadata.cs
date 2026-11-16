@@ -488,9 +488,9 @@ internal static partial class MapServerEndpoints
             SupportsDistinct = true,
             SupportsPagination = true,
             // The FeatureServer-backed query path supports outStatistics on the same
-            // layer, so advertise the capability here too — previously this flag was
-            // left false, and clients reading MapServer layer metadata incorrectly
-            // concluded statistics were unavailable.
+            // layer, so advertise the capability here too — leaving this flag false
+            // makes clients reading MapServer layer metadata incorrectly conclude
+            // statistics are unavailable.
             SupportsStatistics = true,
             AdvancedQueryCapabilities = FeatureServerEndpoints.BuildAdvancedQueryCapabilities(
                 supportsAdvancedQueries: true,
@@ -807,7 +807,7 @@ internal static partial class MapServerEndpoints
     private static MapServerFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
     {
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
-        // SQL type so Esri clients can locate the OID field by type (see issue #1299).
+        // SQL type so Esri clients can locate the OID field by type.
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
         return new()
         {

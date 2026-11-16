@@ -82,7 +82,7 @@ internal static class ImportExportTileOperationsRegistration
             sp.GetService<IExecutionJobStore>(), sp.GetService<IJobQueue>()));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, GeoServerImportJobExecutor>());
 
-        // Migration performance evidence store (#1033 slice 5).
+        // Migration performance evidence store.
         // Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact
         // JSON without reflection. The in-memory store is registered as the fallback so dev / test
         // profiles without a Postgres infrastructure still serve the admin/SDK endpoints.

@@ -708,11 +708,11 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         });
     }
 
-    // Rule (b): platform-release skew (config-pin divergence). Informational, L1 guidance ONLY (#2556
-    // spec revision 2026-07-06): a plane element here explicitly pins an artifact that differs from the
-    // release, so the skew is config-derived, not something a runtime action can clear — a redeploy would
-    // just be overridden by the pin again. See RulePlatformReleaseRuntimeDivergence for the sibling rule
-    // that DOES offer a runtime action, for targets that pin nothing and have simply not converged yet.
+    // Rule (b): platform-release skew (config-pin divergence). Informational, L1 guidance ONLY: a plane
+    // element here explicitly pins an artifact that differs from the release, so the skew is
+    // config-derived, not something a runtime action can clear — a redeploy would just be overridden by
+    // the pin again. See RulePlatformReleaseRuntimeDivergence for the sibling rule that DOES offer a
+    // runtime action, for targets that pin nothing and have simply not converged yet.
     private void EvaluatePlatformReleaseSkew(DateTimeOffset now, List<OpsFinding> findings)
     {
         var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
@@ -1008,7 +1008,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     // ops-health rollup history rather than the live in-process window, so a short blip does not
     // flap the finding. Informational — a generic protocol-level latency/error-rate breach has no single
     // safe automatic remediation (unlike the post-promotion case, there is no specific deploy to roll
-    // back). Fails open when the rollup store is unavailable or errors (#2511-style graceful degradation).
+    // back). Fails open when the rollup store is unavailable or errors (graceful degradation).
     private async Task<bool> EvaluateServingLatencySloAsync(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings, CancellationToken cancellationToken)
     {
         if (_rollupStore is null)

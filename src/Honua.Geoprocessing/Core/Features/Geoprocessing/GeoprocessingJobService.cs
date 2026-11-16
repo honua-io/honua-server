@@ -617,7 +617,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // layer id can be rebound to a different restricted layer, or update/delete authority
         // can be withdrawn, all after the proposal was authorized. Re-evaluating the CURRENT
         // grants against the persisted submitter identity — the same identity the worker will
-        // read under — closes that window (honua-server#3046 review).
+        // read under — closes that window.
         var authorizationPrincipal = resumingApproved || inheritsSubmitterSecurityContext
             ? JobSecurityContextCapture.Restore(resolvedSecurityContext)
             : principal;
@@ -735,8 +735,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // branches closes the gap where a mutating catalog step smuggled onto a custom-code
         // submission would never face the ExecuteMutatingProcess gate.
         // Runs on the resume lane too, against the restored submitter identity: an approved
-        // proposal must not retain update/delete authority that was withdrawn while it waited
-        // (honua-server#3046 review).
+        // proposal must not retain update/delete authority that was withdrawn while it waited.
         try
         {
             if (ContainsMutatingProcess(plan, processCatalog))
@@ -837,7 +836,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             => ConfirmKeyedReplayAsyncCore(jobStore, (jobId, legacyTenantJobId, resolvedKey!), replayToken);
 
         // Resolve authorized existing submissions before charging admission/quota or
-        // minting new side effects (server#4627): a caller-supplied idempotency key whose
+        // minting new side effects: a caller-supplied idempotency key whose
         // job already exists short-circuits here, before raster-source resolution,
         // custom-code token minting, and the admission/quota gate below run again for a
         // request that was already accepted. Without this early check, an otherwise valid
@@ -1640,8 +1639,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // admission without re-deriving the submitter's roles. The baseline execute and
         // resource gates (mutating tier, per-layer read) are NOT bypassed —
         // SubmitJobCoreAsync re-runs them against the payload's revalidated submitter
-        // snapshot, so a grant revoked while the proposal waited denies the resume
-        // (honua-server#3046 review).
+        // snapshot, so a grant revoked while the proposal waited denies the resume.
         var principal = BuildResumePrincipal(payload.RequestedBy);
         return await SubmitJobCoreAsync(
                 payload.Plan,

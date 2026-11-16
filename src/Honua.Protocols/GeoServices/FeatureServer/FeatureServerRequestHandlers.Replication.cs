@@ -402,8 +402,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Every createReplica parameter is honored or rejected; none is silently dropped.
-        // syncModel is validated instead of stored verbatim: an arbitrary value used to be persisted and
-        // made the replica info resource omit both replicaServerGen and layerServerGens.
+        // syncModel is validated instead of stored verbatim: an arbitrary persisted value would make the
+        // replica info resource omit both replicaServerGen and layerServerGens.
         if (!TryNormalizeReplicaSyncModel(GetValueString(values, "syncModel"), out var syncModel))
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -1410,13 +1410,13 @@ internal static partial class FeatureServerEndpoints
             : await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
         // Download / bidirectional sync: assemble the server-to-client delta and deliver it in the
-        // response. This is the core of the #1775 fix — previously the download direction returned
-        // success with no edits and never advanced the serverGen, so server-side changes committed after
-        // createReplica were never delivered. The delta is assembled with the same change-tracking engine
-        // extractChanges uses. The "since" cursor is the generation the client says it already holds
-        // (replicaServerGen, the serverGen from its preceding extractChanges/createReplica) when supplied,
-        // otherwise the replica's recorded last-sync generation. Durable upload provenance excludes
-        // changes already known to this replica without skipping other clients' intervening changes.
+        // response. Without it the download direction would return success with no edits and never advance
+        // the serverGen, so server-side changes committed after createReplica would never be delivered.
+        // The delta is assembled with the same change-tracking engine extractChanges uses. The "since"
+        // cursor is the generation the client says it already holds (replicaServerGen, the serverGen from
+        // its preceding extractChanges/createReplica) when supplied, otherwise the replica's recorded
+        // last-sync generation. Durable upload provenance excludes changes already known to this replica
+        // without skipping other clients' intervening changes.
         LayerChanges[]? downloadEdits = null;
         ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
         var downloadThroughGen = currentGen;

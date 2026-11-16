@@ -60,9 +60,9 @@ internal static partial class FeatureServerEndpoints
             "returnFieldGroups",
             "returnPbfFeatureEncodings",
             // The ArcGIS Maps SDK for .NET appends returnAdvancedSymbols to the
-            // layer/service metadata GET during ServiceFeatureTable.LoadAsync. #1455
-            // accepted it on the layer-query endpoint but not here, so LoadAsync
-            // returned 400 and the entire .NET FeatureServer client was blocked.
+            // layer/service metadata GET during ServiceFeatureTable.LoadAsync.
+            // Rejecting it here makes LoadAsync return 400, which blocks the entire
+            // .NET FeatureServer client.
             "returnAdvancedSymbols",
             // ArcGIS portal-token auth passes the token as a query parameter.
             // Auth middleware consumes it; accept-and-ignore on metadata endpoints

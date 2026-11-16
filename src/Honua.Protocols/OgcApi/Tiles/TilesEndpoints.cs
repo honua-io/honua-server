@@ -644,15 +644,14 @@ internal static partial class TilesEndpoints
 
             var layer = layers[0];
 
-            // DOCUMENTED DIVERGENCE (#1792 Shape A): the vertical (elevation) selection
-            // parsed from `subset=Z(...)` is RECORDED here (threaded into the raster/vector
-            // handlers, telemetry-tagged) but does NOT change the rendered/queried output —
-            // there is no Z-aware vector or raster source yet. This is an intentional, honest
-            // divergence per AGENTS.md ("intentionally diverges" rule): the previous behavior
-            // blanket-rejected every `subset`; we now accept + record the vertical axis while
-            // still rejecting unknown axes (CITE guard). Applying the Z-slice to a Zarr
-            // datacube render is the deferred Shape B follow-up (after #1790). Direct endpoint
-            // tests cover this record-but-don't-render behavior.
+            // DOCUMENTED DIVERGENCE: the vertical (elevation) selection parsed from
+            // `subset=Z(...)` is RECORDED here (threaded into the raster/vector handlers,
+            // telemetry-tagged) but does NOT change the rendered/queried output — there is no
+            // Z-aware vector or raster source yet. This is an intentional, honest divergence
+            // per AGENTS.md ("intentionally diverges" rule): the vertical axis is accepted and
+            // recorded while unknown axes are still rejected (CITE guard). Applying the
+            // Z-slice to a Zarr datacube render is deferred. Direct endpoint tests cover this
+            // record-but-don't-render behavior.
 
             // Tile envelope in the gridset CRS. For the two built-ins this is byte-identical to
             // the legacy TileMath.GetTileBounds / GetTileBoundsGeographic output (the registry
@@ -786,8 +785,7 @@ internal static partial class TilesEndpoints
 
         // Record-but-don't-render the vertical selection (see the documented divergence at
         // the raster/vector dispatch). The feature query below is unchanged — there is no
-        // Z-aware raster source yet (the Zarr datacube Z-slice render is the deferred
-        // Shape B follow-up after #1790).
+        // Z-aware raster source yet (the Zarr datacube Z-slice render is deferred).
         if (verticalSelection is { } selection)
         {
             activity?.SetTag("honua.tile.vertical_selection", selection.RawValue);
@@ -1927,9 +1925,9 @@ internal static partial class TilesEndpoints
             parsedTemporalFilters[layer.StorageLayerId] = temporalFilter;
 
             // Record the requested vertical selection for every layer in the request,
-            // parallel to the temporal filter. Shape A: recorded only — no
-            // per-layer elevation validation against advertised values exists yet (the
-            // datacube vertical extent is the deferred Shape B follow-up after #1790).
+            // parallel to the temporal filter. Recorded only — no per-layer elevation
+            // validation against advertised values exists yet (the datacube vertical
+            // extent is deferred).
             parsedVerticalSelections[layer.StorageLayerId] = requestedVerticalSelection;
         }
 

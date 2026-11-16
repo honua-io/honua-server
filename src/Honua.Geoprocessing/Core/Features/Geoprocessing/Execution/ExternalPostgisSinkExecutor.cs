@@ -368,9 +368,9 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Previously swallowed with no trace, which left an operator staring at a
+            // Log the real exception: swallowing it would leave an operator staring at a
             // generic "could not be resolved" job failure with no way to diagnose why
-            // (bad credentials, unreachable secret store, etc.). Log the real exception.
+            // (bad credentials, unreachable secret store, etc.).
             var connectionRef = hasId ? $"connectionId={connectionIdText}" : $"connectionName={connectionName}";
             Log.ConnectionResolutionFailed(_logger, connectionRef, ex);
             return (null, "secure connection could not be resolved.");

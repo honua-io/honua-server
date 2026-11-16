@@ -122,7 +122,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                 + "or 'input' (staged FeatureCollection data URI).");
         }
 
-        // Layer-only windowing filters (honua-server#3043 review). 'where' and 'bbox' are
+        // Layer-only windowing filters. 'where' and 'bbox' are
         // translated into the source.honua-layer read; the inline branch below parses the
         // staged FeatureCollection verbatim and applies NEITHER. Accepting them alongside
         // 'input' silently enriched every staged feature, so the job "succeeded" with a
@@ -163,7 +163,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                 $"Unknown enrichment dataset '{datasetId}': no managed or configured dataset matches this id.");
         }
 
-        // Bound-layer verification (honua-server#3043 review). The submit-time gate
+        // Bound-layer verification. The submit-time gate
         // authorized the dataset's backing layer as it stood at submission and stamped that
         // identity onto the step; a managed dataset can be re-pointed at a DIFFERENT layer
         // while this job sits in the queue, and reading whatever is current would read a
@@ -479,7 +479,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // Enrich returns after AnnotateNearest without consulting plan.Stats, so accepting the
         // combination here would produce an artifact silently missing every requested
         // statistic. Aggregates summarise a match set; nearest-neighbor yields one closest
-        // feature per target and has no set to summarise (#3043 review).
+        // feature per target and has no set to summarise.
         if (nearest && stats.Count > 0)
         {
             throw new TransformInputException(
@@ -657,7 +657,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         // Carried attributes FIRST, computed fields after — same collision rule as the join
         // path: a dataset carrying JOIN_COUNT or NEAR_DIST must not overwrite the values this
-        // method promises (honua-server#3043 review).
+        // method promises.
         foreach (var field in carryFields)
         {
             OverlayExecutorSupport.Upsert(

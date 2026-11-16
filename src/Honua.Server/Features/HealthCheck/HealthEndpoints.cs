@@ -251,12 +251,9 @@ internal static class HealthEndpoints
         // Intentional catch-all: nothing in this method should realistically throw (arithmetic
         // over an already-obtained memory reading plus GC.CollectionCount calls with fixed,
         // valid generation numbers), so this is a defensive guard rather than an expected
-        // failure path. It previously used a parenthesis-free empty catch clause that both hid
-        // the exception entirely and slipped past the ErrorHandlingPolicyTests regex, which
-        // only matched a typed, empty "catch (Exception ...)" clause. 0 is kept as the fallback
-        // score (the response's Status field independently reports readiness, so a fallback
-        // score of 0 here does not mislead about overall health), but the failure is now logged
-        // so it is diagnosable.
+        // failure path. 0 is the fallback score (the response's Status field independently
+        // reports readiness, so a fallback score of 0 here does not mislead about overall
+        // health), and the failure is logged so it is diagnosable rather than hidden.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HealthEndpointsLog.PerformanceScoreCalculationFailed(logger, ex);

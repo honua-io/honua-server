@@ -75,7 +75,7 @@ internal sealed class GeocodeTool : IMcpTool
         if (!result.IsSuccess)
         {
             // A named provider that is not registered must fail closed. Store-unavailable
-            // would look retryable and used to hide a silent Nominatim substitution.
+            // would look retryable and could hide a silent Nominatim substitution.
             if (result.ErrorMessage?.StartsWith("provider_unavailable:", StringComparison.Ordinal) == true)
             {
                 throw new GeoprocessingPreconditionFailedException(result.ErrorMessage);

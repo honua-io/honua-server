@@ -627,7 +627,7 @@ internal sealed class QueryFormatter
     {
         var isGeometry = IsGeometryField(field);
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
-        // SQL type so Esri clients can locate the OID field by type (see issue #1299).
+        // SQL type so Esri clients can locate the OID field by type.
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
         var geoServicesType = isObjectId
             ? "esriFieldTypeOID"
@@ -1452,7 +1452,7 @@ internal sealed class StreamingQueryFormatter
             // the feature array at the first such row: a cursor over a layer whose first
             // nine rows are strings and whose tenth is an array returns nine rows, and one
             // whose first row is an array returns none - silently, with no error. See
-            // GeoServicesAttributeProjection and honua-server#5171.
+            // GeoServicesAttributeProjection.
             case JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element when stringifyComplexValues:
                 writer.WriteString(propertyName, element.GetRawText());
                 break;

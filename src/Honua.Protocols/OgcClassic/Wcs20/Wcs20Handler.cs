@@ -718,13 +718,13 @@ internal sealed partial class Wcs20Handler
             return new LayerCoverageResult(null, null);
         }
 
-        // The owning service's policy is part of the decision. It
-        // was previously passed as null here, so a service-level read restriction was
-        // discarded on this route: a resource with no policy of its own resolved to
-        // "any authenticated principal", and DescribeCoverage/GetCoverage served the
-        // coverage to a caller the service denies. Every other classic surface (WMS
-        // and WMTS via RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async)
-        // evaluates both policies.
+        // The owning service's policy is part of the decision. Passing null here would
+        // discard a service-level read restriction on this route: a resource with no
+        // policy of its own would resolve to "any authenticated principal", and
+        // DescribeCoverage/GetCoverage would serve the coverage to a caller the service
+        // denies. Every other classic surface (WMS and WMTS via
+        // RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async) evaluates
+        // both policies.
         var accessDecision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, owningService);
         if (!accessDecision.IsAllowed)
         {

@@ -84,7 +84,7 @@ public static partial class EndpointRegistry
         new("PATCH", "/api/v1/admin/import/limits"),
         new("POST", "/api/v1/admin/import/scan"),
 
-        // v1 admin ArcGIS migration evidence endpoints (#1025 slice 6)
+        // v1 admin ArcGIS migration evidence endpoints
         new("GET", "/api/v1/admin/import/geoservices-rest/migrations"),
         new("POST", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest"),
         new("GET", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/manifest"),
@@ -111,7 +111,7 @@ public static partial class EndpointRegistry
         new("DELETE", "/api/v1/admin/import/raster/{rasterId}"),
         new("PATCH", "/api/v1/admin/import/raster/{rasterId}"),
 
-        // v1 admin migration performance evidence endpoints (#1033 slice 5)
+        // v1 admin migration performance evidence endpoints
         new("GET", "/api/v1/admin/migration/performance-evidence/latest"),
         new("GET", "/api/v1/admin/migration/performance-evidence/history"),
         new("GET", "/api/v1/admin/migration/performance-evidence/{evidenceId}"),
@@ -123,7 +123,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoserver/jobs"),
 
-        // v1 admin import endpoints (OGC API Features) — #1029 slice 2
+        // v1 admin import endpoints (OGC API Features)
         new("POST", "/api/v1/admin/import/ogc-api-features/collection"),
         // v1 admin import endpoints (OGC WFS)
         new("POST", "/api/v1/admin/import/ogc-wfs/start"),
@@ -133,7 +133,7 @@ public static partial class EndpointRegistry
         // v1 admin import endpoints (legacy OGC WCS)
         new("POST", "/api/v1/admin/import/ogc-wcs/import"),
 
-        // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
+        // v1 admin GeoServer migration run orchestration endpoints
         new("GET", "/api/v1/admin/migration/runs"),
         new("POST", "/api/v1/admin/migration/runs"),
         new("GET", "/api/v1/admin/migration/runs/{runId}"),
@@ -143,7 +143,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/migration/runs/{runId}/scorecard"),
         new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
 
-        // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
+        // v1 admin import endpoints (OGC WMTS tile cache export)
         new("POST", "/api/v1/admin/import/ogc-tiles/export"),
 
         // Esri tile/vector-tile cache package import + serving binding

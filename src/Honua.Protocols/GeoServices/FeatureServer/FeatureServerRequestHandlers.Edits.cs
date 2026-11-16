@@ -490,9 +490,9 @@ internal static partial class FeatureServerEndpoints
             return unsupportedControlError;
         }
 
-        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
-        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
-        // Pro-gated and Postgres-only.
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler (ADR-0051):
+        // absent/DEFAULT keeps the byte-identical non-versioned path; a named version is Pro-gated
+        // and Postgres-only.
 
         var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -1082,8 +1082,8 @@ internal static partial class FeatureServerEndpoints
             return unsupportedControlError;
         }
 
-        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
-        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler
+        // (ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
 
         var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);

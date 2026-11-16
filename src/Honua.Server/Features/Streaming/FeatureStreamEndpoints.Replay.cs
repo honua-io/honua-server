@@ -89,7 +89,7 @@ internal static partial class FeatureStreamEndpoints
 
                 // Sequence is allocated only for frames that survive filtering and dedup, and
                 // INSIDE the write lock, so allocation order is wire order even when the writer
-                // task is draining the same subscription concurrently (#3038 REQ-002 + review).
+                // task is draining the same subscription concurrently.
                 if (!await SendStampedWebSocketJsonAsync(
                         webSocket,
                         writeLock,

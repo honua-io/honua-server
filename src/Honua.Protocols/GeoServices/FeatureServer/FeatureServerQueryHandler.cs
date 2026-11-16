@@ -160,8 +160,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         // Per-operation RBAC grants are consulted first; the coarse
         // AccessPolicy seam is the fallback when no grant matches. This is the
-        // enforced read path wired to the resolver for this PR — the remaining
-        // protocol adapters are re-wired in #1376.
+        // enforced read path wired to the resolver.
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
             context,
             resource,
@@ -2779,7 +2778,7 @@ internal sealed partial class FeatureServerQueryHandler(
         //
         // returnTrueCurves is accepted as a no-op on OUTPUT. True-curve INPUT (curvePaths/
         // curveRings on applyEdits or query geometry) is densified to linear vertices by
-        // CurveGeometryConverter before storage (#1877 Part A), and NTS/WKB cannot represent a
+        // CurveGeometryConverter before storage, and NTS/WKB cannot represent a
         // true curve, so stored geometry is always linear and cannot be losslessly re-curved.
         // Honua therefore still advertises supportsTrueCurve=false and emits linearized geometry;
         // ArcGIS clients may still include the flag on otherwise ordinary feature queries.
@@ -2922,11 +2921,10 @@ internal sealed partial class FeatureServerQueryHandler(
         }
     }
 
-    // Statistics rows and ordinary feature rows now share one Esri projection. This
-    // conversion was kept local because #5042 withdrew the broader formatter change as
-    // part of reverting #5027 wholesale - for Admin, Import and GP task-name parity
-    // regressions, not for anything this does. Ordinary rows need it for the same
-    // reason statistics rows did: see GeoServicesAttributeProjection.
+    // Statistics rows and ordinary feature rows share one Esri projection. The
+    // conversion is applied in this handler rather than in the shared formatter;
+    // nothing about it prevents moving it there. Ordinary rows need it for the same
+    // reason statistics rows do: see GeoServicesAttributeProjection.
     private static object? GeoServicesAttributeValue(object? value)
         => GeoServicesAttributeProjection.ToEsriValue(value);
 
