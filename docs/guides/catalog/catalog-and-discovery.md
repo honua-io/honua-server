@@ -75,7 +75,7 @@ The open-data STAC projection under the open-data API is not this catalog. A pub
 
 ### GeoServices directory
 
-The services directory (`serve.geoservices-root`) lists each service type the service enables: FeatureServer, MapServer, ImageServer, GPServer, and VectorTileServer. A service enabled for more than one of those is listed once per type. OGC, STAC, and OData protocols are not directory entries; they have their own catalogs. There is no nested folder hierarchy. The only folder-shaped node is the built-in Utilities/PrintingTools GPServer.
+The services directory (`serve.geoservices-root`) lists each service type the service enables: FeatureServer, MapServer, ImageServer, GPServer, and VectorTileServer. A service enabled for more than one of those is listed once per type. OGC, STAC, and OData protocols are not directory entries; they have their own catalogs. Services may belong to one flat [Folder](../../concepts/domain/folder.md) or to the root; Folders do not nest. The directory lists Folders containing visible services, and a Folder directory lists its visible services using Folder-qualified public paths. The built-in Utilities Folder also contains the PrintingTools GPServer.
 
 A service with no visible resource is omitted, except a layerless GPServer the caller is allowed to query. ImageServer is listed only when a raster probe resolves a layer. SceneServer entries are appended only for active registered scenes, and only on an Enterprise license; other editions omit them with no error. An enabled geocoder is listed as GeocodeServer even when the metadata graph is empty. PrintingTools is added to a directory the caller is allowed to see.
 
