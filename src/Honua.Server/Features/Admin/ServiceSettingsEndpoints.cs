@@ -99,6 +99,15 @@ internal static partial class ServiceSettingsEndpoints
 
         try
         {
+            if (listQuery.ConnectionId is not null)
+            {
+                listQuery = listQuery with
+                {
+                    ManagedConnectionId = await Services.ManagedImportConnection.ResolveOwnerAsync(
+                        context.RequestServices, context.RequestAborted).ConfigureAwait(false)
+                };
+            }
+
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             if (ServiceCatalogPage.FolderIsMissing(snapshot, listQuery.FolderId, tenantId))
