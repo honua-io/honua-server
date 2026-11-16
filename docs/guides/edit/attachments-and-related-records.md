@@ -19,7 +19,7 @@ Attachments are keyed by integer object IDs (`globalIds` filters are rejected) a
 Use a client that supports the FeatureServer `addAttachment` operation. Supply the target
 `objectId`, file content, file name, content type, and optional `keywords` value.
 
-The body must be `multipart/form-data` (or form-urlencoded); the response returns the new `attachmentId`.
+Use `multipart/form-data` with a file part; a form-urlencoded body cannot upload a file. The response returns the new attachment ID as `addAttachmentResult.objectId`. Use that value as `{attachmentId}` in download, update, and delete requests.
 
 ### 2. List a feature's attachments
 
@@ -39,7 +39,7 @@ Optional facets: `attachmentTypes` (MIME list), `keywords`, `size` (inclusive `l
 
 To replace it, run `POST /rest/services/{service}/FeatureServer/{layerId}/{objectId}/updateAttachment` with `attachmentId`, `keywords=updated`, and `attachment=photo-v2.jpg`. To delete it, run the sibling `deleteAttachments` operation with `attachmentIds={attachmentId}`.
 
-`updateAttachment` replaces keywords and, when a file is supplied, the content; `deleteAttachments` takes a comma-separated `attachmentIds` list.
+`updateAttachment` replaces keywords and, when a file is supplied, the content. Use `multipart/form-data` to replace the file; form-urlencoded is sufficient for a keywords-only update. `deleteAttachments` takes a comma-separated `attachmentIds` list and accepts a form-urlencoded body.
 
 ### 6. Query related records
 
