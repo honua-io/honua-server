@@ -453,7 +453,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 )
                 VALUES
                     (0, 'Declared', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE,
-                     '{"wms":{"dimensions":[{"name":"elevation","units":"m","extent":"0/10/1"}]},"wmts":{"queryable":false}}'::jsonb),
+                     '{"wms":{"dimensions":[{"name":"elevation","units":"m","extent":"0/10/1"}]},"wmts":{"queryable":false} }'::jsonb),
                     (1, 'Plain', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, '{"wms":"not-an-object"}'::jsonb),
                     (2, 'NoMetadata', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, NULL);
                 """);

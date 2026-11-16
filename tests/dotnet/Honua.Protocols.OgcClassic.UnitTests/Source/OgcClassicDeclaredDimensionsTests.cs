@@ -31,8 +31,14 @@ public sealed class OgcClassicDeclaredDimensionsTests
         OgcClassicDeclaredDimensions.ReadWmsDimensions(resource).Should().Equal(
             new DeclaredWmsDimension
             {
-                Name = "elevation", Units = "CRS:88", UnitSymbol = "m", MultipleValues = true,
-                NearestValue = true, Default = "0/425", Current = "425", Extent = "0/425/1"
+                Name = "elevation",
+                Units = "CRS:88",
+                UnitSymbol = "m",
+                MultipleValues = true,
+                NearestValue = true,
+                Default = "0/425",
+                Current = "425",
+                Extent = "0/425/1"
             });
         OgcClassicDeclaredDimensions.HasWmsTimeDimension(resource).Should().BeFalse();
     }
