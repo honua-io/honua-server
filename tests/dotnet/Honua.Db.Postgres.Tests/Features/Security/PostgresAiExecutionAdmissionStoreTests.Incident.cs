@@ -87,24 +87,31 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     }
 
     [IntegrationTest]
-    public Task Incident_PriorPeriodSettledDebt_DoesNotResetAllowance() => AssertPriorPeriodDebtAsync("settled");
-
-    [IntegrationTest]
-    public Task Incident_PriorPeriodUnsettledDebt_DoesNotResetAllowance() => AssertPriorPeriodDebtAsync("reserved");
-
-    private async Task AssertPriorPeriodDebtAsync(string debtState)
+    public async Task Incident_PriorPeriodSettledDebt_DoesNotResetAllowance()
     {
         var (policy, episode) = await InitializeIncidentAsync();
         var store = Store();
         var grant = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
-        if (debtState == "settled")
-        {
-            (await store.CommitFinancialSendAsync(grant, default)).Should().BeTrue();
-            (await store.SettleFinancialAsync(grant,
-                new AiFinancialUsage(grant.Financial!.RequestDigest, "fixture-model", "incident-response", 10, 5), default))
-                .Should().Be("settled");
-        }
+        (await store.CommitFinancialSendAsync(grant, default)).Should().BeTrue();
+        (await store.SettleFinancialAsync(grant,
+            new AiFinancialUsage(grant.Financial!.RequestDigest, "fixture-model", "incident-response", 10, 5), default))
+            .Should().Be("settled");
         await store.ReleaseAsync(grant, default);
+        await AssertPriorPeriodDebtAsync(policy, episode);
+    }
+
+    [IntegrationTest]
+    public async Task Incident_PriorPeriodUnsettledDebt_DoesNotResetAllowance()
+    {
+        var (policy, episode) = await InitializeIncidentAsync();
+        var store = Store();
+        var grant = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
+        await store.ReleaseAsync(grant, default);
+        await AssertPriorPeriodDebtAsync(policy, episode);
+    }
+
+    private async Task AssertPriorPeriodDebtAsync(AiAdmissionPolicy policy, Guid episode)
+    {
         await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET period_start = period_start - interval '1 day', reserved_at = reserved_at - interval '1 day'");
         await ExecuteAsync($"UPDATE \"{_schema}\".ops_incident_episodes SET observed_at = clock_timestamp() WHERE episode_id = '{episode}'");
 
@@ -166,26 +173,40 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     }
 
     [IntegrationTest]
-    public Task Incident_RebindingSameEpisode_PreservesAllowance() => AssertRebindingAsync("same");
-
-    [IntegrationTest]
-    public Task Incident_RebindingNewEpisode_GetsNewAllowance() => AssertRebindingAsync("new");
-
-    private async Task AssertRebindingAsync(string episodeIdentity)
+    public async Task Incident_RebindingSameEpisode_PreservesAllowance()
     {
         var (policy, episode) = await InitializeIncidentAsync();
-        var store = Store();
-        var first = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
-        await store.ReleaseAsync(first, default);
-        var next = episodeIdentity == "new" ? Guid.NewGuid() : episode;
-        var replacement = await RebindIncidentAsync(policy, next);
+        var first = await ReserveAndReleaseAsync(policy);
+        var replacement = await RebindIncidentAsync(policy, episode);
 
         var decision = await Store().TryAcquireAsync(FinancialContext("different-agent"), Guid.NewGuid(), Frozen(replacement), default);
 
-        decision.Granted.Should().Be(episodeIdentity == "new");
-        if (episodeIdentity == "same") decision.Code.Should().Be("financial_incident_exceeded");
+        decision.Granted.Should().BeFalse();
+        decision.Code.Should().Be("financial_incident_exceeded");
+        (await FinancialChargeAsync(first.AttemptId)).Should().Be((15L, 15L, "reserved"));
+        (await CountAttemptsAsync()).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    public async Task Incident_RebindingNewEpisode_GetsNewAllowance()
+    {
+        var (policy, _) = await InitializeIncidentAsync();
+        var first = await ReserveAndReleaseAsync(policy);
+        var replacement = await RebindIncidentAsync(policy, Guid.NewGuid());
+
+        var decision = await Store().TryAcquireAsync(FinancialContext("different-agent"), Guid.NewGuid(), Frozen(replacement), default);
+
+        decision.Granted.Should().BeTrue();
         (await FinancialChargeAsync(first.AttemptId)).Should().Be((15L, 15L, "reserved"), "rebinding must preserve deployment and actor debt");
-        (await CountAttemptsAsync()).Should().Be(episodeIdentity == "new" ? 2 : 1);
+        (await CountAttemptsAsync()).Should().Be(2);
+    }
+
+    private async Task<AiAdmissionReservation> ReserveAndReleaseAsync(AiAdmissionPolicy policy)
+    {
+        var store = Store();
+        var reservation = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
+        await store.ReleaseAsync(reservation, default);
+        return reservation;
     }
 
     [IntegrationTest]
