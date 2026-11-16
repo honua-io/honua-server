@@ -153,6 +153,20 @@ class SurfaceVocabularyTests(unittest.TestCase):
         self.assertEqual(len(verbs), len(errors), errors)
         self.assertTrue(all("folder; name the Folder" in error for error in errors))
 
+    def test_named_pattern_and_prefix_literals_are_checked(self):
+        path = "src/NamedEndpoints.cs"
+        self.write(path, '''
+            app.MapGet(pattern: "/workspaces", handler: Read);
+            app.MapGroup(prefix /* route */ : @"/publications");
+            app.MapHub<Notifications>(pattern: "/items");
+            app.MapGet(pattern: "/maps", handler: Read);
+        ''')
+        errors = self.run_check()
+        self.assertEqual(3, len(errors), errors)
+        for name, rule in (("/workspaces", "folder"), ("/publications", "layer"),
+                           ("/items", "studio-kind")):
+            self.assertTrue(any(f"rest-literal:{path} '{name}': {rule};" in e for e in errors), errors)
+
     def test_comments_and_string_examples_do_not_define_routes(self):
         self.write("src/Examples.cs", r'''
             // app.MapGet("/workspaces/comment", Read);

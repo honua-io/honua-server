@@ -38,7 +38,7 @@ CS_TOKENS = re.compile(
     r'|(?P<comment>//[^\n]*|/\*.*?\*/)', re.S)
 ROUTE_LITERAL = re.compile(
     r'\.Map(?:Get|Head|Post|Put|Patch|Delete|Methods|Group|Fallback|FallbackToFile|Hub|GrpcService)'
-    r'(?:\s*<[^>]+>)?\s*\(\s*(?P<literal>@"(?:""|[^"])*"|"(?:\\.|[^"\\])*")'
+    r'(?:\s*<[^>]+>)?\s*\(\s*(?:(?:pattern|prefix)\s*:\s*)?(?P<literal>@"(?:""|[^"])*"|"(?:\\.|[^"\\])*")'
     r'\s*(?=[,)])')
 
 
