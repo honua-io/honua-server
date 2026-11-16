@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
@@ -113,18 +114,27 @@ internal sealed class StreamSubscriberSecurity
     public FeatureStreamEnvelope? PrepareDelivery(FeatureStreamEnvelope envelope, IReadOnlyList<string> filterFields)
     {
         var policy = Volatile.Read(ref _state).Resolve(envelope);
-        if (policy is null || FirstMaskedField(policy, filterFields) is not null)
+        if (policy is null ||
+            (!string.Equals(envelope.Operation, "delete", StringComparison.OrdinalIgnoreCase) &&
+             FirstMaskedField(policy, filterFields) is not null))
         {
             return null;
         }
 
         var attributes = envelope.AuthorizationAttributes ?? envelope.Attributes;
-        foreach (var predicate in policy.Predicates)
+        try
         {
-            if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
+            foreach (var predicate in policy.Predicates)
             {
-                return null;
+                if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
+                {
+                    return null;
+                }
             }
+        }
+        catch (Exception exception) when (exception is UnevaluableLikePatternException or RegexMatchTimeoutException)
+        {
+            return null;
         }
 
         return Project(envelope, policy);

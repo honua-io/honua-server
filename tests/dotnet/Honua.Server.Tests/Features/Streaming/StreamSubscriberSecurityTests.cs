@@ -31,6 +31,26 @@ public sealed class StreamSubscriberSecurityTests
         filter.PrepareDelivery(queued).Should().BeNull();
     }
 
+    [UnitTheory]
+    [InlineData(BinaryOperator.Like)]
+    [InlineData(BinaryOperator.NotLike)]
+    public async Task Delivery_RefreshedUnevaluableRowPredicate_DropsQueuedFrame(BinaryOperator operation)
+    {
+        var security = CreateUnrestrictedSecurity();
+        var predicate = new BinaryExpression(new PropertyReference("region"), operation,
+            new Literal(new string('%', 33), LiteralType.Text));
+        var policy = new StreamLayerReadPolicy([predicate], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        security.EnableRefresh(_ => Task.FromResult(new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>())));
+        var queued = security.Project(CreateEnvelope("west"));
+
+        await security.RefreshAsync(CancellationToken.None);
+
+        security.PrepareDelivery(queued, []).Should().BeNull();
+    }
+
     [UnitTest]
     public void Delivery_RowPredicateOnMaskedField_UsesPrivateAuthorizationImage()
     {
@@ -349,6 +369,10 @@ public sealed class StreamSubscriberSecurityTests
 
         filter.Matches(CreateEnvelope("west") with { Operation = "delete" }, null, PropertiesJson).Should().BeTrue();
         filter.Matches(CreateEnvelope("east") with { Operation = "delete" }, null, PropertiesJson).Should().BeFalse();
+        var delivered = filter.PrepareDelivery(filter.Project(CreateEnvelope("west") with { Operation = "delete" }));
+        delivered.Should().NotBeNull();
+        delivered!.Attributes!.Should().NotContainKey("SECRET");
+        filter.PrepareDelivery(CreateEnvelope("east") with { Operation = "delete" }).Should().BeNull();
     }
 
     [UnitTest]
