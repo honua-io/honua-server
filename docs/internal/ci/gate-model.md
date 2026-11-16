@@ -1764,3 +1764,23 @@ Full CI job savings are unmeasured.
 All cases remain in the OData Core Endpoints shard on selected PR runs and
 twice-daily full trunk runs. This changes no runner count, required check name,
 required aggregate dependency, workflow or shard definition.
+### OData, OGC classic and STAC collection host lifetime
+
+The OData, OGC classic and STAC test assemblies serialize their database-backed
+classes in a `Database` collection that previously had no definition, so nothing
+held the reference-counted shared default host between cases. Each assembly now
+defines that collection with a collection-scoped default `WebAppFixture`, so
+default-configuration cases reuse the shared host instead of rebuilding it. The
+definition keeps default parallelization. Each case still creates its own
+`WebAppFixture` and schema; classes with private configuration keep their hosts.
+
+A build-host run of the three complete projects on trunk 47eb3bc9ba passed every
+case with no skips: OGC classic 592, STAC 149 and OData 512. Per-case fixture time
+in the affected default-host classes fell from 2.1 to 3.5 seconds in full run
+43709972683 to 0.1 to 0.5 seconds, even on the loaded build host, while private-host
+classes stayed near 3.4 seconds. Across those 18 classes this removes about 639
+seconds (10.7 runner-minutes) of fixture time per full run. Full CI job savings are
+unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
