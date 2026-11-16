@@ -812,11 +812,18 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (16 Nov 2026): every measured `dispatch_rank` is the median passing
-job duration over ten full trunk runs, counting a run only when the shard's filter at
-its head equals the current filter (gate-model.md, "Measured ranks"). 171 of 219
-shards are measured, ranks sum to 1,644.0 runner-minutes and 189 shards fit the
-10-minute PR shard budget.
+Measured ranks (16 Nov 2026): each recorded `dispatch_rank` is the median passing
+job duration over eleven full trunk runs, counting a sample only when its filter
+and project selection match the current definition (gate-model.md, "Measured
+ranks"). Full run 43819793722 supplies 205 passing child samples and 46 newly
+measured children. After replacing the two gRPC definitions with three whole-class
+children, 214 of 220 definitions have passing measurements. The three new gRPC
+ranks allocate the old combined 24.3 minutes by TRX timing; three other definitions
+retain prior ranks without a matching passing sample. Ranks sum to 1,525.1
+runner-minutes, previously 1,644.0; 190 children fit the unchanged 10-minute PR
+shard budget, previously 189. These are scheduling estimates, not runtime savings.
+Temporal's explicit source override now uses `prioritize: true` as a tie-breaker
+after changed-test and path-hit counts; candidate admission and caps still apply.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 

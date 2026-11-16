@@ -70,22 +70,25 @@ ORDERING ("largest-impact first")
 
       2. `path_hits` -- how many of the diff's files this shard's own `paths`
          prefixes claim. A shard that owns twelve changed files is a better
-         guess at the regression than one that owns a single file, and this is
-         the only signal a source-only diff produces.
-      3. `project_affected` -- whether the shard's test project is in the
+         guess at the regression than one that owns a single file.
+      3. `priority_source_hits` -- changed files covered by a targeted override
+         marked `prioritize: true` for this shard. Explicit source owners rank
+         ahead of broad inherited coverage paths when path-hit counts tie.
+         Priority never adds a candidate or bypasses the time budget.
+      4. `project_affected` -- whether the shard's test project is in the
          reverse-dependency closure of the diff. Under `run_all` this is the
          only discriminator the router leaves, and it is what keeps an
          unmapped-source escalation from spending the cap on six shards whose
          assemblies the change cannot even reach.
-      4. `dispatch_rank` descending -- the observed shard duration in minutes
+      5. `dispatch_rank` descending -- the observed shard duration in minutes
          that ci.yml already dispatches by. The longest shard carries the most
          test surface, so it is the better use of a remaining slot; it also
          front-loads the slowest job, which is what keeps six parallel shards
          near one shard of wall clock.
-      5. Shard name, so the selection is deterministic.
+      6. Shard name, so the selection is deterministic.
 
     Numbered children of a shard split for capacity ("WFS 1" .. "WFS 9") are
-    one family. Among candidates that tie on the first three terms, each
+    one family. Among candidates that tie on the first four terms, each
     family's first child ranks before any family's second child, so a change to
     a class split across many children cannot spend the whole cap and time
     budget on that one class while another changed test's owner waits.
@@ -509,6 +512,15 @@ def count_path_hits(shard: dict[str, Any], changed_files: Sequence[str]) -> int:
     return sum(1 for changed in changed_files if changed.startswith(prefixes))
 
 
+def count_priority_source_hits(name: str, changed_files: Sequence[str], config: dict[str, Any]) -> int:
+    prefixes = tuple(
+        override["prefix"]
+        for override in config.get("targeted_override_prefixes") or ()
+        if override.get("prioritize") is True and name in override.get("shards", ())
+    )
+    return sum(changed.startswith(prefixes) for changed in changed_files)
+
+
 def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
     """`PRODUCT_CODE_PREFIXES` plus every root the shard map itself routes on.
 
@@ -634,6 +646,7 @@ def select(
                 "name": name,
                 "test_class_hits": (test_class_hits or {}).get(name, 0),
                 "path_hits": count_path_hits(shard, changed_files),
+                "priority_source_hits": count_priority_source_hits(name, changed_files, config),
                 "project_affected": project_affected(shard),
                 "dispatch_rank": float(shard.get("dispatch_rank") or 0.0),
                 "timeout_minutes": shard.get("timeout_minutes"),
@@ -646,6 +659,7 @@ def select(
         key=lambda entry: (
             -entry["test_class_hits"],
             -entry["path_hits"],
+            -entry["priority_source_hits"],
             not entry["project_affected"],
             -entry["dispatch_rank"],
             entry["name"],
@@ -699,7 +713,8 @@ def interleave_split_families(ranked: Sequence[dict[str, Any]]) -> list[dict[str
         return rounds[family]
 
     def tie(entry: dict[str, Any]) -> tuple[Any, ...]:
-        return (-entry["test_class_hits"], -entry["path_hits"], not entry["project_affected"])
+        return (-entry["test_class_hits"], -entry["path_hits"],
+                -entry.get("priority_source_hits", 0), not entry["project_affected"])
 
     keyed = [(tie(entry), round_of(entry), position, entry) for position, entry in enumerate(ranked)]
     return [entry for *_, entry in sorted(keyed, key=lambda item: item[:3])]
@@ -770,12 +785,13 @@ def render_summary(result: dict[str, Any]) -> str:
         f"- Projected cost: `{result['projected_runner_minutes']}` runner-minutes, "
         f"`{result['projected_wall_clock_minutes']}` min wall clock (parallel)",
         "",
-        "| Shard | Changed tests it runs | Diff files claimed | Test project affected | dispatch_rank (min) |",
-        "|---|---:|---:|:---:|---:|",
+        "| Shard | Changed tests it runs | Diff files claimed | Priority source files | Test project affected | dispatch_rank (min) |",
+        "|---|---:|---:|---:|:---:|---:|",
     ]
     for entry in result["selected"]:
         lines.append(
             f"| {entry['name']} | {entry.get('test_class_hits', 0)} | {entry['path_hits']} | "
+            f"{entry.get('priority_source_hits', 0)} | "
             f"{'yes' if entry['project_affected'] else 'no'} | {entry['dispatch_rank']} |"
         )
     if result["dropped"]:

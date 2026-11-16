@@ -266,6 +266,39 @@ def check_cap_is_enforced(config: dict[str, Any]) -> None:
             raise FixtureError("dropped families were not reported")
 
 
+def check_explicit_source_priority(config: dict[str, Any]) -> None:
+    """Explicit ownership survives timing drift without overriding test ownership."""
+    probe = copy.deepcopy(config)
+    owners = capacity_split_names(probe, "Server Features Packages and Temporal")
+    owner = next(shard for shard in probe["shards"] if shard["name"] == owners[0])
+    competitor = next(shard for shard in probe["shards"] if shard["name"] not in owners)
+    prefix = "src/Honua.Server/Features/Temporal/"
+    for shard, rank in ((owner, 1), (competitor, 100)):
+        shard.update(paths=[prefix], dispatch_rank=rank)
+    changed = [prefix + "Probe.cs"]
+    descriptor = {"run_all": False, "reason": "targeted", "shards": [owner["name"], competitor["name"]]}
+    selected = select_offline(probe, changed, descriptor=descriptor, cap=1)
+    if selected["shards"] != [owner["name"]]:
+        raise FixtureError("explicit source owner lost its slot to timing drift")
+    for enabled in (False, None):
+        unmarked = copy.deepcopy(probe)
+        for override in unmarked["targeted_override_prefixes"]:
+            if enabled is None:
+                override.pop("prioritize", None)
+            else:
+                override["prioritize"] = enabled
+        selected = select_offline(unmarked, changed, descriptor=descriptor, cap=1)
+        if selected["shards"] != [competitor["name"]]:
+            raise FixtureError("unmarked source override changed priority")
+    selected = selector.select(config=probe, changed_files=changed, descriptor=descriptor,
+                               affected_projects=None, cap=1, test_class_hits={competitor["name"]: 1})
+    if selected["shards"] != [competitor["name"]]:
+        raise FixtureError("source priority displaced changed-test ownership")
+    descriptor["shards"] = [competitor["name"]]
+    if select_offline(probe, changed, descriptor=descriptor, cap=1)["candidate_count"] != 1:
+        raise FixtureError("source priority admitted a noncandidate")
+
+
 def check_largest_impact_first(config: dict[str, Any]) -> None:
     """Path hits outrank dispatch_rank: the shard owning more of the diff wins."""
     ranked = sorted(config["shards"], key=lambda shard: -float(shard.get("dispatch_rank") or 0))
@@ -885,6 +918,7 @@ def main() -> int:
     covered = check_feature_namespace_selects_its_shard(config)
     check_cap_is_enforced(config)
     check_temporal_source_survives_the_cap(config)
+    check_explicit_source_priority(config)
     check_largest_impact_first(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
     check_wps_and_h3_tests_select_both_owners(config)

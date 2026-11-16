@@ -1713,7 +1713,16 @@
     },
     "children": [
       "gRPC Protocol and Scene 1",
-      "gRPC Protocol and Scene 2"
-    ]
+      "gRPC Protocol and Scene 2",
+      "gRPC Protocol and Scene 3"
+    ],
+    "estimatedRanks": {
+      "_comment": "Provisional allocation of the two former jobs\u2019 measured 24.3 minutes, weighted by passing TRX test durations in full run 43819793722; new definitions require subsequent full-run measurements.",
+      "ranks": {
+        "gRPC Protocol and Scene 1": 10.9,
+        "gRPC Protocol and Scene 2": 8.6,
+        "gRPC Protocol and Scene 3": 4.8
+      }
+    }
   }
 ]

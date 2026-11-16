@@ -237,6 +237,15 @@
         "File and Raster Import 2",
         "File and Raster Import 3"
       ]
+    },
+    {
+      "prefix": "src/Honua.Server/Features/Temporal/",
+      "reason": "temporal_source_owners",
+      "prioritize": true,
+      "shards": [
+        "Server Features Packages and Temporal 1",
+        "Server Features Packages and Temporal 2"
+      ]
     }
   ],
   "_shard_partitions_comment": "Exact class-level (or explicitly method-level) partition contracts for split shards. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class or, for method-level partitions, every runnable method and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
@@ -524,7 +533,8 @@
         "Operator Eval Harness 1",
         "Operator Eval Harness 2",
         "gRPC Protocol and Scene 1",
-        "gRPC Protocol and Scene 2"
+        "gRPC Protocol and Scene 2",
+        "gRPC Protocol and Scene 3"
       ]
     },
     {
@@ -4252,7 +4262,7 @@
     {
       "name": "gRPC Protocol and Scene 1",
       "shard_name": "gRPC Protocol and Scene 1",
-      "dispatch_rank": 10.8,
+      "dispatch_rank": 10.9,
       "artifact_suffix": "grpc-protocol-scene-1",
       "log_name": "server-tests-grpc-protocol-scene-1",
       "timeout_minutes": 30,
@@ -4260,8 +4270,8 @@
       "max_cpu_count": "1",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "#7678 capacity child of gRPC Protocol and Scene. Rank is an estimate from TRX class spans; the capacity contract proves exact method ownership.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc)&(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc.GrpcApplyEditsCrossNodeIdempotencyTests.|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc.GrpcFeatureServiceTests.|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithEmptyLine_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithMultiplePaths_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithNegativeSampleCount_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithNonFiniteCoordinate_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithSampleCountAboveMax_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithSampleCountOne_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevation_ForUnknownLayer_SurfacesStructuredOutcome|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevation_WithNonFinitePoint_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevation_WithNullPoint_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_ForFixtureScene_ReturnsMetadata|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_ForInactiveScene_ThrowsNotFound|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_ForUnknownScene_ThrowsNotFound|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_WithBlankSceneId_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForExternalSubTilesetNode_StreamsOpaqueUnspecifiedContent|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForNodeWithMissingContentFile_ThrowsNotFound|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForOversizedContentFile_ThrowsResourceExhausted|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForSceneWithMalformedTilesetJson_ThrowsInternal|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForSceneWithMissingTilesetJson_ThrowsNotFound|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_WithBlankNodeId_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_WithBlankSceneId_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_AfterConcurrentPeerHostAppliesDefaultSeed_StillIncludesRegisteredScene|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_FollowingNextPageToken_WalksTheWholeCatalogExactlyOnce|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithDisjointExtent_ExcludesScene|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithDisjointExtent_StillIncludesSceneWithoutExtent|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithMalformedPageToken_ReturnsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithNegativePageSize_ReturnsEntireCatalog|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithOverlappingExtent_IncludesScene|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithPageSizeBelowTotal_PagesAndSetsNextPageToken|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithPageSizeEqualToTotal_DoesNotSetNextPageToken|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithRegisteredFixtureScene_ReturnsScene|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_ZeroPageSize_ReturnsEntireCatalog|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForFixtureScene_StreamsTilesWithContent|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForOversizedContentFile_ThrowsResourceExhausted|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForSceneWithMalformedTilesetJson_ThrowsInternal|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForSceneWithMissingTilesetJson_ThrowsNotFound|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForUnknownScene_ThrowsNotFound|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithBlankSceneId_ThrowsInvalidArgument|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithDisjointExtent_YieldsNoTiles|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxGeometricErrorBelowRoot_ExcludesCoarseNodes|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxGeometricErrorZero_AppliesNoGeometricErrorFilter|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxLodOne_IncludesDepthOneNodes|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxLodZero_ReturnsAllLods|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMinLod_ExcludesRootNode|FullyQualifiedName=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithOverlappingExtent_StreamsMatchingTiles)",
+      "_comment": "Provisional rank allocates the previous two children\u2019s 24.3 measured job-minutes by summed TRX test duration from full run 43819793722; this is not a measured duration of this definition.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.",
       "paths": [
         "src/Honua.Core/Core/Features/Geoprocessing/",
         "src/Honua.Geoprocessing/Core/Features/Geoprocessing/",
@@ -4282,7 +4292,7 @@
     {
       "name": "gRPC Protocol and Scene 2",
       "shard_name": "gRPC Protocol and Scene 2",
-      "dispatch_rank": 13.5,
+      "dispatch_rank": 8.6,
       "artifact_suffix": "grpc-protocol-scene-2",
       "log_name": "server-tests-grpc-protocol-scene-2",
       "timeout_minutes": 30,
@@ -4290,8 +4300,38 @@
       "max_cpu_count": "1",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "#7678 capacity child of gRPC Protocol and Scene: complement of its siblings, so it also owns future classes and methods. Rank is an estimate from TRX class spans; the capacity contract proves exact method ownership.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc)&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithEmptyLine_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithMultiplePaths_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithNegativeSampleCount_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithNonFiniteCoordinate_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithSampleCountAboveMax_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevationProfile_WithSampleCountOne_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevation_ForUnknownLayer_SurfacesStructuredOutcome&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevation_WithNonFinitePoint_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetElevation_WithNullPoint_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_ForFixtureScene_ReturnsMetadata&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_ForInactiveScene_ThrowsNotFound&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_ForUnknownScene_ThrowsNotFound&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetScene_WithBlankSceneId_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForExternalSubTilesetNode_StreamsOpaqueUnspecifiedContent&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForNodeWithMissingContentFile_ThrowsNotFound&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForOversizedContentFile_ThrowsResourceExhausted&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForSceneWithMalformedTilesetJson_ThrowsInternal&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_ForSceneWithMissingTilesetJson_ThrowsNotFound&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_WithBlankNodeId_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.GetTile_WithBlankSceneId_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_AfterConcurrentPeerHostAppliesDefaultSeed_StillIncludesRegisteredScene&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_FollowingNextPageToken_WalksTheWholeCatalogExactlyOnce&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithDisjointExtent_ExcludesScene&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithDisjointExtent_StillIncludesSceneWithoutExtent&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithMalformedPageToken_ReturnsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithNegativePageSize_ReturnsEntireCatalog&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithOverlappingExtent_IncludesScene&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithPageSizeBelowTotal_PagesAndSetsNextPageToken&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithPageSizeEqualToTotal_DoesNotSetNextPageToken&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_WithRegisteredFixtureScene_ReturnsScene&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.ListScenes_ZeroPageSize_ReturnsEntireCatalog&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForFixtureScene_StreamsTilesWithContent&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForOversizedContentFile_ThrowsResourceExhausted&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForSceneWithMalformedTilesetJson_ThrowsInternal&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForSceneWithMissingTilesetJson_ThrowsNotFound&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_ForUnknownScene_ThrowsNotFound&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithBlankSceneId_ThrowsInvalidArgument&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithDisjointExtent_YieldsNoTiles&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxGeometricErrorBelowRoot_ExcludesCoarseNodes&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxGeometricErrorZero_AppliesNoGeometricErrorFilter&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxLodOne_IncludesDepthOneNodes&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMaxLodZero_ReturnsAllLods&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithMinLod_ExcludesRootNode&FullyQualifiedName!=Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.StreamTiles_WithOverlappingExtent_StreamsMatchingTiles&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Grpc.GrpcApplyEditsCrossNodeIdempotencyTests.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Grpc.GrpcFeatureServiceTests.",
+      "_comment": "Provisional rank allocates the previous two children\u2019s 24.3 measured job-minutes by summed TRX test duration from full run 43819793722; this is not a measured duration of this definition.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Geoprocessing/",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/",
+        "src/Honua.Scene/",
+        "src/Honua.Server/Features/Protocols/Grpc/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ]
+    },
+    {
+      "name": "gRPC Protocol and Scene 3",
+      "shard_name": "gRPC Protocol and Scene 3",
+      "dispatch_rank": 4.8,
+      "artifact_suffix": "grpc-protocol-scene-3",
+      "log_name": "server-tests-grpc-protocol-scene-3",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "1",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Provisional rank allocates the previous two children\u2019s 24.3 measured job-minutes by summed TRX test duration from full run 43819793722; this is not a measured duration of this definition.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests.",
       "paths": [
         "src/Honua.Core/Core/Features/Geoprocessing/",
         "src/Honua.Geoprocessing/Core/Features/Geoprocessing/",

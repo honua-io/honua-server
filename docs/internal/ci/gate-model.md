@@ -1049,28 +1049,44 @@ Passing children count even when their full workflow fails or is cancelled;
 failed, skipped and cancelled children do not supply timing samples.
 
 The latest completed run, [43819793722](https://github.com/honua-io/honua-server/actions/runs/43819793722),
-contains all 219 current server children: 205 passed and 14 failed. It supplies
-46 newly measured children. Across the eleven runs, 216 of 219 definitions now
-have passing measurements (1 to 7 samples, median 2.5; 56 have one sample).
-Migration Source Imports changed project selection and loses its predecessor's
-measurement; its current job failed. It and Server Features Miscellaneous 4 and
-8 have no matching passing sample and retain their previous dispatch ranks.
-Their failures remain gating and separately owned; failed duration is not a
-successful completion estimate.
+contains all 219 then-current server children: 205 passed and 14 failed. It
+supplies 46 newly measured children. Before repartitioning gRPC, 216 definitions
+have matching passing measurements. The two old gRPC definitions are replaced
+below, leaving 214 measured definitions among 220 current children (1 to 7 samples,
+median 3; 54 have one sample). Migration
+Source Imports changed project selection and loses its predecessor's sample;
+its current job failed. It and Server Features Miscellaneous 4 and 8 retain their
+previous ranks. Failed duration is not a successful completion estimate, and
+failures remain gating.
 
 `scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
 `test-full-run-capacity-partitions.py` rejects rank drift. Split children use
 their measured rank, else their contract estimate, else the parent's rank.
 Remove a child's estimate once measured; the estimate-sum conservation rule
 applies only while every child is estimated. This refresh removes 42 obsolete
-child estimates; the two remaining estimates belong to Miscellaneous 4 and 8.
+child estimates. Five estimates remain: Miscellaneous 4 and 8, plus the three
+new gRPC children.
 
-Ranks sum to 1,525.1 runner-minutes, previously 1,644.0, and 188 of 219 shards
-fit the 10-minute PR shard budget, previously 189. This is a scheduling estimate
-refresh, not a measured runtime saving: tests and job budgets are unchanged,
-and elapsed times vary across runs. The separate tiny-shard consolidation
+The old gRPC children measured 10.8 and 13.5 minutes, both outside the unchanged
+10-minute PR shard budget. Regrouping by whole class gives SceneGrpcIntegrationTests,
+GrpcIntegrationTests and a complement containing all other current and future
+gRPC classes. Their provisional ranks, 10.9, 8.6 and 4.8 minutes, allocate the
+old combined 24.3 job-minutes in proportion to passing TRX test durations from
+run 43819793722. These are estimates for new definitions, not measured savings.
+The Scene child remains deferred by the PR budget; the other two restore a
+budget-eligible gRPC source owner. Coverage fixtures prove an exact partition
+and unchanged execution policies.
+
+An explicit Temporal source override uses `prioritize: true` to keep a narrow
+source owner ahead of broad inherited coverage when changed-test and path-hit
+counts tie. It changes ranking only: candidate admission, the six-job cap and
+time budgets still apply. Unmarked overrides retain their previous ranking.
+
+Ranks sum to 1,525.1 runner-minutes, previously 1,644.0; 190 of 220 children fit
+the 10-minute PR shard budget, previously 189 of 219. These are scheduling
+estimates, not measured runtime savings. The separate tiny-shard consolidation
 measurement remains 75.38 to 12.11 runner-minutes (63.27 saved). Single-sample
-ranks remain provisional until subsequent passing full runs add evidence.
+ranks and new partition estimates need subsequent passing full-run evidence.
 
 ### Standalone tooling in affected producer builds
 

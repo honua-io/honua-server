@@ -121,6 +121,7 @@ jq -e '
   and (.unmapped_source_run_all_prefixes | type == "array")
   and (.default_shards_when_no_match | type == "array" and length > 0)
   and (.shards | type == "array" and length > 0)
+          and ((has("prioritize") | not) or (.prioritize | type == "boolean"))
   and (
     .pr_time_budget
     | type == "object"

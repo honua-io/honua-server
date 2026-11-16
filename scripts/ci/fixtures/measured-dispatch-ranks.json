@@ -228,8 +228,6 @@
     "WFS 7": 4.6,
     "WFS 8": 5.7,
     "WFS 9": 5.1,
-    "WFS Endpoints": 7.1,
-    "gRPC Protocol and Scene 1": 10.8,
-    "gRPC Protocol and Scene 2": 13.5
+    "WFS Endpoints": 7.1
   }
 }
