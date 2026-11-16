@@ -247,34 +247,7 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
             INSERT INTO {_schema}.public_publication_generations VALUES ('{state}');
             """);
 
-        async Task ChangeAsync()
-        {
-            switch (operation)
-            {
-                case "row-create":
-                    await _rows.CreatePolicyAsync(new RlsPolicy
-                    {
-                        Role = "other", Service = "alpha", Layer = "parcels", Attribute = "region", ClaimType = "region"
-                    });
-                    break;
-                case "row-delete":
-                    await _rows.DeletePolicyAsync(row.PolicyId);
-                    break;
-                case "field-create":
-                    await _fields.CreatePolicyAsync(new FieldMaskPolicy
-                    {
-                        Role = "other", Service = "alpha", Layer = "parcels", Attribute = "region"
-                    });
-                    break;
-                case "field-delete":
-                    await _fields.DeletePolicyAsync(field.PolicyId);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(operation));
-            }
-        }
-
-        await Assert.ThrowsAsync<InvalidOperationException>(ChangeAsync);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ChangePolicyAsync(operation, row.PolicyId, field.PolicyId));
         Assert.Equal(row.PolicyId, Assert.Single(await _rows.ListPoliciesAsync()).PolicyId);
         Assert.Equal(field.PolicyId, Assert.Single(await _fields.ListPoliciesAsync()).PolicyId);
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
@@ -301,6 +274,33 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
 
         Assert.Empty(await _rows.ListPoliciesAsync());
         Assert.Empty(await _fields.ListPoliciesAsync());
+    }
+
+    private async Task ChangePolicyAsync(string operation, Guid rowId, Guid fieldId)
+    {
+        switch (operation)
+        {
+            case "row-create":
+                await _rows.CreatePolicyAsync(new RlsPolicy
+                {
+                    Role = "other", Service = "alpha", Layer = "parcels", Attribute = "region", ClaimType = "region"
+                });
+                break;
+            case "row-delete":
+                await _rows.DeletePolicyAsync(rowId);
+                break;
+            case "field-create":
+                await _fields.CreatePolicyAsync(new FieldMaskPolicy
+                {
+                    Role = "other", Service = "alpha", Layer = "parcels", Attribute = "region"
+                });
+                break;
+            case "field-delete":
+                await _fields.DeletePolicyAsync(fieldId);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation));
+        }
     }
 
     private async Task ResetAsync()

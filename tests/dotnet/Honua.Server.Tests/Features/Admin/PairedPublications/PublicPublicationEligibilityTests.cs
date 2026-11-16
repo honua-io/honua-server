@@ -41,19 +41,19 @@ public sealed class PublicPublicationEligibilityTests
     }
 
     [Theory]
-    [InlineData("rows", "alias", "ROADS", false)]
-    [InlineData("masks", "ALIAS", "*", false)]
-    [InlineData("rows", "*", "*", false)]
-    [InlineData("masks", "unrelated", "roads", true)]
-    [InlineData("rows", "alias", "other-layer", true)]
+    [InlineData("rows", "alias", "ROADS")]
+    [InlineData("masks", "ALIAS", "*")]
+    [InlineData("rows", "*", "*")]
+    [InlineData("masks", "unrelated", "roads")]
+    [InlineData("rows", "alias", "other-layer")]
     [Trait("Tier", "Fast")]
     public async Task IsEligibleAsync_PolicyThroughAnyResourceService_IsAppliedRegardlessOfRole(
-        string kind, string service, string layer, bool expected)
+        string kind, string service, string layer)
     {
         var source = Source();
         RlsPolicy[] rows = kind == "rows" ? [new() { Role = "signed-in-only", Service = service, Layer = layer, Attribute = "owner", ClaimType = "sub" }] : [];
         FieldMaskPolicy[] masks = kind == "masks" ? [new() { Role = "signed-in-only", Service = service, Layer = layer, Attribute = "secret" }] : [];
-        (await Eligibility(rows, masks).IsEligibleAsync(Snapshot(source), source, default)).Should().Be(expected);
+        (await Eligibility(rows, masks).IsEligibleAsync(Snapshot(source), source, default)).Should().Be(service == "unrelated" || layer == "other-layer");
     }
 
     [UnitTest]

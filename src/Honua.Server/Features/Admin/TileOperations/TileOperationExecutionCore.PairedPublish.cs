@@ -31,8 +31,11 @@ internal sealed partial class TileOperationExecutionCore
 
     private sealed record PairedArtifacts(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
 
-    private sealed record PairedActivation(TileOperationProgress Current, PairedPublishContext Context,
-        PublicationDescriptor Validated, PMTilesBuildResult Build);
+    private sealed record PairedActivation(TileOperationProgress Current, PairedPublishContext Context)
+    {
+        internal required PublicationDescriptor Validated { get; init; }
+        internal required PMTilesBuildResult Build { get; init; }
+    }
 
     private async Task<TileOperationProgress> ExecutePairedPublishAsync(
         TileOperationProgress progress,
@@ -105,7 +108,7 @@ internal sealed partial class TileOperationExecutionCore
         {
             var checks = await StoreAndCheckAsync(context, artifacts, current.JobId, graphProvider, cancellationToken).ConfigureAwait(false);
             var descriptor = Validated(context, capture, Describe(context, artifacts, build), checks);
-            return await ActivateAsync(new(current, context, descriptor, build), services, cancellationToken).ConfigureAwait(false);
+            return await ActivateAsync(new(current, context) { Validated = descriptor, Build = build }, services, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not PairedActivationUnknownException)
         {
@@ -303,7 +306,9 @@ internal sealed partial class TileOperationExecutionCore
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        var (current, context, validated, build) = activation;
+        var (current, context) = activation;
+        var validated = activation.Validated;
+        var build = activation.Build;
         var run = context.Run;
         var descriptor = validated with { PublishedAt = DateTimeOffset.UtcNow };
         var descriptorKey = context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.DescriptorFileName);

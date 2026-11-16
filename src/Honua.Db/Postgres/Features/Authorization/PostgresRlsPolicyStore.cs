@@ -64,14 +64,9 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
                 (@policy_id, @role, @service, @layer, @attribute, @claim_type, @comparison, @description, @created_at, @updated_at)
             """;
 
-        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var ownedTransaction = connection.Transaction is null
-            ? await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false) : null;
-        var transaction = connection.Transaction ?? ownedTransaction!;
-        await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
-        await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var write = await PublicPublicationPolicyWrite.OpenAsync(
+            _connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, write.Transaction.Connection, write.Transaction);
         command.Parameters.AddWithValue("policy_id", NpgsqlDbType.Uuid, policy.PolicyId);
         command.Parameters.AddWithValue("role", NpgsqlDbType.Varchar, policy.Role);
         command.Parameters.AddWithValue("service", NpgsqlDbType.Varchar, policy.Service);
@@ -86,10 +81,7 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         try
         {
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            if (ownedTransaction is not null)
-            {
-                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await write.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -105,20 +97,12 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
     {
         var sql = $"DELETE FROM {_table} WHERE policy_id = @policy_id";
 
-        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var ownedTransaction = connection.Transaction is null
-            ? await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false) : null;
-        var transaction = connection.Transaction ?? ownedTransaction!;
-        await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
-        await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var write = await PublicPublicationPolicyWrite.OpenAsync(
+            _connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, write.Transaction.Connection, write.Transaction);
         command.Parameters.AddWithValue("policy_id", NpgsqlDbType.Uuid, policyId);
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        if (ownedTransaction is not null)
-        {
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await write.CommitAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
     }
 

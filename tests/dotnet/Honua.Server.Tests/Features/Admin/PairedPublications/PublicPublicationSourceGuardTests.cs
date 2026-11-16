@@ -56,32 +56,25 @@ public sealed class PublicPublicationSourceGuardTests
     }
 
     [Theory]
-    [InlineData("ready", true)]
-    [InlineData("pending", false)]
-    [InlineData("revoking", false)]
-    [InlineData("revoked", false)]
-    [InlineData("missing", false)]
-    [InlineData("bucket", false)]
-    [InlineData("origin", false)]
-    [InlineData("distribution", false)]
-    [InlineData("revision", false)]
-    [InlineData("service", false)]
-    [InlineData("layer", false)]
-    [InlineData("stale", false)]
-    [InlineData("restricted", false)]
+    [InlineData("ready")]
+    [InlineData("pending")]
+    [InlineData("revoking")]
+    [InlineData("revoked")]
+    [InlineData("missing")]
+    [InlineData("bucket")]
+    [InlineData("origin")]
+    [InlineData("distribution")]
+    [InlineData("revision")]
+    [InlineData("service")]
+    [InlineData("layer")]
+    [InlineData("stale")]
+    [InlineData("restricted")]
     [Trait("Tier", "Fast")]
-    public async Task ResolveAsync_PublicUrl_RequiresReadyCurrentOriginalDestination(string change, bool advertised)
+    public async Task ResolveAsync_PublicUrl_RequiresReadyCurrentOriginalDestination(string change)
     {
         var source = Source();
         var key = new PublicPublicationKey("publication", "v1");
-        var reservation = new PublicPublicationReservation
-        {
-            Key = key, ServiceId = change == "service" ? "other" : source.Service.EffectivePublicName,
-            LayerIndex = change == "layer" ? 1 : 0, MetadataRevision = change == "revision" ? 6 : 7,
-            DestinationBucket = change == "bucket" ? "other" : "public",
-            DestinationBaseUrl = change == "origin" ? "https://old.example" : "https://data.example",
-            CdnDistributionId = change == "distribution" ? "other" : "cdn"
-        };
+        var reservation = Reservation(change, key, source);
         var state = change switch
         {
             "pending" => PublicPublicationState.Pending,
@@ -109,7 +102,7 @@ public sealed class PublicPublicationSourceGuardTests
         var result = await new PublicPublicationAdvertisement(journal.Object, Guard(graph), target)
             .ResolveAsync(new(key, new(source, 7, 0), "descriptor.json"), default);
 
-        if (advertised)
+        if (change == "ready")
         {
             result.Should().Be(new Uri("https://data.example/data/publications/publication/v1/descriptor.json"));
         }
@@ -118,6 +111,16 @@ public sealed class PublicPublicationSourceGuardTests
             result.Should().BeNull();
         }
     }
+
+    private static PublicPublicationReservation Reservation(
+        string change, PublicPublicationKey key, PMTilesPublishedSource source) => new()
+    {
+        Key = key, ServiceId = change == "service" ? "other" : source.Service.EffectivePublicName,
+        LayerIndex = change == "layer" ? 1 : 0, MetadataRevision = change == "revision" ? 6 : 7,
+        DestinationBucket = change == "bucket" ? "other" : "public",
+        DestinationBaseUrl = change == "origin" ? "https://old.example" : "https://data.example",
+        CdnDistributionId = change == "distribution" ? "other" : "cdn"
+    };
 
     private static PublicPublicationSourceGuard Guard(MetadataV2Graph graph)
     {

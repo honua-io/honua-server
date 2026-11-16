@@ -21,6 +21,29 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
 #if HONUA_EXCLUDE_AWS
         throw new InvalidOperationException("Public data storage requires a server build with AWS support.");
 #else
+        var settings = ReadSettings(section, configuration);
+        RegisterDestination(services, settings);
+        services.AddScoped<PublicPublicationCopier>();
+        services.AddScoped<PublicPublicationAdvertisement>();
+        services.AddScoped<PublicPublicationEligibility>();
+        services.AddScoped<PublicPublicationSourceGuard>();
+        services.AddScoped<PublicPublicationRevoker>();
+        services.AddScoped<PublicPublicationRevocationSweep>();
+        return services;
+#endif
+    }
+
+#if !HONUA_EXCLUDE_AWS
+    private sealed record DestinationSettings
+    {
+        internal required string Bucket { get; init; }
+        internal required string Region { get; init; }
+        internal required Uri Origin { get; init; }
+        internal required string Distribution { get; init; }
+    }
+
+    private static DestinationSettings ReadSettings(IConfigurationSection section, IConfiguration configuration)
+    {
         var bucket = section["BucketName"];
         var region = section["Region"];
         if (string.IsNullOrWhiteSpace(bucket) || string.IsNullOrWhiteSpace(region) ||
@@ -41,30 +64,28 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
             throw new InvalidOperationException("Public data requires its CDN distribution for completed revocation.");
         }
 
+        return new() { Bucket = bucket, Region = region, Origin = origin, Distribution = distribution };
+    }
+
+    private static void RegisterDestination(IServiceCollection services, DestinationSettings settings)
+    {
         var options = Options.Create(new CloudStorageOptions
         {
             Provider = CloudStorageProvider.AwsS3,
-            AwsS3 = new AwsS3Options { BucketName = bucket, Region = region, EnableServerSideEncryption = false }
+            AwsS3 = new AwsS3Options { BucketName = settings.Bucket, Region = settings.Region, EnableServerSideEncryption = false }
         });
         services.AddSingleton<IPublicPublicationDestination>(provider => new PublicPublicationDestination(
             new AwsS3FileStorage(options, provider.GetRequiredService<ILogger<AwsS3FileStorage>>(),
-                provider.GetRequiredService<IUploadProgressStore>()), origin));
+                provider.GetRequiredService<IUploadProgressStore>()), settings.Origin));
         services.AddScoped(provider => new PublicPublicationCleanupTarget
         {
-            Bucket = bucket,
-            BaseUrl = origin.GetLeftPart(UriPartial.Authority),
-            DistributionId = distribution,
+            Bucket = settings.Bucket,
+            BaseUrl = settings.Origin.GetLeftPart(UriPartial.Authority),
+            DistributionId = settings.Distribution,
             Destination = provider.GetRequiredService<IPublicPublicationDestination>(),
             Invalidator = provider.GetRequiredService<ICdnInvalidator>(),
             StatusReader = provider.GetRequiredService<ICdnInvalidationStatusReader>()
         });
-        services.AddScoped<PublicPublicationCopier>();
-        services.AddScoped<PublicPublicationAdvertisement>();
-        services.AddScoped<PublicPublicationEligibility>();
-        services.AddScoped<PublicPublicationSourceGuard>();
-        services.AddScoped<PublicPublicationRevoker>();
-        services.AddScoped<PublicPublicationRevocationSweep>();
-        return services;
-#endif
     }
+#endif
 }

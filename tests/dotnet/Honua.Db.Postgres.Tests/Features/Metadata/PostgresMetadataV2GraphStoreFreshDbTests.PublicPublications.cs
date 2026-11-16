@@ -26,39 +26,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
-            var graph = new MetadataV2Graph
-            {
-                Environment = "Test",
-                Revision = 1,
-                GeneratedAt = DateTimeOffset.UtcNow,
-                Resources =
-                [
-                    new MetadataV2Object
-                    {
-                        Metadata = new MetadataV2ObjectMetadata { Id = "public-layer", Name = "public-layer" },
-                        Type = MetadataV2ObjectType.FeatureDataset
-                    }
-                ]
-            };
+            var graph = PublicLayerGraph();
             var original = await store.SaveAsync(graph, expectedEtag: null);
             var staged = await store.StageAsync(graph with { GeneratedAt = graph.GeneratedAt.AddSeconds(1) });
-            await using var connection = await fixture.DataSource.OpenConnectionAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                CREATE TABLE "{schema}".public_publication_generations (
-                    environment text NOT NULL,
-                    publication_id text NOT NULL,
-                    version text NOT NULL,
-                    metadata_revision bigint NOT NULL,
-                    state text NOT NULL,
-                    PRIMARY KEY (environment, publication_id, version));
-                INSERT INTO "{schema}".public_publication_generations
-                    (environment, publication_id, version, metadata_revision, state)
-                VALUES ('Test', 'public-layer', 'generation-one', @revision, @state);
-                """;
-            command.Parameters.AddWithValue("revision", original.Revision);
-            command.Parameters.AddWithValue("state", state);
-            await command.ExecuteNonQueryAsync();
+            await SeedPublicGenerationAsync(schema, original.Revision, state);
 
             var save = () => operation == "save"
                 ? store.SaveAsync(graph with { GeneratedAt = graph.GeneratedAt.AddSeconds(2) }, original.Etag)
@@ -67,6 +38,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             await save.Should().ThrowAsync<InvalidOperationException>(
                 "catalog changes must not leave previously copied public bytes reachable without a revoker");
             (await store.GetCurrentAsync()).Revision.Should().Be(original.Revision);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
             command.CommandText = $"SELECT COUNT(*) FROM \"{schema}\".public_publication_generations";
             command.Parameters.Clear();
             (await command.ExecuteScalarAsync()).Should().Be(1L,
@@ -76,5 +49,41 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    private static MetadataV2Graph PublicLayerGraph() => new()
+    {
+        Environment = "Test",
+        Revision = 1,
+        GeneratedAt = DateTimeOffset.UtcNow,
+        Resources =
+        [
+            new MetadataV2Object
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "public-layer", Name = "public-layer" },
+                Type = MetadataV2ObjectType.FeatureDataset
+            }
+        ]
+    };
+
+    private async Task SeedPublicGenerationAsync(string schema, long revision, string state)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE TABLE "{schema}".public_publication_generations (
+                environment text NOT NULL,
+                publication_id text NOT NULL,
+                version text NOT NULL,
+                metadata_revision bigint NOT NULL,
+                state text NOT NULL,
+                PRIMARY KEY (environment, publication_id, version));
+            INSERT INTO "{schema}".public_publication_generations
+                (environment, publication_id, version, metadata_revision, state)
+            VALUES ('Test', 'public-layer', 'generation-one', @revision, @state);
+            """;
+        command.Parameters.AddWithValue("revision", revision);
+        command.Parameters.AddWithValue("state", state);
+        await command.ExecuteNonQueryAsync();
     }
 }

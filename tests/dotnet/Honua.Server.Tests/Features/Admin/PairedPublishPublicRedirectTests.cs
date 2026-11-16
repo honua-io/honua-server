@@ -32,19 +32,7 @@ public sealed partial class PairedPublishEndpointTests
     {
         var published = await PublishAsync(IdentityField);
         SetPublicationAccess(new AccessPolicy { AllowAnonymous = true });
-        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var source = PMTilesProxySourceResolver.ResolveForPublish(
-            snapshot, WebAppFixture.TestServiceId, WebAppFixture.TestLayerId)!;
-        _publicGeneration = new()
-        {
-            Reservation = new()
-            {
-                Key = new(_publicationId, published.Version), ServiceId = source.Service.EffectivePublicName,
-                LayerIndex = source.Publication.LayerIndex, MetadataRevision = snapshot.Revision,
-                DestinationBucket = "public", DestinationBaseUrl = "https://data.example", CdnDistributionId = "cdn"
-            },
-            State = PublicPublicationState.Ready, PurgeIds = []
-        };
+        AdvertisePublicGeneration(published.Version);
         using var anonymous = _fixture.CreateClient(allowAutoRedirect: false);
         var files = new[] { "descriptor.json", "item.json", $"{_publicationId}.pmtiles", $"{_publicationId}.parquet" };
         foreach (var file in files)
@@ -63,6 +51,23 @@ public sealed partial class PairedPublishEndpointTests
         denied.Headers.Location.Should().BeNull();
         denied.Headers.CacheControl!.NoStore.Should().BeTrue();
         _publicJournal.Verify(j => j.OpenAsync(It.IsAny<PublicPublicationKey>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private void AdvertisePublicGeneration(string version)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var source = PMTilesProxySourceResolver.ResolveForPublish(
+            snapshot, WebAppFixture.TestServiceId, WebAppFixture.TestLayerId)!;
+        _publicGeneration = new()
+        {
+            Reservation = new()
+            {
+                Key = new(_publicationId, version), ServiceId = source.Service.EffectivePublicName,
+                LayerIndex = source.Publication.LayerIndex, MetadataRevision = snapshot.Revision,
+                DestinationBucket = "public", DestinationBaseUrl = "https://data.example", CdnDistributionId = "cdn"
+            },
+            State = PublicPublicationState.Ready, PurgeIds = []
+        };
     }
 
     private void ConfigurePublicationAdvertisement(IWebHostBuilder builder)
