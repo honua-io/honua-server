@@ -10,6 +10,7 @@ using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
