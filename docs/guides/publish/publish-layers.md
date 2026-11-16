@@ -14,7 +14,9 @@ Register a database connection and publish its spatial tables through Honua's su
 
 ## Create a secure connection
 
-Prefer a server-side secret reference in production. The plaintext password below is only for the local development stack.
+Prefer a server-side secret reference in production. Replace the connection settings below with values reachable from the Honua server. In a container, `localhost` refers to that container; use the database service hostname for a separate database container. The plaintext password below is only for local development.
+
+`ssl_mode="Require"` needs a PostgreSQL server configured for TLS. For a local development database without TLS, use `ssl_mode="Disable"`; keep TLS enabled for production connections.
 
 ```python
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
@@ -37,7 +39,12 @@ Use `admin.list_connections()` and `admin.get_connection(id)` to inspect existin
 ## Inspect and validate tables
 
 `admin.discover_tables(connection.connection_id)` lists the connection's spatial tables with the
-schema, geometry column and SRID that `publish_layer` needs. Pre-publish validation
+schema, geometry column and SRID that `publish_layer` needs. Discovery includes the default
+operational schema (`honua_data` unless `Database:DefaultOperationalSchema` is set), `public`,
+schemas listed in `Database:OperationalSchemas`, and the active request's schema context.
+Reserved metadata schemas are excluded. The connection user must be able to read the source tables.
+
+Pre-publish validation
 (`POST /api/v1/admin/connections/{id}/tables/validate`) does not yet have a high-level SDK
 method; call it through the admin client's HTTP transport or a client generated from
 [`admin-api.json`](../../developer/api-specs/admin-api.json). Validation reports missing primary keys, unsupported geometry, and other publish-blocking problems before catalog mutation.
@@ -59,7 +66,9 @@ with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as 
     print(layer)
 ```
 
-The result includes the numeric layer ID and owning service name. Optional request fields include a description, geometry type, primary key, attribute allowlist, service name, enabled state, and source governance.
+The result includes the numeric layer ID and owning service name. Optional SDK request fields include a description, geometry type, primary key, attribute allowlist, service name, and enabled state. Repeating this publication for the same source table returns a conflict; inspect the existing layer before retrying.
+
+The JSON API also accepts source governance fields. The published `honua-admin` 0.3.2 `PublishLayerRequest` does not expose these fields; use a client generated from [`admin-api.json`](../../developer/api-specs/admin-api.json) to submit the following payload.
 
 For public data, submit only rights and provenance supplied by the data owner. Honua does not infer a license, attribution, publisher, or documentation URL:
 
@@ -151,7 +160,8 @@ its actual source count and 330,000-row publish journey.
 
 - **401 or 403** — verify the admin key and required connection/layer permissions.
 - **Connection test fails** — check host reachability, TLS mode, database name, and credential secret configuration.
-- **Table is absent from discovery** — verify the connection user can read the schema and geometry metadata.
+- **Table is absent from discovery** — check the operational-schema settings above and verify the connection user can read the schema and geometry metadata.
+- **Publish returns 409** — check whether the source table already has a published layer; changing only the requested layer name does not create another publication.
 - **Publish validation fails** — add a stable primary key and use a supported geometry/SRID before retrying.
 - **The layer publishes but queries fail** — confirm it is enabled and the service access policy permits the caller.
 
