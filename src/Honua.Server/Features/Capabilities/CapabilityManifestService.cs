@@ -530,14 +530,14 @@ internal sealed class CapabilityManifestService(
             Capability("collaboration.feature-locks", "collaboration", context,
                 configured: runtimeInventory.FeatureLockAuthorizerConfigured,
                 requiresAuthentication: true),
-            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
-            // lease is node-local, and GeoServices applyEdits honours no client-supplied
-            // version token. Same wire shape as an unimplemented file-format writer. The
-            // version-token row is scoped to GeoServices because OGC API Features does
-            // enforce If-Match/412 — a global name would under-report the working surfaces.
+            // Cross-node leases need the PostgreSQL store, and like every lease they need an authorizer that
+            // can grant one. Without the store the in-process fallback is a missing dependency, not a gap.
             Capability("collaboration.feature-locks.cross-node", "collaboration", context,
-                maturity: CapabilityMaturity.Planned,
-                supported: false),
+                configured: runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
+                unavailableReasonOverride: runtimeInventory.HasSharedFeatureLockStore
+                    ? null
+                    : CapabilityReasonCodes.DependencyUnavailable,
+                requiresAuthentication: true),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -717,6 +717,12 @@ internal sealed class CapabilityManifestService(
             ["collaboration.feature-locks"] = new()
             {
                 Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
+                RequiresAuthentication = true,
+            },
+            ["collaboration.feature-locks.cross-node"] = new()
+            {
+                Configured = runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
+                UnavailableReason = runtimeInventory.HasSharedFeatureLockStore ? null : CapabilityReasonCodes.DependencyUnavailable,
                 RequiresAuthentication = true,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },

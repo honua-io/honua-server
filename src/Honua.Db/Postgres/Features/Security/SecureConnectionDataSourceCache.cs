@@ -92,13 +92,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
     public NpgsqlDataSource GetOrCreate(string connectionString)
         => GetOrCreate(connectionString, connectionString);
 
-    /// <summary>
-    /// Gets (or creates) the pooled data source for a logical connection. When the
-    /// resolved connection string for that logical connection changes — e.g. the
-    /// secrets-manager password rotated — the stale data source is disposed so its
-    /// pooled connections are released instead of accumulating per rotation and
-    /// eventually exhausting server-side connection slots.
-    /// </summary>
     public NpgsqlDataSource GetOrCreate(string connectionName, string connectionString)
     {
         ValidateArguments(connectionName, connectionString);
@@ -108,11 +101,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         }
     }
 
-    /// <summary>
-    /// Pins a pool through its connection lifetime, including an in-flight open.
-    /// Rotation and shutdown retire pinned pools; disposal waits for the last pin.
-    /// Multiplexed logical connections need their source until the lease is returned.
-    /// </summary>
     public Acquisition Acquire(string connectionName, string connectionString, bool preservePrimarySchema = true)
     {
         ValidateArguments(connectionName, connectionString);
@@ -194,10 +182,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         }
     }
 
-    /// <summary>
-    /// Retires only this registered connection's local named and bound pools.
-    /// Existing pins survive; other instances and late opens are bounded by idle pruning.
-    /// </summary>
     public void RetireConnection(Guid connectionId, string connectionName)
     {
         List<NpgsqlDataSource> retired = [];
@@ -276,10 +260,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         }
     }
 
-    /// <summary>
-    /// Stops future maintenance and retires cached entries. An already-running sweep
-    /// retains ownership of its detached batch; asynchronous host disposal waits for it.
-    /// </summary>
     public void Dispose()
     {
         var retired = DetachForDisposal();

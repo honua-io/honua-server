@@ -5,10 +5,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Publishing;
 
-/// <summary>
-/// Resolves one existing authoritative promotion family without moving or creating records.
-/// Migration 082 historically created this family in honua even with Database:Schema set.
-/// </summary>
 internal static class PostgresPromotionSchema
 {
     public static async Task<string> ResolveAsync(

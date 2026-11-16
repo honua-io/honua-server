@@ -10,17 +10,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Service collection extensions for registering PostgreSQL raster store services.
-/// </summary>
 internal static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the PostgreSQL raster store services with dependency injection.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="schemaName">Optional database schema name (defaults to "honua")</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddPostgresRasterStore(this IServiceCollection services, string? schemaName = null)
     {
         // Register the main raster store implementation

@@ -10,6 +10,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
@@ -123,6 +124,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IAuditLog, PersistedTestAuditLog>();
             }
             UseInMemoryAuthenticationState(services);
+            // The connection string names no live database, so feature leases stay in process as well.
+            services.RemoveAll<IFeatureLockService>();
+            services.AddSingleton<IFeatureLockService>(provider => new InMemoryFeatureLockService(provider.GetService<TimeProvider>()));
             RemoveDurableOperationHostedServices(services);
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });

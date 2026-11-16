@@ -15,13 +15,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Legacy in-place "Import*" step methods used by the non-dry-run, non-apply-plan
-/// path of <c>ImportConfigurationAsync</c>. These
-/// helpers iterate filtered resource collections, simulate persistence, aggregate
-/// per-step results into progress reports, and produce the final
-/// <see cref="GeoServerImportResult"/>.
-/// </summary>
 internal sealed partial class GeoServerImportService
 {
     private async Task<ImportStepResult> ImportWorkspacesAsync(GeoServerWorkspaceInfo[] workspaces, GeoServerImportRequest request, GeoServerImportProgress currentProgress, IProgress<GeoServerImportProgress>? progress, CancellationToken cancellationToken)
@@ -406,15 +399,6 @@ internal sealed partial class GeoServerImportService
         await Task.Delay(125, cancellationToken); // Simulate style conversion
     }
 
-    /// <summary>
-    /// Invokes the registered <see cref="ISldStyleConverter"/> against the embedded SLD content
-    /// when available and returns any warning messages for inclusion in import results.
-    /// When conversion errors or missing content combine with <see cref="UnsupportedResourceBehavior.Skip"/>,
-    /// <c>shouldSkip</c> is set to <c>true</c> so the caller can abandon the per-style import
-    /// without double-counting (<see cref="ImportStepResult.SkippedCount"/> is already incremented).
-    /// <c>wasValidated</c> reports whether the converter actually ran and produced no errors;
-    /// callers use it to label the imported resource note.
-    /// </summary>
     internal List<string> TryConvertSldStyle(
         GeoServerStyleInfo style,
         GeoServerImportRequest request,

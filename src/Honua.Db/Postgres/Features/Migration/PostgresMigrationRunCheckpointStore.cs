@@ -11,19 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IMigrationRunCheckpointStore"/> backed by
-/// <c>honua.migration_run_checkpoints</c> (#2459, ADR-0060).
-/// </summary>
-/// <remarks>
-/// Replaces the dev/test-only <see cref="FileSystemMigrationRunCheckpointStore"/> as the
-/// production persistence path so resumable migration-run state lives in the shared data
-/// plane rather than on a compute node's local disk; a run checkpointed on one node can
-/// resume on any node. The <see cref="MigrationRunCheckpointSanitizer"/> is applied on
-/// write so persisted markers stay release-safe, and the checkpoint JSON round-trips
-/// through the shared source-generated <see cref="MigrationRunCheckpointJsonContext"/> so
-/// persistence stays AOT-safe and reflection-free.
-/// </remarks>
 internal sealed class PostgresMigrationRunCheckpointStore : IMigrationRunCheckpointStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -33,7 +20,6 @@ internal sealed class PostgresMigrationRunCheckpointStore : IMigrationRunCheckpo
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }
 
-    /// <inheritdoc />
     public async ValueTask SaveAsync(MigrationRunCheckpoint checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
@@ -59,7 +45,6 @@ internal sealed class PostgresMigrationRunCheckpointStore : IMigrationRunCheckpo
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<MigrationRunCheckpoint?> LoadAsync(string runId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -86,7 +71,6 @@ internal sealed class PostgresMigrationRunCheckpointStore : IMigrationRunCheckpo
         return checkpoint is null ? null : MigrationRunCheckpointSanitizer.Sanitize(checkpoint);
     }
 
-    /// <inheritdoc />
     public async ValueTask<bool> DeleteAsync(string runId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);

@@ -19,10 +19,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// OGC API - Maps endpoints providing server-rendered map imagery.
-/// Implements OGC API - Maps Part 1: Core specification.
-/// </summary>
 public static partial class OgcMapsEndpoints
 {
     private static readonly ImmutableHashSet<string> MetadataQueryParameters =
@@ -33,9 +29,6 @@ public static partial class OgcMapsEndpoints
 
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
 
-    /// <summary>
-    /// Maps OGC API - Maps endpoints to the application.
-    /// </summary>
     public static void MapOgcMapsEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/ogc/maps")
@@ -145,9 +138,6 @@ public static partial class OgcMapsEndpoints
 
     }
 
-    /// <summary>
-    /// Get OGC API - Maps landing page.
-    /// </summary>
     private static async Task<IResult> GetLandingPage(HttpContext context, string? f)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
@@ -213,9 +203,6 @@ public static partial class OgcMapsEndpoints
             "Landing page");
     }
 
-    /// <summary>
-    /// Get OGC API - Maps conformance classes.
-    /// </summary>
     private static async Task<IResult> GetConformance(
         OgcMapsConformanceHandler handler,
         CancellationToken cancellationToken = default)
@@ -250,9 +237,6 @@ public static partial class OgcMapsEndpoints
             fallbackSpec);
     }
 
-    /// <summary>
-    /// Get rendered map from a single collection.
-    /// </summary>
     private static async Task<IResult> GetCollectionMap(
         string collectionId,
         [AsParameters] OgcMapRequest request,
@@ -272,18 +256,6 @@ public static partial class OgcMapsEndpoints
         return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
     }
 
-    /// <summary>
-    /// Builds the dataset extent, common CRS list and shared storage CRS advertised by the
-    /// landing page, from the Maps-enabled collections this caller may see (#5048).
-    /// </summary>
-    /// <remarks>
-    /// Discovery enumerates through <see cref="OgcMapsResourceResolver.EnumerateDatasetEntries"/>
-    /// and combines extents through <see cref="OgcMapsResourceResolver.BuildDatasetExtentAsync"/>,
-    /// the same helpers the dataset-map render path uses, so the landing page cannot describe
-    /// a viewport the renderer would not produce. Nothing is invented: when the bounds cannot
-    /// be transformed to CRS84 the extent is omitted and CRS84 is withdrawn from the
-    /// advertised list rather than reported as a world extent.
-    /// </remarks>
     private static async Task<(Extent? Extent, ImmutableArray<string>? Crs, string? StorageCrs)> BuildDatasetMetadataAsync(
         HttpContext context)
     {
@@ -368,9 +340,6 @@ public static partial class OgcMapsEndpoints
         return (extent, supportedCrs, storageCrs);
     }
 
-    /// <summary>
-    /// Get rendered map from multiple collections (dataset-wide).
-    /// </summary>
     private static async Task<IResult> GetDatasetMap(
         [AsParameters] OgcMapRequest request,
         HttpContext context,
@@ -436,9 +405,6 @@ public static partial class OgcMapsEndpoints
         return await handler.RenderDatasetMapAsync(selectedLayerIds, request, context: context, cancellationToken);
     }
 
-    /// <summary>
-    /// Get rendered map from a single collection with a named style.
-    /// </summary>
     private static async Task<IResult> GetStyledCollectionMap(
         string collectionId,
         string styleId,
@@ -459,9 +425,6 @@ public static partial class OgcMapsEndpoints
         return await handler.RenderStyledMapAsync(layerId, styleId, request, context: context, cancellationToken);
     }
 
-    /// <summary>
-    /// Get map tile sets for a collection.
-    /// </summary>
     private static async Task<IResult> GetCollectionMapTileSets(
         string collectionId,
         HttpContext context,
@@ -499,11 +462,6 @@ public static partial class OgcMapsEndpoints
         return await handler.GetMapTileSetAsync(layerId, tileMatrixSetId, context: context, cancellationToken);
     }
 
-    /// <summary>
-    /// Outcome of resolving a Maps collection: the validated publication and its storage layer
-    /// id, or the response to return instead (the access-policy refusal for a protected
-    /// collection, otherwise 404).
-    /// </summary>
     private readonly record struct MapsCollectionResolution(
         MetadataV2Layer? Publication,
         MetadataV2Object? Resource,

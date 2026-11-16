@@ -11,11 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.WorkflowPackages;
 
-/// <summary>
-/// PostGIS-backed <see cref="IWorkflowPackageStore"/>. Package drafts, immutable
-/// versions, and publications are rows in the metadata schema, so a restart or a
-/// peer replica sees the same records.
-/// </summary>
 internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

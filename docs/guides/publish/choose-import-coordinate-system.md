@@ -18,7 +18,7 @@ Do not assume that leaving a target blank preserves a projected source on an
 older installation. Use an explicit supported target matching the source, or
 wait for the updated server and client.
 
-On older installations, MCP `ingest_dataset` always stores EPSG:4326 and accepts
+On older installations, MCP `honua_ingest_dataset` always stores EPSG:4326 and accepts
 no target. Use the Admin import through a compatible Honua SDK with an explicit
 `targetSrid` matching the source to retain a projected system until the updated
 server is installed.
@@ -30,7 +30,7 @@ establish keep-source support in that installation.
 
 You need import permission, a supported file, and a new target table name.
 Start from Console's **Import a file** entry, or use your installed Honua SDK
-or the MCP `ingest_dataset` tool. The [file import guide](import-files.md)
+or the MCP `honua_ingest_dataset` tool. The [file import guide](import-files.md)
 describes supported formats and background jobs.
 
 ## Choose the source and target
@@ -70,6 +70,8 @@ dataset's expected location. Then [publish the table](publish-layers.md).
 
 - **`import.source_srid_required`:** identify the source system and supply
   `sourceSrid`; selecting a target does not supply the missing source.
+- **`import.source_srid_unsupported`:** the `sourceSrid` you supplied is not a
+  coordinate system this server knows; check the code with the lookup.
 - **`import.target_srid_unsupported`:** choose a target supported by this server.
   Entering an arbitrary EPSG number does not install its transformation support.
 - **The preview has mixed or unresolvable source systems:** resolve the source

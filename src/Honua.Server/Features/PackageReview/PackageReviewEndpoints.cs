@@ -37,14 +37,16 @@ internal static partial class PackageReviewEndpoints
             .WithSummary("Validate a package using the shared package-review contract.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PackageReviewResponse>>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/preview", HandlePreview)
             .WithDisplayName("Preview Package")
             .WithSummary("Validate a package and return a read-only preview plan.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PackageReviewResponse>>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/", HandlePublishMapPackage)
             .WithDisplayName("Publish Map Package")

@@ -5,25 +5,14 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Postgres.Queries.Filters;
 
-/// <summary>
-/// PostgreSQL / PostGIS implementation of <see cref="ISqlDialect"/>.
-/// </summary>
-/// <remarks>
-/// Identifiers are double-quoted with embedded double quotes doubled, per the
-/// ANSI / PostgreSQL convention. Parameters are <c>@</c>-prefixed (Npgsql named parameters).
-/// </remarks>
 internal sealed class PostgresSqlDialect : ISqlDialect
 {
-    /// <summary>Singleton instance — the dialect carries no per-call state.</summary>
     public static readonly PostgresSqlDialect Instance = new();
 
-    /// <inheritdoc />
     public string Name => "postgres";
 
-    /// <inheritdoc />
     public string ParameterPrefix => "@";
 
-    /// <inheritdoc />
     public string QuoteIdentifier(string identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))
