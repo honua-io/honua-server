@@ -1842,6 +1842,7 @@ in `scripts/ci/native-image-impact.py` for authoritative serving-image verificat
 No required check or nightly/release/deploy verification moved. Content-addressed
 skip promotion still requires an audit of authoritative serving-image run evidence;
 the retired observer cannot supply it.
+
 ### OData error-handling and advanced-feature host lifetime
 
 `ODataErrorHandlingTests` and `ODataAdvancedFeaturesTests` build their Pro-licensed,
