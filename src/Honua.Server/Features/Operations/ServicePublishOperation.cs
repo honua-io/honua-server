@@ -6,29 +6,12 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Shared identity and descriptor definition for the <c>service.publish</c> operation. Keeps
-/// the operation id and its groundable descriptor in one place so the descriptor provider and
-/// the executor agree on the contract.
-/// </summary>
 internal static class ServicePublishOperation
 {
-    /// <summary>
-    /// Stable operation identifier for publishing a PostGIS table as a Honua layer.
-    /// </summary>
     public const string OperationId = "service.publish";
 
-    /// <summary>
-    /// Provider identifier for the server-side publish descriptor provider.
-    /// </summary>
     public const string ProviderId = "honua.server.operations";
 
-    /// <summary>
-    /// Builds the groundable descriptor for <c>service.publish</c>. ExecutionKind is
-    /// synchronous (publish is a 12-step inline transaction); ApprovalModel is
-    /// <see cref="OperationApprovalModel.OperatorGate"/> — publish is gated by the operator
-    /// approval gate at the HTTP layer, NOT the Studio publish-request lane.
-    /// </summary>
     public static OperationDescriptor BuildDescriptor() => new()
     {
         OperationId = OperationId,
