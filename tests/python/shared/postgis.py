@@ -685,6 +685,8 @@ class PostGISFixture:
                         FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();
                     """
                 )
+                # Change-feed readers take their committed horizon from this function.
+                conn.execute((MIGRATIONS_DIR / "213_CreateFeatureChangeReadHorizon.sql").read_text())
 
                 # Multidimensional coverage catalog (server migration 025). The ImageServer
                 # metadata builder lists registered coverages for the layer; with migrations
