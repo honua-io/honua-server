@@ -25,9 +25,6 @@ using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Collections management endpoints for OGC API Features
-/// </summary>
 internal static class CollectionsEndpoints
 {
     private const string OgcFeaturesProtocolName = "OgcFeatures";
@@ -50,9 +47,6 @@ internal static class CollectionsEndpoints
         MediaTypes.Html
     ];
 
-    /// <summary>
-    /// Maps collections management endpoints
-    /// </summary>
     public static IEndpointRouteBuilder MapCollectionsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/ogc/features/collections", HandleGetCollections)
@@ -95,9 +89,6 @@ internal static class CollectionsEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Handles the OGC API Features collections list request
-    /// </summary>
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
@@ -281,9 +272,6 @@ internal static class CollectionsEndpoints
         }
     }
 
-    /// <summary>
-    /// Handles the OGC API Features single collection request
-    /// </summary>
     private static async Task<IResult> HandleGetCollection(
         string collectionId,
         HttpContext context,
@@ -410,9 +398,6 @@ internal static class CollectionsEndpoints
         }
     }
 
-    /// <summary>
-    /// Handles the OGC API Features queryables request
-    /// </summary>
     private static async Task<IResult> HandleGetQueryables(
         string collectionId,
         HttpContext context,
@@ -836,9 +821,6 @@ internal static class CollectionsEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds a queryables JSON Schema property from a V2 schema field.
-    /// </summary>
     private static JsonSchemaProperty ConvertFieldToJsonSchemaProperty(MetadataV2Field field)
     {
         var (type, format) = GetJsonSchemaTypeAndFormatV2(field.Type);
@@ -852,9 +834,6 @@ internal static class CollectionsEndpoints
         };
     }
 
-    /// <summary>
-    /// Maps a V2 <see cref="MetadataV2FieldType"/> to a JSON Schema type/format pair.
-    /// </summary>
     private static (string type, string? format) GetJsonSchemaTypeAndFormatV2(MetadataV2FieldType type)
         => type switch
         {
@@ -918,9 +897,6 @@ internal static class CollectionsEndpoints
 
 }
 
-/// <summary>
-/// Logging helpers for collections endpoints
-/// </summary>
 internal static partial class CollectionsEndpointLogging
 {
     [LoggerMessage(EventId = 5201, Level = LogLevel.Warning,

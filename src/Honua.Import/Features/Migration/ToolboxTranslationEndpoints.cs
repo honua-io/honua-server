@@ -14,29 +14,14 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Admin endpoint for the arcpy/toolbox translation lane (#2145). Accepts an SDK-translated
-/// toolbox manifest (<c>.pyt</c>/<c>.tbx</c>/<c>.atbx</c>) and returns the
-/// server-authoritative round-trip report against the canonical process catalog.
-/// </summary>
-/// <remarks>
-/// Contract split: the honua-sdk-python <c>honua-migrate</c> scanner parses toolbox sources
-/// and proposes per-tool mappings; this endpoint owns the round-trip proof (the catalog is
-/// the single source of truth for executable signatures) and the explicit unsupported
-/// report. The server never parses toolbox sources and never emulates arcpy execution;
-/// translated tools map only to existing native processes invoked through the canonical
-/// process/job runtime (OGC API Processes / GPServer).
-/// </remarks>
 internal static partial class ToolboxTranslationEndpoints
 {
     private const int MaxTools = 200;
 
-    /// <summary>Span name for a toolbox translation validation, on the shared Honua source.</summary>
     private const string ValidationActivityName = "honua.import.toolbox_translation.validate";
 
     private const string ValidationOperation = "toolbox-translation-validate";
 
-    /// <summary>The only media type this endpoint accepts a manifest in.</summary>
     private const string JsonMediaType = "application/json";
 
     // Span attributes. Counts and the source format are low-cardinality; the rejection
@@ -49,9 +34,6 @@ internal static partial class ToolboxTranslationEndpoints
     private const string UnsupportedCountTag = "honua.import.toolbox.unsupported_count";
     private const string RejectionReasonTag = "honua.import.toolbox.rejection_reason";
 
-    /// <summary>
-    /// Maps the toolbox translation validation endpoint.
-    /// </summary>
     public static void MapToolboxTranslationEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/toolbox")
@@ -173,13 +155,6 @@ internal static partial class ToolboxTranslationEndpoints
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// True when the request declares a JSON body. Mirrors what
-    /// <c>HttpRequestJsonExtensions.ReadFromJsonAsync</c> accepts: the JSON media type or any
-    /// <c>+json</c> structured suffix, with an optional charset parameter. An ABSENT
-    /// Content-Type is accepted for compatibility with the existing empty-body path, which
-    /// answers 400 "Request body is required."
-    /// </summary>
     private static bool HasJsonContentType(HttpRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.ContentType))
@@ -196,23 +171,12 @@ internal static partial class ToolboxTranslationEndpoints
             || mediaType.Suffix.Equals("json", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Records a refused manifest on the span with a stable reason code. The caller-facing
-    /// message is deliberately not used: it interpolates manifest content, so it belongs in
-    /// the response body rather than in an unbounded span attribute.
-    /// </summary>
     private static void MarkRejected(Activity? activity, string reason)
     {
         activity?.SetTag(RejectionReasonTag, reason);
         activity?.SetStatus(ActivityStatusCode.Error, reason);
     }
 
-    /// <summary>
-    /// Rejects a payload that identifies as a different artifact or an unsupported schema
-    /// version instead of silently reinterpreting it under the v1 toolbox contract. Judged
-    /// on the raw document so an <em>omitted</em> identity (accepted as v1) stays
-    /// distinguishable from an explicit <c>null</c>/blank one (rejected).
-    /// </summary>
     private static string? ValidateArtifactIdentity(JsonElement root)
     {
         if (root.TryGetProperty("artifactKind", out var kindElement)
@@ -291,12 +255,6 @@ internal static partial class ToolboxTranslationEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Coerces explicit JSON <c>null</c> collection values (which bypass the records'
-    /// non-null defaults during deserialization) to empty arrays so the validator never
-    /// dereferences null. A null <c>parameterMappings</c> or <c>unsupportedConstructs</c>
-    /// is treated as "none declared".
-    /// </summary>
     private static ToolboxTranslationManifest Normalize(ToolboxTranslationManifest manifest) =>
         manifest with
         {
@@ -310,7 +268,6 @@ internal static partial class ToolboxTranslationEndpoints
     private static ILogger<ToolboxTranslationEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<ToolboxTranslationEndpointsLog>>();
 
-    /// <summary>Log category marker for toolbox translation endpoint operations.</summary>
     internal sealed class ToolboxTranslationEndpointsLog;
 
     private static partial class Log

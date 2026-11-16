@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.Console.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -29,6 +30,16 @@ internal static class AgentApprovalFilter
     internal const string ConsoleGuidance =
         "Agent changes to layers, access grants and published content need a person: ask one to make this change in Console. " +
         "Do not retry with another credential.";
+
+    // Attaches one of these rules to an admin or Console route. The route then decides for itself
+    // what an agent may change, so the default refusal (AgentRouteAdmissionMiddleware) leaves it
+    // to the rule and its specific guidance.
+    public static TBuilder AddAgentApprovalFilter<TBuilder>(
+        this TBuilder builder,
+        Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> rule,
+        [CallerArgumentExpression(nameof(rule))] string ruleName = "")
+        where TBuilder : IEndpointConventionBuilder
+        => builder.AddEndpointFilter(rule).WithRouteAgentRule($"Its own agent rule decides ({ruleName}).");
 
     public static ValueTask<object?> AccessPolicy(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, AccessPolicyRef, ProposalGuidance);

@@ -22,7 +22,8 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IWebHostEnvironment hostEnvironment,
     IServiceProviderIsService serviceInventory,
     IFeatureOutputFormatRegistry outputFormats,
-    ManifestRoutedCapabilityIndex routedCapabilities)
+    ManifestRoutedCapabilityIndex routedCapabilities,
+    IFeatureLockService? featureLockService = null)
 {
     public ManifestRoutedCapabilityIndex RoutedCapabilities { get; } = routedCapabilities;
 
@@ -35,6 +36,9 @@ internal sealed class CapabilityManifestRuntimeInventory(
     public bool HasAutonomyPolicyStore { get; } = opsAutonomyPolicyStores.Any();
 
     public bool HasFieldCollectionSyncStore { get; } = fieldCollectionSyncStores.Any();
+
+    public bool HasSharedFeatureLockStore { get; } = featureLockService
+        is Collaboration.FeatureLocks.PostgresFeatureLockService;
 
     public bool FeatureLockAuthorizerConfigured { get; } = featureLockAuthorizers
         .Any(static authorizer => authorizer is not Collaboration.FeatureLocks.FailClosedFeatureLockAuthorizer);
