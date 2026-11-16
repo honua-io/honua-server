@@ -92,12 +92,6 @@ internal sealed partial class StreamingFileImportService
         return GetAllowedTableName(tableName);
     }
 
-    /// <summary>
-    /// Reports whether the live physical target already exists. A replace whose load drops
-    /// rows must only refuse to promote when this is <see langword="true"/> — a first-ever
-    /// replace into a brand-new target has no prior complete dataset to lose, so a partial
-    /// result is a normal partial import (#4006), not data loss.
-    /// </summary>
     private static async Task<bool> ImportTableExistsAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -111,13 +105,6 @@ internal sealed partial class StreamingFileImportService
         return (bool?)await command.ExecuteScalarAsync(cancellationToken) == true;
     }
 
-    /// <summary>
-    /// Projects inferred attributes onto nullable typed columns of an import-owned table.
-    /// The properties jsonb document is left intact. A missing ownership comment makes the
-    /// database function return without changing the table. The catalog change commits
-    /// before the row backfill, and each backfill batch commits on its own, so the
-    /// access-exclusive lock is not held while existing rows are rewritten.
-    /// </summary>
     private static async Task<IReadOnlyList<ImportTypedColumn>> PromoteTypedColumnsAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -241,11 +228,6 @@ internal sealed partial class StreamingFileImportService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Create-if-not-exists variant used by the append and upsert load modes, which must
-    /// not drop an existing target. Builds the same fixed import shape only when the table
-    /// is missing, leaving any existing rows untouched.
-    /// </summary>
     private static async Task EnsureTableAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -261,11 +243,6 @@ internal sealed partial class StreamingFileImportService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Builds an empty <c>&lt;table&gt;__staging</c> sibling for a transactional replace.
-    /// Returns the physical staging table name the load streams into; the live target is
-    /// untouched until <see cref="SwapStagingTableAsync"/> renames the staging table over it.
-    /// </summary>
     private static async Task<string> CreateStagingTableAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -343,10 +320,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Copies every staged row into the live target and drops the staging sibling in one
-    /// transaction. A failure rolls the insert back and leaves the live table unchanged.
-    /// </summary>
     private async Task AppendStagingIntoTargetAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -433,14 +406,6 @@ internal sealed partial class StreamingFileImportService
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// True when <paramref name="tableName"/> exists and carries the importer ownership marker.
-    /// A missing table and a table the importer does not own both return false; the latter is not
-    /// an error here because append still has a direct write path for those tables.
-    /// This is a read of the ownership comment only. <see cref="ImportTableOwnership.AssertOwnedAsync"/>
-    /// takes <c>LOCK TABLE</c>, which PostgreSQL rejects outside a transaction (SQLSTATE 25P01),
-    /// and this check runs before the load transaction starts.
-    /// </summary>
     private static async Task<bool> TargetIsImporterOwnedAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -458,12 +423,6 @@ internal sealed partial class StreamingFileImportService
             && marker == ImportTableOwnership.Marker;
     }
 
-    /// <summary>
-    /// Drops the never-promoted <c>&lt;table&gt;__staging</c> sibling of <paramref name="tableName"/>.
-    /// Used when a replace's load left features out (skip/continue) and the live target must not
-    /// be swapped for an incomplete dataset (#4006); the staging table is otherwise dead weight
-    /// until the next replace's <see cref="CreateStagingTableAsync"/> drops it anyway.
-    /// </summary>
     private static async Task DropStagingTableAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -476,10 +435,6 @@ internal sealed partial class StreamingFileImportService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Ensures a stable unique index over the requested property key columns so the keyed
-    /// upsert path has a valid <c>ON CONFLICT</c> target.
-    /// </summary>
     private static async Task EnsureUpsertKeyAsync(
         NpgsqlConnection connection,
         string schemaName,

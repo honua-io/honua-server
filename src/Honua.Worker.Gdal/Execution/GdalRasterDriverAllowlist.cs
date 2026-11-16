@@ -12,10 +12,6 @@ namespace Honua.Worker.Gdal.Execution;
 // are still admitted by the byte guard before the process is spawned.
 internal static class GdalRasterDriverAllowlist
 {
-    /// <summary>
-    /// Runs <paramref name="tool"/> after prefixing the allowlisted <c>-if</c> drivers
-    /// when the tool accepts them.
-    /// </summary>
     public static Task<GdalCommandResult> RunAsync(
         IGdalCommandRunner runner,
         string tool,
@@ -104,10 +100,6 @@ internal static class GdalRasterDriverAllowlist
         return drivers;
     }
 
-    /// <summary>
-    /// Maps an allowlist key onto the GDAL driver short name passed to <c>-if</c>.
-    /// JPEG2000 uses the open-source JP2OpenJPEG driver.
-    /// </summary>
     private static string? ToGdalDriver(string format) => format.ToUpperInvariant() switch
     {
         "TIFF" => "GTiff",

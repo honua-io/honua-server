@@ -143,10 +143,6 @@ internal static class SpatialAnalyticsReadPolicyTestData
             };
     }
 
-    /// <summary>
-    /// Records the one analytics call the reader makes. <see cref="IFeatureDataAccess"/> is
-    /// internal, so it cannot be proxied by a mocking library; every other member is inert.
-    /// </summary>
     private sealed class RecordingFeatureDataAccess : IFeatureDataAccess
     {
         public ParameterizedQuery? Executed { get; private set; }

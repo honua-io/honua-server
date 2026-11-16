@@ -9,18 +9,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Free-tier (LocalStack Community) emulated scenario (#2166) that broadens the matrix beyond the
-/// single-object round-trip in <see cref="S3ArtifactRoundTripCloudIntegrationTests"/> into a
-/// deploy-artifact ROLLBACK path: a versioned bucket publishes artifact v1, then v2 (so v2 is the
-/// live version), and a rollback then promotes v1 back to live by deleting the bad v2 version. This
-/// exercises the S3 versioning surface (enable versioning, list object versions, delete by
-/// version id) that an artifact-store rollback relies on, against a REAL emulated S3 endpoint via
-/// the <see cref="LocalStackFixture"/>'s edge ServiceURL.
-///
-/// Gated like the other emulated scenarios: when Docker is unavailable the fixture reports
-/// <see cref="LocalStackFixture.Available"/> = false and this test skips (never fails).
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 public sealed class S3ArtifactRollbackCloudIntegrationTests : IClassFixture<LocalStackFixture>
 {

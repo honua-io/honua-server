@@ -20,42 +20,12 @@ using DomainAccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// #4386: proves that a denied principal receives <b>zero records</b>, not merely a
-/// status code.
-/// <para>
-/// Every pre-existing RBAC denial assertion in this repository stopped at
-/// <c>response.StatusCode.Should().Be(...)</c>, and the fixture that proved
-/// authorization (<c>ServiceRbacTestFixture</c> over <c>TestWebApplicationFactory</c>)
-/// substitutes an in-memory feature store, so no test proved a denied principal was
-/// refused rows that actually exist in PostGIS.
-/// </para>
-/// <para>
-/// These tests run against a real PostGIS-backed host with the development
-/// authentication bypass switched off and a real portal credential that holds
-/// <see cref="AllowedRole"/> and never <see cref="DeniedRole"/>. Both the allowed and
-/// the denied layer hold real, non-empty rows carrying distinguishable markers, so a
-/// disclosure is observable in the response body rather than inferred from a status.
-/// </para>
-/// <para>
-/// The <c>authorizationDefectInjected</c> arm is the negative control demanded by the
-/// last acceptance criterion: it replaces <see cref="IAccessPolicyEvaluator"/> with an
-/// always-allow implementation — a deliberately bypassed authorization decision — and
-/// asserts the denied read then <b>does</b> return the restricted rows and their
-/// marker. That proves the zero-record assertions have teeth: they are not satisfied
-/// by a route that returns nothing for unrelated reasons (wrong path, missing layer,
-/// unseeded table), because the same route on the same data returns the rows the
-/// moment the authorization decision is removed.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Operation(Operations.Query)]
 public sealed class DeniedPrincipalZeroRecordsTests
 {
-    /// <summary>Role held by the credential under test; gates layer 0 only.</summary>
     private const string AllowedRole = "alpha-reader";
 
-    /// <summary>Role gating layer 1. The credential under test never holds it.</summary>
     private const string DeniedRole = "beta-reader";
 
     private const int AllowedLayerId = 0;
@@ -66,15 +36,10 @@ public sealed class DeniedPrincipalZeroRecordsTests
     private const long DeniedObjectId = 94201;
     private const long DeniedSecondObjectId = 94202;
 
-    /// <summary>Marker written into the readable layer's rows.</summary>
     private const string AllowedMarker = "alpha-readable-parcel-94101";
 
     private const string AllowedSecondMarker = "alpha-readable-parcel-94102";
 
-    /// <summary>
-    /// Marker written into the restricted layer's rows. Its absence from a denied
-    /// response body is the disclosure assertion #4386 asks for.
-    /// </summary>
     private const string DeniedMarker = "beta-restricted-parcel-94201";
 
     private const string DeniedSecondMarker = "beta-restricted-parcel-94202";
@@ -97,11 +62,6 @@ public sealed class DeniedPrincipalZeroRecordsTests
     private const string OgcFeaturesSurface = "ogc-features";
     private const string ODataSurface = "odata";
 
-    /// <summary>
-    /// A denied principal's read of a resource that genuinely holds rows returns no
-    /// record from that resource, and its allowed read returns exactly the allowed
-    /// ids with no row from the denied sibling.
-    /// </summary>
     [IntegrationTheory]
     [MemberData(nameof(SurfaceMatrix))]
     [Protocol(TestProtocols.FeatureServer, TestProtocols.OgcApiFeatures, TestProtocols.ODataV4)]
@@ -303,11 +263,6 @@ public sealed class DeniedPrincipalZeroRecordsTests
         _ => throw new ArgumentOutOfRangeException(nameof(surface), surface, "Unknown surface."),
     };
 
-    /// <summary>
-    /// Extracts the record identifiers a response body actually carries. A body that
-    /// is not a success-shaped payload carries no records, which is exactly what the
-    /// denial case asserts.
-    /// </summary>
     private static List<long> ReadRecordIds(string surface, string body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -440,11 +395,6 @@ public sealed class DeniedPrincipalZeroRecordsTests
         }
     }
 
-    /// <summary>
-    /// The deliberately introduced defect: authorization always allows. Injected only
-    /// by the negative-control arm, so the zero-record assertions are challenged by a
-    /// host that genuinely discloses the restricted rows.
-    /// </summary>
     private sealed class BypassedAccessPolicyEvaluator : IAccessPolicyEvaluator
     {
         public Task<DomainAccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action)

@@ -11,30 +11,9 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
-    /// <summary>
-    /// Whether the SELECT clause should project the runtime <c>distance</c> column.
-    /// <c>returnDistance</c> is spec-compliant for the general layer /query operation:
-    /// the column is computed whenever a spatial filter geometry is present (KNN or any
-    /// other relationship), measuring each feature's geodesic distance from the query
-    /// geometry. The boolean mirrors the parameter binding in
-    /// <c>FeatureDataAccess.AddQueryParameters</c>, which prepends the distance geometry
-    /// parameter ahead of the WHERE parameters.
-    /// </summary>
     internal static bool ShouldComputeDistance(SpatialFilter? spatialFilter)
         => spatialFilter is { ReturnDistance: true };
 
-    /// <summary>
-    /// Builds the <c>ST_Distance(...)</c> geography operand for the runtime distance column
-    /// and, for non-KNN queries, appends the filter geometry to the WHERE-parameter list so
-    /// it is bound in positional order alongside the rest of the SELECT clause.
-    /// </summary>
-    /// <remarks>
-    /// KNN queries intentionally do not append here: their distance geometry is bound
-    /// up-front by <c>FeatureDataAccess.AddQueryParameters</c> (ahead of the WHERE params),
-    /// which is the established KNN ordering. Non-KNN queries have no such manual binding, so
-    /// the geometry is threaded through <paramref name="parameters"/> instead — this keeps the
-    /// distance parameter present only when the SELECT clause actually projects the column.
-    /// </remarks>
     private string BuildDistanceSelectOperand(
         SpatialFilter filter,
         FeatureQuery query,
@@ -286,10 +265,6 @@ internal sealed partial class FeatureQueryBuilder
         return $"jsonb_build_object({string.Join(", ", projectedFields)})::text";
     }
 
-    /// <summary>
-    /// Resolves the enforced field-level-security (column masking) set (#1940) from the
-    /// query into a case-insensitive lookup. Empty when no masking applies.
-    /// </summary>
     private static HashSet<string> ResolveMaskedFields(FeatureQuery query)
     {
         var masked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -303,13 +278,6 @@ internal sealed partial class FeatureQueryBuilder
         return masked;
     }
 
-    /// <summary>
-    /// Builds the attributes-column source expression, subtracting any masked fields
-    /// (#1940) from the raw attributes <c>jsonb</c> via the key-removal operator. Masked
-    /// field names are bound as a single <c>text[]</c> parameter so they can never inject
-    /// SQL regardless of contents. Returns the bare attributes column when nothing is
-    /// masked, preserving the prior byte-identical query.
-    /// </summary>
     internal static string BuildMaskedAttributesColumn(
         HashSet<string> maskedFields,
         ref int paramIndex,
@@ -365,11 +333,6 @@ internal sealed partial class FeatureQueryBuilder
         return ("NULL", $"{unprojected}::text");
     }
 
-    /// <summary>
-    /// Wraps an attributes-jsonb expression with the masked-field key-removal (#1940)
-    /// when any field is masked, binding the masked names as a single <c>text[]</c>
-    /// parameter. Returns the expression unchanged when nothing is masked.
-    /// </summary>
     private static string ApplyMaskRemoval(
         string attributesExpression,
         HashSet<string> maskedFields,

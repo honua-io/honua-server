@@ -6,14 +6,6 @@ using Honua.Db.GeoServicesRest.Features.FeatureStore.Services;
 
 namespace Honua.Db.GeoServicesRest.Tests;
 
-/// <summary>
-/// Regression coverage for #2012 (DNS-rebinding SSRF / TOCTOU): the federated
-/// outbound guard must re-resolve and re-validate the target host's IP at
-/// connect time, so a rebinding A-record that flips from a public address at
-/// registration to a private/metadata address at send time is rejected. The
-/// guard exposes an injectable resolver so the re-check is unit-testable without
-/// real DNS.
-/// </summary>
 public sealed class GeoServicesRestOutboundGuardTests
 {
     [Trait("Tier", "Fast")]

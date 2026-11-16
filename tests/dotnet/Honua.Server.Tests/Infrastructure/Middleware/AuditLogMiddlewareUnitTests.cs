@@ -15,11 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Unit tests that drive <see cref="AuditLogMiddleware"/> directly to prove the
-/// authentication / authorization and login emission branches without standing up
-/// the full host (which bypasses auth in the integration harness) (#507).
-/// </summary>
 public sealed class AuditLogMiddlewareUnitTests
 {
     private readonly CapturingAuditLog _audit = new();

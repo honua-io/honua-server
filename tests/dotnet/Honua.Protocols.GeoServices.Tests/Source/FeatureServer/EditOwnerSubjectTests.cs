@@ -17,9 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Stable edit-owner subjects and non-admin owner reassignment (honua-server#5625, SRV-GS-005).
-/// </summary>
 public sealed class EditOwnerSubjectTests
 {
     [UnitTest]

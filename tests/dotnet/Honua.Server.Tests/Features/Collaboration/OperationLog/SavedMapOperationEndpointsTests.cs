@@ -18,11 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.OperationLog;
 
-/// <summary>
-/// Integration coverage for the saved-map collaborative edit operation log endpoints
-/// (honua-server#972): durable append with monotonic server cursors, idempotent dedupe by
-/// operation id, cursor replay/catchup, and fail-closed authorization.
-/// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
 public sealed class SavedMapOperationEndpointsTests

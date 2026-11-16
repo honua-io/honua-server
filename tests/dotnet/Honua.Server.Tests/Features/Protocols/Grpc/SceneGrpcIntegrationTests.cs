@@ -18,15 +18,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Integration tests for the gRPC SceneService, TileService, and ElevationService
-/// (honua-server#1194 / #1195) exercised through the full ASP.NET Core pipeline
-/// with a real PostgreSQL database via <see cref="WebAppFixture"/>. A
-/// configuration-backed hosted-tiles scene (the canonical fixture tileset) is
-/// registered so scene discovery and tile delivery run against real assets.
-/// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not
-/// support HTTP/2.
-/// </summary>
 [Collection("Database.SceneGrpc")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
@@ -137,12 +128,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         await RegisterExtentSceneAsync();
     }
 
-    /// <summary>
-    /// Registers a database-backed scene with a persisted extent so the
-    /// ListScenes spatial-filter tests have a scene whose footprint can be
-    /// included or excluded by an extent constraint (configuration scenes carry
-    /// no extent and so are always included).
-    /// </summary>
     private async Task RegisterExtentSceneAsync()
     {
         var registration = _fixture.GetService<ISceneRegistrationService>();
@@ -163,21 +148,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         });
     }
 
-    /// <summary>
-    /// Removes this instance's rows from the shared, process-global
-    /// <c>honua.scene_datasets</c> table (see the comment on the
-    /// <c>DELETE FROM honua.scene_datasets</c> line in tests/seed/server.yaml).
-    /// That table is NOT scoped by this fixture's per-test schema isolation, and
-    /// every OTHER isolated <see cref="WebAppFixture"/> host applies the same
-    /// default seed on startup; if this instance left its own id row behind,
-    /// another concurrently-initializing host's seed would leave it there
-    /// indefinitely (the seed excludes these ids for exactly that reason) and
-    /// the next <see cref="SceneGrpcIntegrationTests"/> test to register the
-    /// same id would fail on the unique constraint. Deleting it here — before
-    /// the schema/host teardown below — keeps each test's registered rows
-    /// scoped to its own lifetime, matching the per-test isolation every other
-    /// table in this fixture already gets.
-    /// </summary>
     private Task DeleteRegisteredScenesAsync()
         => _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             $"DELETE FROM honua.scene_datasets WHERE id IN ('{ExtentSceneId}', '{InactiveSceneId}');");
@@ -1224,11 +1194,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return tiles;
     }
 
-    /// <summary>
-    /// Creates a temporary scene asset root containing a valid
-    /// <c>tileset.json</c> whose root content uri points at a b3dm file that
-    /// does not exist, so GetTile resolves the node but cannot read its bytes.
-    /// </summary>
     private static string CreateMissingContentTilesetRoot()
     {
         // Every Path.Combine call below only ever joins a temp directory with
@@ -1253,11 +1218,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return root;
     }
 
-    /// <summary>
-    /// Creates a temporary scene asset root that exists but contains NO
-    /// <c>tileset.json</c>, so the catalog loader cannot resolve the tileset
-    /// document (LoadCatalogAsync NotFound branch).
-    /// </summary>
     private static string CreateMissingTilesetRoot()
     {
         // Second segment is a generated relative literal, so it can never be
@@ -1267,11 +1227,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return root;
     }
 
-    /// <summary>
-    /// Creates a temporary scene asset root whose <c>tileset.json</c> is the JSON
-    /// literal <c>null</c>, so deserialization yields a null document (the
-    /// LoadTilesetAsync "could not be parsed" Internal branch).
-    /// </summary>
     private static string CreateMalformedTilesetRoot()
     {
         // Both Path.Combine calls below only join a temp directory with a fixed
@@ -1283,14 +1238,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return root;
     }
 
-    /// <summary>
-    /// Creates a temporary scene asset root whose <c>tileset.json</c> root
-    /// content uri points at a file just over the gRPC tile service's
-    /// MaxTileContentBytes cap (256 MiB). The oversized payload is a sparse,
-    /// zero-filled file produced via <see cref="FileStream.SetLength"/> so it
-    /// consumes no real disk and the test stays CI-fast, exercising the
-    /// ResourceExhausted oversized-tile rejection branch.
-    /// </summary>
     private static string CreateOversizedTileRoot()
     {
         // Every Path.Combine call below only joins a temp directory with fixed
@@ -1348,16 +1295,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Authorization tests proving the gRPC scene/tile services enforce the same
-/// per-scene <c>AccessPolicy</c> the HTTP/I3S surfaces enforce
-/// (honua-server#1194 / #1195). A protected (non-public) scene must not be
-/// served — metadata or tiles — to an unauthenticated gRPC caller; it returns
-/// <see cref="StatusCode.Unauthenticated"/> (or
-/// <see cref="StatusCode.PermissionDenied"/> for an authenticated-but-unauthorized
-/// caller). Dev-auth is disabled so the anonymous caller is genuinely
-/// unauthenticated, mirroring <c>SceneAuthorizationTests</c> on the HTTP side.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
@@ -1582,16 +1519,6 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Authorization tests proving the gRPC <c>ElevationService</c> enforces the same
-/// per-layer RBAC the HTTP elevation surface enforces. The HTTP adapter validates
-/// the elevation layer through <c>LayerValidationHelpers.ValidateLayerWithAccessV2Async</c>
-/// at read scope before querying; the gRPC adapter routes through the shared
-/// <c>ElevationAccessGuard</c>/<c>EvaluateLayerReadAccessV2Async</c> seam. A
-/// protected (anonymous-denied) elevation layer must therefore be refused for an
-/// unauthenticated gRPC caller, and a public layer must remain queryable. Dev-auth
-/// is disabled so the anonymous caller is genuinely unauthenticated.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime

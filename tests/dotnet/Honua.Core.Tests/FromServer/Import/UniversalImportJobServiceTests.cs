@@ -18,14 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// honua-server#4422 — <c>UniversalImportJobService</c> (the shipped, DI-registered
-/// <see cref="IImportJobService"/>; see ServiceCollectionExtensions.cs) is 720 lines with zero
-/// tests exercising it directly. These cover the fire-and-forget lifecycle end to end: a
-/// successful background import, a failed one, and mid-flight cancellation, each verified
-/// through the same <see cref="IUniversalProgressStore"/> contract real callers observe rather
-/// than through internal state.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class UniversalImportJobServiceTests
 {

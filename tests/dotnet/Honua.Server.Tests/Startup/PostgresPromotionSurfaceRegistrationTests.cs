@@ -15,10 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Verifies that the real Postgres-first server composition advertises the
-/// durable MCP promotion resources (#2482).
-/// </summary>
 public sealed class PostgresPromotionSurfaceRegistrationTests
 {
     [UnitTest]

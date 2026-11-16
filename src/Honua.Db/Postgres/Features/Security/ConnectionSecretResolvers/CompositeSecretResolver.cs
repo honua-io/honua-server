@@ -6,26 +6,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
-/// <summary>
-/// Composite secret resolver that delegates to specific providers based on secret reference format.
-/// </summary>
-/// <remarks>
-/// This resolver examines the provider prefix in secret references and delegates
-/// to the appropriate provider-specific resolver. Supports multiple secret management
-/// systems in the same application.
-///
-/// Secret reference format: {provider}:{path}
-/// Examples:
-/// - "env:DATABASE_CONNECTION_STRING"
-/// - "aws:secretsmanager:prod-database-credentials"
-/// - "azure:keyvault:my-vault:database-connection"
-/// </remarks>
 internal sealed class CompositeSecretResolver : IConnectionSecretResolver
 {
     private readonly Dictionary<string, IConnectionSecretResolver> _resolvers;
     private readonly ILogger<CompositeSecretResolver> _logger;
 
-    /// <inheritdoc />
     public string ProviderName => "composite";
 
     // Logger message delegates for performance
@@ -93,7 +78,6 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
     }
 
-    /// <inheritdoc />
     public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(secretKey))
@@ -141,7 +125,6 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         return resolver.ResolveSecretFreshAsync(secretKey, cancellationToken);
     }
 
-    /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {
         try
@@ -165,12 +148,6 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Only a value that is, as a whole, a <c>provider:path</c> reference for a registered provider
-    /// is resolved. Any other value is returned unchanged: placeholders embedded in a longer string
-    /// are not substituted.
-    /// </remarks>
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionStringTemplate) ||
@@ -188,12 +165,6 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         return _resolvers.Keys.ToArray();
     }
 
-    /// <summary>
-    /// Parses a secret reference into provider and path components.
-    /// </summary>
-    /// <param name="secretRef">Secret reference to parse</param>
-    /// <returns>Tuple of (provider, path)</returns>
-    /// <exception cref="ArgumentException">Thrown when secret reference format is invalid</exception>
     private static (string Provider, string Path) ParseSecretReference(string secretRef)
     {
         var colonIndex = secretRef.IndexOf(':');
@@ -238,9 +209,6 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
     }
 }
 
-/// <summary>
-/// Factory implementation for creating secret resolver instances.
-/// </summary>
 internal sealed class ConnectionSecretResolverFactory : IConnectionSecretResolverFactory
 {
     private readonly Dictionary<string, Func<IConnectionSecretResolver>> _resolverFactories;
@@ -305,12 +273,6 @@ internal sealed class ConnectionSecretResolverFactory : IConnectionSecretResolve
         return _resolverFactories.Keys.ToArray();
     }
 
-    /// <summary>
-    /// Registers a new resolver factory for a provider type.
-    /// </summary>
-    /// <param name="providerType">Provider type identifier</param>
-    /// <param name="factory">Factory function to create resolver instances</param>
-    /// <returns>True if registered, false if provider type already exists</returns>
     public bool RegisterResolverFactory(string providerType, Func<IConnectionSecretResolver> factory)
     {
         if (string.IsNullOrWhiteSpace(providerType))

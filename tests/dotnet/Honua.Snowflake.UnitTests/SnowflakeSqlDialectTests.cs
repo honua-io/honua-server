@@ -7,11 +7,6 @@ using Honua.Db.Snowflake.Queries.Filters;
 
 namespace Honua.Db.Snowflake.Tests;
 
-/// <summary>
-/// Unit tests for the Snowflake SQL dialect and identifier quoting. Confirms double-quoted,
-/// case-preserving identifiers, positional parameter prefix, literal escaping, and rejection of
-/// identifiers outside the safe allow-list.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeSqlDialectTests
 {

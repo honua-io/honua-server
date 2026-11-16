@@ -10,13 +10,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Depth tests for the OGC API Records surface (#2983): bbox edge cases (3D and
-/// antimeridian-crossing boxes), datetime interval semantics for records without a
-/// temporal value (#1988 regression), paging limits and link preservation, unknown
-/// query-parameter rejection, format negotiation, and unknown-collection handling.
-/// Complements the happy-path coverage in <see cref="OgcRecordsEndpointTests"/>.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTestsFixture>

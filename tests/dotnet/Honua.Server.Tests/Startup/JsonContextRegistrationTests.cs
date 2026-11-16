@@ -11,16 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression coverage for the minimal-API JSON resolver wiring (<see cref="JsonContextRegistration"/>).
-/// At startup ASP.NET's RequestDelegate source generator eagerly resolves a
-/// <c>JsonTypeInfo</c> for every <c>[FromBody]</c> parameter against the configured HTTP JSON
-/// options; if a feature's source-generated context is not part of the registered resolver the
-/// host throws a fatal <see cref="System.NotSupportedException"/> while building the endpoints,
-/// taking the whole application down. These tests exercise the exact registration path the app
-/// uses (no Docker / no test host) so a missing context is caught as a fast unit failure rather
-/// than a startup crash in every integration shard.
-/// </summary>
 public sealed class JsonContextRegistrationTests
 {
     private static Microsoft.AspNetCore.Http.Json.JsonOptions BuildConfiguredHttpJsonOptions()

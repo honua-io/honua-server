@@ -27,9 +27,6 @@ using Honua.Server.Tests.Infrastructure;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the unified migration source scanner endpoint.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

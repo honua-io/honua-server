@@ -16,16 +16,17 @@
       Honua.Server (that's the cycle Phase 1 is solving).
     -->
     <!--
-      Only AOT/trim warnings are suppressed at the project level: the source-
+      AOT/trim warnings are suppressed at the project level: the source-
       generated System.Text.Json contexts and ASP.NET minimal-API hosting in
       this Web SDK assembly raise IL2026/IL3050/IL2104/IL3002/IL2075 that cannot
       be resolved in source without abandoning source-gen JSON, matching the
-      sibling protocol assemblies (e.g. Honua.Protocols.Stac). Documentation
-      (CS1591), unused-code (IDE0051/IDE0052), unnecessary-using (IDE0005), and
-      API-design (CA*) warnings are NOT suppressed here — they are fixed at the
-      root in source so warnings-as-errors stays meaningful.
+      sibling protocol assemblies (e.g. Honua.Protocols.Stac). CS1591 is
+      suppressed because the endpoint projects carry no XML doc comments
+      (EndpointProjectXmlDocTests). Unused-code (IDE0051/IDE0052),
+      unnecessary-using (IDE0005) and API-design (CA*) warnings are NOT
+      suppressed here; they are fixed in source so warnings-as-errors stays meaningful.
     -->
-    <NoWarn>$(NoWarn);IL2104;IL2026;IL3002;IL3050;IL2075</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;IL2075</NoWarn>
     <RootNamespace>Honua.Protocols.Scene</RootNamespace>
   </PropertyGroup>
 

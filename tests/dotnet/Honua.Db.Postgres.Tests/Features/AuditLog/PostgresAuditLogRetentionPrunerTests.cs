@@ -15,12 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Integration tests for the configurable audit retention pruner (#509).
-/// Exercises real SQL against an isolated schema with the append-only rules
-/// installed, asserting that pruning removes expired head rows, retains recent
-/// rows, and leaves the tamper-evident hash chain verifiable.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture)
 {

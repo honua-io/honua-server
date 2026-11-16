@@ -298,6 +298,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         await EnsureWriteAccessAsync(context, layer, editBatch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
+        // Dropped before the storability check, so a forged value of any wire type is ignored.
+        editBatch = GrpcEditorTracking.OmitClientValues(layer.Resource, editBatch);
         (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
             .ConfigureAwait(false);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
@@ -370,12 +372,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         // The same owner policy the REST edit protocols apply. A gRPC editor must not
         // update or delete another principal's row, and inserts stamp the owner (#6357).
+        var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext);
         var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
             _featureReader,
             layer.StorageLayerId,
             layer.Resource.OwnerEditPolicy,
             editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext),
+            principal,
             context.CancellationToken).ConfigureAwait(false);
         if (!ownerPrepared.IsAllowed)
         {
@@ -384,7 +387,12 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 ownerPrepared.DenialReason ?? "Edit not permitted."));
         }
 
-        editBatch = ownerPrepared.Batch;
+        // Change events carry the stamped tracking values, as GeoServices events do.
+        var stamp = GrpcEditorTracking.CallerStamp(
+            principal.Name,
+            (grpcHttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        editBatch = GrpcEditorTracking.Stamp(layer.Resource, ownerPrepared.Batch, stamp);
+        requestBatch = GrpcEditorTracking.Stamp(layer.Resource, requestBatch, stamp);
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,

@@ -13,12 +13,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// MapServer find drops caller-masked string fields from the default search set and
-/// refuses an explicit <c>searchFields</c> entry that names one (#6148). The in-memory
-/// store does not enforce <c>FeatureQuerySecurity</c>, so these assert the handler:
-/// a masked column is not searched, its value is not returned, and naming it is a 400.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerFindMaskedFieldTests
 {

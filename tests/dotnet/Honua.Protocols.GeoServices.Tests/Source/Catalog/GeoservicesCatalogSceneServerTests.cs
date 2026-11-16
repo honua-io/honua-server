@@ -15,23 +15,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// Catalog registration tests for the Esri I3S SceneServer (#1807). A
-/// registered scene is discoverable as a <c>type:"SceneServer"</c> directory
-/// entry at the canonical <c>/rest/services/{id}/SceneServer</c> path for
-/// Enterprise editions, and is omitted entirely from the open-core catalog.
-/// </summary>
-/// <remarks>
-/// honua-server#1568 (signature 2): the scene registry persists to the literal,
-/// process-global <c>honua.scene_datasets</c> table — it is schema-qualified, so the
-/// per-test <c>search_path</c> isolation that scopes the rest of the catalog does NOT
-/// scope it. These tests therefore run in a serialized collection
-/// (<c>Database.GeoServicesSceneCatalog</c>) and truncate the global table around each
-/// case so a fixed-id scene cannot collide on <c>scene_datasets_id_unique</c> with, or
-/// leak its directory entry into, a peer test. The <c>ContainSingle()</c> assertion is
-/// preserved — the truncation makes the global registry deterministic rather than
-/// weakening the check.
-/// </remarks>
 [Collection("Database.GeoServicesSceneCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesCatalogSceneServerTests

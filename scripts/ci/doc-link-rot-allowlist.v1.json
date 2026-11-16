@@ -1,14 +1,24 @@
 {
   "version": 1,
   "description": "Pre-existing broken heading anchors inside docs/**/*.md, recorded so the link/anchor gate can be strict about everything else. scripts/ci/check-doc-links.py reports each of these as a warning instead of an error. The list is a ratchet, not a parking lot: an entry that no longer matches a real break is an ERROR, so it can only shrink. Do not add to it \u2014 fix the link instead.",
+  "datedNamesDescription": "Pages whose names carry a date and that scripts or data still read. check-doc-links.py fails any other dated page name and any entry here that is absent; totals.datedNames pins the count, so growth is an explicit edit.",
+  "datedNames": [
+    "docs/gis/capability-ga-regrade-2026-07.md",
+    "docs/gis/client-exclusion-audit-2026-09-20.md",
+    "docs/gis/client-exclusion-followup-2026-09-20.md",
+    "docs/gis/python-lane-status-2026-09-20.md",
+    "docs/gis/qgis-imageserver-ui-2026-09-20.md",
+    "docs/internal/security/code-scanning-2026-Q2-remediation.md"
+  ],
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 9,
+    "entries": 8,
+    "datedNames": 6,
     "missingFiles": 0,
-    "brokenAnchors": 9,
+    "brokenAnchors": 8,
     "byArea": {
-      "docs/internal": 7,
+      "docs/internal": 6,
       "docs/developer": 1,
       "docs/gis": 1,
       "docs/guides": 0
@@ -54,11 +64,6 @@
       "source": "docs/internal/features/README.md",
       "target": "../../guides/secure/authentication.md#authentication",
       "reason": "Points at the page's H1-derived slug, which GitHub does not emit for the title heading of that page."
-    },
-    {
-      "source": "docs/internal/spikes/point-cloud-reality-capture-ingest.md",
-      "target": "../../guides/publish/publish-3d-scenes.md#mime-types",
-      "reason": "Heading dropped when publish-3d-scenes.md was rewritten."
     }
   ]
 }

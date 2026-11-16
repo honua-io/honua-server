@@ -10,12 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit coverage for the additive ArcGIS-compatible input translation: Esri
-/// FeatureSet / esriGeometry JSON inputs are rewritten to the canonical
-/// base64-WKB + srid contract, while native string / base64-WKB inputs pass
-/// through untouched.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerEsriInputTranslationTests
 {

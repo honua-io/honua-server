@@ -14,12 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// The heart of #3089's publication protocol: artifact publication is fenced on the
-/// claimed attempt and durable cancellation, and is idempotent so a retried attempt
-/// (or a retried publish within one attempt) can never duplicate an artifact entry
-/// in the durable job record.
-/// </summary>
 public sealed class JobExecutionContextPublishFencingTests
 {
     private const string WorkerId = "worker-test";
@@ -108,13 +102,6 @@ public sealed class JobExecutionContextPublishFencingTests
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// #3089 review: legacy references keep strict APPEND semantics. Two distinct
-    /// outputs can legitimately produce byte-identical payloads (identical data URIs);
-    /// deduping them would make the second output vanish and shift the positional
-    /// slot/kind mapping downstream. Only typed descriptors — which carry an
-    /// (attempt, output name) identity — dedupe.
-    /// </summary>
     [UnitTest]
     public async Task PublishArtifact_IdenticalLegacyReference_AppendsSecondEntry()
     {

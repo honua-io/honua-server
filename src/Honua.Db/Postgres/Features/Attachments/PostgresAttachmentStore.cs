@@ -15,13 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Attachments;
 
-/// <summary>
-/// PostgreSQL implementation of attachment storage and file management
-/// </summary>
-/// <remarks>
-/// Marked as internal to prevent exposure of database-specific implementations
-/// outside the Infrastructure layer (Clean Architecture principle).
-/// </remarks>
 internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore, IFeatureAttachmentCleanup, IAttachmentNativeMetadataStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -62,10 +55,6 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             ? "features" : SchemaSearchPath.QualifyTable("features", schemaOptions.FeatureSchemaName);
     }
 
-    /// <summary>
-    /// Returns the configured object store. Blob reads and writes call this; a missing
-    /// store becomes an orphan record when the metadata change has already committed.
-    /// </summary>
     private ICloudFileStorage RequireFileStorage()
         => _fileStorage ?? throw new InvalidOperationException(
             "Object storage is not configured. Register ICloudFileStorage before using attachment blobs.");
@@ -92,16 +81,6 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", physical));
     }
 
-    /// <summary>
-    /// Records a storage object that outlived its metadata row, so the divergence is
-    /// enumerable and alertable rather than only logged. Never throws: an orphan record
-    /// must not mask the original failure nor fail an otherwise successful delete.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not cancellable. Every call site is a failure or cancellation path, so
-    /// the caller's token is frequently already canceled; honouring it would discard the
-    /// only evidence that the two stores diverged.
-    /// </remarks>
     private async Task RecordOrphanAsync(
         string storagePath,
         int layerId,
@@ -509,9 +488,6 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         return AttachmentContent.Create(attachment.Value, fileStream);
     }
 
-    /// <summary>
-    /// Sanitizes a filename to prevent path traversal and other security issues.
-    /// </summary>
     private static string SanitizeFileName(string filename)
     {
         if (string.IsNullOrWhiteSpace(filename))
@@ -560,11 +536,6 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             featureId.ToString(CultureInfo.InvariantCulture));
     }
 
-    /// <summary>
-    /// Holds a transaction advisory lock for this feature, recounts its attachments, and
-    /// inserts only when the configured count and size limits still hold. A refusal throws
-    /// <see cref="ValidationException"/> so the caller can delete the blob it already stored.
-    /// </summary>
     private async Task<Attachment> InsertWithinQuotaAsync(
         int layerId,
         long featureId,

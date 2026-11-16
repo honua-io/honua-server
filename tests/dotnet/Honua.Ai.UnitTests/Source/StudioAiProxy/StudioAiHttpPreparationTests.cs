@@ -19,7 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>Connected preparation/HTTP regressions with inert provider transport, never live inference.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiHttpPreparationTests
 {

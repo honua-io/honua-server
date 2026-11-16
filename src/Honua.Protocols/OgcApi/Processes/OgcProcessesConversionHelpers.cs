@@ -9,21 +9,8 @@ using Honua.Protocols.Ogc.Api.Processes.Models;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Stateless conversion helpers between canonical domain types and OGC API Processes models.
-/// Maps ExecutionJobStatus to OGC status strings per the lifecycle state matrix defined in
-/// the geoprocess framework analysis (honua-server#360).
-/// </summary>
 internal static class OgcProcessesConversionHelpers
 {
-    /// <summary>
-    /// Maps a canonical <see cref="ExecutionJobStatus"/> to an OGC API Processes status string.
-    /// </summary>
-    /// <remarks>
-    /// State matrix (from geoprocess-framework-analysis.md):
-    /// Queued → accepted, Provisioning → accepted, Running → running,
-    /// Succeeded → successful, Failed → failed, Cancelled → dismissed.
-    /// </remarks>
     public static string ToOgcStatus(ExecutionJobStatus status) => status switch
     {
         ExecutionJobStatus.Queued => "accepted",
@@ -35,9 +22,6 @@ internal static class OgcProcessesConversionHelpers
         _ => "accepted"
     };
 
-    /// <summary>
-    /// Converts an <see cref="ExecutionJobRecord"/> to an OGC <see cref="OgcStatusInfo"/>.
-    /// </summary>
     public static OgcStatusInfo ToOgcStatusInfo(
         ExecutionJobRecord job,
         string? processId,
@@ -89,9 +73,6 @@ internal static class OgcProcessesConversionHelpers
         };
     }
 
-    /// <summary>
-    /// Converts a cancelled execution job into the OGC API Processes dismissed status shape.
-    /// </summary>
     public static OgcStatusInfo ToOgcDismissedStatusInfo(
         ExecutionJobRecord job,
         string? processId,

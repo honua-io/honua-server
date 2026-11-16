@@ -18,12 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for <c>honua_get_job_results</c>: it adapts
-/// <see cref="IGeoprocessingJobService.GetJobResultsAsync"/> so a tool-only client
-/// can read a terminal result package. Ownership and the job-read grant stay in
-/// the service. An unavailable job substrate uses the submission refusal envelope.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpGetJobResultsToolTests
 {

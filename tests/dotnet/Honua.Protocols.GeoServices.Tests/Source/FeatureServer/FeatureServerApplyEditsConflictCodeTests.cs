@@ -17,17 +17,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Conformance tests for the stable per-feature conflict classification codes returned in the
-/// <c>applyEdits</c> HTTP-200 result envelope (#2251). Two layers of coverage:
-/// <list type="bullet">
-/// <item>Pure tests of <see cref="GeoServicesEditErrorCodes.ClassifyWriterFailure"/>, which maps a
-/// writer's typed <see cref="EditOperationResult"/> onto a stable code (update-update, locked,
-/// not-found/delete-delete, generic) without inspecting the free-form message.</item>
-/// <item>HTTP tests asserting the handler-determined classes (not-found, delete-delete, invalid
-/// object id) surface the documented code on the real <c>applyEdits</c> endpoint.</item>
-/// </list>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerApplyEditsConflictCodeTests
@@ -173,11 +162,6 @@ public sealed class FeatureServerApplyEditsConflictCodeTests
         result.DeleteResults[0].Error!.Code.Should().Be(GeoServicesEditErrorCodes.InvalidObjectId);
     }
 
-    /// <summary>
-    /// Spins up the FeatureServer edit endpoint backed by an in-memory <see cref="TestFeatureStore"/>
-    /// under a Pro license (the FeatureServer editing gate, #1591). Mirrors the harness used by the
-    /// plugin-validation conformance tests.
-    /// </summary>
     private sealed class EditHarness : IAsyncDisposable
     {
         private const string ServiceId = "test";

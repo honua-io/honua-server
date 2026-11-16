@@ -17,11 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Factory for creating an <see cref="IFileImportService"/> wired with no-op
-/// fakes. Used by preview and format-detection unit tests where no database or
-/// external service interaction should occur.
-/// </summary>
 public static class PreviewImportServiceFactory
 {
     public static IFileImportService Create(ImportLimits? limits = null)
@@ -36,10 +31,6 @@ public static class PreviewImportServiceFactory
     }
 }
 
-/// <summary>
-/// Connection provider that throws on any access. Used by preview and format-detection
-/// unit tests where no database interaction should occur.
-/// </summary>
 public sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     public string GetConnectionString()
@@ -60,10 +51,6 @@ public sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvid
         => throw new NotSupportedException("Database access is not expected in preview tests.");
 }
 
-/// <summary>
-/// File format detector for preview tests that exercise the import service
-/// directly without the application's dependency-injection container.
-/// </summary>
 public sealed class TestFileFormatDetectionService : IFileFormatDetectionService
 {
     public SupportedFileFormat? DetectFormat(string fileName)
@@ -121,10 +108,6 @@ public sealed class TestFileFormatDetectionService : IFileFormatDetectionService
         => DetectFormat(fileName);
 }
 
-/// <summary>
-/// CRS detection service that always returns null/false. Used by preview tests
-/// where CRS detection is not the concern under test.
-/// </summary>
 public sealed class NoopCrsDetectionService : ICrsDetectionService
 {
     public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);

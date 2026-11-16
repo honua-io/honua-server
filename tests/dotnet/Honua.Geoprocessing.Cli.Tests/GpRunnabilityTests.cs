@@ -11,11 +11,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// Runnability (#6217): registration never proves readiness. A native op needs GDAL, a
-/// service-backed op needs the integration stack, custom code needs its harness, and the
-/// verdict names the first missing prerequisite instead of guessing.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpRunnabilityTests
 {

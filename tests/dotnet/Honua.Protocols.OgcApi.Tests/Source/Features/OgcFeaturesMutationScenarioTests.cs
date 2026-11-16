@@ -17,10 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Certification-depth mutation scenarios. Each xUnit test instance owns a fresh
-/// database schema so a write can never satisfy another test's read-back.
-/// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database")]
 public sealed class OgcFeaturesMutationScenarioTests : IAsyncLifetime

@@ -8,10 +8,6 @@ using NBomber.Contracts.Stats;
 
 namespace Honua.LoadTests;
 
-/// <summary>
-/// Records the session lifecycle even when NBomber never reaches its final report.
-/// Progress is diagnostic only: the receipt still consumes completed run statistics.
-/// </summary>
 internal sealed class LoadProgressSink : IReportingSink
 {
     private static string _lastProgress = "session has not started";

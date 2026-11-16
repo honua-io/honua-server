@@ -14,13 +14,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.AnalysisContent;
 
-/// <summary>
-/// Verifies that <see cref="PostgresAnalysisContentStore"/> maps provider connectivity failures
-/// (Postgres down / unreachable / auth-backend outage) to
-/// <see cref="AnalysisContentStoreUnavailableException"/> across read, write, and artifact entry
-/// points, so a store outage surfaces as a retryable 503 instead of a generic 500. The connection
-/// open itself is the failure point the analysis-content API explicitly models as store-unavailable.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresAnalysisContentStoreTests
 {

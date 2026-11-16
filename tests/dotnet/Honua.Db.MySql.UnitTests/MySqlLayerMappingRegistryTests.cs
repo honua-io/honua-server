@@ -6,10 +6,6 @@ using Honua.Db.MySql.Features.Infrastructure;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Unit tests for <see cref="MySqlLayerMappingRegistry"/> behaviour:
-/// resolution, missing-layer rejection, qualified table SQL formatting.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class MySqlLayerMappingRegistryTests
 {

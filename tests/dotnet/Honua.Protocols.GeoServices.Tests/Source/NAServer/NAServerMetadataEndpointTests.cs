@@ -11,12 +11,6 @@ using Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// The NAServer service resource and analysis-layer resources (#5035). ArcGIS Pro's
-/// Catalog pane and <c>arcpy.nax</c> read these before they will address a routing
-/// service; until they existed every Esri routing client stopped at
-/// "The requested operation or resource was not found".
-/// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpointTestsFixture>

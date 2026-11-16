@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Eval;
 
-/// <summary>
-/// Class-scoped fixture that owns the shared <see cref="WebAppFixture"/> for the eval
-/// harness run and aggregates per-scenario results into the versioned
-/// <see cref="EvalReport"/> consumed by honua-devops-31.
-/// </summary>
 public sealed class EvalHarnessFixture : IAsyncLifetime
 {
     private const string ReportFileName = "eval-report.json";
@@ -20,16 +15,12 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
     private readonly List<EvalScenarioResult> _results = [];
     private readonly Lock _resultsLock = new();
 
-    /// <summary>Shared web app fixture, initialized once per test class lifetime.</summary>
     public WebAppFixture WebApp { get; } = new();
 
-    /// <summary>Fixture-corpus source resolved at startup: shared-corpus or local-seed.</summary>
     public IEvalFixtureSource FixtureSource { get; private set; } = new LocalSeedFixtureSource();
 
-    /// <summary>Bound runner; created once the web host is ready.</summary>
     public EvalRunner Runner { get; private set; } = null!;
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         var scenarios = EvalScenarioLoader.DiscoverScenarioIds()
@@ -43,7 +34,6 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
         Runner = new EvalRunner(WebApp, FixtureSource);
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         try
@@ -56,7 +46,6 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
         }
     }
 
-    /// <summary>Records the outcome of a scenario run for aggregation into the final report.</summary>
     public void Record(EvalScenarioResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
