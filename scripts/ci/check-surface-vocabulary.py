@@ -2,8 +2,8 @@
 """Fail when a public surface names a Honua object with a different term.
 
 Surfaces are the REST routes in the endpoint registry, MCP tool names (the
-generated roster and tool-name constants), Console page routes and the SDK, CLI
-and skill operations recorded in the workflow stage map. Each name, including
+generated roster and tool-name constants), endpoint route literals, Console
+page routes and the SDK, CLI and skill operations recorded in the workflow stage map. Each name, including
 its route parameter names, is split into singular words and compared with the
 other terms the policy lists for every glossary object. Exceptions are exact;
 an exception whose name is absent fails, so each rename shrinks the list, and
@@ -31,6 +31,44 @@ EXTRACTORS = {
     "mcp": (("*.cs",), re.compile(r'(?:\bToolName|McpServerTool\(\s*Name)\s*=\s*"(honua_[a-z0-9_]+)"')),
     "console-route": (("*.razor",), re.compile(r'^@page\s+"(/[^"]*)"', re.M)),
 }
+# Keep string bodies intact while masking comments, so examples in comments do
+# not become routes and comment markers inside a route remain literal text.
+CS_TOKENS = re.compile(
+    r'(?P<string>"{3,}.*?"{3,}|@"(?:""|[^"])*"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+    r'|(?P<comment>//[^\n]*|/\*.*?\*/)', re.S)
+ROUTE_LITERAL = re.compile(
+    r'\.Map(?:Get|Head|Post|Put|Patch|Delete|Methods|Group|Fallback|FallbackToFile|Hub|GrpcService)'
+    r'(?:\s*<[^>]+>)?\s*\(\s*(?P<literal>@"(?:""|[^"])*"|"(?:\\.|[^"\\])*")'
+    r'\s*(?=[,)])')
+
+
+def endpoint_literals(text):
+    """Return literal route fragments, not guessed fully composed routes.
+
+    Each fragment is scoped to its source file by surface_names. Registry
+    checks still cover composed routes; computed and interpolated expressions
+    require review. Concatenation is never mistaken for a complete literal.
+    """
+    text = CS_TOKENS.sub(
+        lambda token: re.sub(r"[^\n]", " ", token.group())
+        if token.group("comment") else token.group(), text)
+    # Consume standalone string/character tokens before looking inside them for
+    # a call. A real call begins outside a string and consumes its own literal.
+    calls = re.compile(ROUTE_LITERAL.pattern + "|" + CS_TOKENS.pattern, re.S)
+    routes = set()
+    for match in calls.finditer(text):
+        literal = match.group("literal")
+        if literal is None:
+            continue
+        if literal.startswith('@"'):
+            routes.add(literal[2:-1].replace('""', '"'))
+        else:
+            # C# and JSON share the escapes used in route strings. Reject an
+            # unsupported escape instead of silently checking a different name.
+            routes.add(json.loads(literal))
+    return routes
+
+
 PLURALS = ((re.compile(r"(?<=\w{2})ies$"), "y"), (re.compile(r"(?<=ss|sh|ch|.x)es$"), ""),
            (re.compile(r"(?<=\w{2}[^su])s$"), ""))
 
@@ -80,22 +118,25 @@ class Tree:
         return [p for p in listed if p and not p.startswith(("tests/", "test/"))
                 and "/tests/" not in p and ".test." not in p and ".spec." not in p]
 
-    def texts(self, paths):
+    def entries(self, paths):
         if not self.rev:
-            return [(self.root / p).read_text(encoding="utf-8", errors="replace") for p in paths
+            return [(p, (self.root / p).read_text(encoding="utf-8", errors="replace")) for p in paths
                     if (self.root / p).is_file()]
         out = self.git("cat-file", "--batch", stdin="".join(f"{self.rev}:{p}\n" for p in paths).encode())
         texts, at = [], 0
-        while at < len(out):
+        for path in paths:
             header_end = out.index(b"\n", at)
             header = out[at:header_end].split()
             at = header_end + 1
             if header[-1] == b"missing":
                 continue
             size = int(header[2])
-            texts.append(out[at:at + size].decode("utf-8", errors="replace"))
+            texts.append((path, out[at:at + size].decode("utf-8", errors="replace")))
             at += size + 1
         return texts
+
+    def texts(self, paths):
+        return [text for _, text in self.entries(paths)]
 
     def json(self, path):
         found = self.texts([path])
@@ -107,6 +148,8 @@ def surface_names(tree):
     for surface, (patterns, regex) in EXTRACTORS.items():
         for text in tree.texts(tree.paths(patterns)):
             names.update((surface, match) for match in regex.findall(text))
+    for path, text in tree.entries(tree.paths(("src/*.cs",))):
+        names.update((f"rest-literal:{path}", route) for route in endpoint_literals(text))
     roster = tree.json(MCP_ROSTER) or {}
     names.update(("mcp", tool) for key in ROSTER_LISTS for tool in roster.get(key, []))
     for stage in (tree.json(STAGE_MAP) or {}).get("stages", []):

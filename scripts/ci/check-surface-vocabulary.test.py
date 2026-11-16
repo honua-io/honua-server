@@ -127,6 +127,124 @@ class SurfaceVocabularyTests(unittest.TestCase):
         self.assertEqual(checker.surface_names(checker.Tree(self.root)),
                          checker.surface_names(checker.Tree(self.root, "HEAD")))
 
+    def test_endpoint_omitted_from_registry_still_fails(self):
+        self.registry("/api/v1/maps")
+        path = "src/Endpoints.cs"
+        self.write(path, 'app.MapGroup("/workspaces").MapGet("/{publicationId:guid}", Read);')
+        self.assertEqual([
+            f"rest-literal:{path} '/workspaces': folder; name the Folder",
+            f"rest-literal:{path} " + "'/{publicationId:guid}': layer; name the Layer",
+        ], self.run_check())
+
+    def test_canonical_endpoint_groups_and_constrained_parameters_pass(self):
+        self.write("src/Features/MapEndpoints.cs", '''
+            var group = app.MapGroup("/api/v{version:apiVersion}/maps");
+            group.MapGet("/{mapId:guid}/layers/{layerId:int}", Read);
+            group.MapPost("/{mapId:guid}/drafts", Create);
+        ''')
+        self.assertEqual([], self.run_check())
+
+    def test_all_supported_endpoint_verbs_are_checked_without_registry(self):
+        verbs = ("Get", "Head", "Post", "Put", "Patch", "Delete", "Methods", "Group",
+                 "Fallback", "FallbackToFile", "Hub<Notifications>")
+        for index, verb in enumerate(verbs):
+            self.write(f"src/Verb{index}.cs", f'app.Map{verb}(\n"/workspaces/{index}", handler);')
+        errors = self.run_check()
+        self.assertEqual(len(verbs), len(errors), errors)
+        self.assertTrue(all("folder; name the Folder" in error for error in errors))
+
+    def test_comments_and_string_examples_do_not_define_routes(self):
+        self.write("src/Examples.cs", r'''
+            // app.MapGet("/workspaces/comment", Read);
+            /* app.MapGroup("/workspaces/block"); */
+            var ordinary = "app.MapGet(\"/workspaces/string\", Read)";
+            var verbatim = @"app.MapGet(""/workspaces/verbatim"", Read)";
+            var raw = """app.MapGet("/workspaces/raw", Read)""";
+            var slash = '/';
+            app.MapGet("/maps", Read); // app.MapGet("/workspaces/tail", Read);
+        ''')
+        self.assertEqual([], self.run_check())
+
+    def test_route_literals_decode_escapes_and_preserve_comment_markers(self):
+        source = r'''
+            app.MapGet("/\u0070ublications", Read);
+            app.MapGet(@"/maps/""example""", Read);
+            app.MapGet("/maps/http://example", Read);
+            app.MapGet("/maps/*example*/", Read);
+            app.MapGet /* route */ ( /* route */ "/workspaces" /* route */, Read);
+        '''
+        self.assertEqual({"/publications", '/maps/"example"', "/maps/http://example",
+                          "/maps/*example*/", "/workspaces"}, checker.endpoint_literals(source))
+
+    def test_computed_routes_require_registry_coverage(self):
+        self.write("src/Dynamic.cs", '''
+            app.MapGet("/workspaces" + suffix, Read);
+            app.MapGet($"/workspaces/{name}", Read);
+            app.MapGet(route, Read);
+        ''')
+        self.assertEqual([], self.run_check())
+        self.registry("/workspaces/composed")
+        self.assertEqual(["rest '/workspaces/composed': folder; name the Folder"], self.run_check())
+
+    def test_protocol_fragment_exception_cannot_hide_other_endpoint(self):
+        protocol = "src/Protocol/Endpoints.cs"
+        studio = "src/Studio/Endpoints.cs"
+        self.write(protocol, 'app.MapGet("/items", Read);')
+        self.write(studio, 'app.MapGet("/items", Read);')
+        allowed = exception("/items", "studio-kind", "protocol", f"rest-literal:{protocol}")
+        self.assertEqual([f"rest-literal:{studio} '/items': studio-kind; name the actual kind"],
+                         self.run_check([allowed]))
+
+    def test_route_rename_and_file_move_both_retire_exact_exception(self):
+        path = "src/OldEndpoints.cs"
+        self.write(path, 'app.MapGet("/workspaces", Read);')
+        allowed = exception("/workspaces", "folder", surface=f"rest-literal:{path}")
+        self.assertEqual([], self.run_check([allowed]))
+        self.write(path, 'app.MapGet("/folders", Read);')
+        self.assertTrue(self.run_check([allowed])[0].startswith("stale exception"))
+        self.write("src/NewEndpoints.cs", 'app.MapGet("/workspaces", Read);')
+        errors = self.run_check([allowed])
+        self.assertEqual(2, len(errors), errors)
+        self.assertTrue(errors[0].startswith("rest-literal:src/NewEndpoints.cs"))
+        self.assertTrue(errors[1].startswith("stale exception"))
+
+    def test_pending_literal_exception_is_checked_against_committed_source_path(self):
+        path = "src/Endpoints.cs"
+        self.write(path, 'app.MapGroup("/workspaces");')
+        self.git("commit", "-qm", "base")
+        base = checker.Tree(self.root, "HEAD")
+        self.assertEqual(checker.surface_names(base), checker.surface_names(checker.Tree(self.root)))
+        inherited = exception("/workspaces", "folder", surface=f"rest-literal:{path}")
+        self.assertEqual([], checker.new_pending(base, [inherited]))
+        self.write(path, 'app.MapGroup("/workspaces"); app.MapGet("/publications", Read);')
+        introduced = exception("/publications", "layer", surface=f"rest-literal:{path}")
+        moved = exception("/workspaces", "folder", surface="rest-literal:src/Other.cs")
+        self.assertEqual(2, len(checker.new_pending(base, [inherited, introduced, moved])))
+        self.assertNotEqual(checker.surface_names(base), checker.surface_names(checker.Tree(self.root)))
+
+    def test_deleted_endpoint_file_is_absent_only_in_working_tree(self):
+        path = "src/Endpoints.cs"
+        self.write(path, 'app.MapGet("/workspaces", Read);')
+        self.git("commit", "-qm", "base")
+        (self.root / path).unlink()
+        self.assertEqual(set(), checker.surface_names(checker.Tree(self.root)))
+        self.assertEqual({(f"rest-literal:{path}", "/workspaces")},
+                         checker.surface_names(checker.Tree(self.root, "HEAD")))
+
+    def test_registry_exception_does_not_silence_literal_coverage(self):
+        route = "/publications"
+        self.registry(route)
+        self.write("src/Endpoints.cs", f'app.MapGet("{route}", Read);')
+        self.assertEqual(["rest-literal:src/Endpoints.cs '/publications': layer; name the Layer"],
+                         self.run_check([exception(route, "layer")]))
+
+    def test_endpoint_scan_excludes_tests_and_untracked_examples(self):
+        self.write("src/Features/tests/Endpoints.cs", 'app.MapGet("/workspaces", Read);')
+        self.write("tests/Endpoints.cs", 'app.MapGet("/workspaces", Read);')
+        self.write("src/Features/Endpoints.test.cs", 'app.MapGet("/workspaces", Read);')
+        (self.root / "src/Untracked.cs").write_text('app.MapGet("/workspaces", Read);')
+        self.assertEqual([], self.run_check())
+
     def test_base_must_be_a_commit(self):
         self.assertEqual(2, checker.main(["--root", str(self.root), "--base", "missing-ref"]))
 
