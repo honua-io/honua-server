@@ -896,7 +896,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // data-management.delete-features validates cleanly but is reachable only through
         // its owning synchronous protocol endpoint, and translated tools execute through the
         // job runtime. A report that certifies it tells a migrating user a tool works when
-        // it can never execute from a toolbox (unsupported token review, #4409 entry points).
+        // it can never execute from a toolbox (unsupported entry points).
         // (conversion.geometry-format has a job executor and is excluded.)
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
