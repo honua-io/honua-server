@@ -127,7 +127,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     {
         var (policy, _) = await InitializeIncidentAsync(new() { Tokens = 20, Money = 20 });
         (await Store().TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Granted.Should().BeTrue();
-        var outbox = (IAiIncidentNoticeStore)Store();
+        var outbox = Store();
         (await outbox.ListPendingIncidentAsync(100, default)).Should().BeEmpty();
         await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET {dimension} = 16");
         (await outbox.ListPendingIncidentAsync(100, default)).Should().ContainSingle();
@@ -140,12 +140,12 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         var grant = await Store().TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default);
         grant.Granted.Should().BeTrue();
         await ApplyIncidentMigrationAsync();
-        var outbox = (IAiIncidentNoticeStore)Store();
+        var outbox = Store();
         var notice = (await outbox.ListPendingIncidentAsync(100, default)).Should().ContainSingle().Subject;
         notice.EpisodeId.Should().Be(episode);
         notice.ChargedTokens.Should().Be(15);
         (await outbox.MarkQueuedAsync(notice, default)).Should().BeTrue();
-        (await ((IAiIncidentNoticeStore)Store()).MarkQueuedAsync(notice, default)).Should().BeFalse();
+        (await Store().MarkQueuedAsync(notice, default)).Should().BeFalse();
         await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET charged_tokens = charged_tokens");
         (await outbox.ListPendingIncidentAsync(100, default)).Should().BeEmpty();
     }
