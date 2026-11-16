@@ -10,23 +10,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>raster.resample</c>
-/// process: changes a raster's cell size using the requested resampling
-/// algorithm, backed by the GDAL <c>gdalwarp -tr</c> CLI.
-///
-/// Reads a base64-encoded GeoTIFF from the canonical <c>source</c> input and a
-/// target cell size from <c>cellSize</c> (optionally a distinct vertical size via
-/// <c>cellSizeY</c>), warps in an isolated scratch workspace, and publishes the
-/// resampled GeoTIFF as a canonical data-URI artifact. Runs only inside the GDAL
-/// worker image — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterResampleJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterResampleJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.resample";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -50,17 +38,13 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             ["lanczos"] = "lanczos",
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -122,14 +106,14 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             var outputPath = Path.Join(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
 
             // Bound the caller-controlled OUTPUT resolution (-tr) before gdalwarp derives
-            // the output grid from the input extent ÷ target cell size (#2793). The input
+            // the output grid from the input extent ÷ target cell size. The input
             // ground extent = declared pixel dimensions × ModelPixelScale (identity 1.0
             // when the raster carries no georeferencing, matching gdalwarp's own -tr
             // interpretation). When the header is not one we can read dimensions from, the

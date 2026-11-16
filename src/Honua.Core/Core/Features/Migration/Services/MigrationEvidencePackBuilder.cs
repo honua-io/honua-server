@@ -151,9 +151,9 @@ public static class MigrationEvidencePackBuilder
 
     private static string MapStepKindToStage(MigrationApplyExecutionStepResult step)
     {
-        // Slice 1 (#1095) emits workspace + layer-group catalog rows.
-        // Slice 2 (#1107) emits data-source + feature-data rows.
-        // Slice 3 (#1114) emits style rows.
+        // Slice 1 emits workspace + layer-group catalog rows.
+        // Slice 2 emits data-source + feature-data rows.
+        // Slice 3 emits style rows.
         // Any other kind (e.g. per-layer publish) is folded into the catalog
         // stage so the pack always covers every executed step.
         return step.Kind switch

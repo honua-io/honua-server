@@ -11,9 +11,6 @@ using Honua.Server;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Architecture contracts for the console/agent seat-parity promise tracked by #2567.
-/// </summary>
 public sealed class SeatParityContractTests
 {
     private const string OpsParityMapRelativePath =
@@ -131,7 +128,7 @@ public sealed class SeatParityContractTests
                 || string.Equals(type, "LoggingAdminConfigChangeApplier", StringComparison.Ordinal),
             "a logging/no-op admin config applier silently drops approved actions");
 
-        var loggingAppliers = ArchitectureTestHelpers.GetTypesSafely(typeof(EndpointRegistry).Assembly)
+        var loggingAppliers = ArchitectureTestHelpers.GetTypesSafely(ArchitectureTestHelpers.ServerAssembly)
             .Where(type => typeof(IAdminConfigChangeApplier).IsAssignableFrom(type))
             .Where(type => type.Name.Contains("Logging", StringComparison.Ordinal))
             .Select(type => type.FullName)
@@ -297,7 +294,7 @@ public sealed class SeatParityContractTests
 
     private static Dictionary<string, string> LoadOpsActionNameConstants()
     {
-        var type = typeof(EndpointRegistry).Assembly.GetType("Honua.ControlPlane.Executors.OpsActionNames");
+        var type = ArchitectureTestHelpers.ServerAssembly.GetType("Honua.ControlPlane.Executors.OpsActionNames");
         type.Should().NotBeNull("OpsActionNames is the stable action-id vocabulary");
 
         return type!.GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -310,7 +307,7 @@ public sealed class SeatParityContractTests
 
     private static HashSet<string> LoadRegisteredOpsActions()
     {
-        var type = typeof(EndpointRegistry).Assembly.GetType("Honua.ControlPlane.Executors.OpsActionCatalog");
+        var type = ArchitectureTestHelpers.ServerAssembly.GetType("Honua.ControlPlane.Executors.OpsActionCatalog");
         type.Should().NotBeNull("OpsActionCatalog is the T4 action registry");
 
         var field = type!.GetField("GuardrailTiers", BindingFlags.Public | BindingFlags.Static);

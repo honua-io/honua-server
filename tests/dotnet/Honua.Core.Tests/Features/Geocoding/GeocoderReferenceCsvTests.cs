@@ -5,9 +5,6 @@ using Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
-/// <summary>
-/// Unit coverage for the streaming CSV record reader used by the geocoder reference data loader.
-/// </summary>
 public sealed class GeocoderReferenceCsvTests
 {
     [Trait("Tier", "Fast")]

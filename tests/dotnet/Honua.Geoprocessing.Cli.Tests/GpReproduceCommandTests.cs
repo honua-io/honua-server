@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// <c>honua-gp-devkit reproduce</c> (honua-server#6220): an authorized export runs locally,
-/// and a missing input, a hash mismatch, an old bundle, credential material, or a failure
-/// that does not match the recorded native outcome is refused. No server is contacted.
-/// </summary>
 [Collection(GpCliEndToEndTests.CollectionName)]
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpReproduceCommandTests : IDisposable

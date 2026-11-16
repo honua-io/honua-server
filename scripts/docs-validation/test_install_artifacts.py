@@ -98,6 +98,52 @@ class ArtifactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             public.verify_features(features)
 
+    def test_fixed_geoservices_layer_number_is_rejected(self):
+        path = "docs/get-started/quickstart.md"
+        self.replace(path, "/rest/services/quickstart/FeatureServer/{id}",
+                     "/rest/services/quickstart/FeatureServer/0")
+        self.assertTrue(any("layer id" in error for error in artifacts.check(self.root)))
+
+    def geoservices(self, layers, layer, features):
+        def fetch(url, key):
+            self.assertEqual("key", key)
+            path = url.removeprefix("http://host/rest/services/quickstart/FeatureServer")
+            if path == "?f=json":
+                return {"layers": layers}
+            if path.startswith("/1/query?"):
+                return {"features": features}
+            return {"error": {"code": 404}} if "/query?" in path else layer(path)
+        return fetch
+
+    def test_geoservices_layer_url_uses_the_listed_id(self):
+        features = [
+            {"attributes": {"id": 1, "name": "west"}, "geometry": {"x": -157.875, "y": 21.3125}},
+            {"attributes": {"id": 2, "name": "east"}, "geometry": {"x": -155.0625, "y": 19.6875}},
+        ]
+        found = lambda path: {"id": 1} if path == "/1?f=json" else {"error": {"code": 404}}
+        fetch = self.geoservices([{"id": 1, "name": "places"}], found, features)
+        self.assertEqual(1, public.verify_geoservices_layer("http://host", "key", fetch))
+        other = self.geoservices([{"id": 2}], lambda path: {"id": 2}, features)
+        with self.assertRaisesRegex(ValueError, "GeoServices layer URL"):
+            public.verify_geoservices_layer("http://host", "key", other)
+
+    def test_malformed_geoservices_answers_fail_with_a_reason(self):
+        broken = [{"attributes": {"name": "west"}, "geometry": None}]
+        for layers, layer, rows in (
+                (None, lambda path: {"id": 1}, []), ([1], lambda path: {"id": 1}, []),
+                ([{"id": 1}], lambda path: [], []), ([{"id": 1}], lambda path: {"id": 1}, broken)):
+            with self.assertRaisesRegex(ValueError, "GeoServices layer URL"):
+                public.verify_geoservices_layer("http://host", "key", self.geoservices(layers, layer, rows))
+
+    def test_unresolved_or_unlisted_geoservices_layer_is_not_a_success(self):
+        missing = lambda path: {"error": {"code": 404, "message": "Service layer was not found."}}
+        for layers in ([], [{"id": 1}, {"id": 2}], [{"id": "1"}], [{"id": 1}]):
+            with self.assertRaises(ValueError):
+                public.verify_geoservices_layer("http://host", "key", self.geoservices(layers, missing, []))
+        with self.assertRaises(ValueError):
+            public.verify_geoservices_layer(
+                "http://host", "key", self.geoservices([{"id": 1}], lambda path: {"id": 1}, []))
+
     def test_public_replay_stages_the_documented_grid_build_context(self):
         compose = public.public_blocks()["compose"]
         with tempfile.TemporaryDirectory() as directory:

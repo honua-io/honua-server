@@ -8,7 +8,6 @@ using Honua.Core.Features.Scene.Generation;
 
 namespace Honua.Scene.Assets;
 
-/// <summary>Derives every advertised I3S resource from the persisted tileset revision.</summary>
 internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) : II3sSceneResourceProvider, IDisposable
 {
     private const long ByteBudget = 64 * 1024 * 1024;

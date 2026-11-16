@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import json
-import math
 import os
 import re
 from pathlib import Path
@@ -14,12 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PR_GATE = ROOT / ".github/workflows/pr-gate.yml"
 REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
 REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
-EVIDENCE_LEDGER = ROOT / ".github/workflows/review-first-evidence-ledger.yml"
-PROMOTION_POLICY = ROOT / ".github/review-first-promotion.json"
 WORKFLOW_DIR = ROOT / ".github/workflows"
-PREBUILD_BENCHMARK = WORKFLOW_DIR / "server-test-prebuild-benchmark.yml"
-PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
-PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 # validate-review-first-dispatch.sh projects this head's inventory into a scratch
@@ -61,28 +54,6 @@ def mode(source: str, path: Path) -> str:
     return matches[0]
 
 
-def validate_synthetic_artifact_catalog(
-    page_counts: list[int], declared_total: int, maximum_pages: int
-) -> None:
-    """Exercise the workflow's bounded, fail-closed catalog pagination contract."""
-    discovered = 0
-    for page, page_count in enumerate(page_counts[:maximum_pages], start=1):
-        discovered += page_count
-        if page * 100 >= declared_total:
-            if discovered < declared_total:
-                raise AssertionError(
-                    "repository artifact catalog ended before its declared total"
-                )
-            return
-        if page_count != 100:
-            raise AssertionError("repository artifact catalog ended before its declared total")
-
-    raise AssertionError(
-        "review-first-observation-v1 artifact catalog needs more than "
-        f"{maximum_pages} page(s) of 100 (declared total {declared_total})"
-    )
-
-
 def validate_aggregate_review_status(required_job: str, revalidation_condition: str) -> None:
     aggregate_check = required_job.split("- name: Revalidate exact-head review before success", 1)[1]
     require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
@@ -106,8 +77,6 @@ def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
     review_bridge = read_text(REVIEW_BRIDGE)
-    evidence_ledger = read_text(EVIDENCE_LEDGER)
-    promotion_policy = read_text(PROMOTION_POLICY)
     # Trusted default-branch script workflows. `auto-rerun-flaky.yml` and
     # `ci-failure-triage.yml` used to be listed here; both were retired as
     # unreachable (their `workflow_run.event == 'pull_request'` guard can never
@@ -115,9 +84,6 @@ def main() -> None:
     # asserted below so they cannot quietly come back.
     action_workflows = {
         REVIEW_GATE: review_gate,
-        PREBUILD_BENCHMARK: read_text(PREBUILD_BENCHMARK),
-        PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
-        PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
 
     pr_mode = mode(pr_gate, PR_GATE)
@@ -300,43 +266,8 @@ def main() -> None:
     require(review_gate, "persist-credentials: false", "trusted checkout must not persist credentials")
     require(
         review_gate,
-        "review-first-evidence-ledger.js policy-digest",
-        "trusted review workflow must bind its measurement policy",
-    )
-    require(
-        review_gate,
-        "createReviewFirstObservation",
-        "trusted review workflow must serialize the production observe decision",
-    )
-    require(
-        review_gate,
         "if (!['observe', 'rerun'].includes(decision.action)) {",
         "observe and enforce must share the final review-state revalidation",
-    )
-    require(
-        review_gate,
-        "Retain immutable review-first observation",
-        "trusted review workflow must retain an immutable observation receipt",
-    )
-    require(
-        review_gate,
-        "if: always() && steps.attest.outputs.receipt_present == 'true'",
-        "trusted review workflow must upload only an emitted observe receipt",
-    )
-    require(
-        review_gate,
-        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-        "trusted review workflow must pin the artifact writer",
-    )
-    require(
-        review_gate,
-        "name: review-first-observation-v1",
-        "trusted observations need one server-filterable artifact name",
-    )
-    require(
-        review_gate,
-        "retention-days: 30",
-        "review observation retention must match the promotion policy window",
     )
     require(
         review_gate,
@@ -365,16 +296,6 @@ def main() -> None:
     )
     require(
         review_gate,
-        "reviewRevalidated: true,",
-        "observation receipt must assert final complete review revalidation",
-    )
-    require(
-        review_gate,
-        "admissionRevalidated: true,",
-        "observation receipt must assert final admission revalidation",
-    )
-    require(
-        review_gate,
         "if (!finalReview || finalReview.head !== head)",
         "final review evaluation must reject a missing or changed head",
     )
@@ -396,19 +317,15 @@ def main() -> None:
     final_state_read = review_gate.index(
         "finalState = await stabilizeReviewFirstEvaluation(async () => {"
     )
-    observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
-    observe_write = review_gate.index("fs.writeFileSync(", observe_receipt)
-    observe_report = review_gate.index("await reportDecision(decision);", observe_write)
+    observe_decision = review_gate.index("if (decision.action === 'observe') {")
     rerun_mutation = review_gate.index(
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
     )
     rerun_report = review_gate.index("await reportDecision(decision);", rerun_mutation)
-    if not final_state_read < observe_receipt < observe_write < rerun_mutation:
+    if not final_state_read < observe_decision < rerun_mutation < rerun_report:
         raise AssertionError(
-            "joint review/admission revalidation must precede observation and mutation"
+            "joint review/admission revalidation must precede reporting and mutation"
         )
-    if not observe_write < observe_report or not rerun_mutation < rerun_report:
-        raise AssertionError("reporting must not delay an admitted irreversible boundary")
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:
             raise AssertionError(
@@ -442,187 +359,18 @@ def main() -> None:
         "review bridge must observe inline thread changes",
     )
 
-    require(evidence_ledger, "  workflow_dispatch:\n", "evidence ledger needs a manual audit path")
-    require(evidence_ledger, "  schedule:\n", "evidence ledger must run on a schedule")
-    require(evidence_ledger, "  actions: read", "evidence ledger must read retained artifacts")
-    require(evidence_ledger, "  contents: read", "evidence ledger must read trusted policy")
-    require(
-        evidence_ledger,
-        "ref: ${{ github.workflow_sha }}",
-        "evidence ledger must pin its trusted workflow policy commit",
-    )
-    require(
-        evidence_ledger,
-        "Replay production decisions and compute readiness",
-        "evidence ledger must replay the production decision helper",
-    )
-    require(
-        evidence_ledger,
-        "review-first-evidence-ledger.js combine-runs",
-        "workflow-run discovery must combine bounded time partitions",
-    )
-    require(
-        evidence_ledger,
-        'jq -r \'.partitions[] | [.index, .created_filter] | @tsv\'',
-        "workflow-run discovery must query each bounded time partition",
-    )
-    require(
-        evidence_ledger,
-        '"repos/${GITHUB_REPOSITORY}/actions/artifacts"',
-        "artifact discovery must use one bounded repository catalog",
-    )
-    require(
-        evidence_ledger,
-        "-f name=review-first-observation-v1",
-        "repository artifact discovery must filter at the server",
-    )
-    require(
-        evidence_ledger,
-        "maximum_artifact_catalog_pages",
-        "artifact discovery must enforce its catalog-page budget",
-    )
-    require(
-        evidence_ledger,
-        "maximum_receipt_downloads",
-        "receipt downloads must enforce their API budget",
-    )
-    require(
-        evidence_ledger,
-        "maximum_run_pages",
-        "workflow-run discovery must enforce its page budget",
-    )
-    if "--paginate" in evidence_ledger:
-        raise AssertionError("ledger API pagination must use explicit policy bounds")
-    if re.search(r"actions/runs/\$\{run_id\}/artifacts", evidence_ledger):
-        raise AssertionError("artifact discovery must not make one API request per workflow run")
-    require(
-        evidence_ledger,
-        "report-only ledger",
-        "evidence ledger must describe its non-mutating authority",
-    )
-    require(
-        evidence_ledger,
-        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-        "evidence ledger must pin the artifact writer",
-    )
-    require(
-        evidence_ledger,
-        "retention-days: 30",
-        "ledger report retention must match the observation window",
-    )
-    for forbidden in (
-        "actions: write",
-        "contents: write",
-        "pull-requests: write",
-        "statuses: write",
-        "rerun-failed-jobs",
-        "merge-train.yml",
-        "createCommitStatus",
+    for retired in (
+        ".github/workflows/review-first-evidence-ledger.yml",
+        ".github/review-first-promotion.json",
+        "scripts/ci/review-first-evidence-ledger.js",
+        "scripts/ci/review-first-evidence-ledger.test.js",
     ):
-        if forbidden in evidence_ledger:
-            raise AssertionError(f"evidence ledger must remain read-only: found {forbidden}")
-    require(
-        promotion_policy,
-        '"minimum_countable_heads": 20',
-        "review-first promotion threshold must remain explicit",
-    )
-    require(
-        promotion_policy,
-        '"query_partition_hours": 24',
-        "review-first queries must remain partitioned below GitHub's search cap",
-    )
-    require(
-        promotion_policy,
-        '"maximum_runs_per_partition": 999',
-        "review-first queries must fail before GitHub's 1,000-result cap",
-    )
-    require(
-        promotion_policy,
-        '"maximum_artifact_catalog_pages": 50',
-        "repository artifact discovery must remain bounded",
-    )
-    # The scheduled ledger went red when the retained catalog (1,601 receipts,
-    # #5363) outgrew a 3-page budget. Keep the finite bound at least twice the
-    # observed catalog, and keep the worst-case request total inside the
-    # declared API budget so raising one bound cannot silently spend another.
-    policy = json.loads(promotion_policy)
-    observed_catalog = 1601
-    if policy["maximum_artifact_catalog_pages"] * 100 < 2 * observed_catalog:
-        raise AssertionError(
-            "artifact catalog budget must keep 2x headroom over the observed catalog"
-        )
-    partitions = math.ceil(policy["receipt_retention_days"] * 24 / policy["query_partition_hours"])
-    worst_case_requests = (
-        partitions * math.ceil(policy["maximum_runs_per_partition"] / 100)
-        + policy["maximum_artifact_catalog_pages"]
-        + policy["maximum_receipt_downloads"]
-    )
-    if worst_case_requests > policy["maximum_github_api_requests"]:
-        raise AssertionError(
-            f"ledger worst case of {worst_case_requests} requests exceeds the API budget"
-        )
-
-    # Exercise the boundary with catalogs rather than only matching workflow
-    # source. The current-sized catalog must be complete, while the first
-    # catalog outside the finite budget must fail instead of yielding partial
-    # evidence that could be reported as green.
-    current_catalog_pages = [100] * (observed_catalog // 100) + [observed_catalog % 100]
-    validate_synthetic_artifact_catalog(
-        current_catalog_pages,
-        observed_catalog,
-        policy["maximum_artifact_catalog_pages"],
-    )
-    beyond_budget_total = policy["maximum_artifact_catalog_pages"] * 100 + 1
-    try:
-        validate_synthetic_artifact_catalog(
-            [100] * policy["maximum_artifact_catalog_pages"] + [1],
-            beyond_budget_total,
-            policy["maximum_artifact_catalog_pages"],
-        )
-    except AssertionError as error:
-        if "needs more than" not in str(error) or str(beyond_budget_total) not in str(error):
-            raise AssertionError("catalog truncation error must be actionable") from error
-    else:
-        raise AssertionError("catalog beyond the declared page budget must fail closed")
-    for needle, message in (
-        (
-            "while (( page <= maximum_pages )); do",
-            "artifact discovery must stop at its catalog-page budget",
-        ),
-        (
-            "if (( page * 100 >= expected_total )); then\n              catalog_complete=true",
-            "artifact discovery is complete only once it covers the declared total",
-        ),
-        (
-            'echo "repository artifact total changed during pagination" >&2',
-            "artifact discovery must reject a catalog that changes mid-pagination",
-        ),
-        (
-            'echo "repository artifact catalog ended before its declared total" >&2',
-            "artifact discovery must reject a short page before the declared total",
-        ),
-        (
-            'if [[ "${catalog_complete}" != true ]]; then\n'
-            "            printf '::error::review-first-observation-v1 artifact catalog needs more than",
-            "a truncated artifact catalog must fail with an actionable error",
-        ),
-    ):
-        require(evidence_ledger, needle, message)
-    require(
-        promotion_policy,
-        '"maximum_receipt_downloads": 300',
-        "receipt downloads must remain bounded",
-    )
-    require(
-        promotion_policy,
-        '"maximum_github_api_requests": 650',
-        "ledger API use must preserve GITHUB_TOKEN headroom",
-    )
-    require(
-        promotion_policy,
-        '"require_zero_integrity_failures": true',
-        "review-first promotion must fail closed on evidence contradictions",
-    )
+        if (ROOT / retired).exists():
+            raise AssertionError(f"retired report collector must remain absent: {retired}")
+    for retired in ("createReviewFirstObservation", "REVIEW_FIRST_POLICY_DIGEST",
+                    "review-first-observation-v1", "receipt_present"):
+        if retired in review_gate:
+            raise AssertionError(f"review attestation must not emit retired reports: {retired}")
     require(review_bridge, "  contents: read", "review bridge must have a read-only token")
     for forbidden in ("actions: write", "statuses: write", "pull-requests: write", "actions/checkout"):
         if forbidden in review_bridge:

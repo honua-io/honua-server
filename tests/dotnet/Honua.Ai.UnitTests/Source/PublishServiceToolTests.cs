@@ -20,13 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies the MCP <c>honua_publish_service</c> tool (#1951): it advertises the
-/// correct write annotations and output schema, routes <c>tools/call</c> through
-/// the canonical <see cref="IOperationInvoker"/> (operations toolset /
-/// service.publish), and projects the resulting <see cref="OperationHandle"/>
-/// into a structured Completed / RequiresApproval / unavailable result.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class PublishServiceToolTests
 {

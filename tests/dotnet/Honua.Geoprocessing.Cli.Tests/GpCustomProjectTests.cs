@@ -9,12 +9,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// `honua-gp-devkit init` / `test` building blocks (#6217): the embedded honua-samples
-/// templates match their manifests (the drift anchor), the flat YAML descriptor round-trips,
-/// the scaffold adds only the descriptor (and the .NET response file), and the artifact
-/// comparison names the first difference.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpCustomProjectTests
 {

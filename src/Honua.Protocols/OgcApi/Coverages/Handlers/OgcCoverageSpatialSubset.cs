@@ -7,7 +7,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
-/// <summary>Maps named two-dimensional coverage trims to a canonical raster clip.</summary>
 internal static class OgcCoverageSpatialSubset
 {
     internal readonly record struct Bounds(double MinX, double MinY, double MaxX, double MaxY, int Srid);

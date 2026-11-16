@@ -38,6 +38,10 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     private const int GeocodedSourceSrid = 4326;
 
+    internal const string AgentReplaceGuidance =
+        "An agent can only create a new dataset with this tool. To replace an existing dataset, "
+        + "submit dataset.stage.import; it becomes a proposal for one human approval.";
+
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
 
@@ -64,7 +68,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             + "For address-only CSV, first use honua_geocode_addresses, or set addressColumn for server-side geocoding "
             + "(up to 100 rows; addressColumn requires the Enterprise edition and 'geocoding.batch'; Community and Pro must use coordinates or GeoJSON). "
             + "Returns row count, per-row errors, and connectionId/schema/table/geometryColumn/primaryKey for honua_publish_service. "
-            + "Re-ingesting the same datasetName replaces it. Above 4 MB, use POST /api/v1/admin/import/upload.",
+            + "Re-ingesting the same datasetName replaces it. Above 4 MB, import from a URL with honua_admin_import_upload_url.",
         InputSchema = McpToolSchemas.IngestDatasetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.IngestDatasetOutputSchema,
         // Write tool: it creates (or replaces) a table in the catalog database.
@@ -108,6 +112,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         }
 
         var csvOptions = BuildCsvOptions(httpContext, validated);
+        // An agent may stage a new dataset but never replace rows a person may already rely on.
+        var agent = AgentPrincipal.IsAgent(principal);
 
         ImportResult importResult;
         using (var dataStream = new MemoryStream(Encoding.UTF8.GetBytes(validated.Data), writable: false))
@@ -120,7 +126,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 SourceKind = "mcp-inline",
                 SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? GeocodedSourceSrid : null),
                 TargetSrid = validated.TargetSrid,
-                OverwriteExisting = true,
+                OverwriteExisting = !agent,
+                LoadMode = agent ? ImportLoadMode.CreateOnly : ImportLoadMode.Replace,
                 CsvOptions = csvOptions
             };
 
@@ -137,6 +144,11 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
         var output = await ProjectAsync(importResult, validated, httpContext.RequestServices, cancellationToken)
             .ConfigureAwait(false);
+        if (agent && !output.Success)
+        {
+            output.ErrorMessage = $"{output.ErrorMessage} {AgentReplaceGuidance}";
+        }
+
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpIngestDatasetOutput);
     }
 
@@ -158,7 +170,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         {
             throw new GeoprocessingValidationException(
                 $"'data' is {dataByteCount:N0} bytes, above the {MaxInlineDataBytes:N0}-byte inline cap for this tool. "
-                + "Upload larger datasets through the REST import surface (POST /api/v1/admin/import/upload) instead, "
+                + "Import larger datasets from a URL with honua_admin_import_upload_url instead, "
                 + "then publish the resulting table with honua_publish_service.");
         }
 

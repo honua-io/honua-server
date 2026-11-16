@@ -5,9 +5,6 @@ using System.Buffers.Binary;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Inspects WKB dimensions and removes embedded EWKB SRID words without changing coordinate bytes.
-/// </summary>
 public static class WkbSridNormalizer
 {
     private const uint EwkbZFlag = 0x80000000;
@@ -15,12 +12,6 @@ public static class WkbSridNormalizer
     private const uint EwkbSridFlag = 0x20000000;
     private const uint EwkbFlagMask = EwkbZFlag | EwkbMFlag | EwkbSridFlag;
 
-    /// <summary>
-    /// Returns structurally valid WKB/EWKB with every embedded SRID word removed. Z/M flags,
-    /// coordinate bytes, byte order, counts, and all other payload bytes are copied unchanged.
-    /// Invalid, unsupported, truncated, or trailing-junk inputs are returned by reference so the
-    /// database parser remains responsible for the error instead of this boundary repairing it.
-    /// </summary>
     public static byte[] RemoveEmbeddedSrid(byte[] wkb)
     {
         ArgumentNullException.ThrowIfNull(wkb);
@@ -38,12 +29,6 @@ public static class WkbSridNormalizer
         return changed ? output.ToArray() : wkb;
     }
 
-    /// <summary>
-    /// Validates the complete WKB/EWKB payload and reports declared Z and M ordinates across
-    /// every geometry node, including empty geometries. Supports geometry types 1 through 7
-    /// and at most 128 nested geometry levels. Malformed, unsupported, over-depth, or
-    /// trailing-junk input returns false with both flags reset; coordinate values are not inferred.
-    /// </summary>
     public static bool TryGetDeclaredOrdinates(byte[] wkb, out bool hasZ, out bool hasM)
     {
         hasZ = false;
@@ -66,16 +51,6 @@ public static class WkbSridNormalizer
         return false;
     }
 
-    /// <summary>
-    /// Reports whether the outermost geometry declares a Z and/or M ordinate, via either the
-    /// PostGIS-style EWKB high-bit flags or the ISO SQL/MM type-code offset. Callers that bind
-    /// into a provider WKB constructor with no Z/M-flavor translation of its own (MySQL's
-    /// canonical-2D <c>ST_GeomFromWKB</c>, SQL Server's ISO/OGC-flavored <c>STGeomFromWKB</c>)
-    /// should reject dimensioned input here instead of binding a payload the engine cannot parse
-    /// the way <see cref="RemoveEmbeddedSrid"/> emits it (SRID stripped, dimension flags
-    /// otherwise byte-preserved as-is). Malformed input reports <see langword="false"/> so the
-    /// database parser stays responsible for the resulting error.
-    /// </summary>
     public static bool HasZOrMOrdinates(byte[] wkb)
     {
         ArgumentNullException.ThrowIfNull(wkb);

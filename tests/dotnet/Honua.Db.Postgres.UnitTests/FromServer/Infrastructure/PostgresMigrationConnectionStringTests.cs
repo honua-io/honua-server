@@ -9,11 +9,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// The migration lock is a session advisory lock, and migration scripts may SET session state.
-/// Behind RDS Proxy either pins the proxy session, so migration connections must not return to a
-/// pool that a frozen Lambda never prunes (honua-server#6760).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresMigrationConnectionStringTests
 {

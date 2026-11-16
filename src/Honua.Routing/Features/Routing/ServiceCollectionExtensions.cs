@@ -8,45 +8,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Routing.Features.Routing;
 
-/// <summary>
-/// Service collection extensions for the routing subsystem.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Configuration section name for routing options.
-    /// </summary>
     public const string ConfigurationSection = RoutingConfiguration.SectionName;
 
-    /// <summary>
-    /// Configuration key selecting the routing provider (e.g. "pgrouting", "mock").
-    /// </summary>
     public const string ProviderConfigurationKey = "Routing:Provider";
 
-    /// <summary>
-    /// Registers the routing subsystem: binds and validates
-    /// <see cref="RoutingConfiguration"/> from the <c>Routing</c> section and
-    /// registers the routing provider selected by <c>Routing:Provider</c>.
-    /// </summary>
-    /// <remarks>
-    /// Provider selection:
-    /// <list type="bullet">
-    /// <item><c>Routing:Provider=mock</c> — the database-free mock provider.</item>
-    /// <item><c>Routing:Provider=pgrouting</c> — the pgRouting provider, regardless
-    /// of the data provider (operator opt-in).</item>
-    /// <item><c>Routing:Provider=none</c>/<c>unavailable</c> — no routing engine.</item>
-    /// <item>Unset (default) — pgRouting <em>only</em> when the active
-    /// <c>DataSource:Provider</c> is PostgreSQL (or unset, since Postgres is the
-    /// default). On non-Postgres data providers (DuckDB/MySQL/etc.) the pgRouting
-    /// SQL cannot run, so an <see cref="UnavailableRoutingProvider"/> is registered
-    /// instead; the NAServer adapter then returns a clear "not supported" error
-    /// rather than a 500 from executing pgRouting SQL against an incompatible
-    /// database.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Application configuration.</param>
-    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddRouting(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -61,14 +28,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<RoutingConfiguration>, RoutingConfigurationValidator>();
         services.AddSingleton<RoutingSolveCapacityLimiter>();
 
-        // Network-dataset registry (Phase 0 of #1882): resolves the active dataset's
+        // Network-dataset registry: resolves the active dataset's
         // edge/vertex table names. Backed by the honua.network_datasets registry table
         // when present, falling back to the built-in default (public.ways topology) so
         // the default deployment is unchanged. Registered unconditionally; only the
         // pgRouting provider consumes it.
         services.AddScoped<INetworkDatasetResolver, NetworkDatasetRegistry>();
 
-        // Network-dataset editing store (#1882 editing surface): admin CRUD over the
+        // Network-dataset editing store: admin CRUD over the
         // honua.network_datasets registry. The registry table is Postgres-only, so the
         // store is registered only when the active data provider is Postgres (the admin
         // endpoints no-op when it is absent, mirroring the scene-dataset registry).
@@ -77,13 +44,13 @@ public static class ServiceCollectionExtensions
             services.AddScoped<INetworkDatasetStore, PostgresNetworkDatasetStore>();
 
             // Topology generation read/allocation and canonical batched content-edit
-            // stores (#2716). Postgres-only, mirroring the registry store above; the admin
+            // stores. Postgres-only, mirroring the registry store above; the admin
             // edit endpoints no-op when these are absent.
             services.AddScoped<INetworkTopologyGenerationStore, PostgresNetworkTopologyGenerationStore>();
             services.AddScoped<INetworkTopologyEditStore, PostgresNetworkTopologyEditStore>();
 
             // Durable isolated shadow-topology rebuild attempts and their multi-node
-            // fencing lease (#2718/#2720), and atomic generation promotion/rollback (#2719).
+            // fencing lease, and atomic generation promotion/rollback.
             services.AddScoped<INetworkTopologyRebuildStore, PostgresNetworkTopologyRebuildStore>();
             services.AddScoped<NetworkTopologyShadowTopologyBuilder>();
             services.AddScoped<INetworkTopologyPromotionStore, PostgresNetworkTopologyPromotionStore>();

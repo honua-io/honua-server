@@ -8,13 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Hosting;
 
-/// <summary>
-/// Exercises the additive Phase 1 module discovery path
-/// (<see cref="FeatureRegistrationExtensions.AddDiscoveredProtocolModules"/>)
-/// end-to-end. The canonical wiring still goes through the direct
-/// <c>AddXxx</c> calls; these tests pin the discovery path's contract so a
-/// follow-up PR can migrate the canonical wiring with confidence.
-/// </summary>
 public sealed class ProtocolModuleDiscoveryTests
 {
     [Fact]

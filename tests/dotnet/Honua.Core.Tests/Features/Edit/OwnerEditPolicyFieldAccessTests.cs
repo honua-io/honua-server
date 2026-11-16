@@ -12,9 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-/// <summary>
-/// The owner-policy read must see a masked owner field and must not publish it (honua-server#5426).
-/// </summary>
 public sealed class OwnerEditPolicyFieldAccessTests
 {
     private const string Secret = "do-not-leak";
@@ -371,10 +368,6 @@ public sealed class OwnerEditPolicyFieldAccessTests
     private static Feature Named(long id)
         => Feature.Create(id, null, ImmutableDictionary<string, object?>.Empty.Add("name", "visible"));
 
-    /// <summary>
-    /// Returns the owner only when the query is the policy read. Any other query looks like a
-    /// field-masked response: the owner is absent and an unrelated secret is present.
-    /// </summary>
     private sealed class RecordingReader : IFeatureReader
     {
         private readonly Mode _mode;

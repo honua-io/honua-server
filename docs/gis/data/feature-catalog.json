@@ -21,6 +21,21 @@
       "capability": "enrichment.datasets"
     },
     {
+      "id": "delete-api-v1-admin-agent-authority",
+      "route": "/api/v1/admin/agent-authority",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.AgentAuthority_AgentCannotChangeOrDeleteAnExistingCeiling",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.AgentAuthority_HumanCanPersistReadAndRevokeCeiling"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "delete-api-v1-admin-alerts-rules-ruleid",
       "route": "/api/v1/admin/alerts/rules/{ruleId}",
       "method": "DELETE",
@@ -1400,6 +1415,20 @@
       "proof_ledger_surface": "vector-tiles-mvt",
       "maturity": "implemented",
       "capability": "serve.vector-tiles"
+    },
+    {
+      "id": "get-api-v1-admin-agent-authority",
+      "route": "/api/v1/admin/agent-authority",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.AgentAuthority_HumanCanPersistReadAndRevokeCeiling"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-admin-alerts-channels",
@@ -6653,6 +6682,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItems_FlagOn_ResponseIncludesOwnerId",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything",
+        "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.BridgedAnalysisPackage_KeepsItsTenant_AndIsHiddenFromAnotherTenant",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioListings_AnotherTenantsContent_IsNotEnumerable"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -6692,6 +6722,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetVersion_ContentHashInput_RecomputesToContentHashOnVersionAndPublishedReads",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.BridgedAnalysisPackage_KeepsItsTenant_AndIsHiddenFromAnotherTenant",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioReads_AnotherTenantsDraftAndVersion_AreNotFound"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -17203,7 +17234,7 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CanAccessStudio",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_PasswordSession_IsRefusedLikeApproval"
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_PasswordSession_MarksRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -18025,15 +18056,14 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart",
-        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithMissingGeoServerUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithPlaintextPassword_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithSecretReferencePassword_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithValidDryRun_QueuesAndCompletesJob",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithoutDryRunAndWithoutApplyMode_ReturnsSafetyGateError",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithoutDryRun_QueuesApplyPlanJob",
-        "Honua.Server.Tests.Import.GeoServerLiveImportIntegrationTests.Start_LiveGeoServerHarnessDryRun_Completes"
+        "Honua.Server.Tests.Import.GeoServerLiveImportIntegrationTests.Start_LiveGeoServerHarnessDryRun_Completes",
+        "Honua.Server.Tests.Import.ImportEndpointDurableSubmissionTests.StartGeoServer_WhenAccepted_PersistsDurableExecutionJob"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -18115,11 +18145,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.BackgroundWorker_WithUnsafeStoredServiceUrl_FailsJobBeforeImport",
-        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_SourcePublicPathAlreadyReserved_RequiresExplicitMapping",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable",
-        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithCredentialQueryParameter_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithHttpScheme_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithInvalidTableName_ReturnsBadRequest",
@@ -18132,6 +18160,8 @@
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithValidRequest_ReturnsAccepted",
         "Honua.Server.Tests.Import.GeoservicesImportFolderEndpointTests.Start_FolderSelection_PersistsServerPlannedIdentityAndResolvedScope",
         "Honua.Server.Tests.Import.GeoservicesImportFolderEndpointTests.Start_InvalidFolderMapping_RefusesBeforeQueueing",
+        "Honua.Server.Tests.Import.GeoservicesImportJobTests.Import_AcceptedOnOneNode_RunsOnAnotherAfterTheFirstStops",
+        "Honua.Server.Tests.Import.ImportEndpointDurableSubmissionTests.StartGeoservices_WhenAccepted_PersistsDurableExecutionJob",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity"
       ],
@@ -19475,6 +19505,7 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_ApiKeyWithDecisionGrant_RequiresHumanSession",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_ConcurrentVersionWrite_RequiresFreshReviewWithoutSecurityDenial",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSucceeded",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_PasswordBrowserSession_ExecutesOnceWithPasswordEvidence",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_RegisteredOperatorGatedDescriptors_RefusesApiKeyForEveryOperation",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_RequesterInteractiveSession_ExecutesOnce",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_UnregisteredOperationType_ReturnsActionableProblem",
@@ -19533,7 +19564,7 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ReadOnlyScopedKey_ApproveNamesMissingGrant",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_AdminKey_RequiresHumanSessionAndRecordsDenial",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_EvidenceBoundToAnotherTenant_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_PasswordSession_IsRefusedLikeApproval",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_PasswordSession_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithReason_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithoutReason_ReturnsBadRequest"
       ],
@@ -21017,6 +21048,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_WithNullCollections_Returns201WithEmptyCollections",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.BridgedAnalysisPackage_KeepsItsTenant_AndIsHiddenFromAnotherTenant",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -21038,6 +21070,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateVersion_FlagOn_MixedOwnerDraftCannotMoveAnotherOwnersCurrentPointer",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.BridgedAnalysisPackage_KeepsItsTenant_AndIsHiddenFromAnotherTenant",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -26182,6 +26215,22 @@
       "proof_ledger_surface": "geoprocessing-output-artifacts",
       "maturity": "preview",
       "capability": "process.geoprocessing"
+    },
+    {
+      "id": "put-api-v1-admin-agent-authority",
+      "route": "/api/v1/admin/agent-authority",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.AgentAuthority_AgentCannotChangeOrDeleteAnExistingCeiling",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.AgentAuthority_HumanCanPersistReadAndRevokeCeiling",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.AgentAuthority_InvalidCeilingIsRejected"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "put-api-v1-admin-alerts-rules-ruleid",

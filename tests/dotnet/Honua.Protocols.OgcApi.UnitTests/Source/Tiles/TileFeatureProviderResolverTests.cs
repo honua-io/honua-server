@@ -14,12 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
-/// <summary>
-/// Unit tests for <see cref="TileFeatureProviderResolver"/> (honua-server#2962), mirroring
-/// <c>ODataFeatureProviderResolverTests</c>: a collection whose storage binding names a
-/// secondary/additional provider connection must route to that provider's reader/tile
-/// capability rather than the DI-registered primary reader/tile provider.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class TileFeatureProviderResolverTests
 {

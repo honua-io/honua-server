@@ -19,11 +19,6 @@ using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IMigrationCatalogWriter"/>. Persists
-/// migrated workspace and layer-group records into <c>honua.services</c> using
-/// <c>INSERT ... ON CONFLICT DO NOTHING</c> so re-running an apply is idempotent.
-/// </summary>
 internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalogWriter
 {
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
@@ -748,10 +743,6 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         };
     }
 
-    /// <summary>
-    /// Builds one composite candidate, validates ownership rules, and saves it once.
-    /// A stale ETag is retried against a fresh snapshot. An invalid candidate is not saved.
-    /// </summary>
     internal static async Task<CompositeRelationshipPlan> ApplyPlannedCompositeRelationshipsAsync(
         IMetadataV2GraphStore graphStore,
         IReadOnlyList<MigrationRelationshipApplyRequest> requests,
@@ -786,10 +777,6 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         return plan;
     }
 
-    /// <summary>
-    /// Plans a composite graph patch without writing it. New errors from
-    /// <see cref="MetadataV2GraphValidator"/> reject the whole composite set.
-    /// </summary>
     internal static CompositeRelationshipPlan PlanCompositeRelationships(
         MetadataV2Graph graph,
         IReadOnlyList<MigrationRelationshipApplyRequest> requests)

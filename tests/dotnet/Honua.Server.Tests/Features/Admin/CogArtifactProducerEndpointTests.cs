@@ -27,7 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>Actual PostGIS COG publication bytes, separate from substituted transport tests.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]

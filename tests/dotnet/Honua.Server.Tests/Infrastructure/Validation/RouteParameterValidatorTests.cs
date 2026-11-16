@@ -8,10 +8,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// Unit tests for RouteParameterValidator ensuring consistent route parameter
-/// validation across all endpoints.
-/// </summary>
 public class RouteParameterValidatorTests
 {
     private readonly RouteParameterValidator _validator;

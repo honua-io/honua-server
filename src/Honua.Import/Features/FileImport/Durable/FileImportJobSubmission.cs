@@ -7,18 +7,8 @@ using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Import.FileImport.Durable;
 
-/// <summary>
-/// Accepting-host half of a durable file import (honua-server#5916): validates the request and
-/// its format exactly as the in-process runner does before it queues, and builds the initial
-/// import job document the worker later advances.
-/// </summary>
 internal static class FileImportJobSubmission
 {
-    /// <summary>
-    /// Validates <paramref name="request"/> and returns the queued job document with the import
-    /// limits the submission is admitted against.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The format is unknown or gated off.</exception>
     public static (ImportProgress Progress, ImportLimits Limits) CreateQueuedProgress(
         IServiceScopeFactory scopeFactory,
         ImportRequest request,

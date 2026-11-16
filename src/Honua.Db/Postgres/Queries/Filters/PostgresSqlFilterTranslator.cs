@@ -14,13 +14,6 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Queries.Filters;
 
-/// <summary>
-/// Translates filter expressions to parameterized PostgreSQL WHERE clauses.
-/// Recursion, depth-cap enforcement, parameter accumulation, literal and value-list
-/// translation are inherited from <see cref="SqlFilterExpressionVisitorBase"/>;
-/// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
-/// PostGIS function names, geography casts, range types).
-/// </summary>
 internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
@@ -43,13 +36,6 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         _primaryKeyColumn = primaryKeyColumn;
     }
 
-    /// <summary>
-    /// Translates a filter expression to SQL using a Metadata v2 resource for
-    /// field validation and spatial-reference resolution.
-    /// </summary>
-    /// <param name="filter">Filter expression to translate.</param>
-    /// <param name="resource">Metadata v2 resource.</param>
-    /// <returns>SQL fragment with parameters.</returns>
     public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
         => Translate(filter, FilterTranslationContext.FromResource(resource));
 
@@ -309,7 +295,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
         // Geography measures metres. The planar path measures in the layer CRS's own unit, so a
         // distance the parser already normalised to metres (FES uom) is converted to that unit:
-        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS (#5462). Distances without a unit
+        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS. Distances without a unit
         // keep their native planar-in-CRS reading.
         if (!useGeography && spatial.DistanceInMeters)
         {
@@ -337,18 +323,15 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     // Fallback used only when the translation context does not carry an explicit IsGeographic
     // flag (the primary path derives it from spatial_ref_sys). This gates ::geography-cast /
     // geodesic routing (ST_DWithin/ST_Distance over geography, geodesic Intersects), so it uses
-    // the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // the canonical NARROW geodesic-safe bucket rather than the broad geographic
     // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
     // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
-    // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
-    // it drops 4619 (SWEREF99) and 4267 (NAD27) and adds 4617 (NAD83(CSRS)) / 4759
-    // (NAD83(NSRS2007)); the primary
-    // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
-    // fallback is affected.
+    // narrow bucket excludes 4619 (SWEREF99) and 4267 (NAD27) and includes 4617 (NAD83(CSRS)) /
+    // 4759 (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still classifies 4619
+    // correctly, so only the registry-miss fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
-    /// <summary>Resolves a spatial operand, allowing entity adapters to supply canonical geometry properties.</summary>
     protected virtual string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
@@ -362,7 +345,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                     if (geometry.Srid != context.Wkid)
                     {
                         // A geographic literal at latitude ±90 aborts ST_Transform into Web Mercator.
-                        // The shared helper clamps that band; other CRS pairs stay a bare transform (#6186).
+                        // The shared helper clamps that band; other CRS pairs stay a bare transform.
                         geometryExpression = DatumTransformSql.BuildTransformExpression(
                             geometryExpression,
                             context.Wkid,
@@ -653,7 +636,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
             "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
 
-            // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
+            // Extended EXTRACT fields. The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
             // stays a translated, parameter-safe sub-expression.
             "EXTRACT_DOW" => TranslateExtractField("DOW", args),
@@ -940,7 +923,6 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     private static bool CanTranslateAsGeography(FilterExpression expression)
         => expression is GeometryLiteral or PropertyReference;
 
-    /// <summary>Resolves an operand for shared WGS84 geodesic operations.</summary>
     protected virtual string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
@@ -1134,12 +1116,12 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         // FeatureQueryBuilder), so the alias must be rewritten to the real column
         // rather than emitted verbatim (a bare "updated" column does not exist).
         // The OData $deltatoken "changed since" predicate targets the "updated"
-        // alias so the delta filter resolves to the real updated_at column (#1436).
+        // alias so the delta filter resolves to the real updated_at column.
         //
         // Only map the alias when the resource does not expose it as a queryable
         // attribute (TryGetField == null); otherwise fall through to normal schema
         // resolution. This intentionally does NOT recognize the literal physical
-        // names "created_at"/"updated_at" here: per #1415 those names are resolved
+        // names "created_at"/"updated_at" here: those names are resolved
         // through the schema so a user CQL2/OData filter on a layer-defined
         // attribute field (JSONB) maps to the typed attributes path (200), and a
         // filter on an undefined field raises ArgumentException (400) instead of

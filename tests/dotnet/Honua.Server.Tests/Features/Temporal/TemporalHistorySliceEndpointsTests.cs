@@ -22,18 +22,10 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Temporal;
 
-/// <summary>
-/// Integration tests for slices 2-5 of the temporal data history API (honua-server#1166): diff, feature
-/// timeline, attribution surfacing, and governed rollback planning/execution. The Metadata v2 graph,
-/// change tracker, and temporal history store are overridden with deterministic fakes so the real
-/// <c>TemporalHistoryService</c>, the admin endpoints, the distinct authorization policies, and AOT JSON
-/// serialization are exercised end-to-end. Rollback execution uses a fake runner so the job-handle
-/// contract is verified without depending on the durable job runner.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class TemporalHistorySliceEndpointsTests : IAsyncLifetime
+public sealed partial class TemporalHistorySliceEndpointsTests : IAsyncLifetime
 {
     private const string ServiceId = "svc-temporal";
     private const int TemporalLayerId = 10;
@@ -292,8 +284,12 @@ public sealed class TemporalHistorySliceEndpointsTests : IAsyncLifetime
         public int ChangedCount { get; set; }
 
         public Task<IReadOnlyList<TemporalChangeRecord>> GetFeatureRevisionsAsync(
-            int storageLayerId, long objectId, long afterGeneration, int limit, CancellationToken cancellationToken = default)
-            => Task.FromResult(FeatureRevisions);
+            TemporalFeatureRevisionQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TemporalChangeRecord>>(FeatureRevisions
+                .Where(row => row.Generation > query.AfterGeneration && row.Generation <= query.ThroughGeneration)
+                .OrderBy(row => row.Generation)
+                .Take(query.Limit)
+                .ToArray());
 
         public Task<IReadOnlyList<TemporalChangeRecord>> GetChangesInWindowAsync(
             int storageLayerId, long fromGeneration, long toGeneration, long afterObjectId, int limit, CancellationToken cancellationToken = default)

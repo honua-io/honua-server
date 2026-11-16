@@ -9,9 +9,6 @@ using SkiaSharp;
 
 namespace Honua.Protocols.Ogc.Api.Tiles;
 
-/// <summary>
-/// Renders features to a 256x256 PNG raster tile using SkiaSharp.
-/// </summary>
 internal static class TileRenderer
 {
     private const int TileSize = 256;
@@ -33,15 +30,6 @@ internal static class TileRenderer
         int? SourceSrid = null,
         int? TargetSrid = null);
 
-    /// <summary>
-    /// Renders a set of features to a PNG image for the given tile bounds.
-    /// </summary>
-    /// <param name="features">Features to render.</param>
-    /// <param name="bounds">Tile bounding box in map coordinates.</param>
-    /// <param name="geometryKind">Geometry kind of the layer.</param>
-    /// <param name="sourceSrid">Optional feature-geometry SRID.</param>
-    /// <param name="targetSrid">Optional tile-bounds SRID used for rendering.</param>
-    /// <returns>PNG image bytes.</returns>
     internal static byte[] RenderTilePng(
         ImmutableArray<Feature> features,
         TileBounds bounds,

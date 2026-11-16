@@ -10,12 +10,6 @@ using Honua.Db.Postgres.Features.Migration;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Regression tests for #1981: Esri/file import must carry Z and M ordinates
-/// instead of silently flattening geometries to 2-D (or M-less). The streaming
-/// file-import path selects WKB writer dimensionality from the source geometry,
-/// so XYZ, XYM, and XYZM geometries round-trip through WKB.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ImportZmRoundTripTests
 {

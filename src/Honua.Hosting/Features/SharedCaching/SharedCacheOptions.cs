@@ -29,6 +29,8 @@ internal sealed class SharedCacheOptions
 
     public SharedCacheEmergency Emergency { get; set; } = new();
 
+    public SharedCachePurgeBacked PurgeBacked { get; set; } = new();
+
     // The response header the CDN reads cache tags from (its cache-tag configuration names the same header). Empty: no
     // tags are sent and edits invalidate by path.
     public string? CacheTagHeader { get; set; }

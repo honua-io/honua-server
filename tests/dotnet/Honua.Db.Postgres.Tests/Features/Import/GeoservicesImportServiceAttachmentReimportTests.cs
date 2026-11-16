@@ -352,14 +352,14 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
     }
 
     [Fact]
-    public async Task ImportLayerAsync_StorageCleanupFailure_QueuesCleanupAndNextImportRetriesIt()
+    public async Task ImportLayerAsync_StorageCleanupFailure_QueuesCleanupAndRetriesWhenDue()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("AttachmentCleanupRetry");
         try
         {
             var storage = new ImportStorage();
             var store = await CreatePersistentStoreAsync(schema, storage);
-            var handler = new AttachmentFeatureServerHandler();
+            using var handler = new AttachmentFeatureServerHandler();
             var service = CreateService(handler, store, new StubLayerPublishingService(42), schema);
             (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
 
@@ -376,6 +376,10 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
                 NullLogger<PostgresAttachmentStore>.Instance, schema,
             migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("Honua.Server.Migrations.002_CreateAttachmentsTable.sql", "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql", "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template", "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3"));
             service = CreateService(handler, store, new StubLayerPublishingService(42), schema);
+            (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
+            (await PendingCleanupAsync(schema)).Should().Be(3);
+            storage.Files.Should().HaveCount(4);
+            await MakeCleanupRetriesDueAsync(schema);
             (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
             var current = (await ReadStoredAsync(schema)).Should().ContainSingle().Subject;
             storage.Files.Keys.Should().Equal(current.StoragePath);
@@ -471,6 +475,9 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "125_AddImportedAttachmentIdentity.sql"));
         await using var migrate = new NpgsqlCommand(migration.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
         await migrate.ExecuteNonQueryAsync();
+        var retries = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "206_CreateAttachmentCleanupRetries.sql"));
+        await using var retryMigration = new NpgsqlCommand(retries.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
+        await retryMigration.ExecuteNonQueryAsync();
         return new PostgresAttachmentStore(new FixtureConnectionProvider(fixture), storage.Mock.Object,
             NullLogger<PostgresAttachmentStore>.Instance, schema,
             migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("Honua.Server.Migrations.002_CreateAttachmentsTable.sql", "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql", "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template", "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3"));
@@ -490,6 +497,17 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         }
 
         return result.ToArray();
+    }
+
+    private async Task MakeCleanupRetriesDueAsync(string schema)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"""
+            UPDATE {schema}.attachment_cleanup_retries
+            SET next_attempt_at = clock_timestamp() - interval '1 second'
+            WHERE next_attempt_at > clock_timestamp()
+            """, connection);
+        (await command.ExecuteNonQueryAsync()).Should().Be(3);
     }
 
     private async Task<long> PendingCleanupAsync(string schema)

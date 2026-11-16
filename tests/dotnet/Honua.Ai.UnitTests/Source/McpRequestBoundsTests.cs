@@ -15,12 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// SEC-18: <c>POST /mcp</c> bounds the JSON-RPC batch length and the request body
-/// size before any element is dispatched. The handler runs directly against a
-/// <see cref="DefaultHttpContext"/> with small configured caps, so each test sends
-/// the smallest input that crosses a bound and asserts the bounded rejection.
-/// </summary>
 public sealed class McpRequestBoundsTests
 {
     [UnitTest]
@@ -171,10 +165,6 @@ public sealed class McpRequestBoundsTests
         "[" + string.Join(',', Enumerable.Range(1, count)
             .Select(i => $$"""{"jsonrpc":"2.0","id":{{i}},"method":"tools/list"}""")) + "]";
 
-    /// <summary>
-    /// A single <c>tools/list</c> request padded with an ignored parameter to exactly
-    /// <paramref name="totalBytes"/> bytes.
-    /// </summary>
     private static string PaddedToolsList(int totalBytes)
     {
         const string prefix = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{\"pad\":\"";

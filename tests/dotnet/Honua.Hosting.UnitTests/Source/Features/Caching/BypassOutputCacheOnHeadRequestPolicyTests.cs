@@ -10,9 +10,6 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Unit tests for <see cref="BypassOutputCacheOnHeadRequestPolicy"/>.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class BypassOutputCacheOnHeadRequestPolicyTests
 {

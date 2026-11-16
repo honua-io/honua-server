@@ -214,11 +214,6 @@ public sealed class OutputCacheEntitlementGateTests
             => Task.FromResult(new LicenseUploadResult(false, "Static test provider does not support uploads."));
     }
 
-    /// <summary>
-    /// Stands in for the runtime <c>FileBackedLicenseService</c>: a singleton whose snapshot is
-    /// republished when a license is applied or expires, exactly as
-    /// <c>ApplyLicenseAsync</c> and <c>GetSnapshot</c>'s lazy expiration transition do.
-    /// </summary>
     private sealed class MutableLicenseEntitlementService : ILicenseEntitlementService
     {
         private LicenseSnapshot _snapshot;

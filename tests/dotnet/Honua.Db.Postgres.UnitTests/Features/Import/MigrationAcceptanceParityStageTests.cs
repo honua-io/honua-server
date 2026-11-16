@@ -20,16 +20,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Drives the migration acceptance suite parity stage end-to-end across the same fixture set used
-/// by <see cref="MigrationAcceptanceScanStageTests"/> and <see cref="MigrationAcceptanceApplyStageTests"/>:
-/// one ArcGIS GeoServices REST fixture, one GeoServer REST fixture, and one OGC API Features
-/// snapshot fixture. The parity stage runs scan -> manifest -> apply -> parity probes (feature
-/// count, schema field-names, axis-aligned bbox overlap) and asserts that the slice-4
-/// <see cref="MigrationParityStageReport"/> emits the <see cref="MigrationParityEvidenceArtifact"/>
-/// per fixture deterministically while routing manual-review resources through the manual-review
-/// classification path.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceParityStageTests
 {

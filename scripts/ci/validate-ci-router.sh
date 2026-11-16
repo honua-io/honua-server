@@ -68,7 +68,7 @@ run_fixture review-revalidation node --test .github/scripts/revalidate-exact-hea
 echo "Validating review-first PR Gate transition..."
 run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-review-first-dispatch.sh
 
-echo "Validating PR Gate impact observation..."
+echo "Validating CI script fixtures..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
   run_fixture full-ci-dispatch "${PYTHON_BIN}" scripts/ci/full-ci-dispatch.test.py
@@ -84,19 +84,16 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-project-overlap.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
   run_fixture scripts/ci/fixtures/validate-native-tools-image.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
   run_fixture scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
-  run_fixture scripts/ci/source-inventory-pilot/test_run.py "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
-  run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   run_fixture scripts/ci/check-evidence-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-evidence-workflow.test.py
   run_fixture scripts/ci/check-retired-cache.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache.test.py
   run_fixture scripts/ci/check-retired-cache-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache-workflow.test.py
-  run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
   run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
   run_fixture scripts/ci/download-affected-receipts.test.py "${PYTHON_BIN}" scripts/ci/download-affected-receipts.test.py
 else
-  echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
+  echo "⚠️  Skipping CI script fixtures (no working Python 3)."
 fi
 
 echo "Validating data-only derived-artifact normalization..."
@@ -180,7 +177,6 @@ run_fixture shard-structure validate_shard_structure
 run_fixture scripts/ci/validate-server-test-binary-artifacts.sh scripts/ci/validate-server-test-binary-artifacts.sh
 run_fixture scripts/ci/validate-server-test-shard-cache.sh scripts/ci/validate-server-test-shard-cache.sh
 run_fixture scripts/ci/validate-server-test-reuse-benchmark.sh scripts/ci/validate-server-test-reuse-benchmark.sh
-run_fixture scripts/ci/validate-server-test-prebuild.sh scripts/ci/validate-server-test-prebuild.sh
 
 echo "Validating managed build producer and consumer contracts..."
 if [[ -n "${PYTHON_BIN}" ]]; then
@@ -236,7 +232,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating server-test archive entry checks..."
   run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
-  echo "Validating native-image impact observation contract..."
+  echo "Validating native-image content-address inputs contract..."
   run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
   run_fixture scripts/ci/trusted-pr-workflow-run-draft-admission.test.js node --test scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
@@ -494,6 +490,10 @@ assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
   "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
   '["Cloud and Streaming Import","File and Raster Import"]'
+assert_exact_shards \
+  "geojson-preview-validation-import-owner" \
+  "tests/dotnet/Honua.Server.Tests/Import/GeoJsonPreviewValidationTests.cs" \
+  '["File and Raster Import"]'
 assert_exact_shards \
   "geometry-audit-test-only-owner" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesGeometryConverterAuditTests.cs" \
@@ -1723,6 +1723,10 @@ run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scri
 run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Import.GeoJsonPreviewValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "File and Raster Import 3" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.CatalogCapabilitiesMetadataTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \

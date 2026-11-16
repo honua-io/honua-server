@@ -18,19 +18,19 @@ public static partial class EndpointRegistry
         new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
 
         // Saved-map collaboration session seam.
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/sessions/join"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/sessions/join"),
         // Explicit session end for REST-joined sessions (#2999).
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/sessions/leave"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/sessions/leave"),
         // Realtime v1-envelope WebSocket transport: presence, deltas, snapshot recovery (#971/#2999).
-        new("GET", "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream"),
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim"),
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew"),
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"),
+        new("GET", "/api/v1/maps/{mapId}/collaboration/sessions/stream"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/feature-locks/claim"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/feature-locks/renew"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/feature-locks/release"),
         // Durable collaborative edit op-log: append (cursor + idempotency) and replay (#972).
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/operations"),
-        new("GET", "/api/v1/saved-maps/{mapId}/collaboration/operations"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/operations"),
+        new("GET", "/api/v1/maps/{mapId}/collaboration/operations"),
         // Live-session checkpoint into the Studio package lifecycle (#2999).
-        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/checkpoints"),
+        new("POST", "/api/v1/maps/{mapId}/collaboration/checkpoints"),
 
         // Public SDK-compatible scene discovery (#923).
         new("GET", "/api/scenes"),

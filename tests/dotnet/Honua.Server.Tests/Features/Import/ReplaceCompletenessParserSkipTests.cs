@@ -13,9 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Verifies completeness accounting for parser skips and preservation of existing import targets.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

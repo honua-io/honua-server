@@ -9,9 +9,6 @@ using Honua.Protocols.Ogc.Api.Processes.Models;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Source-generated JSON serializer context for OGC API Processes models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

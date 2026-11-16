@@ -10,11 +10,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// HEAD must not become an authentication bypass: an unauthenticated HEAD against an admin
-/// endpoint has to fail exactly like the unauthenticated GET does (401), not 200 and not 405
-/// (#3389).
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

@@ -11,10 +11,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Integration tests for HTTP client resilience policies.
-/// Validates retry behavior, circuit breaker operation, and metrics collection.
-/// </summary>
 [Collection("Database")]
 public class HttpResiliencePolicyTests
 {

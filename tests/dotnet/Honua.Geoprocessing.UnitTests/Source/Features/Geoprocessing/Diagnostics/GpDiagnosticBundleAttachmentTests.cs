@@ -9,10 +9,6 @@ using Honua.Geoprocessing.Diagnostics;
 
 namespace Honua.Geoprocessing.UnitTests.Features.Geoprocessing.Diagnostics;
 
-/// <summary>
-/// Diagnostic-bundle v1 documents from before the GP attachment still load, secrets do not
-/// survive into the attachment, and input bytes are refused unless an export was authorized.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpDiagnosticBundleAttachmentTests
 {

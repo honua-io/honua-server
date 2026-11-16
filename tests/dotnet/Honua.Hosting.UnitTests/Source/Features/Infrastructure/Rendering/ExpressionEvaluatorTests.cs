@@ -11,22 +11,12 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for MapLibre expression evaluation.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class ExpressionEvaluatorTests
 {
     private static readonly ImmutableDictionary<string, object?> _emptyProps =
         ImmutableDictionary<string, object?>.Empty;
 
-    /// <summary>
-    /// The zoom passed by every test whose expression contains no <c>["zoom"]</c> input.
-    /// <see cref="RenderZoom.NotDerivable"/> makes these tests prove the non-goal guard for
-    /// honua-server#2873 rather than merely satisfy a parameter: evaluating <c>["zoom"]</c> against
-    /// it throws, so each of these tests passing unchanged is evidence that the expression never
-    /// consulted zoom and that its result is unaffected by zoom support.
-    /// </summary>
     private static readonly RenderZoom _noZoom =
         RenderZoom.NotDerivable("this test evaluates no zoom expression");
 
@@ -396,12 +386,6 @@ public class ExpressionEvaluatorTests
     private static SKColor EvaluateRamp(string expression, object? value) =>
         ExpressionEvaluator.EvaluateColor(MapLibreExpressionParser.Parse(expression), Props(("value", value)), _noZoom);
 
-    /// <summary>
-    /// Expected colors are the output of MapLibre GL JS's own reference implementation
-    /// (<c>@maplibre/maplibre-gl-style-spec</c>, <c>createExpression(expr, 'fill-color',
-    /// latest.paint_fill['fill-color'])</c>) evaluated over the same expression and inputs.
-    /// They are not derived from this implementation.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -454,12 +438,6 @@ public class ExpressionEvaluatorTests
         result.Should().Be(new SKColor(r, g, b, a));
     }
 
-    /// <summary>
-    /// A fully transparent stop keeps its RGB channels rather than collapsing to zero:
-    /// MapLibre stores colors premultiplied but preserves the original channels for a
-    /// zero-alpha color, so the midpoint here is purple, not blue. Straight (non-premultiplied)
-    /// interpolation over <see cref="SKColor"/> reproduces that. MapLibre emits rgba(128,0,128,0.5).
-    /// </summary>
     [UnitTest]
     public void EvaluateColor_ZeroAlphaStop_PreservesRgbChannelsLikeMapLibre()
     {
@@ -471,11 +449,6 @@ public class ExpressionEvaluatorTests
         result.Should().Be(new SKColor(128, 0, 128, 128));
     }
 
-    /// <summary>
-    /// The decisive check that interpolation happens in gamma-encoded sRGB rather than
-    /// linear-light: MapLibre's midpoint of black and white is 128, where a linear-light
-    /// blend would produce roughly 188.
-    /// </summary>
     [UnitTest]
     public void EvaluateColor_BlackToWhite_InterpolatesInGammaEncodedSrgbNotLinearLight()
     {
@@ -505,10 +478,6 @@ public class ExpressionEvaluatorTests
         result.Should().NotBe(SKColors.Black);
     }
 
-    /// <summary>
-    /// Numeric interpolation must be a pure widening: these expectations are MapLibre's
-    /// output for the same expression and are also the values the pre-fix evaluator produced.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -539,12 +508,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeOfType<double>().Which.Should().BeApproximately(5.0, 1e-9);
     }
 
-    /// <summary>
-    /// MapLibre rejects mixed-type stops when the style is validated
-    /// ("Expected color but found number instead."); this evaluator parses styles lazily at
-    /// render time, so the equivalent failure has to surface here rather than silently
-    /// coercing both stops to 0 and rendering black (honua-server#2867).
-    /// </summary>
     [UnitTest]
     public void Evaluate_InterpolateWithMixedColorAndNumberStops_Throws()
     {
@@ -557,10 +520,6 @@ public class ExpressionEvaluatorTests
             .WithMessage("*color*number*");
     }
 
-    /// <summary>
-    /// MapLibre rejects this at validation time with
-    /// "Could not parse color from value 'not-a-color'".
-    /// </summary>
     [UnitTest]
     public void Evaluate_InterpolateWithUnparseableColorStop_Throws()
     {
@@ -583,10 +542,6 @@ public class ExpressionEvaluatorTests
         act.Should().Throw<StyleExpressionEvaluationException>();
     }
 
-    /// <summary>
-    /// Landing exactly on a stop must yield that stop's own color rather than a rounded
-    /// neighbour, at the first stop, an interior stop, and the last stop.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -604,13 +559,6 @@ public class ExpressionEvaluatorTests
         ((double)ExpressionEvaluator.Evaluate(
             MapLibreExpressionParser.Parse(expression), Props(("value", value)), _noZoom)!);
 
-    /// <summary>
-    /// Linear numeric interpolation must remain a pure widening: expectations are MapLibre
-    /// GL JS's own output for <c>["interpolate", ["linear"], ...]</c> and are byte-identical
-    /// to the pre-fix (type-ignoring) evaluator, proving the type-operand change did not move
-    /// the linear path. Captured via <c>createExpression(expr, 'line-width',
-    /// latest.paint_line['line-width'])</c>.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -630,11 +578,6 @@ public class ExpressionEvaluatorTests
         result.Should().Be(expected);
     }
 
-    /// <summary>
-    /// <c>["exponential", 1]</c> is MapLibre's own degenerate case: it must equal
-    /// <c>["linear"]</c> exactly (its factor collapses to <c>progress / difference</c>).
-    /// Expectations are MapLibre's output and match the linear ramp above stop-for-stop.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -655,12 +598,6 @@ public class ExpressionEvaluatorTests
         exponential.Should().Be(expected);
     }
 
-    /// <summary>
-    /// Exponential (base 2 and base 0.5) numeric ramps over 0..100 -> 0..10. Expectations are
-    /// MapLibre GL JS's own output — the discrepancy this ticket exists for (the type-ignoring
-    /// evaluator returned the linear value here instead). Tolerance absorbs the single-precision
-    /// factor cast; the values differ from linear by orders of magnitude, so the curve is proven.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -679,11 +616,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeApproximately(expected, 1e-5);
     }
 
-    /// <summary>
-    /// The bug's canonical shape: an exponential (base 2) ramp evaluated between two stops
-    /// returns a value that a linear ramp never would. MapLibre GL JS yields 2.0 here (stops
-    /// 10 -> 0, 14 -> 10 at input 12); the linear reading is 5.0.
-    /// </summary>
     [UnitTest]
     public void Evaluate_ExponentialRamp_DiffersFromLinearReading()
     {
@@ -696,10 +628,6 @@ public class ExpressionEvaluatorTests
         linear.Should().Be(5.0);
     }
 
-    /// <summary>
-    /// Multi-stop exponential selects the right interval before applying the curve.
-    /// Expectations are MapLibre GL JS's output for stops 0 -> 0, 50 -> 5, 100 -> 100.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -714,10 +642,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeApproximately(expected, 1e-5);
     }
 
-    /// <summary>
-    /// Cubic-bezier numeric easing. Expectations are MapLibre GL JS's unit-bezier solver output
-    /// for control points (0.42, 0, 0.58, 1) over stops 0 -> 0, 100 -> 10.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -734,11 +658,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeApproximately(expected, 1e-5);
     }
 
-    /// <summary>
-    /// The type operand applies on the color path too (post-#2867/#2870). Expectations are
-    /// MapLibre GL JS's <c>fill-color</c> output for an exponential base-2 ramp between
-    /// #f7fbff and #08306b: base 2 keeps the color near the low stop until close to 100.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -755,11 +674,6 @@ public class ExpressionEvaluatorTests
         result.Should().Be(new SKColor(r, g, b, 255));
     }
 
-    /// <summary>
-    /// Cubic-bezier easing on the color path. Expectations are MapLibre GL JS's
-    /// <c>fill-color</c> output for control points (0.42, 0, 0.58, 1) between #f7fbff and
-    /// #08306b.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -776,12 +690,6 @@ public class ExpressionEvaluatorTests
         result.Should().Be(new SKColor(r, g, b, 255));
     }
 
-    /// <summary>
-    /// <c>["exponential", 1]</c> on the color path is also the degenerate linear case: its
-    /// output must equal the linear <c>ChoroplethRamp</c> bytes MapLibre emits (187,200,218 at
-    /// 25; 128,149,181 at 50; 68,99,144 at 75), proving base-1 does not disturb existing color
-    /// ramps.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -807,11 +715,6 @@ public class ExpressionEvaluatorTests
         parsed.Should().Be(new SKColor(8, 48, 107, 255));
     }
 
-    /// <summary>
-    /// <see cref="ExpressionEvaluator.ParseColor"/> keeps its existing fallbacks — transparent
-    /// for absent values, black for unrecognized ones — now that it delegates to the
-    /// failure-reporting parser.
-    /// </summary>
     [UnitTest]
     public void ParseColor_FallbackBehaviour_IsUnchanged()
     {
@@ -841,13 +744,6 @@ public class ExpressionEvaluatorTests
     private const string ZoomColorRamp =
         """["interpolate", ["linear"], ["zoom"], 0, "#f7fbff", 22, "#08306b"]""";
 
-    /// <summary>
-    /// Numeric zoom ramps are compared with a tolerance rather than exactly because this evaluator
-    /// keeps the interpolation factor <c>t</c> in <see cref="float"/> while MapLibre computes it in
-    /// float64 (the caveat recorded on PR #2870). The two agree exactly wherever the zoom and the
-    /// resulting factor are representable in <see cref="float"/> — every case here except z=13.7 —
-    /// and differ only in the last few ulps otherwise, far below a pixel of stroke width.
-    /// </summary>
     private const double ZoomRampTolerance = 1e-5;
 
     [Theory]
@@ -919,9 +815,6 @@ public class ExpressionEvaluatorTests
         result.Should().Be(new SKColor(r, g, b, 255));
     }
 
-    /// <summary>
-    /// MapLibre's <c>step</c> selects a stop at exactly its boundary (<c>&gt;=</c>), not above it.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -939,10 +832,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeApproximately((float)expected, (float)ZoomRampTolerance);
     }
 
-    /// <summary>
-    /// Zoom and feature attributes compose: the stop outputs are themselves data-driven here, so
-    /// each feature gets its own ramp evaluated at the render's zoom.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
@@ -977,14 +866,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeOfType<double>().Which.Should().BeApproximately(expected, 1e-9);
     }
 
-    /// <summary>
-    /// The regression witness for honua-server#2873. Before the fix, <c>["zoom"]</c> hit the
-    /// evaluator's unknown-operator arm and returned <see langword="null"/>, which
-    /// <c>ConvertToFloat(result, 0f)</c> then silently turned into <c>0f</c> — the same
-    /// permissive-default failure as #2867. Every zoom ramp therefore evaluated as if the map were
-    /// at zoom 0 and pinned to its lowest stop, at every zoom, with no throw, warning, or log. A
-    /// zoom well inside the ramp must now produce the interpolated value, not the zoom-0 one.
-    /// </summary>
     [UnitTest]
     public void EvaluateFloat_ZoomInterpolate_IsNotPinnedToTheLowestStop()
     {
@@ -998,11 +879,6 @@ public class ExpressionEvaluatorTests
         atZoom12.Should().NotBe(atZoom0, "a zoom ramp must vary with zoom rather than stay at its zoom-0 value");
     }
 
-    /// <summary>
-    /// A render that could not derive a zoom must not render a zoom-dependent style as a confident
-    /// wrong picture. Substituting any level here would reinstate the shared root cause of #2867 and
-    /// #2868, so the evaluator raises and carries the render path's own reason into the message.
-    /// </summary>
     [UnitTest]
     public void Evaluate_ZoomExpression_WithNotDerivableZoom_ThrowsRatherThanSubstitutingALevel()
     {
@@ -1015,11 +891,6 @@ public class ExpressionEvaluatorTests
             .WithMessage("*the render extent is empty or degenerate*");
     }
 
-    /// <summary>
-    /// The throw is scoped to expressions that actually read zoom: a style with no zoom input
-    /// evaluates normally on a render that has no derivable zoom, which is what keeps the
-    /// non-derivable case from failing renders it has no bearing on.
-    /// </summary>
     [UnitTest]
     public void Evaluate_NonZoomExpression_WithNotDerivableZoom_EvaluatesNormally()
     {
@@ -1031,10 +902,6 @@ public class ExpressionEvaluatorTests
         result.Should().BeOfType<double>().Which.Should().BeApproximately(5.0, 1e-9);
     }
 
-    /// <summary>
-    /// A zoom expression on a branch that is not taken must not fail the render: only an evaluated
-    /// <c>["zoom"]</c> needs a zoom.
-    /// </summary>
     [UnitTest]
     public void Evaluate_UnreachedZoomBranch_WithNotDerivableZoom_DoesNotThrow()
     {

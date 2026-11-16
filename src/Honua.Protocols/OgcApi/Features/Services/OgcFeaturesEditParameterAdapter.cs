@@ -8,9 +8,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Supported OGC API Features edit operations for the live adapter flow.
-/// </summary>
 internal enum OgcFeaturesEditOperation
 {
     Create,
@@ -20,9 +17,6 @@ internal enum OgcFeaturesEditOperation
     Batch
 }
 
-/// <summary>
-/// Prepared OGC API Features batch operation for adapter conversion.
-/// </summary>
 internal readonly record struct OgcFeaturesBatchEditOperation
 {
     public required OgcFeaturesEditOperation Operation { get; init; }
@@ -30,11 +24,11 @@ internal readonly record struct OgcFeaturesBatchEditOperation
     public Feature? Feature { get; init; }
 
     public long? ObjectId { get; init; }
+
+    // The row as read before a delete, so a delete hook can judge it.
+    public Feature? StoredFeature { get; init; }
 }
 
-/// <summary>
-/// Prepared OGC API Features edit request for adapter conversion.
-/// </summary>
 internal readonly record struct OgcFeaturesEditRequest
 {
     public required OgcFeaturesEditOperation Operation { get; init; }
@@ -51,20 +45,17 @@ internal readonly record struct OgcFeaturesEditRequest
 
     public bool ClearAllProperties { get; init; }
 
-    /// <summary>
-    /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the handler
-    /// validated the If-Match precondition against. When set (single-feature Replace,
-    /// Patch, or Delete), the unified edit pipeline re-validates the stored row against
-    /// this token inside the writer's transaction so a concurrent commit between the
-    /// handler's ETag check and the write surfaces as a typed precondition failure (412)
-    /// instead of being silently overwritten.
-    /// </summary>
+    // The service and published layer the collection was addressed through, as plugin edit hooks see them.
+    public string? ServiceName { get; init; }
+
+    public int? PublicLayerId { get; init; }
+
+    // The row as read before a delete, so a delete hook can judge it.
+    public Feature? StoredFeature { get; init; }
+
     public string? ExpectedStateToken { get; init; }
 }
 
-/// <summary>
-/// Converts prepared OGC API Features edits into the shared unified edit model.
-/// </summary>
 internal sealed class OgcFeaturesEditParameterAdapter(
     ILogger<OgcFeaturesEditParameterAdapter> logger) : IEditParameterAdapter<OgcFeaturesEditRequest>
 {

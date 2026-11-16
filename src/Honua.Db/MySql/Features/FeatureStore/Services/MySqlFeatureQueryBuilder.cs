@@ -12,11 +12,6 @@ using Honua.Db.MySql.Features.Infrastructure;
 
 namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
-/// <summary>
-/// Builds parameterized SQL for the MySQL/MariaDB read-only feature provider.
-/// Targets MySQL 8.0.12+ and MariaDB 10.6+; spatial functions are limited to
-/// the operations both engines share (no <c>ST_Transform</c>, no native MVT, no KNN).
-/// </summary>
 internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
 {
     private readonly MySqlLayerMappingRegistry _layerRegistry;
@@ -30,7 +25,6 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         _engineFlavor = engineFlavor;
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildSelectQuery(
         int layerId,
         FeatureQuery query,
@@ -85,7 +79,6 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildCountQuery(
         int layerId,
         FeatureQuery query,
@@ -123,7 +116,6 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildExtentQuery(
         int layerId,
         FeatureQuery? query,
@@ -205,7 +197,6 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildObjectIdsQuery(
         int layerId,
         FeatureQuery query,
@@ -229,7 +220,6 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public ParameterizedQuery BuildOptimizedSelectQuery(
         int layerId,
         FeatureQuery query,

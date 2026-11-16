@@ -424,7 +424,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
         "tests/dotnet/RedisCollection.cs",
         "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
         "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
@@ -1616,16 +1615,62 @@
       "csproj": ""
     },
     "children": [
-      "Server Features Miscellaneous 3",
-      "Server Features Miscellaneous 4"
+      "Server Features Miscellaneous 9",
+      "Server Features Miscellaneous 10",
+      "Server Features Miscellaneous 11",
+      "Server Features Miscellaneous 12",
+      "Server Features Miscellaneous 13"
     ],
     "estimatedRanks": {
-      "basis": "Unmeasured children: TRX run 43580101834, 11.3 median job minutes, 7.33 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "basis": "Unmeasured children: TRX run 43580101834, 11.3 median job minutes, 7.33 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run. Rebalanced children use run 43819793722 TRX start/end intervals (including per-test lifecycle time), with max(4 min, old job minus summed intervals) plus 0.5 min overhead. Estimates require a scheduled full-run pass.",
       "ranks": {
-        "Server Features Miscellaneous 3": 9.5,
-        "Server Features Miscellaneous 4": 5.9
+        "Server Features Miscellaneous 9": 8.6,
+        "Server Features Miscellaneous 10": 8.6,
+        "Server Features Miscellaneous 11": 8.6,
+        "Server Features Miscellaneous 12": 8.7,
+        "Server Features Miscellaneous 13": 8.7
       }
-    }
+    },
+    "rebalanceEvidence": [
+      {
+        "previousShard": "Server Features Miscellaneous 3",
+        "runId": 43819793722,
+        "observedJobSeconds": 841,
+        "trxMethodIntervalSeconds": 539.54,
+        "overheadAllowanceMinutes": 5.52,
+        "children": {
+          "Server Features Miscellaneous 9": {
+            "intervalSeconds": 179.54,
+            "estimatedJobMinutes": 8.6
+          },
+          "Server Features Miscellaneous 10": {
+            "intervalSeconds": 179.89,
+            "estimatedJobMinutes": 8.6
+          },
+          "Server Features Miscellaneous 11": {
+            "intervalSeconds": 180.11,
+            "estimatedJobMinutes": 8.6
+          }
+        }
+      },
+      {
+        "previousShard": "Server Features Miscellaneous 4",
+        "runId": 43819793722,
+        "observedJobSeconds": 603,
+        "trxMethodIntervalSeconds": 228.23,
+        "overheadAllowanceMinutes": 6.75,
+        "children": {
+          "Server Features Miscellaneous 12": {
+            "intervalSeconds": 112.59,
+            "estimatedJobMinutes": 8.7
+          },
+          "Server Features Miscellaneous 13": {
+            "intervalSeconds": 115.65,
+            "estimatedJobMinutes": 8.7
+          }
+        }
+      }
+    ]
   },
   {
     "originalShard": {
@@ -1758,7 +1803,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportSourceUrlValidationTests.cs",
@@ -1862,15 +1906,61 @@
       ]
     },
     "children": [
-      "gRPC Protocol and Scene 1",
-      "gRPC Protocol and Scene 2"
+      "gRPC Protocol and Scene 3",
+      "gRPC Protocol and Scene 4",
+      "gRPC Protocol and Scene 5",
+      "gRPC Protocol and Scene 6",
+      "gRPC Protocol and Scene 7"
     ],
     "estimatedRanks": {
-      "basis": "Unmeasured children: TRX run 43580101834, 11.2 median job minutes, 8.97 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
+      "basis": "Unmeasured children: TRX run 43580101834, 11.2 median job minutes, 8.97 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run. Rebalanced children use run 43819793722 TRX start/end intervals (including per-test lifecycle time), with max(4 min, old job minus summed intervals) plus 0.5 min overhead. Estimates require a scheduled full-run pass.",
       "ranks": {
-        "gRPC Protocol and Scene 1": 9.5,
-        "gRPC Protocol and Scene 2": 7.5
+        "gRPC Protocol and Scene 3": 8.3,
+        "gRPC Protocol and Scene 4": 8.3,
+        "gRPC Protocol and Scene 5": 8.5,
+        "gRPC Protocol and Scene 6": 8.5,
+        "gRPC Protocol and Scene 7": 8.5
       }
-    }
+    },
+    "rebalanceEvidence": [
+      {
+        "previousShard": "gRPC Protocol and Scene 1",
+        "runId": 43819793722,
+        "observedJobSeconds": 646,
+        "trxMethodIntervalSeconds": 359.91,
+        "overheadAllowanceMinutes": 5.27,
+        "children": {
+          "gRPC Protocol and Scene 3": {
+            "intervalSeconds": 179.54,
+            "estimatedJobMinutes": 8.3
+          },
+          "gRPC Protocol and Scene 4": {
+            "intervalSeconds": 180.37,
+            "estimatedJobMinutes": 8.3
+          }
+        }
+      },
+      {
+        "previousShard": "gRPC Protocol and Scene 2",
+        "runId": 43819793722,
+        "observedJobSeconds": 810,
+        "trxMethodIntervalSeconds": 500.29,
+        "overheadAllowanceMinutes": 5.66,
+        "children": {
+          "gRPC Protocol and Scene 5": {
+            "intervalSeconds": 168.32,
+            "estimatedJobMinutes": 8.5
+          },
+          "gRPC Protocol and Scene 6": {
+            "intervalSeconds": 165.98,
+            "estimatedJobMinutes": 8.5
+          },
+          "gRPC Protocol and Scene 7": {
+            "intervalSeconds": 165.99,
+            "estimatedJobMinutes": 8.5
+          }
+        }
+      }
+    ]
   }
 ]

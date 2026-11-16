@@ -5,9 +5,6 @@ using Honua.Infrastructure.Caching;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;
 
-/// <summary>
-/// Tests for ETag service behavior and conditional header handling.
-/// </summary>
 [Collection("Unit")]
 public class ETagServiceTests
 {

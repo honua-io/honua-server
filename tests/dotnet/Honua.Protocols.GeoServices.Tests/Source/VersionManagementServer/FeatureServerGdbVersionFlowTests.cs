@@ -13,12 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// End-to-end branch-versioning flow over the GeoServices surfaces (#1272, ADR-0051): create a
-/// version, edit with <c>gdbVersion</c>, confirm the versioned query sees the edit while DEFAULT is
-/// unaffected, reconcile, post, and confirm DEFAULT then reflects the change. Also asserts the
-/// DEFAULT (gdbVersion-absent) path is unchanged and the capability metadata advertises versioning.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime

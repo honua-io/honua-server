@@ -10,12 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalProximityJobExecutor"/>: the
-/// gdal_proximity.py distance argument projection (#2240) plus the
-/// nearest-source allocation path that invokes the custom
-/// gdal_euclidean_allocation.py worker step via python3 (#2255).
-/// </summary>
 public sealed class GdalProximityExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-proximity-test";
@@ -176,11 +170,6 @@ public sealed class GdalProximityExecutorTests
         }
     }
 
-    /// <summary>
-    /// The allocation step puts the output path positionally before its optional
-    /// flags, so this fake locates the <c>output.tif</c> argument (rather than a
-    /// fixed offset) and writes the payload there so the read-back path runs.
-    /// </summary>
     private static FakeGdalCommandRunner SucceedingWritingOutputTif(byte[] outputBytes)
         => new((_, args, _) =>
         {

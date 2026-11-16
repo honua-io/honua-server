@@ -5,18 +5,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-/// <summary>
-/// Optional feature store capability for returning GeoJSON-encoded geometries.
-/// </summary>
 public interface IGeoJsonFeatureStore
 {
-    /// <summary>
-    /// Queries features with geometry encoded as GeoJSON fragments.
-    /// </summary>
-    /// <param name="layerId">Layer identifier.</param>
-    /// <param name="query">Query parameters.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Query result with GeoJSON-encoded geometries.</returns>
     Task<QueryResult<EncodedGeoJsonFeature>> QueryGeoJsonAsync(
         int layerId,
         FeatureQuery query,

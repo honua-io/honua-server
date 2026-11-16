@@ -20,13 +20,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Testcontainers integration coverage for the reconciled sink.external-postgis executor.
-/// Proves the executor creates its destination table in a PostGIS database that is not the
-/// Honua catalog and inserts features (tagged with the batch id) through the managed
-/// Npgsql + WKB path — no GDAL. Uses an isolated schema as the "external" target.
-/// Requires Docker; skipped automatically when the database fixture is unavailable.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime

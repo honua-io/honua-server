@@ -9,11 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Spec.Operators;
 
-/// <summary>
-/// Unit coverage for the in-code S1 <see cref="OperatorCatalog"/> and the
-/// <see cref="OperatorSignature"/> lookup helpers. Anchoring the catalog shape
-/// keeps the operator advertisement contract honest across releases (#1144).
-/// </summary>
 public sealed class OperatorCatalogTests
 {
     private static readonly string[] s_expectedOperators =

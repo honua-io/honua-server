@@ -53,7 +53,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
             // beyond performance on MySQL: geographic SRSes (e.g. EPSG:4326) interpret polygon
             // edges as geodesics and reject pole-touching whole-hemisphere envelope rings as
             // invalid (ST_IsValid = 0), so ST_Intersects against a zoom-0 tile envelope silently
-            // matches zero rows while MBRIntersects windows correctly (honua-server#2983).
+            // matches zero rows while MBRIntersects windows correctly.
             SpatialRelationship.Intersects when CanUseEnvelopeOnlyPointIntersects(query, mapping, filter) =>
                 $"MBRIntersects({geomCol}, {filterGeom})",
             // MBRIntersects is index-eligible (uses SPATIAL index when available); ST_Intersects
@@ -91,21 +91,6 @@ internal sealed partial class MySqlFeatureQueryBuilder
         sb.Append(CultureInfo.InvariantCulture, $" AND {clause}");
     }
 
-    /// <summary>
-    /// Mirrors the Postgres builder's envelope-only point-intersects gate: the adapter must
-    /// have explicitly marked the filter as an envelope-window request
-    /// (<see cref="SpatialFilter.IsSimpleEnvelope"/> + <see cref="SpatialFilter.AllowEnvelopeOnly"/>,
-    /// per the documented bbox windowing semantics), the layer must be single-point-typed, and
-    /// null-geometry rows must not be requested.
-    /// </summary>
-    /// <remarks>
-    /// Restricted to <see cref="GeometryType.Point"/>, matching the Postgres gate. Only for a
-    /// single point is "MBR intersects the envelope" identical to "the geometry intersects the
-    /// envelope". A <c>MultiPoint</c> bounding rectangle can overlap the window while none of
-    /// its constituent points fall inside it (for example two points straddling a small bbox),
-    /// so extending the shortcut to multipoints would return features that do not actually
-    /// intersect the viewport.
-    /// </remarks>
     private static bool CanUseEnvelopeOnlyPointIntersects(
         FeatureQuery query,
         MySqlLayerMapping mapping,
@@ -126,7 +111,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // documents canonical X/Y WKB. WkbSridNormalizer preserves whatever dimension flags the
         // input carries byte-for-byte (it only strips the SRID word), so a Z/M-dimensioned filter
         // would otherwise bind a type word MySQL cannot parse. Reject explicitly instead of
-        // silently dropping the extra ordinates (the pre-#2965 behavior) or binding malformed WKB.
+        // silently dropping the extra ordinates or binding malformed WKB.
         if (WkbSridNormalizer.HasZOrMOrdinates(filter.Geometry))
         {
             throw MySqlUnsupportedFeature.Create(
