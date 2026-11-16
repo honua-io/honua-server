@@ -24,6 +24,11 @@ public readonly record struct Feature
     [JsonIgnore]
     public string? ReadStateToken { get; init; }
 
+    // Internal edit validation uses the same unmasked snapshot as its concurrency token.
+    // Response formatters continue to use Attributes, which retains field security.
+    [JsonIgnore]
+    public ImmutableDictionary<string, object?>? EditValidationAttributes { get; init; }
+
     // A partial edit preserves omitted attributes that field security hid.
     [JsonIgnore]
     public bool PreserveOmittedMaskedAttributes { get; init; }
