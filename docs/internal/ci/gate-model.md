@@ -1101,7 +1101,16 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
-OpenAPI Contract Governance retain their generator/contract input filters.
+OpenAPI Contract Governance retain their generator/contract input filters. The
+operation-capability completeness, registry resolution and authored artifact
+checks run in PR Gate's existing architecture job after canonical feature
+catalog regeneration. Capability Matrix Aggregation retains these checks for
+scheduled/manual audits of committed trunk projections. New authored routes
+therefore use the catalog generated from the same head, while missing joins
+and stale authored operation-capability artifacts still fail. No additional
+build, runner or required check is added. Both Server Fast and governance
+jobs already regenerate admin parity exports, including the MCP manifest,
+before the strict Server.Tests projection checks.
 
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
