@@ -438,19 +438,13 @@ Expected effect: the workflow fires only on pull requests that touch an
 image-defining file. The baseline sample does not break its 40 serving-impacted
 heads down by trigger class, so the ~785 completed-build runner-minutes per day
 is the **ceiling** on the saving, not a prediction of it; AC#7's post-change
-30-run comparison must measure the realised figure. Note also that the
-observation receipt's cohorts invert: managed-source heads now report
-`serving_candidate_only`, because the graph-derived candidate would re-add the
-per-push builds this change removes. Promoting that candidate router as written
-would undo the narrowing, so its promotion criteria need restating before any
-enforcement decision.
+30-run comparison must measure the realised figure. The graph-derived candidate router was retired under #7880 after it
+showed no routing savings; it would have re-added managed-source PR builds.
 
-Exact-input build reuse (follow-on #3) is still worth doing — it is what would
-recover the remaining repeat-push cost on the GDAL worker lane, whose Trivy
-verdict depends on the vulnerability database at scan time and is never
-reusable. The observation receipt already carries per-image content digests over
-the merge tree the images are actually built from, so reuse eligibility is
-measured before anything is enforced; see `native-image-impact-routing.md`.
+Exact-input verification reuse remains available for the serving-image variants,
+using content digests from the authoritative workflow itself; see
+`serving-image-content-addressed-skip.md`. The GDAL worker's Trivy verdict depends
+on the vulnerability database at scan time and is never reusable.
 
 #### Post-change Serving trigger measurement (2026-08-28)
 
@@ -503,7 +497,6 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
@@ -620,6 +613,7 @@ candidate context.
 
 | Workflow file | Retired | Why |
 |---|---|---|
+| `native-image-impact-observe.yml` | 2026-11-16 (#7880) | Disabled observation-only router with no measured narrowing benefit. Last run 42570078484 was 9 Nov; zero runs since 13 Nov before retirement (0 runner-minutes saved from an already disabled workflow). Report generation, observer fixtures and its promotion policy were removed; image-input validation and content digests remain in the authoritative serving-image workflow. No active required gate moved or removed. |
 | `server-test-prebuild-observe.yml` | 2026-11-16 (#7880) | The prebuild shadow experiment, with the parity, ledger and benchmark rows below. The observer had been disabled on GitHub since 9 Nov, so parity found no ready prebuild to compare (0 of 60 runs since 10 Nov reached a comparison), the ledger had nothing to count, and the manual benchmark last ran 14 Aug. The required `PR Gate / Server test producer` does not use any of it. Its planners, receipt, audit, try/validate scripts, policies and `server-test-prebuild-shadow.md` went with it. |
 | `server-test-prebuild-parity.yml` | 2026-11-16 (#7880) | Parity leg of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
 | `server-test-prebuild-evidence-ledger.yml` | 2026-11-16 (#7880) | Ledger of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
@@ -928,7 +922,7 @@ revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
 
-PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes); these attempts emit no promotion receipt. Ready-run failures remain observable.
+Trusted PR-run consumers retain `source-run-draft-admission` classification for intentional draft-only runs; ready-run failures remain observable.
 
 ## Admin authentication capacity split (12 November 2026)
 

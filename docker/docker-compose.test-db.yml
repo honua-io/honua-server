@@ -16,7 +16,7 @@ services:
       POSTGRESQL_CONF_log_connections: "on"
       POSTGRESQL_CONF_log_disconnections: "on"
     ports:
-      - "${POSTGRES_TEST_PORT:-5433}:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_TEST_PORT:-5433}:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
