@@ -1913,3 +1913,39 @@ in `scripts/ci/native-image-impact.py` for authoritative serving-image verificat
 No required check or nightly/release/deploy verification moved. Content-addressed
 skip promotion still requires an audit of authoritative serving-image run evidence;
 the retired observer cannot supply it.
+
+### FeatureServer maintenance host lifetime
+
+`FeatureServerMaintenanceTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The validate-SQL, domain and relationship GET cases only read and use that
+host's client. Every case that POSTs (append, calculate and POST validate-SQL) or
+inserts or reads rows still builds and disposes a private Pro host. Assertions and
+case counts are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 42 cases
+with no skips. VSTest execution fell from 10m44s to 2m14s and the TRX interval from
+646.7 to 151.8 seconds. Full run 43709972683 spent 139 seconds of per-case fixture
+time in this class; about four sevenths of its cases now share the host. Full CI
+job savings are unmeasured.
+All cases remain in their existing FeatureServer shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Admin authorization host lifetime
+
+`AdminAuthorizationTests` builds its application (server seed, development
+authentication off, an admin password set) and its unauthenticated client once per
+class through the `AnonymousHost` class fixture. Every case sends an anonymous
+request with no credentials, so the authentication-failure limiter never counts it;
+every write case expects 401, and the anonymous 200 cases only read. Test bodies and
+assertions are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 58 cases with
+no skips. VSTest execution fell from 6m16s to 3s, saving 373 seconds (6.2
+runner-minutes), and the TRX interval from 395.2 to 21.8 seconds, with one test
+process each. Full run 43709972683 spent 196 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Admin Authorization shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow or shard definition.
