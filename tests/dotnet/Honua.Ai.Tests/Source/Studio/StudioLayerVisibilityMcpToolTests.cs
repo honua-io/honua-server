@@ -3,14 +3,11 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -18,14 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureServices(services =>
-        {
-            // Same in-memory Studio store StudioPackageEndpointsTests uses: this suite exercises
-            // the HTTP write/read round trip, not the Postgres store's persistence.
-            services.RemoveAll<IStudioPackageStore>();
-            services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        });
+    private readonly WebAppFixture _fixture = StudioMcpFixtures.CreateCompositionFixture();
 
     private StudioMcpHttpClient _mcp = null!;
 
@@ -206,14 +196,12 @@ public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
 
     private async Task<(Guid DraftId, long Generation)> CreateMapDraftWithParcelsLayerAsync()
     {
-        var created = await CallToolAsync(
-            "honua_studio_create_draft",
-            """{"packageKey":"parcels-visibility-map","family":"map","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
+        var created = await StudioMcpFixtures.SeedMapDraftAsync(_fixture, "parcels-visibility-map");
+        var draftId = created.DraftId;
 
         var withParcels = await CallToolAsync(
             "honua_studio_add_layer",
-            $$"""{"draftId":"{{draftId}}","generation":{{created.GetProperty("generation").GetInt64()}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"} }""");
+            $$"""{"draftId":"{{draftId}}","generation":{{created.Generation}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"} }""");
         var withZoning = await CallToolAsync(
             "honua_studio_add_layer",
             $$"""{"draftId":"{{draftId}}","generation":{{withParcels.GetProperty("generation").GetInt64()}},"layer":{"id":"zoning","type":"fill"} }""");

@@ -529,6 +529,18 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    // Binds the feature namespaces declared in resource metadata, so qualified feature type
+    // names written as content resolve.
+    private static void WriteDeclaredNamespaces(XmlWriter writer, IEnumerable<WfsFeatureTypeDescriptor> descriptors)
+    {
+        foreach (var descriptor in descriptors
+            .Where(static descriptor => descriptor.Declared.NamespacePrefix is not null)
+            .DistinctBy(static descriptor => descriptor.NamespacePrefix))
+        {
+            writer.WriteAttributeString("xmlns", descriptor.NamespacePrefix, null, descriptor.NamespaceUri);
+        }
+    }
+
     private static string BuildListStoredQueriesXml(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         IReadOnlyList<StoredQueryDefinition> managedQueries)
@@ -538,6 +550,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteStartDocument();
             writer.WriteStartElement("wfs", "ListStoredQueriesResponse", Wfs20Utilities.WfsNamespace);
             writer.WriteAttributeString("xmlns", FeatureNamespacePrefix, null, FeatureNamespaceUri);
+            WriteDeclaredNamespaces(writer, descriptors);
 
             writer.WriteStartElement("wfs", "StoredQuery", Wfs20Utilities.WfsNamespace);
             writer.WriteAttributeString("id", GetFeatureByIdStoredQueryId);
@@ -581,6 +594,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteAttributeString("xmlns", "fes", null, Wfs20Utilities.FesNamespace);
             writer.WriteAttributeString("xmlns", "xsd", null, "http://www.w3.org/2001/XMLSchema");
             writer.WriteAttributeString("xmlns", FeatureNamespacePrefix, null, FeatureNamespaceUri);
+            WriteDeclaredNamespaces(writer, descriptors);
 
             if (includeBuiltIn)
             {

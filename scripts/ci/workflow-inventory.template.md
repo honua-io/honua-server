@@ -302,7 +302,7 @@ adding a compiled consumer of any of these files restores runtime validation.
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | Fleet serialized per-PR lander | External service | **Routine merge authority.** Immediately before merge, requires an open, non-draft, MERGEABLE PR based on `trunk`, no hold/escalation label, exact-head successful `PR Gate` + `Review Gate`, and zero unresolved review threads. A deterministic trailing trunk CI failure pauses routine landings except fix-forward branches. |
-| `auto-merge-ready.yml` | auto-merge ready pull requests | `pull_request_target` (opened, ready, reopened, synchronize, labels, draft conversion, edited) | Repository-scoped bot App requests ruleset-governed auto-merge for eligible same-repository trunk PRs; single commits squash, bundles merge. Live hold, draft, base and commit-count checks revoke or replace stale requests. |
+| `auto-merge-ready.yml` | auto-merge ready pull requests | `pull_request_target` (opened, ready, reopened, synchronize, labels, draft conversion, edited) | Repository-scoped bot App requests ruleset-governed auto-merge for eligible same-repository trunk PRs; new requests default to squash for single commits and merge for bundles. Eligible existing requests retain their merge method; live hold, draft and base checks revoke ineligible requests. |
 | `ci.yml` | CI | `schedule` (07:23 and 13:23 UTC), `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context validates scheduled or manually dispatched integration runs. Runtime proofs and import/export fidelity require the managed producer; native GDAL/PDAL and raster receipts run in the existing Worker job. Managed build producer, independent required full-solution format job, test and both architecture suites, CI-router validation, JS typecheck, and Postgres compatibility. Foundation families and selected server shards need the producer, restore verified outputs with MVC and static-asset runtime content roots relocated to the consumer checkout, and compile only their missing project union. Source architecture runs after projection regeneration; the full collector remains in the foundation server family. See the [artifact contract](server-test-binary-artifacts.md). Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. On a managed-artifact miss, the existing legacy cache path remains available: `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The shared quarantine filter runner records `HONUA_QUARANTINE_FILTER` in retained test logs with the effective filter, excluded methods, owning issues and expiry times. `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
 | `trunk-affected.yml` | Trunk affected run | `push` (trunk, no path filter), `workflow_dispatch` | Stage 3 of the [gate model](gate-model.md#verification-stages). Resolves the head of the most recently completed `CI` run on trunk (success only, excluding failures and cancellations; newest 100 runs ordered by completion update time) that is an ancestor of the pushed head and dispatches `ci.yml` with `selective_base` set to it, titled `CI affected <base>..<head>`, so only the shards and lanes the new merges touch run. Runs queue in one concurrency group without cancellation; a run whose push is no longer the trunk tip exits, because the newer push's run covers it. Writes the separate culprit range since the last full green ancestor (successful affected runs cannot clear earlier failures) (commits and pull requests) to its summary; passes that ancestor separately as `investigation_base` so the dispatched run's `changes` job writes the same culprit range to its log and summary for the lane investigating the failure. Missing green history is reported as unknown. Affected runs never certify a sha for the nightly image (`select-certified-nightly-sha.py` ignores their title). Not a required check. Needs only `actions: write` and `contents: read`. Admission and execution recheck a conservative 40-job total bound (33 side jobs plus selected shards); full routing or unknown history defer coverage to scheduled full CI without a successful CI baseline. Affected server-shard concurrency is two. An active PR Gate neither defers nor cancels an affected run. |
 | `trunk-signal-watchdog.yml` | Trunk signal watchdog | Half-hourly `schedule`, `workflow_dispatch` | Opens or updates a `trunk-signal` issue and fails when a running run has not produced a result within 4 h of its first job starting on a runner, the last result is older than 16 h, a run or child job queued over 45 min, at least 6 of the last 10 runs created in the last 6 h were cancelled, or no scheduled full CI run started in 14 h. Queries scheduled runs separately so selective traffic cannot hide missed delivery; a queued workflow counts as started only when job runner assignment proves execution, and child queues remain monitored; closes the issue only when all signals recover. |
@@ -497,7 +497,6 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
@@ -613,6 +612,7 @@ candidate context.
 
 | Workflow file | Retired | Why |
 |---|---|---|
+| `review-first-evidence-ledger.yml` | 2026-11-16 | #7880: observe experiment not promoted; latest daily audit used one runner for 156 seconds (2.60 runner-minutes), with only 5/20 current-policy heads. Exact-head Review Gate remains required. |
 | `native-image-impact-observe.yml` | 2026-11-16 (#7880) | Disabled observation-only router with no measured narrowing benefit. Last run 42570078484 was 9 Nov; zero runs since 13 Nov before retirement (0 runner-minutes saved from an already disabled workflow). Report generation, observer fixtures and its promotion policy were removed; image-input validation and content digests remain in the authoritative serving-image workflow. No active required gate moved or removed. |
 | `server-test-prebuild-observe.yml` | 2026-11-16 (#7880) | The prebuild shadow experiment, with the parity, ledger and benchmark rows below. The observer had been disabled on GitHub since 9 Nov, so parity found no ready prebuild to compare (0 of 60 runs since 10 Nov reached a comparison), the ledger had nothing to count, and the manual benchmark last ran 14 Aug. The required `PR Gate / Server test producer` does not use any of it. Its planners, receipt, audit, try/validate scripts, policies and `server-test-prebuild-shadow.md` went with it. |
 | `server-test-prebuild-parity.yml` | 2026-11-16 (#7880) | Parity leg of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
@@ -870,14 +870,23 @@ cancels before publishing change outputs when admission fails, so deferred work
 cannot become a successful CI baseline. Admitted affected shards run two at once;
 scheduled and non-selective full runs retain their 16-shard concurrency.
 
-Two concurrent shards keep an affected run to usually one and at most two
-`honua-heavy` runners (even matrix indices), so it runs beside PR Gate instead
+Two concurrent trusted shards use at most two `honua-heavy` runners, so an
+affected run runs beside PR Gate instead
 of waiting for an idle PR queue. The former PR Gate priority
 workflow cancelled affected runs whenever a PR Gate started and admission refused
 while one was active; with up to ten open PRs that admitted 0 of 32 dispatches
 from 05:52 to 17:02 UTC on 14 Nov 2026. Required PR gates and shard definitions are
 unchanged. The reported baseline incident (about 170 jobs, two hours queued,
 seven of eight heavy runners) predates the 40-job bound and the two-shard width.
+
+Trusted server-test matrices use the configured `HONUA_HEAVY_RUNNER` pool for
+all indices. Mixing hosted and heavy runners under one `max-parallel` limit
+allowed hosted jobs waiting for capacity to consume admission slots while heavy
+runners sat idle. At 14:17 UTC on 15 Nov, full run 43709972683 had 13 admitted
+hosted jobs waiting plus three executing shards, filling its 16 slots; another
+58 heavy shards had not been admitted. Fork guards, hosted fallback, shard
+coverage and the full/affected concurrency bounds remain unchanged. Live
+post-deployment runner idle times remain to be measured.
 
 ### Covered trunk runs
 
@@ -897,9 +906,9 @@ Gate had six to nine jobs waiting for hosted runners.
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped
 bot App token. Live drafts, forks, non-trunk bases and `hold`, `train:hold` or
-`train:escalated` labels are ineligible. One commit uses squash; bundles use merge
-commits. Synchronization and label changes revoke ineligible requests or replace a
-changed merge method. Required checks and repository rulesets decide when a PR
+`train:escalated` labels are ineligible. New requests use squash for one commit and merge for bundles. Existing eligible
+requests retain their selected method across commit-count and mergeability changes.
+Synchronization and label changes revoke ineligible requests. Required checks and repository rulesets decide when a PR
 merges; review admission applies only where configured as a required check. The
 helper checks out no contributor code and queues without cancellation. It runs on
 `pull_request_target` in the `bot-app` environment: the job is always the trunk
