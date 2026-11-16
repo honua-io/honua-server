@@ -369,12 +369,15 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     private static readonly IReadOnlySet<string> _noReaderVerifiedMigrations = new HashSet<string>(StringComparer.Ordinal);
     private readonly string _schemaName;
     private readonly PostgresCoreSchemaMigrationManifest _migrations;
+    private readonly Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? _connectionFactory;
 
     public PostgresCoreSchemaGuard(
         PostgresCoreSchemaMigrationManifest migrations,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? connectionFactory = null)
     {
         _migrations = migrations ?? throw new ArgumentNullException(nameof(migrations));
+        _connectionFactory = connectionFactory;
         var configuredSchema = configuration?["Database:Schema"];
         _schemaName = string.IsNullOrWhiteSpace(configuredSchema)
             ? PostgresSchemaConfiguration.DefaultMetadataSchema
@@ -387,9 +390,21 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        await using var connection = new NpgsqlConnection(connectionString);
+        _ = new NpgsqlConnectionStringBuilder(connectionString);
+        await using var connection = await CreateConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await VerifyAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<NpgsqlConnection> CreateConnectionAsync(
+        string connectionString, CancellationToken cancellationToken)
+    {
+        if (_connectionFactory is null)
+        {
+            return new NpgsqlConnection(connectionString);
+        }
+
+        return await _connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
     }
 
     public Task VerifyAsync(
