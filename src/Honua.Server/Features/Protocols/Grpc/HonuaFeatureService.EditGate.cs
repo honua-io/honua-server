@@ -38,6 +38,13 @@ internal sealed partial class HonuaFeatureService
         FeatureEditBatch batch,
         IReadOnlyDictionary<long, Feature> storedRows)
     {
+        // Every update is validated against its stored snapshot. Reject repeated targets rather
+        // than letting independently valid partial updates combine into an invalid stored row.
+        if (batch.Updates.Select(static feature => feature.Id).Distinct().Count() != batch.Updates.Length)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "An edit batch cannot update the same feature more than once."));
+        }
+
         var httpContext = call.Context.GetHttpContext();
         var hooks = httpContext.RequestServices?.GetService<IFeatureEditHooks>() ?? NoOpFeatureEditHooks.Instance;
         var scope = new FeatureEditHookScope(call.Request.ServiceId ?? "unknown", call.Request.LayerId)

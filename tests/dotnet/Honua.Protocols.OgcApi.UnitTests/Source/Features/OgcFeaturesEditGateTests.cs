@@ -165,6 +165,64 @@ public sealed class OgcFeaturesEditGateTests
             "Attribute combination for fields (color, size) violates contingent-value group 'colorSize'.");
     }
 
+    [UnitTest]
+    public async Task MaskedPatch_ValidatesStoredHiddenValues_WithoutAddingThemToTheWrite()
+    {
+        foreach (var color in new[] { "red", "blue" })
+        {
+            var reader = Substitute.For<IFeatureReader>();
+            reader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+                .Returns(QueryResult<Feature>.Create(1, [Row(42, "red", "S")]));
+            var writer = new CountingWriter();
+            var hooks = new RecordingHooks();
+            var request = new OgcFeaturesEditRequest
+            {
+                Operation = OgcFeaturesEditOperation.Patch,
+                ObjectId = 42,
+                Feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("color", color)),
+            };
+
+            var resource = Resource();
+            var group = resource.ContingentValueGroups[0];
+            resource = resource with
+            {
+                ContingentValueGroups =
+                [
+                    group with
+                    {
+                        ContingentValues =
+                        [
+                            .. group.ContingentValues,
+                            new MetadataV2ContingentValue
+                            {
+                                Id = 2,
+                                Values = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
+                                {
+                                    ["color"] = new() { Type = "code", Code = JsonElement.Parse("\"blue\"") },
+                                    ["size"] = new() { Type = "null" },
+                                },
+                            },
+                        ],
+                    },
+                ],
+            };
+            var result = await CreateHandlers(writer, reader).Crud.ExecuteEditAsync(
+                Context(hooks), 7, resource, request, CancellationToken.None);
+
+            result.IsSuccess.Should().Be(color == "red", "the stored masked size is S, not null");
+            writer.ApplyCount.Should().Be(color == "red" ? 1 : 0);
+            await reader.Received(1).QueryAsync(7, Arg.Is<FeatureQuery>(query =>
+                query.EnforcedMaskedFields.HasValue && query.EnforcedMaskedFields.Value.IsEmpty &&
+                query.EnforcedSqlFilter == null), Arg.Any<CancellationToken>());
+            if (color == "red")
+            {
+                hooks.BeforeBatches.Should().ContainSingle().Which.Updates.Should().ContainSingle()
+                    .Which.Attributes.Should().Contain("size", "S");
+                writer.LastBatch!.Value.Updates.Should().ContainSingle().Which.Attributes.Should().NotContainKey("size");
+            }
+        }
+    }
+
     private static async Task<Executed[]> ExecuteBothAsync(OgcFeaturesEditRequest request, RecordingHooks hooks)
     {
         var executed = new Executed[2];
@@ -194,9 +252,14 @@ public sealed class OgcFeaturesEditGateTests
     private static Feature Row(long id, string color, string size)
         => Feature.Create(id, null, ImmutableDictionary<string, object?>.Empty.Add("color", color).Add("size", size));
 
-    private static (OgcFeaturesCrudHandler Crud, OgcFeaturesTransactionHandler Transaction) CreateHandlers(IFeatureWriter writer)
+    private static (OgcFeaturesCrudHandler Crud, OgcFeaturesTransactionHandler Transaction) CreateHandlers(IFeatureWriter writer, IFeatureReader? reader = null)
     {
-        var reader = Substitute.For<IFeatureReader>();
+        if (reader is null)
+        {
+            reader = Substitute.For<IFeatureReader>();
+            reader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+                .Returns(QueryResult<Feature>.Create(1, [Row(42, "red", "S")]));
+        }
         var geometry = new OgcFeaturesGeometryServices(
             Substitute.For<IGeometryService>(),
             Substitute.For<ICoordinateTransformService>(),
@@ -268,9 +331,12 @@ public sealed class OgcFeaturesEditGateTests
     {
         public int ApplyCount { get; private set; }
 
+        public FeatureEditBatch? LastBatch { get; private set; }
+
         public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
         {
             ApplyCount++;
+            LastBatch = editBatch;
             var rows = FeatureEditRows.Enumerate(editBatch);
             ImmutableArray<EditOperationResult> Results(FeatureEditOperationKind kind)
                 => [.. rows.Where(row => row.Kind == kind).Select(row => EditOperationResult.Success(row.ObjectId ?? 101))];

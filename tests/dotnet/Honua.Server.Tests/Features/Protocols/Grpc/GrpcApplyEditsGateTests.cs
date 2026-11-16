@@ -32,6 +32,25 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task DuplicateUpdateTargets_AreRejectedBeforeWriting_WithOrWithoutRollback()
+    {
+        var harness = Harness();
+        foreach (var rollback in new[] { true, false })
+        {
+            var request = PartialRequest(updates: [Update("S"), Update("S")]);
+            request.RollbackOnFailure = rollback;
+            var exception = await CallAsync(harness, request);
+            exception.Should().NotBeNull();
+            exception!.StatusCode.Should().Be(StatusCode.InvalidArgument);
+            exception.Status.Detail.Should().Contain("same feature more than once");
+        }
+
+        _written.Should().BeEmpty();
+        _hooks.BeforeBatches.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ContingentViolation_OnAddOrMergedUpdate_FailsTheCallBeforeWriting()
     {
         var harness = Harness();
