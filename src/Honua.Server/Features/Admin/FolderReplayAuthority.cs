@@ -62,6 +62,22 @@ internal sealed class FolderReplayAuthority
             ? new FolderReplayAuthority(principal, proposal) : null;
     }
 
+    internal bool MatchesExecution(FolderReplayExecution execution)
+    {
+        try
+        {
+            var replay = FolderReplayRequest.ReadSealedRequest(Proposal.Plan, Proposal.OperationId, Proposal.TenantId);
+            return execution.Command == FolderMutationCommand.FromRequest(replay.Request) &&
+                execution.ExpectedEtag == replay.Request.Parameters.GetValueOrDefault("If-Match") &&
+                execution.Namespace == replay.Request.Parameters.GetValueOrDefault("namespace") &&
+                execution.SchemaName == replay.SchemaName;
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            return false;
+        }
+    }
+
     private static bool CredentialMatchesPlan(ClaimsPrincipal principal, OperationProposal proposal)
     {
         try
@@ -76,4 +92,12 @@ internal sealed class FolderReplayAuthority
             return false;
         }
     }
+}
+
+internal sealed record FolderReplayExecution
+{
+    public required FolderMutationCommand Command { get; init; }
+    public required string ExpectedEtag { get; init; }
+    public string? Namespace { get; init; }
+    public string? SchemaName { get; init; }
 }
