@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Tests.Infrastructure;
@@ -25,7 +27,7 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     public async Task InitializeAsync()
     {
         await database.CreateSchemaUnderLockAsync(_schema);
-        foreach (var script in new[] { "136_CreateAdminApiKeys.sql", "139_AddAdminApiKeyRestrictions.sql" })
+        foreach (var script in new[] { "136_CreateAdminApiKeys.sql", "139_AddAdminApiKeyRestrictions.sql", "200_ExpandAdminApiKeyStorage.sql" })
         {
             await using var stream = typeof(PostgresAdminApiKeyStore).Assembly.GetManifestResourceStream(
                 "Honua.Server.Migrations." + script)
@@ -37,6 +39,54 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     }
 
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    public async Task ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility()
+    {
+        var writer = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+        var reader = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+        var legacy = await writer.CreateAsync("existing", ["admin:read"], null, null, CancellationToken.None);
+        var expanded = await writer.CreateAsync("expanded", ["admin:read"], null, null, CancellationToken.None);
+        var salt = RandomNumberGenerator.GetBytes(32);
+        var digest = HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(expanded.Key));
+        await using (var update = database.DataSource.CreateCommand($"""
+            UPDATE "{_schema}".admin_api_keys SET key_salt = @salt, key_hash = @digest WHERE id = @id
+            """))
+        {
+            update.Parameters.AddWithValue("salt", salt);
+            update.Parameters.AddWithValue("digest", digest);
+            update.Parameters.AddWithValue("id", expanded.Record.Id);
+            await update.ExecuteNonQueryAsync();
+        }
+
+        (await reader.ValidateAsync(legacy.Key, CancellationToken.None)).Should().NotBeNull();
+        (await reader.ValidateAsync(expanded.Key, CancellationToken.None)).Should().NotBeNull();
+        (await reader.ValidateAsync(expanded.Key, CancellationToken.None)).Should().NotBeNull();
+        (await reader.ValidateAsync(expanded.Key + "different", CancellationToken.None)).Should().BeNull();
+        var rotated = await reader.RotateAsync(expanded.Record.Id, CancellationToken.None);
+        rotated.Should().NotBeNull();
+        (await writer.ValidateAsync(expanded.Key, CancellationToken.None)).Should().BeNull();
+        (await writer.ValidateAsync(rotated!.Key, CancellationToken.None)).Should().NotBeNull();
+        rotated.Record.KeySalt.Should().BeNull();
+        rotated.Record.KeyHash.Should().Equal(SHA256.HashData(Encoding.UTF8.GetBytes(rotated.Key)));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task ExpandedStorage_WithInvalidSalt_RejectsOtherwiseValidLegacyKey()
+    {
+        var store = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+        var created = await store.CreateAsync("existing", ["admin:read"], null, null, CancellationToken.None);
+        await using var update = database.DataSource.CreateCommand($"""
+            UPDATE "{_schema}".admin_api_keys SET key_salt = @salt WHERE id = @id
+            """);
+        update.Parameters.AddWithValue("salt", new byte[1]);
+        update.Parameters.AddWithValue("id", created.Record.Id);
+        await update.ExecuteNonQueryAsync();
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull();
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/api-keys")]

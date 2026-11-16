@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
@@ -62,7 +61,8 @@ internal sealed record AdminApiKeyRecord(
     // record without restrictions serializes byte-for-byte as it did before they existed:
     // the Redis store's conditional usage write compares those bytes.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedReferrers = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? KeySalt = null);
 
 internal sealed record AdminApiKeyRestrictions(
     IReadOnlyList<string>? AllowedReferrers,
@@ -119,7 +119,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             Guid.NewGuid(),
             name,
             CreateDisplayPrefix(generated),
-            HashKey(generated),
+            AdminApiKeyHashing.HashLegacy(generated),
             NormalizePermissions(permissions),
             now,
             now,
@@ -166,7 +166,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             var updated = existing with
             {
                 KeyPrefix = CreateDisplayPrefix(generated),
-                KeyHash = HashKey(generated),
+                KeyHash = AdminApiKeyHashing.HashLegacy(generated),
+                KeySalt = null,
                 UpdatedAt = now,
                 RotatedAt = now,
                 LastUsedAt = null,
@@ -246,7 +247,6 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             return Task.FromResult<AdminApiKeyValidationResult?>(null);
         }
 
-        var providedHash = HashKey(keyMaterial);
         var now = _timeProvider.GetUtcNow();
 
         // codeql[cs/linq/missed-select]: retries a contended key update and returns the first winning record
@@ -256,7 +256,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             while (record is not null &&
                 record.RevokedAt is null &&
                 (!record.ExpiresAt.HasValue || record.ExpiresAt.Value > now) &&
-                CryptographicOperations.FixedTimeEquals(providedHash, record.KeyHash))
+                AdminApiKeyHashing.Verify(keyMaterial, record.KeyHash, record.KeySalt))
             {
                 var updated = record with
                 {
@@ -308,7 +308,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             Guid.NewGuid(),
             name,
             CreateDisplayPrefix(keyMaterial),
-            HashKey(keyMaterial),
+            AdminApiKeyHashing.HashLegacy(keyMaterial),
             NormalizePermissions(permissions),
             now,
             now,
@@ -344,6 +344,4 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         var length = Math.Min(DisplayPrefixLength, keyMaterial.Length);
         return keyMaterial[..length];
     }
-
-    private static byte[] HashKey(string keyMaterial) => SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
 }
