@@ -276,7 +276,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
                 _fixture, proposal.GetProperty("proposalId").GetString()!);
             handle.GetProperty("status").GetString().Should().Be("Completed");
             handle.GetProperty("metadataRevision").GetInt64().Should().Be(42);
-            // Approval executes once; reading the durable handle refreshes metadata once more.
+            // The human approval CSRF request and publish readback each read metadata.
             await AssertSingleActuationAsync(metadataReadbacks: 2);
             return;
         }
