@@ -122,7 +122,7 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
         var postgres = $"{network}-pg";
         var redis = $"{network}-redis";
         var server = $"{network}-server";
-        var port = LocalSubstrateDockerFixture.GetFreeTcpPort();
+        var port = LoopbackTcpPort.GetFree();
         var baseUrl = $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
         var passed = false;
 

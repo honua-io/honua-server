@@ -418,7 +418,7 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
             var postgres = $"{network}-pg";
             var redis = $"{network}-redis";
             var serverName = $"{network}-server";
-            var port = LocalSubstrateDockerFixture.GetFreeTcpPort();
+            var port = LoopbackTcpPort.GetFree();
             var server = new CandidateServer(network, serverName, [serverName, redis, postgres], port);
             try
             {

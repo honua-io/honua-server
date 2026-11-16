@@ -226,30 +226,6 @@ public sealed class RollbackDataPlaneHealthTests
         expired.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
-    [UnitTest]
-    public async Task Yarp_ConvergedProxyWithUnhealthyOrWrongMarker_CannotRollBack()
-    {
-        var unhealthy = await ObserveYarpAsync(healthy: false, body: RollbackDataPlaneTestSupport.PriorMarker, expired: false);
-        unhealthy.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
-
-        var wrongMarker = await ObserveYarpAsync(healthy: true, body: RollbackDataPlaneTestSupport.CandidateMarker, expired: true);
-        wrongMarker.Status.Should().Be(WorkflowOperationStatus.Failed);
-
-        var errorEnvelope = await ObserveYarpAsync(healthy: true, body: "{\"error\":{\"code\":1}}", expired: true);
-        errorEnvelope.Status.Should().Be(WorkflowOperationStatus.Failed);
-
-        var empty = await ObserveYarpAsync(healthy: true, body: RollbackDataPlaneTestSupport.PriorMarker, expired: true, activeRunning: false);
-        empty.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
-    }
-
-    [UnitTest]
-    public async Task Yarp_HealthyRestoredReplica_CanComplete()
-    {
-        var observation = await ObserveYarpAsync(healthy: true, body: RollbackDataPlaneTestSupport.PriorMarker, expired: false);
-        observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
-        observation.ObservedRevision.Should().Be("honua:prior");
-    }
-
     private const string EcsPriorTask = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-app:41";
     private const string EcsCanaryTask = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-app:42";
     private const string EcsStableService = "honua-prod-stable";
@@ -285,46 +261,6 @@ public sealed class RollbackDataPlaneHealthTests
         }
 
         return Operation(DeployTargetKind.AwsEcs, "honua-aws-ecs-alb", EcsPriorTask, parameters);
-    }
-
-    private static async Task<DeployObservation> ObserveYarpAsync(bool healthy, string body, bool expired, bool activeRunning = true)
-    {
-        var runtime = new YarpRuntimeStub(activeRunning);
-        var probe = new YarpProbeStub { Healthy = healthy, Body = body };
-        var options = Microsoft.Extensions.Options.Options.Create(new SelfHostedDeployOptions
-        {
-            Enabled = true,
-            Host = "127.0.0.1",
-            ActivePort = 18080,
-            StandbyPort = 18081,
-            ContainerPort = 8080,
-            ContainerRuntime = "docker",
-            ContainerNamePrefix = "rollback-proof",
-            DrainDelaySeconds = 0
-        });
-        var backend = new YarpRollingDeployBackend(
-            runtime,
-            new YarpProxyStub(),
-            probe,
-            options,
-            NullLogger<YarpRollingDeployBackend>.Instance);
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [SelfHostedDeployParameterKeys.ActivePort] = "18080",
-            [SelfHostedDeployParameterKeys.StandbyPort] = "18081",
-            [SelfHostedDeployParameterKeys.ContainerPort] = "8080"
-        };
-        RollbackDataPlaneTestSupport.AddProof(parameters);
-        if (expired)
-        {
-            RollbackDataPlaneTestSupport.StampExpiredWindow(parameters);
-        }
-
-        return await backend.ObserveAsync(Operation(
-            DeployTargetKind.SelfHostedRolling,
-            YarpRollingDeployBackend.AdapterBackendName,
-            "honua:prior",
-            parameters));
     }
 
     private static Dictionary<string, string> ArgoParameters()
@@ -466,61 +402,5 @@ public sealed class RollbackDataPlaneHealthTests
 
         public Task<ArgoRolloutState> AbortAsync(string @namespace, string name, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
-    }
-
-    private sealed class YarpRuntimeStub(bool activeRunning) : IContainerRuntimeClient
-    {
-        public Task<bool> IsAvailableAsync(string executable, CancellationToken cancellationToken) => Task.FromResult(true);
-
-        public Task<string> RunAsync(ContainerRunRequest request, CancellationToken cancellationToken) => Task.FromResult(request.ContainerName);
-
-        public Task StopAsync(string executable, string containerNameOrId, CancellationToken cancellationToken) => Task.CompletedTask;
-
-        public Task<IReadOnlyList<ContainerSummary>> ListAsync(string executable, IReadOnlyDictionary<string, string> labelSelectors, CancellationToken cancellationToken)
-        {
-            if (!activeRunning)
-            {
-                return Task.FromResult<IReadOnlyList<ContainerSummary>>([]);
-            }
-
-            IReadOnlyList<ContainerSummary> containers =
-            [
-                new ContainerSummary
-                {
-                    Id = "rollback-proof-18080",
-                    Name = "rollback-proof-18080",
-                    Running = true,
-                    Labels = new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        [YarpRollingDeployBackend.LabelTarget] = "target",
-                        [YarpRollingDeployBackend.LabelRole] = YarpRollingDeployBackend.RoleActive,
-                        [YarpRollingDeployBackend.LabelRevision] = "honua:prior"
-                    }
-                }
-            ];
-            return Task.FromResult(containers);
-        }
-    }
-
-    private sealed class YarpProxyStub : IProxyStateSwapper
-    {
-        public bool IsConfigured => true;
-        public string? ActiveDestinationAddress => "http://127.0.0.1:18080/";
-        public Task SwapAsync(string destinationAddress, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    private sealed class YarpProbeStub : ILocalReplicaHealthProbe
-    {
-        public bool Healthy { get; init; }
-        public string? Body { get; init; }
-
-        public Task<LocalReplicaHealthResult> ProbeAsync(string url, int samples, int timeoutSeconds, int expectedStatusCode, CancellationToken cancellationToken)
-            => Task.FromResult(new LocalReplicaHealthResult
-            {
-                Attempts = samples,
-                Failures = Healthy ? 0 : samples,
-                Reached = true,
-                Body = Body
-            });
     }
 }

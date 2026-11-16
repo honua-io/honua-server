@@ -127,7 +127,7 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         // rollback that never happened and only surfacing the truth later as ManualInterventionRequired via
         // ObserveAsync. Returning ManualInterventionRequired here makes the reconciler escalate immediately
         // with a loud error so an operator is paged to perform the out-of-band GitOps revert. Backends that
-        // CAN perform a real in-process revert (Argo, YARP) override this.
+        // CAN perform a real in-process revert (Argo) override this.
         Log.RollbackRequiresManualIntervention(logger, operation.OperationId, operation.Deploy?.TargetId ?? operation.OperationId);
         return Task.FromResult(new DeployObservation
         {

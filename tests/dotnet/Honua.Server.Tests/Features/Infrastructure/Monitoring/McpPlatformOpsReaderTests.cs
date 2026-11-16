@@ -1453,16 +1453,16 @@ public sealed class McpPlatformOpsReaderTests
                 new DeployTargetOptions
                 {
                     TargetId = "serving-us-west",
-                    TargetKind = DeployTargetKind.SelfHostedRolling,
-                    Backend = "self-hosted",
+                    TargetKind = DeployTargetKind.AwsEcs,
+                    Backend = "honua-aws-ecs-alb",
                     Environment = "prod",
                     TargetName = "Serving west",
                 },
                 new DeployTargetOptions
                 {
                     TargetId = "serving-pinned",
-                    TargetKind = DeployTargetKind.SelfHostedRolling,
-                    Backend = "self-hosted",
+                    TargetKind = DeployTargetKind.AwsEcs,
+                    Backend = "honua-aws-ecs-alb",
                     Environment = "prod",
                     TargetName = "Pinned",
                     ArtifactReference = "ghcr.io/honua/server:old",
@@ -1500,8 +1500,8 @@ public sealed class McpPlatformOpsReaderTests
             Deploy = new DeployOperationSpec
             {
                 TargetId = targetId,
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "self-hosted",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
                 Environment = "prod",
                 TargetName = "Honua serving",
                 CurrentRevision = currentRevision,

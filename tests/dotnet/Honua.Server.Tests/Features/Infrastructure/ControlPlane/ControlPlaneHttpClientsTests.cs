@@ -32,17 +32,12 @@ public sealed class ControlPlaneHttpClientsTests
         services.AddHttpClient(ControlPlaneHttpClients.Telemetry).ConfigurePrimaryHttpMessageHandler(() => handler);
         await using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IHttpClientFactory>();
-        var probe = new HttpLocalReplicaHealthProbe(factory);
+        using var probe = factory.CreateClient(ControlPlaneHttpClients.Probe);
 
-        for (var round = 0; round < 5; round++)
+        for (var sample = 0; sample < 15; sample++)
         {
-            var result = await probe.ProbeAsync(
-                "http://127.0.0.1:18081/healthz/ready",
-                samples: 3,
-                timeoutSeconds: 5,
-                expectedStatusCode: 200,
-                CancellationToken.None);
-            result.Failures.Should().Be(3);
+            using var answer = await probe.GetAsync(new Uri("http://127.0.0.1:18081/healthz/ready"));
+            answer.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         }
 
         handler.RequestsTo("/healthz/ready").Should().Be(15, "each probe sample is exactly one request; a retry would hide how the candidate answers");

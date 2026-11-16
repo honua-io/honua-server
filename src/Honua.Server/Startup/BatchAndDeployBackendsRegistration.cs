@@ -83,12 +83,6 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
 #endif
 
-        // Substrate-neutral, single-host rolling-replace deploy backend (ADR-0060). Registered
-        // unconditionally: it is the zero-cloud default for on-prem/air-gapped hosts and is gated at
-        // runtime by ControlPlane:SelfHosted:Enabled rather than a compile-time HONUA_EXCLUDE_* switch.
-        services.AddSingleton<YarpRollingDeployBackend>();
-        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<YarpRollingDeployBackend>());
-
         // Installed Compose project (honua-server#6811). Registered unconditionally and gated at
         // runtime by the executor socket. The server process does not receive the Docker socket.
         services.AddOptions<ComposeExecutorOptions>()

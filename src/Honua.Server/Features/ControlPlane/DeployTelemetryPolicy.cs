@@ -464,11 +464,6 @@ internal sealed record DeployTelemetryPolicy
                 ? "aws-alb-canary"
                 : "honua-http",
             DeployTargetKind.AwsLambda => HasCanarySignalConfiguration(spec.Parameters) ? "aws-lambda-canary" : "honua-http",
-            // Self-hosted rolling replace maps to the "honua-http" preset so a configured metrics
-            // connection is gated like any other target (ADR-0060). A probe-only self-hosted gate
-            // (no metrics substrate on-prem/air-gapped) must select telemetry.policy = health-only
-            // explicitly; the backend's own standby health gate drives promotion either way.
-            DeployTargetKind.SelfHostedRolling => "honua-http",
             // Local Compose readback uses the executor's operator-configured probe URLs. It must not
             // select a metrics preset or a localhost telemetry gate.
             DeployTargetKind.LocalCompose => null,

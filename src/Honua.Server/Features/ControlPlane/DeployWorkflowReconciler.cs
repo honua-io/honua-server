@@ -420,8 +420,8 @@ internal sealed partial class DeployWorkflowReconciler(
             }
 
             // Which signal must be satisfied before an auto-promotion (cutover) fires. Cloud targets
-            // default to the telemetry gate; self-hosted rolling defaults to its own health gate so
-            // on-prem/air-gapped deploys (no metrics substrate) are not structurally unable to promote.
+            // default to the telemetry gate; local Compose defaults to its own health gate so a
+            // host with no metrics substrate is not structurally unable to promote.
             var promotionGate = DeployPromotionPolicy.Resolve(current.Deploy);
 
             // A backend that stages the candidate without traffic gives the metrics gate nothing to measure

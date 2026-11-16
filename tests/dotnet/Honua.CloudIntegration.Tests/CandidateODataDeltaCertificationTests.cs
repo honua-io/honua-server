@@ -25,12 +25,6 @@ namespace Honua.CloudIntegration.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Requires Docker and <c>HONUA_CANDIDATE_IMAGE</c>; the test <c>[SkippableFact]</c>-skips when
-/// either is unavailable, mirroring <see cref="CandidateTelemetryGateCertificationTests"/>. Writes
-/// an immutable JSON receipt (image identity, per-stage state hashes, and the pass/fail outcome) to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when it is set, and to the test output otherwise.
-/// </para>
-/// <para>
 /// The candidate image boots against an empty database and immediately activates a Metadata v2
 /// snapshot containing only the built-in GPServer bootstrap entry (honua-server#2349); the
 /// read path never re-derives one from the legacy V1 catalog once any snapshot is active
@@ -45,6 +39,8 @@ namespace Honua.CloudIntegration.Tests;
 /// exactly as it would after a real publish, with no restart or cache-invalidation race observed.
 /// </para>
 /// </remarks>
+// Skips when Docker or HONUA_CANDIDATE_IMAGE is missing. The JSON receipt goes to
+// HONUA_CANDIDATE_RECEIPT_DIR when it is set, and to the test output otherwise.
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateODataDeltaCertificationTests
 {
@@ -330,7 +326,7 @@ public sealed class CandidateODataDeltaCertificationTests
                 // a real deployment would; only then seed and activate the V1-to-V2 projection
                 // against the live database, which the running candidate resolves on its very next
                 // request with no restart or cache-invalidation race.
-                var candidateHostPort = LocalSubstrateDockerFixture.GetFreeTcpPort();
+                var candidateHostPort = LoopbackTcpPort.GetFree();
                 await Docker.RunCheckedAsync(
                 [
                     "run", "-d", "--name", candidateContainerName, "--network", networkName,
@@ -485,8 +481,7 @@ public sealed class CandidateODataDeltaCertificationTests
             {
                 // pg_isready over TCP, not the default local socket: the image's init phase answers
                 // on the unix socket before the final server the harness connects to is listening,
-                // and the container restarts once after initdb (see CandidateTelemetryGateCertificationTests'
-                // StartPostgresAsync in the sibling deploy-gate certification lane, same lesson).
+                // and the container restarts once after initdb.
                 var (exitCode, _, _) = await Docker.RunAsync(["exec", containerName, "pg_isready", "-h", "127.0.0.1", "-U", "honua", "-d", "honua"]);
                 if (exitCode == 0)
                 {

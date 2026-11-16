@@ -209,8 +209,8 @@ internal static class WorkflowSourceFixture
             Deploy = new DeployOperationSpec
             {
                 TargetId = targetId,
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "self-hosted",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
                 Environment = "prod",
                 TargetName = targetId,
                 DesiredRevision = revision,
@@ -230,8 +230,8 @@ internal static class WorkflowSourceFixture
             Deploy = new DeployOperationSpec
             {
                 TargetId = targetId,
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "self-hosted",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
                 Environment = "prod",
                 TargetName = targetId,
                 CurrentRevision = PriorArtifact,
@@ -251,8 +251,8 @@ internal static class WorkflowSourceFixture
                 .Select(targetId => new DeployTargetOptions
                 {
                     TargetId = targetId,
-                    TargetKind = DeployTargetKind.SelfHostedRolling,
-                    Backend = "self-hosted",
+                    TargetKind = DeployTargetKind.AwsEcs,
+                    Backend = "honua-aws-ecs-alb",
                     Environment = "prod",
                     TargetName = targetId,
                 })

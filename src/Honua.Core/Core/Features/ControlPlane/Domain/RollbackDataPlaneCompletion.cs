@@ -110,9 +110,6 @@ public sealed record RollbackFunctionalQueryExpectation
     /// <summary>Absolute probe URL for backends that can reach a public endpoint.</summary>
     public string? Url { get; init; }
 
-    /// <summary>Replica-local path for the self-hosted rolling backend. Loopback is not an outbound URL.</summary>
-    public string? Path { get; init; }
-
     /// <summary>Substring the prior revision's response must contain.</summary>
     public string? ExpectedContains { get; init; }
 
@@ -233,12 +230,6 @@ public static class RollbackDataPlaneCompletion
 
     /// <summary>Same key the telemetry gate uses for the golden-query URL.</summary>
     public const string FunctionalQueryUrlParameterKey = "telemetry.golden_query.url";
-
-    /// <summary>
-    /// Replica-local functional path used by the self-hosted rolling backend.
-    /// Not a <c>telemetry.*</c> key: loopback probes are not the outbound golden-query URL.
-    /// </summary>
-    public const string FunctionalQueryPathParameterKey = "rollback.functional_query.path";
 
     /// <summary>Prior-revision marker when the probe is local and no outbound golden-query URL is configured.</summary>
     public const string LocalFunctionalQueryExpectedContainsParameterKey = "rollback.functional_query.expected_contains";
@@ -418,7 +409,6 @@ public static class RollbackDataPlaneCompletion
         => new()
         {
             Url = ReadParameter(parameters, FunctionalQueryUrlParameterKey),
-            Path = ReadParameter(parameters, FunctionalQueryPathParameterKey),
             ExpectedContains = ReadParameter(parameters, FunctionalQueryExpectedContainsParameterKey)
                 ?? ReadParameter(parameters, LocalFunctionalQueryExpectedContainsParameterKey),
             ForbiddenContains = ReadParameter(parameters, FunctionalQueryForbiddenContainsParameterKey)

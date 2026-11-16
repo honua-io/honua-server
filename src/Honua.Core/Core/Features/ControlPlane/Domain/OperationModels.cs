@@ -318,15 +318,6 @@ public enum DeployTargetKind
     AwsLambda = 3,
 
     /// <summary>
-    /// Substrate-neutral, single-host rolling-replace target (ADR-0060). The Honua process fronts
-    /// traffic with embedded YARP and owns the cutover: it starts a standby replica of the desired
-    /// revision on a co-located port, health-gates it, atomically swaps the reverse-proxy destination,
-    /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
-    /// zero-cloud-dependency zero-downtime upgrade and rollback story.
-    /// </summary>
-    SelfHostedRolling = 5,
-
-    /// <summary>
     /// Installed Docker Compose project. The server does not receive the Docker socket. A separately
     /// configured executor, reached over a local socket, applies an allowlisted compose change for the
     /// one project the operator registered. Reader-incompatible rollbacks restore a verified backup
@@ -1532,13 +1523,7 @@ public sealed record DeployBackendCapabilities
     /// </summary>
     public bool SupportsRevisionPinning { get; init; }
 
-    /// <summary>
-    /// Whether the backend stages the candidate revision without live traffic until promotion, as a
-    /// single-switch cutover does (the self-hosted rolling backend health-gates a standby replica that
-    /// serves nothing until the proxy swaps to it). Such a backend reports
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> while the candidate is staged, so traffic
-    /// exposure starts at the promotion cutover rather than at that observation (honua-server#4617).
-    /// </summary>
+    // A staged candidate reports Reconciling before it takes traffic, so exposure starts at the promotion cutover.
     public bool StagesCandidateWithoutTraffic { get; init; }
 }
 

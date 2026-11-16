@@ -25,17 +25,9 @@ internal static class CloudIntegrationTraits
     /// </summary>
     public const string CloudIntegration = "CloudIntegration";
 
-    /// <summary>
-    /// Trait value applied to the ADR-0060 substrate-neutral local lane (#2166, #2457). These
-    /// tests prove the single-host, zero-cloud (containers only, no Kubernetes, no cloud) deploy /
-    /// rolling-upgrade / expand-contract-migration / rollback story on BOTH planes (serving via
-    /// <c>YarpRollingDeployBackend</c> + real embedded YARP; GP via
-    /// <c>LocalProcessPoolBatchComputeBackend</c>) plus the real
-    /// <c>PostgresDatabaseMigrationRunner</c> expand/contract gate. They are kept in a distinct
-    /// category so the dedicated <c>local-substrate</c> workflow job opts in with
-    /// <c>--filter "Category=LocalSubstrate"</c>, and every Docker-dependent test
-    /// <c>[SkippableFact]</c>-skips (never fails) when Docker is unavailable.
-    /// </summary>
+    // Single-host lane with no Kubernetes and no cloud: the local process-pool batch backend and the
+    // real migration runner's expand/contract gate. The local-substrate workflow job selects it with
+    // --filter "Category=LocalSubstrate"; Docker-dependent tests skip when Docker is unavailable.
     public const string LocalSubstrate = "LocalSubstrate";
 
     /// <summary>
@@ -50,14 +42,7 @@ internal static class CloudIntegrationTraits
     /// </summary>
     public const string RealAwsCertification = "RealAwsCertification";
 
-    /// <summary>
-    /// Trait value applied to the exact-candidate deploy-gate lane (honua-server#4617). These tests
-    /// roll a real published Honua server image (the candidate) over a real previous image through
-    /// the self-hosted rolling backend, with a real Prometheus scraping the candidate, and inject
-    /// failures. They need both image references (<c>HONUA_CANDIDATE_IMAGE</c> and
-    /// <c>HONUA_PREVIOUS_IMAGE</c>), so they are kept out of the <c>CloudIntegration</c> and
-    /// <c>LocalSubstrate</c> filters and run only when a release or operator names the candidate;
-    /// every test <c>[SkippableFact]</c>-skips when the images or Docker are not available.
-    /// </summary>
+    // Exact-candidate lanes run a published server image named by HONUA_CANDIDATE_IMAGE, so they stay
+    // out of the CloudIntegration and LocalSubstrate filters. Tests skip when the image or Docker is missing.
     public const string CandidateCertification = "CandidateCertification";
 }
