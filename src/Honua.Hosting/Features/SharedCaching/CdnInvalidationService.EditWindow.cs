@@ -17,7 +17,7 @@ internal sealed partial class CdnInvalidationService
             await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
         }
 
-        string[] paths;
+        PurgeBatch[] pending;
         lock (_gate)
         {
             if (_windowClosesAt != windowClosesAt)
@@ -25,18 +25,21 @@ internal sealed partial class CdnInvalidationService
                 return;
             }
 
-            paths = [.. _pendingEditPaths];
+            pending = PurgeBatch.Group(_pendingEditPaths);
             _pendingEditPaths.Clear();
             _windowClosesAt = null;
             _lastEditInvalidation = _timeProvider.GetUtcNow();
         }
 
-        var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), CancellationToken.None)
-            .ConfigureAwait(false);
-        // A busy CDN has already been handed the paths again for the next window.
-        if (result is { Outcome: CdnInvalidationOutcome.Failed })
+        foreach (var batch in pending)
         {
-            Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+            var result = await SendAfterEditAsync(batch.Paths, batch.Cause, CancellationToken.None)
+                .ConfigureAwait(false);
+            // A busy CDN has already been handed the paths again for the next window.
+            if (result is { Outcome: CdnInvalidationOutcome.Failed })
+            {
+                Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+            }
         }
     }
 
@@ -48,10 +51,10 @@ internal sealed partial class CdnInvalidationService
         try
         {
             claimed = await ClaimAcrossTasksAsync(paths, cancellationToken).ConfigureAwait(false);
-            // A settle repeat whose address another task holds is dropped: that task's purge is newer and settles itself.
-            if (claimed.Length < paths.Length && cause.Kind is not CdnPurgeKind.Settle)
+            // Edit settles may rely on a newer purge. Exempt purges must retry: the holder may exhaust its edit budget.
+            if (claimed.Length < paths.Length && (cause.Kind is not CdnPurgeKind.Settle || cause.Reason != "edit"))
             {
-                DeferToNextWindow(paths.Except(claimed, StringComparer.Ordinal), HeldLeaseRetryDelay());
+                DeferToNextWindow(paths.Except(claimed, StringComparer.Ordinal), HeldLeaseRetryDelay(), cause);
             }
 
             if (claimed.Length == 0)
@@ -70,7 +73,7 @@ internal sealed partial class CdnInvalidationService
                     _delivery.SettleOnly(batches.BusyPaths);
                 }
 
-                DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow());
+                DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow(), cause);
             }
 
             AfterEditPurge(claimed, result, cause);
@@ -78,7 +81,7 @@ internal sealed partial class CdnInvalidationService
         catch (OperationCanceledException)
         {
             // The edit request gave up, not the edit: its purge goes out with the next window.
-            DeferToNextWindow(paths, CurrentCoalescingWindow());
+            DeferToNextWindow(paths, CurrentCoalescingWindow(), cause);
             throw;
         }
 
@@ -95,7 +98,7 @@ internal sealed partial class CdnInvalidationService
         }
     }
 
-    private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay)
+    private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay, CdnPurgeCause? cause = null)
     {
         var due = _timeProvider.GetUtcNow() + delay;
         string[]? unsent = null;
@@ -108,7 +111,7 @@ internal sealed partial class CdnInvalidationService
             }
             else
             {
-                _pendingEditPaths.UnionWith(paths);
+                AddPendingPurges(paths, cause ?? CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits));
                 if (_windowClosesAt is { } scheduled && scheduled <= due)
                 {
                     return;
@@ -126,6 +129,18 @@ internal sealed partial class CdnInvalidationService
         }
 
         _ = InvalidatePendingWhenWindowClosesAsync(due);
+    }
+
+    // Called under _gate. Coalescing an edit must not downgrade an administrative purge's exemption.
+    private void AddPendingPurges(IEnumerable<string> paths, CdnPurgeCause cause)
+    {
+        foreach (var path in paths)
+        {
+            if (!_pendingEditPaths.TryGetValue(path, out var pending) || pending.Reason == "edit")
+            {
+                _pendingEditPaths[path] = cause;
+            }
+        }
     }
 
     // One lease per address in the shared database: whichever task takes it sends the purge, and nobody else does until it expires.

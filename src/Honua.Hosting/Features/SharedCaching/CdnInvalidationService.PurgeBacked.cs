@@ -29,11 +29,18 @@ internal sealed partial class CdnInvalidationService
     // not claimed and a busy CDN is not waited for: a purge sent twice costs less than one lost.
     internal async Task FlushPendingAsync()
     {
+        PurgeBatch[] pending;
         string[] paths;
         lock (_gate)
         {
             _stopping = true;
-            paths = [.. _pendingEditPaths.Union(_delivery.TakeAll(), StringComparer.Ordinal)];
+            foreach (var batch in _delivery.TakeAll())
+            {
+                AddPendingPurges(batch.Paths, batch.Cause);
+            }
+
+            pending = PurgeBatch.Group(_pendingEditPaths);
+            paths = [.. _pendingEditPaths.Keys];
             _pendingEditPaths.Clear();
             _windowClosesAt = null;
         }
@@ -46,11 +53,14 @@ internal sealed partial class CdnInvalidationService
         using var deadline = new CancellationTokenSource(ShutdownFlushTimeout);
         try
         {
-            var batches = await SendWithinLimitsAsync(paths, CdnPurgeCause.Shutdown(), deadline.Token)
-                .ConfigureAwait(false);
-            if (batches.Result.Failed)
+            foreach (var batch in pending)
             {
-                Log.ShutdownPurgesNotSent(logger, paths.Length, string.Join(' ', paths));
+                var batches = await SendWithinLimitsAsync(batch.Paths, batch.Cause.AsShutdown(), deadline.Token)
+                    .ConfigureAwait(false);
+                if (batches.Result.Failed)
+                {
+                    Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
+                }
             }
         }
         catch (OperationCanceledException)
@@ -94,7 +104,7 @@ internal sealed partial class CdnInvalidationService
 
         if (plan.Paths.Length > 0)
         {
-            DeferToNextWindow(plan.Paths, plan.Delay);
+            DeferToNextWindow(plan.Paths, plan.Delay, cause);
         }
     }
 
@@ -114,7 +124,7 @@ internal sealed partial class CdnInvalidationService
             stopping = _stopping;
             if (!stopping)
             {
-                due = _delivery.ScheduleSettle(sent);
+                due = _delivery.ScheduleSettle(sent, cause);
             }
         }
 
@@ -142,9 +152,9 @@ internal sealed partial class CdnInvalidationService
             _ = SettleWhenDueAsync(next);
         }
 
-        if (batch.Due.Length > 0)
+        foreach (var repeat in batch.Batches)
         {
-            var result = await SendAfterEditAsync(batch.Due, CdnPurgeCause.Settle(), CancellationToken.None)
+            var result = await SendAfterEditAsync(repeat.Paths, repeat.Cause, CancellationToken.None)
                 .ConfigureAwait(false);
             if (result is { Outcome: CdnInvalidationOutcome.Failed })
             {

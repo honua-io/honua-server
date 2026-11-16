@@ -16,7 +16,7 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
 
     private readonly Lock _gate = new();
     private readonly Dictionary<string, FailedPath> _failed = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTimeOffset> _settleAfter = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ScheduledPurge> _settleAfter = new(StringComparer.Ordinal);
     private readonly HashSet<string> _settleOnly = new(StringComparer.Ordinal);
     private DateTimeOffset? _settleDueAt;
 
@@ -97,16 +97,20 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
     }
 
     // Returns the time a new settle timer must fire, or null when one is already waiting or nothing needs to settle.
-    internal DateTimeOffset? ScheduleSettle(IEnumerable<string> sent)
+    internal DateTimeOffset? ScheduleSettle(IEnumerable<string> sent, CdnPurgeCause? cause = null)
     {
         var due = clock.GetUtcNow() + SettleDelay;
+        var repeat = (cause ?? CdnPurgeCause.Edit("settle")).AsSettle();
         lock (_gate)
         {
             foreach (var path in sent)
             {
                 if (!_settleOnly.Remove(path))
                 {
-                    _settleAfter[path] = due;
+                    // A later edit postpones the repeat, but cannot remove an earlier exemption.
+                    var stated = _settleAfter.TryGetValue(path, out var pending) && pending.Cause.Reason != "edit"
+                        ? pending.Cause : repeat;
+                    _settleAfter[path] = new ScheduledPurge(due, stated);
                 }
             }
 
@@ -132,34 +136,47 @@ internal sealed class PurgeBackedDelivery(TimeProvider clock)
                 return new SettleBatch([], null);
             }
 
-            string[] due = [.. _settleAfter.Where(entry => entry.Value <= now).Select(entry => entry.Key)];
+            string[] due = [.. _settleAfter.Where(entry => entry.Value.Due <= now).Select(entry => entry.Key)];
+            var batches = PurgeBatch.Group(due.Select(path => new KeyValuePair<string, CdnPurgeCause>(path, _settleAfter[path].Cause)));
             foreach (var path in due)
             {
                 _settleAfter.Remove(path);
             }
 
-            _settleDueAt = _settleAfter.Count > 0 ? _settleAfter.Values.Min() : null;
-            return new SettleBatch(due, _settleDueAt);
+            _settleDueAt = _settleAfter.Count > 0 ? _settleAfter.Values.Min(value => value.Due) : null;
+            return new SettleBatch(batches, _settleDueAt);
         }
     }
 
     // Everything still waiting to settle, for a stopping task; retries are already in the coalescing window.
-    internal string[] TakeAll()
+    internal PurgeBatch[] TakeAll()
     {
         lock (_gate)
         {
-            string[] paths = [.. _settleAfter.Keys];
+            var batches = PurgeBatch.Group(_settleAfter.Select(entry => new KeyValuePair<string, CdnPurgeCause>(entry.Key, entry.Value.Cause)));
             _settleAfter.Clear();
             _settleOnly.Clear();
             _failed.Clear();
             _settleDueAt = null;
-            return paths;
+            return batches;
         }
     }
+
+    private readonly record struct ScheduledPurge(DateTimeOffset Due, CdnPurgeCause Cause);
 
     private readonly record struct FailedPath(DateTimeOffset Since, int Attempts);
 }
 
 internal readonly record struct RetryPlan(string[] Paths, TimeSpan Delay, int Abandoned);
 
-internal readonly record struct SettleBatch(string[] Due, DateTimeOffset? Next);
+internal readonly record struct SettleBatch(PurgeBatch[] Batches, DateTimeOffset? Next)
+{
+    internal string[] Due => [.. Batches.SelectMany(batch => batch.Paths)];
+}
+
+internal readonly record struct PurgeBatch(string[] Paths, CdnPurgeCause Cause)
+{
+    internal static PurgeBatch[] Group(IEnumerable<KeyValuePair<string, CdnPurgeCause>> paths)
+        => [.. paths.GroupBy(entry => entry.Value)
+            .Select(group => new PurgeBatch([.. group.Select(entry => entry.Key)], group.Key))];
+}

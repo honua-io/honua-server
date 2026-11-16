@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -95,7 +96,7 @@ public sealed class PurgeBackedDeliveryTests
         await _time.TimerIsWaiting();
         _time.Advance(PurgeBackedDelivery.SettleDelay);
         await cdn.AttemptsReach(2);
-        await Eventually(() => logger.Messages.Any(message => message.Contains("change=settle", StringComparison.Ordinal)));
+        await Eventually(() => logger.Messages.Any(message => message.Contains("change=", StringComparison.Ordinal)));
 
         _time.Advance(PurgeBackedDelivery.SettleDelay * 2);
         await Task.Delay(TimeSpan.FromMilliseconds(100));
@@ -130,6 +131,85 @@ public sealed class PurgeBackedDeliveryTests
         await cdn.AttemptsReach(2);
 
         cdn.Sent[^1].Should().Equal("/*");
+    }
+
+    [UnitTheory]
+    [InlineData("admin")]
+    [InlineData("release")]
+    [InlineData("operation")]
+    public async Task ExemptPurge_SettlesAfterTheEditBudgetIsSpent_AndRetainsTheChangeId(string reason)
+    {
+        var cdn = new FlakyInvalidator(failures: 0);
+        var logger = new RecordingLogger();
+        var service = new CdnInvalidationService(cdn, logger, new CdnPurgeCoordination
+        {
+            TimeProvider = _time,
+            Options = new StaticOptions(Options(monthlyLimit: 1)),
+            Budget = new FixedBudget(1),
+        });
+        var cause = new CdnPurgeCause(reason, "change-123");
+
+        await service.InvalidateNowAsync(["#honua-layer:3"], CancellationToken.None, cause);
+        await _time.TimerIsWaiting();
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
+        await cdn.AttemptsReach(2);
+        await Eventually(() => logger.Messages.Count(message => message.Contains("change=change-123", StringComparison.Ordinal)) == 2);
+
+        await service.InvalidateAfterEditAsync(["#honua-layer:4"], CancellationToken.None);
+        cdn.Attempts.Should().Be(2, "ordinary edits still obey the spent budget");
+        _time.Advance(PurgeBackedDelivery.SettleDelay * 2);
+        await Task.Delay(TimeSpan.FromMilliseconds(100));
+        cdn.Attempts.Should().Be(2, "the exempt settle is not repeated again");
+    }
+
+    [UnitTest]
+    public async Task ExemptSettle_FailureRetryAndShutdownFlush_KeepTheExemption()
+    {
+        var cdn = new FailSecondInvalidator();
+        var service = new CdnInvalidationService(cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination
+        {
+            TimeProvider = _time,
+            Options = new StaticOptions(Options(monthlyLimit: 1)),
+            Budget = new FixedBudget(1),
+        });
+
+        await service.InvalidateNowAsync(["#honua-layer:3"], CancellationToken.None, CdnPurgeCause.Admin("admin-123"));
+        await _time.TimerIsWaiting();
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
+        await Eventually(() => cdn.Attempts == 2);
+        await _time.TimerIsWaiting();
+        _time.Advance(PurgeBackedDelivery.FirstRetryDelay);
+        await Eventually(() => cdn.Attempts == 3);
+        await service.InvalidateNowAsync(["#honua-layer:4"], CancellationToken.None, CdnPurgeCause.Admin("admin-456"));
+
+        await service.FlushPendingAsync();
+
+        cdn.Attempts.Should().Be(5, "the pending administrative settle survives shutdown with a spent budget");
+    }
+
+    [UnitTest]
+    public void Delivery_EditCannotDowngradeAnExemptPendingSettle()
+    {
+        var delivery = new PurgeBackedDelivery(_time);
+        var admin = CdnPurgeCause.Admin("admin-123");
+        var due = delivery.ScheduleSettle(["#a"], admin);
+        delivery.ScheduleSettle(["#a", "#b"], CdnPurgeCause.Edit("edit-456"));
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
+
+        var batch = delivery.TakeDueSettles(due!.Value);
+
+        batch.Batches.Should().ContainSingle(item => item.Cause == admin.AsSettle() && item.Paths.SequenceEqual(new[] { "#a" }));
+        batch.Batches.Should().ContainSingle(item => item.Cause.Reason == "edit" && item.Paths.SequenceEqual(new[] { "#b" }));
+    }
+
+    private sealed class FailSecondInvalidator : ICdnInvalidator
+    {
+        private int _attempts;
+        public int Attempts => Volatile.Read(ref _attempts);
+
+        public Task<CdnInvalidationResult> InvalidateAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default)
+            => Task.FromResult(new CdnInvalidationResult(Interlocked.Increment(ref _attempts) == 2
+                ? CdnInvalidationOutcome.Failed : CdnInvalidationOutcome.Submitted, "test"));
     }
 
     [UnitTest]

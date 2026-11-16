@@ -48,7 +48,7 @@ internal sealed partial class CdnInvalidationService(
         [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
 
     private readonly Lock _gate = new();
-    private readonly HashSet<string> _pendingEditPaths = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CdnPurgeCause> _pendingEditPaths = new(StringComparer.Ordinal);
     private DateTimeOffset _lastEditInvalidation = DateTimeOffset.MinValue;
     private DateTimeOffset? _windowClosesAt;
 
@@ -95,7 +95,7 @@ internal sealed partial class CdnInvalidationService(
             // Once the task is stopping no window timer will fire in time, so an edit is sent at once.
             if (!_stopping && (_windowClosesAt.HasValue || due > now))
             {
-                _pendingEditPaths.UnionWith(paths);
+                AddPendingPurges(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits));
                 due = due > now ? due : now;
                 if (_windowClosesAt is { } scheduled && scheduled <= due)
                 {
@@ -351,10 +351,10 @@ internal sealed record CdnPurgeCause(string Reason, string ChangeId)
     internal CdnPurgeKind Kind { get; private init; } = CdnPurgeKind.Change;
 
     // The repeat of a purge after the settle delay; it is not repeated again.
-    internal static CdnPurgeCause Settle() => new("edit", "settle") { Kind = CdnPurgeKind.Settle };
+    internal CdnPurgeCause AsSettle() => this with { Kind = CdnPurgeKind.Settle };
 
     // Purges a stopping task sends instead of leaving them to its windows.
-    internal static CdnPurgeCause Shutdown() => new("edit", "shutdown") { Kind = CdnPurgeKind.Shutdown };
+    internal CdnPurgeCause AsShutdown() => this with { Kind = CdnPurgeKind.Shutdown };
 
     internal static CdnPurgeCause Admin(string changeId) => new("admin", changeId);
 
