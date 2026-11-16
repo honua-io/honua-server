@@ -55,8 +55,13 @@ public sealed partial class ImportTypedColumnTests
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("id,lon,lat\n001,-156,21\n1,-155,21\nexternal-a,-154,21"));
         var result = await service.ImportFileAsync(new ImportRequest
         {
-            FileStream = stream, FileName = "identity.csv", TableName = "csv_numeric_alias",
-            TargetSchema = imported.Schema, SourceSrid = 4326, TargetSrid = 4326, LoadMode = ImportLoadMode.Append
+            FileStream = stream,
+            FileName = "identity.csv",
+            TableName = "csv_numeric_alias",
+            TargetSchema = imported.Schema,
+            SourceSrid = 4326,
+            TargetSrid = 4326,
+            LoadMode = ImportLoadMode.Append
         });
         result.Success.Should().BeTrue(result.ErrorMessage);
         result.TypedColumns.Should().Contain(column => column.Name == alias && column.PostgresType == "text");
@@ -84,8 +89,13 @@ public sealed partial class ImportTypedColumnTests
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("id,lon,lat\nexternal-a,-156,21"));
         var result = await service.ImportFileAsync(new ImportRequest
         {
-            FileStream = stream, FileName = "identity.csv", TableName = "csv_full_identity",
-            TargetSchema = imported.Schema, SourceSrid = 4326, TargetSrid = 4326, LoadMode = ImportLoadMode.Append
+            FileStream = stream,
+            FileName = "identity.csv",
+            TableName = "csv_full_identity",
+            TargetSchema = imported.Schema,
+            SourceSrid = 4326,
+            TargetSrid = 4326,
+            LoadMode = ImportLoadMode.Append
         });
         result.Success.Should().BeTrue(result.ErrorMessage);
         result.TypedColumns.Should().NotContain(column => column.Name == "source_id");
