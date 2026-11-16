@@ -3831,25 +3831,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-observability-incidents-incidentid",
-      "route": "/api/v1/admin/observability/incidents/{incidentId}",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsIncidentEndpointsTests.GetIncident_AbsentEpisode_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Admin.OpsIncidentEndpointsTests.GetIncident_DatabaseFailure_ReturnsUnavailableWithoutExceptionDetails",
-        "Honua.Server.Tests.Features.Admin.OpsIncidentEndpointsTests.GetIncident_IncompleteEvidence_PreservesRecordedUnknownAndExplicitUncertainty",
-        "Honua.Server.Tests.Features.Admin.OpsIncidentEndpointsTests.GetIncident_InvalidLimit_RejectsBeforeReaderInvocation",
-        "Honua.Server.Tests.Features.Admin.OpsIncidentEndpointsTests.GetIncident_OpsReadCredential_CanReadPersistedContext",
-        "Honua.Server.Tests.Features.Admin.OpsIncidentEndpointsTests.GetIncident_Unauthenticated_DoesNotReadContext"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-admin-observability-logs",
       "route": "/api/v1/admin/observability/logs",
       "method": "GET",
@@ -18608,7 +18589,6 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddLink_IncidentReference_RoundTripsAndAudits",
         "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddLink_PreservesCamelCaseAndEscapesJsonDetails",
         "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddLink_RecordsAudit",
         "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddLink_RejectsDefinedNumericResourceKind"
@@ -18626,7 +18606,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddPin_EscapesHostileEventRefInAuditJson",
-        "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddPin_IncidentVersion_RoundTripsWithoutRefreshingEvidenceTime",
         "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddPin_LinksEventOnInvestigation",
         "Honua.Server.Tests.Features.Admin.InvestigationEndpointsTests.AddPin_RejectsDefinedNumericEventKind"
       ],
@@ -19098,7 +19077,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.AcknowledgeAlert_RecordsAuditEvidence",
-        "Honua.Server.Tests.Features.Alerts.AlertLifecycleAuditAtomicityProofTests.Lifecycle_CriticalAlert_PreservesAcknowledgeAndResolve",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
@@ -19115,7 +19093,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.ResolveAlert_ReturnsNotFound_WhenLifecycleMissing",
-        "Honua.Server.Tests.Features.Alerts.AlertLifecycleAuditAtomicityProofTests.Lifecycle_CriticalAlert_PreservesAcknowledgeAndResolve",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
@@ -19132,8 +19109,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.SuppressAlert_RequiresFutureSuppressUntil",
-        "Honua.Server.Tests.Features.Alerts.AlertLifecycleAuditAtomicityProofTests.Suppress_CriticalAlert_RejectsWithoutLifecycleOrAuditIntent",
-        "Honua.Server.Tests.Features.Alerts.AlertLifecycleAuditAtomicityProofTests.Suppress_DeadlineBeyondSevenDays_RejectsWithoutLifecycleOrAuditIntent",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
