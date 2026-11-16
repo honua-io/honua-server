@@ -14,6 +14,12 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcGlobalIdEditTests
 {
+    public enum FeatureEditFailurePolicy
+    {
+        PerRow,
+        Rollback
+    }
+
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task Calculation_CannotOverwriteServerTrackingFields()
@@ -36,12 +42,12 @@ public sealed partial class GrpcGlobalIdEditTests
     }
 
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [InlineData("blocked")]
+    [InlineData("allowed")]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
-    public async Task DeleteConstraint_UsesStoredValues_AndGuardsSuccessfulWrites(bool blocked)
+    public async Task DeleteConstraint_UsesStoredValues_AndGuardsSuccessfulWrites(string name)
     {
-        var stored = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty.Add("name", blocked ? "blocked" : "allowed"));
+        var stored = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty.Add("name", name));
         _featureReader.GetAsync(Arg.Any<int>(), 7, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Feature?>(stored));
         UseLayer(TrackedResource(MetadataV2FieldType.DateTime) with
         {
@@ -57,8 +63,8 @@ public sealed partial class GrpcGlobalIdEditTests
 
         var response = await _sut.ApplyEdits(request, CallContext("delete"));
 
-        response.DeleteResults.Should().ContainSingle().Which.Success.Should().Be(!blocked);
-        if (blocked)
+        response.DeleteResults.Should().ContainSingle().Which.Success.Should().Be(name == "allowed");
+        if (name == "blocked")
         {
             AssertNothingWritten();
         }
@@ -69,10 +75,10 @@ public sealed partial class GrpcGlobalIdEditTests
     }
 
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(FeatureEditFailurePolicy.PerRow)]
+    [InlineData(FeatureEditFailurePolicy.Rollback)]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
-    public async Task ConstraintFailure_IsPerRowUnlessRollbackWasRequested(bool rollback)
+    public async Task ConstraintFailure_IsPerRowUnlessRollbackWasRequested(FeatureEditFailurePolicy failurePolicy)
     {
         UseLayer(TrackedResource(MetadataV2FieldType.DateTime) with
         {
@@ -83,10 +89,10 @@ public sealed partial class GrpcGlobalIdEditTests
             }],
         }, capabilities: null);
         ReturnWriteResult(FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7)]));
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = rollback };
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = failurePolicy == FeatureEditFailurePolicy.Rollback };
         request.Adds.Add(new Proto.Feature { Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "blocked" } } });
         request.Adds.Add(new Proto.Feature { Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "allowed" } } });
-        if (rollback)
+        if (failurePolicy == FeatureEditFailurePolicy.Rollback)
         {
             var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
             (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);

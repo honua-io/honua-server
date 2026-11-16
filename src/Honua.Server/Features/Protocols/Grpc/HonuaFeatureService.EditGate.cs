@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Grpc.Core;
-using Honua.Core.Features.Edit;
 using Honua.Core.Features.AttributeRules;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,13 +45,7 @@ internal sealed partial class HonuaFeatureService
 
         var httpContext = call.Context.GetHttpContext();
         var hooks = httpContext.RequestServices?.GetService<IFeatureEditHooks>() ?? NoOpFeatureEditHooks.Instance;
-        var scope = new FeatureEditHookScope(call.Request.ServiceId ?? "unknown", call.Request.LayerId)
-        {
-            LayerName = call.Layer.Resource.Metadata.Name,
-            UserName = httpContext.User?.Identity?.Name,
-            TraceId = httpContext.TraceIdentifier,
-            StoredRows = storedRows,
-        };
+        var scope = EditScope(call, storedRows);
         var check = new FeatureEditCheck(call.Layer.Resource, scope, batch)
         {
             EffectiveAttributes = row => EffectiveAttributes(row, storedRows),
@@ -74,6 +68,18 @@ internal sealed partial class HonuaFeatureService
             }),
         ];
         return new EditGate(batch, bounded) { Hooks = hooks, Scope = scope };
+    }
+
+    private static FeatureEditHookScope EditScope(EditCall call, IReadOnlyDictionary<long, Feature> storedRows)
+    {
+        var context = call.Context.GetHttpContext();
+        return new(call.Request.ServiceId ?? "unknown", call.Request.LayerId)
+        {
+            LayerName = call.Layer.Resource.Metadata.Name,
+            UserName = context.User?.Identity?.Name,
+            TraceId = context.TraceIdentifier,
+            StoredRows = storedRows,
+        };
     }
 
     private FeatureEditPreparation ApplyEditRules(EditCall call, FeatureEditBatch batch, IReadOnlyDictionary<long, Feature> storedRows)
