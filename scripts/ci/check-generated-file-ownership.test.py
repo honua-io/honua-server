@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real Git admission and canonical output validation fixtures."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -167,6 +168,31 @@ class OwnershipTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'symlink parent'):
             submitted.prepare(self.base, head)
         self.assertEqual(Path('docs/original/page.md').read_text(), 'canonical\n')
+
+    def test_fresh_roster_preserves_existing_provenance_contract(self):
+        roster = 'docs/gis/data/mcp-tool-roster.v1.json'
+        self.write('scripts/ci/generated-files.sh',
+                   '#!/bin/bash\nGENERATED_FILES=(\n  docs/generated\n  ' + roster + '\n)\n')
+        base = self.commit()
+        committed = dict(serverSha='a' * 40, generatedAt='2026-11-16T19:00:00Z', tools=['expected'])
+        self.write(roster, json.dumps(committed, indent=2) + '\n')
+        head = self.commit()
+        submitted.prepare(base, head)
+        self.assertFalse(Path(roster).exists())
+        fresh = dict(committed, serverSha='b' * 40, generatedAt='2026-11-16T20:00:00Z')
+        self.write(roster, json.dumps(fresh, indent=2) + '\n')
+        self.assertEqual(submitted.mismatches(base, head), [])
+        self.write(roster, json.dumps(dict(fresh, tools=['wrong']), indent=2) + '\n')
+        self.assertEqual(submitted.mismatches(base, head), [roster])
+        for field, value in [('serverSha', 'invalid'), ('generatedAt', 'not-a-date')]:
+            with self.subTest(field=field):
+                self.write(roster, json.dumps(dict(fresh, **{field: value}), indent=2) + '\n')
+                self.assertEqual(submitted.mismatches(base, head), [roster])
+        self.write(roster, json.dumps(fresh, indent=4) + '\n')
+        self.assertEqual(submitted.mismatches(base, head), [roster])
+        Path(roster).chmod(0o755)
+        self.write(roster, json.dumps(fresh, indent=2) + '\n')
+        self.assertEqual(submitted.mismatches(base, head), [roster])
 
     def test_modes_and_symlinks_cannot_match_regular_generated_bytes(self):
         head = self.source_regeneration()

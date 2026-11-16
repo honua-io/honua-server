@@ -188,6 +188,8 @@ Trusted consumer admission resolves the live PR and cancels only older producer
 generations before per-attempt validation. Observe mode retains envelope
 validation and drift reporting. Source PRs commit regenerated projections, and
 the existing architecture job verifies submitted bytes and modes after regeneration.
+The MCP roster retains its existing valid-provenance contract; its generated body
+and file mode must still match exactly.
 Trusted ownership admission requires the current validator and required invocation;
 older branches must adopt the repair. Generated-only publications retain canonical
 trunk-producer proof. No runner job or required aggregate dependency changes.

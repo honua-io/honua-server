@@ -1965,7 +1965,11 @@ protected outputs so only freshly produced bytes and modes can pass. Unproduced
 additions cannot survive the checkout, and symlink parents fail closed.
 After regeneration, the job checks every protected
 path submitted by the PR against its committed bytes and executable mode. Added
-and deleted outputs are included, and symlinks fail. It requires the PR merge
+and deleted outputs are included, and symlinks fail. The MCP roster retains its
+existing drift contract: its valid source SHA and UTC generation timestamp can
+differ between local and CI generation; every other byte and the file mode must
+match freshly generated output. No other projection receives that normalization.
+It requires the PR merge
 checkout and uses its target parent; unreadable Git state fails closed. Output
 that the PR did not change retains advisory drift reporting. No job, required
 context or aggregate dependency is added or removed.

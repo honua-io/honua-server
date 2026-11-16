@@ -2,6 +2,9 @@
 """After regeneration, require submitted projections to match canonical bytes and modes."""
 import argparse
 import importlib.util
+import datetime
+import json
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -34,6 +37,29 @@ def mismatches(base, head):
     return [path for path in supplied_paths(base, head) if not matches_head(head, path)]
 
 
+def roster_body(data):
+    # The existing roster drift contract preserves these two provenance stamps
+    # when the body matches. Fresh generation must still establish every body
+    # byte; only valid, top-level provenance values may vary between checkouts.
+    try:
+        document = json.loads(data)
+        if not re.fullmatch('[0-9a-f]{40}', document['serverSha']):
+            return None
+        datetime.datetime.strptime(document['generatedAt'], '%Y-%m-%dT%H:%M:%SZ')
+        body, count = re.subn(
+            rb'^  "(?:serverSha|generatedAt)": "[^"\r\n]*",\n', b'', data, flags=re.MULTILINE)
+        return body if count == 2 else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def same_content(path, generated, committed):
+    if path != 'docs/gis/data/mcp-tool-roster.v1.json':
+        return generated == committed
+    body = roster_body(generated)
+    return body is not None and body == roster_body(committed)
+
+
 def matches_head(head, path):
     entry = proof.git('ls-tree', '-z', head, '--', path)
     output = Path(path)
@@ -47,7 +73,7 @@ def matches_head(head, path):
         return False
     executable = bool(output.stat().st_mode & stat.S_IXUSR)
     return (executable == (mode == '100755')
-            and output.read_bytes() == proof.git('cat-file', 'blob', blob))
+            and same_content(path, output.read_bytes(), proof.git('cat-file', 'blob', blob)))
 
 
 def main():
