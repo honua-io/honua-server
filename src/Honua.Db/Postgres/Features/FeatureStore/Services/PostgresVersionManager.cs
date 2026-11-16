@@ -55,7 +55,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         // Sequence allocations include uncommitted writes; the merge base must only include committed changes.
         const string sql = """
             WITH committed_generation AS (
-                SELECT COALESCE(MAX(generation), 0) AS generation FROM honua.feature_changes
+                SELECT honua.feature_change_read_horizon() AS generation
             )
             INSERT INTO honua.gdb_versions (version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description)
             SELECT @name, @owner, @parent, @access, 0, generation, generation, @description
