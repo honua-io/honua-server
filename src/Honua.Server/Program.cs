@@ -251,7 +251,6 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
-var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
@@ -274,21 +273,6 @@ var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled
 if (tracingSection.Exists() || tracingEnabled)
 {
     builder.AddTelemetryDefaults();
-}
-
-// Add Redis if configured, otherwise fallback to in-memory cache
-if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-{
-    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = redisCacheConnectionString;
-        options.InstanceName = cacheKeyPrefix;
-    });
-}
-else
-{
-    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
@@ -754,6 +738,9 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+builder.Services.AddScoped<Honua.Infrastructure.Attachments.AttachmentUploadContentVerifier>();
+builder.Services.AddScoped<Honua.Core.Features.Attachments.Abstractions.IAttachmentUploadPublisher,
+    Honua.Infrastructure.Attachments.AttachmentUploadPublisher>();
 
 // Federated-query planning and source configuration (#341).
 // Experimental gate (PA-001): federated query is off by default. Set
@@ -1938,6 +1925,7 @@ app.MapFeatureOverviewEndpoints();
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
+app.MapAgentAuthorityEndpoints();
 
 // Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
 // the per-tenant billing usage export. Admin-authorized.
