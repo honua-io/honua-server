@@ -12,6 +12,7 @@ using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Tests.Realtime;
 
@@ -41,7 +42,7 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
     }
 
     [IntegrationTest(Timeout = 120000)]
-    public async Task ReadHorizon_ReplacedBody_IsWhatTrackerAndVersionCreationUse()
+    public async Task ReadHorizon_ReplacedBody_IsWhatCursorReadersUse()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734302);
         var before = await layer.HeadAsync();
@@ -54,6 +55,21 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
         try
         {
             (await CreateTracker().GetCurrentGenerationAsync()).Should().Be(published);
+
+            var replicas = new PostgresReplicaRepository(Connections());
+            var replica = await replicas.RegisterAtCurrentGenerationAsync(new ReplicaRecord
+            {
+                ReplicaId = Guid.NewGuid().ToString("N"),
+                ReplicaName = "horizon",
+                ServiceId = "horizon",
+                SyncModel = "perReplica",
+                LayerIds = [layer.LayerId],
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastSyncTime = DateTimeOffset.UtcNow,
+                LastSyncGeneration = 0
+            });
+            replica.LastSyncGeneration.Should().Be(published);
+            (await replicas.GetAsync(replica.ReplicaId))!.Value.LastSyncGeneration.Should().Be(published);
 
             var version = await new PostgresVersionManager(Connections()).CreateAsync(
                 new CreateVersionRequest($"horizon_{Guid.NewGuid():N}", "sde", VersionAccess.Public));
@@ -120,6 +136,66 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
         {
             await ExecuteAsync(MigratedBody);
         }
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task ReadHorizon_OpenWriter_DoesNotPublishUntilCommit()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734305);
+        await layer.InsertAsync("""{"name":"committed"}""");
+        var committed = await layer.HeadAsync();
+        await using var connection = await database.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var insert = new NpgsqlCommand("""
+            INSERT INTO honua.features (layer_id, attributes)
+            VALUES (@layer, '{"name":"in flight"}'::jsonb)
+            RETURNING objectid
+            """, connection, transaction);
+        insert.Parameters.AddWithValue("layer", layer.LayerId);
+        var objectId = (long)(await insert.ExecuteScalarAsync())!;
+
+        (await ReadHorizonAsync()).Should().Be(committed);
+        (await CreateLog().ReadAsync(
+            new FeatureChangeLogQuery(committed, null, null, [layer.LayerId], 10), CancellationToken.None))
+            .Should().BeEmpty();
+
+        await transaction.CommitAsync();
+        var published = await ReadHorizonAsync();
+        published.Should().BeGreaterThan(committed);
+        var resumed = await CreateLog().ReadAsync(
+            new FeatureChangeLogQuery(committed, null, null, [layer.LayerId], 10), CancellationToken.None);
+        var change = resumed.Should().ContainSingle().Which;
+        change.ObjectId.Should().Be(objectId);
+        change.Cursor.Should().Be(published);
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task ReadHorizon_RolledBackAllocation_DoesNotPublishAnEmptySequenceHead()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734306);
+        await layer.InsertAsync("""{"name":"committed"}""");
+        var committed = await layer.HeadAsync();
+        await using var connection = await database.DataSource.OpenConnectionAsync();
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var insert = new NpgsqlCommand("""
+                INSERT INTO honua.features (layer_id, attributes)
+                VALUES (@layer, '{"name":"rolled back"}'::jsonb)
+                """, connection, transaction);
+            insert.Parameters.AddWithValue("layer", layer.LayerId);
+            await insert.ExecuteNonQueryAsync();
+            await transaction.RollbackAsync();
+        }
+
+        await using var sequence = new NpgsqlCommand("SELECT last_value FROM honua.sync_generation", connection);
+        ((long)(await sequence.ExecuteScalarAsync())!).Should().BeGreaterThan(committed);
+        (await ReadHorizonAsync()).Should().Be(committed);
+        (await CreateTracker().GetCurrentGenerationAsync()).Should().Be(committed);
+
+        var objectId = await layer.InsertAsync("""{"name":"after rollback"}""");
+        var resumed = await CreateLog().ReadAsync(
+            new FeatureChangeLogQuery(committed, null, null, [layer.LayerId], 10), CancellationToken.None);
+        resumed.Should().ContainSingle().Which.ObjectId.Should().Be(objectId);
     }
 
     private PostgresChangeTracker CreateTracker() => new(Connections());
