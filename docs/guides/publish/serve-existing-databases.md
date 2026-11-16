@@ -71,7 +71,7 @@ Run `POST /api/v1/admin/connections/{connectionId}/layers` with this body:
 }
 ```
 
-Returns `201 Created` with the new `layerId`. See [Publish layers](publish-layers.md) for the full request options and protocol checks.
+Immediate publication returns `201 Created` with the layer in `data` and its persistent ID in `data.storageLayerId`. Background publication returns `202 Accepted` with `data.jobId` and `data.statusUrl`; poll that status URL until a terminal state. A `Completed` job includes `data.storageLayerId`; a failed or cancelled job has no completed layer result. See [Publish layers](publish-layers.md) for the full workflow, request options, and protocol checks.
 
 ## Verify
 
@@ -87,7 +87,7 @@ Open `http://localhost:8080/ogc/features/collections` in a browser and confirm t
 - **`Cannot specify both Password and SecretReference` (400)** — supply exactly one credential mechanism.
 - **`secretReference` rejected (400)** — the value is not a whole `provider:identifier` reference, or the operator has not permitted it under `Security__RequestSecretReferences__*`.
 - **Table missing from discovery** — discovery lists tables with a registered geometry column; confirm the table has a typed geometry column and the connection user has SELECT on it.
-- **Publish returns `409 Conflict`** — a layer with that name already exists in the target service; pick another `layerName`.
+- **Publish returns `409 Conflict`** — inspect the error and check the connection’s published layers. A source-backed table may already be published under a different display name; reuse that publication. Changing `layerName` does not bypass the one-layer-per-source-table rule.
 - **Read-only provider table cannot be edited** — DuckDB, SQL Server, Oracle, and MySQL providers reject edits by design; copy data into PostGIS for editable layers.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
