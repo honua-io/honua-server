@@ -79,3 +79,9 @@ Snapshot xmin can also be held back by transactions in other databases on the sa
 PostgreSQL cluster. This conservatively delays publication; measure that lag under
 the deployed workload before activating the horizon. The driver does not replace
 the reader function or narrow either writer lock.
+
+The driver runs only where the PostgreSQL outbox dispatcher is hosted. Control-plane
+event Lambda hosts omit database polling loops, and providers without transactional
+outbox capability skip dispatch. Before activation, establish a running publisher for
+every database whose readers will use the persisted prefix; a writer-only host does
+not advance it by itself. This stage does not add another publisher for those hosts.
