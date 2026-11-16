@@ -2,6 +2,7 @@
 """Read-only heavy runner selection and hosted fallback contracts."""
 import json
 import os
+import runpy
 import socket
 from pathlib import Path
 import subprocess
@@ -94,7 +95,7 @@ esac
         self.assertEqual(job['outputs']['runner'], '${{ steps.select.outputs.runner || toJSON(inputs.hosted-runner) }}')
         checkout = job['steps'][0]
         self.assertEqual(checkout['id'], 'trusted-base')
-        self.assertEqual(checkout['with']['ref'], '${{ github.event.pull_request.base.sha }}')
+        self.assertEqual(checkout['with']['ref'], "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}")
         self.assertFalse(checkout['with']['persist-credentials'])
         for step in job['steps']:
             self.assertIn("github.event_name == 'pull_request'", step['if'])
@@ -103,6 +104,41 @@ esac
             self.assertLessEqual(step['timeout-minutes'], 2)
         for step in job['steps'][1:]:
             self.assertIn("steps.trusted-base.outcome == 'success' &&", step['if'])
+
+    def test_selector_admission_uses_only_trusted_event_refs(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/advisory-runner-select.yml').read_text())
+        steps = workflow['jobs']['select']['steps']
+        evaluate = runpy.run_path(str(ROOT / 'scripts/ci/fixtures/validate-pr-workflow-load.py'))['evaluate']
+        repository = 'honua-io/honua-server'
+        scenarios = (
+            ('pull_request', 'refs/pull/1/merge', repository, True),
+            ('pull_request', 'refs/pull/1/merge', 'fork/honua-server', False),
+            ('schedule', 'refs/heads/trunk', None, True),
+            ('workflow_dispatch', 'refs/heads/trunk', None, True),
+            ('workflow_dispatch', 'refs/heads/topic', None, False),
+            ('workflow_dispatch', 'refs/tags/trunk', None, False),
+            ('schedule', 'refs/heads/topic', None, False),
+            ('push', 'refs/heads/trunk', None, False),
+            ('pull_request_target', 'refs/heads/trunk', 'fork/honua-server', False),
+        )
+        for event_name, ref, head_repository, allowed in scenarios:
+            event = {'event_name': event_name, 'repository': repository, 'ref': ref, 'sha': 'dispatch-sha',
+                     'event': {'repository': {'default_branch': 'trunk'}}}
+            if head_repository:
+                event['event']['pull_request'] = {'head': {'repo': {'full_name': head_repository}},
+                                                  'base': {'sha': 'base-sha'}}
+            for configured in (False, True):
+                for checkout_outcome in ('success', 'failure'):
+                    for index, step in enumerate(steps):
+                        condition = step['if'].replace('vars.HONUA_HEAVY_RUNNER', "'configured'" if configured else "''")
+                        condition = condition.replace('steps.trusted-base', "steps['trusted-base']")
+                        with self.subTest(event=event_name, ref=ref, head=head_repository,
+                                          configured=configured, outcome=checkout_outcome, step=index):
+                            actual = evaluate(condition, event, {'steps': {'trusted-base': {'outcome': checkout_outcome}}})
+                            self.assertEqual(actual, allowed and configured and (index == 0 or checkout_outcome == 'success'))
+            if allowed:
+                self.assertEqual(evaluate(steps[0]['with']['ref'], event),
+                                 'base-sha' if event_name == 'pull_request' else 'dispatch-sha')
 
     def test_codeql_extraction_obeys_the_runner_slice_budget(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/codeql.yml').read_text())

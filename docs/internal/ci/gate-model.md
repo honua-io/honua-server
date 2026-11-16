@@ -1682,13 +1682,17 @@ hygiene job.
 CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
 `advisory-runner-select.yml` before allocating compute. Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
-and heartbeat. A heartbeat no older than 90 seconds must match the current
+and heartbeat. Scheduled and manually dispatched runs on the repository default
+branch use scripts pinned to the triggering commit. Other dispatch refs remain
+hosted. A heartbeat no older than 90 seconds must match the current
 instance and advertise more than two idle heavy runners: two stay free for
 required PR Gate jobs. Otherwise the job uses its existing
 hosted label. Missing configuration, credentials, read failures and selector
 failure all fall back to hosted compute. This selector never wakes or resizes
-the host; AWS retries and step timeouts are bounded. The current role trusts PR
-subjects only, so scheduled/manual/full-CI callers retain hosted compute.
+the host; AWS retries and step timeouts are bounded. Default-branch selection
+also requires the build-host role trust policy to admit that branch subject;
+until the companion IaC policy is applied, these callers fall back to hosted
+compute. No selector change grants AWS permissions or provisions capacity.
 
 Each consumer also checks the PR's repository before accepting the selected
 runner and falls back to hosted compute for forks, independently of the selector.
