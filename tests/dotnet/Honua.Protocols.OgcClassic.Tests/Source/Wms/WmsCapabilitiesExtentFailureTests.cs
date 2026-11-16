@@ -36,7 +36,7 @@ public sealed class WmsCapabilitiesExtentFailureTests
         await using var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(CapabilitiesExtentFixture.PublishedLayers(
-                MetadataV2ServiceProtocols.Wms, MetadataV2PublicationType.WmsLayer))
+                MetadataV2ServiceProtocols.Wms, MetadataV2LayerType.WmsLayer))
             .ReplaceService<ICoordinateTransformService>(transform);
         await fixture.InitializeAsync();
 
@@ -65,7 +65,7 @@ public sealed class WmsCapabilitiesExtentFailureTests
         await using var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(CapabilitiesExtentFixture.PublishedLayers(
-                MetadataV2ServiceProtocols.Wms, MetadataV2PublicationType.WmsLayer))
+                MetadataV2ServiceProtocols.Wms, MetadataV2LayerType.WmsLayer))
             .ReplaceService<ICoordinateTransformService>(new CapabilitiesExtentFixture.ExtentTransformProbe(false))
             .ReplaceService<ILayerStyleCatalog>(styles);
         await fixture.InitializeAsync();

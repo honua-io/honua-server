@@ -14,7 +14,7 @@ internal static class AdminLayerConfigurationTargets
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         var target = snapshot.ResolveStorageResource(storageLayerId);
-        return target.IsAmbiguous || target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table
+        return target.IsAmbiguous || target.Resource?.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table
             ? target
             : default;
     }
@@ -22,7 +22,7 @@ internal static class AdminLayerConfigurationTargets
     internal static async Task<MetadataV2StorageResourceResolution> WriteAsync(
         IMetadataV2GraphStore graphStore,
         int storageLayerId,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        Func<MetadataV2Object, MetadataV2Object> mutate,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(graphStore);

@@ -75,7 +75,9 @@ public sealed partial class StudioDraftOperationRuntimeTests
             var preserved = await store.GetDraftAsync(draft.DraftId);
             preserved.Should().NotBeNull();
             preserved!.OwnerId.Should().Be("new-owner");
-            preserved.Envelope.Should().BeEquivalentTo(draft.Envelope);
+            preserved.Envelope.Should().BeEquivalentTo(draft.Envelope, options => options
+                .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation).Should().BeTrue())
+                .WhenTypeIs<JsonElement>());
         }
         else
         {
@@ -114,7 +116,9 @@ public sealed partial class StudioDraftOperationRuntimeTests
 
         result.Operation.Status.Should().Be(OperationHandleStatus.Failed);
         result.Operation.Result!.Details["errorKind"].Should().Be("conflict");
-        (await store.GetDraftAsync(draft.DraftId)).Should().BeEquivalentTo(draft);
+        (await store.GetDraftAsync(draft.DraftId)).Should().BeEquivalentTo(draft, options => options
+            .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation).Should().BeTrue())
+            .WhenTypeIs<JsonElement>());
     }
 
     [UnitTheory]

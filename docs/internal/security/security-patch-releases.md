@@ -19,11 +19,18 @@ ECS on Fargate is the deployment target this covers; Lambda images are out of sc
 
 The release rescan never writes advisory ids, package names or digests into a public issue.
 
-- **Private tracker (intended path).** Set the repository secret `SECURITY_FINDINGS_TOKEN`
-  (a fine-grained token with Issues: read and write on the private security tracker only)
-  and the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of that tracker). The
+- **Private tracker (intended path).** Set `SECURITY_FINDINGS_TOKEN` (a fine-grained token
+  with Issues: read and write on the private security tracker only) as a secret of the
+  `security-tracker` environment, whose deployment rule admits trunk only, and keep no
+  repository secret of that name: a repository secret is readable by a workflow on any branch.
+  A manual run of the security nightly from another branch therefore stops at the environment
+  and files nothing. Set the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of
+  that tracker). The
   report job then opens one issue per release, platform and advisory with the package, fixed
-  version and due date, and skips findings that already have an open issue.
+  version and due date, and skips findings that already have an open issue. Before reading
+  findings, it checks the destination repository's visibility through the API. A public
+  destination or failed visibility lookup fails the job before any issue is read or written;
+  correct the destination or token access, then rerun the report.
 - **Fallback.** Without both values the job opens a single public issue, *Security maintenance:
   a supported release image needs a patch release*, with counts only. A maintainer files the
   detail in the private tracker by hand from the run's `release-image-security-*` artifacts.
@@ -70,9 +77,11 @@ versions, a package update voids the decision and the finding comes back for rev
 add image findings to `.trivyignore`: ignore entries hide findings, VEX documents them. The
 one remaining entry, CVE-2025-6965 (bundled SQLite in `SQLitePCLRaw.lib.e_sqlite3`, no
 upstream fix, kept in step with the NuGet audit suppression), is read by the trunk JIT scan
-and by the `ci.yml` image gate (Trivy's default ignore file). The release rescan, the
-release-asset scan and the `release-bundle.yml` gate use an empty ignore file and report it
-as an unfixed finding. Move it
+and by the `ci.yml` image gate (Trivy's default ignore file). The release rescan and release-asset scan use empty ignore files and report it
+as an unfixed finding. The `release-bundle.yml` gate uses `.trivyignore-release`. `.trivyignore-release` holds only documented, time-boxed exceptions
+that the release gate script (`scripts/ci/trivy-release-gate.sh`, which does not read VEX)
+must honour; each entry states the package, why it does not apply, the owner and an expiry.
+Move it
 to a VEX decision once its runtime reachability is established, or remove it when a fix ships.
 
 Do not mark a shell or command-line package (`dash`, `bash`, `tar`, `coreutils`,

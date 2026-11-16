@@ -41,18 +41,11 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
                         definition,
                         sp.GetRequiredService<IOperationSecretStore>()));
             }
-            services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminOperateOperationExecutor(
-                definition,
-                descriptor,
-                sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<IHttpContextAccessor>(),
-                sp.GetService<IAdminApiKeyStore>(),
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<OperationLineageAttestationStore>(),
-                sp.GetRequiredService<IOperationSecretStore>()));
+            services.AddDeferredOperationExecutor(definition.OperationId,
+                sp => AdminOperateOperationExecutor.Create(sp, definition, descriptor));
         }
 
-        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        AdminOperationLoopbackTls.AddClient(services, AdminOperateOperationExecutor.HttpClientName);
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         return services;
     }

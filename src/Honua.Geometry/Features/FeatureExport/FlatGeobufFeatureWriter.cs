@@ -21,18 +21,13 @@ using GeometryType = FlatGeobuf.GeometryType;
 
 namespace Honua.Core.Features.FeatureExport;
 
-/// <summary>
-/// Encodes already authorized, projected feature pages without a database-native property encoder.
-/// Header and feature tables use the format's generated FlatBuffers schema; the optional index
-/// contains complete rows in Hilbert order. Missing and empty geometries retain their rows.
-/// </summary>
 internal static class FlatGeobufFeatureWriter
 {
     private const ushort IndexNodeSize = 16;
 
     internal sealed class ExportOptions
     {
-        internal required MetadataV2Resource Resource { get; init; }
+        internal required MetadataV2Object Resource { get; init; }
         internal required FeatureQuery Query { get; init; }
         internal required IEnumerable<MetadataV2Field> ProjectedFields { get; init; }
         internal int? OutputSrid { get; init; }

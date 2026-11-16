@@ -74,7 +74,7 @@ public sealed class BooleanMutationValidationTests
     public void ValidateAttributes_TypedBooleanAndNull_PreserveValues(
         string json, bool? expected, ValidationExtensions.AttributeValidationMode mode)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new() { Name = "active", Type = MetadataV2FieldType.Boolean, Nullable = true }]
         };
@@ -92,7 +92,7 @@ public sealed class BooleanMutationValidationTests
         }
     }
 
-    private static MetadataV2Resource Resource() => new()
+    private static MetadataV2Object Resource() => new()
     {
         SchemaFields =
         [

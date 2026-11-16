@@ -18,7 +18,7 @@ public sealed class ResourceValidator : IResourceValidator
         _v2Provider = v2Provider ?? throw new ArgumentNullException(nameof(v2Provider));
     }
 
-    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+    public async Task<ResourceValidationResult<MetadataV2Object>> ValidateStorageLayerV2Async(
         int storageLayerId,
         CancellationToken cancellationToken = default)
     {
@@ -26,16 +26,16 @@ public sealed class ResourceValidator : IResourceValidator
         var target = snapshot.ResolveStorageResource(storageLayerId);
         if (target.IsAmbiguous)
         {
-            return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Resource>(target.ConflictDetail!);
+            return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Object>(target.ConflictDetail!);
         }
         var resource = target.Resource;
         return resource is null
-            ? ResourceValidationResult.NotFound<MetadataV2Resource>(
+            ? ResourceValidationResult.NotFound<MetadataV2Object>(
                 ErrorMessages.NotFound.FormatLayer(storageLayerId))
             : ResourceValidationResult.Success(resource);
     }
 
-    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
+    public async Task<ResourceValidationResult<MetadataV2Object>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default)
     {
@@ -51,7 +51,7 @@ public sealed class ResourceValidator : IResourceValidator
         // such as OGC API Maps unable to resolve the layer). Fall back to any
         // matching publication's resource so existing single-publication and
         // non-storage-backed cases keep their previous behaviour.
-        MetadataV2Resource? firstResource = null;
+        MetadataV2Object? firstResource = null;
         foreach (var candidate in snapshot.Graph.Publications)
         {
             if (candidate.LayerIndex != layerId)
@@ -79,20 +79,20 @@ public sealed class ResourceValidator : IResourceValidator
 
         if (firstResource is null)
         {
-            return ResourceValidationResult.NotFound<MetadataV2Resource>(
+            return ResourceValidationResult.NotFound<MetadataV2Object>(
                 ErrorMessages.NotFound.FormatLayer(layerId));
         }
 
         return ResourceValidationResult.Success(firstResource);
     }
 
-    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
+    public async Task<ResourceValidationResult<MetadataV2Object>> ValidateCollectionV2Async(
         string collectionId,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {
-            return ResourceValidationResult.InvalidIdentifier<MetadataV2Resource>(
+            return ResourceValidationResult.InvalidIdentifier<MetadataV2Object>(
                 ErrorMessages.Validation.CollectionIdRequired);
         }
 
@@ -125,7 +125,7 @@ public sealed class ResourceValidator : IResourceValidator
             }
         }
 
-        return ResourceValidationResult.NotFound<MetadataV2Resource>(
+        return ResourceValidationResult.NotFound<MetadataV2Object>(
             ErrorMessages.NotFound.FormatCollection(collectionId));
     }
 
@@ -385,13 +385,13 @@ public sealed class ResourceValidator : IResourceValidator
 
     private static bool IsPublicationTypeCompatible(
         string protocol,
-        MetadataV2PublicationType publicationType)
+        MetadataV2LayerType publicationType)
         => ServiceProtocols.IsPreferredPublicationType(protocol, publicationType) ||
            // MapServer draws and VectorTileServer tiles feature layers, so a split
            // service's feature publication can answer either protocol.
            ((string.Equals(protocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase) ||
              string.Equals(protocol, ServiceProtocols.VectorTileServer, StringComparison.OrdinalIgnoreCase)) &&
-            publicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            publicationType == MetadataV2LayerType.EsriFeatureLayer);
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)
     {

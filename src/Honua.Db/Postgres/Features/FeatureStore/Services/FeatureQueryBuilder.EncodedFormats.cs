@@ -17,7 +17,7 @@ internal sealed partial class FeatureQueryBuilder
     private CoreParameterizedQuery BuildEncodedBinaryQuery(
         string encoderFunction,
         bool includeIndex,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType)
     {
@@ -78,7 +78,7 @@ internal sealed partial class FeatureQueryBuilder
 
     private static void AppendEncodedBinaryAttributeColumns(
         StringBuilder sql,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureQuery query,
         ref int paramIndex,
         List<object> parameters)
@@ -103,7 +103,7 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    internal static IEnumerable<MetadataV2Field> GetEncodedBinaryAttributeFields(MetadataV2Resource resource, FeatureQuery query)
+    internal static IEnumerable<MetadataV2Field> GetEncodedBinaryAttributeFields(MetadataV2Object resource, FeatureQuery query)
     {
         // Field-level security (#1940): drop masked columns from the binary-format
         // projection regardless of the requested outFields (fail-secure).

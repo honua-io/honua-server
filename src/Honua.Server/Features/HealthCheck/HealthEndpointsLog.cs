@@ -5,6 +5,9 @@ namespace Honua.Server.Features.HealthCheck;
 
 internal static partial class HealthEndpointsLog
 {
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deep health probe could not verify its dependencies")]
+    public static partial void DeepProbeFailed(ILogger logger, Exception exception);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to retrieve performance metrics")]
     public static partial void PerformanceMetricsFailed(ILogger logger, Exception exception);
 

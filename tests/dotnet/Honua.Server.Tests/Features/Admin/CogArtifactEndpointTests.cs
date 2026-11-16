@@ -431,9 +431,9 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    private static MetadataV2Publication ImagePublication(MetadataV2Graph graph)
+    private static MetadataV2Layer ImagePublication(MetadataV2Graph graph)
         => graph.Publications.Single(publication => publication.LayerIndex == WebAppFixture.TestLayerId &&
-            publication.PublicationType == MetadataV2PublicationType.EsriImageLayer);
+            publication.PublicationType == MetadataV2LayerType.EsriImageLayer);
 
     private void SetGraph(MetadataV2Graph graph)
         => _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()

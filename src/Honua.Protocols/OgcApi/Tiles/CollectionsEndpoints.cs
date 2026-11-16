@@ -81,7 +81,7 @@ internal static class CollectionsEndpoints
 
             // Walk OGC API Tiles publications: each (resource, service) pair gated on
             // protocol enablement + access policy. Dedupe by resource (prefer IsPrimary).
-            var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
+            var byResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Service Service, MetadataV2Object Resource)>(StringComparer.Ordinal);
             var requiresAuth = false;
             var hasDenied = false;
             var totalPublications = snapshot.Graph.Publications.Count(snapshot.IsRoutable);
@@ -294,8 +294,8 @@ internal static class CollectionsEndpoints
     }
 
     private static async Task<CollectionInfo> CreateCollectionAsync(
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         HttpContext context,
         IFeatureReader featureReader,
@@ -432,9 +432,6 @@ internal static partial class OgcTilesCollectionsEndpointLogging
     public static partial void LogCollectionQueryFailed(ILogger logger, string collectionId, Exception exception);
 }
 
-/// <summary>
-/// Logger category for OGC Tiles collections endpoints.
-/// </summary>
 internal sealed class OgcTilesCollectionsLog
 {
 }

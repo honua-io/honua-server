@@ -173,10 +173,10 @@ public sealed class QueryOnlyCompositeRelationshipApplyTests
     private static MetadataV2GraphSnapshot Snapshot(string etag, MetadataV2Graph graph)
         => new(graph, etag, DateTimeOffset.UnixEpoch);
 
-    private static MetadataV2Graph Graph(params MetadataV2Resource[] resources)
+    private static MetadataV2Graph Graph(params MetadataV2Object[] resources)
         => new() { Revision = 4, Resources = resources };
 
-    private static MetadataV2Resource Resource(int layerId, bool canModify = false, string? name = null)
+    private static MetadataV2Object Resource(int layerId, bool canModify = false, string? name = null)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -185,7 +185,7 @@ public sealed class QueryOnlyCompositeRelationshipApplyTests
                 Name = name ?? $"layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
             },
             SchemaFields = [new MetadataV2Field { Name = "Join_ID", Type = MetadataV2FieldType.Integer }],
-            Editing = new MetadataV2ResourceEditing { CanModify = canModify }
+            Editing = new MetadataV2ObjectEditing { CanModify = canModify }
         };
 
     private static MigrationRelationshipApplyRequest Request(string id, int origin, int related, string role)

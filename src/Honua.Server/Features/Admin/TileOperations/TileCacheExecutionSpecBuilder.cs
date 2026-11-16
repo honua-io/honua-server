@@ -10,6 +10,8 @@ internal static class TileCacheExecutionSpecBuilder
 {
     private const string DefaultTileMatrixSetId = "WebMercatorQuad";
 
+    public const string PairedPublishOperation = "paired-publish";
+
     public static ExecutionJobSpec Build(
         TileOperationStartRequest request,
         string? schemaName,
@@ -77,6 +79,16 @@ internal static class TileCacheExecutionSpecBuilder
         if (!string.IsNullOrWhiteSpace(request.GenerationId))
         {
             parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PublicationId))
+        {
+            parameters[TileCacheJobParameterKeys.PublicationId] = request.PublicationId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.IdentityField))
+        {
+            parameters[TileCacheJobParameterKeys.IdentityField] = request.IdentityField;
         }
 
         if (!string.IsNullOrWhiteSpace(schemaName))
@@ -207,6 +219,8 @@ internal static class TileCacheExecutionSpecBuilder
         parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
         parameters.TryGetValue(TileCacheJobParameterKeys.Compression, out var tileCompression);
+        parameters.TryGetValue(TileCacheJobParameterKeys.PublicationId, out var publicationId);
+        parameters.TryGetValue(TileCacheJobParameterKeys.IdentityField, out var identityField);
         if (!string.IsNullOrWhiteSpace(tileCompression) && !TileArchiveCompression.IsSupported(tileCompression))
         {
             error = $"invalid tile-cache parameter 'compression'; expected one of: {TileArchiveCompression.SupportedValues}";
@@ -230,6 +244,8 @@ internal static class TileCacheExecutionSpecBuilder
             Bbox = bbox,
             MaxTiles = maxTiles,
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
+            PublicationId = string.IsNullOrWhiteSpace(publicationId) ? null : publicationId,
+            IdentityField = string.IsNullOrWhiteSpace(identityField) ? null : identityField,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
             TileCompression = TileArchiveCompression.Normalize(tileCompression),
         };
@@ -269,10 +285,10 @@ internal static class TileCacheExecutionSpecBuilder
     private static string NormalizeOperation(string? operation)
     {
         var normalized = operation?.Trim().ToLowerInvariant();
-        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish"))
+        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or PairedPublishOperation))
         {
             throw new ArgumentException(
-                "Operation must be one of: seed, warm, invalidate, purge, archive, publish.",
+                "Operation must be one of: seed, warm, invalidate, purge, archive, publish, paired-publish.",
                 nameof(operation));
         }
 

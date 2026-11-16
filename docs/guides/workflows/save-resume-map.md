@@ -1,7 +1,7 @@
 ---
 type: "guide"
 title: "Save, reopen, and resume a map"
-description: "Retain an exact composition and resume it in a new session without overwriting unrelated changes."
+description: "Retain an exact Map and resume it in a new session without overwriting unrelated changes."
 tags:
   - "gis"
   - "domain-language"
@@ -16,7 +16,7 @@ sources:
     resource: "/studio/mcp-tools.md"
 workflow:
   profile: "honua.gis-workflow/v1"
-  intent: "Retain an exact composition and resume it in a new session without overwriting unrelated changes."
+  intent: "Retain an exact Map and resume it in a new session without overwriting unrelated changes."
   inputs:
     -
       name: "map"
@@ -83,7 +83,7 @@ workflow:
         - "Save this draft under its ownership and tenant rules."
       idempotency: "Inspect the returned item/version identity before repeating an uncertain save."
       checks:
-        - "Saved version matches the intended composition and dependencies."
+        - "Saved version matches the intended Map and dependencies."
       recovery:
         - "Preserve the saved version; reconcile a conflict from the latest draft rather than overwriting it."
     -
@@ -129,7 +129,7 @@ workflow:
         - "Read the saved item and create an owned draft."
       idempotency: "Reuse a known reopened draft when appropriate; avoid duplicate drafts after an unknown response."
       checks:
-        - "The reopened composition matches the selected version."
+        - "The reopened Map matches the selected version."
         - "All required references resolve for the current actor."
       recovery:
         - "If resuming fails, retain the immutable version and diagnose missing authority or dependencies."
@@ -139,11 +139,11 @@ workflow:
 
 Saving, local undo, reopening, and changing a published version are distinct operations. A [draft](../../concepts/domain/content-version.md) remains mutable; an immutable saved version gives a stable basis for continuation.
 
-Save the validated composition and record its returned identity and hash. A new conversation does not inherit the previous actor's authority. Hand off the goal and non-secret identifiers, then retrieve current server state.
+Save the validated Map and record its returned identity and hash. A new conversation does not inherit the previous actor's authority. Hand off the goal and non-secret identifiers, then retrieve current server state.
 
-Reopen the selected version into a new draft and verify the composition and data references. If the user means “restore what viewers see,” use the existing publication rollback/version-selection contract separately. A save or reopen does not change the audience.
+Reopen the selected version into a new draft and verify the Map and data references. If the user means “restore what viewers see,” use the existing activation rollback/version-selection contract separately. A save or reopen does not change the audience.
 
-When simultaneous edits produce a generation conflict, compare the intended change with the current draft. Preserve unrelated work. Use the existing composition history for supported local undo/redo; do not describe a destructive reset as undo.
+When simultaneous edits produce a generation conflict, compare the intended change with the current draft. Preserve unrelated work. Use the existing Draft history for supported local undo/redo; do not describe a destructive reset as undo.
 
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 

@@ -92,7 +92,7 @@ public sealed class ReadPolicyMetadataFailureTests
         Assert.Equal(0, graph.Calls);
     }
 
-    private static MetadataV2GraphSnapshot CreateSnapshot(MetadataV2Resource resource, int serviceCount)
+    private static MetadataV2GraphSnapshot CreateSnapshot(MetadataV2Object resource, int serviceCount)
         => new(new MetadataV2Graph
         {
             Resources = [resource],
@@ -134,7 +134,7 @@ public sealed class ReadPolicyMetadataFailureTests
 
     private sealed class PolicyFixture
     {
-        internal MetadataV2Resource Resource { get; } = new() { Metadata = new() { Id = "resource", Name = "parcels" } };
+        internal MetadataV2Object Resource { get; } = new() { Metadata = new() { Id = "resource", Name = "parcels" } };
         internal RowLevelSecurityFilterSource Rows { get; }
         internal FieldMaskSource Masks { get; }
         internal LayerReadSecurityResolver Resolver { get; }

@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Events;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
@@ -27,6 +28,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.TestKit.Helpers;
 
@@ -559,6 +561,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.AddSingleton<ICoordinateTransformService, IdentityCoordinateTransformService>();
                 services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
                 services.AddScoped<ISqlFilterTranslator, StringIdSqlFilterTranslator>();
+                services.Replace(ServiceDescriptor.Singleton(Substitute.For<IFeatureChangeEventPublisher>()));
 
                 // V2-ported OGC API Features endpoints resolve collections through
                 // IMetadataV2GraphProvider; mirror the v1 StringIdLayerCatalog content
@@ -575,7 +578,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
 
     private sealed class StringIdSqlFilterTranslator : ISqlFilterTranslator
     {
-        public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+        public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
             => TranslateCore(filter);
 
         private static SqlFragment TranslateCore(FilterExpression filter)
@@ -707,13 +710,13 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
             .AddResource(
                 "res-string-id-layer",
                 "String ID Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddResource(
                 "res-numeric-name-layer",
                 "123",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddPublication(

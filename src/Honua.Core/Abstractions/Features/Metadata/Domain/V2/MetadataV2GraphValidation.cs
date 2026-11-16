@@ -56,7 +56,7 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateCompositeRelationships(
         List<string> errors,
-        Dictionary<string, MetadataV2Resource> resourcesById)
+        Dictionary<string, MetadataV2Object> resourcesById)
     {
         foreach (var resource in resourcesById.Values)
         {
@@ -165,7 +165,7 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateResources(
         List<string> errors,
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
     {
         foreach (var resource in resources)
@@ -200,7 +200,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceSubtypes(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceSubtypes(List<string> errors, MetadataV2Object resource)
     {
         var subtypes = resource.Subtypes;
         if (subtypes is null)
@@ -228,7 +228,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceAttributeRules(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceAttributeRules(List<string> errors, MetadataV2Object resource)
     {
         var rules = resource.AttributeRules;
         if (rules.Count == 0)
@@ -270,7 +270,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceExtrusion(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceExtrusion(List<string> errors, MetadataV2Object resource)
     {
         if (resource.Extrusion is null)
         {
@@ -283,7 +283,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceSymbology3D(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceSymbology3D(List<string> errors, MetadataV2Object resource)
     {
         var symbology = resource.Symbology3D;
         if (symbology is null)
@@ -308,7 +308,7 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateOpacity(
         List<string> errors,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         double? opacity,
         string slot)
     {
@@ -323,7 +323,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceDisplayEditing(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceDisplayEditing(List<string> errors, MetadataV2Object resource)
     {
         if (resource.Display is { } display && !string.IsNullOrWhiteSpace(display.DisplayField))
         {
@@ -356,7 +356,7 @@ public static class MetadataV2GraphValidator
     }
 
     private static void EnsureFieldDeclared(
-        List<string> errors, MetadataV2Resource resource, string? fieldName, string slot)
+        List<string> errors, MetadataV2Object resource, string? fieldName, string slot)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
         {
@@ -374,13 +374,13 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateResourceStorageLayerId(
         List<string> errors,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyList<string> storageBindingIds,
         Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
     {
-        if (resource.Type is not (MetadataV2ResourceType.FeatureDataset
-            or MetadataV2ResourceType.RasterDataset
-            or MetadataV2ResourceType.TileDataset))
+        if (resource.Type is not (MetadataV2ObjectType.FeatureDataset
+            or MetadataV2ObjectType.RasterDataset
+            or MetadataV2ObjectType.TileDataset))
         {
             return;
         }
@@ -398,7 +398,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceSpatial(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceSpatial(List<string> errors, MetadataV2Object resource)
     {
         var spatial = resource.Spatial;
         if (spatial is null)
@@ -428,7 +428,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceTemporal(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceTemporal(List<string> errors, MetadataV2Object resource)
     {
         var temporal = resource.Temporal;
         if (temporal is null)
@@ -441,7 +441,7 @@ public static class MetadataV2GraphValidator
     }
 
     private static void ValidateTemporalField(
-        List<string> errors, MetadataV2Resource resource, string? fieldName, string slot, bool required)
+        List<string> errors, MetadataV2Object resource, string? fieldName, string slot, bool required)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
         {
@@ -466,7 +466,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourceSchemaFields(List<string> errors, MetadataV2Resource resource)
+    private static void ValidateResourceSchemaFields(List<string> errors, MetadataV2Object resource)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var primaryGeometryCount = 0;
@@ -510,7 +510,7 @@ public static class MetadataV2GraphValidator
     }
 
     private static void ValidatePublicationPrimary(
-        List<string> errors, IReadOnlyList<MetadataV2Publication> publications)
+        List<string> errors, IReadOnlyList<MetadataV2Layer> publications)
     {
         // At most one publication per (resourceId, serviceId) may set IsPrimary = true.
         // Not rewritten as .Select(): the loop accumulates a frequency count into a shared
@@ -532,8 +532,8 @@ public static class MetadataV2GraphValidator
 
     private static void ValidatePublications(
         List<string> errors,
-        IEnumerable<MetadataV2Publication> publications,
-        Dictionary<string, MetadataV2Resource> resourcesById,
+        IEnumerable<MetadataV2Layer> publications,
+        Dictionary<string, MetadataV2Object> resourcesById,
         Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
         HashSet<string> serviceIds)
     {
@@ -586,7 +586,7 @@ public static class MetadataV2GraphValidator
     private static void ValidateUnboundPublicationLayerIndexes(
         List<string> errors,
         MetadataV2Graph graph,
-        Dictionary<string, MetadataV2Resource> resourcesById)
+        Dictionary<string, MetadataV2Object> resourcesById)
     {
         var storageOwners = new Dictionary<int, string>();
         var boundResourceIds = new HashSet<string>(StringComparer.Ordinal);
@@ -606,9 +606,9 @@ public static class MetadataV2GraphValidator
             if (publication.StorageBindingId is not null
                 || publication.LayerIndex is not int layerIndex
                 || !resourcesById.TryGetValue(publication.ResourceId, out var resource)
-                || resource.Type is not (MetadataV2ResourceType.FeatureDataset
-                    or MetadataV2ResourceType.RasterDataset
-                    or MetadataV2ResourceType.TileDataset)
+                || resource.Type is not (MetadataV2ObjectType.FeatureDataset
+                    or MetadataV2ObjectType.RasterDataset
+                    or MetadataV2ObjectType.TileDataset)
                 || boundResourceIds.Contains(resource.Metadata.Id)
                 || !storageOwners.TryGetValue(layerIndex, out var ownerResourceId)
                 || string.Equals(ownerResourceId, resource.Metadata.Id, StringComparison.Ordinal))
@@ -634,7 +634,7 @@ public static class MetadataV2GraphValidator
     private static void ValidateStyleResources(List<string> errors, MetadataV2Graph graph)
     {
         var styleResources = graph.Resources
-            .Where(r => r.Type == MetadataV2ResourceType.Style)
+            .Where(r => r.Type == MetadataV2ObjectType.Style)
             .ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
 
         foreach (var resource in graph.Resources)
@@ -657,7 +657,7 @@ public static class MetadataV2GraphValidator
             }
 
             // Resources with Type=Style MUST have Style.Encodings non-empty.
-            if (resource.Type == MetadataV2ResourceType.Style)
+            if (resource.Type == MetadataV2ObjectType.Style)
             {
                 var style = resource.Style;
                 if (style is null || style.Encodings.Count == 0)
@@ -697,6 +697,10 @@ public static class MetadataV2GraphValidator
     private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
     {
         ValidateOneMetadata(errors, "graph", graph.Metadata);
+        foreach (var folder in graph.Folders)
+        {
+            ValidateOneMetadata(errors, $"folder '{folder.Metadata.Id}'", folder.Metadata);
+        }
         foreach (var r in graph.Resources)
         {
             ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
@@ -726,6 +730,7 @@ public static class MetadataV2GraphValidator
             errors.Add(
                 $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
         }
+        MetadataV2DescriptiveValidation.Validate(errors, ownerLabel, metadata);
 
         if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
         {
@@ -744,26 +749,8 @@ public static class MetadataV2GraphValidator
             errors.Add(
                 $"{ownerLabel} metadata.contactPoint.name must not exceed {MetadataV2ContactPoint.MaxNameLength} characters or contain control characters.");
         }
-        if (metadata.ContactPoint is { Email: { } email } &&
-            !string.IsNullOrWhiteSpace(email) &&
-            !HasNonEmptyEmailParts(email))
-        {
-            errors.Add($"{ownerLabel} metadata.contactPoint.email must contain non-empty local and domain parts.");
-        }
-        if (metadata.ContactPoint is { Url: { } contactUrl } &&
-            !string.IsNullOrWhiteSpace(contactUrl))
-        {
-            if (contactUrl.Length > MetadataV2ContactPoint.MaxUrlLength)
-            {
-                errors.Add(
-                    $"{ownerLabel} metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
-            }
-            else if (!IsSafePublicHttpUrl(contactUrl))
-            {
-                errors.Add(
-                    $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
-            }
-        }
+        ValidateContactEmail(errors, $"{ownerLabel} metadata.contactPoint.email", metadata.ContactPoint?.Email);
+        ValidateContactUrl(errors, $"{ownerLabel} metadata.contactPoint.url", metadata.ContactPoint?.Url);
 
         for (var i = 0; i < metadata.Links.Count; i++)
         {
@@ -796,6 +783,30 @@ public static class MetadataV2GraphValidator
         }
     }
 
+    internal static void ValidateContactEmail(List<string> errors, string field, string? email)
+    {
+        if (!string.IsNullOrWhiteSpace(email) && !HasNonEmptyEmailParts(email))
+        {
+            errors.Add($"{field} must contain non-empty local and domain parts.");
+        }
+    }
+
+    internal static void ValidateContactUrl(List<string> errors, string field, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+        if (url.Length > MetadataV2ContactPoint.MaxUrlLength)
+        {
+            errors.Add($"{field} must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
+        }
+        else if (!IsSafePublicHttpUrl(url))
+        {
+            errors.Add($"{field} must be an absolute HTTP(S) URL without credentials.");
+        }
+    }
+
     private static bool IsSafePublicHttpUrl(string value)
         => string.Equals(value, value.Trim(), StringComparison.Ordinal) &&
            Uri.TryCreate(value, UriKind.Absolute, out var parsedUrl) &&
@@ -820,8 +831,8 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateServices(
         List<string> errors,
-        IEnumerable<MetadataV2Service> services,
-        Dictionary<string, MetadataV2Publication> publicationsById)
+        IReadOnlyList<MetadataV2Service> services,
+        Dictionary<string, MetadataV2Layer> publicationsById)
     {
         // Service→publications is now derived from publication.ServiceId only;
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.

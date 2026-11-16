@@ -33,8 +33,8 @@ public sealed partial class PublicPublicationIdentityTests
         using var afterStyle = JsonDocument.Parse(afterBody);
         beforeStyle.RootElement.GetProperty("name").GetString().Should().Be("publication-style");
         afterStyle.RootElement.GetProperty("name").GetString().Should().Be("publication-style");
-        await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Resource>(), OriginalStorageLayerId, Arg.Any<CancellationToken>());
-        await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Resource>(), ReboundStorageLayerId, Arg.Any<CancellationToken>());
+        await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Object>(), OriginalStorageLayerId, Arg.Any<CancellationToken>());
+        await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Object>(), ReboundStorageLayerId, Arg.Any<CancellationToken>());
         using var storageAlias = await _fixture.Client.GetAsync($"/api/styles/{OriginalStorageLayerId}.json");
         storageAlias.StatusCode.Should().Be(HttpStatusCode.NotFound);
         using var caseAlias = await _fixture.Client.GetAsync($"/api/styles/{Uri.EscapeDataString(PublicationId.ToUpperInvariant())}.json");
@@ -64,7 +64,7 @@ public sealed partial class PublicPublicationIdentityTests
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(authenticated ? HttpStatusCode.NotFound : HttpStatusCode.Unauthorized,
             $"body: {body}; challenge: {response.Headers.WwwAuthenticate.Count > 0}; path: {response.RequestMessage?.RequestUri?.AbsolutePath}");
-        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Object>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -77,7 +77,7 @@ public sealed partial class PublicPublicationIdentityTests
         var resourceId = ConfigureDistinctStyleResources();
         var secondStyle = JsonSerializer.Deserialize<JsonElement>(
             """{"version":8,"name":"second-publication-style","sources":{},"layers":[]}""");
-        _styles.GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
+        _styles.GetStyleAsync(Arg.Is<MetadataV2Object>(candidate => candidate.Metadata.Id == secondResourceId),
             Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(new LayerStyleSnapshot(secondStyle, null));
 
         using var client = _fixture.CreateClient();
@@ -90,9 +90,9 @@ public sealed partial class PublicPublicationIdentityTests
             style.RootElement.GetProperty("name").GetString().Should().Be(
                 publicationId == PublicationId ? "publication-style" : "second-publication-style");
         }
-        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == resourceId),
+        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Object>(candidate => candidate.Metadata.Id == resourceId),
             OriginalStorageLayerId, Arg.Any<CancellationToken>());
-        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
+        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Object>(candidate => candidate.Metadata.Id == secondResourceId),
             OriginalStorageLayerId, Arg.Any<CancellationToken>());
     }
 
@@ -107,7 +107,7 @@ public sealed partial class PublicPublicationIdentityTests
         using var response = await client.GetAsync($"/api/v1/admin/metadata/layers/{OriginalStorageLayerId}/style");
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync());
-        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Object>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     private string ConfigureDistinctStyleResources()

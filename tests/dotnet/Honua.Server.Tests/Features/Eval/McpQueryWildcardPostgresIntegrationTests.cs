@@ -80,7 +80,7 @@ public sealed class McpQueryWildcardPostgresIntegrationTests(DatabaseFixtureAdap
         connectionProvider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
             (DbConnection)await fixture.DataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("secret"));
         var reader = new PostgresStorageMappedFeatureReader(
             connectionProvider,

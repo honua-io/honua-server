@@ -19,6 +19,22 @@ public sealed class ExecutionJobCancellationHelperTests
     private const string TransitionTestBackendCancelled = "execution-cancel-terminal-test";
 
     [UnitTest]
+    public async Task QueuedAttemptedImportCancellation_PreservesReceiptRecovery()
+    {
+        var job = CreateJobRecord("import-recovery", ExecutionJobStatus.Queued, backend: "local");
+        job = job with { AttemptCount = 1, Spec = job.Spec with { Kind = ExecutionJobKind.GeoservicesImport } };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecutionJobCancellationHelper.TryApplyAsync(store, job.OperationId, job, "Cancelled");
+
+        result.State.Should().Be(ExecutionJobCancellationState.CancellationRequested);
+        result.Job!.Status.Should().Be(ExecutionJobStatus.Queued);
+        result.Job.CancellationRequestedAt.Should().NotBeNull();
+        result.TerminalTransition.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task QueuedLocalCancellationCasLosesToManualRetry_DoesNotCancelSuccessor()
     {
         var original = CreateJobRecord("queued-retry", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };

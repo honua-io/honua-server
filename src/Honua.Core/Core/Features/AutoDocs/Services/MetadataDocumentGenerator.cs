@@ -4,17 +4,18 @@
 using System.Globalization;
 using System.Text;
 using System.Xml;
-using Honua.Core.Features.AutoDocs.Abstractions;
 using Honua.Core.Features.AutoDocs.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.AutoDocs.Services;
 
-internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
+internal sealed class MetadataDocumentGenerator
 {
     private const string Iso19115Namespace = "http://www.isotc211.org/2005/gmd";
     private const string GcoNamespace = "http://www.isotc211.org/2005/gco";
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "Retain the existing instance-based service registration and consumers.")]
     public MetadataDocumentResult Generate(MetadataDocumentRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Core.Features.Compliance.Services;
 
 // This provider stores key-version metadata only and does not re-encrypt data.
-internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPostureProvider
+public sealed partial class InMemoryEncryptionPostureProvider
 {
     // Bounded timeout for the post-commit audit write. Kept short — the rotation has
     // already mutated in-memory state, and we never want a slow audit sink to look

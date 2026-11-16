@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Core.Features.Security.Abstractions;
@@ -76,7 +77,7 @@ public sealed class PublishedMetadataProjection(
     }
 
     public static string? PublicationUrl(
-        PublishedMetadataRequest request, MetadataV2Service service, MetadataV2Publication publication)
+        PublishedMetadataRequest request, MetadataV2Service service, MetadataV2Layer publication)
     {
         var serviceUrl = ServiceUrl(request, service);
         if (publication.LayerIndex is { } index && service.PrimaryProtocol is { } protocol
@@ -89,6 +90,34 @@ public sealed class PublishedMetadataProjection(
             : null;
     }
 
+    // The service's (or, for a global document, the environment's) metadata after crosswalk inheritance, in the
+    // shape the OGC capabilities writers read.
+    public static MetadataV2ObjectMetadata ForCapabilities(MetadataV2Graph graph, MetadataV2Service? service)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        var record = service is null
+            ? DescriptiveMetadataResolver.ForCatalog(graph)
+            : DescriptiveMetadataResolver.ForCapabilities(graph, service);
+        var contact = record.PointOfContact;
+        return (service?.Metadata ?? graph.Metadata) with
+        {
+            Title = record.Title,
+            Description = record.Description,
+            Keywords = record.Keywords,
+            Language = record.Language,
+            License = record.License,
+            Fees = record.Fees,
+            AccessConstraints = record.AccessConstraints,
+            Attribution = record.Attribution,
+            Publisher = record.Publisher ?? contact?.Organization,
+            ContactPoint = contact is null
+                ? null
+                : new MetadataV2ContactPoint { Name = contact.Name, Email = contact.Email, Url = contact.Url },
+            Contacts = record.Contacts,
+            Links = record.Links,
+        };
+    }
+
     public static string ResolveOwner(MetadataV2ObjectMetadata metadata)
         => string.IsNullOrWhiteSpace(metadata.Publisher) ? "honua" : metadata.Publisher;
 }
@@ -98,8 +127,8 @@ public sealed record PublishedMetadataRequest(MetadataV2GraphSnapshot Snapshot, 
 public sealed record PublishedMetadataService
 {
     public required MetadataV2Service Service { get; init; }
-    public required IReadOnlyList<MetadataV2Publication> Publications { get; init; }
+    public required IReadOnlyList<MetadataV2Layer> Publications { get; init; }
     public required string Access { get; init; }
-    public MetadataV2Resource? FirstResource { get; init; }
+    public MetadataV2Object? FirstResource { get; init; }
     public string? Url { get; init; }
 }

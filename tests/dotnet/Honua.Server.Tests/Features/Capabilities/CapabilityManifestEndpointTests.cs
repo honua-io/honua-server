@@ -109,6 +109,8 @@ public sealed partial class CapabilityManifestEndpointTests
                         ["Limits:Analytics:MaxDensityCellSizeMeters"] = "34567.5",
                         ["Limits:Analytics:MaxDWithinDistanceMeters"] = "45678.5",
                         ["FeatureStreaming:MaxConcurrentSessions"] = "12",
+                        ["Realtime:ResumeMaxEvents"] = "73",
+                        ["FeatureChangeEvents:MaxRetainedEvents"] = "99",
                         ["Grpc:StreamBatchSize"] = "42",
                         ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
                         ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
@@ -628,6 +630,8 @@ public sealed partial class CapabilityManifestEndpointTests
             .Should().Be(123456);
         root.GetProperty("limits").GetProperty("streaming").GetProperty("maxConcurrentSessions").GetInt32()
             .Should().Be(12);
+        root.GetProperty("limits").GetProperty("streaming").GetProperty("cursorRetentionLimit").GetInt32()
+            .Should().Be(73);
         root.GetProperty("limits").GetProperty("streaming").GetProperty("grpcStreamBatchSize").GetInt32()
             .Should().Be(42);
 
@@ -1541,6 +1545,15 @@ public sealed partial class CapabilityManifestEndpointTests
             long revision,
             CancellationToken cancellationToken = default)
             => new(Matches(environment) && revision == _snapshot.Revision ? _snapshot : null);
+
+        public async ValueTask<MetadataV2GraphSnapshot?> GetByEtagAsync(
+            string environment,
+            string etag,
+            CancellationToken cancellationToken = default)
+        {
+            var snapshot = await GetCurrentAsync(environment, cancellationToken).ConfigureAwait(false);
+            return snapshot is not null && string.Equals(snapshot.Etag, etag, StringComparison.Ordinal) ? snapshot : null;
+        }
 
         public async IAsyncEnumerable<MetadataV2EnvironmentRevision> ListCurrentRevisionsAsync(
             IReadOnlyList<string> environments,

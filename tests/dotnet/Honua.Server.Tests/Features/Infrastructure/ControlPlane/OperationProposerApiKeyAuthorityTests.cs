@@ -122,14 +122,15 @@ public sealed class OperationProposerApiKeyAuthorityTests
     public async Task Gateway_MissingAuthorityHelper_DeniesBeforeClaimWithAuditReceipt(string actor)
     {
         var store = Substitute.For<IOperationProposalStore>();
+        var createdAt = DateTimeOffset.UtcNow;
         var proposal = CanonicalOperationGatewayTestComposition.WithVersionedInitiation(new OperationProposal
         {
             ProposalId = "synthetic",
             Kind = OperationClass.ServicePublish,
             Status = OperationProposalStatus.AwaitingApproval,
             RequestedBy = actor,
-            CreatedAt = Now,
-            UpdatedAt = Now,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
             Plan = new OperationProposalPlan { Summary = "synthetic" },
             Audit = new OperationAuditInfo { OperationInstanceId = "synthetic-instance", CorrelationId = "synthetic-correlation", Reason = "test" }
         });

@@ -44,7 +44,7 @@ internal static class EditsHandlerFixture
     private static IFilterExpressionService ObjectIdFilters()
     {
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, null));
         return filters;
     }

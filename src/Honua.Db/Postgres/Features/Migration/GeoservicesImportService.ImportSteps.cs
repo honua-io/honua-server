@@ -26,7 +26,6 @@ namespace Honua.Db.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    /// <inheritdoc />
     public async Task<GeoservicesImportResult> ImportLayerAsync(
         GeoservicesImportRequest request,
         IProgress<GeoservicesImportProgress>? progress,
@@ -58,21 +57,11 @@ internal sealed partial class GeoservicesImportService
         // the winner just committed, or is still publishing, copying attachments into, or reconciling.
         // The lease is session-level so it survives the data commit; the finally below releases it, and a
         // dropped connection (a crashed worker) releases it too.
-        if (!await TryAcquireTargetImportLockAsync(connection, targetSchema, request.TableName, cancellationToken))
+        var receiptContext = new ImportCommitReceiptContext(connection, transaction, request, targetSchema);
+        var lockFailure = await GetTargetLockFailureAsync(receiptContext, stopwatch, cancellationToken);
+        if (lockFailure is not null)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
-            stopwatch.Stop();
-            Log.TargetImportInProgress(_logger, request.TableName);
-            return GeoservicesImportResult.CreateFailure(
-                request.TableName,
-                request.ServiceUrl,
-                request.LayerId,
-                $"Another import is already writing target table '{request.TableName}'; this job did not modify it. "
-                + "Wait for that import to finish, then retry.",
-                stopwatch.Elapsed) with
-            {
-                ServiceName = request.ServiceName
-            };
+            return lockFailure;
         }
 
         // #4827: the step a top-level failure happened in, so the job reports where it failed and
@@ -83,6 +72,12 @@ internal sealed partial class GeoservicesImportService
         var failedFeatures = 0;
         try
         {
+            var committed = await ReadCommittedImportAsync(receiptContext, cancellationToken);
+            if (committed is not null)
+            {
+                return committed;
+            }
+
             // Phase 1: Discover layer metadata
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Discovering, request,
                 "Discovering layer metadata", 0, null);
@@ -366,14 +361,11 @@ internal sealed partial class GeoservicesImportService
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            // #4600: a nonspatial ArcGIS table is created without a geom column (BuildCreateTableSql), so
-            // indexing it unconditionally failed every table import with 42703.
-            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+            await PrepareImportCommitAsync(receiptContext with
             {
-                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
-            }
-
-            await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
+                Features = featuresProcessed,
+                Failures = failedFeatures
+            }, layerInfo, cancellationToken);
 
             stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
@@ -597,6 +589,11 @@ internal sealed partial class GeoservicesImportService
                 fidelityVerdict: fidelity.Verdict,
                 fidelityDifferences: fidelity.Differences);
         }
+        catch (Exception ex) when (stage == ImportFailureStage.Committing && ex is not OutOfMemoryException)
+        {
+            // Release the connection/target lock before the worker resolves the receipt on a fresh connection.
+            throw new GeoservicesImportCommitOutcomeUnknownException(ex);
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             if (stage == ImportFailureStage.AfterCommit)
@@ -667,37 +664,21 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// The import step a top-level failure happened in. It words the failure reason and records
-    /// whether the imported rows had already been committed when the failure happened.
-    /// </summary>
     internal enum ImportFailureStage
     {
-        /// <summary>Reading the source layer's metadata.</summary>
         DiscoveringLayer,
 
-        /// <summary>Creating the target (or staging) table.</summary>
         CreatingTable,
 
-        /// <summary>Reading source pages and inserting them.</summary>
         TransferringFeatures,
 
-        /// <summary>Re-reading the source population, swapping and indexing.</summary>
         Finalizing,
 
-        /// <summary>Sending COMMIT; a lost acknowledgement leaves the durable outcome unknown.</summary>
         Committing,
 
-        /// <summary>After the data commit: publication, attachments and reconciliation.</summary>
         AfterCommit
     }
 
-    /// <summary>
-    /// Rolls back the import transaction on a failure path. #4827: this runs while another error
-    /// is being handled, so it never throws. A committed transaction has nothing to roll back, and
-    /// a lost session cannot run the rollback at all (the server discards the transaction with the
-    /// session); either way the originating error stays the one reported.
-    /// </summary>
     private async Task RollbackAfterFailureAsync(NpgsqlTransaction transaction, ImportFailureStage stage, string tableName)
     {
         if (stage == ImportFailureStage.AfterCommit)
@@ -715,13 +696,6 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Maps a top-level import failure to the job's failure reason: a stable code, the step that
-    /// failed, and a category the operator can act on. #4827: provider and HTTP exception text can
-    /// carry SQL, hosts, URLs, tokens or credentials, so it is never echoed; only the SQLSTATE or
-    /// HTTP status is. Reasons the importer authored itself (<see cref="GeoservicesImportAbortedException"/>)
-    /// are reported as written.
-    /// </summary>
     internal static string BuildImportFailureMessage(Exception exception, ImportFailureStage stage)
     {
         if (stage != ImportFailureStage.AfterCommit && ImportTargetDependencies.IsFailure(exception))
@@ -806,10 +780,6 @@ internal sealed partial class GeoservicesImportService
         };
     }
 
-    /// <summary>
-    /// Redacted reason a single feature row was rejected, carried into the batch warning. Like
-    /// <see cref="BuildImportFailureMessage"/>, it names the category and SQLSTATE only.
-    /// </summary>
     internal static string DescribeFeatureInsertFailure(Exception exception)
         => UnwrapDatabaseFailure(exception) switch
         {
@@ -900,10 +870,6 @@ internal sealed partial class GeoservicesImportService
             ServiceName = request.ServiceName
         };
 
-    /// <summary>
-    /// Counts the source records matching the import filter, or <c>null</c> when the source cannot
-    /// answer. Cancellation propagates; any other failure only leaves the source snapshot unverified.
-    /// </summary>
     private async Task<BoundingBox?> TryQuerySourceExtentAsync(
         GeoservicesImportRequest request,
         CancellationToken cancellationToken)
@@ -950,19 +916,10 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Only the caller's own cancellation propagates. A per-request timeout also surfaces as
-    /// <see cref="OperationCanceledException"/> (the REST client's linked <c>CancelAfter</c>) and, like
-    /// any other source failure, only leaves the source snapshot unverified.
-    /// </summary>
     private static bool IsUnreadableSourceFailure(Exception exception, CancellationToken cancellationToken)
         => exception is not OutOfMemoryException
             && !(exception is OperationCanceledException && cancellationToken.IsCancellationRequested);
 
-    /// <summary>
-    /// Reads the source population again after the last page. The object-ID window path compares the
-    /// object-ID sets it enumerated; the paged path compares filtered counts.
-    /// </summary>
     private async Task<MigrationFidelitySourceSnapshotInput> CaptureSourceSnapshotAsync(
         GeoservicesImportRequest request,
         long[]? sourceObjectIds,
@@ -1072,10 +1029,6 @@ internal sealed partial class GeoservicesImportService
         return esriType.ToPostgresType(length);
     }
 
-    /// <summary>
-    /// Maps an Esri geometry-type token to the PostGIS geometry-column type. Shared with
-    /// <see cref="GeoservicesLayerPublicationService"/> so AutoPublish and table creation agree.
-    /// </summary>
     internal static string MapEsriGeometryType(string esriGeometryType, bool hasZ = false, bool hasM = false)
     {
         var geometryType = esriGeometryType.ToUpperInvariant() switch
@@ -1125,11 +1078,13 @@ internal sealed partial class GeoservicesImportService
         return newFeatures.ToArray();
     }
 
-    /// <summary>
-    /// True when the source field is the Esri geometry field (excluded from attribute columns).
-    /// Shared with <see cref="GeoservicesLayerPublicationService"/> so the reconciliation field set
-    /// matches the imported column set.
-    /// </summary>
     internal static bool IsGeometryField(GeoservicesFieldInfo field)
         => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
+    private static ValueTask JoinCommitAsync(
+        ImportCommitParticipant? participant,
+        ImportCommitScope scope,
+        CancellationToken cancellationToken) => participant is null
+            ? ValueTask.CompletedTask
+            : participant(scope, cancellationToken);
+
 }

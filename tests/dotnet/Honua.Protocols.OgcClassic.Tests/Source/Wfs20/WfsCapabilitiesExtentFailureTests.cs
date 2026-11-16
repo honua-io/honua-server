@@ -37,7 +37,7 @@ public sealed class WfsCapabilitiesExtentFailureTests
         await using var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(CapabilitiesExtentFixture.PublishedLayers(
-                MetadataV2ServiceProtocols.Wfs20, MetadataV2PublicationType.WfsFeatureType, healthyLayerSrid))
+                MetadataV2ServiceProtocols.Wfs20, MetadataV2LayerType.WfsFeatureType, healthyLayerSrid))
             .ReplaceService<ICoordinateTransformService>(transform);
         await fixture.InitializeAsync();
 

@@ -674,8 +674,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             .ContainSingle(evt => evt.Action == "studio.lifecycle" && evt.ResourceId == requestPath)
             .Subject;
         auditEvent.EventType.Should().Be(AuditEventType.Authorization);
-        // Policy denials are audited before the canonical actor is stamped.
-        auditEvent.Actor.Should().Be(scopedKey.Record.Id.ToString("D"));
+        auditEvent.Actor.Should().Be($"apikey:api-key:{scopedKey.Record.Id:D}");
         auditEvent.ActorType.Should().Be(AuditActorType.ApiKey);
         auditEvent.ResourceType.Should().Be("studio");
         auditEvent.Outcome.Should().Be(AuditOutcome.Denied);
@@ -791,8 +790,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 evt.ResourceId == "/api/v1/studio/package-drafts")
             .Subject;
         writeAudit.EventType.Should().Be(AuditEventType.Authorization);
-        // Policy denials are audited before the canonical actor is stamped.
-        writeAudit.Actor.Should().Be(readOnlyKey.Record.Id.ToString("D"));
+        writeAudit.Actor.Should().Be($"apikey:api-key:{readOnlyKey.Record.Id:D}");
         writeAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         writeAudit.ResourceType.Should().Be("studio");
         writeAudit.Outcome.Should().Be(AuditOutcome.Denied);

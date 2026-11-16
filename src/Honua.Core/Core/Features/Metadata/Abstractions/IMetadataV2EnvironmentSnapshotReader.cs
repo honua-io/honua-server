@@ -16,6 +16,11 @@ public interface IMetadataV2EnvironmentSnapshotReader
         long revision,
         CancellationToken cancellationToken = default);
 
+    ValueTask<MetadataV2GraphSnapshot?> GetByEtagAsync(
+        string environment,
+        string etag,
+        CancellationToken cancellationToken = default);
+
     IAsyncEnumerable<MetadataV2EnvironmentRevision> ListCurrentRevisionsAsync(
         IReadOnlyList<string> environments,
         CancellationToken cancellationToken = default);

@@ -321,7 +321,7 @@ class WorkflowCompletion(unittest.TestCase):
     def test_required_context_rejects_failed_dependency_results(self):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
-        aggregate = gate['jobs']['required']['steps'][0]['run']
+        aggregate = next(step for step in gate['jobs']['required']['steps'] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")['run']
         keys = ('BUILD_AND_TEST_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
                 'AFFECTED_SHARDS_RESULT')
         for key in keys:

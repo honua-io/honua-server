@@ -10,7 +10,7 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 internal static class WfsPropertyNameResolver
 {
     internal static string? Resolve(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string requestedName,
         bool allowGeometryAlias,
         bool includeHiddenFields = false)
@@ -100,7 +100,7 @@ internal static class WfsPropertyNameResolver
         return localName;
     }
 
-    private static string? FindExactField(MetadataV2Resource resource, string requestedName)
+    private static string? FindExactField(MetadataV2Object resource, string requestedName)
         => resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(requestedName, StringComparison.OrdinalIgnoreCase))?.Name;
 }

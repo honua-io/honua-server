@@ -128,7 +128,7 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
     private static (MetadataV2Graph Baseline, MetadataV2Graph Graph, string ResourceName) CreateCollisionGraph(MetadataV2GraphSnapshot original)
     {
         var publication = original.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == WebAppFixture.TestLayerId);
+            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer && candidate.LayerIndex == WebAppFixture.TestLayerId);
         var resource = original.ResolveResource(publication)!;
         var binding = original.Graph.StorageBindings.First(candidate =>
             candidate.ResourceId == resource.Metadata.Id && candidate.StorageLayerId == WebAppFixture.TestLayerId);
@@ -142,7 +142,7 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
             Metadata = publication.Metadata with { Id = "collision-odata-publication", Name = "collision-odata-publication" },
             ServiceId = odataService.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
-            PublicationType = MetadataV2PublicationType.ODataEntitySet
+            PublicationType = MetadataV2LayerType.ODataEntitySet
         };
         var baseline = original.Graph with
         {
@@ -172,7 +172,7 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
         {
             Metadata = adminPublication.Metadata with { Id = "collision-admin-odata-publication", Name = "collision-admin-odata-publication" },
             ServiceId = odataService.Metadata.Id,
-            PublicationType = MetadataV2PublicationType.ODataEntitySet
+            PublicationType = MetadataV2LayerType.ODataEntitySet
         };
         var graph = baseline with
         {

@@ -40,11 +40,14 @@ jobs:
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 20
     concurrency:
-      # New events supersede older work for the same PR across head updates.
-      # Unidentified completions stay isolated until resolution; they must not
-      # cancel a resolver that can publish for a known PR.
+      # Events for the same PR queue in order instead of cancelling each other,
+      # because a cancelled resolver is a red mark on the PR page. The shed step
+      # below ends a closed subject green with a notice; an open one reconciles
+      # to the live head and queues one attestation. Unidentified completions
+      # stay isolated until resolution.
       group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || github.run_id }}
-      cancel-in-progress: true
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       pull-requests: read
@@ -59,7 +62,7 @@ jobs:
             // A superseded event is shed NEUTRALLY: the step succeeds, records one
             // job-summary line, and leaves `pr` empty so `attest` is never admitted.
             // Closed subjects cannot consume admission; open subjects always
-            // reach the live-head reconciliation and cancellation path.
+            // reach the live-head reconciliation path.
             const shed = async reason => {
               core.notice(`superseded: ${reason}`);
               core.summary.addRaw(`Shed superseded review event: ${reason}`, true);
@@ -98,15 +101,16 @@ jobs:
             // that can no longer merge. Attesting one anyway spends the trusted job
             // to stamp a RED status onto an already-merged commit, because
             // `pull request is not open` is scored as a blocking reason. `reopened`
-            // re-fires this workflow with the pull request open again, and
-            // claude-review.yml already sheds closed subjects the same way.
+            // re-fires this workflow with the pull request open again.
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
             }
-            // Events are unordered: an old head can cancel a newer resolver.
-            // Always reconcile the live head instead of abandoning that replacement.
-            // Live drafts must also reach the attest concurrency group to cancel
-            // active publication, then shed before checkout or status mutation.
+            // Events are unordered: an old-head event can run after a newer one.
+            // Always reconcile the live head instead of trusting the event head.
+            // Live drafts also reach the attest concurrency group, queue behind
+            // any active publication, then shed before checkout or status mutation.
+            // A draft conversion does not stop an active publication; it is
+            // admitted only to keep this trusted workflow's event contract.
 
       - name: Resolve every event to one pull request
         id: target
@@ -144,9 +148,14 @@ jobs:
       # Resolve first so fork workflow_run events (whose pull_requests array is
       # empty) supersede review/comment events under the same PR identity.
       group: review-gate-${{ needs.resolve.outputs.pr }}
-      # The replacement re-reads live review and admission state before acting;
-      # no cancelled helper grants the required Review Gate status.
-      cancel-in-progress: true
+      # Attestations queue in order instead of cancelling red on the PR page.
+      # Each re-reads live review and admission state, so the last one
+      # publishes the current verdict. An attestation whose live review or
+      # admission state changes between its first snapshot and final revalidation fails red;
+      # the queued event behind that change re-attests an open, ready head.
+      # Bursts are not collapsed: each event runs in turn, up to 100 waiting.
+      cancel-in-progress: false
+      queue: max
     steps:
       - name: Shed superseded review subject
         id: subject

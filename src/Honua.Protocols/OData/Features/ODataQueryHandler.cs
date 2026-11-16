@@ -788,7 +788,7 @@ internal sealed partial class ODataQueryHandler(
         string? filter,
         string? orderby,
         Honua.Core.Features.Validation.PaginationValues pagination,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? select,
         string? expand,
         bool? count,
@@ -850,7 +850,7 @@ internal sealed partial class ODataQueryHandler(
 
     private IResult WriteGeoParquetResult(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         QueryResult<Feature> queryResult,
         string? select)
     {
@@ -861,16 +861,16 @@ internal sealed partial class ODataQueryHandler(
 
         try
         {
-            var (payload, contentType) = ODataGeoParquetExport.FormatPage(
-                queryResult,
-                resource,
-                geometryLimits,
-                outFields,
-                _logger,
-                limitsOptions?.Value?.GeoParquet);
+            var (payload, contentType) = ODataGeoParquetExport.FormatPageStream(queryResult, resource, new ODataGeoParquetStreamOptions
+            {
+                GeometryLimits = geometryLimits,
+                OutFields = outFields,
+                Logger = _logger,
+                EncodingLimits = limitsOptions?.Value?.GeoParquet
+            });
 
             ODataUtilityService.SetODataHeaders(context);
-            return Results.Bytes(payload, contentType);
+            return Results.Stream(payload, contentType);
         }
         catch (GeoParquetLimitExceededException)
         {

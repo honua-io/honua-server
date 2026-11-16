@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
+using System.Xml;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
@@ -113,7 +115,7 @@ internal static class OgcClassicRequestHelpers
         return false;
     }
 
-    internal static string? GetServiceLayerIdentifier(MetadataV2Publication publication)
+    internal static string? GetServiceLayerIdentifier(MetadataV2Layer publication)
     {
         var identifier = publication.Identifier?.Value;
         return !string.IsNullOrWhiteSpace(identifier)
@@ -121,7 +123,7 @@ internal static class OgcClassicRequestHelpers
             : publication.ServiceLocalId ?? publication.LayerIndex?.ToString(CultureInfo.InvariantCulture);
     }
 
-    internal static string GetWmsLayerName(MetadataV2Resource resource, MetadataV2Publication? publication = null)
+    internal static string GetWmsLayerName(MetadataV2Object resource, MetadataV2Layer? publication = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var name = resource.Metadata.Name;
@@ -145,9 +147,30 @@ internal static class OgcClassicRequestHelpers
             : fullName;
     }
 
+    // Catalog text is also served as JSON and may contain characters XML 1.0 cannot represent.
+    // Normalize only at the XML boundary, preserving valid Unicode (including surrogate pairs).
+    internal static string SanitizeXmlText(string value)
+    {
+        var result = new StringBuilder(value.Length);
+        Span<char> buffer = stackalloc char[2];
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (rune.IsBmp && !XmlConvert.IsXmlChar((char)rune.Value))
+            {
+                result.Append('\uFFFD');
+            }
+            else
+            {
+                var length = rune.EncodeToUtf16(buffer);
+                result.Append(buffer[..length]);
+            }
+        }
+        return result.ToString();
+    }
+
     internal static string EscapeXml(string value)
     {
-        return value
+        return SanitizeXmlText(value)
             .Replace("&", "&amp;", StringComparison.Ordinal)
             .Replace("<", "&lt;", StringComparison.Ordinal)
             .Replace(">", "&gt;", StringComparison.Ordinal)

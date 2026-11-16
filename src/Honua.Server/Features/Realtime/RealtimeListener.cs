@@ -31,6 +31,7 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
         PollOnlyReason = connection.PollOnlyReason;
         _options = options;
         _logger = logger;
+        RealtimeMetrics.ListenerConnected.Record(0);
     }
 
     // Why this task runs without a listener, or null when it has one.
@@ -141,12 +142,14 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
     private void RecordReconnect()
     {
         Interlocked.Increment(ref _reconnects);
+        RealtimeMetrics.ListenerReconnects.Add(1);
         LogReconnected(_logger);
     }
 
     private void SetDisconnected()
     {
         _connected = false;
+        RealtimeMetrics.ListenerConnected.Record(0);
         Volatile.Write(ref _processId, 0);
     }
 
@@ -166,7 +169,11 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
     private async Task ListenAsync(Action wake, Action connected, CancellationToken cancellationToken)
     {
         await using var connection = await _dataSource!.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        connection.Notification += (_, _) => wake();
+        connection.Notification += (_, _) =>
+        {
+            RealtimeMetrics.Wakeups.Add(1, new KeyValuePair<string, object?>("source", "notify"));
+            wake();
+        };
         foreach (var family in RealtimeLogFamilies.Logged.Append(RealtimeLogFamilies.Features))
         {
             await using var listen = new NpgsqlCommand($"LISTEN \"{Channel(family)}\"", connection);
@@ -175,6 +182,7 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
 
         Volatile.Write(ref _processId, connection.ProcessID);
         _connected = true;
+        RealtimeMetrics.ListenerConnected.Record(1);
         connected();
         wake();
         while (true)

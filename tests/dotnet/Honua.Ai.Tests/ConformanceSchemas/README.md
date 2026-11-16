@@ -152,3 +152,22 @@ fields + fixture validation) because their live and vendored shapes are authored
 together; their fixtures under `fixtures/tools/resolve_entity/` and
 `fixtures/tools/list_capabilities/` are maintained here (the upstream fixture
 tree does not carry them yet).
+
+## Platform-operation result contracts (scoped upstream pin)
+
+`geospatial-mcp/tools/deploy_operations.result.schema.json` and
+`geospatial-mcp/tools/platform_release_status.result.schema.json`, plus the
+`deploy_operations_result_posture.json` and
+`platform_release_status_result_null_{serving,execution}.json` fixtures, are
+copied byte for byte from geospatial-mcp commit
+**`5c844454e7170727d8f7adb1eb7db655a75f5519`**, reviewed in
+[PR #196](https://github.com/honua-io/geospatial-mcp/pull/196).
+This scoped refresh accepts canonical evidence posture and nullable release-plane
+runtime/artifact fields; other schema families retain their documented pins.
+
+`supported_operation_kinds.result.schema.json` is a server-authored Honua
+extension, marked `x-honua-extension`, rather than an upstream copy. Its enum
+tracks supported canonical executor kinds, including `Geoprocess`. The runtime
+response remains a projection of registered executors; the schema does not add
+executors. Result tests validate fixtures against live and reference schemas and
+preserve JSON text/structured-content parity.

@@ -126,7 +126,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Metadata_MapsGovernanceToDocumentInfo()
     {
         var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
         var services = snapshot.Graph.Services
             .Select(service =>
                 string.Equals(service.Metadata.Name, WebAppFixture.TestServiceId, StringComparison.OrdinalIgnoreCase) &&
@@ -146,7 +146,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         {
             Revision = snapshot.Graph.Revision + 1,
             Services = services,
-        });
+        }, schema: Fixture.CurrentSchema);
 
         var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
 
@@ -314,15 +314,15 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Handlers_WithSameIdStacPublication_IgnoreProtocolDuplicate()
     {
         var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
         var esriPublication = snapshot.Graph.Publications
             .Where(publication =>
                 publication.LayerIndex == WebAppFixture.TestLayerId &&
                 publication.PublicationType is (
-                    MetadataV2PublicationType.EsriMapLayer or
-                    MetadataV2PublicationType.EsriFeatureLayer))
+                    MetadataV2LayerType.EsriMapLayer or
+                    MetadataV2LayerType.EsriFeatureLayer))
             .OrderBy(publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriMapLayer ? 0 : 1)
+                publication.PublicationType == MetadataV2LayerType.EsriMapLayer ? 0 : 1)
             .ThenBy(publication => publication.Metadata.Id, StringComparer.Ordinal)
             .First();
         var stacPublication = esriPublication with
@@ -332,7 +332,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
                 Id = $"{esriPublication.Metadata.Id}-stac",
                 Name = $"{esriPublication.Metadata.Name}-stac",
             },
-            PublicationType = MetadataV2PublicationType.StacCollection,
+            PublicationType = MetadataV2LayerType.StacCollection,
         };
         var danglingMapPublication = esriPublication with
         {
@@ -343,7 +343,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
             },
             ResourceId = "missing-mapserver-resource",
             StorageBindingId = "missing-mapserver-binding",
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            PublicationType = MetadataV2LayerType.EsriMapLayer,
         };
 
         provider.SetGraph(snapshot.Graph with
@@ -353,7 +353,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
                 .Append(stacPublication)
                 .Append(danglingMapPublication)
                 .ToArray(),
-        });
+        }, schema: Fixture.CurrentSchema);
 
         using var exportResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=png32&f=image");

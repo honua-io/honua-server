@@ -3,11 +3,15 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using static Honua.Server.Tests.Features.Infrastructure.ControlPlane.PostgresJobQueueTestJobs;
 
@@ -300,6 +304,59 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
 
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
         (await harness.Queue.TryClaimAsync("worker-a")).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task WakeSignals_CommittedCreateEnqueueAndClaim_RingThisProcessLoops()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var jobChanged = new PollWakeSignal<IExecutionJobStore>();
+        var enqueued = new PollWakeSignal<IJobQueue>();
+        var store = new PostgresExecutionJobStore(
+            harness.Database, Options.Create(new JobStoreOptions()), NullLogger<PostgresExecutionJobStore>.Instance, jobChanged);
+        var queue = new PostgresJobQueue(harness.Database, NullLogger<PostgresJobQueue>.Instance, enqueued, jobChanged);
+        var job = CreateQueuedJob("wakes-loops");
+
+        var beforeCreate = jobChanged.Version;
+        (await store.TryCreateAsync(job)).Should().BeTrue();
+        jobChanged.Version.Should().NotBe(beforeCreate);
+
+        var beforeDuplicate = jobChanged.Version;
+        (await store.TryCreateAsync(job)).Should().BeFalse();
+        jobChanged.Version.Should().Be(beforeDuplicate, "a write that changed nothing must not wake a loop");
+
+        var beforeEnqueue = enqueued.Version;
+        await queue.EnqueueAsync(job.OperationId);
+        enqueued.Version.Should().NotBe(beforeEnqueue);
+
+        var beforeClaim = jobChanged.Version;
+        (await queue.TryClaimAsync("worker-a")).Should().Be(job.OperationId);
+        jobChanged.Version.Should().NotBe(beforeClaim, "a claimed job becomes a reconciliation candidate");
+
+        var beforeDelayedRequeue = enqueued.Version;
+        await queue.RequeueAsync(job.OperationId, visibleAfter: TimeSpan.FromMinutes(1));
+        enqueued.Version.Should().Be(beforeDelayedRequeue, "a job that is not yet visible cannot be claimed");
+
+        var beforeRequeue = enqueued.Version;
+        await queue.RequeueAsync(job.OperationId);
+        enqueued.Version.Should().NotBe(beforeRequeue);
+    }
+
+    [IntegrationTest]
+    public async Task WakeSignals_CapacityCheckedCreate_RingsOnlyWhenAdmitted()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var jobChanged = new PollWakeSignal<IExecutionJobStore>();
+        var store = new PostgresExecutionJobStore(
+            harness.Database, Options.Create(new JobStoreOptions()), NullLogger<PostgresExecutionJobStore>.Instance, jobChanged);
+
+        var beforeAdmitted = jobChanged.Version;
+        (await store.TryCreateWithinCapacityAsync(CreateQueuedJob("within-capacity"), maximumOutstanding: 1)).Should().BeTrue();
+        jobChanged.Version.Should().NotBe(beforeAdmitted);
+
+        var beforeRefused = jobChanged.Version;
+        (await store.TryCreateWithinCapacityAsync(CreateQueuedJob("over-capacity"), maximumOutstanding: 1)).Should().BeFalse();
+        jobChanged.Version.Should().Be(beforeRefused);
     }
 
     private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()

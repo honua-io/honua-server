@@ -4,6 +4,8 @@
 using System.Net;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -66,14 +68,78 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
             "the denial above must be the access policy at work, not an endpoint that returns nothing to anyone");
     }
 
+    [IntegrationTheory]
+    [InlineData("1.3.0")]
+    [InlineData("1.1.1")]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    public async Task Wms_GetCapabilities_EmptyService_EnforcesServiceAccess(string version)
+    {
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph with
+        {
+            Publications = [],
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { Title = "Authored service title" }
+            }).ToArray()
+        };
+        ((TestMetadataV2GraphProvider)Fixture.GetService<IMetadataV2GraphProvider>())
+            .SetGraph(graph, schema: Fixture.CurrentSchema);
+        var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}";
+
+        using var denied = await Outsider().GetAsync(url);
+        await AssertWmsAccessDeniedAsync(denied, version);
+        (await denied.Content.ReadAsStringAsync()).Should().NotContain("Authored service title");
+
+        using var anonymous = await Fixture.Client.GetAsync(url);
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await anonymous.Content.ReadAsStringAsync()).Should().NotContain("Authored service title");
+
+        using var allowed = await Viewer().GetAsync(url);
+        var body = await allowed.Content.ReadAsStringAsync();
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        body.Should().Contain("Authored service title");
+        XDocument.Parse(body).Descendants().Where(element => element.Name.LocalName == "Layer"
+                && element.Elements().Any(child => child.Name.LocalName == "Name"))
+            .Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    public async Task Wms_GetCapabilities_TenantHiddenService_DeniesOtherwiseAuthorizedViewer()
+    {
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph with
+        {
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { Tenant = "other-tenant", Title = "Tenant service title" }
+            }).ToArray()
+        };
+        ((TestMetadataV2GraphProvider)Fixture.GetService<IMetadataV2GraphProvider>())
+            .SetGraph(graph, schema: Fixture.CurrentSchema);
+
+        using var response = await Viewer().GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
+        await AssertWmsAccessDeniedAsync(response);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("Tenant service title");
+    }
+
     /// <summary>
     /// WMS 1.3.0 §7.3.3.4 defines the ServiceExceptionReport payload for a refusal;
     /// the principal is authenticated but lacks the role, so the status is 403.
     /// </summary>
-    private static async Task AssertWmsAccessDeniedAsync(HttpResponseMessage response)
+    private static async Task AssertWmsAccessDeniedAsync(HttpResponseMessage response, string version = "1.3.0")
     {
         var body = await AssertRefusedWithoutPayloadAsync(response, HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        response.Content.Headers.ContentType?.MediaType.Should().Be(
+            version == "1.1.1" ? "application/vnd.ogc.se_xml" : "text/xml");
         body.Should().Contain("ServiceExceptionReport").And.Contain("code=\"AccessDenied\"");
         XDocument.Parse(body).Descendants().Select(static element => element.Name.LocalName)
             .Should().NotContain("FeatureInfoResponse");

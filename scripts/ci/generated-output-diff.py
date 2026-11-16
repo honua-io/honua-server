@@ -46,17 +46,22 @@ def covers(policy_path: str, named_path: str) -> bool:
             or named_path.startswith(policy_path + '/'))
 
 
-def allowed_paths(base: str) -> list[str]:
+def policy_paths(base: str) -> list[str]:
     # Parse the deliberately literal canonical array as data; never eval shell.
     source = git('show', f'{base}:scripts/ci/generated-files.sh').decode('utf-8')
     lines = [line.strip() for line in source.splitlines()
              if line.strip() and not line.lstrip().startswith('#')]
-    if lines[0] != 'GENERATED_FILES=(' or lines[-1] != ')':
+    if not lines or lines[0] != 'GENERATED_FILES=(' or lines[-1] != ')':
         raise ValueError('canonical output policy is not a literal array')
     paths = lines[1:-1]
     if not paths or any(not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+', p)
                         or any(part in ('.', '..') for part in p.split('/')) for p in paths):
         raise ValueError('invalid canonical output policy')
+    return paths
+
+
+def allowed_paths(base: str) -> list[str]:
+    paths = policy_paths(base)
     missing = [named for named in NAMED_OUTPUTS if not any(covers(item, named) for item in paths)]
     if missing:
         raise ValueError('named generated output is not on the canonical allowlist')

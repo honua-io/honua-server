@@ -247,7 +247,7 @@ public sealed class AdminLayerDisplaySpatialTests
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
         var service = snapshot.Index.ServicesById[publication.ServiceId];
         var duplicate = service with { Metadata = service.Metadata with { Id = "other-feature-service" } };
         var competing = publication with

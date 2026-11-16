@@ -225,10 +225,10 @@ public sealed class AntimeridianCutTests
         return new FeatureMutationValidator(geometryValidator);
     }
 
-    private static MetadataV2Resource Resource(MetadataV2SpatialReference spatialReference) => new()
+    private static MetadataV2Object Resource(MetadataV2SpatialReference spatialReference) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
-        Spatial = new MetadataV2ResourceSpatial
+        Spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = spatialReference,
             GeometryType = MetadataV2GeometryType.Polygon

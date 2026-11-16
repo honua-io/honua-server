@@ -932,7 +932,7 @@ public sealed partial class FeatureServerQueryExecutorTests
         await featureReader.DidNotReceive().QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
-    private static (FeatureServerQueryExecutor Sut, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (FeatureServerQueryExecutor Sut, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateFederatedGeoServicesSut(IGeoServicesRestFeatureClient upstream)
     {
         var service = CreateService();
@@ -1146,9 +1146,9 @@ public sealed partial class FeatureServerQueryExecutorTests
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
 
-    private static MetadataV2Publication CreatePublication(
+    private static MetadataV2Layer CreatePublication(
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? storageBindingId = null)
         => new()
         {
@@ -1156,18 +1156,18 @@ public sealed partial class FeatureServerQueryExecutorTests
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBindingId,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = "7",
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
 
     private static TestMetadataV2GraphProvider CreateGraphProvider(
         MetadataV2Service service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         MetadataV2StorageBinding? storageBinding = null)
         => new(new MetadataV2Graph
         {
@@ -1181,7 +1181,7 @@ public sealed partial class FeatureServerQueryExecutorTests
         });
 
     private static MetadataV2StorageBinding CreateStorageBinding(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string id,
         int storageLayerId = 7)
         => new()
@@ -1193,7 +1193,7 @@ public sealed partial class FeatureServerQueryExecutorTests
             StorageLayerId = storageLayerId
         };
 
-    private static MetadataV2Resource CreateResource(IReadOnlyList<string>? storageBindingIds = null)
+    private static MetadataV2Object CreateResource(IReadOnlyList<string>? storageBindingIds = null)
         => CreateResource(
             "test-layer",
             MetadataV2GeometryType.None,
@@ -1201,7 +1201,7 @@ public sealed partial class FeatureServerQueryExecutorTests
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreatePointResource(IReadOnlyList<string>? storageBindingIds = null)
+    private static MetadataV2Object CreatePointResource(IReadOnlyList<string>? storageBindingIds = null)
         => CreateResource(
             "test-layer",
             MetadataV2GeometryType.Point,
@@ -1209,7 +1209,7 @@ public sealed partial class FeatureServerQueryExecutorTests
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreatePointResourceWithCustomObjectId()
+    private static MetadataV2Object CreatePointResourceWithCustomObjectId()
         => CreateResource(
             "test-layer",
             MetadataV2GeometryType.Point,
@@ -1217,14 +1217,14 @@ public sealed partial class FeatureServerQueryExecutorTests
             new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         IReadOnlyList<string>? storageBindingIds,
         params MetadataV2Field[] fields)
     {
         var schemaFields = new List<MetadataV2Field>(fields);
-        MetadataV2ResourceSpatial? spatial = null;
+        MetadataV2ObjectSpatial? spatial = null;
         if (geometryType is not MetadataV2GeometryType.None)
         {
             schemaFields.Add(new MetadataV2Field
@@ -1234,7 +1234,7 @@ public sealed partial class FeatureServerQueryExecutorTests
                 Nullable = true,
                 SemanticRoles = ["geometry.primary"]
             });
-            spatial = new MetadataV2ResourceSpatial
+            spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,
@@ -1242,10 +1242,10 @@ public sealed partial class FeatureServerQueryExecutorTests
             };
         }
 
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = storageBindingIds ?? [],
             SchemaFields = schemaFields,
             Spatial = spatial

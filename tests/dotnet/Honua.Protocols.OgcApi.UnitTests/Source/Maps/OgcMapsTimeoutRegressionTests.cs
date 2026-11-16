@@ -95,7 +95,7 @@ public sealed class OgcMapsTimeoutRegressionTests
     public async Task DatasetMap_ConfiguredDeadline_CancelsCooperativeRenderer()
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource", "test", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("resource", "test", MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddStorageBinding("binding", "resource", "test", storageLayerId: 1)
             .AddService("service", "service", protocols: ["OGC-API-Maps"])

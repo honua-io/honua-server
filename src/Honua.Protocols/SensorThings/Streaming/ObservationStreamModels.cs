@@ -44,7 +44,7 @@ public sealed record ObservationStreamFrame
 
 public sealed record ObservationStreamStatus
 {
-    public const string EphemeralSemantics = "ephemeral";
+    public const string ResumableSemantics = "resumable";
 
     [JsonPropertyName("status")]
     public required string Status { get; init; }
@@ -62,7 +62,7 @@ public sealed record ObservationStreamStatus
     {
         Status = "connected",
         DatastreamId = datastreamId,
-        Semantics = EphemeralSemantics,
+        Semantics = ResumableSemantics,
     };
 
     public static ObservationStreamStatus SlowConsumerGap(long? datastreamId) => new()
@@ -70,16 +70,24 @@ public sealed record ObservationStreamStatus
         Status = "gap",
         DatastreamId = datastreamId,
         Reason = "slow-consumer",
-        Semantics = EphemeralSemantics,
+        Semantics = ResumableSemantics,
     };
 }
 
-internal sealed record ClusterBroadcastDto(string OriginInstanceId, ObservationStreamFrame Frame, ObservationStreamScope? Scope);
+internal sealed record ObservationStreamBatch(
+    [property: JsonPropertyName("cursor")] string Cursor,
+    [property: JsonPropertyName("datastreamId")] long DatastreamId,
+    [property: JsonPropertyName("observations")] System.Text.Json.JsonElement Observations);
+
+internal sealed record ObservationStreamReset(
+    [property: JsonPropertyName("reason")] string Reason,
+    [property: JsonPropertyName("cursor")] string Cursor);
 
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ObservationStreamFrame))]
 [JsonSerializable(typeof(ObservationStreamStatus))]
-[JsonSerializable(typeof(ClusterBroadcastDto))]
+[JsonSerializable(typeof(ObservationStreamBatch))]
+[JsonSerializable(typeof(ObservationStreamReset))]
 internal sealed partial class ObservationStreamJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }
@@ -88,15 +96,6 @@ internal static partial class ObservationStreamLog
 {
     [LoggerMessage(EventId = 5100, Level = LogLevel.Debug, Message = "Observation stream session {SessionId} created ({Transport}, datastream {DatastreamId}).")]
     public static partial void SessionCreated(ILogger logger, Guid sessionId, string transport, long? datastreamId);
-
-    [LoggerMessage(EventId = 5101, Level = LogLevel.Warning, Message = "Observation stream cluster fan-out unavailable; degraded to single-node delivery.")]
-    public static partial void ClusterUnavailable(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 5102, Level = LogLevel.Warning, Message = "Observation stream cluster publish failed.")]
-    public static partial void ClusterPublishFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 5103, Level = LogLevel.Warning, Message = "Observation stream cluster unsubscribe failed during dispose; continuing shutdown.")]
-    public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 5104, Level = LogLevel.Debug, Message = "Observation stream session refused ({Transport}): {Limit} admission cap reached.")]
     public static partial void SessionRejected(ILogger logger, string transport, ObservationStreamAdmissionLimit limit);

@@ -21,15 +21,15 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
 
-        services.TryAddSingleton<IComplianceControlCatalog, DefaultComplianceControlCatalog>();
+        services.TryAddSingleton<DefaultComplianceControlCatalog>();
         services.TryAddSingleton<IDataResidencyPolicyProvider, DefaultDataResidencyPolicyProvider>();
-        services.TryAddSingleton<IEncryptionPostureProvider, InMemoryEncryptionPostureProvider>();
+        services.TryAddSingleton<InMemoryEncryptionPostureProvider>();
 
         // The dependency gate inspects scoped services (IAuditLog, IRoleStore, IOidcProviderStore)
         // so it must be scoped too — singleton would capture the root-scope instances forever.
         services.TryAddScoped<IComplianceDependencyGate, DefaultComplianceDependencyGate>();
         services.TryAddScoped<IComplianceEvidenceCollector, DefaultComplianceEvidenceCollector>();
-        services.TryAddScoped<IComplianceReportExporter, DefaultComplianceReportExporter>();
+        services.TryAddScoped<DefaultComplianceReportExporter>();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IComplianceReportRenderer, CsvComplianceReportRenderer>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IComplianceReportRenderer, PdfComplianceReportRenderer>());

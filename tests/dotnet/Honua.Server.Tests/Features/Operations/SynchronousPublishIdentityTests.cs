@@ -145,7 +145,7 @@ public sealed class SynchronousPublishIdentityTests
             .AddService("svc-parcels", serviceName)
             .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
                 layerIndex: index, storageBindingId: "bind-parcels",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build(),
         "\"newer-graph\"", DateTimeOffset.UtcNow);
 }

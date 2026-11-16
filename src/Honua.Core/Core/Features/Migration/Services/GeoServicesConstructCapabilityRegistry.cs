@@ -3,12 +3,11 @@
 
 using System.Collections.Frozen;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstructCapabilityRegistry
+public sealed class GeoServicesConstructCapabilityRegistry
 {
     public static class Keys
     {
@@ -195,7 +194,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
             ConstructKey = Keys.ResourceRelationships,
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
             Code = ImportCompatibilityCodes.Compatible,
-            Reason = "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Resource.Relationships.",
+            Reason = "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Object.Relationships.",
             UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
             UnsupportedCode = ImportCompatibilityCodes.GeoServicesRelationshipsManualReview,
             UnsupportedReason = "Composite, attributed and many-to-many relationship classes need their junction or cascade "

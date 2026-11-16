@@ -41,6 +41,17 @@ Clients that read either property should stop reading it and regenerate from the
 current admin contract. There is no replacement, because no fallback or reconnect
 interval remains to report.
 
+## Cache server diagnostics withdrawn
+
+The cache runs in process memory on every node, so there is no external cache server
+left to inspect. The admin operation that reported that server's connection metrics is
+removed with no replacement and now returns `404`. `OpsCacheHealthResponse` drops its
+server information, and `OpsCacheStatisticsResponse` drops its server database size and
+memory properties. The other properties keep their names and meaning.
+
+Clients that call the removed operation or read those properties should stop and
+regenerate from the current admin contract.
+
 ## Tile cache inventory and license capacity withdrawn
 
 Generated tiles are no longer tracked in a shared index, and Honua does not meter
@@ -73,7 +84,7 @@ for the request fields and artifact selections.
 
 ## Human approval of pending operations
 
-Approval now requires one authorized person in a live interactive OIDC session.
+Approval now requires one authorized person in a live interactive browser session (password or OIDC).
 The requester may approve their own proposal. An API key, ordinary bearer or
 agent token cannot approve, even when it has an admin or approve grant. Move
 approval clients to the private human review flow described in

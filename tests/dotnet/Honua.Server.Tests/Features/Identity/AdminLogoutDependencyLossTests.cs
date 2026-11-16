@@ -6,6 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -46,7 +47,7 @@ public sealed class AdminLogoutDependencyLossTests
         client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
         if (!saml)
         {
-            await SetCsrfHeaderAsync(client);
+            await BrowserCsrf.SetHeaderAsync(client);
         }
         var path = saml ? "/saml/slo" : "/api/v1/admin/auth/logout";
         var signedRequest = SamlTestAssertions.CreateSignedLogoutRequest(certificate, "admin");
@@ -68,7 +69,7 @@ public sealed class AdminLogoutDependencyLossTests
         Assert.NotNull(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         if (!saml)
         {
-            await SetCsrfHeaderAsync(client);
+            await BrowserCsrf.SetHeaderAsync(client);
         }
         using var retried = await client.PostAsync(path, saml ? content : null);
         Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
@@ -117,14 +118,5 @@ public sealed class AdminLogoutDependencyLossTests
             => RevocationUnavailable
                 ? Task.FromException(new IOException("Dependency unavailable"))
                 : _inner.RevokeAsync(key, cancellationToken);
-    }
-
-    private static async Task SetCsrfHeaderAsync(HttpClient client)
-    {
-        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
-        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
     }
 }

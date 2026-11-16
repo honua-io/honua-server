@@ -11,7 +11,6 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -610,7 +609,6 @@ public sealed class PortalOAuthClientCredentialsTests
             IHttpClientFactory? httpClientFactory = null,
             PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var apiKeyStore = new InMemoryAdminApiKeyStore();
         var created = await apiKeyStore.CreateAsync(
             name: "etl-worker",
@@ -626,12 +624,11 @@ public sealed class PortalOAuthClientCredentialsTests
                 EnableClientCredentials = enableClientCredentials,
                 ClientCredentialsFederation = federationOptions ?? new PortalOAuthClientCredentialsFederationOptions(),
             },
-            SourceRevalidationSeconds = 0,
         });
 
         var services = new ServiceCollection()
             .AddSingleton<IAdminApiKeyStore>(apiKeyStore)
-            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(memoryCache, options, sp))
+            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(sp))
             .BuildServiceProvider();
         var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
         var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);

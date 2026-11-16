@@ -13,7 +13,7 @@ internal static class OgcGeoJsonFeatureBuilder
 {
     internal static GeoJsonFeature Create(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         IReadOnlySet<string>? projectedProperties = null,
@@ -28,7 +28,7 @@ internal static class OgcGeoJsonFeatureBuilder
                 resource,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema),
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema, projectedProperties),
                     IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
                     Schema: schema)),
             geometry,
@@ -37,7 +37,7 @@ internal static class OgcGeoJsonFeatureBuilder
 
     internal static GeoJsonFeature Create(
         EncodedGeoJsonFeature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         IReadOnlySet<string>? projectedProperties = null,
@@ -52,7 +52,7 @@ internal static class OgcGeoJsonFeatureBuilder
                 resource,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema),
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema, projectedProperties),
                     IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
                     Schema: schema)),
             geometry,
@@ -60,10 +60,12 @@ internal static class OgcGeoJsonFeatureBuilder
     }
 
     private static bool ShouldIncludePublicIdentifierProperty(
-        MetadataV2Resource resource, GeoJsonFeatureBaseBuilder.PreparedSchema? schema)
+        MetadataV2Object resource, GeoJsonFeatureBaseBuilder.PreparedSchema? schema,
+        IReadOnlySet<string>? projectedProperties)
     {
         var name = schema?.ObjectIdFieldName ?? resource.FindPrimaryIdField()?.Name ?? "objectid";
-        return !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
+        return !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+            (projectedProperties is null || projectedProperties.Contains(name));
     }
 
     internal static FeatureCollection CreateCollection(

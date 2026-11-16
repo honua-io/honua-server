@@ -29,7 +29,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         if (selected == null || selected.Count == 0)
         {
-            return columns;
+            return columns.Where(column => !column.IsInternalImportColumn).ToList();
         }
 
         var lookup = columns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
@@ -417,7 +417,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 FieldType = MapPostgresType(column.DataType).ToString(),
                 IsNullable = column.IsNullable,
                 IsPrimaryKey = column.IsPrimaryKey,
-                IsSelected = selectedSet == null || selectedSet.Contains(column.Name),
+                IsSelected = selectedSet == null ? !column.IsInternalImportColumn : selectedSet.Contains(column.Name),
                 MaxLength = column.MaxLength
             })
             .ToArray();

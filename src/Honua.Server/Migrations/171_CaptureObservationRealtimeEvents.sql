@@ -1,0 +1,152 @@
+-- Capture observations in the edit transaction, including direct SQL inserts. The application
+-- stamps exact tenant/schema identity in transaction-local context; unscoped SQL stays unscoped.
+-- Schema names identify physical tables only and never stand in for a tenant identity.
+CREATE OR REPLACE FUNCTION $HonuaSchema$.observation_realtime_scope(table_schema text)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    context_text text := current_setting('honua.observation_scope', true);
+    context jsonb;
+    event_scope jsonb;
+BEGIN
+    IF context_text IS NULL OR context_text = '' THEN
+        event_scope := jsonb_build_object('tenantId', NULL, 'schema', NULL);
+    ELSE
+        context := context_text::jsonb;
+        IF jsonb_typeof(context) <> 'object'
+           OR context->>'tableSchema' IS DISTINCT FROM table_schema
+           OR NOT context ? 'tenantId' OR NOT context ? 'schema'
+           OR jsonb_typeof(context->'tenantId') NOT IN ('string', 'null')
+           OR jsonb_typeof(context->'schema') NOT IN ('string', 'null') THEN
+            RAISE EXCEPTION 'Observation scope does not match the inserted table' USING ERRCODE = '22023';
+        END IF;
+        event_scope := jsonb_build_object('tenantId', context->'tenantId', 'schema', context->'schema');
+    END IF;
+    RETURN event_scope;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION $HonuaSchema$.observation_realtime_item(observation jsonb, result_value jsonb)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+    SELECT jsonb_build_object(
+        'id', observation->'id',
+        'phenomenonTime', CASE WHEN observation->>'phenomenon_time_end' IS NULL THEN observation->'phenomenon_time'
+            ELSE to_jsonb((observation->>'phenomenon_time') || '/' || (observation->>'phenomenon_time_end')) END,
+        'resultTime', observation->'result_time',
+        'result', result_value,
+        'featureOfInterestId', COALESCE(NULLIF(observation->'feature_of_interest_reference_id', 'null'::jsonb), observation->'feature_of_interest_id'));
+$$;
+
+CREATE OR REPLACE FUNCTION $HonuaSchema$.append_observation_realtime_batch(event_scope jsonb, stream_id bigint, batch jsonb)
+RETURNS void
+LANGUAGE sql
+AS $$
+    SELECT $HonuaSchema$.realtime_append('observations', jsonb_build_array(jsonb_build_object(
+        'scope_key', stream_id::text, 'kind', 'observation.created',
+        'payload', jsonb_build_object('scope', event_scope, 'datastreamId', stream_id, 'observations', batch))));
+$$;
+
+CREATE OR REPLACE FUNCTION $HonuaSchema$.capture_observation_realtime_events()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    event_scope jsonb := $HonuaSchema$.observation_realtime_scope(TG_TABLE_SCHEMA);
+    observation record;
+    stream_id bigint;
+    batch jsonb := '[]'::jsonb;
+    item jsonb;
+    candidate jsonb;
+    event_payload jsonb;
+BEGIN
+    FOR observation IN
+        SELECT * FROM inserted_observations
+        ORDER BY COALESCE(datastream_reference_id, datastream_id), id, phenomenon_time
+    LOOP
+        IF stream_id IS NOT NULL AND stream_id <> COALESCE(observation.datastream_reference_id, observation.datastream_id) THEN
+            PERFORM $HonuaSchema$.append_observation_realtime_batch(event_scope, stream_id, batch);
+            batch := '[]'::jsonb;
+        END IF;
+        stream_id := COALESCE(observation.datastream_reference_id, observation.datastream_id);
+        item := $HonuaSchema$.observation_realtime_item(to_jsonb(observation),
+            COALESCE(observation.result_json, to_jsonb(observation.result), 'null'::jsonb));
+        candidate := batch || jsonb_build_array(item);
+        event_payload := jsonb_build_object('scope', event_scope, 'datastreamId', stream_id, 'observations', candidate);
+        IF jsonb_array_length(batch) > 0 AND (jsonb_array_length(candidate) > 1000 OR octet_length(event_payload::text) > 65536) THEN
+            PERFORM $HonuaSchema$.append_observation_realtime_batch(event_scope, stream_id, batch);
+            candidate := jsonb_build_array(item);
+            event_payload := jsonb_build_object('scope', event_scope, 'datastreamId', stream_id, 'observations', candidate);
+        END IF;
+        IF octet_length(event_payload::text) > 65536 THEN
+            RAISE EXCEPTION 'Observation event payload exceeds 65536 bytes' USING ERRCODE = '54000';
+        END IF;
+        batch := candidate;
+    END LOOP;
+    IF jsonb_array_length(batch) > 0 THEN
+        PERFORM $HonuaSchema$.append_observation_realtime_batch(event_scope, stream_id, batch);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+-- Statement triggers are not cloned onto partitions. Partition provisioning must call this
+-- installer after CREATE/ATTACH PARTITION, in the same transaction. No superuser DDL hook is needed.
+CREATE OR REPLACE FUNCTION $HonuaSchema$.install_observation_realtime_triggers()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    relation regclass;
+BEGIN
+    FOR relation IN
+        SELECT relid FROM pg_catalog.pg_partition_tree('$HonuaSchema$.sta_observation'::regclass)
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_trigger
+            WHERE tgrelid = relation AND tgname = 'trigger_capture_observation_realtime_events'
+        ) THEN
+            EXECUTE format('CREATE TRIGGER trigger_capture_observation_realtime_events AFTER INSERT ON %s '
+                'REFERENCING NEW TABLE AS inserted_observations FOR EACH STATEMENT '
+                'EXECUTE FUNCTION $HonuaSchema$.capture_observation_realtime_events()', relation);
+        END IF;
+    END LOOP;
+END;
+$$;
+
+-- This row trigger is cloned automatically onto future partitions. Fail closed until their
+-- statement capture trigger is installed, rather than committing observations with a replay gap.
+CREATE OR REPLACE FUNCTION $HonuaSchema$.require_observation_realtime_capture()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = TG_RELID AND tgname = 'trigger_capture_observation_realtime_events'
+          AND tgenabled IN ('O', 'A')
+    ) THEN
+        RAISE EXCEPTION 'Observation partition requires install_observation_realtime_triggers() before inserts'
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+SELECT $HonuaSchema$.install_observation_realtime_triggers();
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = '$HonuaSchema$.sta_observation'::regclass
+          AND tgname = 'trigger_require_observation_realtime_capture'
+    ) THEN
+        CREATE TRIGGER trigger_require_observation_realtime_capture
+        BEFORE INSERT ON $HonuaSchema$.sta_observation
+        FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.require_observation_realtime_capture();
+    END IF;
+END;
+$$;

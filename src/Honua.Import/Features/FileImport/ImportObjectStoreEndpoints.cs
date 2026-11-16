@@ -90,6 +90,9 @@ internal static partial class ImportEndpoints
                 TableName = request.TableName,
                 TargetSchema = request.TargetSchema,
                 SourceSrid = request.SourceSrid,
+                DatumTransformationWkid = request.DatumTransformationWkid,
+                DatumTransformationName = request.DatumTransformationName,
+                CoordinateEpoch = request.CoordinateEpoch,
                 TargetSrid = request.TargetSrid,
                 OverwriteExisting = request.OverwriteExisting,
                 OperationInstanceId = ReadLineageHeader(context, "X-Honua-Operation-Instance-Id"),
@@ -300,6 +303,12 @@ internal sealed record ImportObjectStoreImportRequest
     public string? TargetSchema { get; init; }
 
     public int? SourceSrid { get; init; }
+
+    public int? DatumTransformationWkid { get; init; }
+
+    public string? DatumTransformationName { get; init; }
+
+    public double? CoordinateEpoch { get; init; }
 
     public int? TargetSrid { get; init; }
 

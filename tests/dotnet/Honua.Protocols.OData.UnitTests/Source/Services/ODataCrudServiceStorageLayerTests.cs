@@ -77,10 +77,10 @@ public sealed class ODataCrudServiceStorageLayerTests
     {
         var validator = Substitute.For<IResourceValidator>();
         validator.ValidateLayerV2Async(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(new MetadataV2Resource
+            .Returns(ResourceValidationResult.Success(new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "raster-sidecar" },
-                Type = MetadataV2ResourceType.RasterDataset
+                Type = MetadataV2ObjectType.RasterDataset
             }));
         var featureResource = CreateResource() with
         {
@@ -175,7 +175,7 @@ public sealed class ODataCrudServiceStorageLayerTests
         var adapter = Substitute.For<IEditParameterAdapter<ODataEditRequest>>();
         adapter.ProtocolName.Returns("OData");
         var editRequest = UnifiedEditRequest.WithCreates(ImmutableArray<EditFeature>.Empty);
-        adapter.ConvertAsync(Arg.Any<ODataEditRequest>(), Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        adapter.ConvertAsync(Arg.Any<ODataEditRequest>(), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(EditAdapterResult.Success(editRequest, EditTransaction.CreateSimple("tx", "OData", editRequest)));
 
         // EditTransaction is a record struct. NSubstitute's Arg.Any<EditTransaction>()
@@ -201,7 +201,7 @@ public sealed class ODataCrudServiceStorageLayerTests
         return new ODataCrudService(dependencies, NullLogger<ODataCrudLog>.Instance);
     }
 
-    private static MetadataV2Resource CreateNamedResource()
+    private static MetadataV2Object CreateNamedResource()
         => CreateResource() with
         {
             SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Editable = true, Nullable = true }],
@@ -233,12 +233,12 @@ public sealed class ODataCrudServiceStorageLayerTests
         return new ODataCrudService(dependencies, NullLogger<ODataCrudLog>.Instance);
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.aliased", Name = "aliased" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
@@ -293,24 +293,24 @@ public sealed class ODataCrudServiceStorageLayerTests
 
     private sealed class AcceptingEditProcessor : IEditProcessor
     {
-        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => EditValidationResult.Success();
 
-        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => editRequest;
 
-        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => FeatureEditBatch.Create(creates: ImmutableArray.Create(Feature.Create(0, null)));
 
-        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
+        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Object resource)
             => TransactionValidationResult.Success();
 
-        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => new();
 
         public Task<EditPerformanceEstimate> EstimatePerformanceAsync(
             UnifiedEditRequest editRequest,
-            MetadataV2Resource resource,
+            MetadataV2Object resource,
             CancellationToken cancellationToken)
             => Task.FromResult(new EditPerformanceEstimate());
     }

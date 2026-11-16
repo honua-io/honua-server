@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// cannot satisfy these assertions.
 /// </summary>
 [Collection("Database")]
-public sealed class ProviderRoutedTileAndH3EndpointTests :
+public sealed partial class ProviderRoutedTileAndH3EndpointTests :
     IClassFixture<ProviderRoutedTileAndH3EndpointTests.Fixture>
 {
     private static readonly byte[] SecondaryMvt = [0x11, 0x12];
@@ -351,7 +351,8 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                     Type = MetadataV2FieldType.BigInteger,
                     Nullable = false,
                     SemanticRoles = ["id.primary"]
-                }
+                },
+                new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime }
             };
 
             return new TestMetadataV2GraphBuilder()
@@ -370,23 +371,23 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                 .AddPublication(
                     "publication-secondary-ogc", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
-                    publicationType: MetadataV2PublicationType.OgcCollection)
+                    publicationType: MetadataV2LayerType.OgcCollection)
                 .AddPublication(
                     "publication-secondary", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
-                    publicationType: MetadataV2PublicationType.EsriVectorTileLayer)
+                    publicationType: MetadataV2LayerType.EsriVectorTileLayer)
                 .AddPublication(
                     "publication-primary", "service-routed", "resource-primary",
                     layerIndex: 1, storageBindingId: "binding-primary",
-                    publicationType: MetadataV2PublicationType.EsriVectorTileLayer, isPrimary: true)
+                    publicationType: MetadataV2LayerType.EsriVectorTileLayer, isPrimary: true)
                 .AddPublication(
                     "publication-secondary-feature", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer)
                 .AddPublication(
                     "publication-primary-feature", "service-routed", "resource-primary",
                     layerIndex: 1, storageBindingId: "binding-primary",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true)
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true)
                 .BuildProvider();
         }
 

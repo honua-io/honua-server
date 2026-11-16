@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
@@ -16,11 +15,11 @@ namespace Honua.Core.Features.Portal.Services;
 public sealed class PortalItemProjector : IPortalItemProjector
 {
     private readonly PublishedMetadataProjection _catalogProjection;
-    private readonly IGeoServicesConstructCapabilityRegistry _capabilityRegistry;
+    private readonly GeoServicesConstructCapabilityRegistry _capabilityRegistry;
 
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
-        IGeoServicesConstructCapabilityRegistry capabilityRegistry,
+        GeoServicesConstructCapabilityRegistry capabilityRegistry,
         IPortalResourceReadAuthorizer readAuthorizer)
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);
@@ -110,7 +109,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
 
     private static PortalItem BuildItem(
         MetadataV2Service service,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         string itemType,
         string access,
         string url)
@@ -183,7 +182,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
     }
 
     private static (IReadOnlyList<IReadOnlyList<double>> Extent, string? SpatialReference) BuildExtent(
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         if (resource?.Spatial is not { Bbox: { } bbox } spatial)
         {

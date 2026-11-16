@@ -112,7 +112,7 @@ internal sealed partial class Wfs20Handler
 
     private sealed record FeatureSchemaProfile(string GmlNamespace, string SchemaLocation, string FeatureElement)
     {
-        public string GeometryPropertyType(MetadataV2Resource resource)
+        public string GeometryPropertyType(MetadataV2Object resource)
             => FeatureElement == "AbstractFeature" ? MapGeometryPropertyType(resource.ReadGeometryType()) : "gml:GeometryPropertyType";
     }
 }

@@ -12,8 +12,8 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 
 internal readonly record struct MapToolLayerContext(
     MetadataV2Service Service,
-    MetadataV2Publication Publication,
-    MetadataV2Resource Resource,
+    MetadataV2Layer Publication,
+    MetadataV2Object Resource,
     int StorageLayerId);
 
 internal static class MapToolLayerResolver

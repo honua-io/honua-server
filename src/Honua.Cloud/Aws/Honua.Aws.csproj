@@ -41,6 +41,7 @@
     <PackageReference Include="AWSSDK.RDS" />
     <PackageReference Include="AWSSDK.SecretsManager" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" />
     <PackageReference Include="AWSSDK.SQS" />
     <!-- Pin the patched Cbor dependency used transitively by AWSSDK (GHSA-vmv3-wvjp-wqpj). -->
     <PackageReference Include="System.Formats.Cbor" NoWarn="NU1510" />

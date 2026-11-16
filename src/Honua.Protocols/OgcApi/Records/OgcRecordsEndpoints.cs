@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation;
@@ -18,9 +19,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Read-only OGC API Records endpoints backed by Honua catalog metadata.
-/// </summary>
 internal static class OgcRecordsEndpoints
 {
     internal const string CatalogCollectionId = "honua-catalog";
@@ -41,16 +39,10 @@ internal static class OgcRecordsEndpoints
         "f", "bbox", "datetime", "limit", "offset", "q", "ids", "type", "externalIds"
     };
 
-    /// <summary>
-    /// Logging category for OGC API Records endpoints.
-    /// </summary>
     internal sealed class OgcRecordsEndpointsLog
     {
     }
 
-    /// <summary>
-    /// Maps the OGC API Records endpoint family.
-    /// </summary>
     public static IEndpointRouteBuilder MapOgcRecordsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/ogc/records", HandleGetLandingPage)
@@ -356,7 +348,7 @@ internal static class OgcRecordsEndpoints
         var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var resourceBboxes = new Dictionary<string, ImmutableArray<double>?>();
 
-        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Resource resource)
+        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Object resource)
         {
             if (!resourceBboxes.TryGetValue(resource.Metadata.Id, out var result))
             {
@@ -392,7 +384,7 @@ internal static class OgcRecordsEndpoints
             .Where(item => item.Primary is not null)
             .OrderBy(item => item.Primary!.Metadata.Id, StringComparer.Ordinal);
         var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
-        var recordPublications = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        var recordPublications = new Dictionary<string, MetadataV2Layer>(StringComparer.Ordinal);
         foreach (var item in resourceRecords)
         {
             var resource = item.Resource;
@@ -479,7 +471,7 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateServiceRecord(
         MetadataV2Service service,
-        (MetadataV2Publication Publication, MetadataV2Resource? Resource)[] visiblePublications,
+        (MetadataV2Layer Publication, MetadataV2Object? Resource)[] visiblePublications,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         DateTimeOffset? modified,
@@ -506,15 +498,15 @@ internal static class OgcRecordsEndpoints
             .Order(StringComparer.Ordinal)
             .ToImmutableArray();
 
-        var properties = new OgcRecordProperties
+        var descriptive = DescriptiveMetadataResolver.ForService(snapshot.Graph, service);
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = serviceMetadata.Title ?? service.EffectivePublicName,
-            Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",
             ExternalIds = ImmutableArray.Create(serviceMetadata.Name),
             LayerIds = layerIds
-        };
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -536,8 +528,8 @@ internal static class OgcRecordsEndpoints
     }
 
     private static CatalogRecord CreateResourceRecord(
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
@@ -568,15 +560,15 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
-        var properties = new OgcRecordProperties
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = resource.Metadata.Title ?? resource.Metadata.Name,
-            Description = resource.Metadata.Description,
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
             ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
-        };
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -594,8 +586,8 @@ internal static class OgcRecordsEndpoints
                 $"layer:{publicationId}",
                 publicationId,
                 resource.Metadata.Name,
-                resource.Metadata.Title,
-                resource.Metadata.Description));
+                properties.Title,
+                properties.Description));
     }
 
     private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)
@@ -624,32 +616,9 @@ internal static class OgcRecordsEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds the free-text haystack the <c>q</c> parameter matches against.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#4425: the shipped coverage document states that <c>q</c> searches "over id,
-    /// title, and description", but the haystack was built from the bare name + description with
-    /// the title omitted and the record's actual (prefixed) id absent — so <c>q=layer:0</c> could
-    /// not find the record whose id is exactly <c>layer:0</c>. The fixture could not detect the
-    /// title half because every seeded title is null, so <c>Title ?? Name</c> collapsed to the same
-    /// string. Both the prefixed public id and the title are included now; a null or duplicate
-    /// segment contributes nothing.
-    /// </remarks>
     private static string BuildSearchText(params string?[] segments)
         => string.Join(' ', segments.Where(segment => !string.IsNullOrWhiteSpace(segment)));
 
-    /// <summary>
-    /// Resolves the record's temporal value from the catalog entry's own timestamps.
-    /// </summary>
-    /// <remarks>
-    /// honua-server#4425: both record factories hard-coded <c>Modified: null</c>, so the
-    /// <c>datetime</c> filter short-circuited before <c>DateTimeFilter.Contains</c> could ever run
-    /// and no query could exclude a record by time — the parameter was accepted, advertised and
-    /// inert. The graph already carries <c>updatedAt</c>/<c>createdAt</c> on every catalog entity;
-    /// this projects them so the declared filter has something to filter on. Records that genuinely
-    /// have no timestamp are still not constrained by <c>datetime</c> (#1988).
-    /// </remarks>
     private static DateTimeOffset? ResolveModified(MetadataV2ObjectMetadata metadata)
         => metadata.UpdatedAt ?? metadata.CreatedAt;
 

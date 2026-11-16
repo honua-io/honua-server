@@ -20,7 +20,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-public sealed class DeployWorkflowServiceTests
+public sealed partial class DeployWorkflowServiceTests
 {
     [UnitTest]
     public async Task ImmediateCheckpointedDeploy_PersistsPendingPhaseBeforeReconciliation()

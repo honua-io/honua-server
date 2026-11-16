@@ -60,7 +60,7 @@ public class PrintingToolsRequestHandlerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowedRoles = [coarseAllowed ? "reader" : "editor"] },
@@ -79,7 +79,7 @@ public class PrintingToolsRequestHandlerTests
                 ResourceId = "resource", StorageLayerId = 7,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }],
-            Publications = [new MetadataV2Publication
+            Publications = [new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication", Tenant = tenantVisible ? "tenant-a" : "tenant-b" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
@@ -133,7 +133,7 @@ public class PrintingToolsRequestHandlerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowAnonymous = false },
@@ -152,7 +152,7 @@ public class PrintingToolsRequestHandlerTests
                 ResourceId = "resource", StorageLayerId = 7,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }],
-            Publications = [new MetadataV2Publication
+            Publications = [new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,

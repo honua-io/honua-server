@@ -29,7 +29,7 @@ assert RYUK in SCRIPT.read_text(encoding="utf-8")
 python_job = re.split(r"(?m)^  [a-z][a-z0-9-]*:\n", workflow.split("  python-integration-tests:\n", 1)[1], maxsplit=1)[0]
 assert "RYUK_CONTAINER_IMAGE: '" + RYUK + "'" in python_job
 assert "run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18" in python_job
-assert "if [[ \"${SERVER_SHARD}\" == 'Core and Cloud Contracts' ]]; then\n            images+=(postgis16 postgis18)" in workflow
+assert "if [[ \"${SERVER_SHARD}\" == 'Core and Cloud Contracts '[0-9]* ]]; then\n            images+=(postgis16 postgis18)" in workflow
 datum = (ROOT / "tests/dotnet/Honua.TestKit/DatumGridPostgresFixture.cs").read_text(encoding="utf-8")
 assert 'const string image = "mirror.gcr.io/postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677";' in datum
 for block in re.split(r"(?m)^      - ", workflow):

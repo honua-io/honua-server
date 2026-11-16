@@ -189,10 +189,10 @@ public sealed class FeatureMutationEventServiceTests
             null,
             NullLogger<OutputCacheInvalidationService>.Instance);
         var service = new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>(), invalidation);
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" },
-            Identifier = new MetadataV2PublicationIdentifier { Value = "parcels", IsNumeric = false },
+            Identifier = new MetadataV2LayerIdentifier { Value = "parcels", IsNumeric = false },
         };
 
         await service.InvalidatePublishedLayerAsync(publication, 42);

@@ -26,9 +26,6 @@ using Npgsql;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Admin;
 
-/// <summary>
-/// PostgreSQL implementation of layer publishing operations.
-/// </summary>
 internal sealed partial class PostgreSqlLayerPublishingService(
     ITableDiscoveryService tableDiscoveryService,
     IMetadataV2GraphStore metadataGraphStore,
@@ -435,6 +432,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Original source object ID for migration identity mapping; null for newly created features."));
         }
 
+        // Reject a bad temporal column before any rows are copied; the graph projection resolves it again.
+        _ = ResolveTemporalColumnForPublish(request.TemporalColumn, fields);
+
         // Every physical-cursor page must observe the same source snapshot.
         await using var transaction = await connection.BeginTransactionAsync(
             System.Data.IsolationLevel.RepeatableRead, cancellationToken);
@@ -724,10 +724,6 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return linkedLayer;
     }
 
-    /// <summary>
-    /// Verifies a committed-sink endpoint pin and, only when it matches, allows that
-    /// publish to discover a non-reserved schema outside the operational list.
-    /// </summary>
     private static IDisposable? OpenCommittedSchemaScope(
         string connectionString,
         string? fingerprint,

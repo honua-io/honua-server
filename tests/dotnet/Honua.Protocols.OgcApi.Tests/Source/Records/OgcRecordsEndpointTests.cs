@@ -183,13 +183,13 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         {
             Metadata = sourcePublication.Metadata with { Id = activePublicationId },
             ServiceId = activeServiceId,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
         var retiredPublication = activePublication with
         {
             Metadata = activePublication.Metadata with { Id = retiredPublicationId },
             ServiceId = retiredServiceId,
-            PublicationType = MetadataV2PublicationType.EsriMapLayer
+            PublicationType = MetadataV2LayerType.EsriMapLayer
         };
         var mutatedGraph = snapshot.Graph with
         {
@@ -302,7 +302,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
             Revision = snapshot.Graph.Revision + 1,
             Resources = snapshot.Graph.Resources.Select(resource => resource with
             {
-                Spatial = (resource.Spatial ?? new MetadataV2ResourceSpatial()) with
+                Spatial = (resource.Spatial ?? new MetadataV2ObjectSpatial()) with
                 {
                     SpatialReference = snapshot.ResolveStorageLayerId(resource) == WebAppFixture.TestLayerId
                         ? new MetadataV2SpatialReference { Srid = srid }

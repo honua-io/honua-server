@@ -312,7 +312,9 @@ public sealed class RollbackDataPlaneHealthTests
         const string stableTg = "stable-tg";
         var alb = new EcsAlbStub(health, canaryTg, stableTg);
         var ecs = new EcsServiceStub();
-        return new AwsEcsAlbDeployBackend(alb, ecs, NullLogger<AwsEcsAlbDeployBackend>.Instance, RollbackDataPlaneTestSupport.HealthyProbe());
+        return new AwsEcsAlbDeployBackend(
+            new AwsEcsAlbDeployClients(alb, ecs, RollbackDataPlaneTestSupport.HealthyProbe()),
+            NullLogger<AwsEcsAlbDeployBackend>.Instance);
     }
 
     private static WorkflowOperationRecord CreateEcsOperation(bool expired)

@@ -39,7 +39,8 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminKey);
-            });
+            })
+            .UseProcessLocalConsoleState();
     }
 
     public async Task InitializeAsync()
@@ -170,12 +171,29 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CreateContent_WithAPublishedId_IsRefusedAsAClientError()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
+
+        var refusal = await Assert.ThrowsAsync<ConsoleContentIdConflictException>(() => store.CreateAsync(new ConsoleContentItem
+        {
+            Id = "publication",
+            Name = "collision",
+            ItemType = ConsoleContentItemType.Layer,
+        }));
+
+        Assert.Equal("Published metadata is read-only in the content catalog.", refusal.Message);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content")]
     [Endpoint("GET /api/v1/console/content/{id}")]
     [Endpoint("PATCH /api/v1/console/content/{id}")]
     public async Task GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership()
     {
-        var store = _fixture.Services.GetRequiredService<InMemoryConsoleContentStore>();
+        var store = _fixture.Services.GetRequiredService<IAuthoredConsoleContent>();
         await store.CreateAsync(new()
         {
             Id = "publication",
@@ -205,7 +223,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
     [Endpoint("GET /api/v1/console/content")]
     public async Task GetContent_MultipleAuthoredPages_PaginatesAfterCombiningWithGraphItems()
     {
-        var store = _fixture.Services.GetRequiredService<InMemoryConsoleContentStore>();
+        var store = _fixture.Services.GetRequiredService<IAuthoredConsoleContent>();
         for (var index = 0; index < 201; index++)
         {
             await store.CreateAsync(new()
@@ -308,7 +326,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
             Publications = [graph.Publications[0], graph.Publications[0] with
             {
                 Metadata = graph.Publications[0].Metadata with { Id = "secondary-publication" },
-                PublicationType = MetadataV2PublicationType.StacCollection,
+                PublicationType = MetadataV2LayerType.StacCollection,
                 IsPrimary = false
             }]
         });

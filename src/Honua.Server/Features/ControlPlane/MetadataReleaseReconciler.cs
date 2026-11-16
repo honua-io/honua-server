@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Hosting;
@@ -90,12 +91,6 @@ internal sealed partial class MetadataReleaseReconciler(
         }
     }
 
-    /// <summary>
-    /// Advances the forward lifecycle by exactly one stage so the leased loop re-enters and resumes
-    /// deterministically. Every stage is idempotent against the persisted record: a crash between a
-    /// side effect and the record write re-runs the stage and observes the side effect instead of
-    /// repeating it.
-    /// </summary>
     private async Task<WorkflowOperationRecord> AdvanceForwardAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken)
@@ -237,10 +232,6 @@ internal sealed partial class MetadataReleaseReconciler(
         }
     }
 
-    /// <summary>
-    /// Captures the active revision and its ETag before any mutation. Only a retained revision can
-    /// serve as the immutable base: a synthesized compatibility or empty graph is refused.
-    /// </summary>
     private async Task<WorkflowOperationRecord> CapturePriorAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken)
@@ -269,10 +260,6 @@ internal sealed partial class MetadataReleaseReconciler(
             release with { PriorRevision = current.Revision, PriorEtag = current.Etag });
     }
 
-    /// <summary>
-    /// Prepares the candidate from the immutable prior revision, validates it and stages it as a
-    /// retained revision. The active pointer does not move, so canonical readers keep the prior revision.
-    /// </summary>
     private async Task<WorkflowOperationRecord> PrepareCandidateAsync(
         WorkflowOperationRecord operation,
         MetadataReleaseExecutionPlan plan,
@@ -332,11 +319,6 @@ internal sealed partial class MetadataReleaseReconciler(
             });
     }
 
-    /// <summary>
-    /// Moves the current pointer to the candidate only if the prior revision is still current. A
-    /// newer update is never overwritten: the change is rebased onto it and revalidated, or rejected
-    /// after <see cref="MaxRebaseAttempts"/> rebases.
-    /// </summary>
     private async Task<WorkflowOperationRecord> ActivateCandidateAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken)
@@ -393,10 +375,6 @@ internal sealed partial class MetadataReleaseReconciler(
             });
     }
 
-    /// <summary>
-    /// Ends a release that failed before activation: discards the staged candidate (canonical readers
-    /// never left the prior revision) and fails the operation with a stable blocker.
-    /// </summary>
     private async Task<WorkflowOperationRecord> AbandonCandidateAsync(
         WorkflowOperationRecord operation,
         string reason,
@@ -415,11 +393,6 @@ internal sealed partial class MetadataReleaseReconciler(
             [blocker]);
     }
 
-    /// <summary>
-    /// Executes the requested rollback: restores only the operation-owned change, never touches
-    /// physical data or unrelated updates, and verifies the recovered service before reporting
-    /// RolledBack. Snapshot-required is refused — that path is deferred.
-    /// </summary>
     private async Task<WorkflowOperationRecord> ExecuteRollbackAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken)
@@ -528,10 +501,6 @@ internal sealed partial class MetadataReleaseReconciler(
         }
     }
 
-    /// <summary>
-    /// Reverts only the owned field changes on top of whatever is live now, preserving every later
-    /// update, with an ETag-conditional commit retried against concurrent writers.
-    /// </summary>
     private async Task<RecoveryOutcome> RevertOwnedChangesAsync(
         MetadataReleaseContext release,
         CancellationToken cancellationToken)
@@ -785,17 +754,13 @@ internal sealed partial class MetadataReleaseReconciler(
     }
 }
 
-/// <summary>
-/// Background worker that continuously reconciles active metadata-release workflow operations.
-/// Sibling to <see cref="DeployWorkflowReconcilerBackgroundService"/>; processes only
-/// <see cref="WorkflowOperationKind.MetadataRelease"/> operations.
-/// </summary>
 internal sealed class MetadataReleaseReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     IMetadataReleaseOperationReconciler reconciler,
-    ILogger<MetadataReleaseReconcilerBackgroundService> logger) : BackgroundService
+    ILogger<MetadataReleaseReconcilerBackgroundService> logger,
+    PollWakeSignal<IWorkflowOperationStore>? wake = null) : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly IdlePollPacer _pacer = new(wake);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -803,9 +768,12 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var activeOperations = await workflowStore.ListActiveAsync(WorkflowOperationKind.MetadataRelease, stoppingToken).ConfigureAwait(false);
+                idle = activeOperations.Count == 0;
                 foreach (var operation in activeOperations)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
@@ -834,7 +802,7 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
                 MetadataReleaseReconciler.Log.MetadataReleasePollLoopFailed(logger, ex);
             }
 
-            await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+            await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
         }
     }
 }

@@ -28,7 +28,7 @@
       scripts are invoked via `python3` by the corresponding executors and run
       ONLY inside the GDAL worker image (they require the GDAL Python bindings +
       SciPy provided by docker/worker-gdal/Dockerfile). gdal_euclidean_allocation.py
-      backs proximity.euclidean-allocation (#2255): stock gdal_proximity has no
+      backs proximity.euclidean-allocation: stock gdal_proximity has no
       nearest-source allocation mode. Copied to the build/publish output so the
       runtime image's build-stage COPY includes them at /app/Scripts.
     -->

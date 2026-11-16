@@ -8,13 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Metadata;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IMetadataV2StyleGraphSync"/> (ADR-0048, Phase 2,
-/// issue #1389). Reconciles the canonical graph's <c>Type=Style</c> resources and
-/// <c>StyleResourceIds</c> against the independent style catalog whenever a layer's
-/// styles change, so the FeatureServer/MapServer style read path reflects edits
-/// immediately rather than waiting for a re-publish.
-/// </summary>
 internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSync
 {
     private readonly IMetadataV2GraphStore _graphStore;
@@ -38,7 +31,6 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         MetadataV2GraphSnapshot snapshot;
@@ -82,7 +74,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         var now = DateTimeOffset.UtcNow;
         var styles = await _styleCatalog.GetStylesForLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
-        var styleResources = new List<MetadataV2Resource>(styles.Count);
+        var styleResources = new List<MetadataV2Object>(styles.Count);
         var styleResourceIds = new List<string>(styles.Count);
         foreach (var style in styles)
         {
@@ -101,7 +93,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         // Replace the data resource's StyleResourceIds with the current catalog order.
         var updatedDataResource = dataResource with { StyleResourceIds = styleResourceIds };
 
-        var resources = new List<MetadataV2Resource>(graph.Resources.Count + styleResources.Count);
+        var resources = new List<MetadataV2Object>(graph.Resources.Count + styleResources.Count);
         foreach (var resource in graph.Resources)
         {
             if (string.Equals(resource.Metadata.Id, updatedDataResource.Metadata.Id, StringComparison.Ordinal))
@@ -135,7 +127,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
             .SelectMany(r => r.StyleResourceIds)
             .ToHashSet(StringComparer.Ordinal);
         resources.RemoveAll(r =>
-            r.Type == MetadataV2ResourceType.Style
+            r.Type == MetadataV2ObjectType.Style
             && !referencedStyleIds.Contains(r.Metadata.Id));
 
         var updatedGraph = graph with

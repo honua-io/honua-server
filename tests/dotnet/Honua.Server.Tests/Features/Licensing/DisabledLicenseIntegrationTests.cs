@@ -147,6 +147,7 @@ public sealed class DisabledLicenseIntegrationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment(Environments.Production);
+            TestHostHttpClientLifetime.Apply(builder);
             builder.ConfigureTestServices(services => WebAppFixturePostgresWiringMixin.ConfigureIsolatedTestServices(
                 services, connectionString, () => schema, []));
         }

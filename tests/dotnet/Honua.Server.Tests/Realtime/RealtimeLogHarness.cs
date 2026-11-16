@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Realtime;
@@ -33,6 +34,8 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
 
+    public string Schema => _jobs.Schema;
+
     public string ConnectionString => _fixture.ConnectionString;
 
     public static async Task<RealtimeLogHarness> CreateAsync(DatabaseFixtureAdapter fixture)
@@ -48,20 +51,39 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
         return new RealtimeLogHarness(jobs, fixture);
     }
 
-    public async Task ApplyMigrationAsync()
+    public async Task ApplyMigrationAsync(string resource = MigrationResource)
     {
-        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(MigrationResource)
-            ?? throw new InvalidOperationException($"Embedded migration '{MigrationResource}' was not found.");
+        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidOperationException($"Embedded migration '{resource}' was not found.");
         using var reader = new StreamReader(stream);
         var migration = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal);
         await _fixture.ExecuteDdlUnderLockAsync(migration);
+    }
+
+    public async Task<ControlPlaneStorage> CreateControlPlaneStorageAsync()
+    {
+        // Proposal updates join operation_proposal_batches (migration 174) in the same statement as the proposal row.
+        foreach (var resource in new[]
+        {
+            "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
+            "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
+        })
+        {
+            await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException($"Embedded migration '{resource}' was not found.");
+            using var reader = new StreamReader(stream);
+            await _fixture.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
+                .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+        }
+
+        return new ControlPlaneStorage(_jobs.Database, new PostgresLeaseStore(_jobs.JobStore));
     }
 
     public static JsonElement Payload(object value) => JsonSerializer.SerializeToElement(value);
 
     // A task's dispatcher over this schema.
     public RealtimeDispatcher CreateDispatcher(RealtimeOptions? options = null)
-        => new(Log, Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
+        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
 
     // A task's listener on this database.
     public RealtimeListener CreateListener(RealtimeOptions options, string? connectionString = null)

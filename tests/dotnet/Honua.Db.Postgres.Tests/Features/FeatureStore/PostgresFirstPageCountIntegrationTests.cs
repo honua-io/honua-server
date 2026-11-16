@@ -40,9 +40,9 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
             """);
         _provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
             (DbConnection)await fixture.DataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns((SqlFragment?)null);
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
     }
 
@@ -65,9 +65,9 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     [IntegrationTest]
     public async Task QueryAsync_ShortSpatialPage_PreservesBoundaryAndSecurityWithOneDatabaseRead()
     {
-        _rows.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rows.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(new SqlFragment("\"tenant\" = @p0", ["a"]));
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("secret"));
         var query = new FeatureQuery
         {
@@ -87,8 +87,8 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         result.Items.Should().OnlyContain(feature => !feature.Attributes.ContainsKey("secret"));
         result.HasMoreResults.Should().BeFalse();
         await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
-        await _rows.Received(1).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
-        await _masks.Received(1).ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>());
+        await _rows.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
+        await _masks.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTheory]
@@ -194,10 +194,10 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     private PostgresStorageMappedFeatureReader CreateReader() => new(
         _provider,
         new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
-        new MetadataV2Resource
+        new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "first-page", Name = "points" },
-            Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point },
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point },
             SchemaFields =
             [
                 new() { Name = "id", Type = MetadataV2FieldType.BigInteger },

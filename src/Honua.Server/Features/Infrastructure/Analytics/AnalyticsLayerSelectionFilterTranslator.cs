@@ -18,7 +18,7 @@ internal sealed class AnalyticsLayerSelectionFilterTranslator : ILayerSelectionF
 
     public Task<LayerSelectionTranslation> TranslateAsync(
         LayerSelectionFilter selection,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);

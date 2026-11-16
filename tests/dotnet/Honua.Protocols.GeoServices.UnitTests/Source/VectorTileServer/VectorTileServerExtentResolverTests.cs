@@ -79,7 +79,7 @@ public sealed class VectorTileServerExtentResolverTests
         extent.Should().BeNull();
     }
 
-    private static MetadataV2Resource Resource(
+    private static MetadataV2Object Resource(
         MetadataV2SpatialReference? spatialReference,
         double west,
         double south,
@@ -87,8 +87,8 @@ public sealed class VectorTileServerExtentResolverTests
         double north) => new()
         {
             Metadata = new() { Id = "res-" + west.ToString(System.Globalization.CultureInfo.InvariantCulture) },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = spatialReference,
                 GeometryType = MetadataV2GeometryType.Point,

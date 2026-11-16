@@ -71,7 +71,7 @@ public sealed class PublishedImportTargetTests
         restored.Extensions.Keys.Should().BeEquivalentTo(expected);
     }
 
-    private static MetadataV2Publication PublicationCollections(string[]? values) => new()
+    private static MetadataV2Layer PublicationCollections(string[]? values) => new()
     {
         Metadata = new() { Id = "publication" },
         ResourceId = "resource",

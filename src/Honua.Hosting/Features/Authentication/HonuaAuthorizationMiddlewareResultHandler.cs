@@ -137,12 +137,14 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
         }
 
         var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+        var (actor, actorType) = AuditContextResolver.ResolveCanonicalActor(context);
         var auditEvent = new AuditEvent
         {
             Timestamp = timeProvider.GetUtcNow(),
             EventType = AuditEventType.Authorization,
-            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            Actor = actor,
             ActorType = actorType,
+            ActorAgent = AuditContextResolver.ResolveAgent(context),
             ResourceType = "studio",
             ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
             Action = "studio.lifecycle",

@@ -237,13 +237,13 @@ public sealed record MetadataScriptResourceContract
     public bool? Exists { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 
     [JsonPropertyName("serviceType")]
     public MetadataV2ServiceType? ServiceType { get; init; }
 
     [JsonPropertyName("publicationType")]
-    public MetadataV2PublicationType? PublicationType { get; init; }
+    public MetadataV2LayerType? PublicationType { get; init; }
 
     [JsonPropertyName("route")]
     public string? Route { get; init; }

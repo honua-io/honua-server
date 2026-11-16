@@ -306,7 +306,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             return false;
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.AdminName);
         var now = DateTimeOffset.UtcNow;
         record = new NetworkDatasetRecord(
             request.Id!,
@@ -381,7 +381,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             Srid = srid,
             Status = status,
             Description = NormalizeOptional(description),
-            UpdatedBy = ResolveActor(context),
+            UpdatedBy = ActorResolver.Resolve(context, ActorResolution.AdminName),
         };
         error = string.Empty;
         return true;
@@ -406,9 +406,6 @@ internal static partial class NetworkDatasetAdminEndpoints
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
-
-    private static string ResolveActor(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
     internal sealed class NetworkDatasetAdminLogCategory;
 

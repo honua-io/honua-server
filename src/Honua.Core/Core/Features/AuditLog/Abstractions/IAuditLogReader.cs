@@ -25,6 +25,8 @@ public sealed record AuditLogFilter
 
     public string? Actor { get; init; }
 
+    public string? ActorAgent { get; init; }
+
     public IReadOnlyList<AuditActorType>? ActorTypes { get; init; }
 
     public string? ResourceType { get; init; }
@@ -62,6 +64,9 @@ public sealed record AuditEventRecord
     public required string Actor { get; init; }
 
     public required AuditActorType ActorType { get; init; }
+
+    // Agent identity is independent of the credential type stored in ActorType.
+    public string? ActorAgent { get; init; }
 
     public required string ResourceType { get; init; }
 

@@ -4,7 +4,6 @@
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Microsoft.Extensions.Logging;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -14,16 +13,16 @@ using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.Migration.Services;
 
 // image/tiff, image/geotiff, and image/tiff parameters are ingested; every other format is manual review before any bytes are downloaded.
-public sealed partial class OgcWcsImportService : IOgcWcsImportService
+public sealed partial class OgcWcsImportService
 {
     private const string DefaultOutputFormat = "image/tiff";
     private const string DefaultVersion = "2.0.1";
 
-    private readonly IOgcCoverageImportService _coverageImportService;
+    private readonly OgcCoverageImportService _coverageImportService;
     private readonly ILogger<OgcWcsImportService> _logger;
 
     public OgcWcsImportService(
-        IOgcCoverageImportService coverageImportService,
+        OgcCoverageImportService coverageImportService,
         ILogger<OgcWcsImportService> logger)
     {
         _coverageImportService = coverageImportService

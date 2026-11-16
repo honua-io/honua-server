@@ -181,10 +181,10 @@ public sealed class VectorTileServerPrimaryPublicationTests :
                 .AddService("svc-vts-mixed", "vts-mixed", protocols: [ServiceProtocols.VectorTileServer], accessPolicy: openPolicy)
                 .AddPublication(
                     "pub-mixed-feature", "svc-vts-mixed", "res-mixed-feature",
-                    layerIndex: 0, publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true)
+                    layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true)
                 .AddPublication(
                     "pub-mixed-vector", "svc-vts-mixed", "res-mixed-vector",
-                    layerIndex: 1, publicationType: MetadataV2PublicationType.EsriVectorTileLayer)
+                    layerIndex: 1, publicationType: MetadataV2LayerType.EsriVectorTileLayer)
                 .AddResource("res-restricted-open", "restricted-open-layer", accessPolicy: openPolicy)
                 .AddStorageBinding("binding-restricted-open", "res-restricted-open", "features", storageLayerId: RestrictedOpenStorageId)
                 .AddResource("res-restricted-private", "restricted-private-layer", accessPolicy: privatePolicy)
@@ -192,10 +192,10 @@ public sealed class VectorTileServerPrimaryPublicationTests :
                 .AddService("svc-vts-restricted", "vts-restricted", protocols: [ServiceProtocols.VectorTileServer], accessPolicy: openPolicy)
                 .AddPublication(
                     "pub-restricted-open", "svc-vts-restricted", "res-restricted-open",
-                    layerIndex: 0, publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true)
+                    layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true)
                 .AddPublication(
                     "pub-restricted-private", "svc-vts-restricted", "res-restricted-private",
-                    layerIndex: 1, publicationType: MetadataV2PublicationType.EsriVectorTileLayer)
+                    layerIndex: 1, publicationType: MetadataV2LayerType.EsriVectorTileLayer)
                 .BuildProvider();
         }
     }

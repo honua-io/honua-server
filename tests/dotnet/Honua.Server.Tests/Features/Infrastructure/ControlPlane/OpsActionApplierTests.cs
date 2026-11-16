@@ -37,6 +37,14 @@ public sealed class OpsActionApplierTests : IAsyncLifetime
     private IAdminConfigChangeApplier Applier => _fixture.GetService<IAdminConfigChangeApplier>();
 
     [IntegrationTest]
+    public async Task ApplyAsync_ForbiddenAction_RejectsBeforeExecution()
+    {
+        var apply = () => Applier.ApplyAsync("""{"action":"security.disable"}""");
+
+        await apply.Should().ThrowAsync<OpsActionException>().WithMessage("*blocked*");
+    }
+
+    [IntegrationTest]
     public async Task ApplyAsync_RedriveDeadLetters_DrainsSeededBacklogAndAudits()
     {
         var eventId = await SeedDispatchAsync(AlertChannelType.Webhook);

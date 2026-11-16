@@ -13,7 +13,7 @@ internal static class VectorTileServerExtentResolver
     private const int DefaultSrid = 4326;
 
     public static async Task<VectorTileExtent?> ResolveAsync(
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         MetadataV2SpatialReference? serviceSpatialReference,
         VectorTileSpatialReference tilingSpatialReference,
         ICoordinateTransformService transformService,

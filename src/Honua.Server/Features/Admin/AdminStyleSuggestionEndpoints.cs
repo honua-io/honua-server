@@ -6,10 +6,11 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Server.Features.Admin.Models;
+using Honua.Core.Features.Styling.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.Mvc;
 
@@ -38,7 +39,7 @@ internal static class AdminStyleSuggestionEndpoints
         StyleSuggestionRequest? request,
         HttpContext context,
         [FromServices] Core.Features.Validation.Abstractions.IResourceValidator resourceValidator,
-        [FromServices] IStyleSuggestionService styleSuggestionService,
+        [FromServices] StyleSuggestionService styleSuggestionService,
         [FromServices] ILicenseEntitlementService entitlementService,
         [FromServices] ILogger<AdminStyleSuggestionEndpointsLog> logger,
         CancellationToken cancellationToken)

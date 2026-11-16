@@ -348,7 +348,7 @@ public sealed class EditOwnerSubjectTests
     private static GeoServicesFeature EditFeature(long objectId, string name)
         => new() { Attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = name } };
 
-    private static MetadataV2Resource OwnerEditResource()
+    private static MetadataV2Object OwnerEditResource()
         => OwnerResource() with
         {
             SchemaFields =
@@ -384,10 +384,10 @@ public sealed class EditOwnerSubjectTests
         return new GeoServicesFeature { Attributes = attributes, ReplaceAttributes = replaceAttributes };
     }
 
-    private static MetadataV2Resource TrackedResource()
+    private static MetadataV2Object TrackedResource()
         => new()
         {
-            Editing = new MetadataV2ResourceEditing
+            Editing = new MetadataV2ObjectEditing
             {
                 GlobalIdField = "GlobalID",
                 CreatorField = "created_user",
@@ -419,7 +419,7 @@ public sealed class EditOwnerSubjectTests
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private static MetadataV2Resource OwnerResource()
+    private static MetadataV2Object OwnerResource()
         => new()
         {
             OwnerEditPolicy = new MetadataV2OwnerEditPolicy

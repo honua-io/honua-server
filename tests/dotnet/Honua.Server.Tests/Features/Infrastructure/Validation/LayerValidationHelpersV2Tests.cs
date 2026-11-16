@@ -243,7 +243,7 @@ public sealed class LayerValidationHelpersV2Tests
                 "res-test",
                 layerIndex: 0,
                 serviceLocalId: "test-collection",
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .Build();
 
         // Apply access policy to the resource.

@@ -1,7 +1,7 @@
 ---
 type: "guide"
 title: "Compose a map from readable layers"
-description: "Create or update a map composition with explicit drawing order, styles, and a checked preview."
+description: "Create or update a Map with explicit drawing order, styles, and a checked preview."
 tags:
   - "gis"
   - "domain-language"
@@ -17,18 +17,18 @@ sources:
     resource: "/studio/mcp-tools.md"
 workflow:
   profile: "honua.gis-workflow/v1"
-  intent: "Create or update a map composition with explicit drawing order, styles, and a checked preview."
+  intent: "Create or update a Map with explicit drawing order, styles, and a checked preview."
   inputs:
     -
       name: "map"
       concept: "/concepts/domain/map.md"
       required: true
-      description: "New or existing draft composition with current generation."
+      description: "New or existing Map Draft with current generation."
     -
       name: "layer"
       concept: "/concepts/domain/layer.md"
       required: true
-      description: "Readable published data resource selected for this composition."
+      description: "Readable Layer selected for this Map."
     -
       name: "style"
       concept: "/concepts/domain/style.md"
@@ -92,14 +92,14 @@ workflow:
         - "Modify this draft; data read authority remains separate."
       idempotency: "Use generation checks and reconcile conflicts before replay."
       checks:
-        - "The drawing layer points to the correct data resource."
+        - "The drawing layer references the correct Layer."
         - "Order, visibility, styling, and view state match the intended presentation."
       recovery:
-        - "Restore the prior draft composition only if no competing edit occurred."
+        - "Restore the prior Map Draft only if no competing edit occurred."
       rollback:
         snapshot: "Record the pre-change resource identifiers, state, revision, and dependencies."
         revisionGuard: "Re-read current state; stop compensation if the resource changed outside this action."
-        scope: "Only the edited map draft and its composition."
+        scope: "Only the edited Map Draft."
         compensation: "Restore the prior draft state with a current generation check."
         verification:
           - "Read the affected resources again and verify the intended prior state under the same identity."
@@ -122,7 +122,7 @@ workflow:
       effect: "read"
       effectTarget: "observation"
       preconditions:
-        - "The installed renderer supports this composition."
+        - "The installed renderer supports this Map."
       authorization:
         - "Read every dependency and preview the draft."
       idempotency: "Read-only preview."
@@ -135,15 +135,15 @@ workflow:
 
 # Compose a map from readable layers
 
-Resolve [published layers](../../concepts/domain/layer.md) before creating [drawing layers](../../concepts/domain/map-layer.md). A composition records source references, drawing order, style, labels, and view state. It does not copy every feature into the map document.
+Resolve [Layers](../../concepts/domain/layer.md) before creating [drawing layers](../../concepts/domain/map-layer.md). A Map records source references, drawing order, style, labels, and view state. It does not copy every feature into the map document.
 
 Use the current draft generation and preserve unrelated edits. “Make the important records stand out” needs a field or rule defining importance. Changing a catalog default can affect other consumers, so prefer the scope the user actually requested.
 
-Ask for the outcome in GIS terms: “Map these parcels by zoning, keep the existing overlays, show a legend, and save a version I can reopen. Tell me which checks passed before publishing.” The agent resolves the selected published data and styling fields rather than asking you to supply internal identifiers.
+Ask for the outcome in GIS terms: “Map these parcels by zoning, keep the existing overlays, show a legend, and save a version I can reopen. Tell me which checks passed before publishing.” The agent resolves the selected Layers and styling fields rather than asking you to supply internal identifiers.
 
-For catalog-backed composition, the agent copies the discovered `studioSourceId` from `honua_list_layers` or `honua_describe_layer` into the drawing layer's `sourceId`. The drawing layer's own `id` identifies that presentation within the map. Ordinary catalog editing does not require portable `sourceBindings` or a `mapSpec` export; those and supported inline overrides are separate source mechanisms. Discovery leaves data access subject to the current caller's permissions.
+For a Map using Catalog Layers, the agent copies the discovered `studioSourceId` from `honua_list_layers` or `honua_describe_layer` into the drawing layer's `sourceId`. The drawing layer's own `id` identifies that presentation within the map. Ordinary catalog editing does not require portable `sourceBindings` or a `mapSpec` export; those and supported inline overrides are separate source mechanisms. Discovery leaves data access subject to the current caller's permissions.
 
-`honua_studio_validate_draft` checks structure, and `honua_studio_preview_draft` returns a plan. Source access and canvas rendering remain unverified after either result. A `honua_render_map` image previews the requested published layers, independently of the saved Studio composition. The visual preview action above requires an actual Studio canvas or another supported consumer of that exact composition; it has no equivalent MCP render call.
+`honua_studio_validate_draft` checks structure, and `honua_studio_preview_draft` returns a plan. Source access and canvas rendering remain unverified after either result. A `honua_render_map` image previews the requested Layers, independently of the saved Studio Map. The visual preview action above requires an actual Studio canvas or another supported consumer of that exact Map; it has no equivalent MCP render call.
 
 Preview the result with the real renderer. Check all layers, ordering, labels, legend, attribution, and useful extent. A blank map could be a legitimate empty selection or a broken dependency; establish which.
 

@@ -121,6 +121,12 @@ internal abstract class DelegatingStudioPackageStore : IStudioPackageStore
     public virtual Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.GetDraftAsync(draftId, cancellationToken);
 
+    public Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default)
+        => _inner.GetDraftRevisionAsync(draftId, generation, cancellationToken);
+
+    public Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default)
+        => _inner.ListDraftRevisionsAsync(query, cancellationToken);
+
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, cancellationToken);
 

@@ -20,6 +20,7 @@ public sealed class AgentApprovalRuleTests
     [InlineData("admin.services.access-policy.set")]
     [InlineData("admin.layer.publish")]
     [InlineData("service.publish")]
+    [InlineData("dataset.stage.import")]
     [InlineData("studio.content.rollback")]
     public async Task EvaluateAsync_AgentGatedOperation_PolicyDisabled_RequiresApproval(string operationId)
     {
@@ -68,11 +69,29 @@ public sealed class AgentApprovalRuleTests
     }
 
     [UnitTest]
-    public async Task EvaluateAsync_AgentUngatedOperation_FollowsConfiguredPolicy()
+    public async Task EvaluateAsync_AgentChangeNotApprovedForAgents_RequiresApproval()
     {
         var pdp = BuildPdp(new OperationPolicyOptions { Enabled = false }, productionEnvironment: false);
 
         var decision = await EvaluateAsync(pdp, "admin.connections.create", AgentApprovalRule.AgentRole);
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+        decision.ApprovalLane.Should().Be(AgentApprovalRule.ApprovalLane);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_AgentReadOnlyOperation_FollowsConfiguredPolicy()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions { Enabled = false }, productionEnvironment: false);
+
+        var decision = await pdp.EvaluateAsync(
+            BuildDescriptor("admin.connections.list") with
+            {
+                Policy = BuildDescriptor("admin.connections.list").Policy with { SideEffectClass = OperationSideEffectClass.ReadOnly },
+            },
+            new OperationRequest { OperationId = "admin.connections.list" },
+            new OperationPolicyContext { Roles = [AgentApprovalRule.AgentRole] },
+            CancellationToken.None);
 
         decision.Kind.Should().Be(PolicyDecisionKind.Allow);
     }

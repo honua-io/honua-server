@@ -7,9 +7,14 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal static class OpsAutonomyPolicyDefaults
 {
-    public static IReadOnlySet<string> BuiltInAutoSafeRules { get; } = new HashSet<string>(StringComparer.Ordinal)
+    public static IReadOnlySet<string> BuiltInKnownRules { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         OpsFindingsService.RuleAlertDispatchBacklog,
+    };
+
+    public static IReadOnlySet<string> BuiltInAutoSafeRules { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        // No current actuator has automatic compensation. Add only proven tier-1 rules.
     };
 
     public static OpsAutonomyPolicy Resolve(
@@ -24,14 +29,18 @@ internal static class OpsAutonomyPolicyDefaults
             return Normalize(persisted with { Rule = rule });
         }
 
-        var mode = OpsAutonomyMode.ProposeOnly;
+        var mode = options.Profile == OpsAutonomyProfile.Unattended && BuiltInAutoSafeRules.Contains(rule)
+            ? OpsAutonomyMode.AutoApply : OpsAutonomyMode.ProposeOnly;
         var maxActions = options.DefaultMaxAutoActionsPerWindow;
         var windowSeconds = options.DefaultWindowSeconds;
         var maxBlastRadius = options.DefaultMaxBlastRadius;
 
         if (!string.IsNullOrWhiteSpace(rule) && options.Rules.TryGetValue(rule, out var ruleOptions))
         {
-            mode = ParseMode(ruleOptions.Mode) ?? mode;
+            if (!string.IsNullOrWhiteSpace(ruleOptions.Mode))
+            {
+                mode = ParseMode(ruleOptions.Mode) ?? OpsAutonomyMode.ProposeOnly;
+            }
             maxActions = ruleOptions.MaxAutoActionsPerWindow ?? maxActions;
             windowSeconds = ruleOptions.WindowSeconds ?? windowSeconds;
             maxBlastRadius = ruleOptions.MaxBlastRadius ?? maxBlastRadius;

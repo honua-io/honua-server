@@ -140,7 +140,7 @@ public sealed class MetadataV2EditingConfigurationTests
             Revision = 7,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource" },
                     SchemaFields =
@@ -150,7 +150,7 @@ public sealed class MetadataV2EditingConfigurationTests
                     ],
                     PrimaryStorageBindingId = "storage",
                     StorageBindingIds = ["storage"],
-                    Editing = new MetadataV2ResourceEditing { CanModify = false, CreatorField = "created_by" }
+                    Editing = new MetadataV2ObjectEditing { CanModify = false, CreatorField = "created_by" }
                 }
             ],
             Services = [new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "service" } }],
@@ -165,7 +165,7 @@ public sealed class MetadataV2EditingConfigurationTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "publication" }, ResourceId = "resource",
                     ServiceId = "service", StorageBindingId = "storage", Capabilities = ["Query", "Extract"]

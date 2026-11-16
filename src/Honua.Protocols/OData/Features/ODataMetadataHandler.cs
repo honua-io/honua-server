@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -105,7 +106,9 @@ internal sealed class ODataMetadataHandler(
             return CreateAccessDeniedResult(context, allPublications);
         }
 
-        var metadata = _metadataService.GenerateMetadataDocumentV2(visible.Select(p => p.Resource));
+        var snapshot = await ODataV2Lookups.GetSnapshotAsync(context, effectiveToken).ConfigureAwait(false);
+        var metadata = _metadataService.GenerateMetadataDocumentV2(
+            visible.Select(p => p.Resource), DescriptiveMetadataResolver.ForCatalog(snapshot.Graph));
         return TypedResults.Content(metadata, "application/xml");
     }
 

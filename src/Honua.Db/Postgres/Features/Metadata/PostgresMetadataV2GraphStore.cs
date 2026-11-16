@@ -15,14 +15,7 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Metadata;
 
-/// <summary>
-/// PostgreSQL-backed implementation of <see cref="IMetadataV2GraphStore"/>.
-/// The canonical graph document is persisted as JSONB in <c>metadata_v2_snapshots</c>;
-/// sidecar tables (resources/services/publications/storage_bindings/connections) are
-/// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
-/// revision per environment.
-/// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader, IMetadataV2GraphRevisionProbe
+internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader, IMetadataV2GraphRevisionProbe
 {
     // Shared with schema-coupled metadata publishers such as the demo STAC seed.
     // The environment hash is the second key so unrelated environments can publish concurrently.
@@ -115,20 +108,11 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         return current;
     }
 
-    /// <inheritdoc />
     public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
         // Write/publish base load: only the genuinely-activated snapshot, never the V1
         // compat synthesis. See IMetadataV2GraphWriteBaseReader for why. (honua-server#1412.)
         => TryLoadCurrentAsync(cancellationToken);
 
-    /// <summary>
-    /// Synthesizes a Metadata v2 graph snapshot from the legacy V1 catalog when no
-    /// snapshot has been activated for the environment. Read-only: it neither writes to
-    /// the metadata_v2 tables nor activates a revision, so an operator's first real
-    /// publish (which goes through <see cref="SaveAsync"/>) still takes precedence on the
-    /// next read. Returns <c>null</c> when the V1 catalog has no published service layers
-    /// (a truly empty database) or when the legacy tables do not exist. (honua-server#1412.)
-    /// </summary>
     private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
         CancellationToken cancellationToken)
     {
@@ -276,36 +260,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             }
         }
 
-        // Revisions are a store-owned allocation, not a caller-owned identifier. The
-        // caller necessarily builds its document before this lock is acquired; another
-        // publisher may therefore have consumed the proposed revision, and an interrupted
-        // writer may have left a higher orphan snapshot. Allocate above every retained
-        // snapshot while holding the shared environment lock.
-        graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
-        var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-        graph = graph with { Revision = revision };
-        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        var etag = ComputeEtag(json);
-
-        // Bootstrap reconciliation (honua-server#1395): when no current snapshot is
-        // activated for this environment the caller (LoadCurrentOrEmptyGraphAsync) started
-        // from an empty graph and is forcing a first write at a low revision. A shared or
-        // partially-written database can still carry orphaned sidecar rows (e.g. a prior
-        // RefreshSidecarsAsync that committed before metadata_v2_current did). On databases
-        // created before migration 046 those rows also collided with the then-unique
-        // idx_metadata_v2_services_name and surfaced as a raw Postgres 23505. When
-        // bootstrapping, clear stale sidecar rows for the whole environment (all revisions)
-        // rather than only the target (environment, revision), so the first write reconciles
-        // cleanly instead of 500ing the layer-publish path and never leaves orphaned
-        // revisions behind.
-        var isBootstrap = current is null;
-
-        await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
-        await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
-        await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
-        await PruneSnapshotsAsync(connection, transaction, graph.Revision, cancellationToken).ConfigureAwait(false);
-
-        var snapshot = new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
+        var snapshot = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
         var commitWasReconciled = false;
         try
         {
@@ -403,7 +358,6 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         return target;
     }
 
-    /// <inheritdoc />
     public async Task<MetadataV2GraphSnapshot> StageAsync(
         MetadataV2Graph graph,
         CancellationToken cancellationToken = default)
@@ -439,7 +393,6 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
     }
 
-    /// <inheritdoc />
     public async Task<bool> DiscardStagedAsync(
         long revision,
         CancellationToken cancellationToken = default)
@@ -495,13 +448,6 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// One primary-key read of the environment's current-pointer row: no document load, no schema
-    /// guard round trip, and no session state, so it is safe on every request behind RDS Proxy.
-    /// A missing pointer table (schema not yet migrated) reads as "no activated revision", the same
-    /// answer <see cref="GetCurrentAsync"/> gives by falling back to the compat/empty snapshot.
-    /// </remarks>
     public async ValueTask<string?> GetCurrentEtagAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"SELECT etag FROM {_currentTable} WHERE environment = @environment";
@@ -1013,13 +959,6 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
-    /// <summary>
-    /// Builds an empty-but-valid in-memory snapshot for a freshly deployed server with no
-    /// published datasets. All catalog-style read surfaces (STAC, GeoServices, OGC API
-    /// Features, OData, WFS, …) enumerate the collections/services list and return a valid
-    /// empty response when the list is zero-length, so this snapshot produces 200s with no
-    /// items rather than 500s. It is never persisted to the database. (honua-server#1619.)
-    /// </summary>
     private MetadataV2GraphSnapshot BuildEmptySnapshot()
     {
         var graph = new MetadataV2Graph

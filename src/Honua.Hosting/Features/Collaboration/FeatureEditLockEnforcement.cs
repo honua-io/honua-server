@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Collaboration;
 
-// A lease is enforced here and again at the feature writer so a protocol without its own check cannot bypass it, the check is not inside the writer transaction, and enforcement is node-local.
+// A lease is enforced here and again at the feature writer so a protocol without its own check cannot bypass it, the check is not inside the writer transaction, and enforcement spans nodes only when the lease store is shared.
 public static class FeatureEditLockEnforcement
 {
     public const string HolderHeaderName = "X-Honua-Lock-Holder";
@@ -24,13 +24,13 @@ public static class FeatureEditLockEnforcement
     // Protocol-specific graph service ids differ, so a lease is keyed on the shared routed service name and binds a competing write from another protocol.
     public static string? ResolveServiceName(
         MetadataV2Service? service,
-        MetadataV2Publication? publication)
+        MetadataV2Layer? publication)
     {
         var name = service?.Metadata?.Name;
         return string.IsNullOrWhiteSpace(name) ? publication?.ServiceId : name;
     }
 
-    public static int ResolveLayerId(MetadataV2Publication? publication, int fallbackLayerId)
+    public static int ResolveLayerId(MetadataV2Layer? publication, int fallbackLayerId)
         => publication?.LayerIndex ?? fallbackLayerId;
 
     // An unidentifiable holder fails any active lease instead of being allowed through.

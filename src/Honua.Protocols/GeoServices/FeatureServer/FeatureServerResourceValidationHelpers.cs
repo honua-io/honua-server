@@ -19,8 +19,8 @@ internal static class FeatureServerResourceValidationHelpers
     internal readonly record struct ServiceLayerValidationV2Result(
         bool IsValid,
         MetadataV2Service? Service,
-        MetadataV2Publication? Publication,
-        MetadataV2Resource? Resource,
+        MetadataV2Layer? Publication,
+        MetadataV2Object? Resource,
         IResult? ErrorResult);
 
     public static async Task<ServiceValidationV2Result> ValidateServiceV2Async(

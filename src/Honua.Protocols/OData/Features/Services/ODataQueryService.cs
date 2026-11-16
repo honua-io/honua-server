@@ -34,7 +34,7 @@ internal sealed partial class ODataQueryService
         string? orderby,
         int? resultRecordCount,
         int? resultOffset,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? select = null,
         string? expand = null,
         bool? count = null,
@@ -161,7 +161,7 @@ internal sealed partial class ODataQueryService
         }).ToArray();
     }
 
-    public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, MetadataV2Resource resource, int? publicLayerId = null)
+    public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, MetadataV2Object resource, int? publicLayerId = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (string.IsNullOrWhiteSpace(odataFilter))

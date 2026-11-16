@@ -52,11 +52,13 @@ docker run -p 8080:8080 -p 8081:8081 \
 
 **Kubernetes** — deploy with the Helm chart in [honua-helm](https://github.com/honua-io/honua-helm); see the [Kubernetes guide](docs/guides/deploy/kubernetes.md).
 
-**Local development** — .NET Aspire with a dashboard for traces, logs, and metrics:
+**Local development** — start the Docker Compose stack with private per-install credentials:
 
 ```bash
-dotnet run --project src/Honua.AppHost
+python3 scripts/docker/quickstart.py
 ```
+
+See the [local development guide](docs/guides/deploy/local-development.md) for source builds.
 
 To run geoprocessing jobs locally (in-process, no cloud), use the [local GP dev quickstart](docs/guides/query-analyze/gp-local-dev-quickstart.md). For self-hosted pilots, run the [pilot onboarding runbook](docs/guides/deploy/pilot-onboarding-runbook.md) before handing a deployment to another team.
 

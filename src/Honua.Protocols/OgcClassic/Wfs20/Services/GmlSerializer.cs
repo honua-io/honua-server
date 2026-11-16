@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Xml;
 using System.Xml.Linq;
+using System.Xml;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-internal sealed class GmlSerializer : IGmlSerializer
+internal sealed class GmlSerializer
 {
     private static readonly XNamespace GmlNamespace = "http://www.opengis.net/gml/3.2";
     private static readonly XNamespace WfsNamespace = "http://www.opengis.net/wfs/2.0";
@@ -82,6 +82,7 @@ internal sealed class GmlSerializer : IGmlSerializer
         return collection;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the instance API used by dependency-injected consumers.")]
     public XElement? SerializeGeometry(string? geometryGml)
     {
         if (string.IsNullOrEmpty(geometryGml))

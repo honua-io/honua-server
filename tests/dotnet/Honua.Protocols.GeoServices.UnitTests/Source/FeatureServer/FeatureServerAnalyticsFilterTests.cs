@@ -81,13 +81,13 @@ public sealed class FeatureServerAnalyticsFilterTests
     public async Task ApplyAnalyticsFilters_CustomObjectIds_UseSqlFilterInsteadOfStorageIds()
     {
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("gid = ANY(@ids)", new object?[] { 7L })));
         var context = new DefaultHttpContext
         {
             RequestServices = new ServiceCollection().AddSingleton(filters).BuildServiceProvider()
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -207,7 +207,7 @@ public sealed class FeatureServerAnalyticsFilterTests
         };
     }
 
-    private static MetadataV2Resource Layer(string objectIdField, int? srid = null)
+    private static MetadataV2Object Layer(string objectIdField, int? srid = null)
         => new()
         {
             SchemaFields =
@@ -216,7 +216,7 @@ public sealed class FeatureServerAnalyticsFilterTests
             ],
             Spatial = srid is null
                 ? null
-                : new MetadataV2ResourceSpatial
+                : new MetadataV2ObjectSpatial
                 {
                     SpatialReference = new MetadataV2SpatialReference { Srid = srid },
                     GeometryType = MetadataV2GeometryType.Point

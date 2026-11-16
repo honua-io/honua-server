@@ -50,6 +50,7 @@ internal static partial class OidcProviderEndpoints
             .WithTags("Admin", "OIDC")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
             // #2997: OIDC provider configuration is the Pro identity.oidc surface (ADR-0024
             // Identity tier — "no SSO tax for one provider"), mirroring the #2978 SAML/SCIM
             // gate shape. Configuring a second provider additionally requires the Enterprise

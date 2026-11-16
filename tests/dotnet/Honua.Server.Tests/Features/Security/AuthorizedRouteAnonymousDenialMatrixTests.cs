@@ -49,13 +49,13 @@ public sealed class AuthorizedRouteAnonymousDenialMatrixTests : IAsyncLifetime
 
     // Cross-cutting: the denominator is every endpoint-authorized route in the live route table. The
     // [Endpoint] entries name representative routes this test drives that have no other anonymous proof:
-    // the SignalR admin hub (method-agnostic) and the introspection route (ArcGIS 499 envelope).
+    // the admin SSE stream and the introspection route (ArcGIS 499 envelope).
     [IntegrationTest]
-    [Endpoint("GET /hubs/admin")]
+    [Endpoint("GET /api/v1/admin/live")]
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task EveryAuthorizedRoute_AnonymousCaller_Returns401()
     {
-        // Method-agnostic endpoints (no HttpMethodMetadata: SignalR hub transport and negotiate, /metrics)
+        // Method-agnostic endpoints (no HttpMethodMetadata: /metrics)
         // are expanded into concrete GET and POST requests, not skipped. The gRPC unimplemented-method
         // catch-all only matches gRPC requests, so it is sent as an application/grpc POST.
         var routes = RouteAuthorizationInventoryGuardTests.ClassifyDeployedRoutes(_fixture.Services)

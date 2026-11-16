@@ -28,4 +28,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/ProviderUnitSupport/StubV2Provider.cs" Link="Shared/StubV2Provider.cs" />
+    <Compile Include="../Shared/ProviderUnitSupport/ReadPolicySourceStubs.cs" Link="Shared/ReadPolicySourceStubs.cs" />
+  </ItemGroup>
+
 </Project>

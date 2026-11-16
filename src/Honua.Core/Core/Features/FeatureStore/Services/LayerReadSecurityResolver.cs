@@ -12,20 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves the read policy a feature provider enforces for a layer: the metadata-v2
-/// permanent filter, the request-scoped row-level security (RLS) predicate (#502) and the
-/// request-scoped field masks (#1940). This is the single, provider-neutral implementation
-/// shared by every read surface (feature stores, the storage-mapped reader and the spatial
-/// analytics reader), so providers cannot drift apart in what they resolve.
-/// </summary>
-/// <remarks>
-/// A provider that applies the resolved policy calls <see cref="ApplyAsync(int, FeatureQuery, CancellationToken)"/>
-/// (or the resource-keyed overload). A provider that cannot apply a row-level security
-/// predicate or field masks calls <see cref="EnsureNoUnenforcedPolicyAsync"/> on every read
-/// path instead, so a policy that targets one of its layers refuses the read rather than
-/// being silently skipped.
-/// </remarks>
 public sealed class LayerReadSecurityResolver
 {
     private readonly IMetadataV2GraphProvider? _v2Provider;
@@ -33,13 +19,6 @@ public sealed class LayerReadSecurityResolver
     private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
     private readonly IFieldMaskSource? _fieldMaskSource;
 
-    /// <summary>
-    /// Creates a resolver over the optional metadata, filter and request-scoped policy services.
-    /// </summary>
-    /// <param name="v2Provider">Metadata v2 graph provider used to map a storage layer id to its resource.</param>
-    /// <param name="filterExpressionService">Filter service used to translate the permanent filter.</param>
-    /// <param name="rlsFilterSource">Request-scoped row-level security predicate source.</param>
-    /// <param name="fieldMaskSource">Request-scoped field mask source.</param>
     public LayerReadSecurityResolver(
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
@@ -52,13 +31,6 @@ public sealed class LayerReadSecurityResolver
         _fieldMaskSource = fieldMaskSource;
     }
 
-    /// <summary>
-    /// Builds a resolver from the services registered in <paramref name="services"/>, so every
-    /// provider registration wires the metadata, filter, row-level security and field-mask
-    /// services the same way.
-    /// </summary>
-    /// <param name="services">Scoped service provider of the current registration.</param>
-    /// <returns>A resolver over the registered (optional) services.</returns>
     public static LayerReadSecurityResolver FromServices(IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -70,14 +42,6 @@ public sealed class LayerReadSecurityResolver
             services.GetService<IFieldMaskSource>());
     }
 
-    /// <summary>
-    /// Stamps the layer's enforced row filter and masked fields onto <paramref name="query"/>
-    /// and rejects query expressions that reference a masked field.
-    /// </summary>
-    /// <param name="layerId">Storage layer id being read.</param>
-    /// <param name="query">Query to stamp.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The query carrying the enforced filter and masked fields.</returns>
     public async Task<FeatureQuery> ApplyAsync(
         int layerId,
         FeatureQuery query,
@@ -116,16 +80,8 @@ public sealed class LayerReadSecurityResolver
         return query;
     }
 
-    /// <summary>
-    /// Resource-keyed variant of <see cref="ApplyAsync(int, FeatureQuery, CancellationToken)"/> for
-    /// readers that are already bound to a metadata resource and need no layer-id lookup.
-    /// </summary>
-    /// <param name="resource">Resource being read.</param>
-    /// <param name="query">Query to stamp.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The query carrying the enforced filter and masked fields.</returns>
     public async Task<FeatureQuery> ApplyAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
@@ -174,15 +130,6 @@ public sealed class LayerReadSecurityResolver
         return query;
     }
 
-    /// <summary>
-    /// Resolves the request-scoped field-level-security (column masking) set (#1940) for
-    /// the layer, or an empty set when no masking applies (no policy, no request context).
-    /// Best-effort metadata lookup so a missing resource never throws here; the field-mask
-    /// source itself returns an empty set when nothing matches.
-    /// </summary>
-    /// <param name="layerId">Storage layer id being read.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The masked field names, or an empty set.</returns>
     public async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_fieldMaskSource is null)
@@ -196,22 +143,6 @@ public sealed class LayerReadSecurityResolver
             : await ResolveMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Resolves the layer's enforced (row-visibility) filter to a parameterized SQL
-    /// fragment, or null when no filter applies. Combines two independent sources with
-    /// AND so both are honored on every read surface:
-    /// <list type="bullet">
-    ///   <item>the layer's metadata-v2 <em>permanent filter</em> (server-declared,
-    ///   always-on), and</item>
-    ///   <item>the request-scoped <em>row-level security (RLS)</em> predicate (#502),
-    ///   derived from the caller's roles/claims and the layer's RLS policies.</item>
-    /// </list>
-    /// Both fragments are independently parameterized; RLS placeholders are renumbered
-    /// so the merged fragment stays positionally consistent for the provider.
-    /// </summary>
-    /// <param name="layerId">Storage layer id being read.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The combined enforced filter, or null.</returns>
     public async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
         int layerId,
         CancellationToken cancellationToken)
@@ -222,17 +153,6 @@ public sealed class LayerReadSecurityResolver
             : await ResolveEnforcedSqlFilterAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Resolves only the request-scoped row-level security (RLS) predicate for the layer, or
-    /// null when no policy applies (no RLS source, no resolvable resource, no request principal,
-    /// or no matching policy). Writers use it as the <c>WITH CHECK</c> predicate every created or
-    /// updated row must satisfy (honua-server#6103), so an RLS-scoped editor cannot insert or
-    /// move a row outside the partition they can read. The metadata permanent filter is a
-    /// layer-wide view filter, not a per-caller policy, and is intentionally not included.
-    /// </summary>
-    /// <param name="layerId">Storage layer id being written.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The parameterized RLS predicate, or null.</returns>
     public async Task<SqlFragment?> ResolveRowLevelSecurityFilterAsync(
         int layerId,
         CancellationToken cancellationToken)
@@ -243,26 +163,10 @@ public sealed class LayerReadSecurityResolver
             : await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Refuses the read when a row-level security predicate or a field mask resolves for the
-    /// layer and the calling provider cannot apply it. Providers that do not translate the
-    /// enforced row filter and do not mask attributes call this on every read path, so a
-    /// policy is never silently skipped. Returns without effect when nothing resolves.
-    /// </summary>
-    /// <param name="providerDisplayName">Provider name used in the refusal message.</param>
-    /// <param name="layerId">Storage layer id being read.</param>
-    /// <param name="boundResource">Resource the reader is bound to, when it has one; otherwise
-    /// the resource is looked up by <paramref name="layerId"/>.</param>
-    /// <param name="rejectPermanentFilter"><see langword="true"/> when the provider does not
-    /// translate the layer's metadata-v2 permanent filter either, so a configured permanent
-    /// filter refuses the read as well.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <exception cref="NotSupportedException">A permanent filter, row-level security policy
-    /// or field-mask policy applies and the provider cannot enforce it.</exception>
     public async Task EnsureNoUnenforcedPolicyAsync(
         string providerDisplayName,
         int layerId,
-        MetadataV2Resource? boundResource,
+        MetadataV2Object? boundResource,
         bool rejectPermanentFilter,
         CancellationToken cancellationToken)
     {
@@ -315,7 +219,7 @@ public sealed class LayerReadSecurityResolver
            && combined.CanResolveWith(_fieldMaskSource);
 
     private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         return _fieldMaskSource is null
@@ -324,7 +228,7 @@ public sealed class LayerReadSecurityResolver
     }
 
     private async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         var permanentFilter = PermanentFilterResolver.Resolve(resource, _filterExpressionService);
@@ -340,16 +244,17 @@ public sealed class LayerReadSecurityResolver
         return SqlFragmentHelpers.CombineSqlFilters(permanentFilter, rlsFilter);
     }
 
-    /// <summary>
-    /// Resolves a resource's permanent filter for a provider that can translate permanent
-    /// filters but cannot apply request-scoped row or field policies.
-    /// </summary>
     public static SqlFragment? ResolvePermanentFilter(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFilterExpressionService? filterExpressionService)
         => PermanentFilterResolver.Resolve(resource, filterExpressionService);
 
-    private async Task<MetadataV2Resource?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
+    public static FilterExpression? RequirePermanentFilterExpression(
+        MetadataV2Object resource,
+        IFilterExpressionService? filterExpressionService)
+        => PermanentFilterResolver.ParseSavedExpression(resource, filterExpressionService);
+
+    private async Task<MetadataV2Object?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider is null)
         {
@@ -365,12 +270,12 @@ public sealed class LayerReadSecurityResolver
         return candidates.FirstOrDefault();
     }
 
-    private static MetadataV2Resource[] FindResourceCandidates(MetadataV2GraphSnapshot snapshot, int layerId)
+    private static MetadataV2Object[] FindResourceCandidates(MetadataV2GraphSnapshot snapshot, int layerId)
     {
         var boundResources = snapshot.Graph.StorageBindings
             .Where(binding => binding.StorageLayerId == layerId)
             .Select(binding => snapshot.Index.ResourcesById.GetValueOrDefault(binding.ResourceId))
-            .OfType<MetadataV2Resource>();
+            .OfType<MetadataV2Object>();
         var publishedResources = snapshot.Graph.Publications
             .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
             .Where(candidate => candidate.Resource is not null &&
@@ -400,7 +305,7 @@ public sealed class LayerReadSecurityResolver
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return candidates.Where(resource => IsFeatureResource(resource) || !UsesDistinctTables(resource)).ToArray();
 
-        bool UsesDistinctTables(MetadataV2Resource resource)
+        bool UsesDistinctTables(MetadataV2Object resource)
         {
             var resourceBindings = bindings[resource.Metadata.Id].ToArray();
             try
@@ -416,11 +321,11 @@ public sealed class LayerReadSecurityResolver
         }
     }
 
-    private static bool IsFeatureResource(MetadataV2Resource resource)
-        => resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table;
+    private static bool IsFeatureResource(MetadataV2Object resource)
+        => resource.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table;
 
     private async Task RejectAmbiguousPolicyAsync(
-        IReadOnlyList<MetadataV2Resource> resources, CancellationToken cancellationToken)
+        IReadOnlyList<MetadataV2Object> resources, CancellationToken cancellationToken)
     {
         foreach (var resource in resources)
         {

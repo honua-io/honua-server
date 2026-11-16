@@ -49,35 +49,35 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 The database and observability tiers are separate modules: `aws-data` / `azure-data`
 for the managed PostGIS, and `observability-stack`.
 
-Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The unsuffixed release and trunk tags are the canonical native-AOT production artifact. The `-aot` generic tags remain compatibility aliases to the same image. JIT images are explicitly suffixed `-jit` and are development/conformance/debugging aids, not supported production serving artifacts.
+Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the chiseled JIT image with PostGIS as its only database store. Unsuffixed generic release and nightly tags select that image. Native AOT is a separate, optional `-aot` variant; its promotion requires suite and live-journey parity evidence. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
 
-Cloud-targeted production tags remain explicit: `*-ecs-aot`, `*-lambda-aot`, and `*-functions-aot`; their shorter `*-ecs`, `*-lambda`, and `*-functions` compatibility aliases resolve to those same verified AOT images. Their JIT debugging counterparts end in `-jit` (`*-ecs-jit`, `*-lambda-jit`, `*-functions-jit`) so a production tag can never resolve to JIT.
+Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot`, `*-lambda-aot`, and `*-functions-aot` select Native AOT. The shorter `*-ecs`, `*-lambda`, and `*-functions` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
 
-The serving-image boundary is strict: the native-AOT web images contain no GDAL/OGR CLI, native GDAL/PROJ/GEOS libraries, or .NET GDAL bindings. PostGIS may use its own database-side GDAL support, and native raster/ETL jobs may use the independently built `honua-worker-etl` image; neither dependency is copied into the web container.
+The Native-AOT serving-image boundary excludes GDAL/OGR CLI, native GDAL/PROJ/GEOS libraries, and .NET GDAL bindings from the AOT web images. PostGIS may use its own database-side GDAL support, and native raster/ETL jobs may use the independently built `honua-worker-etl` image; neither dependency is copied into the web container.
 
 ### Which tag to pull
 
-On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick by whether you want the latest *release* or the latest *trunk* build:
+These are the generic web image publication contracts (Docker Hub + GHCR). Confirm that the selected variant has actually been published for your revision, then pin its digest:
 
 | Tag | Means | Moves when | Published by |
 |---|---|---|---|
-| `latest` / `latest-aot` | Latest stable native-AOT **release** (`-aot` is an alias) | A `v*` release tag is cut | `deploy.yml` |
-| `vX.Y.Z` / `vX.Y.Z-aot` | A specific native-AOT release (`-aot` is an alias) | Never (immutable) | `deploy.yml` |
+| `latest` | Most recently promoted PostGIS JIT image | A stable release or manual default-branch deployment publishes | `deploy.yml` |
+| `vX.Y.Z` | A specific PostGIS JIT release | Never (immutable) | `deploy.yml` |
+| `latest-full`, `vX.Y.Z-full` | Corresponding JIT image with additional stores | `latest-full`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
+| `latest-aot`, `vX.Y.Z-aot` | Corresponding optional Native-AOT image | `latest-aot`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
+| `trunk`, `trunk-jit` | Latest certified PostGIS JIT trunk image | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha7>` | PostGIS JIT moving, dated, and revision-specific nightly images | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk-jit-full`, `nightly-jit-full`, `nightly-jit-<sha7>-full` | Corresponding JIT nightly with additional stores | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk-aot`, `nightly-aot`, `nightly-aot-<sha7>` | Corresponding optional Native-AOT nightly | A certified nightly candidate is published | `nightly-container-build.yml` |
 
-| `trunk` / `trunk-aot` | Latest native-AOT **trunk** build (`-aot` is an alias) | Every nightly build | `nightly-container-build.yml` |
-| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Native-AOT trunk build with moving, dated, and SHA-pinned variants | Every nightly build | `nightly-container-build.yml` |
-| `latest-jit`, `vX.Y.Z-jit`, `trunk-jit`, `nightly-jit*` | Non-production JIT compatibility/debug image | Corresponding release or nightly build | `deploy.yml` / `nightly-container-build.yml` |
+The getting-started pages use the 2026.1 release channel
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
+promotion moves. The exact digest is in the release's `customer-install-manifest.json`
+(`server.image`). Do not infer that a new variant exists from an older tag.
 
-> **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
-> never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
-> tag — both are immutable. The getting-started pages use the 2026.1 release channel
-> `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
-> promotion moves. The exact digest is in the release's `customer-install-manifest.json`
-> (`server.image`).
-
-- **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). Both are native AOT. `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
-- **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk`. It is the documented native-AOT moving tag for the head of the default branch. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
-- **Compatibility debugging only**: use an explicitly suffixed `-jit` tag. Do not promote that image into production.
+- **Production / demos**: use the release's install manifest and supported platform variant. The mutable `latest` tags can include manual default-branch deployments; select the release image and pin its digest for deployment and rollback.
+- **Trunk-following consumers**: use `trunk` for the default JIT image, or the explicit full/AOT nightly variant required by your workload. Nightlies follow a [certified candidate](../operate/nightly-images.md), rather than every trunk commit.
+- **Additional database stores**: select the matching JIT full image and check the installed store inventory before restoring traffic. File-format imports alone do not require the full image.
 
 ## Pattern by team size
 
@@ -124,17 +124,17 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 - Use the generic web image at the release digest (mirrored to ECR if your account requires it), with the task definition's `runtimePlatform.cpuArchitecture` set to `X86_64`; container ports 8080 (HTTP) and 8081 (h2c gRPC).
 - Health checks: ALB target group on `/healthz/ready`; container health on `/healthz/live`.
 - Inject secrets via ECS task-definition `secrets` from Secrets Manager or SSM Parameter Store.
-- Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file.
-- Behind CloudFront with a VPC origin to an internal ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, and trust it only from the VPC:
+- Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file. Where no certificate can be created, set `Operations__SecretChannel__KeyRingSecret` instead to a random secret of at least 43 characters (for example a Secrets Manager generated string injected through task-definition `secrets`). Keep that secret for the life of the database and restore it with every database restore: a ring wrapped with one secret cannot be read with another, so turn secret rotation off; the server refuses to use the ring and names both fingerprints when they differ. A build older than this setting cannot start on a secret-only install, so application rollback past it needs a certificate-based install. When a certificate is also configured it keeps wrapping new keys, and keys wrapped with either stay readable. Retain that certificate and its private key while certificate-wrapped keys remain: setting `KeyRingSecret` does not rewrap existing keys, and startup refuses a secret-only configuration for such a ring.
+- Behind CloudFront to an ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, set the ALB's `routing.http.xff_header_processing.mode` attribute to `preserve`, and trust forwarded headers only from the VPC. The ALB must be reachable only through CloudFront: use an internal ALB behind a CloudFront VPC origin, or protect a public ALB with both a security group admitting only the `com.amazonaws.global.cloudfront.origin-facing` prefix list and a secret origin header set by your distribution. For the public ALB, forward to the target group only when the listener matches that secret header; the default listener action must return `403`. Keep the header name and value secret, and use HTTPS from CloudFront to the public ALB to protect them in transit. The prefix list admits every CloudFront distribution, so it cannot authenticate your distribution on its own. Follow [AWS's origin access guidance](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html) before trusting these headers:
 
   ```bash
   ForwardedHeaders__Enabled=true
-  ForwardedHeaders__ForwardLimit=2
+  ForwardedHeaders__ForwardLimit=1
   ForwardedHeaders__ProtoHeaderName=CloudFront-Forwarded-Proto
   ForwardedHeaders__KnownNetworks__0=10.0.0.0/16   # the VPC CIDR; ALB node addresses change
   ```
 
-  The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
+  The limit is one hop. CloudFront appends the viewer address to `X-Forwarded-For`, and with `preserve` the ALB passes that header on unchanged, so the last entry is the viewer and the immediate peer is the ALB inside the VPC. The server takes that last entry and ignores any addresses the viewer sent itself. With the ALB's default `append` mode the ALB adds the address CloudFront connected from. For a public ALB that is a CloudFront origin-facing address outside the VPC range, so the server would report CloudFront as the client; `preserve` with one hop works for public and VPC-origin ALBs alike.
 
   Do not forward the viewer's `X-Forwarded-Host` in the origin request policy: neither CloudFront nor the ALB overwrites it, and the server applies it from a trusted hop. Set `Public__BaseUrl` (and `HostValidation__AllowedHosts__<n>` if you list hosts) to the distribution's host.
 

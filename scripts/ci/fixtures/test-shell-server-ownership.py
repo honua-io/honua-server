@@ -9,6 +9,7 @@ import sys
 import tempfile
 from threading import Thread
 import unittest
+from unittest.mock import patch
 import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -16,11 +17,14 @@ DOCKER = """#!/usr/bin/env python3
 import sys
 args=sys.argv[1:]
 if args[0]=='run': print('fixture-database-container')
+elif args[0]=='compose' and args[-3:]==['ps','-q','nginx']:
+    import os
+    print(os.environ.get('OWNERSHIP_FAKE_NGINX_CONTAINERS','fixture-nginx-container'))
 elif args[0]=='logs': print('PostgreSQL init process complete; ready for start up.')
 elif args[0]=='inspect':
     if any('"running"' in a for a in args):
         import json,os
-        print(json.dumps({'id':'a'*64,'running':True,'pid':int(os.environ['OWNERSHIP_FAKE_CONTAINER_PID']),'started':'fixture','status':'running'}))
+        print(json.dumps({'id':'a'*64,'running':True,'pid':int(os.environ['OWNERSHIP_FAKE_CONTAINER_PID']),'started':'fixture','status':'running','ports':{port:[{'HostIp':'127.0.0.1','HostPort':os.environ['OWNERSHIP_FAKE_HTTP_PORT']}] for port in ('80/tcp','8080/tcp')} if 'OWNERSHIP_FAKE_HTTP_PORT' in os.environ else {}}))
     else: print('true')
 elif args[0]=='exec' and any('SELECT count' in a for a in args): print('2')
 """
@@ -89,6 +93,55 @@ class ShellServerOwnershipTests(unittest.TestCase):
             except ProcessLookupError:
                 pass
             process.wait(timeout=3)
+
+    def run_scale_launcher(self, published_port):
+        script = self.root / "scale-launcher.sh"
+        script.write_text(f'exec bash "{ROOT}/scripts/scale/scale-test.sh" --test basic\n')
+        environment = {"CI": "true", "HONUA_ADMIN_PASSWORD": "fixture-admin-key",
+                       "OWNERSHIP_FAKE_CONTAINER_PID": "1", "HONUA_SCALE_TEST_READY_SECONDS": "0.25",
+                       "HONUA_SCALE_TEST_HTTP_PORT": str(self.foreign.server_port)}
+        if published_port is not None:
+            environment["OWNERSHIP_FAKE_HTTP_PORT"] = str(published_port)
+        with patch.dict(os.environ, environment):
+            return self.run_harness(script)
+
+    def test_scale_launcher_rejects_a_foreign_healthy_listener(self):
+        code, output = self.run_scale_launcher(None)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("owned listener", output)
+
+    def test_scale_launcher_accepts_its_container_published_listener(self):
+        code, output = self.run_scale_launcher(self.foreign.server_port)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Scale-out testing completed", output)
+
+    def test_scale_launcher_rejects_missing_or_ambiguous_container(self):
+        for containers in ("", "first\nsecond"):
+            with self.subTest(containers=containers), patch.dict(
+                    os.environ, {"OWNERSHIP_FAKE_NGINX_CONTAINERS": containers}):
+                code, output = self.run_scale_launcher(self.foreign.server_port)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("Expected exactly one", output)
+
+    def test_capacity_startup_checks_the_recorded_candidate_listener(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/capacity-soak-candidate.yml").read_text())
+        steps = workflow["jobs"]["soak"]["steps"]
+        source = next(step["run"] for step in steps
+                      if step.get("name") == "Wait for the Production startup policy to report ready")
+        private = self.root / "capacity-substrate"
+        private.mkdir()
+        (private / "server-container").write_text("fixture-candidate-container\n")
+        script = self.root / "capacity-wait.sh"
+        script.write_text(source)
+        environment = {"OWNERSHIP_FAKE_CONTAINER_PID": "1"}
+        with patch.dict(os.environ, environment):
+            code, output = self.run_harness(script)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("owned listener", output)
+        environment["OWNERSHIP_FAKE_HTTP_PORT"] = str(self.foreign.server_port)
+        with patch.dict(os.environ, environment):
+            code, output = self.run_harness(script)
+        self.assertEqual(code, 0, output)
 
     def test_boot_smoke_does_not_qualify_a_foreign_ready_server(self):
         code, output = self.run_harness("scripts/ci/server-boot-smoke.sh")

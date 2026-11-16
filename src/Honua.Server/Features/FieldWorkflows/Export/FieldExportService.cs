@@ -1,14 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Security.Claims;
-using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FieldWorkflows.Export;
 using Honua.Core.Features.FieldWorkflows.Review;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using System.Globalization;
+using System.Text.Json;
 
 namespace Honua.Server.Features.FieldWorkflows.Export;
 
@@ -77,7 +77,7 @@ internal sealed class FieldExportService
             SubmittedTo = request.SubmittedTo
         };
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var package = await _store.CreateExportAsync(normalized, actor, context.RequestAborted).ConfigureAwait(false);
         var payload = FieldExportSerializer.Serialize(format, package.Items, package.Truncated);
 
@@ -141,11 +141,6 @@ internal sealed class FieldExportService
         response.Headers.Pragma = "no-cache";
     }
 
-    private static string ResolveActor(HttpContext context)
-        => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-           ?? context.User.Identity?.Name
-           ?? AuditEvent.AnonymousActor;
-
     private static string JsonString(string? value)
         => value is null ? "null" : "\"" + JsonEncodedText.Encode(value) + "\"";
 
@@ -159,7 +154,7 @@ internal sealed class FieldExportService
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.AdminAction,
-            Actor = ResolveActor(context),
+            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
             ActorType = context.User.Identity?.IsAuthenticated == true ? AuditActorType.UserId : AuditActorType.Anonymous,
             ResourceType = "field_export",
             ResourceId = exportId.ToString(),

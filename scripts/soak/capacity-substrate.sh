@@ -6,6 +6,7 @@ set -euo pipefail
 project=honua-capacity-soak
 private_dir="$RUNNER_TEMP/capacity-substrate"
 prepared="$private_dir/compose.yaml"
+container_file="$private_dir/server-container"
 
 case "${1:-}" in
   start)
@@ -17,6 +18,24 @@ case "${1:-}" in
     docker compose --project-directory . --project-name "$project" -f docker/compose/docker-compose.soak.yml config > "$prepared.tmp"
     mv "$prepared.tmp" "$prepared"
     docker compose --project-name "$project" -f "$prepared" up -d
+    container="$(docker compose --project-name "$project" -f "$prepared" ps -q honua)"
+    newline='
+'
+    if [[ -z "$container" || "$container" == *"$newline"* ]]; then
+      echo "::error::Expected exactly one capacity candidate container" >&2
+      exit 1
+    fi
+    printf '%s\n' "$container" > "$container_file"
+    ;;
+  wait)
+    container="$(cat "$container_file")"
+    if ! python3 "${BASH_SOURCE[0]%/*}/../ci/owned-server.py" wait \
+      --container "$container" --container-port 8080 \
+      --url "${BASE_URL:?BASE_URL is required}/healthz/ready" \
+      --timeout "${HONUA_SOAK_READY_SECONDS:-600}"; then
+      docker logs --tail 120 "$container" || true
+      exit 1
+    fi
     ;;
   cleanup)
     cleanup_status=0
@@ -40,7 +59,7 @@ case "${1:-}" in
       echo "::error::Capacity substrate cleanup failed; retain the private configuration for recovery" >&2
       exit "$cleanup_status"
     fi
-    rm -f "$prepared" "$prepared.tmp"
+    rm -f "$prepared" "$prepared.tmp" "$container_file"
     ;;
-  *) echo "Usage: $0 start|cleanup" >&2; exit 2 ;;
+  *) echo "Usage: $0 start|wait|cleanup" >&2; exit 2 ;;
 esac

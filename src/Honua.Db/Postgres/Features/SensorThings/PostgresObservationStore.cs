@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -14,11 +15,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.SensorThings;
 
-/// <summary>
-/// Postgres implementation of <see cref="IObservationStore"/> over the
-/// configured-schema <c>sta_*</c> catalog tables and the range-partitioned
-/// <c>sta_observation</c> time-series table (migration 059).
-/// </summary>
 internal sealed partial class PostgresObservationStore : IObservationStore, ISensorThingsEntityStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -27,6 +23,7 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
     private readonly ISchemaContext? _schemaContext;
     private readonly string? _configuredSchema;
     private readonly IConfiguration? _configuration;
+    private readonly ITenantContext? _tenantContext;
     private string _thingTable => SchemaSearchPath.QualifyTable("sta_thing", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _sensorTable => SchemaSearchPath.QualifyTable("sta_sensor", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _observedPropertyTable => SchemaSearchPath.QualifyTable("sta_observed_property", _schemaContext?.CurrentSchema ?? _configuredSchema);
@@ -39,7 +36,8 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
         PostgresCoreSchemaMigrationManifest migrations,
         string? schemaName = null,
         ISchemaContext? schemaContext = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        ITenantContext? tenantContext = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
@@ -49,6 +47,7 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
         _configuredSchema = schemaName;
         _schemaContext = schemaContext;
         _configuration = configuration;
+        _tenantContext = tenantContext;
     }
 
     private async Task VerifySchemaFloorAsync(CancellationToken cancellationToken)
@@ -326,12 +325,6 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, Math.Max(0, query.Top));
     }
 
-    /// <summary>
-    /// Binds the translated <c>$filter</c> values with the PostgreSQL type their column
-    /// expects. The translator already refused any literal that does not match the column,
-    /// so the CLR type here is authoritative; binding it explicitly keeps an inferred
-    /// parameter type from reintroducing a text-versus-double comparison (#4203).
-    /// </summary>
     private static void AddFilterParameters(NpgsqlCommand command, IReadOnlyList<object?> parameters)
     {
         for (var i = 0; i < parameters.Count; i++)

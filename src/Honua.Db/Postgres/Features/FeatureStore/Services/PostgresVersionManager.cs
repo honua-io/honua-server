@@ -12,14 +12,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Postgres branch-versioning manager (#1272 Track B, ADR-0051; production hardening #1553). Owns
-/// gdb-version lifecycle over <c>honua.gdb_versions</c> + the overlay <c>honua.version_edits</c>, plus the
-/// reconcile/post merge workflow with #371 conflict resolution. Reconcile/post and a conflicting resolve
-/// run under a durable (service, version) <see cref="IVersionLock"/> so concurrent maintenance for the
-/// same version is serialized; large runs execute through the canonical async job runner. A null or
-/// DEFAULT resolution always maps to the byte-identical base path.
-/// </summary>
 internal sealed partial class PostgresVersionManager : IVersionManager
 {
     private const string DefaultVersionSentinel = "sde.default";
@@ -34,14 +26,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     private readonly IVersionLock _versionLock;
     private readonly string _lockScope;
 
-    /// <summary>Initializes the manager with the database connection provider.</summary>
-    /// <param name="connectionProvider">Database connection provider.</param>
-    /// <param name="schemaName">Optional schema hosting the DEFAULT <c>features</c> table; null for the search-path default.</param>
-    /// <param name="versionLock">
-    /// Durable (service, version) lock that serializes reconcile/post/resolve for a version (#1553).
-    /// Defaults to a single-node in-process lock when none is supplied (development/test and single-node
-    /// deployments); the Redis-backed lock is injected in multi-replica deployments.
-    /// </param>
     public PostgresVersionManager(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         string? schemaName = null,
@@ -55,10 +39,8 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         _lockScope = string.IsNullOrWhiteSpace(schemaName) ? "honua.versioning" : schemaName!;
     }
 
-    /// <inheritdoc />
     public bool SupportsVersioning => true;
 
-    /// <inheritdoc />
     public async Task<GdbVersion> CreateAsync(CreateVersionRequest request, CancellationToken cancellationToken = default)
     {
         ValidateBranchName(request.VersionName);
@@ -70,11 +52,14 @@ internal sealed partial class PostgresVersionManager : IVersionManager
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // The merge base is the current DEFAULT generation; reconcile pulls DEFAULT changes since this
-        // cursor into the branch. last_value mirrors PostgresChangeTracker.GetCurrentGenerationAsync.
+        // Sequence allocations include uncommitted writes; the merge base must only include committed changes.
         const string sql = """
+            WITH committed_generation AS (
+                SELECT COALESCE(MAX(generation), 0) AS generation FROM honua.feature_changes
+            )
             INSERT INTO honua.gdb_versions (version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description)
-            VALUES (@name, @owner, @parent, @access, 0, (SELECT last_value FROM honua.sync_generation), (SELECT last_value FROM honua.sync_generation), @description)
+            SELECT @name, @owner, @parent, @access, 0, generation, generation, @description
+            FROM committed_generation
             RETURNING version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
             """;
 
@@ -101,7 +86,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteAsync(Guid versionId, CancellationToken cancellationToken = default)
     {
         // ON DELETE CASCADE on honua.version_edits removes the overlay rows with the registry row.
@@ -113,7 +97,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         return affected > 0;
     }
 
-    /// <inheritdoc />
     public async Task<GdbVersion?> AlterAsync(AlterVersionRequest request, CancellationToken cancellationToken = default)
     {
         if (request.VersionName is not null)
@@ -148,7 +131,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         return ReadVersion(reader);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<GdbVersion>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -170,11 +152,9 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         return results.ToImmutable();
     }
 
-    /// <inheritdoc />
     public Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default)
         => ResolveAsync(gdbVersion, callerOwner: null, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<VersionContext?> ResolveAsync(
         string? gdbVersion,
         string? callerOwner,
@@ -253,10 +233,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         return ReadVersion(reader);
     }
 
-    /// <summary>
-    /// Rejects branch names that cannot round-trip as an <c>owner.name</c> identity: blank, a leading or
-    /// trailing dot, an empty segment, or the DEFAULT sentinel. Internal dots are valid (#6140).
-    /// </summary>
     private static void ValidateBranchName(string? versionName)
     {
         if (string.IsNullOrWhiteSpace(versionName)

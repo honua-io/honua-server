@@ -79,7 +79,7 @@ concurrency:
 
 env:
   DOTNET_VERSION: '11.0.x'
-  BASE_URL: http://localhost:5000
+  BASE_URL: http://127.0.0.1:5000
   SOAK_SERVER_PORT: '5000'
   SOAK_DB_NAME: honua_soak
   SOAK_DB_USER: honua
@@ -486,21 +486,7 @@ jobs:
         working-directory: producer
         run: |
           set -euo pipefail
-          for _ in $(seq 1 120); do
-            if curl -fsS --max-time 5 "$BASE_URL/healthz/ready" >/dev/null; then
-              echo "ready"
-              exit 0
-            fi
-            if [ "$(docker inspect -f '{{.State.Running}}' honua-capacity-soak-honua-1 2>/dev/null || echo false)" != true ]; then
-              echo "::error::the candidate server exited before becoming ready"
-              docker logs honua-capacity-soak-honua-1 2>&1 | tail -80
-              exit 1
-            fi
-            sleep 5
-          done
-          echo "::error::the candidate server did not become ready within 600s"
-          docker logs honua-capacity-soak-honua-1 2>&1 | tail -120
-          exit 1
+          scripts/soak/capacity-substrate.sh wait
 
       - name: Seed exactly the declared envelope topology
         working-directory: producer
@@ -532,10 +518,7 @@ jobs:
           docker exec honua-capacity-soak-redis-1 redis-cli FLUSHALL
           SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")" \
             docker compose --project-directory . -f docker/compose/docker-compose.soak.yml restart honua
-          for _ in $(seq 1 120); do
-            if curl -fsS --max-time 5 "$BASE_URL/healthz/ready" >/dev/null; then break; fi
-            sleep 5
-          done
+          scripts/soak/capacity-substrate.sh wait
           curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true"
 
       - name: Refuse a server whose effective configuration differs from the envelope

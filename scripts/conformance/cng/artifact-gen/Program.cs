@@ -87,7 +87,7 @@ static void GenerateGeoParquet(string path)
     // GeoServices formatter adapter) over a small canonical feature set so
     // `gpq validate` checks the actual `geo` metadata, WKB encoding and CRS that
     // honua emits — the same writer the FeatureServer `f=parquet` path uses.
-    var resource = new MetadataV2Resource
+    var resource = new MetadataV2Object
     {
         Metadata = new MetadataV2ObjectMetadata
         {
@@ -110,7 +110,7 @@ static void GenerateGeoParquet(string path)
                 SemanticRoles = ["geometry.primary"],
             },
         ],
-        Spatial = new MetadataV2ResourceSpatial
+        Spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Point,

@@ -26,7 +26,7 @@ internal static partial class ServiceSettingsEndpoints
             ServiceSettingsJsonContext.Default.ApiResponseLayerMetadataResponse);
     }
 
-    private sealed record FeatureLayerTarget(MetadataV2Resource? Resource, IResult? Error);
+    private sealed record FeatureLayerTarget(MetadataV2Object? Resource, IResult? Error);
 
     private static FeatureLayerTarget ResolveFeatureLayerTarget(MetadataV2GraphSnapshot snapshot, string serviceName, int serviceLayerIndex)
     {
@@ -53,7 +53,7 @@ internal static partial class ServiceSettingsEndpoints
     private static string[] FindLayerMetadataResourceIds(MetadataV2GraphSnapshot snapshot,
         HashSet<string> serviceIds, int serviceLayerIndex) => snapshot.Graph.Publications
         .Where(publication => serviceIds.Contains(publication.ServiceId) &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
             snapshot.IsRoutable(publication) && publication.LayerIndex == serviceLayerIndex)
         .Select(publication => publication.ResourceId).Distinct(StringComparer.Ordinal).ToArray();
 }

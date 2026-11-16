@@ -48,6 +48,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     private readonly GeometryLimits _geometryLimits;
     private readonly EditLimits _editLimits;
     private readonly int _streamBatchSize;
+    private readonly int _maxRecordCount;
 
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
@@ -99,6 +100,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
+        _maxRecordCount = limitsOptions?.Value?.Query?.MaxRecordCount ?? 10000;
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
         _editReceipts = editReceipts;
@@ -206,13 +208,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
         var requestServices = context.GetHttpContext().RequestServices;
-        var resolvedReader = await ResolveReaderAsync(
-                layer, FeatureProviderReadOperation.Query, requestServices, context.CancellationToken)
+        var streamingStore = await ResolveStreamingStoreAsync(layer, requestServices, context.CancellationToken)
             .ConfigureAwait(false);
-        var streamingStore = requestServices.GetService<FeatureProviderQueryRouter>() is null
-            && requestServices.GetService<IMetadataV2GraphProvider>() is null
-            ? _streamingFeatureStore
-            : resolvedReader as IStreamingFeatureStore;
         if (streamingStore is null)
         {
             throw new RpcException(new Status(
@@ -325,11 +322,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return FilterResultGlobalIds(globalIds, keyedEdit.Response);
         }
 
-        prepared = await PrepareGrpcTargetsAsync(prepared).ConfigureAwait(false);
+        prepared = await PrepareGrpcTargetsAsync(prepared, CallerEditStamp(context)).ConfigureAwait(false);
         editBatch = prepared.Batch;
+        globalIds = prepared.GlobalIds;
         var requestBatch = prepared.RequestBatch;
         var perOperationGeometryChanged = BuildPerOperationGeometryChanged(requestBatch);
-        var grpcHttpContext = context.GetHttpContext();
+        var grpcHttpContext = context.GetHttpContext()
+            ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,
@@ -522,15 +521,26 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<IStreamingFeatureStore?> ResolveStreamingStoreAsync(
+        GrpcLayerContext layer, IServiceProvider requestServices, CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(layer, FeatureProviderReadOperation.Query, requestServices,
+            cancellationToken).ConfigureAwait(false);
+        return requestServices.GetService<FeatureProviderQueryRouter>() is null
+            && requestServices.GetService<IMetadataV2GraphProvider>() is null
+            ? _streamingFeatureStore
+            : reader as IStreamingFeatureStore;
+    }
+
     // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
-    private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
+    private async Task<VisibleEditTargets> EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
         if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
         {
-            return editBatch;
+            return new VisibleEditTargets(editBatch, new Dictionary<long, Feature>());
         }
 
         // Collect distinct target objectids across updates and deletes; a single hidden/missing
@@ -570,7 +580,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         if (editBatch.Updates.IsDefaultOrEmpty)
         {
-            return editBatch;
+            return new VisibleEditTargets(editBatch, storedById);
         }
 
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
@@ -608,12 +618,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
         }
 
-        return editBatch with
-        {
-            Updates = mergedUpdates.MoveToImmutable(),
-            // Count is not known up front, so this builder cannot use MoveToImmutable.
-            Preconditions = preconditions.ToImmutable()
-        };
+        return new VisibleEditTargets(
+            editBatch with
+            {
+                Updates = mergedUpdates.MoveToImmutable(),
+                // Count is not known up front, so this builder cannot use MoveToImmutable.
+                Preconditions = preconditions.ToImmutable()
+            },
+            storedById);
     }
 
     // Omitted geometry keeps the stored geometry because there is no protobuf signal for clearing it, and omitted attributes are merged from the locked row.
@@ -761,8 +773,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static GrpcLayerContext CreateLayerContext(
         MetadataV2Service service,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         int storageLayerId,
         MetadataV2GraphSnapshot? snapshot)
     {
@@ -787,7 +799,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 .Select(field => field.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase));
     }
 
-    private static SpatialReference ToSpatialReference(MetadataV2Resource resource)
+    private static SpatialReference ToSpatialReference(MetadataV2Object resource)
     {
         var srid = resource.ReadSrid();
         return srid.HasValue ? SpatialReference.Create(srid.Value) : SpatialReference.WGS84;
@@ -953,7 +965,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     // A where clause that names a masked field is refused.
     private static async Task<SqlFragment?> BindWhereClauseAsync(
         string? where,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IServiceProvider requestServices,
         CancellationToken cancellationToken)
     {
@@ -1103,7 +1115,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureEditBatch editBatch)
     {
         var httpContext = context.GetHttpContext();
@@ -1149,7 +1161,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     // An edit kind the publication omits is rejected.
     private static void EnsureDeclaredEditCapabilities(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         FeatureEditBatch editBatch)
     {
         Check(!editBatch.Creates.IsDefaultOrEmpty, AuthorizationOperation.Insert);
@@ -1189,7 +1201,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     private static async Task EnsureReadAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var httpContext = context.GetHttpContext();
 
@@ -1237,8 +1249,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private readonly record struct GrpcLayerContext(
         MetadataV2Service Service,
-        MetadataV2Publication Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
         int StorageLayerId,
         MetadataV2GraphSnapshot? Snapshot,
         SpatialReference SpatialReference,

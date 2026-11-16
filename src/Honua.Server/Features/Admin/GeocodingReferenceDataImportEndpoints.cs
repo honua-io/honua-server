@@ -131,7 +131,7 @@ internal static class GeocodingReferenceDataImportEndpoints
             }
         }
 
-        var importService = context.RequestServices.GetRequiredService<IGeocoderReferenceDataImportService>();
+        var importService = context.RequestServices.GetRequiredService<GeocoderReferenceDataImportService>();
         var logger = context.RequestServices.GetRequiredService<ILogger<GeocodingReferenceDataImportLog>>();
 
         Stream? referenceStream = null;

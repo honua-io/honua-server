@@ -40,9 +40,11 @@ If you edit a table outside Honua, with a desktop GIS or a load script, the serv
 
 On several tasks, the tasks share one lease per invalidated tag or path in the database, so whichever task edits first sends the invalidation; an edit on another task during that window is sent shortly after the window ends instead of at once.
 
+Edit purges also share one monthly counter in the database (`SharedCache__PurgeBudget__MonthlyEditSubmissions`, default 1000; set it to 0 to disable the cap). The counter is the number of edit purges sent, not the number of edits, so a burst inside the 30 second window still counts as one. When the count is reached, further edit purges pause until the next UTC month and cached edits expire with their lifetime. Access changes, an operator invalidation and a release still purge. The same response header is `budget` on a request whose edit purge was paused. Each admitted edit purge adds `SharedCache__PurgeBudget__EstimatedCostPerSubmission` (default 0, an operator-supplied unit cost) to that month's spend estimate. While the budget is spent, the operations view reports the finding `cdn-purge-budget`. If the counter cannot be read, the edit purge is sent anyway.
+
 CloudFront limits how many invalidations may be in progress. When it is busy the service retries for up to 17 seconds; when many layers are edited in the same 30 seconds it invalidates everything once instead of naming each layer.
 
-An admin request that told the CDN carries the response header `Honua-Cdn-Invalidation: submitted`, or `failed` when CloudFront refused. A failure never undoes the change and never blocks a rollback; a release operation records it in the operation's warnings. Until the invalidation is repeated, cached responses expire with their lifetime.
+An admin request that told the CDN carries the response header `Honua-Cdn-Invalidation: submitted`, or `failed` when CloudFront refused. An edit request whose purge was paused by the monthly cap carries `budget`. A failure never undoes the change and never blocks a rollback; a release operation records it in the operation's warnings. Until the invalidation is repeated, cached responses expire with their lifetime.
 
 Every invalidation is logged once as a purge record (event 10311): the reason (`admin`, `edit`, `release` or `operation`), the change it belongs to, the task that sent it, the CloudFront outcome and invalidation id, and the paths. For an admin change, the change is the `X-Correlation-ID` returned to the admin request, so you can find the purge a given change caused.
 
@@ -58,7 +60,7 @@ The exported `Honua` meter includes these origin cache instruments:
 | `honua_shared_cache_purge_requests_total` | `reason`, `scope`, `outcome` | One logical CDN submission per batch, after bounded retries. |
 | `honua_shared_cache_purge_duration_seconds` | `reason`, `scope`, `outcome` | Submission duration, including retries. |
 
-Purge outcomes include submitted, failed, busy, and canceled; an unconfigured CDN emits no purge measurements. A submitted purge is accepted by the provider; its completion is asynchronous. Scope is `all`, `tags`, or `paths`. Dimensions never include resource names, paths, tenant identifiers, or change IDs. Use purge records to investigate a specific change. These counters describe the origin cache and submissions; CDN edge hit ratios come from distribution telemetry.
+Purge outcomes include submitted, failed, busy, budget, and canceled; an unconfigured CDN emits no purge measurements. `budget` means the monthly edit-purge cap paused that submission. A submitted purge is accepted by the provider; its completion is asynchronous. Scope is `all`, `tags`, or `paths`. Dimensions never include resource names, paths, tenant identifiers, or change IDs. Use purge records to investigate a specific change. These counters describe the origin cache and submissions; CDN edge hit ratios come from distribution telemetry.
 
 Responses on cached routes carry an RFC 9211 `Cache-Status` header for this cache:
 
@@ -130,3 +132,43 @@ SharedCache__CacheTagHeader=x-amz-meta-cache-tag
 - **Everything is `private, no-store`.** The request carries a credential or names a tenant, or a development bypass identity is active. None of these is shared.
 - **A change is not visible through the CDN.** Check the admin response for `Honua-Cdn-Invalidation: failed`, and the task role's permission on the distribution.
 - **Edits made outside Honua are not visible.** Shorten the layer's lifetime, or invalidate the layer's cache after loading data.
+
+## Purge after an ECS deployment settles
+
+When the ops event queue is enabled, the server consumes ECS
+`SERVICE_DEPLOYMENT_COMPLETED` events and performs a second CDN purge after the
+replacement deployment settles. This removes responses that old tasks could
+have cached after the release-change purge.
+
+Only configured ECS deploy targets are eligible. Their `aws.ecs.cluster` (name
+or ARN) and canary or stable service must match the event, and so must
+`aws.region` when it is set. Parameters are read as the deploy backend reads
+them: values are trimmed, a blank value counts as unset, and the canary service
+defaults to the target name.
+The supported backends are `honua-aws-ecs-alb` and `honua-gitops-aws-ecs`.
+The queue must receive ECS Deployment State Change events for these services,
+and the server's task role must allow describing them. Unrelated events do not
+cause a purge.
+
+Before purging, the consumer checks the live service: the event's deployment is
+primary, its rollout is complete, running tasks match the desired count, no tasks
+are pending, and every older deployment has zero running and pending tasks.
+A completion event that arrives before this state is visible stays retryable.
+Events for an explicitly superseded deployment do not trigger a purge, nor does
+a late event for a deployment ECS no longer lists once the current primary's
+own purge is recorded.
+
+Only completed deployments trigger this purge. When the ECS deployment circuit
+breaker rolls a failed deployment back, no second purge runs: responses cached
+from the failed tasks stay until their cache lifetime ends, and late events for
+older deployments of that service retry until the next completed deployment is
+recorded or the queue dead-letters them.
+
+PostgreSQL coordinates consumers across tasks and records a successful purge in
+`cdn_deployment_purges`. A task that finds another task already handling the
+same service returns the event to the queue instead of waiting for it. Repeated deliveries of that deployment do not purge
+again. Failed purges remain unrecorded and use the queue's retry and dead-letter
+policy. If a process stops after submitting a purge but before committing its
+record, retry can submit the purge again; purging is safe to repeat. The CDN
+purge log carries the release change ID `deployment:<event-id>`. CDN propagation
+still depends on the configured provider.

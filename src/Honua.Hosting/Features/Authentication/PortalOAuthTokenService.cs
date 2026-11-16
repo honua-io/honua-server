@@ -426,7 +426,7 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token has already been used.");
         }
 
-        // BH2-024: if IssueAsync throws (transient Redis/network failure) after the atomic
+        // BH2-024: if IssueAsync throws (transient database or network failure) after the atomic
         // consume, restore the original token so the client can retry successfully instead
         // of being forced to re-authenticate. Restoration is best-effort: if the store is
         // also unavailable the client must re-authenticate, but the original exception is

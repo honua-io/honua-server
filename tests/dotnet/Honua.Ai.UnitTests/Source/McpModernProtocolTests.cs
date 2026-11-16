@@ -46,6 +46,7 @@ public sealed class McpModernProtocolTests
     [InlineData("resources/list")]
     [InlineData("resources/templates/list")]
     [InlineData("prompts/list")]
+    [InlineData("skills/list")]
     public async Task Post_CatalogRequest_IgnoresForeignSessionAndAddsCacheHints(string method)
     {
         using var services = CreateServices();

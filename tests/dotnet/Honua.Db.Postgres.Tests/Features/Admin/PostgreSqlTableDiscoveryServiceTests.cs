@@ -63,6 +63,38 @@ public sealed class PostgreSqlTableDiscoveryServiceTests
     }
 
     [Fact]
+    public async Task DiscoverNonSpatialTableAsync_OnlyColumnMarkersIdentifyImportBookkeeping()
+    {
+        var schema = await _fixture.CreateIsolatedSchemaAsync("column_ownership");
+        try
+        {
+            await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                CREATE TABLE "{schema}".attributes (id integer PRIMARY KEY, properties jsonb, created_at timestamptz);
+                COMMENT ON TABLE "{schema}".attributes IS 'honua:import-owned:v1';
+                """;
+            await command.ExecuteNonQueryAsync();
+            var service = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance,
+                schemaConfiguration: new PostgresSchemaConfiguration("honua", schema, [schema, "public"]));
+            var businessTable = await service.DiscoverNonSpatialTableAsync(connection, schema, "attributes");
+            businessTable!.Columns.Should().OnlyContain(column => !column.IsInternalImportColumn);
+            command.CommandText = $"""
+                COMMENT ON COLUMN "{schema}".attributes.properties IS 'honua:import-bookkeeping:v1';
+                COMMENT ON COLUMN "{schema}".attributes.created_at IS 'honua:import-bookkeeping:v1';
+                """;
+            await command.ExecuteNonQueryAsync();
+            var importTable = await service.DiscoverNonSpatialTableAsync(connection, schema, "attributes");
+            importTable!.Columns.Where(column => column.IsInternalImportColumn).Select(column => column.Name)
+                .Should().BeEquivalentTo("properties", "created_at");
+        }
+        finally
+        {
+            await _fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
     public async Task DiscoverTables_OnlyOperationalSchemasReachSpatialAndAttributeIntrospection()
     {
         var schema = await _fixture.CreateIsolatedSchemaAsync("schema_policy");

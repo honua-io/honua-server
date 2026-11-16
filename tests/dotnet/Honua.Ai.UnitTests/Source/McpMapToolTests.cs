@@ -429,13 +429,13 @@ public sealed class McpMapToolTests
     private static async Task<MetadataV2Graph> MultiProtocolLayerGraphAsync(AccessPolicy? accessPolicy = null)
     {
         var graph = (await BuildGraphProvider(accessPolicy).GetCurrentAsync()).Graph;
-        var feature = graph.Publications[0] with { PublicationType = MetadataV2PublicationType.EsriFeatureLayer };
+        var feature = graph.Publications[0] with { PublicationType = MetadataV2LayerType.EsriFeatureLayer };
         return graph with
         {
             Publications = [feature, feature with
             {
                 Metadata = feature.Metadata with { Id = "pub-parcels-stac" },
-                PublicationType = MetadataV2PublicationType.StacCollection
+                PublicationType = MetadataV2LayerType.StacCollection
             }]
         };
     }
@@ -689,6 +689,7 @@ public sealed class McpMapToolTests
     {
         var descriptor = new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance).Describe();
 
+        descriptor.InputSchema.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
         var inputProps = descriptor.InputSchema.GetProperty("properties");
         inputProps.TryGetProperty("resultOffset", out var resultOffset).Should().BeTrue();
         resultOffset.GetProperty("type").GetString().Should().Be("integer");
@@ -1596,7 +1597,7 @@ public sealed class McpMapToolTests
 
     private static TestMetadataV2GraphProvider BuildGraphProvider(AccessPolicy? accessPolicy = null, AccessPolicy? servicePolicy = null)
     {
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             GeometryType = MetadataV2GeometryType.Polygon,
             SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },

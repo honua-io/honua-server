@@ -205,6 +205,27 @@ public sealed class FeatureEditBatchTests
     }
 
     [UnitTest]
+    public void FailureWithUnknownCommitOutcome_DiscardsProvisionalOperationEvidence()
+    {
+        var operation = EditOperationResult.Success(7) with
+        {
+            OperationEvidence = [new FeatureOperationEvidence
+            {
+                Generation = 12, LayerId = 3, ObjectId = 7, Operation = FeatureChangeOperation.Insert
+            }]
+        };
+
+        var result = FeatureEditResult.FailureWithUnknownCommitOutcome(
+            createResults: [operation, EditOperationResult.FailureWithUnknownCommitOutcome("Commit not acknowledged.")],
+            updateResults: [operation], deleteResults: [operation]);
+
+        result.CreateResults.Should().OnlyContain(item => item.OperationEvidence.IsDefault);
+        result.UpdateResults.Should().OnlyContain(item => item.OperationEvidence.IsDefault);
+        result.DeleteResults.Should().OnlyContain(item => item.OperationEvidence.IsDefault);
+        result.MayHaveCommitted.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void EditOperationResult_DefaultIsSuccessTrue()
     {
         var result = new EditOperationResult();

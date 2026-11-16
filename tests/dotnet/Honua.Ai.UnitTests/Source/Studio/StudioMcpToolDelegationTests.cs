@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
@@ -182,7 +183,10 @@ public sealed class StudioMcpToolDelegationTests
             .Should().Be("studio.content.create-publication-request");
 
         var finalDraft = await lifecycleService.GetDraftAsync(draftId);
-        finalDraft.Should().BeEquivalentTo(draftBeforeProposal);
+        finalDraft.Should().BeEquivalentTo(draftBeforeProposal, options => options
+            .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation)
+                .Should().BeTrue("snapshot JSON content must remain unchanged"))
+            .WhenTypeIs<JsonElement>());
 
         var pointers = await store.GetPointersAsync(itemId);
         pointers.Should().NotBeNull();

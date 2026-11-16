@@ -548,7 +548,7 @@ public sealed class MigrationCatalogReconcilerTests
             }
         };
 
-    private static MetadataV2Resource BuildPublishedResource()
+    private static MetadataV2Object BuildPublishedResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc.parcels", Name = "parcels" },
@@ -584,13 +584,13 @@ public sealed class MigrationCatalogReconcilerTests
                     }
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference { Srid = 2227, Crs = "EPSG:2227" },
                 GeometryType = MetadataV2GeometryType.MultiPolygon,
                 Bbox = new MetadataV2Bbox { West = 6_000_000, South = 1_900_000, East = 6_100_000, North = 2_000_000 }
             },
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID" }
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "GLOBALID" }
         };
 
     [Trait("Tier", "Fast")]
@@ -600,7 +600,7 @@ public sealed class MigrationCatalogReconcilerTests
         var inventory = BuildInventoryResource() with { HasAttachments = true };
         var published = BuildPublishedResource() with
         {
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID", SupportsAttachments = false }
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "GLOBALID", SupportsAttachments = false }
         };
 
         var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
@@ -617,7 +617,7 @@ public sealed class MigrationCatalogReconcilerTests
         var inventory = BuildInventoryResource() with { HasAttachments = true };
         var published = BuildPublishedResource() with
         {
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID", SupportsAttachments = true }
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "GLOBALID", SupportsAttachments = true }
         };
 
         var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);

@@ -11,38 +11,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Default <see cref="IVersionJobRunner"/> (#1553). Wraps the synchronous <see cref="IVersionManager"/>
-/// reconcile/post in a durable, pollable job: it records the job, runs the operation in the background,
-/// persists every lifecycle transition to the <see cref="IVersionJobStore"/>, and emits a telemetry span
-/// tagged with version id, kind, policy, conflict/auto-resolved counts, outcome, and duration. The
-/// version manager itself holds the (service, version) <see cref="IVersionLock"/> for the critical
-/// section, so a job, a competing sync request, and a conflicting resolve are all serialized by the same
-/// lock; a contended lock surfaces as <see cref="VersionLockedException"/>, which the runner records as a
-/// terminal <see cref="VersionJobStatus.LockContended"/> job. The background work resolves its own DI
-/// scope so it is independent of the originating request's lifetime, and the durable store +
-/// transactional reconcile make a re-run after a restart idempotent.
-/// </summary>
 public sealed partial class VersionJobRunner : IVersionJobRunner
 {
     private static readonly ActivitySource ActivitySource = new("Honua", "1.0.0");
+    private static readonly TimeSpan TerminalSaveRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IVersionJobStore _jobStore;
     private readonly ILogger<VersionJobRunner> _logger;
     private readonly IHostApplicationLifetime? _lifetime;
 
-    /// <summary>Initializes the runner.</summary>
-    /// <param name="scopeFactory">Factory used to resolve a fresh DI scope for each background job.</param>
-    /// <param name="jobStore">Durable job store used to record and poll job state.</param>
-    /// <param name="logger">Logger.</param>
-    /// <param name="lifetime">
-    /// Optional host lifetime (matches the <c>InProcessTemporalCorrectiveJobSink</c> pattern).
-    /// When supplied, <see cref="IHostApplicationLifetime.ApplicationStopping"/> is observed by
-    /// the detached background job so a graceful shutdown records a terminal state instead of
-    /// leaving the job silently abandoned mid-flight. Optional so the runner still works in
-    /// hosts/tests that do not register <see cref="IHostApplicationLifetime"/>.
-    /// </param>
     public VersionJobRunner(
         IServiceScopeFactory scopeFactory,
         IVersionJobStore jobStore,
@@ -55,7 +33,6 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         _lifetime = lifetime;
     }
 
-    /// <inheritdoc />
     public Task<VersionJob> StartReconcileAsync(
         string service,
         Guid versionId,
@@ -64,7 +41,6 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         CancellationToken cancellationToken = default)
         => StartAsync(service, versionId, VersionJobKind.Reconcile, policy, detection, cancellationToken);
 
-    /// <inheritdoc />
     public Task<VersionJob> StartPostAsync(
         string service,
         Guid versionId,
@@ -73,7 +49,6 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             service, versionId, VersionJobKind.Post, VersionReconcilePolicy.None,
             VersionConflictDetection.ByAttribute, cancellationToken);
 
-    /// <inheritdoc />
     public Task<VersionJob?> GetJobAsync(Guid jobId, CancellationToken cancellationToken = default)
         => _jobStore.GetAsync(jobId, cancellationToken);
 
@@ -154,11 +129,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             activity?.SetTag("honua.version.applied_changes", completed.AppliedChanges);
             activity?.SetTag("honua.version.outcome", "succeeded");
             activity?.SetStatus(ActivityStatusCode.Ok);
-            await store.SaveAsync(completed, CancellationToken.None).ConfigureAwait(false);
             if (completed.Status == VersionJobStatus.Succeeded)
             {
                 await InvalidateQueryResponsesBestEffortAsync(scope.ServiceProvider).ConfigureAwait(false);
             }
+            await SaveTerminalStateAsync(completed).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
         {
@@ -210,9 +185,6 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         }
     }
 
-    // Best-effort: the terminal transition is recorded through the singleton job store (the DI scope
-    // may already be gone when the failure was in the prologue), and a store outage while saving must
-    // not become a second unobserved exception on this detached task.
     private async Task InvalidateQueryResponsesBestEffortAsync(IServiceProvider services)
     {
         try
@@ -233,13 +205,28 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
 
     private async Task SaveTerminalStateAsync(VersionJob job)
     {
-        try
+        var shutdownToken = _lifetime?.ApplicationStopping ?? CancellationToken.None;
+        while (true)
         {
-            await _jobStore.SaveAsync(job, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
+            try
+            {
+                await _jobStore.SaveAsync(job, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
+            }
+
+            // Retain the operation's original outcome through an outage without replaying it.
+            try
+            {
+                await Task.Delay(TerminalSaveRetryDelay, shutdownToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
     }
 

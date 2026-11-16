@@ -11,7 +11,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 internal static class ServerMaintainedEditFields
 {
     internal static IReadOnlyDictionary<string, object?> OmitClientValues(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes,
         bool isUpdate,
         bool useGlobalIds)
@@ -23,10 +23,7 @@ internal static class ServerMaintainedEditFields
         var editing = resource.Editing;
         if (editing is not null)
         {
-            Add(omit, editing.CreatorField);
-            Add(omit, editing.CreatedAtField);
-            Add(omit, editing.EditorField);
-            Add(omit, editing.UpdatedAtField);
+            omit.UnionWith(EditorTrackingFields.Names(editing));
             if (isUpdate || !useGlobalIds)
             {
                 Add(omit, editing.GlobalIdField);
@@ -77,7 +74,7 @@ internal static class ServerMaintainedEditFields
     }
 
     internal static void Stamp(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         bool isInsert,
         EditPrincipal principal,
@@ -94,25 +91,22 @@ internal static class ServerMaintainedEditFields
             return;
         }
 
+        var stamp = new EditorTrackingStamp(principal.Name, field => TimeValue(field, utcNow));
         if (isInsert)
         {
             StampInsertGlobalId(resource, attributes, editing.GlobalIdField, useGlobalIds);
-            SetUser(resource, attributes, editing.CreatorField, principal.Name);
-            SetUser(resource, attributes, editing.EditorField, principal.Name);
-            SetTime(resource, attributes, editing.CreatedAtField, utcNow);
-            SetTime(resource, attributes, editing.UpdatedAtField, utcNow);
+            EditorTrackingFields.StampInsert(resource, attributes, stamp);
             return;
         }
 
         Restore(resource, attributes, existingAttributes, editing.GlobalIdField);
         Restore(resource, attributes, existingAttributes, editing.CreatorField);
         Restore(resource, attributes, existingAttributes, editing.CreatedAtField);
-        SetUser(resource, attributes, editing.EditorField, principal.Name);
-        SetTime(resource, attributes, editing.UpdatedAtField, utcNow);
+        EditorTrackingFields.StampUpdate(resource, attributes, stamp);
     }
 
     private static void StampInsertGlobalId(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         string? fieldName,
         bool useGlobalIds)
@@ -122,49 +116,21 @@ internal static class ServerMaintainedEditFields
             return;
         }
 
-        var name = CanonicalName(resource, fieldName);
+        var name = EditorTrackingFields.CanonicalName(resource, fieldName);
         var supplied = useGlobalIds && TryGet(attributes, name, out var value) ? value : null;
         attributes[name] = InsertGlobalIds.Resolve(supplied);
     }
 
-    private static void SetUser(
-        MetadataV2Resource resource,
-        IDictionary<string, object?> attributes,
-        string? fieldName,
-        string? principalName)
+    private static object TimeValue(MetadataV2Field? field, DateTimeOffset utcNow) => field?.Type switch
     {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return;
-        }
-
-        attributes[CanonicalName(resource, fieldName)] = principalName;
-    }
-
-    private static void SetTime(
-        MetadataV2Resource resource,
-        IDictionary<string, object?> attributes,
-        string? fieldName,
-        DateTimeOffset utcNow)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return;
-        }
-
-        var name = CanonicalName(resource, fieldName);
-        var field = FindField(resource, fieldName);
-        attributes[name] = field?.Type switch
-        {
-            MetadataV2FieldType.Date => GeoServicesFieldConventions.ToEpochMilliseconds(
-                DateOnly.FromDateTime(utcNow.UtcDateTime)),
-            MetadataV2FieldType.String => utcNow.ToString("O", CultureInfo.InvariantCulture),
-            _ => utcNow.ToUnixTimeMilliseconds(),
-        };
-    }
+        MetadataV2FieldType.Date => GeoServicesFieldConventions.ToEpochMilliseconds(
+            DateOnly.FromDateTime(utcNow.UtcDateTime)),
+        MetadataV2FieldType.String => utcNow.ToString("O", CultureInfo.InvariantCulture),
+        _ => utcNow.ToUnixTimeMilliseconds(),
+    };
 
     private static void Restore(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         IReadOnlyDictionary<string, object?>? existingAttributes,
         string? fieldName)
@@ -174,7 +140,7 @@ internal static class ServerMaintainedEditFields
             return;
         }
 
-        var name = CanonicalName(resource, fieldName);
+        var name = EditorTrackingFields.CanonicalName(resource, fieldName);
         if (existingAttributes is not null && TryGet(existingAttributes, name, out var value))
         {
             attributes[name] = value;
@@ -184,26 +150,10 @@ internal static class ServerMaintainedEditFields
         attributes.Remove(name);
     }
 
-    private static bool IsPreservedGlobalId(MetadataV2ResourceEditing? editing, string fieldName, bool useGlobalIds)
+    private static bool IsPreservedGlobalId(MetadataV2ObjectEditing? editing, string fieldName, bool useGlobalIds)
         => useGlobalIds &&
            editing?.GlobalIdField is { } globalIdField &&
            fieldName.Equals(globalIdField, StringComparison.OrdinalIgnoreCase);
-
-    private static string CanonicalName(MetadataV2Resource resource, string fieldName)
-        => FindField(resource, fieldName)?.Name ?? fieldName;
-
-    private static MetadataV2Field? FindField(MetadataV2Resource resource, string fieldName)
-    {
-        foreach (var field in resource.SchemaFields)
-        {
-            if (field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return field;
-            }
-        }
-
-        return null;
-    }
 
     private static bool TryGet(IDictionary<string, object?> attributes, string name, out object? value)
         => TryGetValue(attributes, name, out value);

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.MultiTenancy.Domain;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,12 @@ internal sealed class TenantStatusEnforcementMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
+        if (context.GetEndpoint()?.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null)
+        {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
         var tenantContext = context.RequestServices.GetService<ITenantContext>();
         if (tenantContext is null
             || string.IsNullOrEmpty(tenantContext.TenantId))

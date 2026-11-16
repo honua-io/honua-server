@@ -271,7 +271,7 @@ public sealed class TileFeatureProviderResolverTests
             new FeatureDataProviderRegistry([provider]));
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateSnapshot(
             string? connectionId,
             bool publicationUsesExplicitBinding = true,
@@ -284,10 +284,10 @@ public sealed class TileFeatureProviderResolverTests
             Protocols = ["OgcApiTiles"],
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-secondary", Name = "secondary" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-secondary"],
             PrimaryStorageBindingId = resourceUsesPrimaryBinding ? "binding-secondary" : null,
             SchemaFields =
@@ -316,7 +316,7 @@ public sealed class TileFeatureProviderResolverTests
                 }
                 : new Dictionary<string, JsonElement>()
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-secondary", Name = "secondary" },
             ServiceId = service.Metadata.Id,

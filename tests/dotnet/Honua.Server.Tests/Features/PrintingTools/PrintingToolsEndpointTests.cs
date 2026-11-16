@@ -17,23 +17,18 @@ namespace Honua.Server.Tests.Features.PrintingTools;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.PrintingTools)]
-public sealed class PrintingToolsEndpointTests : IAsyncLifetime
+public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, IDisposable
 {
     private static readonly int[] DefaultOutputSize = [800, 600];
     private static readonly int[] OversizedOutputSize = [10000, 10000];
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public async Task InitializeAsync()
+    public PrintingToolsEndpointTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = fixture.CreateAdminClient();
     }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    public void Dispose() => _client.Dispose();
 
     // --- Service Info ---
 

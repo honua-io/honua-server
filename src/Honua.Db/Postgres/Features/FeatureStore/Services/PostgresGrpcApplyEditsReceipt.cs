@@ -6,11 +6,7 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads and writes <c>grpc_apply_edits_receipt</c>. Writes join the caller's edit transaction.
-/// Each read and write also deletes a bounded batch of expired rows so expiry is removal, not only a filter.
-/// </summary>
-internal static class PostgresGrpcApplyEditsReceipt
+internal static partial class PostgresGrpcApplyEditsReceipt
 {
     internal const int MaxScopeLength = 128;
     internal const int MaxReceiptBytes = 16 * 1024 * 1024;

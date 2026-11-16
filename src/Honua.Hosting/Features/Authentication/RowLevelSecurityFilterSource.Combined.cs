@@ -18,7 +18,7 @@ internal sealed partial class RowLevelSecurityFilterSource
            && combined.CanResolveWith(masks.PolicyStore);
 
     public async Task<ReadSecurityResolution> ResolveCombinedAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFieldMaskSource fieldSource,
         CancellationToken cancellationToken = default)
     {

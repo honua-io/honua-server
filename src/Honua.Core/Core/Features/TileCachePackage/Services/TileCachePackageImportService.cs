@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.TileCachePackage.Services;
 
-public sealed partial class TileCachePackageImportService : ITileCachePackageImportService
+public sealed partial class TileCachePackageImportService
 {
     private const string StyleIdentifier = "default";
 

@@ -56,7 +56,7 @@ public static partial class GeoParquetFeatureWriter
 
     public static (ReadOnlyMemory<byte> response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
@@ -65,8 +65,45 @@ public static partial class GeoParquetFeatureWriter
         GeometryLimits geometryLimits,
         string[]? outFields = null,
         ILogger? logger = null,
-        GeoParquetLimits? encodingLimits = null)
+        GeoParquetLimits? encodingLimits = null,
+        IReadOnlyDictionary<string, string>? fileMetadata = null)
     {
+        var (payload, contentType) = FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = objectIdFieldName,
+            ReturnGeometry = returnGeometry,
+            OutputSrid = outputSrid,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            Logger = logger,
+            EncodingLimits = encodingLimits,
+            FileMetadata = fileMetadata
+        });
+        using (payload)
+        using (var copy = new MemoryStream())
+        {
+            payload.CopyTo(copy);
+            return (copy.ToArray(), contentType);
+        }
+    }
+
+    public static (Stream response, string contentType) FormatAsGeoParquetStream(
+        QueryResult<Feature> result,
+        MetadataV2Object resource,
+        GeoParquetStreamEncodingOptions options)
+    {
+        var objectIdFieldName = options.ObjectIdFieldName;
+        var returnGeometry = options.ReturnGeometry;
+        var outputSrid = options.OutputSrid;
+        var returnZ = options.ReturnZ;
+        var returnM = options.ReturnM;
+        var geometryLimits = options.GeometryLimits;
+        var outFields = options.OutFields;
+        var logger = options.Logger;
+        var encodingLimits = options.EncodingLimits;
+        var fileMetadata = options.FileMetadata;
         ArgumentNullException.ThrowIfNull(resource);
         encodingLimits ??= new GeoParquetLimits();
         ValidateEncodingLimits(encodingLimits);
@@ -84,7 +121,7 @@ public static partial class GeoParquetFeatureWriter
         var batches = PlanBatches(features, encodingLimits);
         if (features.Length == 0)
         {
-            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits);
+            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits, fileMetadata);
         }
 
         var runtimeFields = DetectRuntimeFields(features, resource);
@@ -118,6 +155,7 @@ public static partial class GeoParquetFeatureWriter
         var (schema, fieldsToInclude, resolvedObjectIdFieldName, geometryColumnName, bboxColumnName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
             runtimeFields, geometryTypes, includeCovering: includeCovering);
+        schema = WithFileMetadata(schema, fileMetadata);
 
         return (WriteArrowParquet(schema, writer =>
         {
@@ -153,9 +191,9 @@ public static partial class GeoParquetFeatureWriter
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
-    private static ReadOnlyMemory<byte> WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
+    private static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
-        using var stream = new BoundedParquetStream(limits.MaxResponseBytes);
+        var stream = new BoundedParquetStream(limits.MaxResponseBytes);
         try
         {
             // Construct and dispose the builder itself explicitly (rather than chaining off
@@ -171,22 +209,30 @@ public static partial class GeoParquetFeatureWriter
                 writer.Close();
             }
 
-            return stream.GetBuffer().AsMemory(0, checked((int)stream.Length));
+            stream.Position = 0;
+            return stream;
         }
         catch (Exception) when (stream.LimitExceeded)
         {
             // The native callback can wrap a managed Stream exception. Keep the shared
             // budget contract even when the refusal occurs while writing the footer.
+            stream.Dispose();
             throw new GeoParquetLimitExceededException();
         }
         catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
         {
+            stream.Dispose();
             throw new ParquetRuntimeUnavailableException(ex);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
         }
     }
 
     public static List<MetadataV2Field> ResolveSelectedFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         string[]? outFields)
     {
@@ -222,22 +268,42 @@ public static partial class GeoParquetFeatureWriter
         return selectedFields;
     }
 
-    private static (ReadOnlyMemory<byte> response, string contentType) CreateEmptyGeoParquet(
-        MetadataV2Resource resource,
+    private static (Stream response, string contentType) CreateEmptyGeoParquet(
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
-        GeoParquetLimits encodingLimits)
+        GeoParquetLimits encodingLimits,
+        IReadOnlyDictionary<string, string>? fileMetadata)
     {
         var (schema, _, _, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
-        return (WriteArrowParquet(schema, writeBatches: null, encodingLimits), ContentType);
+        return (WriteArrowParquet(WithFileMetadata(schema, fileMetadata), writeBatches: null, encodingLimits), ContentType);
+    }
+
+    private static Schema WithFileMetadata(Schema schema, IReadOnlyDictionary<string, string>? fileMetadata)
+    {
+        if (fileMetadata is not { Count: > 0 })
+        {
+            return schema;
+        }
+
+        var metadata = new Dictionary<string, string>(schema.Metadata ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+        foreach (var (key, value) in fileMetadata)
+        {
+            if (!metadata.TryAdd(key, value))
+            {
+                throw new ArgumentException($"GeoParquet file metadata key '{key}' collides with a key the writer owns.", nameof(fileMetadata));
+            }
+        }
+
+        return new Schema(schema.FieldsList, metadata);
     }
 
     private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName, string geometryColumnName, string bboxColumnName) BuildSchema(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
         string[]? outFields,
@@ -315,7 +381,7 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private static Dictionary<string, string> BuildGeoParquetMetadata(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         IReadOnlyCollection<string>? geometryTypes,
@@ -367,7 +433,7 @@ public static partial class GeoParquetFeatureWriter
         return metadata;
     }
 
-    private static double? ResolveCoordinateEpoch(MetadataV2Resource resource, bool includeGeometry, int outputSrid)
+    private static double? ResolveCoordinateEpoch(MetadataV2Object resource, bool includeGeometry, int outputSrid)
     {
         if (!includeGeometry || resource.Spatial?.StorageCrsCoordinateEpoch is not { } epoch)
         {
@@ -446,7 +512,7 @@ public static partial class GeoParquetFeatureWriter
 
     public static List<(string name, IArrowType type)> DetectRuntimeFields(
         ImmutableArray<Feature> features,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var result = new List<(string name, IArrowType type)>();
         if (features.Length == 0) return result;

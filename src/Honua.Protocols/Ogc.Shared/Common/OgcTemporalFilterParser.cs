@@ -11,7 +11,7 @@ internal static class OgcTemporalFilterParser
 {
     public static bool TryParse(
         string? datetime,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out TemporalFilter? temporalFilter,
         out string? errorMessage)
     {
@@ -58,7 +58,7 @@ internal static class OgcTemporalFilterParser
         => Iso8601TemporalIntervalParser.TryParseRange(datetime, out start, out end, out errorMessage);
 
     private static bool TryResolveTemporalFieldsV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out string? startFieldName,
         out TemporalPropertyType propertyType,
         out string? endFieldName)
@@ -114,7 +114,7 @@ internal static class OgcTemporalFilterParser
     }
 
     private static bool TryResolveSchemaTemporalType(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string fieldName,
         out TemporalPropertyType type)
     {

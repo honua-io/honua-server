@@ -11,11 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditLogReader"/> backing the Console
-/// audit query surface (#1168). Uses the (timestamp DESC, audit_id DESC) index
-/// added by migration 034 for stable cursor pagination.
-/// </summary>
 internal sealed class PostgresAuditLogReader : IAuditLogReader
 {
     internal const int MinPageSize = 1;
@@ -44,7 +39,7 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
 
         var sql = new StringBuilder();
         sql.Append("SELECT audit_id, timestamp, event_type, actor, actor_type, resource_type, resource_id, ");
-        sql.Append("action, outcome, correlation_id, remote_ip, user_agent, details ");
+        sql.Append("action, outcome, correlation_id, remote_ip, user_agent, details, actor_agent ");
         sql.Append("FROM ").Append(_table).Append(" WHERE 1=1");
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -104,7 +99,8 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
             CorrelationId = reader.GetString(9),
             RemoteIp = reader.IsDBNull(10) ? null : reader.GetString(10),
             UserAgent = reader.IsDBNull(11) ? null : reader.GetString(11),
-            Details = reader.IsDBNull(12) ? string.Empty : reader.GetString(12)
+            Details = reader.IsDBNull(12) ? string.Empty : reader.GetString(12),
+            ActorAgent = reader.IsDBNull(13) ? null : reader.GetString(13)
         };
     }
 
@@ -129,6 +125,12 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
         {
             sql.Append(" AND actor = @actor");
             command.Parameters.AddWithValue("actor", NpgsqlDbType.Text, filter.Actor);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ActorAgent))
+        {
+            sql.Append(" AND actor_agent = @actor_agent");
+            command.Parameters.AddWithValue("actor_agent", NpgsqlDbType.Text, filter.ActorAgent);
         }
 
         if (!string.IsNullOrWhiteSpace(filter.ResourceType))
@@ -217,9 +219,6 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
         => Enum.TryParse<AuditOutcome>(value, ignoreCase: false, out var parsed) ? parsed : AuditOutcome.Failure;
 }
 
-/// <summary>
-/// Cursor encoding for audit-log pagination.
-/// </summary>
 internal sealed record AuditLogCursor(DateTimeOffset Timestamp, long AuditId)
 {
     public static string Encode(DateTimeOffset timestamp, long auditId)

@@ -27,6 +27,7 @@ internal sealed partial class CollaborationSessionPruneService : BackgroundServi
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
+                _sessions.PruneRemotePresence();
                 var removed = _sessions.PruneStaleParticipants(MaxIdle);
                 if (removed > 0)
                 {

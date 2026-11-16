@@ -55,7 +55,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// subsequent <c>honua_render_map</c> resolves the applied style.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpStyleToolTests
+public sealed partial class McpStyleToolTests
 {
     private const string ServiceId = "svc-parcels";
     private const string ServiceName = "Parcels";
@@ -275,7 +275,7 @@ public sealed class McpStyleToolTests
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be(errorCode);
         if (approvalRequired)
         {
-            result.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+            result.GetProperty("structuredContent").TryGetProperty("proposalId", out _).Should().BeFalse();
         }
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
@@ -969,13 +969,13 @@ public sealed class McpStyleToolTests
     public async Task ToolsCall_RenderMap_MixedRasterAndVectorLayers_IsRefusedBeforeRendering()
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource(ResourceId, "Parcels Dataset", spatial: new MetadataV2ResourceSpatial
+            .AddResource(ResourceId, "Parcels Dataset", spatial: new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
             })
             .AddStorageBinding("bind-parcels", ResourceId, "public.parcels", storageLayerId: StorageLayerId)
-            .AddResource("res-dem", "Elevation", type: MetadataV2ResourceType.RasterDataset)
+            .AddResource("res-dem", "Elevation", type: MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("bind-dem", "res-dem", "raster.dem", storageLayerId: StorageLayerId + 1)
             .AddService(ServiceId, ServiceName)
             .AddPublication("pub-parcels", ServiceId, ResourceId, layerIndex: 0, storageBindingId: "bind-parcels")
@@ -1001,7 +1001,7 @@ public sealed class McpStyleToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_SharedStorageLayerWithDifferentResources_IsRefused()
     {
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             GeometryType = MetadataV2GeometryType.Polygon,
             SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
@@ -1155,7 +1155,7 @@ public sealed class McpStyleToolTests
         string storageBindingId = "bind-parcels",
         bool useFallbackBinding = false, string? publicationBindingId = null)
     {
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             GeometryType = MetadataV2GeometryType.Polygon,
             SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },

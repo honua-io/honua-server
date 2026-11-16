@@ -54,7 +54,7 @@ public sealed class AgentSettingsApprovalTests : IAsyncLifetime
         const string path = "/api/v1/admin/services/test/layers/0/metadata";
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer && candidate.LayerIndex == 0);
         var binding = snapshot.ResolveStorageBinding(publication)!;
         _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
         {

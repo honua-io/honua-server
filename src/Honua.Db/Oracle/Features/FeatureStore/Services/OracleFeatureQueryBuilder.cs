@@ -11,28 +11,10 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-/// <summary>
-/// Translates a <see cref="FeatureQuery"/> into parameterized Oracle SQL for the Oracle
-/// spatial provider. All identifiers are validated and double-quoted; all literal values
-/// flow through named bind parameters (<c>:p0</c>, <c>:p1</c>, …) with
-/// <c>BindByName = true</c>.
-/// </summary>
-/// <remarks>
-/// Oracle 12c+ is assumed for <c>OFFSET … FETCH NEXT</c> pagination. Spatial functions used:
-/// <list type="bullet">
-///   <item><c>SDO_UTIL.TO_WKBGEOMETRY</c> (Oracle Spatial 10g R2+) for OGC WKB output.</item>
-///   <item><c>SDO_UTIL.FROM_WKBGEOMETRY</c> (Oracle Spatial 11g R1+) for filter geometries.</item>
-///   <item><c>SDO_RELATE</c> + <c>SDO_AGGR_MBR</c> for spatial filtering and extents.</item>
-/// </list>
-/// </remarks>
 internal static partial class OracleFeatureQueryBuilder
 {
     internal const string ProviderLabel = "Oracle";
 
-    /// <summary>
-    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
-    /// geometry column is configured), and any requested attribute columns.
-    /// </summary>
     public static ParameterizedQuery BuildSelectQuery(OracleLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -84,9 +66,6 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
-    /// </summary>
     public static ParameterizedQuery BuildCountQuery(
         OracleLayerMapping mapping,
         FeatureQuery query,
@@ -136,10 +115,6 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
-    /// listings when only identifiers are needed.
-    /// </summary>
     public static ParameterizedQuery BuildObjectIdsQuery(
         OracleLayerMapping mapping,
         FeatureQuery query,
@@ -166,11 +141,6 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds an extent query using <c>SDO_AGGR_MBR</c>. The aggregate returns a rectangle
-    /// SDO_GEOMETRY whose <c>SDO_ORDINATES</c> varray contains <c>(minX, minY, maxX, maxY)</c>
-    /// in the source CRS.
-    /// </summary>
     public static ParameterizedQuery BuildExtentQuery(
         OracleLayerMapping mapping,
         FeatureQuery? query,
@@ -209,15 +179,6 @@ internal static partial class OracleFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the Oracle provider cannot translate.
-    /// Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features (<c>datetime</c>),
-    /// STAC search, and OData time-window queries. The provider does not yet emit Oracle temporal
-    /// predicates, so the filter is surfaced as an eager <see cref="NotSupportedException"/> —
-    /// never silently dropped, which would return rows outside the requested window (a
-    /// correctness/data-leak bug). Mirrors the fail-loud contract of the MySQL/Redshift/Databricks
-    /// providers (temporal GA hardening, #2429).
-    /// </summary>
     private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
     {
         if (query.TemporalFilter.HasValue)
@@ -228,11 +189,6 @@ internal static partial class OracleFeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Recovers provider-neutral constraints from a Postgres-translated <see cref="FeatureQuery.SqlFilter"/>.
-    /// A pure integral <c>IN</c> list is lifted only when its target is the object id or the
-    /// layer primary key. Attribute <c>IN</c> lists and <c>NOT IN</c> stay unlifted.
-    /// </summary>
     internal static FeatureQuery NormalizeConstraints(
         FeatureQuery query,
         SqlFragment? translationOfWhere,
@@ -544,11 +500,6 @@ internal static partial class OracleFeatureQueryBuilder
     private static bool IsPaging(FeatureQuery query)
         => query.Limit.HasValue || query.Offset is > 0;
 
-    /// <summary>
-    /// Orders a DISTINCT projection by columns that appear in the select list. Oracle
-    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
-    /// so it cannot uniquify every distinct tuple.
-    /// </summary>
     private static void AppendDistinctOrderBy(
         StringBuilder sb,
         FeatureQuery query,
@@ -623,32 +574,17 @@ internal static partial class OracleFeatureQueryBuilder
         List<object> parameters,
         Func<string, string> resolveColumnName)
     {
-        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
-        if (expressions.Count == 0)
+        var rendered = new List<string>();
+        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Warehouse))
         {
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        var rendered = new List<string>(expressions.Count);
-        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
-        // throw, mutate the shared `parameters` accumulator, and `continue` early per
-        // branch -- not a pure map of one iteration variable to another.
-        foreach (var trimmed in (expressions).Select(raw => raw.Trim()))
-        {
-            if (trimmed.Length == 0)
-            {
-                throw new ArgumentException("WHERE clause format not supported.");
-            }
-
-            if (trimmed.Equals("1=1", StringComparison.Ordinal) ||
-                trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            if (expression.Kind == LegacyWhereExpressionKind.True)
             {
                 rendered.Add("1=1");
                 continue;
             }
 
-            var nullMatch = NullCheckRegex().Match(trimmed);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = resolveColumnName(nullMatch.Groups["field"].Value);
                 OracleIdentifier.EnsureValid(field, "WHERE column");
@@ -658,28 +594,28 @@ internal static partial class OracleFeatureQueryBuilder
                 continue;
             }
 
-            var inMatch = InExpressionRegex().Match(trimmed);
-            if (inMatch.Success)
+            var inMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = resolveColumnName(inMatch.Groups["field"].Value);
                 OracleIdentifier.EnsureValid(field, "WHERE column");
                 var placeholders = new List<string>();
-                foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
+                foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
                 {
                     placeholders.Add(":p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
-                    parameters.Add(ParseValueToken(valueMatch.Value));
+                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value, LegacyWhereValuePolicy.NumericRequired));
                 }
                 rendered.Add($"{OracleIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
-            var compMatch = ComparisonRegex().Match(trimmed);
-            if (compMatch.Success)
+            var compMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = resolveColumnName(compMatch.Groups["field"].Value);
                 OracleIdentifier.EnsureValid(field, "WHERE column");
-                var op = NormalizeOperator(compMatch.Groups["op"].Value);
-                var value = ParseValueToken(compMatch.Groups["value"].Value);
+                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
+                var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value, LegacyWhereValuePolicy.NumericRequired);
 
                 var paramName = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(value);
@@ -692,54 +628,5 @@ internal static partial class OracleFeatureQueryBuilder
 
         return string.Join(" AND ", rendered);
     }
-
-
-    private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
-    {
-        "NOT LIKE" => "NOT LIKE",
-        "LIKE" => "LIKE",
-        ">=" => ">=",
-        "<=" => "<=",
-        "!=" or "<>" => "<>",
-        "=" => "=",
-        ">" => ">",
-        "<" => "<",
-        _ => throw new ArgumentException($"Unsupported operator: {op}")
-    };
-
-    private static object ParseValueToken(string valueToken)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return valueToken[1..^1].Replace("''", "'", StringComparison.Ordinal);
-        }
-
-        if (decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
-        {
-            return num;
-        }
-
-        // Defense-in-depth: ComparisonRegex constrains the 'value' group to a quoted string or
-        // numeric literal, so this branch is currently unreachable. Throw explicitly so any
-        // future code path that calls this function with an unexpected token fails loudly rather
-        // than silently returning a raw string that could produce unparameterized SQL.
-        throw new ArgumentException($"Unrecognized value token: {valueToken}");
-    }
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex InExpressionRegex();
-
-    [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
-    private static partial Regex InValueRegex();
 
 }

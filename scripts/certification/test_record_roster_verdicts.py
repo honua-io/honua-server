@@ -32,6 +32,7 @@ class RecordVerdictsTest(unittest.TestCase):
                 "  echo release-body",
                 f"  exit {release_exit}",
                 "fi",
+                '[[ "$*" == *"--check-readiness"* ]] || exit 9',
                 "echo contract-body",
                 f"exit {contract_exit}",
                 "",

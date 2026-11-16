@@ -27,7 +27,7 @@ The API distinguishes three identifiers:
 
 - `storageLayerId` is the internal integer backing-store handle. Global connection and metadata administration use it to address stored data.
 - `serviceLayerIndex` is an integer within one Service. Service-scoped administration and MCP tools require the Service together with this index; another Service can use the same index for different data.
-- The graph Layer ID is the author-chosen, globally unique string currently stored as `MetadataV2Publication.Metadata.Id`. Public protocol identifiers derive from the Layer, so changing its storage binding preserves its identity. The Service-local string identifier is currently stored as `MetadataV2Publication.Identifier.Value`.
+- The graph Layer ID is the author-chosen, globally unique string currently stored as `MetadataV2Layer.Metadata.Id`. Public protocol identifiers derive from the Layer, so changing its storage binding preserves its identity. The Service-local string identifier is currently stored as `MetadataV2Layer.Identifier.Value`.
 
 The [2026.1-rc.2 identifier changes](../../reference/release-notes/2026.1-rc.2.md) map these identities to each protocol.
 

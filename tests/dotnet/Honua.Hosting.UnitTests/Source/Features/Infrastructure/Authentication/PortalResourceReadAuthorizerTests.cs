@@ -132,7 +132,7 @@ public sealed class PortalResourceReadAuthorizerTests
             AuthorizationOperation.Update)).IsAllowed.Should().BeFalse();
         var other = harness.Service with { Metadata = harness.Service.Metadata with { Id = "other-service" } };
         AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, other).IsAllowed.Should().BeFalse();
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             { Id = "foreign-publication", Name = "foreign-publication", Tenant = "foreign-tenant" }
@@ -189,7 +189,7 @@ public sealed class PortalResourceReadAuthorizerTests
         using var harness = await Harness.CreateAsync("tenant-a");
         var service = harness.Service with { Metadata = harness.Service.Metadata with { Tenant = "tenant-a" } };
         var resource = harness.Resource with { Metadata = harness.Resource.Metadata with { Tenant = "tenant-a" } };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             { Id = "publication", Name = "publication", Tenant = "tenant-a" }
@@ -256,7 +256,7 @@ public sealed class PortalResourceReadAuthorizerTests
             AccessPolicy = new AccessPolicy { AllowedRoles = ["service-reader"], AllowedWriteRoles = ["service-writer"] },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
-        public MetadataV2Resource Resource { get; } = new()
+        public MetadataV2Object Resource { get; } = new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-points", Name = "points" },
             AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["layer-writer"] },

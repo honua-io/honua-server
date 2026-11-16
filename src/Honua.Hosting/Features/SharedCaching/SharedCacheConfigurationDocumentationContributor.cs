@@ -47,10 +47,23 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
                         "CacheTagHeader",
                         "Response header the CDN reads cache tags from; when set, edits invalidate by tag instead of by path",
                         (string.Empty, current.CacheTagHeader ?? string.Empty)),
+                    .. PurgeBudgetProperties(current.PurgeBudget),
                 ],
             },
         ];
     }
+
+    private static ConfigurationProperty[] PurgeBudgetProperties(CdnPurgeBudgetOptions budget) =>
+    [
+        Property(
+            "PurgeBudget:MonthlyEditSubmissions",
+            "Edit purges sent this UTC month before further edit purges wait for the cache lifetime. Zero disables the cap. Access changes and releases are not counted",
+            (CdnPurgeBudgetOptions.DefaultMonthlyEditSubmissions, budget.MonthlyEditSubmissions)),
+        Property(
+            "PurgeBudget:EstimatedCostPerSubmission",
+            "Operator-supplied cost added to the month's spend estimate for each admitted edit purge",
+            (0m, budget.EstimatedCostPerSubmission)),
+    ];
 
     public IReadOnlyList<EnvironmentVariableInfo> GetEnvironmentVariables() =>
     [
@@ -58,6 +71,8 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
         new() { Name = "SharedCache__Layers__{serviceId}/{layerId}__SharedMaxAgeSeconds", ConfigPath = "SharedCache.Layers", Description = "Seconds the CDN keeps responses for one layer", Default = "", Required = false, Example = "15" },
         new() { Name = "SharedCache__Emergency__AllPublicLayers", ConfigPath = "SharedCache.Emergency", Description = "Force the emergency lifetime on every public layer", Default = "false", Required = false, Example = "true" },
         new() { Name = "SharedCache__CacheTagHeader", ConfigPath = "SharedCache.CacheTagHeader", Description = "Response header the CDN's cache-tag configuration reads; empty sends no tags", Default = "", Required = false, Example = "x-amz-meta-cache-tag" },
+        new() { Name = "SharedCache__PurgeBudget__MonthlyEditSubmissions", ConfigPath = "SharedCache.PurgeBudget.MonthlyEditSubmissions", Description = "Edit purges admitted per UTC month before edit purges pause. Zero disables the cap", Default = "1000", Required = false, Example = "1000" },
+        new() { Name = "SharedCache__PurgeBudget__EstimatedCostPerSubmission", ConfigPath = "SharedCache.PurgeBudget.EstimatedCostPerSubmission", Description = "Operator-supplied unit cost added to the monthly spend estimate. Zero records a count only", Default = "0", Required = false, Example = "0" },
         new() { Name = "SharedCache__CloudFront__DistributionId", ConfigPath = "SharedCache.CloudFront", Description = "CloudFront distribution to invalidate when content changes", Default = "", Required = false, Example = "E2EXAMPLE123" },
     ];
 

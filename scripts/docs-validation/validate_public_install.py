@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -24,8 +25,8 @@ fences = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fences)
 
 
-def public_blocks() -> dict[str, str]:
-    blocks = fences.parse(ROOT / "docs/get-started/quickstart.md",
+def public_blocks(document: Path | None = None) -> dict[str, str]:
+    blocks = fences.parse(document or ROOT / "docs/get-started/quickstart.md",
                           languages=("bash", "sh", "yaml", "python", "powershell"))
     runnable = {name.removeprefix("install."): body
                 for name, mode, body in blocks if mode == "run"}
@@ -41,6 +42,11 @@ def free_ports() -> tuple[int, int]:
         http.bind(("127.0.0.1", 0))
         grpc.bind(("127.0.0.1", 0))
         return http.getsockname()[1], grpc.getsockname()[1]
+
+
+def stage_compose(work: Path, compose: str) -> None:
+    shutil.copytree(ROOT / "docker/proj-grids", work / "docker/proj-grids")
+    (work / "compose.yaml").write_text(compose)
 
 
 def wait_ready(base: str, timeout: int = 180) -> None:
@@ -64,6 +70,54 @@ def verify_features(features: list[dict]) -> None:
                  row["geometry"]["x"], row["geometry"]["y"]) for row in features}
     if len(features) != 2 or observed != expected:
         raise ValueError("Published sample identities, names or coordinates differ from the quickstart")
+
+
+def fetch_json(url: str, key: str) -> dict:
+    request = urllib.request.Request(url, headers={"X-API-Key": key})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
+def verify_geoservices_layer(base: str, key: str, fetch=fetch_json) -> int:
+    """The quickstart's GeoServices URL resolves with the id its service document lists."""
+    service = f"{base}/rest/services/quickstart/FeatureServer"
+    try:
+        layers = fetch(service + "?f=json", key)["layers"]
+        (layer_id,) = [layer["id"] for layer in layers]
+        if type(layer_id) is not int:
+            raise ValueError("layer id is not an integer")
+        layer = fetch(f"{service}/{layer_id}?f=json", key)
+        if "error" in layer or layer["id"] != layer_id:
+            raise ValueError(f"FeatureServer/{layer_id} does not resolve")
+        query = fetch(f"{service}/{layer_id}/query?where=1%3D1&outFields=id,name&outSR=4326&f=json", key)
+        verify_features(query["features"])
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        # A malformed answer is a failed proof with a reason, not a traceback.
+        raise ValueError(f"Quickstart GeoServices layer URL: {error!r}") from error
+    return layer_id
+
+
+def publication_filename(blocks: dict[str, str]) -> str:
+    command = shlex.split(blocks["query"])
+    if len(command) != 2 or command[0] != "python":
+        raise ValueError("Review the documented publication command")
+    name = command[1]
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+\.py", name) or name == "quickstart.py":
+        raise ValueError("Documented publication must preserve the packaged initializer")
+    return name
+
+
+def publish_sample(work: Path, blocks: dict[str, str], run) -> tuple[str, list[dict]]:
+    for name in ("seed", "clients"):
+        run(["bash", "-euo", "pipefail", "-c", blocks[name]], 600)
+    (work / publication_filename(blocks)).write_text(blocks["publish"])
+    output = run(["bash", "-euo", "pipefail", "-c", ". .venv/bin/activate\n" + blocks["query"]], 300)
+    match = re.fullmatch(r"published service quickstart layer (\d+)\n(.*)\s*", output, re.S)
+    if not match:
+        raise ValueError("Quickstart did not return a published layer and features")
+    features = json.loads(match[2])
+    verify_features(features)
+    return match[1], features
 
 
 def main() -> int:
@@ -140,7 +194,7 @@ def main() -> int:
             receipt["anonymousPull"] = True
             receipt["repoDigests"] = json.loads(run(
                 ["docker", "image", "inspect", image, "--format", "{{json .RepoDigests}}"]))
-            (work / "compose.yaml").write_text(blocks["compose"])
+            stage_compose(work, blocks["compose"])
             shell("secrets")
             env_file.update(line.split("=", 1) for line in (work / ".env").read_text().splitlines())
             # The documented .env names the release channel. Compose pulls that
@@ -156,18 +210,10 @@ def main() -> int:
             shell("start")
             base = f"http://localhost:{http}"
             wait_ready(base)
-            shell("seed")
-            shell("clients", 600)
-            env["PATH"] = str(work / ".venv/bin") + os.pathsep + env["PATH"]
-            (work / "quickstart.py").write_text(blocks["publish"])
-            output = shell("query")
-            match = re.fullmatch(r"published service quickstart layer (\d+)\n(.*)\s*", output, re.S)
-            if not match:
-                raise ValueError("Quickstart did not return a published layer and features")
-            layer_id, payload = match.groups()
-            features = json.loads(payload)
-            verify_features(features)
+            layer_id, _ = publish_sample(work, blocks, run)
             receipt["publishQuery"] = True
+            key = (work / "secrets/honua_admin_password").read_text().strip()
+            receipt["geoservicesLayerId"] = verify_geoservices_layer(base, key)
             run(compose + ["restart", "honua", "postgres", "redis"])
             wait_ready(base)
             # Query the persisted layer through the published SDK, without seed,

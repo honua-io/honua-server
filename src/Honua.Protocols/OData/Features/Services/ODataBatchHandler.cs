@@ -57,8 +57,8 @@ internal sealed partial class ODataBatchHandler
         int PublicLayerId,
         int StorageLayerId,
         int Srid,
-        MetadataV2Publication? Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Layer? Publication,
+        MetadataV2Object Resource,
         MetadataV2Service? Service,
         IFeatureReader Reader);
 

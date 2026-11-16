@@ -12,7 +12,7 @@ internal readonly record struct ReadPolicyMetadataContext(HttpContext? Context, 
 internal static class ReadPolicyServiceScope
 {
     internal static async Task<IReadOnlyCollection<string>> ResolveAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ReadPolicyMetadataContext metadata,
         CancellationToken cancellationToken)
     {

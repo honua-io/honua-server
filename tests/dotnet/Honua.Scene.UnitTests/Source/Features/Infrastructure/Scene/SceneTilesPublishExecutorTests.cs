@@ -1277,13 +1277,13 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = resourceName },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     StorageBindingIds = [bindingId],
                     SchemaFields = BuildMetadataFields(fields),
-                    Spatial = new MetadataV2ResourceSpatial
+                    Spatial = new MetadataV2ObjectSpatial
                     {
                         SpatialReference = new MetadataV2SpatialReference
                         {

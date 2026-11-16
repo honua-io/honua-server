@@ -27,6 +27,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _itemsTable;
     private readonly string _draftsTable;
+    private readonly string _draftRevisionsTable;
     private readonly string _versionsTable;
     private readonly string _checkpointVersionsTable;
     private readonly string _dependenciesTable;
@@ -40,6 +41,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         _connectionProvider = connectionProvider;
         _itemsTable = SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
         _draftsTable = SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
+        _draftRevisionsTable = SchemaSearchPath.QualifyTable("studio_draft_revisions", schemaName);
         _versionsTable = SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);
         _checkpointVersionsTable = SchemaSearchPath.QualifyTable("saved_map_checkpoint_versions", schemaName);
         _dependenciesTable = SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
@@ -340,7 +342,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default) =>
         CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateCheckpointVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -529,7 +530,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             : null;
     }
 
-    /// <inheritdoc />
     public async Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
@@ -581,7 +581,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         };
     }
 
-    /// <inheritdoc />
     public async Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default)
@@ -834,11 +833,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
     }
 
-    /// <summary>
-    /// Restricts an enumeration to the caller's tenant (honua-server#4905). Rows written before
-    /// tenant stamping record no tenant and belong to the deployment's default tenant, so they
-    /// are admitted only when the caller's scope says the request resolved to that default.
-    /// </summary>
     private static void AppendTenantClause(
         TenantScopeFilter? tenant,
         List<string> clauses,
@@ -896,7 +890,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         };
     }
 
-    /// <summary>Dynamic SQL predicate plus its bound parameter descriptions, reused across a COUNT and a paged SELECT.</summary>
     private readonly record struct SqlFilter(string Sql, IReadOnlyList<(string Name, NpgsqlDbType Type, object Value)> Parameters);
 
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(

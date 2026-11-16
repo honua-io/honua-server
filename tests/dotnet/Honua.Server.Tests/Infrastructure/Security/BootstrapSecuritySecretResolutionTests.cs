@@ -340,6 +340,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var result = await verifier.VerifyAsync("admin", "weak-password", CancellationToken.None);
 
         result.Should().BeNull();
+        resolver.ResolvedReferences.Should().ContainSingle().Which.Should().Be(reference);
     }
 
     [UnitTest]
@@ -353,6 +354,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var result = await verifier.VerifyAsync("admin", rotatedPassword, CancellationToken.None);
 
         result.Should().NotBeNull();
+        resolver.ResolvedReferences.Should().ContainSingle().Which.Should().Be(reference);
     }
 
     [UnitTest]
@@ -392,6 +394,11 @@ public sealed class BootstrapSecuritySecretResolutionTests
 
         public bool CanResolve(string secretKey) => values.ContainsKey(secretKey);
 
+        public Task<string?> ResolveSecretFreshAsync(
+            string secretKey,
+            CancellationToken cancellationToken = default) =>
+            ResolveSecretAsync(secretKey, cancellationToken);
+
         public Task<string?> ResolveSecretAsync(
             string secretKey,
             CancellationToken cancellationToken = default)
@@ -413,6 +420,11 @@ public sealed class BootstrapSecuritySecretResolutionTests
         public string ProviderName => "throwing-test";
 
         public bool CanResolve(string secretKey) => true;
+
+        public Task<string?> ResolveSecretFreshAsync(
+            string secretKey,
+            CancellationToken cancellationToken = default) =>
+            ResolveSecretAsync(secretKey, cancellationToken);
 
         public Task<string?> ResolveSecretAsync(
             string secretKey,

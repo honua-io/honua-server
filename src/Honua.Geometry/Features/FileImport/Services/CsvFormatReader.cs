@@ -21,16 +21,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming CSV reader that supports two geometry encodings:
-/// WKT columns and longitude/latitude coordinate pairs.
-/// </summary>
 internal static class CsvFormatReader
 {
-    /// <summary>
-    /// Maximum size for a single CSV record to prevent memory exhaustion attacks.
-    /// Default: 10 MB per record should be sufficient for legitimate geospatial data.
-    /// </summary>
     private const int MaxRecordSizeBytes = 10 * 1024 * 1024;
     private const int DelimiterProbeRecordCount = 5;
     private static readonly char[] _candidateDelimiters = [',', '\t', ';', '|'];
@@ -64,31 +56,17 @@ internal static class CsvFormatReader
         }
         .ToFrozenSet(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Stream features from a CSV file.
-    /// </summary>
     internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         CancellationToken cancellationToken)
         => ReadStreamingAsync(stream, delimiterOverride: null, diagnostics: null, cancellationToken);
 
-    /// <summary>
-    /// Stream features from a CSV file with an optional explicit delimiter override.
-    /// </summary>
     internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
         CancellationToken cancellationToken)
         => ReadStreamingAsync(stream, delimiterOverride, diagnostics: null, cancellationToken);
 
-    /// <summary>
-    /// Stream features from a CSV file with an optional explicit delimiter override and an
-    /// optional <see cref="CsvGeometryDiagnostics"/> sink. When a row has a mapped geometry
-    /// column whose value is present but cannot be parsed as WKT/EWKT/WKB, the raw value is
-    /// preserved as an attribute (so the data is never discarded) and the occurrence is
-    /// recorded on <paramref name="diagnostics"/> so the caller can surface a warning rather
-    /// than silently importing a null geometry.
-    /// </summary>
     internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
@@ -96,12 +74,6 @@ internal static class CsvFormatReader
         CancellationToken cancellationToken)
         => ReadStreamingAsync(stream, delimiterOverride, diagnostics, options: null, cancellationToken);
 
-    /// <summary>
-    /// Reads the SRID embedded in the first geometry value (EWKT <c>SRID=n;</c> or EWKB),
-    /// the same signal <c>.wkt</c> detection uses. Returns null when the sample has no
-    /// embedded SRID so the caller can keep the geographic default. Malformed samples
-    /// return null rather than failing detection; the streaming reader still reports them.
-    /// </summary>
     internal static async Task<int?> TryDetectGeometrySridAsync(
         Stream stream,
         CancellationToken cancellationToken)
@@ -157,14 +129,6 @@ internal static class CsvFormatReader
         return null;
     }
 
-    /// <summary>
-    /// Stream features from a CSV file with optional explicit <see cref="CsvImportOptions"/>.
-    /// When the options carry explicit longitude/latitude column names they replace the
-    /// header auto-detection heuristics; when they carry an address column, each row's
-    /// address value is resolved into a point through the caller-supplied
-    /// <see cref="CsvImportOptions.AddressGeocoder"/> (failed rows keep their attributes
-    /// and are recorded on <paramref name="diagnostics"/>).
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
@@ -196,7 +160,13 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
-                mapping = BuildMapping(headers, options);
+                if (diagnostics is not null)
+                {
+                    diagnostics.Headers = headers;
+                }
+                // Spreadsheets in most European locales write ';'-separated files with decimal-comma numbers. Tab and
+                // pipe files are as often written where ',' groups thousands, so only ';' files read a decimal comma.
+                mapping = BuildMapping(headers, options) with { DecimalComma = delimiter == ';' };
                 return null;
             }
 
@@ -373,8 +343,8 @@ internal static class CsvFormatReader
             var longitudeValue = GetField(fields, mapping.LongitudeIndex.Value);
             var latitudeValue = GetField(fields, mapping.LatitudeIndex.Value);
 
-            if (double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude) &&
-                double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude))
+            if (ParseCoordinate(longitudeValue, mapping) is { } longitude &&
+                ParseCoordinate(latitudeValue, mapping) is { } latitude)
             {
                 // A parseable coordinate pair supersedes an unparseable WKT column.
                 unparseableGeometryValue = null;
@@ -527,8 +497,24 @@ internal static class CsvFormatReader
             return false;
         }
 
-        return !double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
-            || !double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        return ParseCoordinate(longitudeValue, mapping) is null || ParseCoordinate(latitudeValue, mapping) is null;
+    }
+
+    // Invariant numbers always; a decimal comma ("11,575490": one comma, digits on both sides, no point) only in
+    // ';'-separated files.
+    private static double? ParseCoordinate(string value, CsvColumnMapping mapping)
+    {
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var invariant))
+            return invariant;
+        var trimmed = value.Trim();
+        var comma = trimmed.IndexOf(',', StringComparison.Ordinal);
+        if (!mapping.DecimalComma || comma <= 0 || comma == trimmed.Length - 1
+            || trimmed.IndexOf(',', comma + 1) >= 0 || trimmed.Contains('.', StringComparison.Ordinal)
+            || !char.IsAsciiDigit(trimmed[comma - 1]) || !char.IsAsciiDigit(trimmed[comma + 1]))
+            return null;
+        return double.TryParse(trimmed.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalComma)
+            ? decimalComma
+            : null;
     }
 
     private static void RestoreUnparseableCoordinate(
@@ -766,11 +752,6 @@ internal static class CsvFormatReader
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Quote state for one CSV record. A double quote opens a field only at the
-    /// start of that field; any other quote is literal. A null delimiter means every
-    /// probe candidate can separate fields, used before the delimiter is chosen.
-    /// </summary>
     private readonly struct CsvQuoteCursor
     {
         public bool InQuotes { get; private init; }
@@ -880,56 +861,32 @@ internal static class CsvFormatReader
         int? LongitudeIndex,
         int? LatitudeIndex,
         int? AddressIndex = null,
-        bool ExplicitCoordinates = false);
+        bool ExplicitCoordinates = false)
+    {
+        // Set for ';'-separated files, where a comma inside a coordinate can only be a decimal comma.
+        public bool DecimalComma { get; init; }
+    }
 }
 
-/// <summary>
-/// A CSV row whose configured address column could not be resolved into a
-/// coordinate. The row is imported without geometry; the failure is surfaced as
-/// a per-row validation issue on the import result.
-/// </summary>
-/// <param name="RowNumber">1-based data-row ordinal (header excluded).</param>
-/// <param name="Address">The trimmed address text that failed to resolve; empty when the row had no address value.</param>
 internal readonly record struct CsvGeocodeFailure(int RowNumber, string Address);
 
-/// <summary>
-/// Collects diagnostics emitted while streaming a CSV so the import pipeline can surface
-/// warnings instead of silently importing rows with dropped geometry. A single instance is
-/// passed to <see cref="CsvFormatReader"/> and read after enumeration completes.
-/// </summary>
 internal sealed class CsvGeometryDiagnostics
 {
-    /// <summary>
-    /// Upper bound on individually recorded geocode failures so a pathological
-    /// input cannot grow the diagnostics without bound; the count keeps advancing.
-    /// </summary>
     private const int MaxRecordedGeocodeFailures = 100;
 
     private List<CsvGeocodeFailure>? _geocodeFailures;
 
-    /// <summary>
-    /// Number of rows whose mapped geometry column held a value that could not be parsed as
-    /// WKT, EWKT, or WKB/EWKB hex. Such rows are imported without geometry but with the raw
-    /// value preserved as an attribute.
-    /// </summary>
+    public IReadOnlyList<string> Headers { get; internal set; } = [];
+
     public int UnparseableGeometryRows { get; private set; }
 
-    /// <summary>Records that a row had an unparseable geometry value.</summary>
     public void RecordUnparseableGeometry() => UnparseableGeometryRows++;
 
-    /// <summary>Total number of rows whose address value could not be geocoded.</summary>
     public int GeocodeFailureCount { get; private set; }
 
-    /// <summary>
-    /// Individually recorded geocode failures, capped at 100 entries
-    /// (<see cref="GeocodeFailureCount"/> is not capped).
-    /// </summary>
     public IReadOnlyList<CsvGeocodeFailure> GeocodeFailures =>
         (IReadOnlyList<CsvGeocodeFailure>?)_geocodeFailures ?? [];
 
-    /// <summary>Records that a row's address value could not be geocoded.</summary>
-    /// <param name="rowNumber">1-based data-row ordinal (header excluded).</param>
-    /// <param name="address">The trimmed address text; empty when the row had no address value.</param>
     public void RecordGeocodeFailure(int rowNumber, string address)
     {
         GeocodeFailureCount++;

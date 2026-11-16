@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads the change-tracking log from Postgres for incremental replication sync
-/// </summary>
 internal sealed class PostgresChangeTracker : IChangeTracker
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -42,6 +39,22 @@ internal sealed class PostgresChangeTracker : IChangeTracker
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long gen ? gen : 0;
+    }
+
+    public async Task<bool> HasLayerChangedSinceAsync(long sinceGeneration, int layerId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM honua.feature_changes
+                WHERE generation > $1 AND layer_id = $2)
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, sinceGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Integer, layerId);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is true;
     }
 
     public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(

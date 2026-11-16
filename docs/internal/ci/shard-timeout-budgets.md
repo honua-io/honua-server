@@ -571,11 +571,13 @@ superseded by the table in this section.
 
 | Child | Test surface | p50 / p90 (min) | Inner / outer cap | p90 / cap |
 |---|---|---:|---:|---:|
-| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests`, `…CursorDurabilityTests` | 18.0 / 20.7 | 30 / 40 | 69% |
+| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests` (`…CursorDurabilityTests` removed by #7750; timings predate that) | 18.0 / 20.7 | 30 / 40 | 69% |
 | Server Features Data Enrichment and Sharing | `DataEnrichment.*`, `Orchestration.*`, `Sharing.*`, `Grounding.*`, `Capabilities.*` | 23.6 / 25.3 | 38 / 48 | 67% |
 
 Both children are at or below the 70% target, and both job caps clear their
-inner cap by the required 10 minutes.
+inner cap by the required 10 minutes. The cursor-durability class in that
+historical surface was later deleted. The current Snapshot and Conformance
+filter, its parent and the miscellaneous residuals no longer name it.
 
 Two children rather than three: each shard pays a full restore+build of
 `Honua.Server.Tests`, and the next batch tail after this split is
@@ -1386,6 +1388,8 @@ The console timing suggests roughly eleven minutes were spent in the largest cla
 logs cannot predict either child's final wall time. Actual complete child TRX and timing receipts
 remain necessary; the split alone does not establish qualification or close a capacity incident.
 The retained source/timing description is [the WMS fixture](../../../eng/ci/fixtures/shard-capacity/wms.json).
+
+`CapabilitiesMetadataXmlTests` lives in the parent `Ogc.Classic` namespace and exercises WMS, WFS and WMTS capabilities XML. It is claimed by `OGC Classic Capabilities Metadata` instead of being folded into a protocol complement. The WMS and WMTS partitions stay exact. Its dispatch rank 6.0 is an estimate until the next complete full trunk run.
 
 
 ## October 2026 Core attachments capacity split (6451)

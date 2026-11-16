@@ -306,7 +306,7 @@ internal sealed partial class CoordinatedReleaseControlService(
     {
         if (_workflowStore == null)
         {
-            throw new ServiceUnavailableException("Coordinated release operations require Redis-backed durable storage.");
+            throw new ServiceUnavailableException("Coordinated release operations require PostgreSQL-backed durable storage.");
         }
     }
 }

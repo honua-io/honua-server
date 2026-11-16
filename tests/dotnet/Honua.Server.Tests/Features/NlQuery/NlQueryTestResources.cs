@@ -7,7 +7,7 @@ namespace Honua.Server.Tests.Features.NlQuery;
 
 internal static class NlQueryTestResources
 {
-    internal static MetadataV2Resource CriticalFacilities { get; } = CreateResource(
+    internal static MetadataV2Object CriticalFacilities { get; } = CreateResource(
         "critical_facilities",
         MetadataV2GeometryType.Point,
         [
@@ -18,7 +18,7 @@ internal static class NlQueryTestResources
         ],
         description: "Fixture critical facilities layer");
 
-    internal static MetadataV2Resource TestParks { get; } = CreateResource(
+    internal static MetadataV2Object TestParks { get; } = CreateResource(
         "test_parks",
         MetadataV2GeometryType.Point,
         [
@@ -29,7 +29,7 @@ internal static class NlQueryTestResources
         ],
         description: "Parks layer");
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         IReadOnlyList<MetadataV2Field> fields,
@@ -38,7 +38,7 @@ internal static class NlQueryTestResources
         var geometryField = fields.FirstOrDefault(field =>
             field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
 
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -47,7 +47,7 @@ internal static class NlQueryTestResources
                 Description = description,
             },
             SchemaFields = fields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,

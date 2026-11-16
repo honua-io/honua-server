@@ -339,7 +339,7 @@ internal static class AdminSldStyleEndpoints
     }
 
     private static Dictionary<string, object?> BuildMapLibreStyleDocument(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         MapLibreStyleLayer[] convertedLayers)
     {

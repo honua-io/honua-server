@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Stac.Services;
@@ -13,7 +14,7 @@ internal static class StacResourceExtensions
     private const string StacExtensionKey = "stac";
 
     public static MetadataV2ObjectMetadata WithStacServiceGovernanceFallbacks(
-        this MetadataV2Resource resource,
+        this MetadataV2Object resource,
         MetadataV2ObjectMetadata serviceMetadata)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -35,7 +36,7 @@ internal static class StacResourceExtensions
     }
 
     public static string ResolveLicense(
-        this MetadataV2Resource resource,
+        this MetadataV2Object resource,
         MetadataV2ObjectMetadata? fallbackMetadata = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -78,44 +79,20 @@ internal static class StacResourceExtensions
         return LayerSourceGovernance.IsSpdxLicenseIdentifier(license);
     }
 
-    public static ImmutableArray<string>? ResolveKeywords(this MetadataV2Resource resource)
+    public static ImmutableArray<string>? ResolveKeywords(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        var keywords = ReadStringArray(resource, "keywords");
-        if (keywords is null || keywords.Value.Length == 0)
-        {
-            return ResourceTagsAsKeywords(resource);
-        }
-        return keywords;
+        var keywords = DescriptiveMetadataResolver.NormalizedTerms(resource.Metadata.Keywords);
+        return keywords.Count == 0 ? null : [.. keywords];
     }
 
-    public static ImmutableArray<string>? ResolveDeclaredExtensions(this MetadataV2Resource resource)
+    public static ImmutableArray<string>? ResolveDeclaredExtensions(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return ReadStringArray(resource, "extensions");
     }
 
-    private static ImmutableArray<string>? ResourceTagsAsKeywords(MetadataV2Resource resource)
-    {
-        // STAC keywords are now sourced from the resource's labels (the v2
-        // Kubernetes-style label dictionary). A label entry with empty value is
-        // treated as a bare tag.
-        var labels = resource.Metadata?.Labels;
-        if (labels is null || labels.Count == 0)
-        {
-            return null;
-        }
-
-        var normalized = labels.Keys
-            .Where(static keyword => !string.IsNullOrWhiteSpace(keyword))
-            .Select(static keyword => keyword.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToImmutableArray();
-
-        return normalized.Length == 0 ? null : normalized;
-    }
-
-    private static string? ReadString(MetadataV2Resource resource, string propertyName)
+    private static string? ReadString(MetadataV2Object resource, string propertyName)
     {
         if (!TryGetStacObject(resource, out var stac))
         {
@@ -129,7 +106,7 @@ internal static class StacResourceExtensions
         return value.GetString();
     }
 
-    private static ImmutableArray<string>? ReadStringArray(MetadataV2Resource resource, string propertyName)
+    private static ImmutableArray<string>? ReadStringArray(MetadataV2Object resource, string propertyName)
     {
         if (!TryGetStacObject(resource, out var stac))
         {
@@ -166,7 +143,7 @@ internal static class StacResourceExtensions
             .ToImmutableArray();
     }
 
-    private static bool TryGetStacObject(MetadataV2Resource resource, out JsonElement stac)
+    private static bool TryGetStacObject(MetadataV2Object resource, out JsonElement stac)
     {
         if (resource.Extensions is not null &&
             resource.Extensions.TryGetValue(StacExtensionKey, out var element) &&

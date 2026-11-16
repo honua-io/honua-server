@@ -120,7 +120,7 @@ Follow the catalog's pagination and visibility rules. An empty response may refl
 
 When several candidates fit, explain the meaningful difference and resolve the choice. For example, a facility inventory and a live availability feed can share a title while answering different questions.
 
-Return a stable resource identifier and why it fits. This workflow changes neither the data nor its policy. Continue with [analysis](analyze-features.md) or [map composition](compose-map.md).
+Return a stable resource identifier and why it fits. This workflow changes neither the data nor its policy. Continue with [analysis](analyze-features.md) or [Map](compose-map.md).
 
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 

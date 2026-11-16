@@ -26,9 +26,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.
-/// </summary>
 internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore, IObjectIdStreamingReader
 {
     private const string UnsupportedWhereClauseMessage =
@@ -38,7 +35,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
-    private readonly MetadataV2Resource _resource;
+    private readonly MetadataV2Object _resource;
     private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
@@ -65,7 +62,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     public PostgresStorageMappedFeatureReader(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureStorageMapping mapping,
         DataConnection? connection,
         IConnectionEncryptionService? connectionEncryptionService,
@@ -428,13 +425,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Top-feature queries are not supported for source-backed PostGIS layers yet.");
-
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
-        int layerId,
-        FeatureQuery query,
-        DateBinDefinition dateBin,
-        CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Date bins are not supported for source-backed PostGIS layers yet.");
 
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId,
@@ -913,16 +903,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
-        foreach (var statistic in query.OutStatistics!.Value)
-        {
-            var field = ResolveFieldDefinition(statistic.OnStatisticField);
-            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField, sql);
-            var aggregateExpression = BuildStatisticsAggregateExpression(
-                statistic.StatisticType,
-                fieldExpression,
-                field.Type);
-            selectParts.Add($"{aggregateExpression} AS {ValidateAndQuoteIdentifier(statistic.OutStatisticFieldName)}");
-        }
+        AddOutStatistics(selectParts, query.OutStatistics!.Value, sql);
 
         sql.Append(CultureInfo.InvariantCulture, $"SELECT {string.Join(", ", selectParts)} FROM {BuildFeatureSource(query, sql)}");
         AppendFilter(sql, query);
@@ -936,6 +917,27 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         AppendStatisticsOrderBy(sql, query);
         AppendPagination(sql, query);
 
+        return await ReadStatisticsRowsAsync(sql, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void AddOutStatistics(List<string> selectParts, ImmutableArray<StatisticDefinition> statistics, SqlBuilder sql)
+    {
+        foreach (var statistic in statistics)
+        {
+            var field = ResolveFieldDefinition(statistic.OnStatisticField);
+            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField, sql);
+            var aggregateExpression = BuildStatisticsAggregateExpression(
+                statistic.StatisticType,
+                fieldExpression,
+                field.Type);
+            selectParts.Add($"{aggregateExpression} AS {ValidateAndQuoteIdentifier(statistic.OutStatisticFieldName)}");
+        }
+    }
+
+    private async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ReadStatisticsRowsAsync(
+        SqlBuilder sql,
+        CancellationToken cancellationToken)
+    {
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -1261,6 +1263,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var maxY = sql.AddParameter(filter.EnvelopeMaxY.Value);
             var srid = filter.Srid ?? _storageSrid;
             var envelope = $"ST_MakeEnvelope({minX}, {minY}, {maxX}, {maxY}, {srid})";
+            if (filter.EnvelopeMaxX.Value <= filter.EnvelopeMinX.Value ||
+                filter.EnvelopeMaxY.Value <= filter.EnvelopeMinY.Value)
+            {
+                // A box collapsed to a point or line (an OGC bbox=x,y,x,y) makes ST_MakeEnvelope
+                // a zero-area polygon that GEOS treats as intersecting nothing, dropping the
+                // features exactly on it. ST_Envelope reduces it to the POINT or LINESTRING it is.
+                envelope = $"ST_Envelope({envelope})";
+            }
+
             return TransformFilterGeometryIfNeeded(envelope, srid, query.SpatialFilterDatumTransformation);
         }
 
@@ -1293,14 +1304,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return BuildDistancePredicateSql(geometryColumn, filterGeometry, _storageSrid, distance, beyond, sql.AddParameter);
     }
 
-    /// <summary>
-    /// Builds the ST_Distance distance/beyond predicate for a storage-mapped layer. Both operands
-    /// arrive in the storage SRID (the column natively, the filter after
-    /// <see cref="TransformFilterGeometryIfNeeded"/>). A bare <c>::geography</c> cast requires
-    /// lon/lat input and throws for projected-storage layers (a 500), so both operands are
-    /// reprojected to WGS84 geography via <see cref="ToWgs84Geography"/> (the same path KNN uses)
-    /// so <c>ST_Distance</c> returns metres regardless of the storage CRS. (#2740)
-    /// </summary>
     internal static string BuildDistancePredicateSql(
         string geometryColumn,
         string filterGeometry,
@@ -1406,24 +1409,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private string ParseWhereClause(string whereClause, SqlBuilder sql)
     {
         var trimmed = whereClause.Trim();
-        if (TrueLiteralRegex().IsMatch(trimmed))
+        if (LegacyWhereClauseParser.IsTrueLiteral(trimmed))
         {
             return "TRUE";
         }
 
         var expressions = SplitOnAnd(trimmed);
-        if (expressions.Count == 0)
-        {
-            throw new ArgumentException(UnsupportedWhereClauseMessage);
-        }
-
         var parameterizedExpressions = new List<string>(expressions.Count);
-        // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
-        // per-expression parse (null-check vs. comparison), not a pure 1:1 mapping.
-        foreach (var part in (expressions).Select(expression => expression.Trim()))
+        foreach (var expression in LegacyWhereClauseParser.Parse(expressions, LegacyWhereGrammar.StorageMapped, UnsupportedWhereClauseMessage))
         {
-            var nullMatch = NullCheckRegex().Match(part);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var nullColumn = ResolveWhereColumnExpression(nullMatch.Groups["field"].Value, sql);
                 var notClause = string.IsNullOrWhiteSpace(nullMatch.Groups["not"].Value) ? string.Empty : "NOT ";
@@ -1431,25 +1427,21 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 continue;
             }
 
-            var inMatch = InRegex().Match(part);
-            if (inMatch.Success)
+            var inMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var inField = inMatch.Groups["field"].Value;
                 var inColumn = ResolveWhereColumnExpression(inField, sql);
-                var placeholders = SplitValueTokens(inMatch.Groups["values"].Value)
+                var placeholders = LegacyWhereClauseParser.SplitValueTokens(inMatch.Groups["values"].Value)
                     .Select(valueToken => AddWhereValueParameter(inField, valueToken, forceText: false, sql));
                 parameterizedExpressions.Add($"{inColumn} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
-            var comparisonMatch = ComparisonRegex().Match(part);
-            if (!comparisonMatch.Success)
-            {
-                throw new ArgumentException(UnsupportedWhereClauseMessage);
-            }
+            var comparisonMatch = expression.Match;
 
             var fieldName = comparisonMatch.Groups["field"].Value;
-            var normalizedOperator = NormalizeOperator(comparisonMatch.Groups["op"].Value);
+            var normalizedOperator = LegacyWhereClauseParser.NormalizeOperator(comparisonMatch.Groups["op"].Value, LegacyWhereGrammar.StorageMapped, UnsupportedWhereClauseMessage);
             var forceText = normalizedOperator.Contains("LIKE", StringComparison.OrdinalIgnoreCase);
             var column = forceText ? ResolveColumnExpression(fieldName, sql) : ResolveWhereColumnExpression(fieldName, sql);
             var valueParameter = AddWhereValueParameter(fieldName, comparisonMatch.Groups["value"].Value, forceText, sql);
@@ -1476,7 +1468,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string AddWhereValueParameter(string fieldName, string valueToken, bool forceText, SqlBuilder sql)
     {
-        var parameter = sql.AddParameter(ParseValueToken(valueToken, forceText));
+        var parameter = sql.AddParameter(LegacyWhereClauseParser.ParseValueToken(valueToken, forceText ? LegacyWhereValuePolicy.Text : LegacyWhereValuePolicy.NumericOrText));
         // A quoted numeric literal is bound as text; cast it too so both quoted and
         // unquoted operands use the declared numeric field's comparison semantics.
         return !forceText && IsJsonNumericField(fieldName) ? $"{parameter}::numeric" : parameter;
@@ -1549,13 +1541,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return ValidateAndQuoteIdentifier(field.Name);
     }
 
-    /// <summary>
-    /// Resolves a field reference used in an ORDER BY clause. Scalar fields persisted inside
-    /// the attributes JSONB column are read with the text accessor (<c>-&gt;&gt;</c>), which
-    /// would otherwise sort numerically- and temporally-typed values lexicographically
-    /// (e.g. "10" before "9"). Cast those fields to their declared SQL type so sorting matches
-    /// the field's semantics; text/uuid fields keep the plain text accessor.
-    /// </summary>
     private string ResolveSortColumnExpression(string fieldName, SqlBuilder sql)
     {
         var column = ResolveColumnExpression(fieldName, sql);
@@ -1793,21 +1778,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             + "was meant to target a distinct source, give it a non-empty connection ID.")]
     private static partial void LogEmptyIdFallbackPastUnresolvedCredentials(ILogger logger, string table);
 
-    /// <summary>
-    /// Decides whether an unresolved bound connection represents a genuine misconfiguration
-    /// (a layer pinned to a distinct source whose credentials we cannot unlock) that must fail
-    /// loudly, versus an empty/placeholder binding that means "use the default connection".
-    /// </summary>
-    /// <remarks>
-    /// Only reached when no plaintext string was present and no encrypted string could be
-    /// decrypted. An empty/whitespace connection ID is the "use the default connection"
-    /// sentinel: such a binding always falls back to the default database regardless of any
-    /// leftover (and unresolvable) credential material, because it never identified a distinct
-    /// source. A binding with a *non-empty* ID and encrypted bytes (regardless of whether a
-    /// decryption service is available) or an external secret reference is pointing at a
-    /// specific source, so we must not silently read from the default database. A binding with
-    /// none of that material is a placeholder for the default connection.
-    /// </remarks>
     internal static bool ShouldFailInsteadOfDefaultFallback(
         DataConnection connection,
         IConnectionEncryptionService? connectionEncryptionService)
@@ -1905,27 +1875,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"{ValidateAndQuoteIdentifier(mapping.SchemaName!)}.{table}";
     }
 
-    /// <summary>
-    /// Quotes a SELECT alias for a schema field that <see cref="ResolveAttributeFields"/> has
-    /// already admitted, accepting either shape that method admits.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="ValidateAndQuoteIdentifier"/> is the wrong guard for an alias derived from a
-    /// declared field name. It enforces <c>SchemaSearchPath.IsValidIdentifier</c>
-    /// (<c>^[A-Za-z_][A-Za-z0-9_]*$</c>), which rejects the colon in a STAC extension queryable
-    /// such as <c>eo:cloud_cover</c>. Before those names were admitted to the projection the
-    /// field was silently dropped; admitting them turned the same request into an
-    /// <see cref="InvalidOperationException"/> and an HTTP 500 on the FlatGeobuf/Geobuf path,
-    /// because the encoded-binary builder aliases every resolved field unconditionally
-    /// (review finding on honua-server#3489).
-    ///
-    /// The alias is safe to emit with doubling-only quoting, exactly as the native
-    /// <c>FeatureQueryBuilder</c> path does: the JSONB branch admits a name only through
-    /// <c>IsValidEncodedColumnAlias</c>, which contains no quote, whitespace, backslash
-    /// or control character and enforces PostgreSQL's 63-byte identifier boundary.
-    /// The guard is re-asserted here rather than assumed, so this stays correct if the
-    /// caller's field filter ever widens.
-    /// </remarks>
     private static string QuoteAttributeFieldAlias(string fieldName)
     {
         var sanitized = fieldName.Trim();
@@ -1952,44 +1901,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static bool IsSafeIdentifier(string identifier)
         => SchemaSearchPath.IsValidIdentifier(identifier);
-
-    private static string NormalizeOperator(string operatorValue)
-    {
-        return operatorValue.Trim().ToUpperInvariant() switch
-        {
-            "NOT LIKE" => "NOT LIKE",
-            "LIKE" => "LIKE",
-            ">=" => ">=",
-            "<=" => "<=",
-            "!=" => "!=",
-            "<>" => "!=",
-            "=" => "=",
-            ">" => ">",
-            "<" => "<",
-            _ => throw new ArgumentException(UnsupportedWhereClauseMessage)
-        };
-    }
-
-    private static object ParseValueToken(string valueToken, bool forceText)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return UnescapeSqlString(valueToken);
-        }
-
-        if (!forceText && decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalValue))
-        {
-            return decimalValue;
-        }
-
-        return valueToken;
-    }
-
-    private static string UnescapeSqlString(string valueToken)
-    {
-        var content = valueToken[1..^1];
-        return content.Replace("''", "'", StringComparison.Ordinal);
-    }
 
     private string BuildDistanceSelectExpression(FeatureQuery query, SqlBuilder sql)
     {
@@ -2100,40 +2011,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return parts;
     }
 
-    private static List<string> SplitValueTokens(string values)
-    {
-        var tokens = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var index = 0; index < values.Length; index++)
-        {
-            var value = values[index];
-            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
-            {
-                current.Append("''");
-                index++;
-            }
-            else if (value == '\'')
-            {
-                inQuotes = !inQuotes;
-                current.Append(value);
-            }
-            else if (value == ',' && !inQuotes)
-            {
-                tokens.Add(current.ToString().Trim());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(value);
-            }
-        }
-
-        tokens.Add(current.ToString().Trim());
-        return tokens;
-    }
-
     private static bool IsAndTokenAt(string whereClause, int index)
     {
         if (index + 3 > whereClause.Length)
@@ -2154,26 +2031,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static bool IsIdentifierChar(char value)
         => char.IsLetterOrDigit(value) || value == '_';
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex InRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(
-        @"^(?:1\s*=\s*1|TRUE)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex TrueLiteralRegex();
 
     [GeneratedRegex(
         @"@p(?<index>\d+)",

@@ -13,7 +13,6 @@ using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Thin executor that binds an operation to its existing authenticated Admin REST route.</summary>
 internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-operation-loopback";
@@ -83,6 +82,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
+        AdminOperationLoopbackTls.PinServedCertificate(message, current);
         if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
             message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);

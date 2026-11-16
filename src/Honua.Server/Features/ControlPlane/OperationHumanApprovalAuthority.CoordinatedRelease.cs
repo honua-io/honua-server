@@ -44,7 +44,7 @@ internal sealed partial class OperationHumanApprovalAuthority
             Gate = gate,
             TenantId = target.TenantId,
             ActorId = verified.ActorId,
-            Channel = OperationHumanApprovalEvidence.InteractiveOidcChannel,
+            Channel = verified.Channel,
             SessionReference = verified.SessionReference,
             CapabilityReference = verified.CapabilityReference,
             PlanHash = target.BindingDigest,

@@ -16,14 +16,6 @@ using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Concrete executor for <c>service.publish</c>. It WRAPS the existing
-/// <see cref="ILayerPublishingService"/> rather than reimplementing publish:
-/// <see cref="ValidateAsync"/> delegates to <c>ValidateTableForPublishAsync</c> and
-/// <see cref="SubmitAsync"/> maps the request onto a <see cref="LayerPublishRequest"/> and
-/// calls <c>PublishLayerAsync</c>. The resulting Metadata v2 revision is surfaced on the
-/// returned handle.
-/// </summary>
 internal sealed class ServicePublishExecutor
     : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
@@ -36,20 +28,6 @@ internal sealed class ServicePublishExecutor
     private readonly IPublishedServiceStore? _publishedServices;
     private readonly CommittedSinkPublicationSources? _sourceProof;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
-    /// </summary>
-    /// <param name="publishingService">Shared layer publishing service (reused, not reimplemented).</param>
-    /// <param name="connectionResolver">Resolves the target connection string from the request connection id.</param>
-    /// <param name="metadataGraphProvider">Read access to the Metadata v2 graph for revision surfacing.</param>
-    /// <param name="clock">Time provider for handle id generation.</param>
-    /// <param name="notifications">Optional catalog-change broadcaster resolved by production composition.</param>
-    /// <param name="jobs">
-    /// Accepts the publish off the request token. Omitted only by tests that construct the executor
-    /// directly; production composition always supplies it.
-    /// </param>
-    /// <param name="publishedServices">Optional persisted service store for promotion identity checks.</param>
-    /// <param name="sourceProof">Durable source jobs and result-package catalog for committed sink publication.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
@@ -74,10 +52,8 @@ internal sealed class ServicePublishExecutor
         _sourceProof = sourceProof;
     }
 
-    /// <inheritdoc />
     public string OperationId => ServicePublishOperation.OperationId;
 
-    /// <inheritdoc />
     public async Task<OperationRequest> PrepareAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -85,6 +61,39 @@ internal sealed class ServicePublishExecutor
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        var pinned = await PinMetadataBaseAsync(request, context, cancellationToken).ConfigureAwait(false);
+        return await PrepareSourceAsync(pinned, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    // A proposal records the write base it was made against; approved replay must still find it.
+    private async Task<OperationRequest> PinMetadataBaseAsync(
+        OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken)
+    {
+        if (_publishingService is not ILayerPublicationBaseReader baseReader)
+        {
+            return request;
+        }
+
+        if (context.ApprovedProposalId is not null)
+        {
+            _ = ServicePublishMetadataPin.Require(request);
+            return request;
+        }
+
+        if (ServicePublishMetadataPin.HasAny(request))
+        {
+            throw new InvalidOperationException("The metadata pin is server-set; do not supply it.");
+        }
+
+        var publicationBase = await baseReader.ReadPublicationBaseAsync(cancellationToken).ConfigureAwait(false);
+        return request with { Parameters = ServicePublishMetadataPin.With(request.Parameters, publicationBase) };
+    }
+
+    private async Task<OperationRequest> PrepareSourceAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
         var sourceJobId = GetOptional(request, VerifiedCommittedSinkPublication.SourceJobIdKey);
         var sourceArtifactId = GetOptional(request, VerifiedCommittedSinkPublication.SourceArtifactIdKey);
         var claimedFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey);
@@ -143,7 +152,6 @@ internal sealed class ServicePublishExecutor
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationValidation> ValidateAsync(
         OperationRequest request,
         CancellationToken cancellationToken = default)
@@ -179,7 +187,6 @@ internal sealed class ServicePublishExecutor
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationHandle> SubmitAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -217,6 +224,12 @@ internal sealed class ServicePublishExecutor
             ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };
         publishRequest.CommittedSinkPublication = request.VerifiedCommittedSinkPublication;
+        // Only an approved proposal enforces its pin; a direct publish keeps conflict retries.
+        if (context.ApprovedProposalId is not null && ServicePublishMetadataPin.TryRead(request) is { } pin)
+        {
+            publishRequest.ExpectedMetadataRevision = pin.Revision;
+            publishRequest.ExpectedMetadataEtag = pin.Etag;
+        }
 
         PublishedLayerSummary summary;
         if (_jobs is not null)
@@ -280,8 +293,8 @@ internal sealed class ServicePublishExecutor
         // A later current-graph read could attribute another publisher's revision to this job.
         if (_notifications is { } notifications)
         {
-            TryNotify(() => { notifications.BroadcastResourcesListChanged(); });
-            TryNotify(() => { notifications.BroadcastToolsListChanged(); });
+            await TryNotifyAsync(() => notifications.BroadcastResourcesListChanged()).ConfigureAwait(false);
+            await TryNotifyAsync(() => notifications.BroadcastToolsListChanged()).ConfigureAwait(false);
         }
         var now = _clock.GetUtcNow();
         var (identity, promotionReadback) = await ResolvePublishedLayerReadbackAsync(
@@ -342,7 +355,6 @@ internal sealed class ServicePublishExecutor
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
@@ -469,11 +481,11 @@ internal sealed class ServicePublishExecutor
         Unavailable,
     }
 
-    private static void TryNotify(Action notify)
+    private static async Task TryNotifyAsync(Func<ValueTask<int>> notify)
     {
         try
         {
-            notify();
+            await notify().ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -529,7 +541,7 @@ internal sealed class ServicePublishExecutor
         // Reconstruct only from the committed graph, including after a restart.
         var publications = snapshot.Graph.Publications
             .Where(publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                 publication.LayerIndex is >= 0 &&
                 snapshot.ResolveResource(publication) is not null &&
                 snapshot.ResolveStorageBinding(publication) is { } binding &&

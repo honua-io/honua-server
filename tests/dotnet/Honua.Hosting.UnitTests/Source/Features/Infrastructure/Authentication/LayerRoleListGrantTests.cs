@@ -308,7 +308,7 @@ public sealed class LayerRoleListGrantTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticated ? "Test" : null));
     }
 
-    private static MetadataV2Resource Resource(AccessPolicy? layerPolicy)
+    private static MetadataV2Object Resource(AccessPolicy? layerPolicy)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "parcels" },

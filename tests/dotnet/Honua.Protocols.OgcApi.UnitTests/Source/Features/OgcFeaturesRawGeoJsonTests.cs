@@ -157,17 +157,17 @@ public sealed class OgcFeaturesRawGeoJsonTests
         rawFeature.GetProperty("properties").TryGetProperty("internal_secret", out _).Should().BeFalse();
     }
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "bench_points", Name = "bench_points" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 .. fields,
                 new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String },
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = new MetadataV2SpatialReference

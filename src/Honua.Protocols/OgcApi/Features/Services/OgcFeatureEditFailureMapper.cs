@@ -6,10 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Maps writer <see cref="EditOperationResult"/> failures onto OGC HTTP statuses
-/// from the safe client message. Writer error codes stay unchanged.
-/// </summary>
 internal static class OgcFeatureEditFailureMapper
 {
     internal const string ConflictMessage = "The operation conflicted with existing data.";

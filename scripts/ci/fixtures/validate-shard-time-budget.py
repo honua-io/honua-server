@@ -7,6 +7,7 @@ defect it is written for.
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import os
@@ -63,17 +64,52 @@ def check_total_budget_defers_the_overflow(config: dict[str, Any]) -> None:
         raise FixtureError("a selection past the total budget did not defer the overflow")
 
 
-def slowest_uniquely_owned_shard(config: dict[str, Any]) -> dict[str, Any]:
+def check_source_paths_have_budgeted_owners(config: dict[str, Any]) -> None:
+    """A source change must retain a PR owner after the time budget is applied."""
     limit = budget_module.load_time_budget(config)["max_shard_minutes"]
-    return next(
+    source_paths = {path for shard in config["shards"] for path in shard["paths"]
+                    if path.startswith("src/")}
+    fast_paths = {path for shard in config["shards"] if shard["dispatch_rank"] <= limit
+                  for path in shard["paths"]}
+    missing = sorted(path for path in source_paths
+                     if not any(path.startswith(owner) for owner in fast_paths))
+    if missing:
+        raise FixtureError(f"source paths without a PR owner within {limit} min: {missing}")
+
+
+def check_source_owner_failure_injection(config: dict[str, Any]) -> None:
+    mutated = copy.deepcopy(config)
+    path = "src/Honua.Server/Features/Geocoding/"
+    owners = [shard for shard in mutated["shards"]
+              if any(path.startswith(prefix) for prefix in shard["paths"])]
+    assert owners, "The ownership failure injection needs the real Geocoding source path."
+    limit = budget_module.load_time_budget(config)["max_shard_minutes"]
+    for shard in owners:
+        shard["dispatch_rank"] = limit + 1
+    try:
+        check_source_paths_have_budgeted_owners(mutated)
+    except FixtureError as error:
+        if path not in str(error):
+            raise FixtureError("ownership injection did not identify the uncovered source path") from error
+    else:
+        raise FixtureError("accepted a source path whose every PR owner is over budget")
+
+
+def deferred_only_config(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A copy of the map in which the slowest shard with a uniquely owned prefix is over budget."""
+    limit = budget_module.load_time_budget(config)["max_shard_minutes"]
+    mutated = copy.deepcopy(config)
+    slow = next(
         shard
-        for shard in sorted(config["shards"], key=lambda s: -s["dispatch_rank"])
-        if shard["dispatch_rank"] > limit and shard_fixtures.unique_owned_prefix(config, shard)
+        for shard in sorted(mutated["shards"], key=lambda s: -s["dispatch_rank"])
+        if shard_fixtures.unique_owned_prefix(mutated, shard)
     )
+    slow["dispatch_rank"] = max(slow["dispatch_rank"], limit + 1)
+    return mutated, slow
 
 
 def check_all_deferred_selection_skips_offline(config: dict[str, Any]) -> None:
-    slow = slowest_uniquely_owned_shard(config)
+    config, slow = deferred_only_config(config)
     probe = [f"{shard_fixtures.unique_owned_prefix(config, slow)}AffectedShardsFixtureProbe.cs"]
     result = select_within_budget(config, probe, shard_fixtures.router(config, probe))
     if result["shards"] or result["reason"] != budget_module.DEFERRED_SKIP_REASON:
@@ -82,12 +118,15 @@ def check_all_deferred_selection_skips_offline(config: dict[str, Any]) -> None:
 
 def check_all_deferred_selection_through_the_cli(config: dict[str, Any]) -> None:
     """The CLI receipt, step summary and `deferred_to_trunk` output all name the deferred shard."""
-    slow = slowest_uniquely_owned_shard(config)
+    config, slow = deferred_only_config(config)
     probe = f"{shard_fixtures.unique_owned_prefix(config, slow)}AffectedShardsFixtureProbe.cs\n"
     with tempfile.TemporaryDirectory() as directory:
         output = Path(directory) / "github-output"
+        mutated = Path(directory) / "ci-shards.json"
+        mutated.write_text(json.dumps(config), encoding="utf-8")
         completed = subprocess.run(
-            [sys.executable, str(shard_fixtures.SELECTOR), "--changed-files", "-", "--time-budget", "--github-output"],
+            [sys.executable, str(shard_fixtures.SELECTOR), "--changed-files", "-", "--time-budget", "--github-output",
+             "--config", str(mutated)],
             input=probe, capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "GITHUB_OUTPUT": str(output)},
         )
@@ -137,6 +176,8 @@ def check_failure_injections(config: dict[str, Any]) -> None:
 
 def main() -> int:
     config = selector.load_config(shard_fixtures.CONFIG_PATH)
+    check_source_paths_have_budgeted_owners(config)
+    check_source_owner_failure_injection(config)
     check_budget_bounds_the_selection(config)
     check_total_budget_defers_the_overflow(config)
     check_all_deferred_selection_skips_offline(config)

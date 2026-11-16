@@ -15,7 +15,8 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddAnalysisReportingCore(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Func<IServiceProvider, IAnalysisReportStore?>? createStore = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -46,13 +47,30 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportTemplate, SurfaceSlopeReportTemplate>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportTemplate, GeneralizationDissolveReportTemplate>());
 
-        services.TryAddSingleton<IAnalysisReportTemplateRegistry, AnalysisReportTemplateRegistry>();
-        services.TryAddSingleton<IAnalysisReportBuilder, AnalysisReportBuilder>();
-        services.TryAddSingleton<IAnalysisReportStore, InMemoryAnalysisReportStore>();
+        services.TryAddSingleton<AnalysisReportTemplateRegistry>();
+        services.TryAddSingleton<AnalysisReportBuilder>();
+        services.AddReportStore(createStore);
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportRenderer, MarkdownReportRenderer>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportRenderer, HtmlReportRenderer>());
 
         return services;
+    }
+
+    private static void AddReportStore(this IServiceCollection services,
+        Func<IServiceProvider, IAnalysisReportStore?>? createStore)
+    {
+        if (createStore is null)
+        {
+            services.TryAddSingleton<IAnalysisReportStore, InMemoryAnalysisReportStore>();
+            return;
+        }
+        foreach (var descriptor in services.Where(item => item.ServiceType == typeof(IAnalysisReportStore)
+            && item.ImplementationType == typeof(InMemoryAnalysisReportStore)).ToArray())
+        {
+            services.Remove(descriptor);
+        }
+        services.TryAddSingleton<IAnalysisReportStore>(sp => createStore(sp)
+            ?? new InMemoryAnalysisReportStore(sp.GetRequiredService<IOptions<ReportingConfiguration>>()));
     }
 }

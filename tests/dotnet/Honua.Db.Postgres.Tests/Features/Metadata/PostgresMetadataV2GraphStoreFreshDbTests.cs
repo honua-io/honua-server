@@ -74,10 +74,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
                 GeneratedAt = DateTimeOffset.UtcNow,
                 Resources =
                 [
-                    new MetadataV2Resource
+                    new MetadataV2Object
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-9000", Name = "fresh-db-layer" },
-                        Type = MetadataV2ResourceType.FeatureDataset,
+                        Type = MetadataV2ObjectType.FeatureDataset,
                     },
                 ],
             };
@@ -123,10 +123,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
                     GeneratedAt = DateTimeOffset.UtcNow,
                     Resources =
                     [
-                        new MetadataV2Resource
+                        new MetadataV2Object
                         {
                             Metadata = new MetadataV2ObjectMetadata { Id = "retained-first", Name = "first" },
-                            Type = MetadataV2ResourceType.FeatureDataset,
+                            Type = MetadataV2ObjectType.FeatureDataset,
                         },
                     ],
                 },
@@ -138,10 +138,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
                     GeneratedAt = DateTimeOffset.UtcNow,
                     Resources =
                     [
-                        new MetadataV2Resource
+                        new MetadataV2Object
                         {
                             Metadata = new MetadataV2ObjectMetadata { Id = "retained-second", Name = "second" },
-                            Type = MetadataV2ResourceType.FeatureDataset,
+                            Type = MetadataV2ObjectType.FeatureDataset,
                         },
                     ],
                 },
@@ -255,10 +255,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
             Environment = "Test",
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources = resourceIds
-                .Select(id => new MetadataV2Resource
+                .Select(id => new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                 })
                 .ToArray(),
         };
@@ -479,10 +479,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
                     GeneratedAt = DateTimeOffset.UtcNow,
                     Resources =
                     [
-                        new MetadataV2Resource
+                        new MetadataV2Object
                         {
                             Metadata = new MetadataV2ObjectMetadata { Id = "res-next", Name = "next" },
-                            Type = MetadataV2ResourceType.FeatureDataset,
+                            Type = MetadataV2ObjectType.FeatureDataset,
                         },
                     ],
                 },
@@ -600,10 +600,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
             ],
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-1", Name = "parcels" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     StorageBindingIds = ["bind-1"],
                 },
             ],
@@ -617,24 +617,24 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-1", Name = "pub-1" },
                     ResourceId = "res-1",
                     ServiceId = "svc-1",
                     StorageBindingId = "bind-1",
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
                     IsPrimary = true,
                 },
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-2", Name = "pub-2" },
                     ResourceId = "res-1",
                     ServiceId = "svc-1",
                     StorageBindingId = "bind-1",
-                    PublicationType = MetadataV2PublicationType.StacCollection,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = string.Empty, IsNumeric = false },
+                    PublicationType = MetadataV2LayerType.StacCollection,
+                    Identifier = new MetadataV2LayerIdentifier { Value = string.Empty, IsNumeric = false },
                     IsPrimary = false,
                 },
             ],

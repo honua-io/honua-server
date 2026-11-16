@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      OGC SensorThings API (STA v1.1) protocol assembly (#1747). The read API
+      OGC SensorThings API (STA v1.1) protocol assembly. The read API
       reuses the shared OData $filter parser (Honua.Geometry / Honua.Core) rather
       than hand-rolling a parser, and the observations store contract lives in
       Honua.Core. Infrastructure helpers live in Honua.Hosting. It may not

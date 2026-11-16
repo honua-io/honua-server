@@ -84,10 +84,10 @@ public sealed class OgcFeaturesResponseHelpersBatchLoadTests
         reader.Queries.Should().BeEmpty();
     }
 
-    private static MetadataV2Resource CreateResource() => new()
+    private static MetadataV2Object CreateResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res-1", Name = "test-resource" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         SchemaFields =
         [
             new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false }

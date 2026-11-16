@@ -7,7 +7,6 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>Maps the admin publish body onto the domain request the publisher accepts.</summary>
 internal static class LayerPublishRequestMapper
 {
     internal static bool TryParseStorageMode(string? value, out LayerStorageMode storageMode)
@@ -92,6 +91,7 @@ internal static class LayerPublishRequestMapper
             Srid = request.Srid,
             PrimaryKey = request.PrimaryKey,
             GlobalIdField = request.GlobalIdField,
+            TemporalColumn = request.TemporalColumn,
             SupportsAttachments = request.SupportsAttachments,
             Fields = request.Fields ?? Array.Empty<string>(),
             FieldDomains = request.FieldDomains is { } fieldDomains
@@ -133,6 +133,7 @@ internal static class LayerPublishRequestMapper
             Srid = request.Srid,
             PrimaryKey = request.PrimaryKey,
             GlobalIdField = request.GlobalIdField,
+            TemporalColumn = request.TemporalColumn,
             SupportsAttachments = request.SupportsAttachments,
             Fields = request.Fields ?? Array.Empty<string>(),
             FieldDomains = request.FieldDomains,

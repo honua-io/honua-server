@@ -22,7 +22,8 @@ internal static class ObservabilityAuditEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability", "Audit")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         group.MapGet("", HandleList)
             .WithDisplayName("List Audit Log Entries")
@@ -228,6 +229,7 @@ internal static class ObservabilityAuditEndpoints
             From = from,
             To = to,
             Actor = QueryFilterParsers.GetString(query, "actor"),
+            ActorAgent = QueryFilterParsers.GetString(query, "actorAgent"),
             ResourceType = QueryFilterParsers.GetString(query, "resourceType"),
             Action = QueryFilterParsers.GetString(query, "action"),
             Limit = limit,
@@ -262,6 +264,7 @@ internal static class ObservabilityAuditEndpoints
             From = from,
             To = to,
             Actor = QueryFilterParsers.GetString(query, "actor"),
+            ActorAgent = QueryFilterParsers.GetString(query, "actorAgent"),
             ActorTypes = actorTypes,
             ResourceType = QueryFilterParsers.GetString(query, "resourceType"),
             ResourceId = QueryFilterParsers.GetString(query, "resourceId"),
@@ -285,6 +288,7 @@ internal static class ObservabilityAuditEndpoints
             EventType = record.EventType.ToString(),
             Actor = record.Actor,
             ActorType = record.ActorType.ToString(),
+            ActorAgent = record.ActorAgent,
             ResourceType = record.ResourceType,
             ResourceId = record.ResourceId,
             Action = record.Action,

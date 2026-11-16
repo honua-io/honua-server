@@ -670,11 +670,11 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             .Which.Message.Should().Contain("Invalid PostGIS encoded projection alias");
     }
 
-    private static MetadataV2Resource CreatePrefixedFieldResource(params MetadataV2Field[] additionalFields)
+    private static MetadataV2Object CreatePrefixedFieldResource(params MetadataV2Field[] additionalFields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-stac", Name = "Stac" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "plain_field", Type = MetadataV2FieldType.String },
@@ -683,11 +683,11 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             ],
         };
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-secure", Name = "Secure" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "tenant_id", Type = MetadataV2FieldType.String },
@@ -742,7 +742,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     private static PostgresStorageMappedFeatureReader CreateReader(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IRowLevelSecurityFilterSource? rlsSource = null,
         IFieldMaskSource? fieldMaskSource = null,
         string? attributesColumn = null,

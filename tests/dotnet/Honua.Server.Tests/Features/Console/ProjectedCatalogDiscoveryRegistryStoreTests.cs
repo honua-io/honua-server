@@ -229,13 +229,13 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
     internal static MetadataV2Graph Graph(string metadataNamespace = "alpha", string suffix = "")
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource" + suffix, "resource" + suffix, MetadataV2ResourceType.FeatureDataset,
+            .AddResource("resource" + suffix, "resource" + suffix, MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddService("service" + suffix, "service with space",
                 protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer],
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddPublication("publication" + suffix, "service" + suffix, "resource" + suffix, layerIndex: suffix.Length == 0 ? 42 : 43,
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
         MetadataV2ObjectMetadata Scoped(MetadataV2ObjectMetadata metadata) => metadata with { Tenant = "public", Namespace = metadataNamespace };
         return graph with

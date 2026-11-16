@@ -36,7 +36,7 @@ public sealed class MetadataV2StyleResourceTests
             createdAt: now,
             updatedAt: now);
 
-        resource.Type.Should().Be(MetadataV2ResourceType.Style);
+        resource.Type.Should().Be(MetadataV2ObjectType.Style);
         resource.Metadata.Id.Should().Be("style-style-layer-7");
         resource.Metadata.Name.Should().Be("style-layer-7");
         resource.Style.Should().NotBeNull();
@@ -121,13 +121,13 @@ public sealed class MetadataV2StyleResourceTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.a" },
                     StorageBindingIds = ["storage.a"],
                     StyleResourceIds = ["style-shared"]
                 },
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.b" },
                     StorageBindingIds = ["storage.b"],

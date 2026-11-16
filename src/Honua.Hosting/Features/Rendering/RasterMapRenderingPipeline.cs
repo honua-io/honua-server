@@ -87,7 +87,7 @@ internal static partial class RasterMapRenderingPipeline
         string? StableOrderField = null,
         MetadataV2FieldType? StableOrderFieldType = null,
         ImmutableArray<string>? EnforcedMaskedFields = null,
-        MetadataV2Resource? Resource = null);
+        MetadataV2Object? Resource = null);
 
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,

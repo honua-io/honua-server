@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Conserve the Console and Alerts test surface across whole-class shards."""
+"""Conserve the Console and Alerts test surface across capacity shards."""
 import copy
 import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_partition
+from shard_capacity_partition import PartitionSource, capacity_split_names, check_method_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -15,7 +15,9 @@ CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
 CONTRACT = json.loads((ROOT / "scripts/ci/fixtures/console-capacity-contract.json").read_text())
 ORIGINAL = CONTRACT["originalShard"]
 NAMES = ("Server Features Console Sessions and Access", ORIGINAL["name"])
-CHILDREN = [next(shard for shard in CONFIG["shards"] if shard["name"] == name) for name in NAMES]
+FAMILIES = [capacity_split_names(CONFIG, name) for name in NAMES]
+CHILDREN = [next(shard for shard in CONFIG["shards"] if shard["name"] == name)
+            for family in FAMILIES for name in family]
 MODULE.TEST_PROJECT_DIRS = {
     root: project for root, project in MODULE.TEST_PROJECT_DIRS.items() if project == ORIGINAL["csproj"]
 }
@@ -24,7 +26,7 @@ CLASSES = MODULE.enumerate_test_classes()
 
 
 def verify_conservation(children):
-    return check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, children)
+    return check_method_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, children)
 
 
 selected = verify_conservation(CHILDREN)
@@ -32,9 +34,13 @@ isolated = {
     method for method in MODULE.selection_pool(CLASSES, ORIGINAL["csproj"])
     if method.rsplit(".", 1)[0] in CONTRACT["isolatedClasses"]
 }
-assert selected[0] == isolated, "The measured Console classes changed ownership."
-parents = [parent for parent in CONFIG["shard_partitions"] if set(NAMES) & set(parent["children"])]
-assert parents == [CONTRACT["parentPartition"]], "The legacy parent contract changed."
+assert set.union(*selected[:len(FAMILIES[0])]) == isolated, "The measured Console classes changed ownership."
+parents = [parent for parent in CONFIG["shard_partitions"]
+           if set(FAMILIES[0]) & set(parent["children"])]
+expected_parent = copy.deepcopy(CONTRACT["parentPartition"])
+expected_parent["children"] = [child for name in expected_parent["children"]
+                               for child in capacity_split_names(CONFIG, name)]
+assert parents == [expected_parent], "The legacy parent contract changed."
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
 

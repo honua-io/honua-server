@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.NlQuery;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class DeterministicNlQueryPlanProviderTests
 {
-    private static readonly MetadataV2Resource TestResource = NlQueryTestResources.CriticalFacilities;
+    private static readonly MetadataV2Object TestResource = NlQueryTestResources.CriticalFacilities;
 
     private static DeterministicNlQueryPlanProvider CreateProvider()
     {

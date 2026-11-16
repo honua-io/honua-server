@@ -37,11 +37,30 @@ internal static class SharedCacheGuard
 
         if (ExcludesSharedCaches(cacheControl))
         {
+            // The ETag service writes this pair only when nothing else set a policy. It is a
+            // validation fallback, not a decision to store the response in a private cache.
+            // A response that is not shareable still leaves as private, no-store. A handler
+            // that chose its own private lifetime is left alone.
+            if (IsETagFallback(cacheControl) && !ResponseMayBeShared(context))
+            {
+                LeaveAsNotShared(context);
+                return;
+            }
+
             SharedCacheResponse.RemoveCacheTags(context);
             return;
         }
 
         LeaveAsNotShared(context);
+    }
+
+    // CacheControlHeaderValue reorders directives, so compare the set rather than the raw string.
+    private static bool IsETagFallback(string cacheControl)
+    {
+        var directives = cacheControl.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return directives.Length == 2
+            && directives.Contains("private", StringComparer.OrdinalIgnoreCase)
+            && directives.Contains("must-revalidate", StringComparer.OrdinalIgnoreCase);
     }
 
     private static void LeaveAsNotShared(HttpContext context)

@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Structured logging for OGC API - Maps operations.
-/// Event ID range: 5900-5999 (avoiding collisions with other features).
-/// </summary>
 internal static partial class OgcMapsLog
 {
     [LoggerMessage(

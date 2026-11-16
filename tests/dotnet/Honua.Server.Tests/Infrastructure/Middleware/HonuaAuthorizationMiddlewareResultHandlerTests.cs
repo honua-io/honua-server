@@ -5,8 +5,11 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -28,6 +31,7 @@ public sealed class HonuaAuthorizationMiddlewareResultHandlerTests
     private const string RequestPath = "/api/v1/admin/roles/1";
 
     private readonly CapturingAuditLog _audit = new();
+    private static readonly Guid KnownApiKeyId = Guid.Parse("6f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f");
 
     [Fact]
     public async Task Challenge_OnPolicyWithoutDomainSeam_RecordsAuthenticationFailure()
@@ -171,6 +175,102 @@ public sealed class HonuaAuthorizationMiddlewareResultHandlerTests
         evt.Action.Should().Be("studio.lifecycle");
         evt.Outcome.Should().Be(AuditOutcome.Denied);
     }
+
+    [UnitTheory]
+    [InlineData("api-key", "apikey:api-key:6f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f", AuditActorType.ApiKey)]
+    [InlineData("stamped", "bearer:subject:-:stamped", AuditActorType.UserId)]
+    [InlineData("bearer", "bearer:subject:https%3A%2F%2Fissuer.example:subject-1", AuditActorType.UserId)]
+    [InlineData("name-only", "test:name:operator", AuditActorType.UserId)]
+    // A non-GUID key id is never stamped, so the resolver keeps the raw value.
+    [InlineData("non-guid-key", "not-a-guid", AuditActorType.ApiKey)]
+    public async Task Forbid_OnStudioLifecyclePolicy_RecordsTheStampedActor(
+        string principalCase,
+        string expectedActor,
+        AuditActorType expectedType)
+    {
+        // Policy denials run before tenant resolution; they record what it stamps.
+        var context = BuildContext(authenticated: false);
+        context.User = StudioPrincipal(principalCase);
+        var policy = new AuthorizationPolicyBuilder()
+            .AddRequirements(new StudioLifecycleRequirement())
+            .Build();
+
+        var handler = new HonuaAuthorizationMiddlewareResultHandler();
+        await handler.HandleAsync(_ => Task.CompletedTask, context, policy, PolicyAuthorizationResult.Forbid());
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("studio.lifecycle");
+        evt.Actor.Should().Be(expectedActor);
+        evt.ActorType.Should().Be(expectedType);
+    }
+
+    [UnitTest]
+    public async Task StudioHandlerDenial_UnstampedApiKey_RecordsCanonicalApiKeyActor()
+    {
+        // Multi-tenant installs never stamp API-key callers; both Studio audit paths must still agree.
+        var context = BuildContext(authenticated: false);
+        context.User = ApiKeyPrincipal(KnownApiKeyId.ToString("D"));
+
+        await StudioAuthorizationAudit.RecordDecisionAsync(
+            context,
+            _audit,
+            TimeProvider.System,
+            StudioAuthorizationOperation.CreateDraft,
+            "studio-content-item",
+            null,
+            StudioAuthorizationDecision.Deny("studio_authorization/test", "denied"));
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Actor.Should().Be($"apikey:api-key:{KnownApiKeyId:D}");
+        evt.ActorType.Should().Be(AuditActorType.ApiKey);
+    }
+
+    [UnitTest]
+    public async Task Forbid_OnGenericPolicy_UnstampedApiKey_KeepsTheRawKeyId()
+    {
+        var context = BuildContext(authenticated: false);
+        context.User = ApiKeyPrincipal(KnownApiKeyId.ToString("D"));
+
+        await HandleAsync(context, PolicyAuthorizationResult.Forbid());
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("auth.denied");
+        evt.Actor.Should().Be(KnownApiKeyId.ToString("D"));
+    }
+
+    private static ClaimsPrincipal StudioPrincipal(string principalCase)
+    {
+        switch (principalCase)
+        {
+            case "api-key":
+                return ApiKeyPrincipal(KnownApiKeyId.ToString("D"));
+            case "non-guid-key":
+                return ApiKeyPrincipal("not-a-guid");
+            case "stamped":
+                var stamped = new ClaimsIdentity(
+                    [new Claim(ClaimTypes.NameIdentifier, "subject-1")],
+                    authenticationType: "Bearer");
+                var stampedActor = new Claim("honua:canonical_actor", "bearer:subject:-:stamped");
+                stampedActor.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+                stamped.AddClaim(stampedActor);
+                return new ClaimsPrincipal(stamped);
+            case "bearer":
+                return new ClaimsPrincipal(new ClaimsIdentity(
+                    [new Claim("sub", "subject-1"), new Claim("iss", "https://issuer.example")],
+                    authenticationType: "Bearer"));
+            case "name-only":
+                return new ClaimsPrincipal(new ClaimsIdentity(
+                    [new Claim(ClaimTypes.Name, "operator")],
+                    authenticationType: "Test"));
+            default:
+                throw new ArgumentOutOfRangeException(nameof(principalCase), principalCase, null);
+        }
+    }
+
+    private static ClaimsPrincipal ApiKeyPrincipal(string apiKeyId)
+        => new(new ClaimsIdentity(
+            [new Claim("api_key_id", apiKeyId), new Claim(ClaimTypes.Name, "carol")],
+            authenticationType: AuthenticationExtensions.ApiKeyScheme));
 
     [Fact]
     public async Task Forbid_WhenAuditSinkThrows_StillForbids()

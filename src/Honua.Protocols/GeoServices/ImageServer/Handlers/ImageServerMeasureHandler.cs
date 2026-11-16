@@ -106,7 +106,7 @@ internal sealed class ImageServerMeasureHandler
             {
                 return await MeasureDemHeightAsync(
                     context, layerId, raster, rasterName, fromGeometry.Points[0], toGeometry.Value.Points[0],
-                    GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
+                    ImageServerRequestValues.GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
             // Shadow-based height mensuration (#2667/ADR-0065): the object height is derived from the
@@ -119,7 +119,7 @@ internal sealed class ImageServerMeasureHandler
             {
                 return await MeasureShadowHeightAsync(
                     context, layerId, raster, rasterName, fromGeometry.Points[0], toGeometry.Value.Points[0],
-                    operation, GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
+                    operation, ImageServerRequestValues.GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
             if (IsSensorDependentOperation(operation))
@@ -129,9 +129,9 @@ internal sealed class ImageServerMeasureHandler
                     "Sensor-dependent ImageServer mensuration requires sensor/DEM metadata that is not modeled on this service.");
             }
 
-            var linearUnit = GetString(values, "linearUnit") ?? "esriMeters";
-            var angularUnit = GetString(values, "angularUnit") ?? "esriDUDecimalDegrees";
-            var areaUnit = GetString(values, "areaUnit") ?? "esriSquareMeters";
+            var linearUnit = ImageServerRequestValues.GetString(values, "linearUnit") ?? "esriMeters";
+            var angularUnit = ImageServerRequestValues.GetString(values, "angularUnit") ?? "esriDUDecimalDegrees";
+            var areaUnit = ImageServerRequestValues.GetString(values, "areaUnit") ?? "esriSquareMeters";
 
             var response = operation.ToLowerInvariant() switch
             {
@@ -183,7 +183,7 @@ internal sealed class ImageServerMeasureHandler
         out MeasureGeometry? toGeometry,
         out string? error)
     {
-        operation = GetString(values, "measureOperation") ?? string.Empty;
+        operation = ImageServerRequestValues.GetString(values, "measureOperation") ?? string.Empty;
         fromGeometry = default;
         toGeometry = null;
         error = null;
@@ -194,8 +194,8 @@ internal sealed class ImageServerMeasureHandler
             return false;
         }
 
-        var geometryType = GetString(values, "geometryType") ?? "esriGeometryPoint";
-        if (!TryParseGeometry(GetString(values, "fromGeometry"), geometryType, serviceSrid, "fromGeometry", out fromGeometry, out error))
+        var geometryType = ImageServerRequestValues.GetString(values, "geometryType") ?? "esriGeometryPoint";
+        if (!TryParseGeometry(ImageServerRequestValues.GetString(values, "fromGeometry"), geometryType, serviceSrid, "fromGeometry", out fromGeometry, out error))
         {
             return false;
         }
@@ -208,7 +208,7 @@ internal sealed class ImageServerMeasureHandler
             "esrimensurationheightfromtopandtopshadow";
         if (requiresToGeometry)
         {
-            if (!TryParseGeometry(GetString(values, "toGeometry"), geometryType, serviceSrid, "toGeometry", out var parsedTo, out error))
+            if (!TryParseGeometry(ImageServerRequestValues.GetString(values, "toGeometry"), geometryType, serviceSrid, "toGeometry", out var parsedTo, out error))
             {
                 return false;
             }
@@ -284,7 +284,7 @@ internal sealed class ImageServerMeasureHandler
                 return false;
             }
 
-            var srid = ReadWkid(root) ?? serviceSrid;
+            var srid = ImageServerGeometryHelpers.ReadWkid(root) ?? serviceSrid;
             if (normalizedType == "esriGeometryPoint")
             {
                 if (!TryGetJsonDouble(root, "x", out var x) ||
@@ -792,30 +792,6 @@ internal sealed class ImageServerMeasureHandler
         };
     }
 
-    private static int? ReadWkid(JsonElement root)
-    {
-        if (!root.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (sr.TryGetProperty("latestWkid", out var latest) &&
-            latest.ValueKind == JsonValueKind.Number &&
-            latest.TryGetInt32(out var latestWkid))
-        {
-            return latestWkid;
-        }
-
-        if (sr.TryGetProperty("wkid", out var wkid) &&
-            wkid.ValueKind == JsonValueKind.Number &&
-            wkid.TryGetInt32(out var wkidValue))
-        {
-            return wkidValue;
-        }
-
-        return null;
-    }
-
     private static bool TryGetJsonDouble(JsonElement element, string propertyName, out double value)
     {
         value = 0d;
@@ -826,7 +802,4 @@ internal sealed class ImageServerMeasureHandler
 
     private static double DegreesToRadians(double degrees)
         => degrees * Math.PI / 180d;
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

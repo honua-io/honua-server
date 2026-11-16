@@ -410,7 +410,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         string? schemaName = "public", string tableName = "pool_probe", bool smallintHint = false)
         => new(harness.Primary,
             new DefaultObjectPoolProvider().Create(new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy()),
-            new MetadataV2Resource
+            new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "pool-probe", Name = "pool-probe" },
                 SchemaFields = [new MetadataV2Field { Name = "name", Type = smallintHint ? MetadataV2FieldType.Integer : MetadataV2FieldType.String }]

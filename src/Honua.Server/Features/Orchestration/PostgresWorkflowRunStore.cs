@@ -14,7 +14,8 @@ namespace Honua.Server.Features.Orchestration;
 
 internal sealed class PostgresWorkflowRunStore(
     ControlPlaneStorage storage,
-    IOptions<ControlPlaneRetentionOptions> retention) : IWorkflowRunStore, IExpiredRowSweep
+    IOptions<ControlPlaneRetentionOptions> retention,
+    PollWakeSignal<IWorkflowRunStore>? wake = null) : IWorkflowRunStore, IExpiredRowSweep
 {
     private readonly string _runs = storage.Database.Table("workflow_runs");
     private readonly OperationLeases _leases = new(storage.Leases, "workflow-run:");
@@ -30,17 +31,28 @@ internal sealed class PostgresWorkflowRunStore(
     public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
         => _leases.ReleaseAsync(new LeaseClaim(operationId, ownerId), cancellationToken);
 
-    public Task<bool> TryCreateAsync(WorkflowRun run, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        => WriteAsync($"INSERT INTO {_runs} ({Columns}) VALUES ({Values}) ON CONFLICT (run_id) DO NOTHING",
-            new RunWrite(run, ttl ?? retention.Value.WorkflowRuns), cancellationToken);
+    public async Task<bool> TryCreateAsync(WorkflowRun run, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+    {
+        var created = await WriteAsync($"INSERT INTO {_runs} ({Columns}) VALUES ({Values}) ON CONFLICT (run_id) DO NOTHING",
+            new RunWrite(run, ttl ?? retention.Value.WorkflowRuns), cancellationToken).ConfigureAwait(false);
+        if (created)
+        {
+            wake?.Wake();
+        }
+
+        return created;
+    }
 
     public async Task SetAsync(WorkflowRun run, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        => await WriteAsync($"""
+    {
+        await WriteAsync($"""
             INSERT INTO {_runs} ({Columns}) VALUES ({Values})
             ON CONFLICT (run_id) DO UPDATE SET workflow_id = excluded.workflow_id,
                 active = excluded.active, created_at = excluded.created_at,
                 expires_at = excluded.expires_at, record = excluded.record
             """, new RunWrite(run, ttl ?? retention.Value.WorkflowRuns), cancellationToken).ConfigureAwait(false);
+        wake?.Wake();
+    }
 
     public Task<WorkflowRun?> GetAsync(string runId, CancellationToken cancellationToken = default)
     {

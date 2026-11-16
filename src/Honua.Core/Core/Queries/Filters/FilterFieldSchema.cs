@@ -10,14 +10,14 @@ namespace Honua.Core.Queries.Filters;
 
 public readonly struct FilterFieldSchema
 {
-    private readonly MetadataV2Resource? _resource;
+    private readonly MetadataV2Object? _resource;
 
-    private FilterFieldSchema(MetadataV2Resource? resource)
+    private FilterFieldSchema(MetadataV2Object? resource)
     {
         _resource = resource;
     }
 
-    public static FilterFieldSchema From(MetadataV2Resource resource)
+    public static FilterFieldSchema From(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return new FilterFieldSchema(resource);

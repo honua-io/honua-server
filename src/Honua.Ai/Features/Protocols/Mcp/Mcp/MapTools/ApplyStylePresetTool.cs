@@ -90,12 +90,6 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             ResourceType = OperatorResourceType.Catalog,
             Operation = OperatorOperation.Publish,
         });
-        if (approval.IsRequired)
-        {
-            throw new GeoprocessingApprovalRequiredException(
-                approval.PolicyRef ?? "operator.publish");
-        }
-
         var argument = McpToolHelpers.ParseArguments(arguments, MapToolJsonContext.Default.McpApplyStylePresetArgument);
 
         if (string.IsNullOrWhiteSpace(argument.StyleId))
@@ -126,7 +120,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
                 + "List presets with honua_get_style (omit styleId).");
         }
 
-        var operation = await invoker.SubmitAsync(new OperationRequest
+        var request = new OperationRequest
         {
             OperationId = "style.apply-preset",
             DryRun = argument.DryRun,
@@ -136,7 +130,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
                 ["serviceLayerIndex"] = argument.ServiceLayerIndex!.Value.ToString(CultureInfo.InvariantCulture),
                 ["styleId"] = styleId,
             },
-        }, new OperationPolicyContext
+        };
+        var policyContext = new OperationPolicyContext
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             AuthorizationOutcome = authorization.AuthorizationOutcome,
@@ -148,7 +143,18 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                 .OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
-        }, cancellationToken).ConfigureAwait(false);
+        };
+        OperationHandle operation;
+        if (approval.IsRequired && !request.DryRun)
+        {
+            var proposer = invoker as IOperationProposalSubmitter
+                ?? throw new GeoprocessingStoreUnavailableException("The style proposal runtime is not available on this server.");
+            operation = await proposer.ProposeAsync(request, policyContext, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            operation = await invoker.SubmitAsync(request, policyContext, cancellationToken).ConfigureAwait(false);
+        }
         if (operation.Status == OperationHandleStatus.RequiresApproval)
         {
             throw new GeoprocessingApprovalRequiredException(

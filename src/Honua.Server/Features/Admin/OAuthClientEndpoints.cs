@@ -22,7 +22,8 @@ internal static partial class OAuthClientEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OAuth Clients")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         clients.MapGet("/", HandleListClients)
             .WithDisplayName("List OAuth Clients")
@@ -49,7 +50,8 @@ internal static partial class OAuthClientEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OAuth Scopes")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         scopes.MapGet("/", HandleListScopes)
             .WithDisplayName("List OAuth Scopes")
@@ -58,12 +60,12 @@ internal static partial class OAuthClientEndpoints
         scopes.MapPut("/", HandleDefineScope)
             .WithDisplayName("Define OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         scopes.MapDelete("/{scope}", HandleDeleteScope)
             .WithDisplayName("Delete OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<OAuthClientResponse>>>> HandleListClients(

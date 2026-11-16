@@ -40,6 +40,7 @@ internal static partial class TenantAdminEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tenants")
             .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
             .AddEndpointFilter((invocationContext, next) =>
             {
                 var context = invocationContext.HttpContext;

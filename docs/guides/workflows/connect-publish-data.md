@@ -1,7 +1,7 @@
 ---
 type: "guide"
 title: "Connect and publish existing data"
-description: "Expose an authorized dataset through a published layer and explicitly configured service."
+description: "Expose an authorized dataset through a Layer and explicitly configured service."
 tags:
   - "gis"
   - "domain-language"
@@ -16,7 +16,7 @@ sources:
     resource: "/reference/admin-api/connections-and-layers.md"
 workflow:
   profile: "honua.gis-workflow/v1"
-  intent: "Expose an authorized dataset through a published layer and explicitly configured service."
+  intent: "Expose an authorized dataset through a Layer and explicitly configured service."
   inputs:
     -
       name: "source"
@@ -116,7 +116,7 @@ workflow:
         -
           name: "layer"
           concept: "/concepts/domain/layer.md"
-          description: "Created or reconciled published layer."
+          description: "Created or reconciled Layer."
       effect: "create"
       effectTarget: "catalog_configuration"
       preconditions:
@@ -192,7 +192,7 @@ workflow:
 
 Start by resolving the [dataset](../../concepts/domain/dataset.md), [connection](../../concepts/domain/connection.md), and destination [service](../../concepts/domain/service.md). Testing a connection does not publish its tables.
 
-Choose storage behavior deliberately. A source-backed layer retains the source table as authority. Managed publication copies records into a managed store, which becomes authoritative for that published layer. Source-backed publication does not supply feature writes. This workflow publishes data; it does not authorize AI edits of source records.
+Choose storage behavior deliberately. A source-backed layer retains the source table as authority. Managed publication copies records into a managed store, which becomes authoritative for that Layer. Source-backed publication does not supply feature writes. This workflow publishes data; it does not authorize AI edits of source records.
 
 Validate fields, geometry, CRS, source rights, and the intended read policy. Publish the selected table into the intended service once, then configure only the needed protocol exposure. Changing the catalog does not itself imply anonymous access.
 

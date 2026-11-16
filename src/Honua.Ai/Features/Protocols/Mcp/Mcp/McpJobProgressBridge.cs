@@ -121,7 +121,7 @@ internal sealed class McpJobProgressBridge
 
             if (first || progress != lastProgress || !string.Equals(phase, lastPhase, StringComparison.Ordinal))
             {
-                _publisher.PublishProgress(sessionId, jobId, progress, ProgressTotal, phase);
+                await _publisher.PublishProgress(sessionId, jobId, progress, ProgressTotal, phase).ConfigureAwait(false);
                 lastProgress = progress;
                 lastPhase = phase;
                 first = false;

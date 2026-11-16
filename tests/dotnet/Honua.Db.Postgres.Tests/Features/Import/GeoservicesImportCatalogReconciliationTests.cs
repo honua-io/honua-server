@@ -111,11 +111,11 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
         var provider = new FixtureConnectionProvider(fixture);
         var graphStore = new PostgresMetadataV2GraphStore(provider, $"Reproject-{Guid.NewGuid():N}",
             FixtureBypassDatabaseSchemaGuard.Instance);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "reprojected", Name = "Reprojected" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

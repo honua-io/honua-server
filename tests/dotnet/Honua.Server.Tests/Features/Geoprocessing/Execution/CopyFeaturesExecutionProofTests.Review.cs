@@ -23,7 +23,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
     [Fact]
     public async Task CopyFeatures_MaskedRequiredField_CopiesRedactedValuesAndNullableSchema()
     {
-        _masks.ResolveAsync(Arg.Is<MetadataV2Resource>(r => r.Metadata.Id == _sourceResource.Metadata.Id), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Is<MetadataV2Object>(r => r.Metadata.Id == _sourceResource.Metadata.Id), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("label"));
         var result = await _fixture.GetService<IFeatureLayerCopyService>().CopyAsync(_sourceId, "Masked copy",
             new FeatureQuery(), Guid.NewGuid().ToString("N"), 1_000_000, CancellationToken.None);
@@ -45,7 +45,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
             Convert.ToInt32(row.Attributes["score"], System.Globalization.CultureInfo.InvariantCulture)
                 .Should().Be(row.Id switch { 11 => 7, 13 => 14, 15 => 21, _ => -1 });
         }
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>()).Returns(ImmutableArray<string>.Empty);
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>()).Returns(ImmutableArray<string>.Empty);
         await AssertRows(_sourceId, [11, 13, 15]);
     }
 
@@ -125,7 +125,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
         var temporal = _sourceResource with
         {
             SchemaFields = [.. _sourceResource.SchemaFields, new MetadataV2Field { Name = "observed", Type = MetadataV2FieldType.DateTime, Nullable = false }],
-            Temporal = new MetadataV2ResourceTemporal
+            Temporal = new MetadataV2ObjectTemporal
             {
                 StartTimeField = "observed",
                 Extent = new MetadataV2TimeRange
@@ -141,7 +141,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
         }, before.Etag);
         if (maskTime)
         {
-            _masks.ResolveAsync(Arg.Is<MetadataV2Resource>(r => r.Metadata.Id == _sourceResource.Metadata.Id), Arg.Any<CancellationToken>())
+            _masks.ResolveAsync(Arg.Is<MetadataV2Object>(r => r.Metadata.Id == _sourceResource.Metadata.Id), Arg.Any<CancellationToken>())
                 .Returns(ImmutableArray.Create("observed"));
         }
         var result = await _fixture.GetService<IFeatureLayerCopyService>().CopyAsync(_sourceId, "Temporal copy",
@@ -159,7 +159,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
         var resolved = range!.Value;
         resolved.Min.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
         resolved.Max.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, objectIds is null ? 5 : 3, 0, 0, 0, TimeSpan.Zero));
-        _masks.ResolveAsync(Arg.Is<MetadataV2Resource>(r => r.Metadata.Id == target.Metadata.Id), Arg.Any<CancellationToken>())
+        _masks.ResolveAsync(Arg.Is<MetadataV2Object>(r => r.Metadata.Id == target.Metadata.Id), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("observed"));
         var redactedRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
         redactedRange.Should().NotBeNull();

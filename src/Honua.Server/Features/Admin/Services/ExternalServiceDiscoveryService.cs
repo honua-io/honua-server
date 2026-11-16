@@ -1,27 +1,27 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net;
-using System.Net.Http.Json;
 using System.Globalization;
-using System.Text;
+using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
-using System.Xml;
+using System.Text;
 using System.Xml.Linq;
+using System.Xml;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Validation;
-using Honua.Server.Features.Admin.Models;
-using Honua.Import;
-using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Import;
+using Honua.Migration;
+using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin.Services;
 
 internal sealed partial class ExternalServiceDiscoveryService(
     IHttpClientFactory httpClientFactory,
     IExternalServiceDiscoveryNetworkGuard networkGuard,
-    ILogger<ExternalServiceDiscoveryService> logger) : IExternalServiceDiscoveryService
+    ILogger<ExternalServiceDiscoveryService> logger)
 {
     internal const string HttpClientName = "external-service-discovery";
     private const int DefaultTimeoutSeconds = 30;

@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_partition
+from shard_capacity_partition import PartitionSource, check_partition, current_source_paths
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -16,6 +16,14 @@ EVIDENCE = json.loads((ROOT / "eng/ci/fixtures/shard-capacity/wms.json").read_te
 ORIGINAL = EVIDENCE["originalShard"]
 NAMES = ("OGC Classic Maps Core", "OGC Classic Maps Supporting")
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
+CATALOG_PATHS = [
+    "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/",
+    "src/Honua.Core/Core/Features/Metadata/Services/",
+    "src/Honua.Protocols/OgcClassic/CatalogCapabilitiesXml.cs",
+    "src/Honua.Protocols/OgcClassic/Wcs20/",
+    "src/Honua.Protocols/OgcClassic/Wfs20/",
+    "src/Honua.Protocols/OgcClassic/Wmts/",
+]
 PROJECT = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj"
 CLASS = "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests"
 CLASSES = MODULE.enumerate_test_classes()
@@ -28,7 +36,11 @@ assert EVIDENCE["trxPresent"] is False and EVIDENCE["qualification"] == "not-eva
 
 
 def check(children):
-    selected = check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, children)
+    original_paths = current_source_paths(ORIGINAL["paths"])
+    assert children[1]["paths"] == original_paths + CATALOG_PATHS, "Catalog triggers changed."
+    capacity_children = copy.deepcopy(children)
+    capacity_children[1]["paths"] = original_paths
+    selected = check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, capacity_children)
     assert selected[0] == MAIN, "The measured main class changed ownership."
     return list(map(len, selected))
 
@@ -47,7 +59,9 @@ for override in CONFIG["targeted_override_prefixes"]:
 assert len(CONFIG["shards"]) == len({s["shard_name"] for s in CONFIG["shards"]})
 first = sorted(MAIN)[0]
 foreign = sorted(set(METHODS) - EXPECTED)[0]
-for mutation in ("lost", "duplicated", "foreign", "trigger", "budget", "parallelism", "project", "swapped"):
+MUTATIONS = ("lost", "duplicated", "foreign", "trigger", "catalog-trigger", "unexpected-trigger",
+             "budget", "parallelism", "project", "swapped")
+for mutation in MUTATIONS:
     changed = copy.deepcopy(CHILDREN)
     if mutation == "lost":
         changed[0]["filter"] += "&FullyQualifiedName!=" + first
@@ -57,6 +71,10 @@ for mutation in ("lost", "duplicated", "foreign", "trigger", "budget", "parallel
         changed[1]["filter"] += "|FullyQualifiedName=" + foreign
     elif mutation == "trigger":
         changed[0]["paths"] = changed[0]["paths"][1:]
+    elif mutation == "catalog-trigger":
+        changed[1]["paths"].pop()
+    elif mutation == "unexpected-trigger":
+        changed[1]["paths"].append("src/Honua.Ai/")
     elif mutation == "budget":
         changed[0]["test_timeout_minutes"] += 1
     elif mutation == "parallelism":
@@ -71,4 +89,4 @@ for mutation in ("lost", "duplicated", "foreign", "trigger", "budget", "parallel
         pass
     else:
         raise AssertionError(f"{mutation} mutation was accepted")
-print(f"wms-capacity-partition=ok original_methods={len(EXPECTED)} child_methods={counts} negatives=8 budgets=unchanged roster_shards={len(CONFIG['shards'])}")
+print(f"wms-capacity-partition=ok original_methods={len(EXPECTED)} child_methods={counts} negatives={len(MUTATIONS)} budgets=unchanged roster_shards={len(CONFIG['shards'])}")

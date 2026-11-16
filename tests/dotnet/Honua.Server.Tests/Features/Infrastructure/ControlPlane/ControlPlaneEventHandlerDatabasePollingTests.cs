@@ -34,8 +34,6 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<JobExecutionService>(services).Should().BeFalse();
         Hosts<NetworkTopologyRebuildReconcilerBackgroundService>(services).Should().BeFalse();
         Hosts<MigrationBatchBackgroundService>(services).Should().BeFalse();
-        Hosts<GeoservicesImportBackgroundService>(services).Should().BeFalse();
-        Hosts<GeoServerImportBackgroundService>(services).Should().BeFalse();
         Hosts<OpsHealthRollupSampler>(services).Should().BeFalse();
         Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeFalse();
     }
@@ -49,8 +47,6 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<JobExecutionService>(services).Should().BeTrue();
         Hosts<NetworkTopologyRebuildReconcilerBackgroundService>(services).Should().BeTrue();
         Hosts<MigrationBatchBackgroundService>(services).Should().BeTrue();
-        Hosts<GeoservicesImportBackgroundService>(services).Should().BeTrue();
-        Hosts<GeoServerImportBackgroundService>(services).Should().BeTrue();
         Hosts<OpsHealthRollupSampler>(services).Should().BeTrue();
         Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeTrue();
     }

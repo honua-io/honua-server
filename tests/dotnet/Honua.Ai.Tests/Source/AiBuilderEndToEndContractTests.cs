@@ -35,7 +35,7 @@ public sealed class AiBuilderEndToEndContractTests
     private const string OperationsDashboardPrompt =
         "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.";
 
-    private static readonly MetadataV2Resource FacilitiesResource = NlQueryTestResources.CriticalFacilities;
+    private static readonly MetadataV2Object FacilitiesResource = NlQueryTestResources.CriticalFacilities;
 
     private static (DeterministicNlQueryPlanProvider Nl, PlanAnalysisTool Planner) BuildServices()
     {

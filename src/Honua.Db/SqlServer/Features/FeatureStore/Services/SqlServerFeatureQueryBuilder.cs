@@ -11,19 +11,10 @@ using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
-/// <summary>
-/// Translates a <see cref="FeatureQuery"/> into parameterized T-SQL for the SQL Server
-/// spatial provider. All identifiers are validated and bracket-quoted; all literal values
-/// flow through SQL parameters.
-/// </summary>
 internal static partial class SqlServerFeatureQueryBuilder
 {
     internal const string ProviderLabel = "SQL Server";
 
-    /// <summary>
-    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
-    /// geometry column is configured), and any requested attribute columns.
-    /// </summary>
     public static ParameterizedQuery BuildSelectQuery(SqlServerLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -75,18 +66,9 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
-    /// </summary>
     public static ParameterizedQuery BuildCountQuery(SqlServerLayerMapping mapping, FeatureQuery query)
         => BuildCountQuery(mapping, query, attributeColumns: null);
 
-    /// <summary>
-    /// Builds a count for <paramref name="query"/>. When <see cref="FeatureQuery.Distinct"/> is set,
-    /// the count is the number of distinct projected attribute tuples, not the raw row count.
-    /// WHERE fields must be the primary key, the geometry column, or one of
-    /// <paramref name="attributeColumns"/>; a <see langword="null"/> list admits no attributes.
-    /// </summary>
     public static ParameterizedQuery BuildCountQuery(
         SqlServerLayerMapping mapping,
         FeatureQuery query,
@@ -136,11 +118,6 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
-    /// listings when only identifiers are needed. WHERE and ORDER BY fields must be declared on
-    /// the layer (primary key, geometry, or <paramref name="attributeColumns"/>).
-    /// </summary>
     public static ParameterizedQuery BuildObjectIdsQuery(
         SqlServerLayerMapping mapping,
         FeatureQuery query,
@@ -167,14 +144,6 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Builds an extent query using <c>geometry::EnvelopeAggregate</c> or
-    /// <c>geography::EnvelopeAggregate</c> (both SQL Server 2012+). The corner extraction
-    /// uses geometry-typed <c>STX</c>/<c>STY</c> properties for planar layers and
-    /// geography-typed <c>Long</c>/<c>Lat</c> properties for geodetic layers, since SQL Server
-    /// exposes a different point coordinate API per spatial type. WHERE fields must be declared on
-    /// the layer (primary key, geometry, or <paramref name="attributeColumns"/>).
-    /// </summary>
     public static ParameterizedQuery BuildExtentQuery(
         SqlServerLayerMapping mapping,
         FeatureQuery? query,
@@ -215,15 +184,6 @@ internal static partial class SqlServerFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    /// <summary>
-    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the SQL Server provider cannot
-    /// translate. Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features
-    /// (<c>datetime</c>), STAC search, and OData time-window queries. The provider does not yet
-    /// emit T-SQL temporal predicates, so the filter is surfaced as an eager
-    /// <see cref="NotSupportedException"/> — never silently dropped, which would return rows
-    /// outside the requested window (a correctness/data-leak bug). Mirrors the fail-loud
-    /// contract of the MySQL/Redshift/Databricks providers (temporal GA hardening, #2429).
-    /// </summary>
     private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
     {
         if (query.TemporalFilter.HasValue)
@@ -234,11 +194,6 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Recovers provider-neutral constraints from a Postgres-translated <see cref="FeatureQuery.SqlFilter"/>.
-    /// A pure integral <c>IN</c> list is lifted only when its target is the object id or the
-    /// layer primary key. Attribute <c>IN</c> lists and <c>NOT IN</c> stay unlifted.
-    /// </summary>
     internal static FeatureQuery NormalizeConstraints(
         FeatureQuery query,
         SqlFragment? translationOfWhere,
@@ -542,11 +497,6 @@ internal static partial class SqlServerFeatureQueryBuilder
     private static bool IsPaging(FeatureQuery query)
         => query.Limit.HasValue || query.Offset is > 0;
 
-    /// <summary>
-    /// Orders a DISTINCT projection by columns that appear in the select list. SQL Server
-    /// rejects ORDER BY expressions that are not projected, and the primary key is not part
-    /// of a distinct-values tuple.
-    /// </summary>
     private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
     {
         var clauses = new List<string>();
@@ -616,32 +566,17 @@ internal static partial class SqlServerFeatureQueryBuilder
         IReadOnlyList<string> attributeColumns,
         List<object> parameters)
     {
-        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
-        if (expressions.Count == 0)
+        var rendered = new List<string>();
+        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Warehouse))
         {
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        var rendered = new List<string>(expressions.Count);
-        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
-        // throw, mutate the shared `parameters` accumulator, and `continue` early per
-        // branch -- not a pure map of one iteration variable to another.
-        foreach (var trimmed in (expressions).Select(raw => raw.Trim()))
-        {
-            if (trimmed.Length == 0)
-            {
-                throw new ArgumentException("WHERE clause format not supported.");
-            }
-
-            if (trimmed.Equals("1=1", StringComparison.Ordinal) ||
-                trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            if (expression.Kind == LegacyWhereExpressionKind.True)
             {
                 rendered.Add("1=1");
                 continue;
             }
 
-            var nullMatch = NullCheckRegex().Match(trimmed);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
@@ -652,30 +587,30 @@ internal static partial class SqlServerFeatureQueryBuilder
                 continue;
             }
 
-            var inMatch = InExpressionRegex().Match(trimmed);
-            if (inMatch.Success)
+            var inMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = inMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var placeholders = new List<string>();
-                foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
+                foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
                 {
                     placeholders.Add("@p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
-                    parameters.Add(ParseValueToken(valueMatch.Value));
+                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value));
                 }
                 rendered.Add($"{SqlServerIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
-            var compMatch = ComparisonRegex().Match(trimmed);
-            if (compMatch.Success)
+            var compMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
                 SqlServerIdentifier.EnsureValid(field, "WHERE column");
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var op = NormalizeOperator(compMatch.Groups["op"].Value);
-                var value = ParseValueToken(compMatch.Groups["value"].Value);
+                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
+                var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value);
 
                 var paramName = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(value);
@@ -714,50 +649,5 @@ internal static partial class SqlServerFeatureQueryBuilder
         return declared ?? throw new ArgumentException(
             $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
     }
-
-
-    private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
-    {
-        "NOT LIKE" => "NOT LIKE",
-        "LIKE" => "LIKE",
-        ">=" => ">=",
-        "<=" => "<=",
-        "!=" or "<>" => "<>",
-        "=" => "=",
-        ">" => ">",
-        "<" => "<",
-        _ => throw new ArgumentException($"Unsupported operator: {op}")
-    };
-
-    private static object ParseValueToken(string valueToken)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return valueToken[1..^1].Replace("''", "'", StringComparison.Ordinal);
-        }
-
-        if (decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
-        {
-            return num;
-        }
-
-        return valueToken;
-    }
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex InExpressionRegex();
-
-    [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
-    private static partial Regex InValueRegex();
 
 }

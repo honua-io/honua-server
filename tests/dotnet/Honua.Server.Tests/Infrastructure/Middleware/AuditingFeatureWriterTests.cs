@@ -8,6 +8,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Middleware;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
@@ -156,7 +157,7 @@ public sealed class AuditingFeatureWriterTests
         _auditLog.Events.Should().ContainSingle();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(FeatureWriterTransactionCommitOutcome.Committed, AuditOutcome.Success)]
     [InlineData(FeatureWriterTransactionCommitOutcome.Unknown, AuditOutcome.Failure)]
     [InlineData(FeatureWriterTransactionCommitOutcome.SupersededByExistingReceipt, AuditOutcome.Failure)]

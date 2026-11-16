@@ -43,7 +43,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         _logger = logger;
     }
 
-    public async Task<SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+    public async Task<SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
     {
         var predicates = await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false);
         SqlFragment? combined = null;
@@ -56,12 +56,12 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     }
 
     public async Task<IReadOnlyList<FilterExpression>> ResolveExpressionsAsync(
-        MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        MetadataV2Object resource, CancellationToken cancellationToken = default)
         => (await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false))
             .Select(static predicate => predicate.Expression).ToArray();
 
     private async Task<IReadOnlyList<(FilterExpression Expression, SqlFragment Sql)>> ResolvePredicatesAsync(
-        MetadataV2Resource resource, CancellationToken cancellationToken)
+        MetadataV2Object resource, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -134,7 +134,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     }
 
     private async Task<IReadOnlyCollection<string>> ResolveServiceNamesAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         try
@@ -149,7 +149,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         }
     }
 
-    private (FilterExpression Expression, SqlFragment Sql) BuildPredicate(RlsPolicy policy, ClaimsPrincipal principal, MetadataV2Resource resource)
+    private (FilterExpression Expression, SqlFragment Sql) BuildPredicate(RlsPolicy policy, ClaimsPrincipal principal, MetadataV2Object resource)
     {
         var values = principal
             .FindAll(policy.ClaimType)

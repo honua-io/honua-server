@@ -6,18 +6,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Session;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IDatabaseSessionFactory"/>.
-/// Wraps <see cref="IAdoNetDatabaseConnectionProvider"/> internally so that the
-/// existing resilience, concurrency-gate, schema-search-path, and tracking
-/// behaviour is reused without duplication.
-/// </summary>
-/// <remarks>
-/// During the audit C3 migration window (ADR 0046) both the legacy provider
-/// and the new factory are registered in DI; consumers migrate progressively
-/// from <see cref="IAdoNetDatabaseConnectionProvider"/> to
-/// <see cref="IDatabaseSessionFactory"/>.
-/// </remarks>
 internal sealed class PostgresDatabaseSessionFactory : IDatabaseSessionFactory
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

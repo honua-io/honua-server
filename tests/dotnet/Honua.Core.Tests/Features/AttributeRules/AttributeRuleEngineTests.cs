@@ -266,7 +266,7 @@ public sealed class AttributeRuleEngineTests
         AssertFires(resource, AttributeRuleEditEvent.Update, firesOnUpdate);
         AssertFires(resource, AttributeRuleEditEvent.Delete, firesOnDelete);
 
-        static void AssertFires(MetadataV2Resource resource, AttributeRuleEditEvent editEvent, bool shouldFire)
+        static void AssertFires(MetadataV2Object resource, AttributeRuleEditEvent editEvent, bool shouldFire)
         {
             var result = AttributeRuleEngine.Apply(
                 resource,
@@ -326,7 +326,7 @@ public sealed class AttributeRuleEngineTests
         result.Attributes["code"].Should().Be("AB");
     }
 
-    private static MetadataV2Resource ResourceWithRules(params MetadataV2AttributeRule[] rules)
+    private static MetadataV2Object ResourceWithRules(params MetadataV2AttributeRule[] rules)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "Test" },
@@ -348,7 +348,7 @@ public sealed class AttributeRuleEngineTests
     {
         public List<string> Unsupported { get; } = new();
 
-        public void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule)
+        public void OnUnsupported(MetadataV2Object resource, MetadataV2AttributeRule rule)
             => Unsupported.Add(rule.Name);
     }
 }

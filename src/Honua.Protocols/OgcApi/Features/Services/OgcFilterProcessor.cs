@@ -19,14 +19,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Simple bounding box representation.
-/// </summary>
 internal sealed record BoundingBox(double MinX, double MinY, double MaxX, double MaxY);
 
-/// <summary>
-/// Processes and combines CQL2, spatial, and temporal filters for OGC Features queries.
-/// </summary>
 internal sealed partial class OgcFilterProcessor
 {
     private const string InvalidCqlFilterPrefix = "Invalid CQL filter";
@@ -35,9 +29,6 @@ internal sealed partial class OgcFilterProcessor
     private const string InvalidFilterProcessingMessage = "Invalid filter parameters.";
     private const string InvalidCqlSyntaxMessage = "Syntax error in filter expression.";
 
-    /// <summary>
-    /// Result of filter processing operation.
-    /// </summary>
     internal sealed class FilterProcessingResult
     {
         public bool IsSuccess { get; init; }
@@ -89,12 +80,9 @@ internal sealed partial class OgcFilterProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Processes all filter types against a V2 canonical resource.
-    /// </summary>
     public async Task<FilterProcessingResult> ProcessFiltersAsync(
         HttpRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? filter,
         string? bbox,
         string? datetime,
@@ -275,7 +263,7 @@ internal sealed partial class OgcFilterProcessor
     private CqlFilterResult ProcessCql2JsonFilter(
         string? filter,
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         FilterExpression? jsonFilterExpression = null;
         var jsonParseResult = _filterExpressionService.Parse(FilterLanguage.Cql2Json, filter);
@@ -310,7 +298,7 @@ internal sealed partial class OgcFilterProcessor
     private CqlFilterResult ProcessCql2TextFilter(
         string? filter,
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var combinedResult = TryBuildCombinedFilter(filter, request, resource);
         if (!combinedResult.IsSuccess)
@@ -361,7 +349,7 @@ internal sealed partial class OgcFilterProcessor
     private static CombinedFilterResult TryBuildCombinedFilter(
         string? filter,
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var fragments = new List<string>();
 
@@ -444,7 +432,7 @@ internal sealed partial class OgcFilterProcessor
         }
     }
 
-    private static TemporalFilterResult ProcessTemporalFilter(string? datetime, MetadataV2Resource resource)
+    private static TemporalFilterResult ProcessTemporalFilter(string? datetime, MetadataV2Object resource)
     {
         if (!OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out var rangeError))
         {
@@ -468,7 +456,7 @@ internal sealed partial class OgcFilterProcessor
     private BboxFilterResult ProcessBboxFilter(
         string? bboxValue,
         CrsDefinition crsDefinition,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var bboxResult = TryParseBbox(bboxValue, crsDefinition);
         if (!bboxResult.IsSuccess)

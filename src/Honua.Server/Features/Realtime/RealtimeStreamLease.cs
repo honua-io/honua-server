@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Coordination;
@@ -18,14 +17,17 @@ internal sealed class RealtimeStreamLease : IRealtimeStreamLease
     private readonly TimeSpan _renewalInterval;
     private readonly ILeaseStore _leases;
     private readonly LeaseClaim _claim;
-    private readonly CancellationTokenSource _lost = new();
+    private readonly CancellationTokenSource _lost;
+    private readonly TimeProvider _timeProvider;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _renewal;
     private long _confirmedAt;
     private int _disposed;
 
-    private RealtimeStreamLease(ILeaseStore leases, LeaseClaim claim, long confirmedAt, TimeSpan duration, TimeSpan renewalInterval)
+    private RealtimeStreamLease(ILeaseStore leases, LeaseClaim claim, long confirmedAt, TimeSpan duration, TimeSpan renewalInterval, TimeProvider timeProvider)
     {
+        _timeProvider = timeProvider;
+        _lost = new CancellationTokenSource(duration, timeProvider);
         _duration = duration;
         _renewalInterval = renewalInterval;
         _leases = leases;
@@ -35,14 +37,15 @@ internal sealed class RealtimeStreamLease : IRealtimeStreamLease
         _renewal = RenewAsync();
     }
 
-    public bool IsHeld => !_lost.IsCancellationRequested && Stopwatch.GetElapsedTime(Interlocked.Read(ref _confirmedAt)) < _duration;
+    public bool IsHeld => !_lost.IsCancellationRequested && _timeProvider.GetElapsedTime(Interlocked.Read(ref _confirmedAt)) < _duration;
 
     public CancellationToken LostToken => _lost.Token;
 
     internal static async ValueTask<IRealtimeStreamLease?> TryAcquireAsync(
         ILeaseStore leases, string sessionId, CancellationToken cancellationToken,
-        TimeSpan? duration = null, TimeSpan? renewalInterval = null)
+        TimeSpan? duration = null, TimeSpan? renewalInterval = null, TimeProvider? timeProvider = null)
     {
+        var clock = timeProvider ?? TimeProvider.System;
         var lifetime = duration ?? TimeSpan.FromSeconds(30);
         var interval = renewalInterval ?? TimeSpan.FromSeconds(10);
         if (lifetime <= TimeSpan.Zero || interval <= TimeSpan.Zero || interval >= lifetime)
@@ -52,25 +55,25 @@ internal sealed class RealtimeStreamLease : IRealtimeStreamLease
         // Hashing keeps arbitrary session IDs inside the shared store's bounded key contract.
         var key = "realtime:mcp-stream:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId)));
         var claim = new LeaseClaim(key, Guid.NewGuid().ToString("N"));
-        var before = Stopwatch.GetTimestamp();
+        var before = clock.GetTimestamp();
         if (!await leases.TryAcquireAsync(claim, lifetime, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
 
-        if (Stopwatch.GetElapsedTime(before) >= lifetime)
+        if (clock.GetElapsedTime(before) >= lifetime)
         {
             // The acquisition may already have expired; it is never safe to deliver on it.
             await leases.ReleaseAsync(claim, cancellationToken).ConfigureAwait(false);
             return null;
         }
 
-        return new RealtimeStreamLease(leases, claim, before, lifetime, interval);
+        return new RealtimeStreamLease(leases, claim, before, lifetime, interval, clock);
     }
 
     private void ScheduleDeadline(long confirmedAt)
     {
-        var remaining = _duration - Stopwatch.GetElapsedTime(confirmedAt);
+        var remaining = _duration - _timeProvider.GetElapsedTime(confirmedAt);
         _lost.CancelAfter(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
     }
 
@@ -81,10 +84,10 @@ internal sealed class RealtimeStreamLease : IRealtimeStreamLease
         {
             while (IsHeld)
             {
-                await Task.Delay(_renewalInterval, renewal.Token).ConfigureAwait(false);
-                var before = Stopwatch.GetTimestamp();
+                await Task.Delay(_renewalInterval, _timeProvider, renewal.Token).ConfigureAwait(false);
+                var before = _timeProvider.GetTimestamp();
                 if (!IsHeld || !await _leases.RenewAsync(_claim, _duration, renewal.Token).ConfigureAwait(false)
-                    || !IsHeld || Stopwatch.GetElapsedTime(before) >= _duration)
+                    || !IsHeld || _timeProvider.GetElapsedTime(before) >= _duration)
                 {
                     break;
                 }

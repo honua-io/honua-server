@@ -42,11 +42,11 @@ public sealed class DatabricksSqlFilterTranslatorTests
         Assert.Equal("collection_specific_field", exception.PropertyName);
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },

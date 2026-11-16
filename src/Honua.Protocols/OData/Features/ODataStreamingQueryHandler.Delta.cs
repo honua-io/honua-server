@@ -68,7 +68,7 @@ internal sealed partial class ODataStreamingQueryHandler
     }
 
     private async Task<IResult> HandleDurableDeltaAsync(
-        HttpContext context, IFeatureReader reader, MetadataV2Resource resource, int storageLayerId,
+        HttpContext context, IFeatureReader reader, MetadataV2Object resource, int storageLayerId,
         string metadataEtag, ODataDeltaService.DeltaQueryState query, DurableDeltaContinuation? continuation,
         int pageSize, int initialOffset, string? bbox, CancellationToken cancellationToken)
     {
@@ -242,7 +242,7 @@ internal sealed partial class ODataStreamingQueryHandler
         return changes.ToArray();
     }
 
-    private static async Task<string> ComputeDeltaBindingAsync(HttpContext context, MetadataV2Resource resource, string metadataEtag, CancellationToken cancellationToken)
+    private static async Task<string> ComputeDeltaBindingAsync(HttpContext context, MetadataV2Object resource, string metadataEtag, CancellationToken cancellationToken)
     {
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes, Encoding.UTF8, leaveOpen: true);
@@ -251,7 +251,7 @@ internal sealed partial class ODataStreamingQueryHandler
         writer.Write(context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema ?? "");
         writer.Write(context.RequestServices.GetService<ITenantContext>()?.TenantId ?? "");
         writer.Write(CanonicalSecurityActor.Resolve(context.User)?.ActorId ?? "anonymous");
-        writer.Write(JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Resource));
+        writer.Write(JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Object));
         var rls = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
         var predicate = rls is null ? null : await rls.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
         writer.Write(predicate?.Sql ?? "");

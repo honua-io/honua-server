@@ -374,6 +374,68 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles")]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetDatasetTileset_WithMoreCollectionsThanPngCap_AdvertisesTemplateThatResolves()
+    {
+        AddCollectionClones(count: 17);
+
+        using var collectionsResponse = await _fixture.Client.GetAsync("/ogc/tiles/collections");
+        using var collections = JsonDocument.Parse(await collectionsResponse.Content.ReadAsStringAsync());
+        collections.RootElement.GetProperty("collections").GetArrayLength().Should().BeGreaterThan(16);
+
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad");
+        response.Be200Ok();
+        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
+        tileset!.Description.Should().Contain("first 16");
+        tileset.Links.Should().Contain(link => link.Rel == RelationTypes.Self && !link.Href.Contains("collections=", StringComparison.Ordinal));
+        var template = tileset.Links.Single(link => link.Rel == "item" && link.Type == MediaTypes.Png).Href;
+        var query = System.Web.HttpUtility.ParseQueryString(new Uri(template.Replace("{tileMatrix}/{tileRow}/{tileCol}", "0/0/0", StringComparison.Ordinal)).Query);
+        query["collections"]!.Split(',').Should().HaveCount(16);
+
+        var listResponse = await _fixture.Client.GetAsync("/ogc/tiles/tiles");
+        listResponse.Be200Ok();
+        var list = await listResponse.Content.ReadFromJsonAsync<TileSetsList>();
+        list!.Tilesets.First().Links.Single(link => link.Rel == "item" && link.Type == MediaTypes.Png).Href.Should().Be(template);
+
+        var tile = await _fixture.Client.GetAsync(new Uri(template.Replace("{tileMatrix}/{tileRow}/{tileCol}", "0/0/0", StringComparison.Ordinal)).PathAndQuery);
+        tile.StatusCode.Should().Be(HttpStatusCode.OK);
+        tile.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Png);
+    }
+
+    private void AddCollectionClones(int count)
+    {
+        _fixture.MutateV2Graph(graph =>
+        {
+            var publication = graph.Publications.First(candidate => candidate.LayerIndex == WebAppFixture.TestLayerId);
+            var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
+            var clones = Enumerable.Range(1, count).Select(i =>
+            {
+                var index = 9000 + i;
+                var id = index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return (
+                    Resource: resource with { Metadata = resource.Metadata with { Id = $"{resource.Metadata.Id}-cap-{id}", Name = $"{resource.Metadata.Name}_cap_{id}" } },
+                    Publication: publication with
+                    {
+                        Metadata = publication.Metadata with { Id = $"{publication.Metadata.Id}-cap-{id}" },
+                        ResourceId = $"{resource.Metadata.Id}-cap-{id}",
+                        Identifier = publication.Identifier with { Value = id },
+                        LayerIndex = index,
+                        ServiceLocalId = id,
+                        IsPrimary = true,
+                    });
+            }).ToArray();
+            return graph with
+            {
+                Resources = graph.Resources.Concat(clones.Select(clone => clone.Resource)).ToArray(),
+                Publications = graph.Publications.Concat(clones.Select(clone => clone.Publication)).ToArray(),
+            };
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
     public async Task GetDatasetTileset_WithMultipleCollections_CanonicalizesLinksAndUsesDatasetMetadataLink()
     {

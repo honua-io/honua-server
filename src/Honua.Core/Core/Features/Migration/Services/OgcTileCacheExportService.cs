@@ -19,7 +19,7 @@ using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.Migration.Services;
 
 // Re-runs do not overwrite tiles the sink already has.
-public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportService
+public sealed partial class OgcTileCacheExportService
 {
     public const string HttpClientName = "ogc-tile-cache-export";
 

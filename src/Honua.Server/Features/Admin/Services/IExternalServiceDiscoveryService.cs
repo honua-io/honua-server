@@ -5,13 +5,6 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin.Services;
 
-internal interface IExternalServiceDiscoveryService
-{
-    Task<ExternalServiceDiscoveryResponse> DiscoverAsync(
-        ExternalServiceDiscoveryRequest request,
-        CancellationToken cancellationToken = default);
-}
-
 internal interface IExternalServiceDiscoveryNetworkGuard
 {
     Task<bool> IsDisallowedAsync(Uri uri, CancellationToken cancellationToken = default);

@@ -77,7 +77,7 @@ internal sealed class PublishedConsoleContent(
     }
 
     private ConsoleContentItem ProjectLayer(
-        MetadataV2Publication publication, PublishedMetadataService published, PublishedMetadataRequest request)
+        MetadataV2Layer publication, PublishedMetadataService published, PublishedMetadataRequest request)
     {
         var resource = request.Snapshot.ResolveResource(publication)!;
         var accessTier = projection.DeriveAccessTier(resource.AccessPolicy, published.Service.AccessPolicy);

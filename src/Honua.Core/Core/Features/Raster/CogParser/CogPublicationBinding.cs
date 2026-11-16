@@ -8,11 +8,11 @@ namespace Honua.Core.Features.Raster.CogParser;
 public static class CogPublicationBinding
 {
     // Prefer the single image publication; when none exists, keep the single publication of any type, and fail closed when that choice is ambiguous.
-    public static MetadataV2Publication? Resolve(MetadataV2GraphSnapshot snapshot, int layerIndex)
+    public static MetadataV2Layer? Resolve(MetadataV2GraphSnapshot snapshot, int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        MetadataV2Publication? imageMatch = null;
-        MetadataV2Publication? anyMatch = null;
+        MetadataV2Layer? imageMatch = null;
+        MetadataV2Layer? anyMatch = null;
         var imageCount = 0;
         var anyCount = 0;
         foreach (var publication in snapshot.Graph.Publications)
@@ -24,7 +24,7 @@ public static class CogPublicationBinding
 
             anyCount++;
             anyMatch = publication;
-            if (publication.PublicationType == MetadataV2PublicationType.EsriImageLayer)
+            if (publication.PublicationType == MetadataV2LayerType.EsriImageLayer)
             {
                 imageCount++;
                 imageMatch = publication;

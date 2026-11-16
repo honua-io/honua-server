@@ -11,10 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Edit;
 
-/// <summary>
-/// Default implementation of unified edit processor.
-/// Handles edit validation, optimization, and conversion across all protocols.
-/// </summary>
 public sealed class EditProcessor : IEditProcessor
 {
     // PA-018: the feature-write pipeline (validate/optimize/convert) is called separately by
@@ -26,11 +22,6 @@ public sealed class EditProcessor : IEditProcessor
 
     private readonly ILogger<EditProcessor> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="EditProcessor"/> class.
-    /// </summary>
-    /// <param name="logger">The logger used to record edit diagnostics.</param>
-    /// <param name="v2GraphProvider">The optional metadata graph provider used to resolve storage layer identifiers.</param>
     public EditProcessor(ILogger<EditProcessor> logger, IMetadataV2GraphProvider? v2GraphProvider = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -70,8 +61,7 @@ public sealed class EditProcessor : IEditProcessor
         return hasGeometry;
     }
 
-    /// <inheritdoc />
-    public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+    public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -165,8 +155,7 @@ public sealed class EditProcessor : IEditProcessor
         }
     }
 
-    /// <inheritdoc />
-    public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+    public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -213,8 +202,7 @@ public sealed class EditProcessor : IEditProcessor
         }
     }
 
-    /// <inheritdoc />
-    public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+    public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -258,8 +246,7 @@ public sealed class EditProcessor : IEditProcessor
         }
     }
 
-    /// <inheritdoc />
-    public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
+    public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -338,8 +325,7 @@ public sealed class EditProcessor : IEditProcessor
         }
     }
 
-    /// <inheritdoc />
-    public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+    public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -371,10 +357,9 @@ public sealed class EditProcessor : IEditProcessor
         };
     }
 
-    /// <inheritdoc />
     public Task<EditPerformanceEstimate> EstimatePerformanceAsync(
         UnifiedEditRequest editRequest,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -438,7 +423,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static EditValidationResult ValidateCreateOperations(
         ImmutableArray<EditFeature> creates,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var warnings = new List<string>();
 
@@ -472,7 +457,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static EditValidationResult ValidateUpdateOperations(
         ImmutableArray<EditFeature> updates,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         foreach (var feature in updates)
         {
@@ -492,7 +477,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static EditValidationResult ValidateDeleteOperations(
         ImmutableArray<long> deletes,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         if (deletes.Any(objectId => objectId <= 0))
         {
@@ -504,7 +489,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static EditValidationResult ValidateOrderedOperations(
         ImmutableArray<UnifiedEditOperation> operations,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         foreach (var operation in operations)
         {
@@ -536,7 +521,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static EditValidationResult ValidateTransactionOptions(
         EditTransactionOptions options,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var warnings = new List<string>();
 
@@ -553,7 +538,7 @@ public sealed class EditProcessor : IEditProcessor
         return EditValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    private static TransactionValidationResult ValidateResourceCompatibility(EditTransaction transaction, MetadataV2Resource resource)
+    private static TransactionValidationResult ValidateResourceCompatibility(EditTransaction transaction, MetadataV2Object resource)
     {
         var warnings = new List<string>();
 
@@ -573,37 +558,30 @@ public sealed class EditProcessor : IEditProcessor
         return TransactionValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    private static UnifiedEditRequest OptimizeGeometryOperations(UnifiedEditRequest request, MetadataV2Resource resource)
+    private static UnifiedEditRequest OptimizeGeometryOperations(UnifiedEditRequest request, MetadataV2Object resource)
     {
         // Implementation would include geometry simplification, validation caching, etc.
         return request;
     }
 
-    private static UnifiedEditRequest OptimizeAttributeOperations(UnifiedEditRequest request, MetadataV2Resource resource)
+    private static UnifiedEditRequest OptimizeAttributeOperations(UnifiedEditRequest request, MetadataV2Object resource)
     {
         // Implementation would include attribute validation caching, default value handling, etc.
         return request;
     }
 
-    private static UnifiedEditRequest OptimizeOperationOrder(UnifiedEditRequest request, MetadataV2Resource resource)
+    private static UnifiedEditRequest OptimizeOperationOrder(UnifiedEditRequest request, MetadataV2Object resource)
     {
         // Implementation would include reordering operations for optimal database performance
         return request;
     }
 
-    private static UnifiedEditRequest AddPerformanceHints(UnifiedEditRequest request, MetadataV2Resource resource)
+    private static UnifiedEditRequest AddPerformanceHints(UnifiedEditRequest request, MetadataV2Object resource)
     {
         // Implementation would add hints for query optimization, caching, etc.
         return request;
     }
 
-    /// <summary>
-    /// Collects optimistic-concurrency preconditions from the request-level
-    /// <see cref="UnifiedEditRequest.Preconditions"/> array and from per-feature
-    /// <see cref="EditConstraints.ExpectedStateToken"/> values on updates (both the
-    /// split Updates array and ordered Operations). First registration per object ID
-    /// wins; request-level preconditions take precedence over per-feature constraints.
-    /// </summary>
     private static ImmutableArray<FeatureEditPrecondition> CollectPreconditions(UnifiedEditRequest editRequest)
     {
         Dictionary<long, FeatureEditPrecondition>? byObjectId = null;
@@ -666,7 +644,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static ImmutableArray<Feature> ConvertToFeatures(
         ImmutableArray<EditFeature>? editFeatures,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool isCreate)
     {
         if (editFeatures?.IsDefaultOrEmpty != false)
@@ -685,7 +663,7 @@ public sealed class EditProcessor : IEditProcessor
 
     private static ImmutableArray<FeatureEditOperation> ConvertToFeatureOperations(
         ImmutableArray<UnifiedEditOperation> operations,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var featureOperations = new List<FeatureEditOperation>();
 
@@ -721,7 +699,7 @@ public sealed class EditProcessor : IEditProcessor
         return featureOperations.ToImmutableArray();
     }
 
-    private static Feature ConvertEditFeatureToFeature(EditFeature editFeature, MetadataV2Resource resource, bool isCreate)
+    private static Feature ConvertEditFeatureToFeature(EditFeature editFeature, MetadataV2Object resource, bool isCreate)
     {
         var objectId = isCreate ? 0 : (editFeature.ObjectId ?? 0);
         var attributes = editFeature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
@@ -737,39 +715,12 @@ public sealed class EditProcessor : IEditProcessor
         };
     }
 
-    private static int GetMaxOperationsForResource(MetadataV2Resource resource)
+    private static int GetMaxOperationsForResource(MetadataV2Object resource)
     {
         // In reality, this would check resource configuration or capabilities.
         return 10000; // Default maximum operations per resource
     }
 
-    /// <summary>
-    /// Determines whether <paramref name="field"/> is a server-assigned identifier field, which
-    /// must never be required from a create/update client payload. A field qualifies when it
-    /// carries the <c>id.primary</c> semantic role, when its name matches the resource's
-    /// authoritative primary-id field name (<see cref="MetadataV2SpatialExtensions.FindPrimaryIdField"/>,
-    /// which falls back to the conventional <c>objectid</c>/<c>id</c> name), OR when it is the
-    /// conventional server-assigned integer object-id field (an integer/big-integer field named
-    /// <see cref="FieldNames.ObjectId"/>).
-    /// </summary>
-    /// <remarks>
-    /// The semantic-role check alone is insufficient: many seeded and published layers declare a
-    /// non-nullable <c>objectid</c> field without the <c>id.primary</c> role. BH2-014 (#2456) added a
-    /// per-field required-attribute gate that keyed exclusively on the role, so every create that
-    /// omitted <c>objectid</c> — the normal case, since the server assigns it — was rejected with
-    /// "Required attribute(s) missing for create operation: objectid". c4dada39 keyed the skip on the
-    /// resource's authoritative id-field name as well.
-    /// <para>
-    /// That still missed layers that declare BOTH a distinct public primary id (e.g. a string field
-    /// with the <c>id.primary</c> role) AND a separate server-assigned integer <c>objectid</c>. For
-    /// those, <see cref="MetadataV2SpatialExtensions.FindPrimaryIdField"/> resolves to the roled
-    /// public id, so the conventional <c>objectid</c> fell through and every create omitting it (the
-    /// normal case — it is auto-assigned) was rejected with a 500. The OGC API Features create path
-    /// (String-ID layers) is exactly this shape. Recognizing the conventional integer object-id
-    /// independently of the resolved primary id restores those creates while still rejecting
-    /// genuinely-missing non-id required fields.
-    /// </para>
-    /// </remarks>
     private static bool IsServerAssignedIdField(MetadataV2Field field, string? primaryIdFieldName)
     {
         for (var i = 0; i < field.SemanticRoles.Count; i++)
@@ -792,18 +743,8 @@ public sealed class EditProcessor : IEditProcessor
             && string.Equals(field.Name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Returns why one create attribute bag fails required-field rules, or <see langword="null"/>
-    /// when the bag is acceptable. Callers that apply a batch with
-    /// <c>rollbackOnFailure=false</c> use this per add slot so one missing field does not fail
-    /// the rest of the batch with a request-level error (honua-server#6133).
-    /// </summary>
-    /// <param name="resource">Layer resource whose schema defines required fields.</param>
-    /// <param name="attributes">Attributes that will be written for the create. Null and empty
-    /// are treated the same.</param>
-    /// <returns>A client-safe rejection, or <see langword="null"/> when the create may proceed.</returns>
     public static string? DescribeCreateAttributeRejection(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?>? attributes)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -819,7 +760,7 @@ public sealed class EditProcessor : IEditProcessor
             : null;
     }
 
-    private static bool RequiresAttributes(MetadataV2Resource resource)
+    private static bool RequiresAttributes(MetadataV2Object resource)
     {
         // V2 fields carry Nullable but no DefaultValue — match the v1 contract by
         // treating any non-nullable, non-geometry, non-system field as required.
@@ -844,13 +785,8 @@ public sealed class EditProcessor : IEditProcessor
         return false;
     }
 
-    /// <summary>
-    /// Returns the names of all required (non-nullable, non-geometry, non-id) schema fields
-    /// that are absent from the supplied attribute dictionary. Uses case-insensitive field-name
-    /// matching so the check is consistent regardless of how the caller built the dictionary.
-    /// </summary>
     private static List<string> FindMissingRequiredFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes)
     {
         var missing = new List<string>();

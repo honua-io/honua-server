@@ -24,5 +24,7 @@ public interface IDatumTransformationCatalog
     // A pair with area-of-use bounds must not fall back to the default grid on a non-match.
     bool HasAreaOfUse(int fromSrid, int toSrid) => false;
 
+    DatumTransformationSelection? FindByName(string name, int fromSrid, int toSrid) => null;
+
     bool TryGetByWkid(int wkid, int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection);
 }

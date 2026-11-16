@@ -38,13 +38,15 @@ internal static class BrowserSessionSecurity
                 || HttpMethods.IsOptions(request.Method) || HttpMethods.IsTrace(request.Method);
             var metadata = context.GetEndpoint()?.Metadata;
             var requiresCsrf = metadata?.GetMetadata<RequireBrowserCsrfMetadata>() is not null
-                || request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName);
+                || (request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
+                    && (metadata?.GetMetadata<UsesBrowserSessionMetadata>() is not null
+                        || !HasAuthenticatedExplicitCredential(context)));
             // SAML POST bindings validate signed protocol messages and their own correlation state.
             if (!safe && requiresCsrf && metadata?.GetMetadata<BrowserCsrfProtocolBindingMetadata>() is null)
             {
                 if (!request.IsHttps || !IsSameOrigin(request))
                 {
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    RejectCsrf(context);
                     return;
                 }
 
@@ -55,13 +57,35 @@ internal static class BrowserSessionSecurity
                 }
                 catch (AntiforgeryValidationException)
                 {
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    RejectCsrf(context);
                     return;
                 }
             }
 
             await next(context).ConfigureAwait(false);
         });
+    }
+
+    private static bool HasAuthenticatedExplicitCredential(HttpContext context) =>
+        context.User.Identity is { IsAuthenticated: true } identity
+        && identity.AuthenticationType != OidcAuthenticationExtensions.AdminSessionScheme
+        && !context.IsAdminAuthSessionBridged()
+        && (context.Request.Headers.ContainsKey("X-API-Key")
+            || context.Request.Headers.ContainsKey("Authorization"));
+
+    private static void RejectCsrf(HttpContext context)
+    {
+        if (context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentType = "application/grpc";
+            context.Response.Headers["grpc-status"] = "7";
+            context.Response.Headers["grpc-message"] = Uri.EscapeDataString(
+                $"Browser session requests require same-origin HTTPS and a fresh {HeaderName} token.");
+            return;
+        }
+
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
     }
 
     private static bool IsSameOrigin(HttpRequest request)
@@ -82,5 +106,7 @@ internal static class BrowserSessionSecurity
 }
 
 internal sealed class RequireBrowserCsrfMetadata;
+
+internal sealed class UsesBrowserSessionMetadata;
 
 internal sealed class BrowserCsrfProtocolBindingMetadata;

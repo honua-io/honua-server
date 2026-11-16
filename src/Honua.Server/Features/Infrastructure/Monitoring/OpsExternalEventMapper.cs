@@ -42,6 +42,11 @@ internal static class OpsExternalEventMapper
         var externalEvent = ParseEnvelope(body);
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
+        if (Text(root, "source") == "honua.watchdog")
+        {
+            return OpsWatchdogEventMapper.Map(root);
+        }
+
         var detail = root.GetProperty("detail");
         var template = SelectTemplate(root, detail);
         if (template is null)
@@ -69,8 +74,11 @@ internal static class OpsExternalEventMapper
             .Select(e => Map(e.Body)).OfType<OpsFinding>().ToArray();
         var findings = mapped.Where(f => StateFamily(f) is null).ToList();
         findings.AddRange(mapped.Where(f => StateFamily(f) is not null)
-            .GroupBy(f => (Family: StateFamily(f), f.Subject.TargetId))
-            .Select(g => g.OrderByDescending(f => f.DetectedAt).ThenBy(f => f.Id, StringComparer.Ordinal).First()));
+            .GroupBy(f => (Family: StateFamily(f), f.Subject.TargetId,
+                IncidentId: f.Rule == "watchdog-incident" ? f.Subject.OperationId : null))
+            .Select(g => g.OrderByDescending(f => f.DetectedAt)
+                .ThenByDescending(OpsWatchdogEventMapper.StageOrder)
+                .ThenByDescending(f => f.Severity).ThenBy(f => f.Id, StringComparer.Ordinal).First()));
         var crashes = findings.Where(f => f.Rule is "ecs-task-stopped" or "ecs-task-oom")
             .Where(f => f.DetectedAt >= now - TimeSpan.FromMinutes(15) && f.DetectedAt <= now)
             .Where(f => !string.IsNullOrWhiteSpace(f.Subject.OperationId))
@@ -96,6 +104,7 @@ internal static class OpsExternalEventMapper
 
     private static string? StateFamily(OpsFinding finding) => finding.Rule switch
     {
+        "watchdog-incident" => "watchdog-incident",
         var rule when rule.StartsWith("cloudwatch-alarm", StringComparison.Ordinal) => "cloudwatch-alarm",
         var rule when rule.StartsWith("ecs-deployment-", StringComparison.Ordinal) => "ecs-deployment",
         _ => null,

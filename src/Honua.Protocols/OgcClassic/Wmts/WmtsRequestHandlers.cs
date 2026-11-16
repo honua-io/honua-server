@@ -30,6 +30,8 @@ using static Honua.Infrastructure.Helpers.DelimitedParameterHelpers;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
+using Honua.Core.Features.Metadata.Services;
+
 namespace Honua.Protocols.Ogc.Classic.Wmts;
 
 internal static class WmtsRequestHandlers
@@ -55,8 +57,8 @@ internal static class WmtsRequestHandlers
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
     private readonly record struct WmtsLayer(
-        MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Object Resource,
+        MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier);
 
@@ -1056,12 +1058,12 @@ internal static class WmtsRequestHandlers
             .ToArray();
     }
 
-    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -1255,6 +1257,7 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
         var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
@@ -1293,21 +1296,18 @@ internal static class WmtsRequestHandlers
                 sb.Append("    <ows:Abstract>").Append(EscapeXml(service.Metadata.Description)).AppendLine("</ows:Abstract>");
             }
 
+            foreach (var keywords in CatalogCapabilitiesXml.Keywords(service.Metadata, "http://www.opengis.net/ows/1.1"))
+                sb.AppendLine(keywords.ToString());
             sb.AppendLine("    <ows:ServiceType>OGC WMTS</ows:ServiceType>");
             sb.AppendLine("    <ows:ServiceTypeVersion>1.0.0</ows:ServiceTypeVersion>");
+            sb.Append("    <ows:Fees>").Append(EscapeXml(service.Metadata.Fees ?? string.Empty)).AppendLine("</ows:Fees>");
+            sb.Append("    <ows:AccessConstraints>").Append(EscapeXml(service.Metadata.AccessConstraints ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
             sb.AppendLine("  </ows:ServiceIdentification>");
         }
 
         if (includeServiceProvider)
         {
-            sb.AppendLine("  <ows:ServiceProvider>");
-            sb.AppendLine("    <ows:ProviderName>Honua Server</ows:ProviderName>");
-            sb.Append("    <ows:ProviderSite xlink:href=\"").Append(EscapeXml(normalizedBaseUrl)).AppendLine("/\" />");
-            sb.AppendLine("    <ows:ServiceContact>");
-            sb.AppendLine("      <ows:IndividualName>Honua Support</ows:IndividualName>");
-            sb.AppendLine("      <ows:PositionName>Support Engineer</ows:PositionName>");
-            sb.AppendLine("    </ows:ServiceContact>");
-            sb.AppendLine("  </ows:ServiceProvider>");
+            sb.AppendLine(CatalogCapabilitiesXml.Provider(service.Metadata, "http://www.opengis.net/ows/1.1").ToString());
         }
 
         if (includeOperationsMetadata)
@@ -1941,14 +1941,14 @@ internal static class WmtsRequestHandlers
     private static bool TryValidateWmtsDimensionParameters(
         HttpContext context,
         IQueryCollection query,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out IResult errorResult)
     {
         errorResult = Results.Empty;
 
         // Treat all WmtsLayer wrappers identically here: dimension validation only consults
         // the resource (name + temporal extension), not the publication or storage handle.
-        var dummyLayer = new WmtsLayer(resource, new MetadataV2Publication(), 0, string.Empty);
+        var dummyLayer = new WmtsLayer(resource, new MetadataV2Layer(), 0, string.Empty);
         var dimensions = GetWmtsDimensionDefinitions(dummyLayer);
 
         // WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys,
@@ -2453,7 +2453,7 @@ internal static class WmtsRequestHandlers
 
     private static async Task AppendWmtsWgs84BoundingBoxAsync(
         StringBuilder sb,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -2474,7 +2474,7 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<(string LowerCorner, string UpperCorner)?> TryGetWmtsWgs84BoundingBoxAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         HttpContext context,
         CancellationToken cancellationToken)
     {

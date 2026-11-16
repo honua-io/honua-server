@@ -48,6 +48,7 @@ public sealed class ScheduledTickDispatcherTests
     [InlineData(ScheduledTickKind.TemporaryFileCleanup)]
     [InlineData(ScheduledTickKind.DigestFlush)]
     [InlineData(ScheduledTickKind.JobStoreRetention)]
+    [InlineData(ScheduledTickKind.OpsNotifications)]
     public async Task RunTickAsync_RoutesToTheMatchingHandlerOnly(ScheduledTickKind kind)
     {
         var (dispatcher, handlers) = BuildDispatcherForAllKinds();

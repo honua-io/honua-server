@@ -33,7 +33,7 @@ public sealed class FeatureServerTopFeaturesTemporalTests
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc", "dates", route: "/rest/services/dates/FeatureServer",
                 protocols: [ServiceProtocols.FeatureServer], accessPolicy: access)
-            .AddResource("res", "dates", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("res", "dates", MetadataV2ObjectType.FeatureDataset,
                 fields: [
                     new() { Name = "objectid", Type = MetadataV2FieldType.Integer, SemanticRoles = ["id.primary"] },
                     new() { Name = "day", Type = MetadataV2FieldType.Date },
@@ -41,7 +41,7 @@ public sealed class FeatureServerTopFeaturesTemporalTests
                 ], accessPolicy: access)
             .AddStorageBinding("binding", "res", "public.dates", storageLayerId: 0)
             .AddPublication("pub", "svc", "res", layerIndex: 0, storageBindingId: "binding",
-                serviceLocalId: "0", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                serviceLocalId: "0", publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .BuildProvider();
         var reader = Substitute.For<IFeatureReader>();
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty

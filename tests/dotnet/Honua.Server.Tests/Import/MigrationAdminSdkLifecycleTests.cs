@@ -24,6 +24,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -46,7 +47,7 @@ namespace Honua.Server.Tests.Import;
 /// <see cref="SdkModels.MigrationBatchResponse"/>), and each layer job's verdict and differences (not on
 /// <see cref="SdkModels.GeoservicesImportProgress"/>).
 /// </remarks>
-[Collection("Database")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdminSdkLifecycleTests.SdkMigrationHost>
@@ -472,6 +473,7 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         {
             var source = Source;
             Web = new WebAppFixture()
+                .WithProductionJobSubstrate()
                 .WithTestLicense(HonuaEdition.Enterprise)
                 .ConfigureServices(services =>
                 {
@@ -513,6 +515,7 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         public async Task InitializeAsync()
         {
             await Web.InitializeAsync();
+            await Web.Postgres.DataSource.ClearJobSubstrateAsync();
 
             var assembly = typeof(Program).Assembly;
             var batchMigrations = new[]
@@ -541,6 +544,7 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         {
             try
             {
+                await Web.Postgres.DataSource.ClearJobSubstrateAsync();
                 await using var connection = await Web.Postgres.GetConnectionAsync(ImportSchema);
                 foreach (var table in _importedTables)
                 {

@@ -6,10 +6,12 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
@@ -17,30 +19,27 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Scene;
 
-/// <summary>
-/// Postgres/PostGIS implementation of <see cref="ISceneFeatureSource"/>. Streams
-/// the canonical 3D Tiles input shape (WGS-84 lon/lat plus optional Z) for a
-/// metadata v2 feature resource. The geometry is reprojected to EPSG:4326 with the
-/// layer's datum-catalog selection, or two-argument <c>ST_Transform</c> when the
-/// catalog has no entry.
-/// </summary>
 internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 {
     private const int PageSize = 1_000;
 
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresSceneFeatureSource> _logger;
+    private readonly IFilterExpressionService? _filterExpressionService;
+    private SqlFragment? _boundPermanentFilter;
 
     public PostgresSceneFeatureSource(
         IPrimaryDatabaseConnectionProvider connectionProvider,
-        ILogger<PostgresSceneFeatureSource> logger)
+        ILogger<PostgresSceneFeatureSource> logger,
+        IFilterExpressionService? filterExpressionService = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _filterExpressionService = filterExpressionService;
     }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -76,11 +75,13 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
                 .Append(" AS \"a_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('"');
         }
 
+        _boundPermanentFilter = ResolveScenePermanentFilter(resource);
         var sql = $"""
             SELECT {selectColumns}
             FROM {qualifiedTable}
             WHERE {DatabaseSchema.LayerIdColumn} = @layer_id
               AND {DatabaseSchema.ObjectIdColumn} > @last_key
+              {(_boundPermanentFilter is null ? string.Empty : "AND (" + _boundPermanentFilter.Sql + ")")}
             ORDER BY {DatabaseSchema.ObjectIdColumn} ASC
             LIMIT {PageSize}
             """;
@@ -113,6 +114,31 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         }
     }
 
+    internal SqlFragment? ResolveScenePermanentFilter(MetadataV2Object resource)
+    {
+        if (string.IsNullOrWhiteSpace(resource.PermanentFilter?.Expression))
+        {
+            return null;
+        }
+
+        // Parser and translator failures quote the saved filter. Replace them
+        // before scene generation logs the exception.
+        SqlFragment? fragment;
+        try
+        {
+            fragment = LayerReadSecurityResolver.ResolvePermanentFilter(resource, _filterExpressionService);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            throw SceneFilterFailure(resource);
+        }
+
+        return fragment ?? throw SceneFilterFailure(resource);
+    }
+
+    private static InvalidOperationException SceneFilterFailure(MetadataV2Object resource)
+        => new($"Saved permanent filter for resource '{resource.Metadata.Id}' could not be applied to scene publishing.");
+
     private async Task<List<SceneFeature>> ReadBatchAsync(
         string sql,
         int layerId,
@@ -125,6 +151,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         command.CommandText = sql;
         command.Parameters.Add(new NpgsqlParameter("@layer_id", layerId));
         command.Parameters.Add(new NpgsqlParameter("@last_key", lastKey));
+        AddFragmentParameters(command, _boundPermanentFilter);
         // Pass attribute field names as JSON-path parameters so the SQL itself
         // never interpolates field names (defense in depth — fields come from
         // the trusted catalog, but parameter binding keeps the contract
@@ -204,6 +231,21 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         }
     }
 
+    private static void AddFragmentParameters(System.Data.Common.DbCommand command, SqlFragment? fragment)
+    {
+        if (fragment is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < fragment.Parameters.Count; i++)
+        {
+            command.Parameters.Add(new NpgsqlParameter(
+                "@p" + i.ToString(CultureInfo.InvariantCulture),
+                fragment.Parameters[i] ?? DBNull.Value));
+        }
+    }
+
     private static async Task<bool> ReadSceneRowAsync(
         NpgsqlDataReader reader,
         CancellationToken cancellationToken)
@@ -218,10 +260,6 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         }
     }
 
-    /// <summary>
-    /// WGS 84 geometry expression for scene publishing. A catalog entry uses that
-    /// pipeline; otherwise the expression stays two-argument <c>ST_Transform</c>.
-    /// </summary>
     internal static string BuildPublishedGeometrySql(int? layerSrid)
     {
         var column = DatabaseSchema.GeometryColumn;
@@ -238,7 +276,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
     }
 
     private static List<MetadataV2Field> ResolveAttributeFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyList<string> includeAttributes)
     {
         var candidates = resource.SchemaFields
@@ -255,25 +293,12 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         return candidates.Where(f => allow.Contains(f.Name)).ToList();
     }
 
-    /// <summary>
-    /// Returns true when the supplied field name is one of the canonical
-    /// row-identifier aliases. Honua's shared <c>features</c> table stores
-    /// the identifier in the <c>objectid</c> column rather than in the
-    /// JSONB attributes bag, so the source must populate these slots from
-    /// the primary key value.
-    /// </summary>
     private static bool IsObjectIdAlias(string name)
         => string.Equals(name, "objectid", StringComparison.OrdinalIgnoreCase)
             || string.Equals(name, "object_id", StringComparison.OrdinalIgnoreCase)
             || string.Equals(name, "id", StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>
-/// Minimal WKB reader for the geometry kinds the v1 3D Tiles pipeline
-/// accepts: Point, LineString, Polygon, and their Multi variants. Returns
-/// the first ring/part for multi-geometries — v1 collapses multi inputs into
-/// a single deterministic representation.
-/// </summary>
 internal static class WkbGeometryReader
 {
     public static SceneFeatureGeometry? Parse(byte[] wkb)

@@ -9,6 +9,10 @@ public interface IConnectionSecretResolver
 
     Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default);
 
+    // Credential restoration must bypass cached secret values and fail closed for unsupported providers.
+    Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Fresh secret resolution is not supported by this provider.");
+
     bool CanResolve(string secretKey);
 
     Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)

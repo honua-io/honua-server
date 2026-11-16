@@ -329,7 +329,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WhenLayerDoesNotSupportAttachments_DoesNotStore()
     {
-        SetLayerEditing(new MetadataV2ResourceEditing { SupportsAttachments = false });
+        SetLayerEditing(new MetadataV2ObjectEditing { SupportsAttachments = false });
         try
         {
             var before = await CountStoredAttachmentsAsync();
@@ -1312,11 +1312,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
-    private void SetLayerEditing(MetadataV2ResourceEditing? editing)
+    private void SetLayerEditing(MetadataV2ObjectEditing? editing)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
             candidate.LayerIndex == TestLayerId);
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with

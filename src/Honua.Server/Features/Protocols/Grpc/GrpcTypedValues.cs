@@ -65,7 +65,7 @@ internal static class GrpcTypedValues
 
     // Exact values use JSON strings in canonical storage; schema types supply their meaning.
     // The wire discriminator must agree with the declared type before entering the writer.
-    public static FeatureEditBatch EnsureStorable(MetadataV2Resource resource, FeatureEditBatch batch)
+    public static FeatureEditBatch EnsureStorable(MetadataV2Object resource, FeatureEditBatch batch)
         => batch with
         {
             Creates = NormalizeFeatures(resource, batch.Creates),
@@ -76,10 +76,10 @@ internal static class GrpcTypedValues
             }).ToImmutableArray()
         };
 
-    private static ImmutableArray<Feature> NormalizeFeatures(MetadataV2Resource resource, ImmutableArray<Feature> features)
+    private static ImmutableArray<Feature> NormalizeFeatures(MetadataV2Object resource, ImmutableArray<Feature> features)
         => features.IsDefault ? [] : features.Select(feature => NormalizeFeature(resource, feature)).ToImmutableArray();
 
-    private static Feature NormalizeFeature(MetadataV2Resource resource, Feature feature)
+    private static Feature NormalizeFeature(MetadataV2Object resource, Feature feature)
     {
         var attributes = feature.Attributes.ToBuilder();
         foreach (var (name, value) in feature.Attributes)

@@ -1672,12 +1672,12 @@ public sealed class LayerSourcedExecutorTests
 
         public FakeMetadataV2GraphProvider(int layerId, int storageSrid, IReadOnlyList<MetadataV2Field>? schemaFields = null)
         {
-            var resource = new MetadataV2Resource
+            var resource = new MetadataV2Object
             {
                 SchemaFields = schemaFields ?? [],
                 Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-                Spatial = new MetadataV2ResourceSpatial
+                Spatial = new MetadataV2ObjectSpatial
                 {
                     StorageCrs = new MetadataV2SpatialReference { Srid = storageSrid },
                 },

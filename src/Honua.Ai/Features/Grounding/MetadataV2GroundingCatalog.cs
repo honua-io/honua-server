@@ -59,11 +59,11 @@ internal static class MetadataV2GroundingCatalog
             field.Description,
             field.Nullable);
 
-    private static bool IsDatasetResource(MetadataV2ResourceType type)
-        => type is MetadataV2ResourceType.FeatureDataset
-            or MetadataV2ResourceType.Table
-            or MetadataV2ResourceType.RasterDataset
-            or MetadataV2ResourceType.TileDataset;
+    private static bool IsDatasetResource(MetadataV2ObjectType type)
+        => type is MetadataV2ObjectType.FeatureDataset
+            or MetadataV2ObjectType.Table
+            or MetadataV2ObjectType.RasterDataset
+            or MetadataV2ObjectType.TileDataset;
 }
 
 internal sealed record GroundingCatalogLayer(

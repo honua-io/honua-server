@@ -35,7 +35,7 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static async Task<IResult> ReadLayerConfigurationAsync(int storageLayerId, HttpContext context,
-        Func<MetadataV2Resource, IResult> respond)
+        Func<MetadataV2Object, IResult> respond)
     {
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
@@ -53,7 +53,7 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static async Task<IResult?> WriteLayerConfigurationAsync(int storageLayerId, HttpContext context,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate)
+        Func<MetadataV2Object, MetadataV2Object> mutate)
     {
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
         MetadataV2StorageResourceResolution target;
@@ -74,7 +74,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         return null;
     }
 
-    private static MetadataV2Resource ApplyDisplay(MetadataV2Resource resource, LayerDisplayUpdateRequest request)
+    private static MetadataV2Object ApplyDisplay(MetadataV2Object resource, LayerDisplayUpdateRequest request)
     {
         var current = resource.Display ?? new();
         var display = current with
@@ -107,7 +107,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         return resource with { Display = display };
     }
 
-    private static MetadataV2Resource ApplySpatial(MetadataV2Resource resource, LayerSpatialUpdateRequest request)
+    private static MetadataV2Object ApplySpatial(MetadataV2Object resource, LayerSpatialUpdateRequest request)
     {
         if (request.GeometryType is { } geometryType &&
             (!Enum.IsDefined(geometryType) || geometryType == MetadataV2GeometryType.Unknown))
@@ -132,7 +132,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         return resource with { Spatial = spatial };
     }
 
-    private static IResult DisplayResponse(int storageLayerId, MetadataV2Resource resource)
+    private static IResult DisplayResponse(int storageLayerId, MetadataV2Object resource)
     {
         var display = resource.Display ?? new();
         return Results.Json(ApiResponse<LayerDisplayResponse>.CreateSuccess(new()
@@ -148,7 +148,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         }), LayerDisplaySpatialJsonContext.Default.ApiResponseLayerDisplayResponse);
     }
 
-    private static IResult SpatialResponse(int storageLayerId, MetadataV2Resource resource)
+    private static IResult SpatialResponse(int storageLayerId, MetadataV2Object resource)
     {
         var spatial = resource.Spatial ?? new();
         return Results.Json(ApiResponse<LayerSpatialResponse>.CreateSuccess(new()

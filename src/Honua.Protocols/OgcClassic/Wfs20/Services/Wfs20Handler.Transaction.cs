@@ -428,7 +428,7 @@ internal sealed partial class Wfs20Handler
             var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
-                descriptor,
+                (descriptor, descriptors),
                 AuthorizationOperation.Insert,
                 validatedLayerIds,
                 cancellationToken).ConfigureAwait(false);
@@ -489,7 +489,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -587,7 +587,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Delete,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -674,7 +674,7 @@ internal sealed partial class Wfs20Handler
         // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -744,7 +744,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> BuildTransactionInsertFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         XElement featureElement,
         CancellationToken cancellationToken)
     {
@@ -762,7 +762,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> BuildTransactionReplaceFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         long objectId,
         XElement featureElement,
         CancellationToken cancellationToken)
@@ -792,7 +792,7 @@ internal sealed partial class Wfs20Handler
 
     internal async Task<Feature> BuildTransactionUpdatedFeatureAsync(
         Feature existing,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
@@ -829,7 +829,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> CreateTransactionFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         long objectId,
         byte[]? geometry,
         ImmutableDictionary<string, object?> attributes,
@@ -868,7 +868,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<TransactionFeaturePayload> ReadTransactionFeaturePayloadAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         XElement featureElement,
         CancellationToken cancellationToken)
     {
@@ -943,7 +943,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<TransactionFeatureChanges> ParseTransactionUpdateChangesAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         XElement updateElement,
         CancellationToken cancellationToken)
     {
@@ -1192,11 +1192,12 @@ internal sealed partial class Wfs20Handler
 
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
-        WfsFeatureTypeDescriptor descriptor,
+        (WfsFeatureTypeDescriptor Requested, IReadOnlyList<WfsFeatureTypeDescriptor> Visible) featureType,
         AuthorizationOperation operation,
         HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
+        var descriptor = featureType.Requested;
         var layerId = descriptor.StorageLayerId;
         if (!validatedLayerIds.Add((layerId, operation)))
         {
@@ -1235,7 +1236,7 @@ internal sealed partial class Wfs20Handler
         // Transaction action, including on anonymously writable layers (SEC-5).
         var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
             descriptor.Service,
-            descriptor.Publication,
+            ResolveEditCapabilityPublication(descriptor, featureType.Visible),
             operation);
         return undeclared is null
             ? null
@@ -1246,6 +1247,31 @@ internal sealed partial class Wfs20Handler
                 "Transaction");
     }
 
+
+    // The STAC collection publication that publishing writes beside a layer's feature publication
+    // was the advertised feature type, so clients hold its name. A Transaction through it is bound
+    // by the feature publication of the same layer in the same service. The candidates are the
+    // feature types this caller can see, so another tenant's or service's publication never applies.
+    private static MetadataV2Layer ResolveEditCapabilityPublication(
+        WfsFeatureTypeDescriptor descriptor,
+        IReadOnlyList<WfsFeatureTypeDescriptor> visibleFeatureTypes)
+    {
+        var publication = descriptor.Publication;
+        if (publication.PublicationType != MetadataV2LayerType.StacCollection)
+        {
+            return publication;
+        }
+
+        return visibleFeatureTypes
+            .Where(candidate => candidate.StorageLayerId == descriptor.StorageLayerId)
+            .Select(static candidate => candidate.Publication)
+            .Where(candidate =>
+                candidate.PublicationType != MetadataV2LayerType.StacCollection &&
+                string.Equals(candidate.ServiceId, publication.ServiceId, StringComparison.Ordinal))
+            .OrderByDescending(static candidate => candidate.IsPrimary)
+            .ThenBy(static candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .FirstOrDefault() ?? publication;
+    }
 
     private static WfsFeatureTypeDescriptor ResolveTransactionFeatureTypeDescriptor(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
@@ -1266,13 +1292,13 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static bool IsFallbackTransactionGeometryProperty(MetadataV2Resource resource, string rawName)
+    private static bool IsFallbackTransactionGeometryProperty(MetadataV2Object resource, string rawName)
         => ResolveGeometryPropertyName(resource) is { } geometryProperty &&
            WfsPropertyNameResolver.MatchesGeometryProperty(rawName, geometryProperty) &&
            WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true, includeHiddenFields: true) is null;
 
     private static TransactionFieldResolution? ResolveTransactionField(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string rawName,
         string? namespaceName = null)
     {
@@ -1338,7 +1364,7 @@ internal sealed partial class Wfs20Handler
 
 
     private static bool TryResolveReservedGmlTransactionAttributeName(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string rawName,
         string? namespaceName,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? attributeName)
@@ -1369,7 +1395,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static bool HasTransactionAttributeField(MetadataV2Resource resource, string fieldName)
+    private static bool HasTransactionAttributeField(MetadataV2Object resource, string fieldName)
     {
         return resource.SchemaFields.Any(candidate =>
             candidate.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography &&
@@ -1378,7 +1404,7 @@ internal sealed partial class Wfs20Handler
 
 
     private static bool TryResolveGmlTransactionField(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string normalizedName,
         string rawName,
         string? namespaceName,
@@ -1484,7 +1510,7 @@ internal sealed partial class Wfs20Handler
 
     private async Task<byte[]?> ParseTransactionGeometryPropertyAsync(
         XElement propertyElement,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         if (HasNilAttribute(propertyElement))
@@ -1546,7 +1572,7 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string GetResourceFeatureTypeName(MetadataV2Resource resource)
+    private static string GetResourceFeatureTypeName(MetadataV2Object resource)
     {
         if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {
@@ -2435,7 +2461,7 @@ internal sealed partial class Wfs20Handler
     internal async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<Wfs20EditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,

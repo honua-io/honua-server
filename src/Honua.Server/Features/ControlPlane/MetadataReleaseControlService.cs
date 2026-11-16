@@ -165,7 +165,7 @@ internal sealed partial class MetadataReleaseControlService(
     {
         if (_workflowStore == null)
         {
-            throw new InvalidOperationException("Metadata release operations require Redis-backed durable storage.");
+            throw new InvalidOperationException("Metadata release operations require PostgreSQL-backed durable storage.");
         }
     }
 }

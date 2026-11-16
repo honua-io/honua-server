@@ -18,7 +18,10 @@ internal static partial class ConfigurationRuntimeMiddleware
         var logger = app.ApplicationServices.GetRequiredService<ILogger<ConfigurationRuntimeRefresh>>();
         return app.Use(async (context, next) =>
         {
-            if (context.Request.Path.Equals("/healthz/live", StringComparison.OrdinalIgnoreCase))
+            if (context.Request.Path.Equals("/healthz/live", StringComparison.OrdinalIgnoreCase) ||
+                context.Request.Path.Equals("/healthz/live/", StringComparison.OrdinalIgnoreCase) ||
+                context.Request.Path.Equals("/healthz/deep", StringComparison.OrdinalIgnoreCase) ||
+                context.Request.Path.Equals("/healthz/deep/", StringComparison.OrdinalIgnoreCase))
             {
                 await next(context).ConfigureAwait(false);
                 return;

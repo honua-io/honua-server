@@ -88,32 +88,32 @@ public sealed class FeatureServerLayerListParsingTests
             // case does not depend on that default.
             Status = activeStatus,
         };
-        var activeResource = new MetadataV2Resource
+        var activeResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-active" },
             Status = activeStatus,
         };
-        var retiredResource = new MetadataV2Resource
+        var retiredResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-retired" },
             Status = retiredStatus,
         };
-        var activePublication = new MetadataV2Publication
+        var activePublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-active" },
             ServiceId = service.Metadata.Id,
             ResourceId = activeResource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             Status = activeStatus,
         };
-        var retiredPublication = new MetadataV2Publication
+        var retiredPublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-retired" },
             ServiceId = service.Metadata.Id,
             ResourceId = retiredResource.Metadata.Id,
             LayerIndex = 1,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             Status = retiredStatus,
         };
         var snapshot = new MetadataV2GraphSnapshot(
@@ -159,24 +159,24 @@ public sealed class FeatureServerLayerListParsingTests
             Status = activeStatus,
             Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OData],
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-a" },
             Status = activeStatus,
         };
-        var featurePublication = new MetadataV2Publication
+        var featurePublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-feature" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             Status = activeStatus,
         };
         var odataPublication = featurePublication with
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-odata" },
-            PublicationType = MetadataV2PublicationType.ODataEntitySet,
+            PublicationType = MetadataV2LayerType.ODataEntitySet,
         };
         var snapshot = new MetadataV2GraphSnapshot(
             new MetadataV2Graph
@@ -199,7 +199,7 @@ public sealed class FeatureServerLayerListParsingTests
         selectorSpecified.Should().BeTrue();
         error.Should().BeNull();
         layers.Should().ContainSingle()
-            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+            .Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public sealed class FeatureServerLayerListParsingTests
         };
         var draftStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
         var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
-        var activeResource = new MetadataV2Resource
+        var activeResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-active" },
             Status = activeStatus,
@@ -238,7 +238,7 @@ public sealed class FeatureServerLayerListParsingTests
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-draft-binding" },
             StorageBindingIds = ["binding-draft"],
         };
-        var activePublication = new MetadataV2Publication
+        var activePublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-active" },
             ServiceId = service.Metadata.Id,

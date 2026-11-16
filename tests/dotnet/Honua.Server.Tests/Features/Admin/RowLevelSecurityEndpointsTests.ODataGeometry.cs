@@ -137,7 +137,7 @@ public sealed partial class RowLevelSecurityEndpointsTests
     {
         var original = _fixture.GetCurrentV2GraphSnapshot();
         var publication = original.Graph.Publications.First(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer && candidate.LayerIndex == 0);
         var resource = original.ResolveResource(publication)!;
         var binding = original.ResolveStorageBinding(publication)!;
         var service = original.Index.ServicesById[publication.ServiceId] with
@@ -155,7 +155,7 @@ public sealed partial class RowLevelSecurityEndpointsTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "geometry-intent-publication" },
                     ServiceId = service.Metadata.Id,
-                    PublicationType = MetadataV2PublicationType.ODataEntitySet,
+                    PublicationType = MetadataV2LayerType.ODataEntitySet,
                     StorageBindingId = binding.Metadata.Id,
                     Capabilities = ["Query", "Create", "Update", "Delete"]
                 },

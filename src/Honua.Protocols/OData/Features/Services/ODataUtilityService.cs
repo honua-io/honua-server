@@ -555,7 +555,7 @@ internal static class ODataUtilityService
     }
 
     public static Dictionary<string, object?> BuildLayerPayload(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(resource);

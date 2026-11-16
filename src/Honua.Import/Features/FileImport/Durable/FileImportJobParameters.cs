@@ -6,14 +6,6 @@ using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Import.FileImport.Durable;
 
-/// <summary>
-/// The <see cref="Honua.Core.Features.ControlPlane.Domain.ExecutionJobSpec.Parameters"/> contract
-/// of a <c>FileImport</c> execution job (honua-server#5916). The accepting host writes it; the
-/// worker reads it back into the <see cref="ImportRequest"/> the in-process path would have run.
-/// The source is either the staged shared file (<c>import.cloud_file_id</c>) or a customer
-/// object pinned by ETag (<c>import.object_store_uri</c>). A worker on another machine cannot
-/// read the accepting host's local disk.
-/// </summary>
 internal static class FileImportJobParameters
 {
     public const string CloudFileId = "import.cloud_file_id";
@@ -22,6 +14,10 @@ internal static class FileImportJobParameters
     public const string TableName = "import.table_name";
     public const string TargetSchema = "import.target_schema";
     public const string SourceSrid = "import.source_srid";
+    public const string DatumTransformationName = "import.datum_transformation_name";
+    public const string SourceLayer = "import.source_layer";
+    public const string DatumTransformationWkid = "import.datum_transformation_wkid";
+    public const string CoordinateEpoch = "import.coordinate_epoch";
     public const string TargetSrid = "import.target_srid";
     public const string OverwriteExisting = "import.overwrite_existing";
     public const string LoadMode = "import.load_mode";
@@ -34,23 +30,16 @@ internal static class FileImportJobParameters
     public const string AuditId = "import.audit_id";
     public const string ProposalId = "import.proposal_id";
 
-    /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
 
-    /// <summary>ETag pinned by the accepting host's HeadObject. The worker sends it as <c>If-Match</c>.</summary>
     public const string ObjectStoreETag = "import.object_store_etag";
 
-    /// <summary>Allow-listed role ARN, when the worker must assume a role. Never an external id.</summary>
     public const string ObjectStoreRoleArn = "import.object_store_role_arn";
 
-    /// <summary>Content type observed by HeadObject.</summary>
     public const string ObjectStoreContentType = "import.object_store_content_type";
 
-    /// <summary>The runner the accepting host routed the job to (<c>batch</c> or <c>in-process</c>).</summary>
     public const string Runner = "import.runner";
 
-    /// <summary>Projects a staged or customer-object import request onto job parameters.</summary>
-    /// <exception cref="InvalidOperationException">The request has no shared file and no pinned object.</exception>
     public static Dictionary<string, string> Build(ImportRequest request, long fileSizeBytes)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -95,6 +84,10 @@ internal static class FileImportJobParameters
         AddIfPresent(parameters, TargetSchema, request.TargetSchema);
         AddIfPresent(parameters, TargetSrid, request.TargetSrid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, SourceSrid, request.SourceSrid?.ToString(CultureInfo.InvariantCulture));
+        AddIfPresent(parameters, DatumTransformationName, request.DatumTransformationName);
+        AddIfPresent(parameters, SourceLayer, request.SourceLayer);
+        AddIfPresent(parameters, DatumTransformationWkid, request.DatumTransformationWkid?.ToString(CultureInfo.InvariantCulture));
+        AddIfPresent(parameters, CoordinateEpoch, request.CoordinateEpoch?.ToString("R", CultureInfo.InvariantCulture));
         AddIfPresent(parameters, KeyColumns, request.KeyColumns.Count == 0 ? null : string.Join(',', request.KeyColumns));
         AddIfPresent(parameters, SourceUrl, request.SourceUrl);
         AddIfPresent(parameters, UploadId, request.UploadId);
@@ -105,7 +98,6 @@ internal static class FileImportJobParameters
         return parameters;
     }
 
-    /// <summary>Reads the import request back from job parameters.</summary>
     public static bool TryParse(
         IReadOnlyDictionary<string, string> parameters,
         out ImportRequest? request,
@@ -134,27 +126,18 @@ internal static class FileImportJobParameters
             return false;
         }
 
-        int? targetSrid = null;
-        if (Get(parameters, TargetSrid) is { } targetSridText)
+        var spatialReferences = ParseSpatialReferences(parameters);
+        if (spatialReferences.Error is not null)
         {
-            if (!int.TryParse(targetSridText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTarget))
-            {
-                error = $"'{TargetSrid}' is not an integer.";
-                return false;
-            }
-            targetSrid = parsedTarget;
+            error = spatialReferences.Error;
+            return false;
         }
 
-        int? sourceSrid = null;
-        if (Get(parameters, SourceSrid) is { } sourceSridText)
+        var datum = ParseDatumSelection(parameters);
+        if (datum.Error is not null)
         {
-            if (!int.TryParse(sourceSridText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSource))
-            {
-                error = $"'{SourceSrid}' is not an integer.";
-                return false;
-            }
-
-            sourceSrid = parsedSource;
+            error = datum.Error;
+            return false;
         }
 
         var loadMode = ImportLoadMode.Replace;
@@ -177,8 +160,12 @@ internal static class FileImportJobParameters
             FileName = fileName,
             TableName = tableName,
             TargetSchema = Get(parameters, TargetSchema),
-            SourceSrid = sourceSrid,
-            TargetSrid = targetSrid,
+            SourceSrid = spatialReferences.Source,
+            DatumTransformationWkid = datum.Wkid,
+            DatumTransformationName = Get(parameters, DatumTransformationName),
+            SourceLayer = Get(parameters, SourceLayer),
+            CoordinateEpoch = datum.Epoch,
+            TargetSrid = spatialReferences.Target,
             OverwriteExisting = string.Equals(Get(parameters, OverwriteExisting), "true", StringComparison.Ordinal),
             LoadMode = loadMode,
             KeyColumns = Get(parameters, KeyColumns) is { } keys
@@ -193,6 +180,64 @@ internal static class FileImportJobParameters
             ProposalId = Get(parameters, ProposalId),
         };
         return true;
+    }
+
+    private static (int? Source, int? Target, string? Error) ParseSpatialReferences(
+        IReadOnlyDictionary<string, string> parameters)
+    {
+        int? source = null;
+        int? target = null;
+        foreach (var key in new[] { SourceSrid, TargetSrid })
+        {
+            if (Get(parameters, key) is not { } text)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            {
+                return (null, null, $"'{key}' is not an integer.");
+            }
+
+            if (key == SourceSrid)
+            {
+                source = value;
+            }
+            else
+            {
+                target = value;
+            }
+        }
+
+        return (source, target, null);
+    }
+
+    private static (int? Wkid, double? Epoch, string? Error) ParseDatumSelection(
+        IReadOnlyDictionary<string, string> parameters)
+    {
+        int? datumTransformationWkid = null;
+        if (Get(parameters, DatumTransformationWkid) is { } wkidText)
+        {
+            if (!int.TryParse(wkidText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wkid) || wkid <= 0)
+            {
+                return (null, null, $"'{DatumTransformationWkid}' must be a positive WKID.");
+            }
+
+            datumTransformationWkid = wkid;
+        }
+
+        double? coordinateEpoch = null;
+        if (Get(parameters, CoordinateEpoch) is { } epochText)
+        {
+            if (!double.TryParse(epochText, NumberStyles.Float, CultureInfo.InvariantCulture, out var epoch) || !double.IsFinite(epoch))
+            {
+                return (null, null, $"'{CoordinateEpoch}' must be a finite decimal year.");
+            }
+
+            coordinateEpoch = epoch;
+        }
+
+        return (datumTransformationWkid, coordinateEpoch, null);
     }
 
     private static string? Get(IReadOnlyDictionary<string, string> parameters, string key)

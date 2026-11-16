@@ -399,8 +399,8 @@ internal sealed class CapabilityManifestService(
             .ToArray();
 
     private static string[] BuildPublicationFamilies()
-        => Enum.GetValues<MetadataV2PublicationType>()
-            .Where(value => value != MetadataV2PublicationType.Unknown)
+        => Enum.GetValues<MetadataV2LayerType>()
+            .Where(value => value != MetadataV2LayerType.Unknown)
             .Select(ToWireValue)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -530,14 +530,14 @@ internal sealed class CapabilityManifestService(
             Capability("collaboration.feature-locks", "collaboration", context,
                 configured: runtimeInventory.FeatureLockAuthorizerConfigured,
                 requiresAuthentication: true),
-            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
-            // lease is node-local, and GeoServices applyEdits honours no client-supplied
-            // version token. Same wire shape as an unimplemented file-format writer. The
-            // version-token row is scoped to GeoServices because OGC API Features does
-            // enforce If-Match/412 — a global name would under-report the working surfaces.
+            // Cross-node leases need the PostgreSQL store, and like every lease they need an authorizer that
+            // can grant one. Without the store the in-process fallback is a missing dependency, not a gap.
             Capability("collaboration.feature-locks.cross-node", "collaboration", context,
-                maturity: CapabilityMaturity.Planned,
-                supported: false),
+                configured: runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
+                unavailableReasonOverride: runtimeInventory.HasSharedFeatureLockStore
+                    ? null
+                    : CapabilityReasonCodes.DependencyUnavailable,
+                requiresAuthentication: true),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -717,6 +717,12 @@ internal sealed class CapabilityManifestService(
             ["collaboration.feature-locks"] = new()
             {
                 Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
+                RequiresAuthentication = true,
+            },
+            ["collaboration.feature-locks.cross-node"] = new()
+            {
+                Configured = runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
+                UnavailableReason = runtimeInventory.HasSharedFeatureLockStore ? null : CapabilityReasonCodes.DependencyUnavailable,
                 RequiresAuthentication = true,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
@@ -1025,7 +1031,6 @@ internal sealed class CapabilityManifestService(
         var limits = options.Limits;
         var importLimits = limits.Imports;
         var featureStreamOptions = options.Streaming;
-        var featureChangeEventOptions = options.FeatureChangeEvents;
         var uploads = options.FileUpload;
         var uploadSecurity = options.FileUploadSecurity;
         var grpc = options.Grpc;
@@ -1093,7 +1098,7 @@ internal sealed class CapabilityManifestService(
                 MaxSubscriptionsPerSession = featureStreamOptions.MaxSubscriptionsPerSession,
                 MaxSubscriptionIdLength = featureStreamOptions.MaxSubscriptionIdLength,
                 MaxControlFrameBytes = featureStreamOptions.MaxControlFrameBytes,
-                CursorRetentionLimit = featureChangeEventOptions.MaxRetainedEvents,
+                CursorRetentionLimit = options.CursorRetentionLimit,
                 HeartbeatIntervalSeconds = featureStreamOptions.HeartbeatInterval.TotalSeconds,
                 GrpcStreamBatchSize = Math.Max(grpc.StreamBatchSize, 1)
             },
@@ -1534,23 +1539,23 @@ internal sealed class CapabilityManifestService(
             _ => value.ToString()
         };
 
-    private static string ToWireValue(MetadataV2PublicationType value)
+    private static string ToWireValue(MetadataV2LayerType value)
         => value switch
         {
-            MetadataV2PublicationType.OgcCollection => "ogc-collection",
-            MetadataV2PublicationType.WfsFeatureType => "wfs-feature-type",
-            MetadataV2PublicationType.WmsLayer => "wms-layer",
-            MetadataV2PublicationType.WmtsLayer => "wmts-layer",
-            MetadataV2PublicationType.EsriFeatureLayer => "esri-feature-layer",
-            MetadataV2PublicationType.EsriMapLayer => "esri-map-layer",
-            MetadataV2PublicationType.EsriImageLayer => "esri-image-layer",
-            MetadataV2PublicationType.EsriVectorTileLayer => "esri-vector-tile-layer",
-            MetadataV2PublicationType.StacCollection => "stac-collection",
-            MetadataV2PublicationType.DcatDistribution => "dcat-distribution",
-            MetadataV2PublicationType.OgcRecord => "ogc-record",
-            MetadataV2PublicationType.ODataEntitySet => "odata-entity-set",
-            MetadataV2PublicationType.SensorThingsDatastream => "sensorthings-datastream",
-            MetadataV2PublicationType.Custom => "custom",
+            MetadataV2LayerType.OgcCollection => "ogc-collection",
+            MetadataV2LayerType.WfsFeatureType => "wfs-feature-type",
+            MetadataV2LayerType.WmsLayer => "wms-layer",
+            MetadataV2LayerType.WmtsLayer => "wmts-layer",
+            MetadataV2LayerType.EsriFeatureLayer => "esri-feature-layer",
+            MetadataV2LayerType.EsriMapLayer => "esri-map-layer",
+            MetadataV2LayerType.EsriImageLayer => "esri-image-layer",
+            MetadataV2LayerType.EsriVectorTileLayer => "esri-vector-tile-layer",
+            MetadataV2LayerType.StacCollection => "stac-collection",
+            MetadataV2LayerType.DcatDistribution => "dcat-distribution",
+            MetadataV2LayerType.OgcRecord => "ogc-record",
+            MetadataV2LayerType.ODataEntitySet => "odata-entity-set",
+            MetadataV2LayerType.SensorThingsDatastream => "sensorthings-datastream",
+            MetadataV2LayerType.Custom => "custom",
             _ => value.ToString()
         };
 

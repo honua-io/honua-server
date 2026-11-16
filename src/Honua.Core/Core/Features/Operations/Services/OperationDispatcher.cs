@@ -11,7 +11,7 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
+public sealed partial class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
 {
     private static readonly TimeSpan PostActuationPersistenceTimeout = TimeSpan.FromSeconds(10);
 
@@ -24,6 +24,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
     private readonly OperationEnvelopeFactory _envelopeFactory;
     private readonly IOperationApprovalReplayVerifier? _approvalReplayVerifier;
     private readonly TimeProvider _clock;
+    private readonly IAgentAuthorityStore? _agentAuthorityStore;
 
     public OperationDispatcher(
         IOperationCatalog catalog,
@@ -33,7 +34,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         IOperationApprovalBridge? approvalBridge = null,
         IOperationInstanceStore? instanceStore = null,
         IAuditLog? auditLog = null,
-        IOperationApprovalReplayVerifier? approvalReplayVerifier = null)
+        OperationActuationGuards? guards = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -46,7 +47,8 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         _instanceStore = instanceStore ?? new VolatileOperationInstanceStore();
         _auditLog = auditLog ?? new VolatileOperationAuditLog();
         _envelopeFactory = new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
-        _approvalReplayVerifier = approvalReplayVerifier;
+        _approvalReplayVerifier = guards?.ApprovalReplayVerifier;
+        _agentAuthorityStore = guards?.AgentAuthorityStore;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -123,7 +125,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         // enforcing there alone let a discover/create-only bearer invoke sensitive inventories.
         if (OperationScopeMapping.ExceedsScopeAuthority(request, context))
         {
-            return new OperationHandle
+            return await RecordAgentDenialAsync(new OperationHandle
             {
                 OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
                 OperationId = request.OperationId,
@@ -137,7 +139,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                 Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
                     ? "Operation exceeds the caller's OAuth scope authority."
                     : "Approved replay operation exceeds the sealed OAuth scope authority.",
-            };
+            }, context, cancellationToken).ConfigureAwait(false);
         }
 
         if (proposalOnly)
@@ -331,21 +333,11 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         PolicyDecision decision;
         try
         {
-            decision = string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
-                ? await _policy
-                    .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
-                    .ConfigureAwait(false)
-                : PolicyDecision.Allowed;
-            // Only this trusted mode adds an approval floor. A refusal is never promoted,
-            // and verified approved replay remains on the ordinary submission path.
-            if (proposalOnly && decision.Kind == PolicyDecisionKind.Allow)
+            decision = await EvaluateSubmissionDecisionAsync(descriptor, request, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (proposalOnly)
             {
-                decision = new PolicyDecision
-                {
-                    Kind = PolicyDecisionKind.RequireApproval,
-                    ApprovalLane = "control-plane",
-                    Reason = "Operator-gated proposal submission requires separate approval.",
-                };
+                decision = RequireProposalApproval(decision);
             }
             envelope = envelope with
             {
@@ -396,6 +388,9 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                     AuditId = decided.AuditId ?? acceptanceAuditId,
                     EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, decided.EvidenceRefs),
                 };
+                projected = projected.Status == OperationHandleStatus.Denied
+                    ? await RecordAgentDenialAsync(projected, invocationContext, cancellationToken).ConfigureAwait(false)
+                    : projected;
                 return projected.Status == OperationHandleStatus.RequiresApproval
                     ? await PersistApprovalDecisionAsync(projected, cancellationToken).ConfigureAwait(false)
                     : await PersistAsync(projected, cancellationToken).ConfigureAwait(false);
@@ -462,6 +457,13 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         }
         else
         {
+            var refused = await RefuseRevokedAgentAuthorityAsync(envelope, descriptor, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (refused is not null)
+            {
+                return refused;
+            }
+
             try
             {
                 executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
@@ -641,6 +643,22 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         return failed;
     }
 
+    // An agent's refusal is audited even when no operation row is accepted, so its denials stay attributable.
+    private async Task<OperationHandle> RecordAgentDenialAsync(
+        OperationHandle denied,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
+        if (OperationAuditActor.ResolveAgent(context) is null)
+        {
+            return denied;
+        }
+
+        var auditId = await WriteAuditAsync(denied, context, "operation.denied", AuditOutcome.Denied, cancellationToken)
+            .ConfigureAwait(false);
+        return denied with { AuditId = auditId };
+    }
+
     private async Task PersistPreActuationCancellationAsync(
         OperationHandle envelope,
         OperationPolicyContext invocationContext)
@@ -656,15 +674,11 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         {
             var auditId = await WriteAuditAsync(
                     cancelled,
-                    new OperationPolicyContext
+                    invocationContext with
                     {
                         OperationInstanceId = cancelled.OperationInstanceId,
                         CorrelationId = cancelled.CorrelationId,
                         AuthorizationOutcome = cancelled.AuthorizationOutcome,
-                        // The cancellation row belongs to the same invocation as the accepted
-                        // row; dropping the submitting principal recorded an authenticated
-                        // caller (for example an MCP tool call) as anonymous.
-                        PrincipalId = invocationContext.PrincipalId,
                     },
                     "operation.cancelled",
                     AuditOutcome.Failure,
@@ -788,7 +802,8 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
             Timestamp = _clock.GetUtcNow(),
             EventType = AuditEventType.AdminAction,
             Actor = context.PrincipalId ?? AuditEvent.AnonymousActor,
-            ActorType = context.PrincipalId is null ? AuditActorType.Anonymous : AuditActorType.UserId,
+            ActorType = OperationAuditActor.ResolveType(context),
+            ActorAgent = OperationAuditActor.ResolveAgent(context),
             ResourceType = "operation_instance",
             ResourceId = envelope.OperationInstanceId,
             Action = action,

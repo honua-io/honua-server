@@ -412,7 +412,7 @@ public sealed class HonuaLayerSinkExecutorTests
 
     private static MetadataV2GraphSnapshot CatalogSnapshotWithRelationalLayer(int layerId, string schema, string table)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },

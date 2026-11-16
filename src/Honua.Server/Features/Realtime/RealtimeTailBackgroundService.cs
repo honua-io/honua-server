@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Realtime;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Realtime;
@@ -16,6 +17,23 @@ internal sealed partial class RealtimeTailBackgroundService(
     IOptions<RealtimeOptions> options,
     ILogger<RealtimeTailBackgroundService> logger) : BackgroundService
 {
+    internal IRealtimeStreamLifecycle? StreamLifecycle { get; init; }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (StreamLifecycle is { } lifecycle)
+            {
+                await lifecycle.DrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // A host without a system database has no log to follow.
@@ -40,15 +58,21 @@ internal sealed partial class RealtimeTailBackgroundService(
         await Task.WhenAll(listening, flushing).ConfigureAwait(false);
     }
 
-    internal TimeSpan CurrentPollInterval()
+    internal TimeSpan CurrentPollInterval() => CurrentPoll().Interval;
+
+    // The interval and the wake-up source are chosen together, before the wait, so a listener that
+    // reconnects during the wait does not relabel the poll that follows it.
+    private (TimeSpan Interval, string Source) CurrentPoll()
     {
         var current = options.Value;
         if (listener is null)
         {
-            return current.LocalPollInterval;
+            return (current.LocalPollInterval, "local-poll");
         }
 
-        return listener.IsConnected ? current.SafetyPollInterval : current.DegradedPollInterval;
+        return listener.IsConnected
+            ? (current.SafetyPollInterval, "safety-poll")
+            : (current.DegradedPollInterval, "degraded-poll");
     }
 
     private async Task FollowAsync(RealtimeDispatcher active, CancellationToken stoppingToken)
@@ -70,7 +94,8 @@ internal sealed partial class RealtimeTailBackgroundService(
                 LogDispatchFailed(logger, exception);
             }
 
-            if (await active.WaitForWakeAsync(CurrentPollInterval(), stoppingToken).ConfigureAwait(false))
+            var poll = CurrentPoll();
+            if (await active.WaitForWakeAsync(poll.Interval, stoppingToken).ConfigureAwait(false))
             {
                 var coalesce = options.Value.WakeCoalesceWindow;
                 if (coalesce > TimeSpan.Zero)
@@ -79,6 +104,10 @@ internal sealed partial class RealtimeTailBackgroundService(
                 }
 
                 active.DrainWakeups();
+            }
+            else
+            {
+                RealtimeMetrics.Wakeups.Add(1, new KeyValuePair<string, object?>("source", poll.Source));
             }
         }
     }

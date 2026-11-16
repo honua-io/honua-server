@@ -25,7 +25,7 @@ internal static class FilterExpressionHelpers
 
     internal static FilterExpression NormalizeFilterPropertyReferences(
         FilterExpression expression,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         Func<string, string?>? protocolFieldResolver = null)
     {
         return RewriteProperties(expression, property => new PropertyReference(
@@ -103,7 +103,7 @@ internal static class FilterExpressionHelpers
         return normalized;
     }
 
-    internal static string? ResolveFieldName(MetadataV2Resource resource, string requestedName, bool allowGeometryAlias)
+    internal static string? ResolveFieldName(MetadataV2Object resource, string requestedName, bool allowGeometryAlias)
     {
         var normalized = NormalizeIdentifier(requestedName);
         if (string.IsNullOrWhiteSpace(normalized))

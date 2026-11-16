@@ -36,7 +36,6 @@ public sealed class DatabricksLiveIntegrationTests
         var registry = new DatabricksLayerMappingRegistry([layer]);
         var store = new DatabricksFeatureStore(
             registry,
-            new DatabricksFeatureQueryBuilder(),
             new DatabricksFeatureDataAccess(statementClient));
 
         var result = await store.QueryAsync(layer.LayerId, new FeatureQuery { Limit = 5 }, CancellationToken.None);

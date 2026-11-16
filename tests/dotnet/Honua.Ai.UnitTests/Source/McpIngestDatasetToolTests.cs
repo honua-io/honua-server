@@ -10,6 +10,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
@@ -375,7 +376,7 @@ public sealed class McpIngestDatasetToolTests
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_IngestOversizeInlineData_ReturnsInvalidArgumentPointingAtRestUpload()
+    public async Task ToolsCall_IngestOversizeInlineData_ReturnsInvalidArgumentPointingAtUrlImport()
     {
         var oversize = new string('x', IngestDatasetTool.MaxInlineDataBytes + 1);
         var response = await DispatchAsync(
@@ -385,7 +386,7 @@ public sealed class McpIngestDatasetToolTests
         var structured = AssertToolFailed(response);
         structured.GetProperty("code").GetString().Should().Be("invalid_argument");
         structured.GetProperty("message").GetString().Should()
-            .Contain("/api/v1/admin/import/upload").And.Contain("inline cap");
+            .Contain("honua_admin_import_upload_url").And.Contain("inline cap");
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -427,6 +428,51 @@ public sealed class McpIngestDatasetToolTests
         var structured = AssertToolSucceeded(response);
         structured.GetProperty("success").GetBoolean().Should().BeFalse();
         structured.GetProperty("errorMessage").GetString().Should().Contain("No features");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_AgentIngest_CreatesOnlyAndPointsReplacementAtApproval()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importService.ImportFileAsync(Arg.Do<ImportRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateFailure(
+                "landmarks",
+                SupportedFileFormat.GeoJson,
+                "Create-only import requires a new target table."));
+
+        var response = await DispatchAsAgentAsync(
+            BuildServices(importService),
+            $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
+
+        var structured = AssertToolSucceeded(response);
+        structured.GetProperty("success").GetBoolean().Should().BeFalse();
+        structured.GetProperty("errorMessage").GetString().Should().Contain("dataset.stage.import");
+        captured.Should().NotBeNull();
+        captured!.OverwriteExisting.Should().BeFalse();
+        captured.EffectiveLoadMode.Should().Be(ImportLoadMode.CreateOnly);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_HumanIngest_KeepsReplacingTheDataset()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importService.ImportFileAsync(Arg.Do<ImportRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateFailure("landmarks", SupportedFileFormat.GeoJson, "No features found in file"));
+
+        var response = await DispatchAsync(
+            BuildServices(importService),
+            $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
+
+        AssertToolSucceeded(response).GetProperty("errorMessage").GetString().Should().NotContain("dataset.stage.import");
+        captured!.EffectiveLoadMode.Should().Be(ImportLoadMode.Replace);
     }
 
     [UnitTest]
@@ -508,7 +554,7 @@ public sealed class McpIngestDatasetToolTests
             .Contain("header row").And
             .Contain("lon/lat").And
             .Contain("EPSG:4326").And
-            .Contain("/api/v1/admin/import/upload");
+            .Contain("honua_admin_import_upload_url");
         descriptor.OutputSchema.Should().NotBeNull();
         descriptor.Annotations!.ReadOnlyHint.Should().BeFalse();
         descriptor.Annotations.DestructiveHint.Should().BeFalse();
@@ -580,18 +626,34 @@ public sealed class McpIngestDatasetToolTests
         return services.BuildServiceProvider();
     }
 
-    private async Task<McpJsonRpcResponse?> DispatchAsync(
+    private Task<McpJsonRpcResponse?> DispatchAsync(
         ServiceProvider services,
         string argumentsJson,
         CancellationToken cancellationToken = default)
+    {
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.RequestServices = services;
+        return DispatchAsync(context, argumentsJson, cancellationToken);
+    }
+
+    private Task<McpJsonRpcResponse?> DispatchAsAgentAsync(ServiceProvider services, string argumentsJson)
+    {
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, AgentApprovalRule.AgentRole));
+        context.RequestServices = services;
+        return DispatchAsync(context, argumentsJson, CancellationToken.None);
+    }
+
+    // The context carries the request services the tool resolves.
+    private static async Task<McpJsonRpcResponse?> DispatchAsync(
+        HttpContext context,
+        string argumentsJson,
+        CancellationToken cancellationToken)
     {
         var surface = new McpDataAccessSurface(
             [new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance)],
             [],
             NullLogger<McpDataAccessSurface>.Instance);
-
-        var context = McpTestFactory.AuthenticatedHttpContext();
-        context.RequestServices = services;
 
         return await surface.DispatchAsync(
             context,

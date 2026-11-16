@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geocoding.Features.Geocoding.Services;
 
-internal sealed class GeocodeProviderRegistry : IGeocodeProviderRegistry, IGeocodeProviderFactory
+internal sealed class GeocodeProviderRegistry : IGeocodeProviderRegistry
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IOptions<GeocodingConfiguration> _configuration;

@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Licensing.Abstractions;
 using Microsoft.Extensions.Hosting;
 
@@ -775,11 +776,12 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
     IExecutionJobStore jobStore,
     IExecutionJobReconciler reconciler,
     ILogger<ExecutionJobReconcilerBackgroundService> logger,
-    IReconcilableJobSource? reconcilableJobs = null) : BackgroundService
+    IReconcilableJobSource? reconcilableJobs = null,
+    PollWakeSignal<IExecutionJobStore>? wake = null) : BackgroundService
 {
     private readonly IReconcilableJobSource _reconcilableJobs = reconcilableJobs ?? new ActiveJobsReconcilableJobSource(jobStore);
 
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly IdlePollPacer _pacer = new(wake);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -787,11 +789,14 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var operationIds = await _reconcilableJobs
                     .ListBackendReconciliationCandidateIdsAsync(stoppingToken)
                     .ConfigureAwait(false);
+                idle = operationIds.Count == 0;
                 foreach (var operationId in operationIds)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
@@ -821,7 +826,7 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
 
             try
             {
-                await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+                await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

@@ -28,10 +28,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 
-/// <summary>
-/// Handler for OGC API - Maps rendering operations.
-/// Provides server-side map rendering from vector and raster collections.
-/// </summary>
 internal sealed class OgcMapsRenderingHandler
 {
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
@@ -40,9 +36,6 @@ internal sealed class OgcMapsRenderingHandler
     private const int DefaultBboxCrsSrid = 4326;
     private static readonly Regex _backgroundColorPattern = new("^0x[0-9A-Fa-f]{6}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// Supported image media types mapped to OGC format short names.
-    /// </summary>
     private static readonly Dictionary<string, RasterFormat> _acceptMediaTypeMap = new(StringComparer.OrdinalIgnoreCase)
     {
         ["image/png"] = RasterFormat.PNG,
@@ -74,9 +67,6 @@ internal sealed class OgcMapsRenderingHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Renders a map from a single collection.
-    /// </summary>
     public async Task<IResult> RenderCollectionMapAsync(
         int layerId,
         OgcMapRequest request,
@@ -171,9 +161,6 @@ internal sealed class OgcMapsRenderingHandler
         }
     }
 
-    /// <summary>
-    /// Renders a map from multiple collections (dataset-wide).
-    /// </summary>
     public async Task<IResult> RenderDatasetMapAsync(
         int[] layerIds,
         OgcMapRequest request,
@@ -202,7 +189,7 @@ internal sealed class OgcMapsRenderingHandler
 
             // Resolve dataset entries (storage layer id + V2 resource + service) from explicit
             // selection or all accessible V2 resources that expose OGC API Maps.
-            var entries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
+            var entries = new List<(int LayerId, MetadataV2Object Resource, MetadataV2Service? Service)>();
             int[] resolvedLayerIds;
 
             if (layerIds.Length == 0)
@@ -424,9 +411,6 @@ internal sealed class OgcMapsRenderingHandler
     private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
         => OgcMapsResourceResolver.IsProtocolEnabled(service, OgcApiMapsProtocol);
 
-    /// <summary>
-    /// Renders a map with a specific style applied.
-    /// </summary>
     public async Task<IResult> RenderStyledMapAsync(
         int layerId,
         string styleId,
@@ -571,15 +555,10 @@ internal sealed class OgcMapsRenderingHandler
         }
     }
 
-    /// <summary>
-    /// Renders a styled map for a vector collection through the shared Skia pipeline,
-    /// resolving the MapLibre style for <paramref name="styleId"/> via the OGC API - Styles
-    /// projection (ADR-0048).
-    /// </summary>
     private async Task<IResult> RenderStyledVectorMapAsync(
         int layerId,
         string styleId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         string mapLibreStyleJson,
         MapRenderRequest renderRequest,
@@ -669,7 +648,7 @@ internal sealed class OgcMapsRenderingHandler
         return CreateMapFileResult(context, result, renderRequest);
     }
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -684,17 +663,13 @@ internal sealed class OgcMapsRenderingHandler
 
     internal static bool IsStyleAssociatedWithResource(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string styleId)
         => resource.StyleResourceIds.Any(styleResourceId =>
             snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
-            styleResource.Type == MetadataV2ResourceType.Style &&
+            styleResource.Type == MetadataV2ObjectType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
 
-    /// <summary>
-    /// Creates a not-found result using StandardErrorHelpers when context is available,
-    /// or a plain 404 when it is not.
-    /// </summary>
     private static IResult CreateBadRequestResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateBadRequest(context, message)
@@ -757,7 +732,7 @@ internal sealed class OgcMapsRenderingHandler
 
     private static (IReadOnlyDictionary<string, TemporalFilter>? Filters, string? Error) CreateVectorTemporalFilters(
         string? datetime,
-        IEnumerable<(int LayerId, MetadataV2Resource Resource)> layers)
+        IEnumerable<(int LayerId, MetadataV2Object Resource)> layers)
     {
         if (string.IsNullOrWhiteSpace(datetime))
         {
@@ -801,19 +776,11 @@ internal sealed class OgcMapsRenderingHandler
             "Temporal raster mosaic");
     }
 
-    /// <summary>
-    /// Creates a not-found result using StandardErrorHelpers when context is available,
-    /// or a plain 404 when it is not.
-    /// </summary>
     private static IResult CreateNotFoundResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateNotFound(context, message)
             : Results.NotFound();
 
-    /// <summary>
-    /// Creates an internal server error result using StandardErrorHelpers when context is available,
-    /// or a plain 500 Problem when it is not.
-    /// </summary>
     private static IResult CreateErrorResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateInternalServerError(context, message)
@@ -854,9 +821,6 @@ internal sealed class OgcMapsRenderingHandler
         return EncodedRasterResults.File(result.Data, result.ContentType);
     }
 
-    /// <summary>
-    /// Appends RFC 8288 Link headers for self and alternate image format representations.
-    /// </summary>
     private static void AppendLinkHeaders(HttpContext context, string currentContentType)
     {
         var requestPath = context.Request.Path + context.Request.QueryString;
@@ -872,9 +836,6 @@ internal sealed class OgcMapsRenderingHandler
         }
     }
 
-    /// <summary>
-    /// Constructs a path with the format query parameter replaced for alternate link generation.
-    /// </summary>
     private static string ReplaceFormatInPath(HttpContext context, string mediaType)
     {
         var shortName = mediaType switch
@@ -922,11 +883,6 @@ internal sealed class OgcMapsRenderingHandler
     private static string FormatContentBboxHeader(double[] bbox)
         => FormattableString.Invariant($"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}");
 
-    /// <summary>
-    /// Resolves the output format from the Accept header and/or f query parameter.
-    /// The f parameter takes precedence when present; otherwise the Accept header is used.
-    /// Falls back to PNG when neither is specified.
-    /// </summary>
     internal static RasterFormat? ResolveOutputFormat(string? fParam, HttpContext? context)
     {
         // f query parameter takes precedence when explicitly provided
@@ -973,7 +929,7 @@ internal sealed class OgcMapsRenderingHandler
 
     private (MapRenderRequest?, string?) CreateMapRenderRequest(
         OgcMapRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         HttpContext? context = null,
         FeatureExtent? datasetExtentOverride = null)

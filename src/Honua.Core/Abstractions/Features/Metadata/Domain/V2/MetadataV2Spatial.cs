@@ -89,7 +89,7 @@ public sealed record MetadataV2Bbox : ExtensibleJsonRecord
     public double North { get; init; }
 }
 
-public sealed record MetadataV2ResourceSpatial : ExtensibleJsonRecord
+public sealed record MetadataV2ObjectSpatial : ExtensibleJsonRecord
 {
     private IReadOnlyList<MetadataV2SpatialReference> _supportedCrs = Array.Empty<MetadataV2SpatialReference>();
 

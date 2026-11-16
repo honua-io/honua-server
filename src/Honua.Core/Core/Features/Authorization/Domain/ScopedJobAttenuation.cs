@@ -3,68 +3,18 @@
 
 namespace Honua.Core.Features.Authorization.Domain;
 
-/// <summary>
-/// Pure, server-side attenuation math for the custom-code geoprocessing auth spine
-/// (Phase 0). Computes the <em>intersection</em> of an owner's reachable grants and
-/// a requested resource scope, and projects that intersection onto the role and
-/// permission claims the shared RBAC pipeline already enforces.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This type carries no I/O and no <c>HttpContext</c> dependency so it is safe to
-/// call from any layer (submit-time clamp in the geoprocessing service and
-/// mint-time freeze in the issuer share this one implementation). It is the single
-/// place the narrow-only invariant is computed; both callers MUST route through it
-/// so the rule cannot drift between the two sites.
-/// </para>
-/// <para>
-/// Owner reachability is derived from the same claim grammar the live pipeline
-/// reads: the <c>admin</c> role (full authority), configured global data-editor
-/// roles, service-scoped <c>data-editor:{service}</c> roles (service-wide write),
-/// and per-resource <c>read:</c>/<c>write:</c> permission grants. A scope entry is
-/// only retained when the owner could actually reach it at the requested access
-/// level — anything else is dropped (clamped away), never widened.
-/// </para>
-/// </remarks>
 public static class ScopedJobAttenuation
 {
-    /// <summary>The conventional full-authority role.</summary>
     public const string AdminRole = "admin";
 
-    /// <summary>Prefix for service-scoped data-editor roles (mirrors <c>RbacOptions.DataEditorServicePrefix</c> default).</summary>
     public const string ServiceEditorRolePrefix = "data-editor:";
 
-    /// <summary>Permission-grant prefix for write access (mirrors the layer-scoped write-key grammar).</summary>
     public const string WriteGrantPrefix = "write:";
 
-    /// <summary>Permission-grant prefix for read access (the read counterpart of <see cref="WriteGrantPrefix"/>).</summary>
     public const string ReadGrantPrefix = "read:";
 
-    /// <summary>
-    /// Wildcard accepted only in read grants: <c>read:*</c> reaches every service and
-    /// <c>read:{service}/*</c> every layer of one service. Write grants have no wildcard.
-    /// </summary>
     public const string ReadWildcard = "*";
 
-    /// <summary>
-    /// Computes the effective (intersected) scope: every requested entry the owner
-    /// could actually reach at the requested access level, clamped to the owner's
-    /// reachable access. An entry the owner could only read but the request asked
-    /// to write is downgraded to read; an entry the owner could not reach at all is
-    /// dropped. The result can therefore never exceed either input.
-    /// </summary>
-    /// <param name="ownerRoles">The owner's role snapshot.</param>
-    /// <param name="ownerGrants">
-    /// The owner's per-resource permission grants (<c>read:{svc}[/{layer}]</c> /
-    /// <c>write:{svc}[/{layer}]</c>), or <see langword="null"/>/empty when the owner
-    /// carries no fine-grained grants.
-    /// </param>
-    /// <param name="globalDataEditorRoles">
-    /// Roles that confer write to every service (the configured global data-editor
-    /// roles), or <see langword="null"/> when none are configured.
-    /// </param>
-    /// <param name="requestedScope">The scope the job declared / requested.</param>
-    /// <returns>The intersected, access-clamped scope (possibly empty).</returns>
     public static IReadOnlyList<JobResourceScopeEntry> Intersect(
         IReadOnlyList<string>? ownerRoles,
         IReadOnlyList<string>? ownerGrants,
@@ -108,18 +58,6 @@ public static class ScopedJobAttenuation
         return effective;
     }
 
-    /// <summary>
-    /// Determines whether a requested scope is wholly reachable by the owner — i.e.
-    /// the intersection equals the request (every entry retained at the requested
-    /// access). Used by the submit-time validation to reject (rather than silently
-    /// clamp) a declared scope that exceeds the submitter.
-    /// </summary>
-    /// <param name="ownerRoles">The owner's role snapshot.</param>
-    /// <param name="ownerGrants">The owner's per-resource permission grants.</param>
-    /// <param name="globalDataEditorRoles">Roles conferring write to every service.</param>
-    /// <param name="requestedScope">The declared scope to test.</param>
-    /// <param name="firstUnreachable">The first entry the owner cannot fully reach, when the method returns <see langword="false"/>.</param>
-    /// <returns><see langword="true"/> when every entry is reachable at its requested access.</returns>
     public static bool IsWithinOwner(
         IReadOnlyList<string>? ownerRoles,
         IReadOnlyList<string>? ownerGrants,
@@ -157,16 +95,6 @@ public static class ScopedJobAttenuation
         return true;
     }
 
-    /// <summary>
-    /// Projects an effective scope onto the role and permission claim values the
-    /// shared RBAC pipeline enforces. The returned values are what the issuer pins
-    /// onto the hydrated principal: <c>data-editor:{service}</c> roles for
-    /// service-wide write entries, and <c>read:</c>/<c>write:</c> permission grants
-    /// for every entry. Because only the intersected scope is projected, the
-    /// hydrated principal can never out-grant the intersection.
-    /// </summary>
-    /// <param name="effectiveScope">The already-intersected scope.</param>
-    /// <returns>The role and permission claim values to pin onto the principal.</returns>
     public static ScopedJobClaims ToClaims(IReadOnlyList<JobResourceScopeEntry> effectiveScope)
     {
         var roles = new List<string>();
@@ -208,9 +136,6 @@ public static class ScopedJobAttenuation
         return new ScopedJobClaims(roles, permissions);
     }
 
-    /// <summary>
-    /// Pre-indexed view of an owner's reachable access for fast per-entry checks.
-    /// </summary>
     private sealed class OwnerReach
     {
         private readonly bool _isAdminOrGlobalEditor;
@@ -364,11 +289,6 @@ public static class ScopedJobAttenuation
             }
         }
 
-        /// <summary>
-        /// Returns the maximum access the owner can reach for the
-        /// <c>(service, layer)</c> target, or <see langword="null"/> when the owner
-        /// cannot reach it at all.
-        /// </summary>
         public JobResourceAccess? MaxAccess(string service, string? layer)
         {
             if (_isAdminOrGlobalEditor)
@@ -404,12 +324,6 @@ public static class ScopedJobAttenuation
     }
 }
 
-/// <summary>
-/// The role and permission claim values an attenuated scoped-job principal carries,
-/// produced by <see cref="ScopedJobAttenuation.ToClaims"/>.
-/// </summary>
-/// <param name="Roles">Service-scoped <c>data-editor:{service}</c> roles for service-wide write entries.</param>
-/// <param name="Permissions">Per-resource <c>read:</c>/<c>write:</c> permission grants for every entry.</param>
 public sealed record ScopedJobClaims(
     IReadOnlyList<string> Roles,
     IReadOnlyList<string> Permissions);

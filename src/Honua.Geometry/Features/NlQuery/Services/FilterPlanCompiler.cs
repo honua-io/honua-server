@@ -11,11 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Features.NlQuery.Services;
 
-/// <summary>
-/// Compiles a <see cref="FilterPlan"/> into the existing <see cref="FilterExpression"/> AST.
-/// Acts as a security boundary: only the allowed subset of operators maps to AST nodes,
-/// and every property reference is validated against the resource schema.
-/// </summary>
 public static class FilterPlanCompiler
 {
     private const int DefaultSrid = SpatialConstants.DefaultSrid;
@@ -35,14 +30,7 @@ public static class FilterPlanCompiler
         "before", "after", "during"
     };
 
-    /// <summary>
-    /// Compiles a filter plan into a <see cref="FilterExpression"/> AST, validating
-    /// all property references and operators against the Metadata v2 resource.
-    /// </summary>
-    /// <param name="plan">The filter plan to compile.</param>
-    /// <param name="resource">The Metadata v2 resource providing schema metadata.</param>
-    /// <returns>A result containing either the compiled expression or an error.</returns>
-    public static FilterPlanCompileResult Compile(FilterPlan plan, MetadataV2Resource resource)
+    public static FilterPlanCompileResult Compile(FilterPlan plan, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(resource);
@@ -68,14 +56,6 @@ public static class FilterPlanCompiler
         }
     }
 
-    /// <summary>
-    /// Checks clause shape that does not need a resource schema: null clauses, a null
-    /// type discriminator, and AND/OR sequences longer than the expression depth cap.
-    /// Returns the failure message, or <see langword="null"/> when the shape is acceptable.
-    /// Schema errors are left to <see cref="Compile"/>.
-    /// </summary>
-    /// <param name="plan">Filter plan to inspect.</param>
-    /// <returns>A caller-facing failure message, or <see langword="null"/>.</returns>
     public static string? DescribeStructureFailure(FilterPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -93,7 +73,7 @@ public static class FilterPlanCompiler
     private static FilterExpression CompileClauses(
         FilterPlanCombinator combinator,
         FilterPlanClause[] clauses,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         EnsureClauseStructure(clauses);
         if (clauses.Length == 0)
@@ -135,7 +115,7 @@ public static class FilterPlanCompiler
         }
     }
 
-    private static FilterExpression CompileClause(FilterPlanClause clause, MetadataV2Resource resource)
+    private static FilterExpression CompileClause(FilterPlanClause clause, MetadataV2Object resource)
     {
         if (clause.Type is null)
         {
@@ -160,7 +140,7 @@ public static class FilterPlanCompiler
         };
     }
 
-    private static BinaryExpression CompileComparison(ComparisonClause clause, MetadataV2Resource resource)
+    private static BinaryExpression CompileComparison(ComparisonClause clause, MetadataV2Object resource)
     {
         if (!AllowedComparisonOperators.Contains(clause.Operator))
         {
@@ -182,7 +162,7 @@ public static class FilterPlanCompiler
         return new BinaryExpression(property, op, literal);
     }
 
-    private static FilterExpression CompileSpatial(SpatialClause clause, MetadataV2Resource resource)
+    private static FilterExpression CompileSpatial(SpatialClause clause, MetadataV2Object resource)
     {
         if (!AllowedSpatialOperators.Contains(clause.Operator))
         {
@@ -213,7 +193,7 @@ public static class FilterPlanCompiler
         return new SpatialPredicate(spatialOp, propertyRef, geometryLiteral);
     }
 
-    private static TemporalPredicate CompileTemporal(TemporalClause clause, MetadataV2Resource resource)
+    private static TemporalPredicate CompileTemporal(TemporalClause clause, MetadataV2Object resource)
     {
         if (!AllowedTemporalOperators.Contains(clause.Operator))
         {
@@ -253,7 +233,7 @@ public static class FilterPlanCompiler
         }
     }
 
-    private static FilterExpression CompileNested(NestedClause clause, MetadataV2Resource resource)
+    private static FilterExpression CompileNested(NestedClause clause, MetadataV2Object resource)
     {
         if (clause.Clauses.Length == 0)
         {
@@ -263,10 +243,10 @@ public static class FilterPlanCompiler
         return CompileClauses(clause.Combinator, clause.Clauses, resource);
     }
 
-    private static void ValidatePropertyExists(string propertyName, MetadataV2Resource resource)
+    private static void ValidatePropertyExists(string propertyName, MetadataV2Object resource)
         => _ = FindField(propertyName, resource);
 
-    private static MetadataV2Field FindField(string propertyName, MetadataV2Resource resource)
+    private static MetadataV2Field FindField(string propertyName, MetadataV2Object resource)
     {
         if (string.IsNullOrWhiteSpace(propertyName))
         {
@@ -454,10 +434,6 @@ public static class FilterPlanCompiler
     }
 }
 
-/// <summary>
-/// Exception thrown during filter plan compilation for expected validation failures.
-/// Used internally by the compiler; callers receive <see cref="FilterPlanCompileResult"/>.
-/// </summary>
 internal sealed class FilterPlanCompilationException : Exception
 {
     public FilterPlanCompilationException(string message) : base(message) { }

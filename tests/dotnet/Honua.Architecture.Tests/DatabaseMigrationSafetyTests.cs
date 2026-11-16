@@ -31,8 +31,7 @@ public sealed class DatabaseMigrationSafetyTests
         var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
         var scripts = EnumerateMigrationFiles().ToDictionary(
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
-        var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
-            File.ReadAllText(Path.Join(root, "eng", "schema", "schema-migration-hashes.v1.json")))!;
+        var hashes = ReadMigrationHashes(root);
         RollingUpgradeViolations(scripts, new MigrationPins(baseline, hashes, ReadReleaseBoundary(root))).Should().BeEmpty(
             "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
     }
@@ -66,6 +65,22 @@ public sealed class DatabaseMigrationSafetyTests
         RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new MigrationPins(
             new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) }))
             .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("\nDROP TABLE honua.features;", false)]
+    [InlineData("\n-- changed", false)]
+    public void ExpandOnlyGate_ReviewedIndexRemoval_RequiresExactSql(string suffix, bool accepted)
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "src/Honua.Server/Migrations/999_RemoveUnusedFeatureIndexes.sql";
+        var sql = File.ReadAllText(Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql")) + suffix;
+        var scripts = new Dictionary<string, string> { [name] = sql };
+        var pins = new MigrationPins(new(), new() { [name] = MigrationHash(sql) });
+
+        MigrationSafetyClassifier.Classify(name, sql).IsBreaking.Should().BeTrue();
+        RollingUpgradeViolations(scripts, pins).Any().Should().Be(!accepted);
     }
 
     [Theory]
@@ -109,6 +124,15 @@ public sealed class DatabaseMigrationSafetyTests
         }
         RollingUpgradeViolations(scripts, new MigrationPins(new Dictionary<string, string>(), hashes))
             .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    private static Dictionary<string, string> ReadMigrationHashes(string root)
+    {
+        var directory = Path.Join(root, "eng", "schema", "migration-hashes");
+        return Directory.EnumerateFiles(directory, "*.sha256", SearchOption.AllDirectories)
+            .ToDictionary(
+                path => Path.GetRelativePath(directory, path)[..^".sha256".Length].Replace('\\', '/'),
+                path => File.ReadAllText(path).Trim(), StringComparer.Ordinal);
     }
 
     private static Dictionary<string, string> ReadReleaseBoundary(string root)
@@ -289,11 +313,12 @@ public sealed class DatabaseMigrationSafetyTests
         {
             if (!hashes.ContainsKey(name))
             {
-                yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.v1.json";
+                yield return $"{name}: every migration must be hash-pinned under eng/schema/migration-hashes";
             }
             var incompatible = Regex.IsMatch(sql, @"^[ \t]*--[ \t]*honua:reader-incompatible\b",
                 RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
-            var contracting = MigrationSafetyClassifier.Classify(name, sql).IsBreaking;
+            var contracting = MigrationSafetyClassifier.Classify(name, sql).IsBreaking
+                && MigrationReaderCompatibility.Declare(name, sql).Classification != MigrationReaderCompatibilityClassification.Expand;
             if ((incompatible || (contracting && !baseline.ContainsKey(name))) &&
                 (!boundary.TryGetValue(Path.GetFileName(name), out var boundaryHash) || boundaryHash != MigrationHash(sql)))
             {
@@ -334,8 +359,7 @@ public sealed class DatabaseMigrationSafetyTests
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
         const string path = "src/Honua.Server/Migrations/135_RecordMigrationReaderCompatibility.sql";
         var sql = File.ReadAllText(Path.Join(root, path));
-        var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
-            File.ReadAllText(Path.Join(root, "eng", "schema", "schema-migration-hashes.v1.json")))!;
+        var hashes = ReadMigrationHashes(root);
 
         hashes.Should().ContainKey(path).WhoseValue.Should().Be(MigrationHash(sql));
         var declaration = MigrationReaderCompatibility.Declare("Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql", sql);

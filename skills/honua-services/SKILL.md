@@ -1,6 +1,8 @@
 ---
-name: honua-services
-description: Use when importing a small dataset, publishing it as a Honua layer, and checking a filtered feature query.
+{
+  "name": "honua-services",
+  "description": "Use when importing a small dataset, publishing it as a Honua layer, and checking a filtered feature query."
+}
 ---
 
 # Import, publish, and query

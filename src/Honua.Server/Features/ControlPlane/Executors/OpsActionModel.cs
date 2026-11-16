@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -30,36 +29,6 @@ internal static class OpsActionNames
 
     public const string SetConfig = "workload.set_config";
 }
-
-internal static class OpsActionCatalog
-{
-    // The guardrail tier can tighten the edition floor and can never loosen it, and the auto-safe marker never loosens a guardrail by itself.
-    public static readonly ImmutableDictionary<string, OpsActionDescriptor> Actions =
-        ImmutableDictionary.CreateRange(
-            StringComparer.Ordinal,
-            new KeyValuePair<string, OpsActionDescriptor>[]
-            {
-                new(OpsActionNames.RedriveDeadLetters, new OpsActionDescriptor(GuardrailTier.RequiresApproval, true)),
-                new(OpsActionNames.PauseChannel, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.ResumeChannel, new OpsActionDescriptor(GuardrailTier.DirectExecute, false)),
-                new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.ComposeRestartService, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.ComposeApplyConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.RestartEcs, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.RestartLambda, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-                new(OpsActionNames.SetConfig, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
-            });
-
-    public static readonly ImmutableDictionary<string, GuardrailTier> GuardrailTiers =
-        Actions.ToImmutableDictionary(
-            static action => action.Key,
-            static action => action.Value.GuardrailTier,
-            StringComparer.Ordinal);
-
-    public static bool IsRegistered(string action) => Actions.ContainsKey(action);
-}
-
-internal sealed record OpsActionDescriptor(GuardrailTier GuardrailTier, bool IsAutoSafe);
 
 internal sealed class OpsActionSafetyCatalog : IOpsActionSafetyCatalog
 {

@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -14,26 +13,6 @@ internal sealed partial class FeatureQueryBuilder
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IS\s+(?<not>NOT\s+)?NULL$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex InRegex();
-
-    [GeneratedRegex(
-        @"^(?:1\s*=\s*1|TRUE)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex TrueLiteralRegex();
 
     private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
     {
@@ -106,31 +85,17 @@ internal sealed partial class FeatureQueryBuilder
             throw new ArgumentException("WHERE clause contains an unsupported expression");
         }
 
-        var expressions = SplitOnAnd(whereClause);
-        if (expressions.Count == 0)
+        var parameterizedExpressions = new List<string>();
+        foreach (var expression in LegacyWhereClauseParser.Parse(SplitOnAnd(whereClause), LegacyWhereGrammar.Postgres, UnsupportedWhereClauseMessage))
         {
-            throw new ArgumentException(UnsupportedWhereClauseMessage);
-        }
-
-        var parameterizedExpressions = new List<string>(expressions.Count);
-
-        // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
-        // per-expression parse (literal/null-check/comparison/etc.), not a pure 1:1 mapping.
-        foreach (var trimmedExpression in (expressions).Select(expression => expression.Trim()))
-        {
-            if (trimmedExpression.Length == 0)
-            {
-                throw new ArgumentException(UnsupportedWhereClauseMessage);
-            }
-
-            if (TrueLiteralRegex().IsMatch(trimmedExpression))
+            if (expression.Kind == LegacyWhereExpressionKind.True)
             {
                 parameterizedExpressions.Add("TRUE");
                 continue;
             }
 
-            var nullMatch = NullCheckRegex().Match(trimmedExpression);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var fieldName = nullMatch.Groups["field"].Value;
                 var fieldSql = MapWhereField(fieldName, ref paramIndex, parameters, out _);
@@ -140,10 +105,10 @@ internal sealed partial class FeatureQueryBuilder
                 continue;
             }
 
-            var inMatch = InRegex().Match(trimmedExpression);
-            if (inMatch.Success)
+            var inMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.In)
             {
-                var valueTokens = SplitValueTokens(inMatch.Groups["values"].Value);
+                var valueTokens = LegacyWhereClauseParser.SplitValueTokens(inMatch.Groups["values"].Value);
                 var fieldSql = MapWhereField(
                     inMatch.Groups["field"].Value,
                     ref paramIndex,
@@ -161,7 +126,7 @@ internal sealed partial class FeatureQueryBuilder
                 foreach (var valueToken in valueTokens)
                 {
                     placeholders.Add($"${paramIndex}");
-                    parameters.Add(ParseValueToken(valueToken, forceText: false));
+                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueToken));
                     paramIndex++;
                 }
 
@@ -169,15 +134,15 @@ internal sealed partial class FeatureQueryBuilder
                 continue;
             }
 
-            var comparisonMatch = ComparisonRegex().Match(trimmedExpression);
-            if (comparisonMatch.Success)
+            var comparisonMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var fieldName = comparisonMatch.Groups["field"].Value;
                 var operatorValue = comparisonMatch.Groups["op"].Value;
                 var valueToken = comparisonMatch.Groups["value"].Value;
 
                 var fieldSql = MapWhereField(fieldName, ref paramIndex, parameters, out var isAttributeField);
-                var normalizedOperator = NormalizeOperator(operatorValue);
+                var normalizedOperator = LegacyWhereClauseParser.NormalizeOperator(operatorValue, LegacyWhereGrammar.Postgres, UnsupportedWhereClauseMessage);
                 var forceTextComparison = normalizedOperator.Contains("LIKE", StringComparison.OrdinalIgnoreCase);
                 var isQuoted = IsQuotedStringLiteral(valueToken);
                 var isNumericLiteral = !isQuoted &&
@@ -188,7 +153,7 @@ internal sealed partial class FeatureQueryBuilder
                     fieldSql = $"NULLIF({fieldSql}, '')::numeric";
                 }
 
-                var parameterizedValue = ParseValueToken(valueToken, forceTextComparison);
+                var parameterizedValue = LegacyWhereClauseParser.ParseValueToken(valueToken, forceTextComparison ? LegacyWhereValuePolicy.Text : LegacyWhereValuePolicy.NumericOrText);
                 parameterizedExpressions.Add($"{fieldSql} {normalizedOperator} ${paramIndex}");
                 parameters.Add(parameterizedValue);
                 paramIndex++;
@@ -256,42 +221,10 @@ internal sealed partial class FeatureQueryBuilder
         };
     }
 
-    private static string NormalizeOperator(string operatorValue)
-    {
-        return operatorValue.Trim().ToUpperInvariant() switch
-        {
-            "NOT LIKE" => "NOT LIKE",
-            "LIKE" => "LIKE",
-            ">=" => ">=",
-            "<=" => "<=",
-            "!=" => "!=",
-            "<>" => "!=",
-            "=" => "=",
-            ">" => ">",
-            "<" => "<",
-            _ => throw new ArgumentException(UnsupportedWhereClauseMessage)
-        };
-    }
-
     private static bool IsQuotedStringLiteral(string valueToken)
         => valueToken.Length >= 2 &&
            valueToken.StartsWith('\'') &&
            valueToken.EndsWith('\'');
-
-    private static object ParseValueToken(string valueToken, bool forceText)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return UnescapeSqlString(valueToken);
-        }
-
-        if (!forceText && decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalValue))
-        {
-            return decimalValue;
-        }
-
-        return valueToken;
-    }
 
     private static string UnescapeSqlString(string valueToken)
     {
@@ -354,40 +287,6 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return parts;
-    }
-
-    private static List<string> SplitValueTokens(string values)
-    {
-        var tokens = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var index = 0; index < values.Length; index++)
-        {
-            var value = values[index];
-            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
-            {
-                current.Append("''");
-                index++;
-            }
-            else if (value == '\'')
-            {
-                inQuotes = !inQuotes;
-                current.Append(value);
-            }
-            else if (value == ',' && !inQuotes)
-            {
-                tokens.Add(current.ToString().Trim());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(value);
-            }
-        }
-
-        tokens.Add(current.ToString().Trim());
-        return tokens;
     }
 
     private static bool IsAndTokenAt(string whereClause, int index)

@@ -12,12 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Operations.Status;
 
-internal interface IOperateStatusService
-{
-    Task<OperateStatusResponse> GetAsync(CancellationToken cancellationToken = default);
-}
-
-internal sealed class OperateStatusService : IOperateStatusService
+internal sealed class OperateStatusService
 {
     internal const string SchemaVersion = "1.1";
 

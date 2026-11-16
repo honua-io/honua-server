@@ -30,9 +30,10 @@ internal sealed partial class HonuaFeatureService
             EnsureServiceFingerprint(keyed.RequestFingerprint, fingerprint);
             return FilterServiceGlobalIds(edits, cached);
         }
+        var stamp = CallerEditStamp(context);
         for (var index = 0; index < edits.Length; index++)
         {
-            edits[index] = await PrepareGrpcTargetsAsync(edits[index]).ConfigureAwait(false);
+            edits[index] = await PrepareGrpcTargetsAsync(edits[index], stamp).ConfigureAwait(false);
         }
         return await ExecuteServiceEditsAsync(new ServiceEditExecution(
             new ServiceEditCall(request, context, receipts), edits, keyed) { Fingerprint = fingerprint }).ConfigureAwait(false);

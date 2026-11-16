@@ -1,7 +1,17 @@
 # Trivy allowlist for images published by the release-bundle workflow.
 #
-# This file is intentionally empty. Add an advisory ID only after documenting
-# the affected package, exploitability, upstream remediation status, owner, and
-# expiry in the pull request that introduces the exception. A release exception
-# must never be copied from the broader repository/test-tooling allowlist without
-# proving that it applies to the customer-deployed image.
+# Add an advisory ID only after documenting the affected package, exploitability,
+# upstream remediation status, owner, and expiry here and in the pull request that
+# introduces the exception. A release exception must never be copied from the
+# broader repository/test-tooling allowlist without proving that it applies to the
+# customer-deployed image. Every entry carries an expiry, after which the finding
+# blocks again.
+
+# golang.org/x/net v0.60.0 in the Compose executor's docker-compose plugin
+# (compose 5.7.1, copied from the pinned docker CLI image). The advisory is in the
+# x/net/html parser. That package is not linked into the compose binary: its
+# symbols are absent; the binary links only x/net http2, hpack, trace, idna,
+# dnsmessage, httpproxy and httpguts. Upstream: fixed in x/net 0.62.0; compose
+# 5.7.1, the current release, is built with 0.60.0. Owner: security maintainers.
+# Remove when the CLI pin carries a compose release built with x/net 0.62.0 or later.
+CVE-2026-78661 exp:2026-12-31

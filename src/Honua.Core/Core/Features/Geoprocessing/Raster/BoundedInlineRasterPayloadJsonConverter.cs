@@ -6,10 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Geoprocessing.Raster;
 
-/// <summary>
-/// Rejects an oversized inline raster while its base64 value is still represented by
-/// the bounded JSON token, before System.Text.Json allocates the decoded byte array.
-/// </summary>
 public sealed class BoundedInlineRasterPayloadJsonConverter : JsonConverter<byte[]>
 {
     private const int MaximumEncodedBytes =

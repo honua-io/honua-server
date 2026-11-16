@@ -151,7 +151,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             Nullable = true,
             Description = "Creator",
         });
-        _fixture.UpdateV2ResourceEditing(TestLayerId, new MetadataV2ResourceEditing
+        _fixture.UpdateV2ResourceEditing(TestLayerId, new MetadataV2ObjectEditing
         {
             GlobalIdField = "GlobalID",
             CreatorField = "created_user",

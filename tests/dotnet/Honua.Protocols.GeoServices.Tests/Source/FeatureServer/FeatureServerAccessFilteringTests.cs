@@ -395,7 +395,7 @@ internal sealed class FeatureServerAccessFilteringCatalog : ITestMetadataV2Graph
             .AddResource(
                 visibleResourceId,
                 "Visible Audit Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
@@ -416,7 +416,7 @@ internal sealed class FeatureServerAccessFilteringCatalog : ITestMetadataV2Graph
             .AddResource(
                 hiddenResourceId,
                 "Hidden Audit Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
@@ -450,14 +450,14 @@ internal sealed class FeatureServerAccessFilteringCatalog : ITestMetadataV2Graph
                 visibleResourceId,
                 layerIndex: ServiceRbacTestFixture.AlphaLayerId,
                 storageBindingId: "binding-layer-0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .AddPublication(
                 "svc-alpha-layer-1",
                 serviceId,
                 hiddenResourceId,
                 layerIndex: ServiceRbacTestFixture.BetaLayerId,
                 storageBindingId: "binding-layer-1",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .BuildProvider();
     }
 

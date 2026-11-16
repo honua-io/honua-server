@@ -7,6 +7,9 @@ namespace Honua.Infrastructure.Monitoring;
 
 public sealed class OpsHealthSnapshotResponse
 {
+    [JsonPropertyName("taskId")]
+    public string TaskId { get; init; } = Environment.MachineName;
+
     [JsonPropertyName("evidencePosture")]
     public EvidencePosture? EvidencePosture { get; init; }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Microsoft.Extensions.Hosting;
 
@@ -9,9 +10,10 @@ namespace Honua.Server.Features.Orchestration;
 internal sealed class WorkflowOrchestrationBackgroundService(
     IWorkflowRunStore runStore,
     WorkflowOrchestrationEngine engine,
-    ILogger<WorkflowOrchestrationBackgroundService> logger) : BackgroundService
+    ILogger<WorkflowOrchestrationBackgroundService> logger,
+    PollWakeSignal<IWorkflowRunStore>? wake = null) : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly IdlePollPacer _pacer = new(wake);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -19,9 +21,12 @@ internal sealed class WorkflowOrchestrationBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var activeRuns = await runStore.ListActiveAsync(stoppingToken).ConfigureAwait(false);
+                idle = activeRuns.Count == 0;
                 foreach (var run in activeRuns)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
@@ -57,7 +62,7 @@ internal sealed class WorkflowOrchestrationBackgroundService(
 
             try
             {
-                await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+                await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

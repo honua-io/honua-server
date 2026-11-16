@@ -35,7 +35,6 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
 
     private AccessTokenCache? _tokenCache;
 
-    /// <inheritdoc />
     public string ProviderName => ProviderType;
 
     public AzureKeyVaultResolver(IHttpClientFactory httpClientFactory, ILogger<AzureKeyVaultResolver> logger)
@@ -45,19 +44,25 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
+
+        if (TryGetCached(secretKey, out var cached))
+        {
+            return cached;
+        }
+
+        return await ResolveSecretFreshAsync(secretKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
 
         if (!secretKey.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException($"Invalid Azure secret reference. Expected '{KeyVaultPrefix}<vault>:<secret>[:<version>]'.", nameof(secretKey));
-        }
-
-        if (TryGetCached(secretKey, out var cached))
-        {
-            return cached;
         }
 
         var (vaultName, secretName, version) = ParseSecretReference(secretKey);
@@ -80,7 +85,6 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         return secretValue;
     }
 
-    /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {
         if (string.IsNullOrWhiteSpace(secretKey) ||
@@ -100,13 +104,9 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         }
     }
 
-    /// <summary>
-    /// Compatibility shim for callers still invoking the older async capability probe directly on this concrete type.
-    /// </summary>
     public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
         => Task.FromResult(CanResolve(secretKey));
 
-    /// <inheritdoc />
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))

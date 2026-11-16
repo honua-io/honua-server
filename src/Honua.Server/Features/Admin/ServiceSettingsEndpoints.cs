@@ -16,9 +16,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for managing per-service protocol toggles and MapServer settings.
-/// </summary>
 internal static partial class ServiceSettingsEndpoints
 {
     private const int DefaultMapServerMaxImageWidth = 4096;
@@ -29,9 +26,6 @@ internal static partial class ServiceSettingsEndpoints
     private const string DefaultMapServerFormat = "png";
     private const int DefaultMapServerMaxFeaturesPerLayer = 10_000;
 
-    /// <summary>
-    /// Log category for service settings endpoints.
-    /// </summary>
     internal sealed class ServiceSettingsEndpointsLog;
 
     public static void MapServiceSettingsEndpoints(this IEndpointRouteBuilder endpoints)
@@ -51,7 +45,7 @@ internal static partial class ServiceSettingsEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPut("/{serviceName}/protocols", HandleUpdateProtocols)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithDisplayName("Update Service Protocols")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
@@ -62,7 +56,7 @@ internal static partial class ServiceSettingsEndpoints
         group.MapPut("/{serviceName}/access-policy", HandleUpdateAccessPolicy)
             .WithDisplayName("Update Access Policy")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessPolicy);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessPolicy);
 
         group.MapPut("/{serviceName}/timeinfo", HandleUpdateTimeInfo)
             .WithDisplayName("Update Time Info")
@@ -83,7 +77,7 @@ internal static partial class ServiceSettingsEndpoints
             .ProducesProblem(500)
             .ProducesProblem(501)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddEndpointFilter(AgentApprovalFilter.LayerMetadataAccessPolicy);
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadataAccessPolicy);
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceListPage>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
@@ -137,6 +131,7 @@ internal static partial class ServiceSettingsEndpoints
             }
 
             var response = BuildSettingsResponse(serviceName, services);
+            context.Response.Headers.ETag = snapshot.Etag;
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -190,9 +185,8 @@ internal static partial class ServiceSettingsEndpoints
             }
 
             await MutateServicesByNameAsync(
-                graphStore,
-                serviceName,
-                svc => svc with { Protocols = normalizedProtocols },
+                new ServiceMutation(graphStore, serviceName,
+                    svc => svc with { Protocols = normalizedProtocols }),
                 context.RequestAborted).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
 
@@ -257,9 +251,7 @@ internal static partial class ServiceSettingsEndpoints
             }
 
             await MutateServicesByNameAsync(
-                graphStore,
-                serviceName,
-                svc =>
+                new ServiceMutation(graphStore, serviceName, svc =>
                 {
                     var existing = svc.AccessPolicy ?? new AccessPolicy();
                     return svc with
@@ -272,14 +264,21 @@ internal static partial class ServiceSettingsEndpoints
                             AllowedWriteRoles = request.AllowedWriteRoles ?? existing.AllowedWriteRoles,
                         },
                     };
-                },
-                context.RequestAborted).ConfigureAwait(false);
+                }),
+                context.RequestAborted, request.ExpectedMetadataEtag).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
 
             var refreshed = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             TryResolveServicesByName(refreshed, serviceName, out var updatedServices);
             var response = BuildSettingsResponse(serviceName, updatedServices ?? Array.Empty<MetadataV2Service>());
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
+        }
+        catch (MetadataV2GraphConcurrencyException)
+        {
+            return TypedResults.Problem(
+                title: "Access policy metadata changed",
+                detail: "Inspect service settings again before applying this access policy.",
+                statusCode: StatusCodes.Status409Conflict);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -300,7 +299,7 @@ internal static partial class ServiceSettingsEndpoints
     {
         // GAP (#1035 cutover 72/N): the v1 admin path exposed a service-scope time-info
         // editor that was actually applied to every layer on the service. In the V2
-        // graph temporal metadata lives on MetadataV2Resource.Temporal — there is no
+        // graph temporal metadata lives on MetadataV2Object.Temporal — there is no
         // service-level slot. Rather than silently fan-out across resources (which
         // would mask field-typed validation gaps) we refuse the operation and direct
         // callers to the per-layer endpoint until a service-level temporal extension
@@ -473,19 +472,6 @@ internal static partial class ServiceSettingsEndpoints
         }
     }
 
-    /// <summary>
-    /// Looks up every V2 service whose <c>Metadata.Name</c> matches
-    /// <paramref name="serviceName"/> (case-insensitive). Multiple V2 services may share
-    /// a display name when the same logical service is exposed under multiple protocols
-    /// (FeatureServer / MapServer / Stac all named "test"); the v1 admin contract was
-    /// service-name-keyed, so we collapse those entries the same way at response time.
-    /// </summary>
-    /// <summary>
-    /// Resolves the graph snapshot used to look up <paramref name="serviceName"/>. The cached read
-    /// path is tried first; on a miss the persisted store is consulted before answering 404, because
-    /// the cached snapshot can predate a write that just committed (on another node, or within the
-    /// snapshot TTL if the cross-node invalidation message was lost). A hit costs nothing extra.
-    /// </summary>
     private static async ValueTask<MetadataV2GraphSnapshot> GetSnapshotForServiceAsync(
         IMetadataV2GraphProvider graphProvider,
         IMetadataV2GraphStore? graphStore,
@@ -520,7 +506,7 @@ internal static partial class ServiceSettingsEndpoints
            service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
            graph.Publications.Any(publication =>
                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
 
     private static ServiceSettingsResponse BuildSettingsResponse(
         string serviceName,
@@ -576,9 +562,9 @@ internal static partial class ServiceSettingsEndpoints
         string layerName,
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
-        MetadataV2ResourceTemporal? timeInfo,
+        MetadataV2ObjectTemporal? timeInfo,
         RasterMosaicResponse? rasterMosaic,
-        MetadataV2ResourceEditing? editing)
+        MetadataV2ObjectEditing? editing)
     {
         return new LayerMetadataResponse
         {
@@ -787,80 +773,12 @@ internal static partial class ServiceSettingsEndpoints
         }
     }
 
-    // The Metadata v2 graph store uses optimistic concurrency: SaveAsync rejects a stale expected-etag with an
-    // "etag mismatch" InvalidOperationException. Background writers (catalog cache, CRS warmup) can bump the
-    // etag between our read and write, so the read-modify-write is retried a few times before surfacing.
-    private const int MetadataMutationMaxAttempts = 5;
-
-    private static bool IsEtagMismatch(Exception exception) =>
-        exception is InvalidOperationException
-        && exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to every
-    /// service whose <c>Metadata.Name</c> matches <paramref name="serviceName"/>
-    /// (case-insensitively), and persists the result. Multiple service entries can share
-    /// a name when the same logical service is exposed under different protocols (e.g.
-    /// FeatureServer / MapServer / Stac all named "test"), and the v1 admin endpoint
-    /// updated all of them in one row because protocol toggles lived on a single
-    /// per-service settings record. Retries on optimistic-concurrency etag mismatch.
-    /// </summary>
-    private static async Task MutateServicesByNameAsync(
-        IMetadataV2GraphStore graphStore,
-        string serviceName,
-        Func<MetadataV2Service, MetadataV2Service> mutate,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var services = snapshot.Graph.Services.ToArray();
-            var mutatedAny = false;
-            for (var i = 0; i < services.Length; i++)
-            {
-                if (string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
-                {
-                    services[i] = mutate(services[i]);
-                    mutatedAny = true;
-                }
-            }
-
-            if (!mutatedAny)
-            {
-                return;
-            }
-
-            var updated = snapshot.Graph with
-            {
-                Services = services,
-                Revision = snapshot.Graph.Revision + 1,
-            };
-
-            try
-            {
-                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
-            {
-                // Concurrent etag bump — re-read and re-apply the mutation against the fresh snapshot.
-            }
-        }
-    }
-
-    /// <summary>
-    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to the
-    /// uniquely resolved canonical resource, and persists the result. The immutable
-    /// resource id is carried across optimistic-concurrency retries, and the current
-    /// FeatureServer publication is revalidated before each attempt so a relink cannot
-    /// redirect or orphan the patch.
-    /// </summary>
-    private static async Task<(MetadataV2Resource? Resource, bool BindingConflict)> MutateResourceByIdAsync(
+    private static async Task<(MetadataV2Object? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
         string serviceName,
         int serviceLayerIndex,
         string resourceId,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        Func<MetadataV2Object, MetadataV2Object> mutate,
         MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
@@ -906,7 +824,7 @@ internal static partial class ServiceSettingsEndpoints
                     .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 var publicationIds = snapshot.Graph.Publications.Where(publication =>
                         publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
-                        publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                        publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                         publication.LayerIndex == serviceLayerIndex && snapshot.IsRoutable(publication))
                     .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
@@ -970,17 +888,15 @@ internal static partial class ServiceSettingsEndpoints
         Conflict,
     }
 
-    /// <summary>
-    /// Creates the V2 <see cref="MetadataV2ResourceTemporal"/> block. Treats an entirely-empty time info as
-    /// "clear temporal" — returns null so the resource turns non-temporal — to preserve
-    /// clear-on-empty-PUT semantics. Preserves an existing declared extent when
-    /// only the field names are changing.
-    /// </summary>
-    private static MetadataV2ResourceTemporal? ToV2Temporal(
+    // Creates the V2 MetadataV2ObjectTemporal block. Treats an entirely-empty time info as
+    // "clear temporal" — returns null so the resource turns non-temporal — to preserve
+    // clear-on-empty-PUT semantics. Preserves an existing declared extent when
+    // only the field names are changing.
+    private static MetadataV2ObjectTemporal? ToV2Temporal(
         string? startTimeField,
         string? endTimeField,
         string? trackIdField,
-        MetadataV2ResourceTemporal? existing)
+        MetadataV2ObjectTemporal? existing)
     {
         if (string.IsNullOrEmpty(startTimeField)
             && string.IsNullOrEmpty(endTimeField)
@@ -989,7 +905,7 @@ internal static partial class ServiceSettingsEndpoints
             return null;
         }
 
-        return new MetadataV2ResourceTemporal
+        return new MetadataV2ObjectTemporal
         {
             StartTimeField = startTimeField,
             EndTimeField = endTimeField,

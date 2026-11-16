@@ -32,13 +32,16 @@ internal sealed partial class HonuaFeatureService
         await EnsureWriteAccessAsync(call.Context, layer.Service, layer.Resource, batch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, batch);
         EnsureEditLimits(batch, _editLimits);
+        // Dropped before the storability check, so a forged value of any wire type is ignored.
+        batch = GrpcEditorTracking.OmitClientValues(layer.Resource, batch);
         (batch, var globalIds) = await PrepareGlobalIdsAsync(call, batch).ConfigureAwait(false);
         batch = await ValidateGrpcMutationsAsync(call, batch).ConfigureAwait(false);
         if (layer.Snapshot is { } snapshot)
         {
             var binding = snapshot.ResolveStorageBinding(layer.Publication)
                 ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
-            if (!FeatureStorageMapping.FromMetadata(layer.Resource, binding).SupportsManagedWrites)
+            if (!FeatureStorageMapping.FromMetadata(layer.Resource, binding).SupportsManagedWrites
+                || !await SupportsGlobalIdWritesAsync(layer, call.Context).ConfigureAwait(false))
             {
                 throw new RpcException(new Status(StatusCode.FailedPrecondition,
                     "The layer's storage binding does not support managed writes."));
@@ -47,23 +50,43 @@ internal sealed partial class HonuaFeatureService
         return new PreparedGrpcEdit(call, batch, globalIds);
     }
 
-    private async Task<PreparedGrpcEdit> PrepareGrpcTargetsAsync(PreparedGrpcEdit edit)
+    // One stamp per call: every layer of a multi-layer ApplyServiceEdits records the same
+    // editor and time, as GeoServices applyEdits does for the service endpoint.
+    private static EditorTrackingStamp CallerEditStamp(ServerCallContext context)
+    {
+        var http = context.GetHttpContext()
+            ?? throw new InvalidOperationException("HttpContext is required for gRPC edits.");
+        return GrpcEditorTracking.CallerStamp(
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(http).Name,
+            (http.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+    }
+
+    private async Task<PreparedGrpcEdit> PrepareGrpcTargetsAsync(PreparedGrpcEdit edit, EditorTrackingStamp stamp)
     {
         var call = edit.Call;
         var batch = await ResolveGlobalIdTargetsAsync(edit.GlobalIds, edit.Batch, call.Context.CancellationToken)
             .ConfigureAwait(false);
         var requestBatch = batch;
-        batch = await EnsureEditTargetsVisibleAsync(call.Layer.StorageLayerId, batch, call.Context.CancellationToken)
+        // RLS is enforced only on reads, so every update/delete target is pre-resolved through
+        // the RLS-enforced reader and fails closed when hidden (#2071).
+        var visible = await EnsureEditTargetsVisibleAsync(call.Layer.StorageLayerId, batch, call.Context.CancellationToken)
             .ConfigureAwait(false);
+        var globalIds = edit.GlobalIds with { ExistingGlobalIds = StoredGlobalIds(visible.Stored, edit.GlobalIds.Field) };
         var owner = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader, call.Layer.StorageLayerId, call.Layer.Resource.OwnerEditPolicy, batch,
+            _featureReader, call.Layer.StorageLayerId, call.Layer.Resource.OwnerEditPolicy, visible.Batch,
             ServiceDataEditorAuthorization.ResolveEditPrincipal(call.Context.GetHttpContext()), call.Context.CancellationToken)
             .ConfigureAwait(false);
         if (!owner.IsAllowed)
         {
             throw new RpcException(new Status(StatusCode.PermissionDenied, owner.DenialReason ?? "Edit not permitted."));
         }
-        return edit with { Batch = owner.Batch, RequestBatch = requestBatch };
+        // Change events carry the stamped tracking values, as GeoServices events do.
+        return edit with
+        {
+            Batch = GrpcEditorTracking.Stamp(call.Layer.Resource, owner.Batch, stamp),
+            GlobalIds = globalIds,
+            RequestBatch = GrpcEditorTracking.Stamp(call.Layer.Resource, requestBatch, stamp),
+        };
     }
 
     private async Task<FeatureEditBatch> ValidateGrpcMutationsAsync(

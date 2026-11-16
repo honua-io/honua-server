@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.StudioAiProxy;
 
-internal sealed class StudioAiProxyService : IStudioAiProxyService
+internal sealed class StudioAiProxyService
 {
     private const int MaxToolCount = 128;
     private const int MaxMessageCount = 256;

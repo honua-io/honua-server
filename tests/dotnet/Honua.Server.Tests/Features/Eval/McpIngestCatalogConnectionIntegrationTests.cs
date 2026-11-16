@@ -79,6 +79,10 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             await using var factory = CreateHost(catalogConnection, identityProvider);
             using var admin = factory.CreateClient();
             await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(factory.Services, admin);
+            // An agent changes admin state only through the operations API or MCP, so a person
+            // registers the connections the agent then ingests into.
+            using var person = factory.CreateClient();
+            person.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
             using var scope = factory.Services.CreateScope();
             var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
             (await registry.GetActiveConnectionsAsync()).Should().BeEmpty("this catalog is an owned isolated database");
@@ -91,7 +95,7 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
                 GeneratedAt = DateTimeOffset.UtcNow
             }, expectedEtag: null);
 
-            using var registered = await admin.PostAsJsonAsync("/api/v1/admin/connections", new
+            using var registered = await person.PostAsJsonAsync("/api/v1/admin/connections", new
             {
                 name = catalogName,
                 host = connectionBuilder.Host,
@@ -151,15 +155,18 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             using var query = JsonDocument.Parse(queryPayload);
             var features = query.RootElement.GetProperty("features");
             features.GetArrayLength().Should().Be(1);
-            using var properties = JsonDocument.Parse(
-                features[0].GetProperty("attributes").GetProperty("properties").GetString()!);
-            properties.RootElement.GetProperty("name").GetString().Should().Be("Honolulu");
+            // The GeoJSON property is published as its own field. The raw import
+            // copy in `properties` is bookkeeping and stays out of the default
+            // field selection.
+            var attributes = features[0].GetProperty("attributes");
+            attributes.GetProperty("name").GetString().Should().Be("Honolulu");
+            attributes.TryGetProperty("properties", out _).Should().BeFalse();
             features[0].GetProperty("geometry").GetProperty("x").GetDouble().Should().BeApproximately(-157.86, 1e-6);
             features[0].GetProperty("geometry").GetProperty("y").GetDouble().Should().BeApproximately(21.31, 1e-6);
 
             // The supported admin route adds a second valid registration for
             // this same catalog. Ingest must stop suggesting an arbitrary one.
-            using var created = await admin.PostAsJsonAsync("/api/v1/admin/connections", new
+            using var created = await person.PostAsJsonAsync("/api/v1/admin/connections", new
             {
                 name = aliasName,
                 host = connectionBuilder.Host,

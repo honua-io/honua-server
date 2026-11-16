@@ -10,9 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Forms.Packages;
 
-/// <summary>
-/// Validates form packages and submissions against target layer schema and server policy.
-/// </summary>
 public sealed class FormPackageValidator
 {
     private static readonly HashSet<string> _supportedVisibilityOperators = new(StringComparer.OrdinalIgnoreCase)
@@ -38,9 +35,6 @@ public sealed class FormPackageValidator
     private readonly IFormTargetMetadataResolver _targetResolver;
     private readonly AttachmentLimits _attachmentLimits;
 
-    /// <summary>
-    /// Initializes a new validator.
-    /// </summary>
     public FormPackageValidator(IFormTargetMetadataResolver targetResolver, IOptions<LimitsOptions> limitsOptions)
     {
         _targetResolver = targetResolver ?? throw new ArgumentNullException(nameof(targetResolver));
@@ -48,9 +42,6 @@ public sealed class FormPackageValidator
         _attachmentLimits = limitsOptions.Value.Attachments;
     }
 
-    /// <summary>
-    /// Validates a package before publishing.
-    /// </summary>
     public async Task<FormPackageValidationResult> ValidateForPublishAsync(
         FormPackageDocument package,
         CancellationToken cancellationToken = default)
@@ -74,9 +65,6 @@ public sealed class FormPackageValidator
         return CreateResult(issues);
     }
 
-    /// <summary>
-    /// Validates a runtime submission against the published package and target layer.
-    /// </summary>
     public async Task<FormPackageValidationResult> ValidateSubmissionAsync(
         FormPackageVersion packageVersion,
         FormSubmissionRequest request,
@@ -106,9 +94,6 @@ public sealed class FormPackageValidator
         return CreateResult(issues);
     }
 
-    /// <summary>
-    /// Resolves the target service, publication, and resource for a package.
-    /// </summary>
     public async Task<FormTargetMetadataResolution> ResolveTargetAsync(
         FormPackageDocument package,
         List<FormValidationIssue> issues,
@@ -171,8 +156,8 @@ public sealed class FormPackageValidator
     private static void ValidateSubmitPolicy(
         FormPackageDocument package,
         MetadataV2Service service,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         List<FormValidationIssue> issues)
     {
         var allowedOperations = package.SubmitPolicy.AllowedOperations;
@@ -206,7 +191,7 @@ public sealed class FormPackageValidator
         }
     }
 
-    private static void ValidateFields(FormPackageDocument package, MetadataV2Resource resource, List<FormValidationIssue> issues)
+    private static void ValidateFields(FormPackageDocument package, MetadataV2Object resource, List<FormValidationIssue> issues)
     {
         var sectionIds = package.Sections
             .Where(static section => !string.IsNullOrWhiteSpace(section.SectionId))
@@ -471,7 +456,7 @@ public sealed class FormPackageValidator
         }
     }
 
-    private void ValidateAttachmentPolicy(FormPackageDocument package, MetadataV2Resource resource, List<FormValidationIssue> issues)
+    private void ValidateAttachmentPolicy(FormPackageDocument package, MetadataV2Object resource, List<FormValidationIssue> issues)
     {
         var attachmentFields = package.Fields.Where(IsAttachmentField).ToArray();
         if (!package.AttachmentPolicy.Enabled && attachmentFields.Length == 0)
@@ -614,7 +599,7 @@ public sealed class FormPackageValidator
     private static void ValidateSubmissionPolicy(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         List<FormValidationIssue> issues)
     {
         if (!IsKnownOperation(request.Operation))
@@ -654,7 +639,7 @@ public sealed class FormPackageValidator
     private static void ValidateSubmittedValues(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         List<FormValidationIssue> issues)
     {
         var fields = package.Fields
@@ -713,7 +698,7 @@ public sealed class FormPackageValidator
     }
 
     private sealed record SubmissionFieldContext(
-        MetadataV2Resource Resource, FormSubmissionRequest Request, IReadOnlyDictionary<string, MetadataV2Field> Fields);
+        MetadataV2Object Resource, FormSubmissionRequest Request, IReadOnlyDictionary<string, MetadataV2Field> Fields);
 
     private static bool ValidateTargetFieldSubmission(
         FormFieldDefinition field, SubmissionFieldContext context, List<FormValidationIssue> issues)
@@ -781,7 +766,7 @@ public sealed class FormPackageValidator
     private static void ValidateSubmittedGeometry(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         List<FormValidationIssue> issues)
     {
         _ = package;
@@ -823,7 +808,7 @@ public sealed class FormPackageValidator
     private void ValidateSubmittedAttachments(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         List<FormValidationIssue> issues)
     {
         if (OperationEquals(request.Operation, FormSubmissionOperations.Delete))
@@ -1014,8 +999,8 @@ public sealed class FormPackageValidator
 
     private static bool TargetSupportsOperation(
         MetadataV2Service service,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         string operation)
     {
         if (resource.Editing is { CanModify: false })
@@ -1060,7 +1045,7 @@ public sealed class FormPackageValidator
         return ["Query"];
     }
 
-    private static bool ResourceSupportsAttachments(MetadataV2Resource resource)
+    private static bool ResourceSupportsAttachments(MetadataV2Object resource)
         => resource.Editing?.SupportsAttachments == true ||
            (TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
             TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
@@ -1077,7 +1062,7 @@ public sealed class FormPackageValidator
         return null;
     }
 
-    private static MetadataV2GeometryType ResourceGeometryType(MetadataV2Resource resource)
+    private static MetadataV2GeometryType ResourceGeometryType(MetadataV2Object resource)
         => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
 
     private static bool IsGeometryField(MetadataV2Field field)

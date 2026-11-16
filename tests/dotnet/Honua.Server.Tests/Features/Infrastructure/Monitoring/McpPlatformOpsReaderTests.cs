@@ -559,7 +559,8 @@ public sealed class McpPlatformOpsReaderTests
             Arg.Is<OperationPolicyContext>(context =>
                 context.AuthorizationOutcome == "admin-policy-authorized" &&
                 !context.ScopeGoverned &&
-                context.PrincipalId == "test:subject:-:ops-agent"),
+                context.PrincipalId == "test:subject:-:ops-agent" &&
+                context.Roles.Contains("agent")),
             Arg.Any<CancellationToken>());
 
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload);

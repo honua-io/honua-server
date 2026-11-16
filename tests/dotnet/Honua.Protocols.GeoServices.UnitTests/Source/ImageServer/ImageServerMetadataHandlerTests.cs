@@ -29,7 +29,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMetadataHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly IImageServerMultidimensionalInfoBuilder _multidimensionalInfoBuilder =
         Substitute.For<IImageServerMultidimensionalInfoBuilder>();
@@ -544,7 +544,7 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_TemporalHintsAbsentFromCatalog_AreNotAdvertised()
     {
-        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        var handler = CreateHandler(new MetadataV2ObjectTemporal
         {
             StartTimeField = "timestamp",
             EndTimeField = "event_date",
@@ -562,7 +562,7 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_CatalogTemporalHints_AreAdvertisedByCanonicalName()
     {
-        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        var handler = CreateHandler(new MetadataV2ObjectTemporal
         {
             StartTimeField = "acquisitiondate",
             EndTimeField = "timestamp",
@@ -656,13 +656,13 @@ public class ImageServerMetadataHandlerTests
         time.EndTimeField.Should().BeNull("CreatedAt is masked for this caller");
     }
 
-    private ImageServerMetadataHandler CreateHandler(MetadataV2ResourceTemporal temporal)
+    private ImageServerMetadataHandler CreateHandler(MetadataV2ObjectTemporal temporal)
         => new(
             new TestMetadataV2GraphBuilder()
                 .AddResource(
                     "resource-1",
                     "test-layer",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     fields:
                     [
                         new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
@@ -677,7 +677,7 @@ public class ImageServerMetadataHandlerTests
                     "resource-1",
                     layerIndex: 1,
                     serviceLocalId: "test-layer",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .BuildProvider(),
             _rasterStore,
             _multidimensionalInfoBuilder,
@@ -723,19 +723,6 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(CreateTestExtent());
     }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
-            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo(int? srid = 4326) => new()
     {

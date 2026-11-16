@@ -20,7 +20,7 @@ The 2026.1 operational read surfaces add an `evidencePosture` object to their ex
 Two composite reads also publish the section sources they are built from, alongside the top-level id:
 
 - `honua_ops_health` covers `honua_ops_health.health_checks`, `honua_ops_health.serving_latency`, `honua_ops_health.gp_queue`, `honua_ops_health.alert_dispatch`, `honua_ops_health.deploy_release`, and `honua_ops_health.database_cache`.
-- `honua_ops_findings` covers `honua_ops_findings.alert_dispatch`, `honua_ops_findings.control_plane`, `honua_ops_findings.deploy_preflight`, `honua_ops_findings.gp_queue`, `honua_ops_findings.workflow_operations`, `honua_ops_findings.serving_latency_rollup`, `honua_ops_findings.database_pressure`, and `honua_ops_findings.batch_backends`.
+- `honua_ops_findings` covers `honua_ops_findings.alert_dispatch`, `honua_ops_findings.control_plane`, `honua_ops_findings.deploy_preflight`, `honua_ops_findings.gp_queue`, `honua_ops_findings.workflow_operations`, `honua_ops_findings.serving_latency_rollup`, `honua_ops_findings.database_pressure`, `honua_ops_findings.batch_backends`, and `honua_ops_findings.catalog_rollbacks`.
 
 A composite source is `complete` only when every section it declares is individually actionable. Its `coverage.expectedComponentIds`/`coverage.includedComponentIds` name the sections it declared and the sections it actually covered, and its `observedAt` is no fresher than the oldest section it summarizes.
 

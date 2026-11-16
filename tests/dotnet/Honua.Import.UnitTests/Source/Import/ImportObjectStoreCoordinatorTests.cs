@@ -254,6 +254,9 @@ public sealed class ImportObjectStoreCoordinatorTests
             ObjectStoreRoleArn = RoleArn,
             ObjectStoreContentType = "application/geo+json",
             TargetSrid = targetSrid,
+            SourceSrid = 7912,
+            DatumTransformationWkid = 108574,
+            CoordinateEpoch = 2020.25,
         };
 
         var parameters = FileImportJobParameters.Build(request, 42);

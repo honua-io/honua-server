@@ -179,6 +179,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     {
         (string Family, string StandardLabel, string[] Uris)[] resources =
         [
+            ("skills", "Operating skill file", ["skill://{skill}/{path}"]),
             ("temporary-files", "Temporary rendered artifact", ["honua://temporary-files/{fileId}"]),
             ("jobs", "Job", ["honua://jobs/{jobId}"]),
             ("job-results", "Job results", ["honua://jobs/{jobId}/results"]),
@@ -290,8 +291,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // infrastructure. It is not a customer deployment claim. This classification
             // does not weaken the full-severity security floor for cross-tenant disclosure.
             ("admin.multi-tenancy", "control-plane", FeatureCatalog.MultiTenancyKey, CapabilityKind.Feature, null, CapabilityMaturity.Internal),
-            // Realtime is opt-in Experimental. It works on a
-            // single node; delivery across several nodes needs an optional Redis add-on.
+            // Realtime is opt-in Experimental. Streams deliver from the PostgreSQL event log;
+            // several nodes need the cross-node provider (Realtime:Provider=postgres, or auto with MultiNode).
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             // SensorThings uses the same canonical opt-in gate as its route registration;
             // it must never be present at runtime while absent from capability discovery.
@@ -347,16 +348,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // rather than as support — the shipped authorizer grants no lease at all.
             ("collaboration.feature-locks", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // The two recorded 2026.1 feature-lock gaps (#4402), declared here so a client
-            // reads them off the manifest instead of off the docs page: a lease is node-local,
-            // and the GeoServices applyEdits surface honours no client-supplied version token.
-            // The version-token gap is named for the ONE surface that has it: OGC API Features
-            // enforces If-Match/412 on PUT, merge-PATCH and DELETE and the store-level
-            // precondition path is untouched, so a generically-named "edit.version-tokens"
-            // would tell a client to disable optimistic concurrency where it works.
-            // Planned maturity + the KnownGap status below is the same shape the unimplemented
-            // file-format writers already publish (supported=false, lifecycle "planned").
-            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
+            // Shared PostgreSQL leases implement cross-node coordination; availability
+            // depends on the selected runtime store.
+            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // GeoServices applyEdits still has no client-supplied version-token support.
             ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
             // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).

@@ -89,7 +89,7 @@ public sealed class MapServerFindMaskedFieldTests
     private sealed class FixedFieldMaskSource(string fieldName) : IFieldMaskSource
     {
         public Task<ImmutableArray<string>> ResolveAsync(
-            MetadataV2Resource resource,
+            MetadataV2Object resource,
             CancellationToken cancellationToken = default)
             => Task.FromResult(ImmutableArray.Create(fieldName));
     }

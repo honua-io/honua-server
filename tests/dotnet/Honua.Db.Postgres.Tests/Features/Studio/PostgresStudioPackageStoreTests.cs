@@ -22,7 +22,7 @@ using Npgsql;
 namespace Honua.Db.Postgres.Tests.Features.Studio;
 
 [Collection("Database")]
-public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
+public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task AcceptedMapPublication_CommitsCanonicalDeploymentWithPointer_AndRepublishSupersedes()
@@ -1393,6 +1393,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      // insert and single-version read carry (honua-server#5449).
                      "126_AddStudioContentHashInput.sql",
                      "134_VersionCanonicalDeployments.sql",
+                     "162_CreateStudioDraftRevisions.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);

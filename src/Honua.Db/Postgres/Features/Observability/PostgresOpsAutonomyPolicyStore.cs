@@ -11,10 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Observability;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IOpsAutonomyPolicyStore"/> backed by
-/// <c>honua.ops_autonomy_*</c> tables.
-/// </summary>
 internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
 {
     private const string SettingsId = "global";
@@ -232,6 +228,13 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
             await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        await using (var actionLock = new NpgsqlCommand("SELECT pg_advisory_xact_lock(1, hashtext(@action))", connection, transaction))
+        {
+            actionLock.Parameters.AddWithValue("action", NpgsqlDbType.Text,
+                $"ops-action:{request.OperationClass}:{request.ActionDiscriminator}");
+            await actionLock.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         var existingSql = $"""
             SELECT 1
             FROM {_actionTable}
@@ -250,13 +253,18 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         }
 
         var countSql = $"""
-            SELECT COUNT(*)
+            SELECT GREATEST(
+                COUNT(*) FILTER (WHERE rule = @rule),
+                COUNT(*) FILTER (WHERE operation_class = @operation_class
+                    AND action_discriminator IS NOT DISTINCT FROM @action_discriminator))
             FROM {_actionTable}
-            WHERE rule = @rule AND reserved_at >= @cutoff
+            WHERE reserved_at >= @cutoff
             """;
         await using (var countCommand = new NpgsqlCommand(countSql, connection, transaction))
         {
             countCommand.Parameters.AddWithValue("rule", NpgsqlDbType.Text, request.Rule);
+            countCommand.Parameters.AddWithValue("operation_class", NpgsqlDbType.Text, request.OperationClass.ToString());
+            countCommand.Parameters.AddWithValue("action_discriminator", NpgsqlDbType.Text, (object?)request.ActionDiscriminator ?? DBNull.Value);
             countCommand.Parameters.AddWithValue("cutoff", NpgsqlDbType.TimestampTz, cutoff);
             var count = (long)(await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
             if (count >= maxActions)

@@ -18,9 +18,6 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Import.FileImport;
 
-/// <summary>
-/// Shared HTTP client wiring for import-related outbound requests.
-/// </summary>
 internal static class ImportHttpClientHelper
 {
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler()

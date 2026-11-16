@@ -52,7 +52,7 @@ public sealed class ReportingFinancialAdmissionTests(DatabaseFixtureAdapter fixt
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         { ["AiExecutionAdmission:DeploymentId"] = "deployment", ["AiExecutionAdmission:Backend"] = "postgres" }).Build();
         var services = new ServiceCollection(); services.AddLogging();
-        services.AddKeyedScoped<IAiExecutionAdmissionStore>("postgres", (_, _) => _selectedStore); services.AddAiExecutionAdmission(configuration);
+        services.AddScoped<IAiExecutionAdmissionStore>(_ => _selectedStore); services.AddAiExecutionAdmission(configuration);
         _services = services.BuildServiceProvider();
         _policy = AiFinancialTestPolicy.Create("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", "openai");
         var initialized = await _store.ApplyControlAsync(new("deployment", AiAdmissionControlAction.Initialize, Guid.Empty, 0, 0,

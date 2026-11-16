@@ -33,6 +33,8 @@ internal sealed class SharedCacheOptions
     // tags are sent and edits invalidate by path.
     public string? CacheTagHeader { get; set; }
 
+    public CdnPurgeBudgetOptions PurgeBudget { get; set; } = new();
+
     internal bool CacheTagsEnabled => !string.IsNullOrWhiteSpace(CacheTagHeader);
 
     internal SharedCacheLifetime DefaultFor(ResponseCacheClass cacheClass) => cacheClass switch
@@ -58,4 +60,15 @@ internal sealed class SharedCacheEmergency
     internal bool AppliesTo(SharedCacheSubject? subject)
         => AllPublicLayers
            || (subject?.LayerKey is { } layerKey && Layers.Contains(layerKey, StringComparer.OrdinalIgnoreCase));
+}
+
+// Edit purges stop for the rest of the UTC month once the count is reached. Zero disables the cap.
+// The unit cost is whatever the operator records; the product does not embed a vendor price.
+internal sealed class CdnPurgeBudgetOptions
+{
+    internal const int DefaultMonthlyEditSubmissions = 1000;
+
+    public int MonthlyEditSubmissions { get; set; } = DefaultMonthlyEditSubmissions;
+
+    public decimal EstimatedCostPerSubmission { get; set; }
 }

@@ -23,5 +23,7 @@
 
   <ItemGroup>
     <Compile Include="../Shared/OutboundSecurity/OutboundAddressCases.cs" Link="Shared/OutboundAddressCases.cs" />
+    <Compile Include="../Shared/ProviderUnitSupport/ParcelsLayerFixture.cs" Link="Shared/ParcelsLayerFixture.cs" />
+    <Compile Include="../Shared/ProviderUnitSupport/ReadPolicySourceStubs.cs" Link="Shared/ReadPolicySourceStubs.cs" />
   </ItemGroup>
 </Project>

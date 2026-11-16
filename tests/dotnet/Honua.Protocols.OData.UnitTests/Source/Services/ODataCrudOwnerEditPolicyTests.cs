@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -12,15 +11,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
+using Honua.Tests.OwnerEdit;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Protocols.OData.UnitTests.Services;
@@ -37,12 +34,7 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
     private const string AnonymousDenial =
         "Anonymous edits are not permitted while an owner-based edit policy is active.";
 
-    private static readonly MetadataV2OwnerEditPolicy Policy = new()
-    {
-        Enabled = true,
-        OwnerField = "owner",
-        StampOwnerOnInsert = true
-    };
+    private static readonly MetadataV2OwnerEditPolicy Policy = OwnerEditTestFixtures.Policy;
 
     [UnitTest]
     public async Task Update_ReplacementWithMaskedProtectedFields_UsesPreservingWriterContract()
@@ -52,7 +44,7 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var service = CreateService(reader, writer, Principal("alice", admin: false));
         var resource = Resource(null) with
         {
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" },
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" },
             SchemaFields =
             [
                 new() { Name = "name", Type = MetadataV2FieldType.String, Editable = true },
@@ -176,39 +168,11 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
     private static ParsedFeaturePayload Payload(string name)
         => new() { Attributes = new Dictionary<string, object?> { ["name"] = name } };
 
-    private static MetadataV2Resource Resource(MetadataV2OwnerEditPolicy? policy)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "cities", Name = "cities" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            OwnerEditPolicy = policy,
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "objectid",
-                    Type = MetadataV2FieldType.Integer,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
-            ]
-        };
+    private static MetadataV2Object Resource(MetadataV2OwnerEditPolicy? policy)
+        => OwnerEditTestFixtures.CitiesResource(policy);
 
     private static DefaultHttpContext Principal(string subject, bool admin)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
-        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
-        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, subject) };
-        if (admin)
-        {
-            claims.Add(new Claim(ClaimTypes.Role, "admin"));
-        }
-
-        context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
-        return context;
-    }
+        => admin ? OwnerEditTestFixtures.Principal(subject, "admin") : OwnerEditTestFixtures.Principal(subject);
 
     private static ODataCrudService CreateService(IFeatureReader reader, IFeatureWriter writer, HttpContext? httpContext)
     {

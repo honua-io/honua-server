@@ -39,12 +39,12 @@ public class CogEndpointTests : IAsyncLifetime
             var bindingId = $"cog-binding-{storageLayerId}";
             var serviceId = $"cog-service-{storageLayerId}";
             builder
-                .AddResource(resourceId, resourceId, MetadataV2ResourceType.RasterDataset)
+                .AddResource(resourceId, resourceId, MetadataV2ObjectType.RasterDataset)
                 .AddStorageBinding(bindingId, resourceId, $"rasters:{storageLayerId}", storageLayerId: storageLayerId)
                 .AddService(serviceId, serviceId, protocols: [ServiceProtocols.ImageServer])
                 .AddPublication($"cog-publication-{storageLayerId}", serviceId, resourceId,
                     layerIndex: Math.Min(storageLayerId, 3), storageBindingId: bindingId,
-                    publicationType: MetadataV2PublicationType.EsriImageLayer);
+                    publicationType: MetadataV2LayerType.EsriImageLayer);
         }
         var graph = builder.BuildProvider();
         _fixture = new WebAppFixture().ConfigureServices(services =>

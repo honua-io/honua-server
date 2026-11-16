@@ -313,7 +313,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         return result.GetProperty("structuredContent").Clone();
     }
 
-    private static async Task<JsonElement> CallRefusedPresetAsync(HttpClient client, string session, string styleId)
+    private static async Task<JsonElement> ProposePresetAsync(HttpClient client, string session, string styleId)
     {
         var styleArgument = $",\"styleId\":\"{styleId}\"";
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
@@ -343,29 +343,13 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         using var scope = _fixture.Services.CreateScope();
         var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
         var before = await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId);
-        var denied = await CallRefusedPresetAsync(client, session, styleId);
-        denied.GetProperty("code").GetString().Should().Be("failed_precondition");
-        denied.GetProperty("policyRef").GetString().Should().Be("operator.publish");
-
-        using var submission = await client.PostAsJsonAsync("/api/v1/operations/style.apply-preset/submit", new
-        {
-            parameters = new Dictionary<string, string>
-            {
-                ["serviceId"] = _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
-                    .First(publication => publication.LayerIndex == WebAppFixture.TestLayerId
-                        && publication.PublicationType == MetadataV2PublicationType.EsriMapLayer).ServiceId,
-                ["serviceLayerIndex"] = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["styleId"] = styleId,
-            },
-        });
-        var body = await submission.Content.ReadAsStringAsync();
-        submission.IsSuccessStatusCode.Should().BeTrue(body);
-        using var receipt = JsonDocument.Parse(body);
-        var proposal = receipt.RootElement.GetProperty("data");
-        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", body);
+        var proposal = await ProposePresetAsync(client, session, styleId);
+        proposal.GetProperty("code").GetString().Should().Be("failed_precondition");
+        proposal.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        proposal.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
         (await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId))
             .Should().BeEquivalentTo(before, options => options.WithStrictOrdering(),
-                "neither the refused convenience call nor proposal submission may apply the preset");
+                "the MCP proposal must not apply the preset before human approval");
         return await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposal.GetProperty("proposalId").GetString()!);
     }
 

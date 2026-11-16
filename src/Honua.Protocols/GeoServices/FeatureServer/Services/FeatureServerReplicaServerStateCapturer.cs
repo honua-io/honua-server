@@ -13,12 +13,12 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
 {
     private readonly IFeatureReader _featureReader;
     private readonly IFilterExpressionService _filterExpressionService;
-    private readonly IReadOnlyDictionary<int, MetadataV2Resource> _resourcesByPublicLayerId;
+    private readonly IReadOnlyDictionary<int, MetadataV2Object> _resourcesByPublicLayerId;
 
     public FeatureServerReplicaServerStateCapturer(
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
-        IReadOnlyDictionary<int, MetadataV2Resource> resourcesByPublicLayerId)
+        IReadOnlyDictionary<int, MetadataV2Object> resourcesByPublicLayerId)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));

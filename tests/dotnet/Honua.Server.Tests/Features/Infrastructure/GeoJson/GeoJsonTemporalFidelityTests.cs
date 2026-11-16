@@ -63,10 +63,10 @@ public sealed class GeoJsonTemporalFidelityTests
 
     private static void AssertBothPaths(object? value, MetadataV2FieldType type, string? expected)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "temporal", Name = "temporal" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = [new MetadataV2Field { Name = "observed_at", Type = type, Nullable = true }]
         };
         var attributes = ImmutableDictionary<string, object?>.Empty.Add("observed_at", value);

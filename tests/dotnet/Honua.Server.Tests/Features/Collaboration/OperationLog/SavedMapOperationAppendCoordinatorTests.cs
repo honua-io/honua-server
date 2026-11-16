@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Realtime;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Operations;
@@ -102,14 +103,14 @@ public sealed class SavedMapOperationAppendCoordinatorTests
     {
         var repository = Substitute.For<ISavedMapOperationLogRepository>();
         repository.SupportsReplicaSharedReplay.Returns(true);
-        var backplane = Substitute.For<ICollaborationSessionBackplane>();
-        backplane.SupportsCrossReplicaDelivery.Returns(true);
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Capabilities.Returns(new RealtimeProviderCapabilities(true, false, false));
 
         using var coordinator = new SavedMapOperationAppendCoordinator(
             repository,
             CreateSessionService(),
             SavedMapCollaborationTopology.ForMultiReplica(true),
-            backplane);
+            provider);
 
         coordinator.CanAcceptEdits.Should().BeFalse(
             "pub/sub delivery cannot order cursor assignment and publication across replicas");
@@ -120,15 +121,15 @@ public sealed class SavedMapOperationAppendCoordinatorTests
     {
         var repository = Substitute.For<ISavedMapOperationLogRepository>();
         repository.SupportsReplicaSharedReplay.Returns(true);
-        var backplane = Substitute.For<ICollaborationSessionBackplane>();
-        backplane.SupportsCrossReplicaDelivery.Returns(true);
-        backplane.SupportsOrderedOperationDelivery.Returns(true);
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Capabilities.Returns(new RealtimeProviderCapabilities(true, false, false));
+        provider.Capabilities.Returns(new RealtimeProviderCapabilities(true, true, true));
 
         using var coordinator = new SavedMapOperationAppendCoordinator(
             repository,
             CreateSessionService(),
             SavedMapCollaborationTopology.ForMultiReplica(true),
-            backplane);
+            provider);
 
         coordinator.CanAcceptEdits.Should().BeTrue();
     }

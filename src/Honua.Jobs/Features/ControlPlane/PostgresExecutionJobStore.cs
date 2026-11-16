@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -42,6 +43,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
     private readonly JobStoreDatabase _database;
     private readonly JobStoreOptions _options;
     private readonly ILogger<PostgresExecutionJobStore> _logger;
+    private readonly PollWakeSignal<IExecutionJobStore>? _wake;
     private readonly string _jobs;
     private readonly string _leases;
     private readonly string _insertJob;
@@ -51,13 +53,15 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
     public PostgresExecutionJobStore(
         JobStoreDatabase database,
         IOptions<JobStoreOptions> options,
-        ILogger<PostgresExecutionJobStore> logger)
+        ILogger<PostgresExecutionJobStore> logger,
+        PollWakeSignal<IExecutionJobStore>? wake = null)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(options);
         _database = database;
         _options = options.Value;
         _logger = logger;
+        _wake = wake;
         _jobs = database.Table(ExecutionJobRow.TableName);
         _leases = database.Table("leases");
 
@@ -114,6 +118,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         if (inserted)
         {
             Log.ExecutionJobCreated(_logger, job.OperationId, created.Spec.Kind.ToString(), created.Status.ToString());
+            _wake?.Wake();
         }
 
         return inserted;
@@ -170,6 +175,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
             cancellationToken).ConfigureAwait(false);
 
         Log.ExecutionJobUpdated(_logger, job.OperationId, stored.Status.ToString());
+        _wake?.Wake();
     }
 
     public Task<bool> TrySetAsync(
@@ -222,6 +228,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         if (updated)
         {
             Log.ExecutionJobUpdated(_logger, job.OperationId, job.Status.ToString());
+            _wake?.Wake();
         }
         else
         {

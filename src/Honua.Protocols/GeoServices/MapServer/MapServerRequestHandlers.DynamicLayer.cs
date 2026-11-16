@@ -358,7 +358,7 @@ internal static partial class MapServerEndpoints
 
     // Geometry and publisher-hidden fields are left off the joined field list so the right layer cannot surface them through the join.
     private static List<MapServerFieldInfo> BuildJoinedFields(
-        MetadataV2Resource rightResource,
+        MetadataV2Object rightResource,
         string qualifier)
     {
         var rightObjectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(rightResource);
@@ -389,7 +389,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static JsonElement? ResolveDynamicLayerDrawingInfo(
-        MetadataV2Resource sourceResource,
+        MetadataV2Object sourceResource,
         MetadataV2GraphSnapshot snapshot,
         string? drawingInfoJson)
     {

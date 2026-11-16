@@ -10,16 +10,16 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.Logging;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
+public sealed partial class OgcCoverageImportService
 {
     private const string GeoTiffFormat = "GeoTIFF";
     private const string CogFormat = "CloudOptimizedGeoTIFF";
@@ -425,16 +425,13 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
                 $"GetCoverage response for {sourceCoverageId} declares {declaredLength} bytes, exceeding the {MaxCoverageDownloadBytes}-byte import limit.");
         }
 
-        // Both Path.Combine arguments below are safe: "honua-ogc-coverage-import" is a fixed
-        // relative literal, and the filename is a server-generated GUID ("N" format, hex only)
-        // plus a fixed extension - neither can become a rooted path that discards tempDir.
-        var tempDir = Path.Join(Path.GetTempPath(), "honua-ogc-coverage-import");
-        Directory.CreateDirectory(tempDir);
-        var path = Path.Join(tempDir, $"{Guid.NewGuid():N}.tif");
+        // A GUID name directly under the temp path (no shared fixed directory another local
+        // user could pre-create), created exclusively and owner-only.
+        var path = PrivateTempFile.NewPath("honua-ogc-coverage-import-", ".tif");
         try
         {
             await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using var destination = File.Create(path);
+            await using var destination = PrivateTempFile.Create(path, FileOptions.Asynchronous);
 
             // Copy with an explicit byte ceiling: the response stream is source-controlled
             // (chunked responses carry no Content-Length), so an unbounded CopyToAsync could
@@ -619,7 +616,7 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
             }
 
             builder.Path = $"{basePath}/collections/{Uri.EscapeDataString(coverageId)}/coverage";
-            builder.Query = BuildQuery(
+            builder.Query = MigrationSourceUrls.BuildQuery(
                 builder.Query,
                 new Dictionary<string, string?>
                 {
@@ -635,7 +632,7 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         var isWcs2 = resolvedVersion.StartsWith("2.", StringComparison.Ordinal);
         var wcsBuilder = new UriBuilder(serviceUri)
         {
-            Query = BuildQuery(
+            Query = MigrationSourceUrls.BuildQuery(
                 serviceUri.Query,
                 new Dictionary<string, string?>
                 {
@@ -647,38 +644,6 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
                 })
         };
         return wcsBuilder.Uri;
-    }
-
-    private static string BuildQuery(string existingQuery, IReadOnlyDictionary<string, string?> values)
-    {
-        var pairs = new List<KeyValuePair<string, string>>();
-        var trimmed = existingQuery.TrimStart('?');
-        if (trimmed.Length > 0)
-        {
-            foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var separator = part.IndexOf('=', StringComparison.Ordinal);
-                var key = separator < 0 ? Uri.UnescapeDataString(part) : Uri.UnescapeDataString(part[..separator]);
-                if (values.Keys.Any(candidate => string.Equals(candidate, key, StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                var value = separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]);
-                pairs.Add(new KeyValuePair<string, string>(key, value));
-            }
-        }
-
-        foreach (var (key, value) in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                pairs.Add(new KeyValuePair<string, string>(key, value));
-            }
-        }
-
-        return string.Join("&", pairs.Select(static pair =>
-            $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
     }
 
     [SuppressMessage("Performance", "CA1308:Normalize strings to uppercase", Justification = "Stable ASCII slug for manifest target identities.")]

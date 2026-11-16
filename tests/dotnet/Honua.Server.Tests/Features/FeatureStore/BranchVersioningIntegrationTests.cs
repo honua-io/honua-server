@@ -64,6 +64,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
             _schema,
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
+        await InitializeReceiptEvidenceSchemaAsync();
 
         // Register the test layer so the feature store resolves its SRID (4326) and stamps written
         // geometries; without it the geography GIST index expression (ST_Transform(...,4326)) rejects

@@ -15,6 +15,8 @@ internal sealed class ObservabilityAuditRecordResponse
 
     public required string ActorType { get; init; }
 
+    public string? ActorAgent { get; init; }
+
     public required string ResourceType { get; init; }
 
     public string? ResourceId { get; init; }
