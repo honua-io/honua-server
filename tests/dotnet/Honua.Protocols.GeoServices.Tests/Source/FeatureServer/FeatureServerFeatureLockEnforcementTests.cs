@@ -17,28 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// End-to-end proof that a collaborative-editing lease is binding on the GeoServices
-/// write path (honua-server#4402).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The lease here is a <b>real</b> one: it is taken through the shipped
-/// <see cref="IFeatureLockService"/> singleton — the same instance
-/// <c>/api/v1/maps/{mapId}/collaboration/feature-locks/claim</c> writes to — and
-/// the competing edit is a real HTTP <c>applyEdits</c> against real PostGIS. Nothing
-/// about the write path is substituted or decorated. This is the assertion the issue
-/// named as missing: before #4402 <c>IFeatureEditGuard</c> had twenty-six passing unit
-/// tests and no consumer, so every one of these edits landed and overwrote the holder.
-/// </para>
-/// <para>
-/// <b>The lease namespace.</b> A lease is keyed on
-/// <c>(serviceName, layerId, featureId)</c>. <see cref="LeaseNamespaceIsTheRouteServiceAndLayer"/>
-/// pins that those are the service id and layer id from the request URL, and not some
-/// internal storage identifier a client could not know — that binding is the whole
-/// reason a lease claimed by a client blocks a write from another one.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerFeatureLockEnforcementTests : IAsyncLifetime
