@@ -662,6 +662,7 @@ These workflows run on schedule and can be dispatched manually:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `release-please.yml` (SDK repos only) | Push | Version automation |
+| `disabled-workflow-check.yml` | Weekly schedule | Fails while a workflow disabled on GitHub is still in the tree, unless an active workflow calls it or a dated entry names the ticket that decides it |
 
 ## Attesting reviewers
 
