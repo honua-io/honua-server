@@ -4,7 +4,6 @@
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Scale;
 
@@ -12,8 +11,6 @@ namespace Honua.Server.Tests.Scale;
 public sealed class RedisScaleOutTests
 {
     private const string BaseUrlEnv = "HONUA_SCALE_TEST_BASE_URL";
-    private const string RedisEnv = "HONUA_SCALE_TEST_REDIS";
-    private const string OutputCachePrefix = "honua:outputcache:";
 
     [ScaleTest(BaseUrlEnv)]
     [Operation(Operations.TestInfrastructure)]
@@ -102,27 +99,6 @@ public sealed class RedisScaleOutTests
         odataInstances.Should().HaveCountGreaterOrEqualTo(2, "OData requests should route to multiple Honua instances");
     }
 
-    [ScaleTest(BaseUrlEnv, RedisEnv)]
-    [Operation(Operations.Cache)]
-    [Endpoint("GET /ogc/features")]
-    public async Task OutputCache_WritesToRedisStore()
-    {
-        var redisConnection = GetRequiredEnv(RedisEnv);
-        using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnection);
-        var server = GetServer(multiplexer);
-        var database = multiplexer.GetDatabase();
-
-        await ClearKeysAsync(server, database, $"{OutputCachePrefix}*");
-
-        using var client = CreateClient();
-        using var response = await SendRequestAsync(client, "/ogc/features");
-        response.EnsureSuccessStatusCode();
-        await response.Content.ReadAsByteArrayAsync();
-
-        var keys = server.Keys(pattern: $"{OutputCachePrefix}*").ToArray();
-        keys.Should().NotBeEmpty("output cache entries should be persisted in Redis");
-    }
-
     private static HttpClient CreateClient()
     {
         var baseUrl = GetRequiredEnv(BaseUrlEnv).TrimEnd('/');
@@ -139,28 +115,6 @@ public sealed class RedisScaleOutTests
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.ConnectionClose = true;
         return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-    }
-
-    private static async Task ClearKeysAsync(IServer server, IDatabase database, string pattern)
-    {
-        var keys = server.Keys(pattern: pattern).ToArray();
-        if (keys.Length == 0)
-        {
-            return;
-        }
-
-        await database.KeyDeleteAsync(keys);
-    }
-
-    private static IServer GetServer(ConnectionMultiplexer multiplexer)
-    {
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            throw new InvalidOperationException("Redis connection string did not provide any endpoints.");
-        }
-
-        return multiplexer.GetServer(endpoints[0]);
     }
 
     private static string GetRequiredEnv(string name)

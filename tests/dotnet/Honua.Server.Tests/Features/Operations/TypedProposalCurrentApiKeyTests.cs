@@ -28,10 +28,10 @@ using CanonicalExecutor = Honua.Core.Features.Operations.Abstractions.IOperation
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-[Collection(RedisFixture.CollectionName)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsyncLifetime
+public sealed class TypedProposalCurrentApiKeyTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
@@ -51,7 +51,6 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");

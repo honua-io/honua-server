@@ -58,6 +58,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
   run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
   run_fixture publish-authorization "${PYTHON_BIN}" scripts/ci/check-publish-authorization.py
+  run_fixture trivy-release-gate "${PYTHON_BIN}" scripts/ci/trivy-release-gate.test.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
@@ -1841,6 +1842,10 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration 1" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.ImportProgressRepairTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration 3" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportExecutionJobQueueTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
