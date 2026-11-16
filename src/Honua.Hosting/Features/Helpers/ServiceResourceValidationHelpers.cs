@@ -203,6 +203,18 @@ internal static class ServiceResourceValidationHelpers
     internal static bool IsCatalogStorageUnavailable(Exception exception)
         => exception is DbException { SqlState: "42P01" };
 
+    public static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateAdminStorageLayerAsync(
+        int storageLayerId, HttpContext context, IResourceValidator resourceValidator, CancellationToken cancellationToken)
+    {
+        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
+        if (!layerResult.IsValid || layerResult.Resource == null)
+        {
+            return (null, CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
+        }
+
+        return (layerResult.Resource, null);
+    }
+
     public static IResult CreateAdminValidationProblem<T>(
         HttpContext context,
         ResourceValidationResult<T> validation,

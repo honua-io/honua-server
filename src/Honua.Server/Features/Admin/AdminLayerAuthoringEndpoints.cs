@@ -78,7 +78,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         int storageLayerId, string key, HttpContext context,
         IResourceValidator resourceValidator, IMetadataV2GraphStore graphStore, CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (problem != null || resource == null)
         {
             return problem!;
@@ -104,7 +104,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         IResourceValidator resourceValidator, IMetadataV2GraphStore graphStore,
         OutputCacheInvalidationService cacheInvalidator, CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (problem != null || resource == null)
         {
             return problem!;
@@ -314,18 +314,6 @@ internal static partial class AdminLayerAuthoringEndpoints
         || string.Equals(cardinality, "many-to-many", StringComparison.OrdinalIgnoreCase);
 
     // ---- shared helpers ---------------------------------------------------------------------------------
-
-    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
-        int storageLayerId, HttpContext context, IResourceValidator resourceValidator, CancellationToken cancellationToken)
-    {
-        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
-        {
-            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
-        }
-
-        return (layerResult.Resource, null);
-    }
 
     private static bool IsEtagMismatch(Exception exception) =>
         exception is InvalidOperationException

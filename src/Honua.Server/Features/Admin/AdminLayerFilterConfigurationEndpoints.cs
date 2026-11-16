@@ -46,7 +46,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -68,7 +68,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -198,21 +198,6 @@ internal static class AdminLayerFilterConfigurationEndpoints
             default:
                 return false;
         }
-    }
-
-    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
-        int storageLayerId,
-        HttpContext context,
-        IResourceValidator resourceValidator,
-        CancellationToken cancellationToken)
-    {
-        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
-        {
-            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
-        }
-
-        return (layerResult.Resource, null);
     }
 
     private static LayerFilterConfigurationResponse BuildResponse(int storageLayerId, MetadataV2PermanentFilter? filter)

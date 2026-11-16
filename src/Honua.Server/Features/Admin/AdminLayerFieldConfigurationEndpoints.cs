@@ -51,7 +51,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] ILayerFieldConfigurationStore fieldConfigurationStore,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -75,7 +75,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -128,21 +128,6 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return Results.Json(
             ApiResponse<LayerFieldConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
-    }
-
-    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
-        int storageLayerId,
-        HttpContext context,
-        IResourceValidator resourceValidator,
-        CancellationToken cancellationToken)
-    {
-        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
-        {
-            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
-        }
-
-        return (layerResult.Resource, null);
     }
 
     private static string? ValidateRequest(
