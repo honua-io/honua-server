@@ -231,11 +231,12 @@ public sealed class OperatorJourneyMcpIntegrationTests
 
     private static async Task AssertMalformedPreviewRefusedAsync(HttpClient admin, string json)
     {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var malformed = await CallAsync(admin, "honua_admin_import_preview", new
         {
             file = Convert.ToBase64String(Encoding.UTF8.GetBytes(json)),
             fileName = "invalid.geojson",
-        });
+        }, timeout.Token);
         var malformedResult = malformed.GetProperty("result");
         var refusal = malformedResult.GetProperty("structuredContent");
         refusal.GetProperty("status").GetString().Should().Be("Failed");
@@ -285,7 +286,8 @@ public sealed class OperatorJourneyMcpIntegrationTests
         return structured.Clone();
     }
 
-    private static async Task<JsonElement> CallAsync(HttpClient client, string name, object arguments)
+    private static async Task<JsonElement> CallAsync(
+        HttpClient client, string name, object arguments, CancellationToken cancellationToken = default)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -295,8 +297,8 @@ public sealed class OperatorJourneyMcpIntegrationTests
             @params = new { name, arguments },
         });
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-        using var response = await client.PostAsync("/mcp", content);
-        var body = await response.Content.ReadAsStringAsync();
+        using var response = await client.PostAsync("/mcp", content, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
         return document.RootElement.Clone();
