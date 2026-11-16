@@ -103,15 +103,19 @@ public sealed class ConfigurationGenerationMigrationTests(DatabaseFixtureAdapter
         await harness.ExecuteAsync($"DELETE FROM {harness.Table("scene_datasets")} WHERE id = 'scene'");
         (await GenerationAsync(harness)).Should().Be(initial + 3);
 
-        await harness.ExecuteAsync($"INSERT INTO {harness.Table("rbac_rls_policies")} (role, service, layer, attribute, claim_type) VALUES ('*', 'roads', '0', 'district', 'district')");
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("rbac_rls_policies")} (policy_id, role, service, layer, attribute, claim_type) VALUES ('11111111-1111-1111-1111-111111111111', '*', 'roads', '0', 'district', 'district')");
         (await GenerationAsync(harness)).Should().Be(initial + 4);
-        await harness.ExecuteAsync($"DELETE FROM {harness.Table("rbac_rls_policies")} WHERE service = 'roads'");
+        await harness.ExecuteAsync($"UPDATE {harness.Table("rbac_rls_policies")} SET attribute = 'region' WHERE service = 'roads'");
         (await GenerationAsync(harness)).Should().Be(initial + 5);
-
-        await harness.ExecuteAsync($"INSERT INTO {harness.Table("rbac_field_mask_policies")} (role, service, layer, attribute) VALUES ('*', 'roads', '0', 'owner')");
+        await harness.ExecuteAsync($"DELETE FROM {harness.Table("rbac_rls_policies")} WHERE service = 'roads'");
         (await GenerationAsync(harness)).Should().Be(initial + 6);
-        await harness.ExecuteAsync($"UPDATE {harness.Table("rbac_field_mask_policies")} SET attribute = 'name' WHERE service = 'roads'");
+
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("rbac_field_mask_policies")} (policy_id, role, service, layer, attribute) VALUES ('22222222-2222-2222-2222-222222222222', '*', 'roads', '0', 'owner')");
         (await GenerationAsync(harness)).Should().Be(initial + 7);
+        await harness.ExecuteAsync($"UPDATE {harness.Table("rbac_field_mask_policies")} SET attribute = 'name' WHERE service = 'roads'");
+        (await GenerationAsync(harness)).Should().Be(initial + 8);
+        await harness.ExecuteAsync($"DELETE FROM {harness.Table("rbac_field_mask_policies")} WHERE service = 'roads'");
+        (await GenerationAsync(harness)).Should().Be(initial + 9);
     }
 
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
