@@ -75,6 +75,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0067](0067-plugin-data-store-and-output-format-extension-points.md) | Plugin Data-Store and Output-Format Extension Points | Accepted | 2026-07 |
 | [0068](0068-optional-jwt-access-tokens-and-introspection.md) | Optional JWT Access Tokens and RFC 7662 Introspection | Accepted | 2026-06 |
 | [0069](0069-studio-persistence-bridge-forms-analysis.md) | Bridge Forms and Analysis Persistence into the Studio Package Lifecycle | Accepted | 2026-07 |
+| [0070](0070-job-submitter-security-context-carrier.md) | Carry the submitter's claim snapshot onto background jobs | Accepted | 2026-08 |
 | [0071](0071-raster-execution-boundary.md) | Raster Execution Boundary — Single GDAL-Worker Engine, PostGIS as Serving/Storage Plane | Accepted | 2026-08 |
 | [0073](0073-dedicated-photogrammetry-worker.md) | Dedicated Photogrammetry Worker and Qualified Orthomosaic Engine | Accepted | 2026-08 |
 
@@ -94,6 +95,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0087](0087-native-client-protocols.md) | Native client protocols are gRPC and cloud-native files; OGC API and GeoServices REST are compatibility surfaces | Proposed | 2026-11 |
 | [0088](0088-one-first-party-field-sync-contract.md) | One first-party field sync contract | Proposed | 2026-11 |
 | [0089](0089-one-operation-definition.md) | One operation definition for governed transports and recovery | Proposed | 2026-11 |
+| [0088](0088-explicit-datum-selection-and-observation-epochs.md) | Explicit datum selection and observation epochs | Accepted | 2026-11 |
 
 ## Template
 
