@@ -1949,3 +1949,20 @@ class. Full CI job savings are unmeasured.
 All cases remain in their existing Server Features Admin Authorization shards on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow or shard definition.
+
+### Query related records host lifetime
+
+`QueryRelatedRecordsEndpointTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The related-record GET cases use it. The case that inserts and deletes
+features, and the POST, PUT and DELETE cases, first switch to a private Pro host of
+their own. Test bodies and assertions are otherwise unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 35 cases with
+no skips. VSTest execution fell from 3m20s to 46s, saving 154 seconds (2.6
+runner-minutes), and the TRX interval from 214.0 to 74.3 seconds, with one test
+process each. Full run 43709972683 spent 124 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing shard on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
