@@ -22,7 +22,6 @@ CALL = re.compile(r"^\s*(?:-\s*)?uses:\s*['\"]?\./(\.github/workflows/[\w.-]+\.y
 
 # Disabled workflows that stay until their owning ticket decides them.
 ALLOWED = {
-    ".github/workflows/server-test-prebuild-observe.yml": ("#7880", "2026-12-31"),
     ".github/workflows/lambda-preview-certification.yml": ("#7881", "2026-12-31"),
     ".github/workflows/real-aws-certification.yml": ("#7881", "2026-12-31"),
 }

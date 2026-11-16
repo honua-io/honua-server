@@ -44,9 +44,8 @@ router snapshot exists in this inventory; these validators remain strict.
 `public-interface-proof.json`, capability keys/mappings/allowlists/maturity
 judgments, GeoServices judgments, certification receipts, and stranded-merge
 dispositions are authored inputs or evidence. They are never auto-rewritten.
-The review-first, impact-routing and server-test-prebuild evidence ledgers are
-workflow artifacts produced by their existing ledger/audit scripts, not
-checked-in projections. The SDK compatibility table/summary
+The review-first evidence ledger is a workflow artifact produced by its
+ledger script, not a checked-in projection. The SDK compatibility table/summary
 (`scripts/ci/generate-sdk-compatibility-table.sh`), canonical CNG fixtures
 (`scripts/conformance/cng/generate-canonical-fixtures.py`), migration evidence
 packs and protocol-harness fragments are also run artifacts. Their provenance

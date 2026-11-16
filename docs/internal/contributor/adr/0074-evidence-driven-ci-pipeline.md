@@ -351,6 +351,10 @@ for the prior decision; it is not an active rollout or rollback path.
 
 ### Historical hosted shadow checkpoint (2026-08-14)
 
+This shadow was retired on 2026-11-16 under #7880: its observer had been disabled since
+9 November and no parity run reached a comparison. The checkpoint below is
+historical evidence, not an active rollout path.
+
 The first opportunistic prebuild candidate passed its bounded hosted A/B and is
 enabled only as a read-only producer-availability observer. It is not
 verification authority and it does not change branch protection, shard

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit;
 using Xunit;
 
 namespace Honua.Protocols.GeoServices.Tests;
@@ -19,8 +20,10 @@ namespace Honua.Protocols.GeoServices.Tests;
 // graph singleton is partitioned by schema in TestMetadataV2GraphProvider, so concurrent
 // metadata mutations across schemas no longer collide.
 //
-// These collections intentionally declare no ICollectionFixture — the fixture is
-// per-class — so they exist only to give xUnit distinct, parallelizable collection names.
+// These collections exist mainly to give xUnit distinct, parallelizable collection
+// names. The MapServer collection also holds a default WebAppFixture reference so its
+// serial default-host cases reuse the shared server instead of rebuilding it per case;
+// each case still creates its own WebAppFixture and schema.
 
 /// <summary>
 /// Legacy database collection for shared-catalog GeoServices tests that have not been
@@ -46,7 +49,7 @@ public class DatabaseGeoServicesRasterCollection
 /// </summary>
 [CollectionDefinition("Database.GeoServicesMapServer")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
-public class DatabaseGeoServicesMapServerCollection
+public class DatabaseGeoServicesMapServerCollection : ICollectionFixture<WebAppFixture>
 {
 }
 

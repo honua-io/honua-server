@@ -169,9 +169,8 @@ and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
 Review event ordering is not guaranteed. A late old-head event queues behind newer ones and reconciles the current live PR head. Draft conversion still reaches the shared attestation group, queues, and sheds the live draft before checkout or status publication. Other draft pull-request payloads skip resolution.
 
-Trusted observers resolve the current PR before expensive jobs: prebuild
-producers/parity legs cancel by PR and matrix identity; unrelated comments
-cannot interrupt paid work. New validation concurrency uses a unique run ID
+Trusted observers resolve the current PR before expensive jobs; unrelated
+comments cannot interrupt paid work. New validation concurrency uses a unique run ID
 outside PR events, keeping manual qualification independent of trunk pushes.
 Existing release cancellation policy is retained.
 
@@ -503,9 +502,6 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
-| `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
-| `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
@@ -617,13 +613,16 @@ candidate context.
 | `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | `workflow_call` | Reusable gate consumed by `honua-sdk-js`, `honua-sdk-dotnet`, and `honua-sdk-python`. |
 | `server-test-reuse-benchmark.yml` | Server Test Reuse Benchmark | `workflow_dispatch` | Bounded A/B of an overlapped reuse producer against independent baselines. Manual, read-only, publishes no status. |
-| `server-test-prebuild-benchmark.yml` | Server Test Prebuild Benchmark | `workflow_dispatch` | Manual read-only A/B proof for #3226; cannot affect branch protection or the train. |
 
 ## Recently retired
 
 | Workflow file | Retired | Why |
 |---|---|---|
 | `native-image-impact-observe.yml` | 2026-11-16 (#7880) | Disabled observation-only router with no measured narrowing benefit. Last run 42570078484 was 9 Nov; zero runs since 13 Nov before retirement (0 runner-minutes saved from an already disabled workflow). Report generation, observer fixtures and its promotion policy were removed; image-input validation and content digests remain in the authoritative serving-image workflow. No active required gate moved or removed. |
+| `server-test-prebuild-observe.yml` | 2026-11-16 (#7880) | The prebuild shadow experiment, with the parity, ledger and benchmark rows below. The observer had been disabled on GitHub since 9 Nov, so parity found no ready prebuild to compare (0 of 60 runs since 10 Nov reached a comparison), the ledger had nothing to count, and the manual benchmark last ran 14 Aug. The required `PR Gate / Server test producer` does not use any of it. Its planners, receipt, audit, try/validate scripts, policies and `server-test-prebuild-shadow.md` went with it. |
+| `server-test-prebuild-parity.yml` | 2026-11-16 (#7880) | Parity leg of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
+| `server-test-prebuild-evidence-ledger.yml` | 2026-11-16 (#7880) | Ledger of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
+| `server-test-prebuild-benchmark.yml` | 2026-11-16 (#7880) | Manual A/B benchmark of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
 | `pr-gate-impact-observe.yml` | 2026-11-16 (#7880) | Disabled on GitHub since 9 Nov; observe-only docs-only routing classification. The docs-only fast path it measured is enforced through `scripts/ci/docs-only-diff.sh`. Its classifier (`classify-pr-gate-impact.py`) and validator (`validate-pr-gate-impact.sh`) went with it. |
 | `impact-routing-evidence-ledger.yml` | 2026-11-16 (#7880) | Counted observer receipts toward a seven-day promotion bar that disabled observers could no longer reach. `audit-impact-routing-evidence.py`, the promotion and tombstone policies and `impact-routing-evidence.md` went with it. The run-catalog helpers the affected-shard audit uses stay in `collect-impact-routing-runs.py`, without its receipt download path. |
 | `claude-review.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub since the 11-11 review-path ruling; independent review now comes from the lanes and the Codex connector. Its helpers (`claude-review-body.js`, `claude-review-dedupe.js`, `review-catchup.js`) went with it. `review-gate-evidence.js` still grades a Claude bot review if one is posted. |
@@ -634,7 +633,7 @@ candidate context.
 | `auto-rerun-flaky.yml` | 2026-08-16 | Job guarded on `workflow_run.event == 'pull_request'`, which `ci.yml` has not emitted since #2865 removed its `pull_request` trigger. Every run for months was `skipped`. |
 | `ci-failure-triage.yml` | 2026-08-16 | Same dead guard. Its deterministic classifier (`scripts/ci/ci-failure-classifier.js`) and Bedrock helper (`scripts/ci/bedrock-triage.js`) had no other consumer and were removed with it. |
 | `server-test-shard-cache-proof.yml` | 2026-08-16 | One-off hosted proof for the #2735 shard-local cache, triggered only by pushes to a merged experiment branch. The shipped cache lives in `ci.yml` and is still guarded by `scripts/ci/validate-server-test-shard-cache.sh`; the recorded proof stays in `server-test-binary-artifacts.md`. |
-| `server-test-transfer-benchmark.yml` | 2026-08-16 | One-off #2722 benchmark whose design ADR-0074 rejected, triggered only by pushes to `ci/2722-hosted-transfer-benchmark`. Its config and evaluator went with it; the measured result stays in `server-test-transfer-benchmark.md`. Later producer designs are measured by `server-test-reuse-benchmark.yml` and `server-test-prebuild-benchmark.yml`. |
+| `server-test-transfer-benchmark.yml` | 2026-08-16 | One-off #2722 benchmark whose design ADR-0074 rejected, triggered only by pushes to `ci/2722-hosted-transfer-benchmark`. Its config and evaluator went with it; the measured result stays in `server-test-transfer-benchmark.md`. Later producer designs are measured by `server-test-reuse-benchmark.yml`. |
 
 ## Historical change log
 
@@ -1083,6 +1082,81 @@ needed to verify it.
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### SensorThings collection host lifetime
+
+The SensorThings `Database` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial default-configuration classes (query options, paging, ingest, ingest
+identity, navigation and review regressions) no longer rebuild that host for
+every case. Each case still creates its own `WebAppFixture`, schema and seed.
+Classes with their own configuration, such as core CRUD with development
+authentication off and the multi-tenant streams, keep their private hosts.
+The expiring portal credential in the stream authorization theory now lives 20
+seconds instead of 45; connect, publish and the first observation take about 3
+seconds, and the case still asserts the observation arrives before expiry and the
+stream then ends with `authorization-ended`.
+
+Paired build-host runs of the complete SensorThings test project on trunk
+c06ce1031a passed the same 135 cases with no skips. VSTest execution fell from
+13m08s to 7m55s, saving 313 seconds (5.2 runner-minutes); the TRX interval fell
+from 789.2 to 477.2 seconds. Query options fell from 116.7 to 11.0 seconds of
+fixture-inclusive time and paging from 57.8 to 6.4. The baseline shared the build
+host with another lane job, so part of the difference may be load; the per-case
+fixture time removed (about 5 seconds per default-host case) accounts for most of
+it. Full CI job savings are unmeasured.
+All cases remain in the SensorThings shard on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+### GeoServices MapServer collection host lifetime
+
+The `Database.GeoServicesMapServer` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial MapServer, export and identify classes no longer rebuild that host for
+every case after the previous case releases it. Each case still creates its own
+`WebAppFixture`, schema and seed, and the KML cleanup in
+`MapServerEndpointTestBase` is unchanged. Cases that change the metadata graph
+(service governance, protocol-duplicate publications and the KML seed) now write
+their own schema partition instead of the shared baseline, so those changes end
+with the case. Classes that replace services keep their private hosts.
+
+Paired build-host runs on trunk c06ce1031a used the three CI shard filters with
+one test process each and passed the same cases with no skips. TRX intervals:
+GeoServices MapServer 562.3 to 33.3 seconds (56 cases), MapServer Export 804.2 to
+34.0 seconds (65 cases), MapServer Identify 625.5 to 32.0 seconds (52 cases). The
+build host was heavily loaded, so its per-case host rebuild (about 10 seconds)
+exceeds CI's: full run 43709972683 spent 212 and 225 seconds of per-case fixture
+time in the MapServer and Export classes (3.5 to 3.8 seconds per case), which is
+the expected CI saving for those shards. Full CI job savings are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+### Catalog endpoint SOAP raster host lifetime
+
+`GeoservicesCatalogEndpointTests` lazily starts one SOAP raster application per
+class for six read-only tests that use the default raster store. Only Catalog
+Support 5 and 6 contain these cases; the other four shards do not start this host.
+The existing database collection serializes the tests; the class fixture owns
+startup and disposal.
+Cases that customize raster metadata, inspect substitute call counts, mutate
+catalog state or override host configuration retain their private applications.
+Every request, response assertion and discovered case remains in place.
+
+All cases remain in the existing GeoServices Catalog Support shards on selected
+PR runs and twice-daily full trunk runs. Runner count, required check names,
+aggregate dependencies, workflows and shard definitions are unchanged. A paired
+build-host class run passed the same 59 cases without skips: VSTest execution
+185 to 140 seconds; fixture-inclusive TRX interval 214.73 to 159.48 seconds.
+This saves 0.75 execution runner-minutes in one unchanged test process. The six
+shared cases' body total fell from 34.50 to 4.99 seconds; other cases also varied,
+so the observed whole-class reduction is not entirely attributed to host reuse.
+Build and admission time are excluded. The complete existing Support 6 test
+invocation passed the same 24 cases without skips: VSTest 81 to 63 seconds,
+saving 18 seconds (0.30 execution runner-minutes) with one process unchanged;
+fixture-inclusive TRX interval 83.24 to 66.93 seconds. Full CI-job time, including
+setup and build, remains unmeasured.
 
 ### GPServer default application lifetime
 

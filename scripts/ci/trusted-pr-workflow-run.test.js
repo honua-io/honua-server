@@ -384,7 +384,7 @@ test('recordObservationSkip mirrors the resolver skip surface and bounds its cod
   const written = {};
   recordObservationSkip({
     core,
-    label: 'server-test-prebuild',
+    label: 'example-observer',
     markerPath: '/tmp/draft.json',
     fs: { writeFileSync: (path, body) => { written[path] = body; } },
     code: 'pull-request-draft',
