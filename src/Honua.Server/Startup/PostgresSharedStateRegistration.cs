@@ -90,7 +90,6 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
         services.AddOAuthScopeCatalogue();
-
         services.AddRetentionSweeps();
         services.AddRealtimeEventLog(configuration);
         return services;
