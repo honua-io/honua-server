@@ -215,11 +215,11 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
 
             var realtime = root.GetProperty("realtime");
             realtime.GetProperty("supported").GetBoolean().Should().BeTrue();
-            realtime.GetProperty("hubPath").GetString().Should().Be("/hubs/admin");
-            realtime.GetProperty("protocol").GetString().Should().Be("signalr");
+            realtime.GetProperty("streamPath").GetString().Should().Be("/api/v1/admin/live");
+            realtime.GetProperty("protocol").GetString().Should().Be("sse");
             realtime.GetProperty("events").EnumerateArray()
                 .Should()
-                .Contain(element => element.GetString() == "AdminStatusChanged");
+                .Contain(element => element.GetString() == "status");
 
             root.GetProperty("tracingEnabled").GetBoolean().Should().BeTrue();
             root.GetProperty("metricsEnabled").GetBoolean().Should().BeTrue();

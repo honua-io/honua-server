@@ -79,6 +79,8 @@ Review new UI labels, model types, database names, API fields, MCP schemas, publ
 - package, family, or composition as Studio object names; use the actual kind, such as Map, App, or Dashboard;
 - tenant selection as a product surface; internal isolation checks still apply.
 
+`scripts/ci/check-surface-vocabulary.py` applies these rules to REST routes, MCP tool names and the SDK, CLI and skill operations in the [workflow stage map](../../guides/workflows/stage-map.v1.json), and to Console page routes when run in the Console repository. Each exception names one exact surface name, its kind (protocol, technical or pending rename) and a reason; it fails once that name is gone, and a new name cannot be recorded as a pending rename.
+
 Ordinary technical uses such as HTTP resource, MCP resource, coordinate projection, and package dependency are not product-object names. Historical filenames and existing implementation references remain readable during migration. A compatibility exception must identify the exact literal, location, and reason; never split a retired term to evade a scan. Keep protocol-defined wire names where clients depend on them. Prefer `feature-service` and `feature-layer` for Honua's own type names.
 
 ## Workflows and interpretation

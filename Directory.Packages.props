@@ -53,8 +53,7 @@
          1.10.4 is the published release pin with lossless source metadata and nullable/WKT fidelity. -->
     <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.10.4" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
-    <!-- Transitive of NBomber.Contracts (tests) and Microsoft.AspNetCore.SignalR.StackExchangeRedis (server
-         admin realtime backplane); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
+    <!-- Pin the NBomber.Contracts test dependency to its patched release. -->
     <PackageVersion Include="MessagePack" Version="2.5.307" />
     <!-- Transitive of AWSSDK.CloudWatch via AWSSDK.Extensions.CborProtocol; referenced directly by
          Honua.Aws to clear GHSA-vmv3-wvjp-wqpj (NU1902). -->
@@ -66,8 +65,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
     <!-- ASP.NET Core OpenApi 11.0.0 requires Microsoft.OpenApi [3.11.0, 4.0.0). -->
     <PackageVersion Include="Microsoft.OpenApi" Version="3.11.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0" />

@@ -4,6 +4,7 @@
 using System.Net.WebSockets;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Alerts;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -46,7 +47,7 @@ internal static class StreamingOperationsEndpoints
     }
 
     private static IResult HandleListSubscribers(
-        [FromServices] IStreamingSubscriptionManager subscriptionManager,
+        [FromServices] RealtimeAlertNotificationBroadcaster subscriptionManager,
         ILogger<StreamingOperationsEndpointsLog> logger)
     {
         var subscriptions = subscriptionManager.GetSubscriptions();
@@ -168,7 +169,7 @@ internal static class StreamingOperationsEndpoints
     }
 
     private static async Task CloseAlertStreamAsync(WebSocket socket, Task<WebSocketReceiveResult>? pendingReceive,
-        IAlertNotificationSubscription subscription, CancellationToken requestAborted)
+        RealtimeAlertNotificationBroadcaster.Subscription subscription, CancellationToken requestAborted)
     {
         using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
         shutdown.CancelAfter(TimeSpan.FromSeconds(5));
@@ -266,7 +267,7 @@ internal static class StreamingOperationsEndpoints
 
     private static IResult HandleDisconnectSubscriber(
         Guid subscriberId,
-        [FromServices] IStreamingSubscriptionManager subscriptionManager,
+        [FromServices] RealtimeAlertNotificationBroadcaster subscriptionManager,
         HttpContext context,
         ILogger<StreamingOperationsEndpointsLog> logger)
     {
