@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Forms;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class FormPackageEndpointsTests : IAsyncLifetime
+public sealed partial class FormPackageEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .WithTestLicense(HonuaEdition.Pro)
