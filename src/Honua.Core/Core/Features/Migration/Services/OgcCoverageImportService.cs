@@ -616,7 +616,7 @@ public sealed partial class OgcCoverageImportService
             }
 
             builder.Path = $"{basePath}/collections/{Uri.EscapeDataString(coverageId)}/coverage";
-            builder.Query = BuildQuery(
+            builder.Query = MigrationSourceUrls.BuildQuery(
                 builder.Query,
                 new Dictionary<string, string?>
                 {
@@ -632,7 +632,7 @@ public sealed partial class OgcCoverageImportService
         var isWcs2 = resolvedVersion.StartsWith("2.", StringComparison.Ordinal);
         var wcsBuilder = new UriBuilder(serviceUri)
         {
-            Query = BuildQuery(
+            Query = MigrationSourceUrls.BuildQuery(
                 serviceUri.Query,
                 new Dictionary<string, string?>
                 {
@@ -644,38 +644,6 @@ public sealed partial class OgcCoverageImportService
                 })
         };
         return wcsBuilder.Uri;
-    }
-
-    private static string BuildQuery(string existingQuery, IReadOnlyDictionary<string, string?> values)
-    {
-        var pairs = new List<KeyValuePair<string, string>>();
-        var trimmed = existingQuery.TrimStart('?');
-        if (trimmed.Length > 0)
-        {
-            foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var separator = part.IndexOf('=', StringComparison.Ordinal);
-                var key = separator < 0 ? Uri.UnescapeDataString(part) : Uri.UnescapeDataString(part[..separator]);
-                if (values.Keys.Any(candidate => string.Equals(candidate, key, StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                var value = separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]);
-                pairs.Add(new KeyValuePair<string, string>(key, value));
-            }
-        }
-
-        foreach (var (key, value) in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                pairs.Add(new KeyValuePair<string, string>(key, value));
-            }
-        }
-
-        return string.Join("&", pairs.Select(static pair =>
-            $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
     }
 
     [SuppressMessage("Performance", "CA1308:Normalize strings to uppercase", Justification = "Stable ASCII slug for manifest target identities.")]
