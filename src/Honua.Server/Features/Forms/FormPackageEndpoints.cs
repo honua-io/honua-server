@@ -74,7 +74,7 @@ internal static class FormPackageEndpoints
             .Produces<FormPackageValidationResult>();
 
         admin.MapPost("/{formId}/versions/{packageVersion:int}/publish", HandlePublish)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("PublishFormPackageDraft")
             .WithSummary("Validate and publish an immutable package version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))

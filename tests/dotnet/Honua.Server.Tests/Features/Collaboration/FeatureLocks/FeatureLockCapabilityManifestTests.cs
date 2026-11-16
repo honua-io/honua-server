@@ -17,6 +17,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 
+// The capability manifest publishes the feature-lock dispositions, not only the docs page. A client that reads
+// /api/v1/capabilities/manifest learns that leases are enforced, that no lease can be granted until an authorizer
+// is supplied, that cross-node leases need the PostgreSQL store, and that the GeoServices applyEdits surface honours
+// no client-supplied version token. Both composition paths are covered (the hand-curated roster and the
+// registry-derived projection), because the two must stay wire-identical.
 [Collection("Database")]
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Metadata)]
@@ -77,8 +82,6 @@ public sealed class FeatureLockCapabilityManifestTests
     }
 
     [IntegrationTheory]
-    [InlineData(false, CrossNodeCapability)]
-    [InlineData(true, CrossNodeCapability)]
     [InlineData(false, VersionTokenCapability)]
     [InlineData(true, VersionTokenCapability)]
     [Endpoint("GET /api/v1/capabilities/manifest")]
@@ -98,6 +101,43 @@ public sealed class FeatureLockCapabilityManifestTests
         gap.GetProperty("available").GetBoolean().Should().BeFalse();
         gap.GetProperty("lifecycle").GetString().Should().Be("planned");
         gap.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+    }
+
+    // Each host shape names its composition path ("registry" or the curated roster), whether it has the shared
+    // PostgreSQL store, and whether an authorizer that can grant leases is registered.
+    [IntegrationTheory]
+    [InlineData("curated shared-store authorizer", null)]
+    [InlineData("registry shared-store authorizer", null)]
+    [InlineData("curated shared-store", "disabled-by-configuration")]
+    [InlineData("registry shared-store", "disabled-by-configuration")]
+    [InlineData("curated authorizer", "dependency-unavailable")]
+    [InlineData("registry authorizer", "dependency-unavailable")]
+    [InlineData("curated", "dependency-unavailable")]
+    [InlineData("registry", "dependency-unavailable")]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task Manifest_CrossNodeAvailability_FollowsSelectedStoreAndAuthorizer(string hostShape, string? expectedReason)
+    {
+        var shape = hostShape.Split(' ');
+        var fixture = CreateFixture(shape.Contains("authorizer"), shape.Contains("registry"));
+        if (!shape.Contains("shared-store"))
+        {
+            fixture = fixture.ConfigureServices(services =>
+            {
+                services.AddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
+            });
+        }
+        await using var lifetime = fixture;
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var document = await GetManifestAsync(client);
+        var crossNode = Capability(document, CrossNodeCapability);
+
+        crossNode.GetProperty("supported").GetBoolean().Should().BeTrue("shared leases are implemented");
+        crossNode.GetProperty("lifecycle").GetString().Should().Be("implemented");
+        crossNode.GetProperty("available").GetBoolean().Should().Be(expectedReason is null);
+        (crossNode.TryGetProperty("reasonCode", out var reason) && reason.ValueKind != JsonValueKind.Null
+            ? reason.GetString()
+            : null).Should().Be(expectedReason);
     }
 
     [IntegrationTest]

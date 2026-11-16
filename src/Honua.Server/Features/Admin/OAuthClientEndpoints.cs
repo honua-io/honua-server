@@ -60,12 +60,12 @@ internal static partial class OAuthClientEndpoints
         scopes.MapPut("/", HandleDefineScope)
             .WithDisplayName("Define OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
         scopes.MapDelete("/{scope}", HandleDeleteScope)
             .WithDisplayName("Delete OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<OAuthClientResponse>>>> HandleListClients(
