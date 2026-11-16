@@ -385,7 +385,8 @@ if len(proof) != 2 or "if: steps.public-install.outputs.smoke == 'true'" not in 
     problems.append("public Docker proof must run only when selected, including on docs-only changes")
 for name in ("Verify tracked text files are UTF-8", "Verify review-first admission contract", "Verify .NET base-image security inventory"):
     block = gate[gate.find(f"- name: {name}") :].split("- name:", 2)[1]
-    if "docs-only" in block:
+    executable = "\n".join(line for line in block.splitlines() if not line.lstrip().startswith("#"))
+    if "docs-only" in executable:
         problems.append(f"the always-on step {name!r} must not depend on the docs-only verdict")
 if "steps.docs-only.outputs.docs_only == 'true') && 'true' || steps.select.outputs.skip" not in select:
     problems.append("a docs-only diff must publish skip=true to the affected-shard aggregate")
