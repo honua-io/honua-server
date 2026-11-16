@@ -52,7 +52,6 @@ internal static class WmtsRequestHandlers
         "http://www.opengis.net/ows/1.1 http://schemas.opengis.net/ows/1.1.0/owsExceptionReport.xsd";
     private const string WmtsCapabilitiesSchemaLocation =
         "http://www.opengis.net/wmts/1.0 http://schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd";
-    private const string CiteWmtsNonQueryableLayerTitle = "cite:BasicPolygons";
     private const string WmtsProtocolName = "Wmts";
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
@@ -760,7 +759,7 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
         }
 
-        if (!IsWmtsLayerQueryable(service, layer))
+        if (!IsWmtsLayerQueryable(layer))
         {
             return CreateWmtsExceptionReport(context,
                 "OperationNotSupported",
@@ -1415,7 +1414,7 @@ internal static class WmtsRequestHandlers
             foreach (var layer in visibleLayers)
             {
                 var layerId = layer.Identifier;
-                var isQueryable = IsWmtsLayerQueryable(service, layer);
+                var isQueryable = IsWmtsLayerQueryable(layer);
                 MetadataV2TemporalRange? layerTemporalRange = wmtsTemporalRanges.TryGetValue(layer.StorageLayerId, out var fetchedRange)
                     ? fetchedRange
                     : null;
@@ -1514,53 +1513,25 @@ internal static class WmtsRequestHandlers
         return sb.ToString();
     }
 
-    private static bool IsWmtsLayerQueryable(MetadataV2Service service, WmtsLayer layer)
-    {
-        // CITE's BasicPolygons fixture is explicitly non-queryable in v1; preserve the
-        // same behavior in V2 since CITE conformance still pivots on the cite/BasicPolygons
-        // pair to assert the "no GetFeatureInfo" branch. Match by both Name and Title to be
-        // robust against fixtures that put the conformance string in either slot.
-        var serviceName = service.Metadata.Name ?? string.Empty;
-        if (!string.Equals(serviceName, CiteServiceName, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
+    private static bool IsWmtsLayerQueryable(WmtsLayer layer)
+        => OgcClassicDeclaredDimensions.IsWmtsQueryable(layer.Resource);
 
-        var resourceName = layer.Resource.Metadata.Name ?? string.Empty;
-        var resourceTitle = layer.Resource.Metadata.Title ?? string.Empty;
-        if (string.Equals(resourceName, CiteWmtsNonQueryableLayerTitle, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(resourceTitle, CiteWmtsNonQueryableLayerTitle, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return true;
-    }
+    private static WmtsDimensionDefinition[] GetDeclaredWmtsDimensionDefinitions(MetadataV2Object resource)
+        => [.. OgcClassicDeclaredDimensions.ReadWmtsDimensions(resource).Select(declared => new WmtsDimensionDefinition(
+            Identifier: declared.Identifier,
+            Values: declared.Values,
+            DefaultValue: declared.DefaultValue,
+            SupportsCurrent: declared.SupportsCurrent,
+            CurrentValue: declared.CurrentValue))];
 
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitions(WmtsLayer layer)
     {
-        // CITE Terrain is identified by display name across both fixtures. Match
-        // resource Title (preferred — that's the human-facing label) and Name.
-        var resourceTitle = layer.Resource.Metadata.Title ?? string.Empty;
-        var resourceName = layer.Resource.Metadata.Name ?? string.Empty;
-        if (string.Equals(resourceTitle, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(resourceName, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        // Dimensions declared in resource metadata take the place of the
+        // data-derived time dimension below.
+        var declared = GetDeclaredWmtsDimensionDefinitions(layer.Resource);
+        if (declared.Length > 0)
         {
-            return
-            [
-                new WmtsDimensionDefinition(
-                    Identifier: "elevation",
-                    Values: ["100", "200", "300"],
-                    DefaultValue: "100",
-                    SupportsCurrent: true,
-                    CurrentValue: "300"),
-                new WmtsDimensionDefinition(
-                    Identifier: "scenario",
-                    Values: ["winter", "summer"],
-                    DefaultValue: "winter",
-                    SupportsCurrent: false,
-                    CurrentValue: null)
-            ];
+            return declared;
         }
 
         // Time-aware feature layers advertise a continuous "time" dimension so
@@ -2088,10 +2059,8 @@ internal static class WmtsRequestHandlers
             return (null, null);
         }
 
-        var resourceTitle = layer.Resource.Metadata.Title ?? string.Empty;
-        var resourceName = layer.Resource.Metadata.Name ?? string.Empty;
-        if (string.Equals(resourceTitle, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(resourceName, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        // TIME is not resolved against feature data for a layer that declares its own dimensions.
+        if (OgcClassicDeclaredDimensions.ReadWmtsDimensions(layer.Resource).Length > 0)
         {
             return (null, null);
         }

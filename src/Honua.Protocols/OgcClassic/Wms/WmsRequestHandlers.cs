@@ -54,11 +54,6 @@ internal static partial class WmsRequestHandlers
     private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
     private const double WmsWebMercatorMax = SpatialConstants.WebMercatorExtent;
     private const string WmsWarningHeaderName = "Warning";
-    private const string CiteLakesLayerTitle = "cite:Lakes";
-    private const string CiteAutosLayerTitle = "cite:Autos";
-    private const string CiteTerrainDefaultElevation = "0/425";
-    private const string CiteAutosDefaultTime = "2000-01-01T00:00:30Z";
-    private const string CiteAutosExtent = "2000-01-01T00:00:00Z/2000-01-01T00:01:00Z/PT5S";
     private const string WmsProtocolName = "Wms";
     private static readonly Version _wms13SemanticVersion = new(1, 3, 0);
     private static readonly string[] _wms13CapabilitiesMediaTypes = [WmsCapabilitiesMimeType];
@@ -321,13 +316,10 @@ internal static partial class WmsRequestHandlers
     private static string GetWmsLayerDisplayName(WmsLayer layer)
         => layer.Identifier;
 
-    private static bool IsCiteLayerNamed(WmsLayer layer, string citeName)
-    {
-        var name = layer.Resource.Metadata.Name ?? string.Empty;
-        var title = layer.Resource.Metadata.Title ?? string.Empty;
-        return string.Equals(name, citeName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(title, citeName, StringComparison.OrdinalIgnoreCase);
-    }
+    // A layer that declares its own time dimension in metadata owns that dimension:
+    // the server neither advertises a data-derived one nor filters the layer by TIME.
+    private static bool HasDeclaredTimeDimension(WmsLayer layer)
+        => OgcClassicDeclaredDimensions.HasWmsTimeDimension(layer.Resource);
 
     private static int GetWmsMaxLayersPerRequest(HttpContext context)
     {
@@ -427,10 +419,10 @@ internal static partial class WmsRequestHandlers
         CancellationToken cancellationToken)
     {
         var timeParam = GetQueryValue(query, "TIME");
-        var allCiteAutos = layers.Length > 0 && layers.All(layer => IsCiteLayerNamed(layer, CiteAutosLayerTitle));
+        var allDeclareTime = layers.Length > 0 && layers.All(HasDeclaredTimeDimension);
 
-        // cite:Autos layers are never TIME-filtered.
-        if (allCiteAutos)
+        // Layers with a declared time dimension are never TIME-filtered.
+        if (allDeclareTime)
         {
             return (null, [], null);
         }
@@ -440,7 +432,7 @@ internal static partial class WmsRequestHandlers
         var hasTemporalLayer = false;
         for (var i = 0; i < layers.Length; i++)
         {
-            if (!IsCiteLayerNamed(layers[i], CiteAutosLayerTitle) &&
+            if (!HasDeclaredTimeDimension(layers[i]) &&
                 TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layers[i].Resource, out var selection))
             {
                 // Match GetCapabilities' effective gate, not just the presence of
@@ -492,8 +484,8 @@ internal static partial class WmsRequestHandlers
         {
             var layer = layers[i];
 
-            // cite:Autos stays unfiltered without dropping TIME for the other layers.
-            if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
+            // A declared time dimension stays unfiltered without dropping TIME for the other layers.
+            if (HasDeclaredTimeDimension(layer))
             {
                 temporalFilters[i] = null;
                 continue;

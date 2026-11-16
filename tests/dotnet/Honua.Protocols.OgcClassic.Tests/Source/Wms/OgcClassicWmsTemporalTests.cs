@@ -8,7 +8,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
@@ -286,27 +285,17 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     public async Task Wms_GetMap_CiteAutosLayer_WithTimeCurrent_BypassesGenericParser()
     {
         // The generic OgcTemporalFilterParser must be bypassed when the request
-        // targets cite:Autos, or it would reject tokens like "current".
-        // V2 cutover: the bypass keys on the V2 resource name.
-        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
-            command =>
-            {
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
-            },
-            _fixture.CurrentSchema);
+        // targets a layer that declares its own time dimension, or it would
+        // reject tokens like "current".
+        _fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsTime);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=current");
 
         // Without the bypass this would be HTTP 400 with InvalidDimensionValue
         // because OgcTemporalFilterParser cannot parse "current". The bypass
-        // lets the request fall through to standard rendering (the test
-        // service is not the CITE service, so synthetic CITE rendering is
-        // skipped and the response is the layer's full-extent image).
+        // lets the request fall through to standard rendering, so the
+        // response is the layer's full-extent image.
         var content = await response.Content.ReadAsByteArrayAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
@@ -317,8 +306,9 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosMixedWithRegularLayer_RejectsUnparseableTime()
     {
-        // The CITE Autos parse-error bypass leaves TIME forms like "current" or
-        // CSV instants unparsed when the *entire* request targets cite:Autos. A mixed request (cite:Autos + a normal
+        // The declared-time bypass leaves TIME forms like "current" or CSV instants
+        // unparsed when the *entire* request targets layers that declare their own
+        // time dimension. A mixed request (such a layer + a normal
         // layer) cannot rely on the bypass — TIME=current does not apply to a
         // regular layer's temporal column, so silently dropping TIME for the
         // normal layer would diverge from the documented temporal contract.
@@ -326,18 +316,9 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // instead of returning a (null, null) filter array for everyone.
         await ConfigureLayerAsTimeAwareAsync();
 
-        // Rename layer 1 to cite:Autos so the request can mix both layers in
-        // a single LAYERS= argument while keeping layer 0 time-aware.
-        _fixture.UpdateV2ResourceName(1, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
-            command =>
-            {
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = 1 });
-            },
-            _fixture.CurrentSchema);
+        // Declare a time dimension on layer 1 so the request can mix both layers
+        // in a single LAYERS= argument while keeping layer 0 time-aware.
+        _fixture.SetV2ResourceExtension(1, "wms", DeclaredDimensionJson.WmsTime);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId},1&STYLES=,&FORMAT=image/png&TIME=current");
@@ -353,19 +334,10 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosLayer_WithCsvTimeInstants_BypassesGenericParser()
     {
-        // Comma-separated TIME instants are CITE-supported but rejected by
-        // OgcTemporalFilterParser (only RFC 3339 instants/intervals). Verify
-        // the bypass also covers this CITE-only form. V2 cutover: rename via V2.
-        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
-            command =>
-            {
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
-            },
-            _fixture.CurrentSchema);
+        // Comma-separated TIME instants are valid for a declared multi-value
+        // dimension but rejected by OgcTemporalFilterParser (only RFC 3339
+        // instants/intervals). Verify the bypass also covers this form.
+        _fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsTime);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2000-01-01T00:00:00Z,2000-01-01T00:00:30Z");

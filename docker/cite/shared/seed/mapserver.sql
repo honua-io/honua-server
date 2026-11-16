@@ -49,8 +49,8 @@ INSERT INTO honua.layers (
     metadata
 )
 VALUES
-    (0, 'cite:BasicPolygons', 'CITE BasicPolygons layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
-    (1, 'cite:Lakes', 'CITE Lakes layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
+    (0, 'cite:BasicPolygons', 'CITE BasicPolygons layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true},"wmts":{"queryable":false}}'::jsonb),
+    (1, 'cite:Lakes', 'CITE Lakes layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true},"wms":{"dimensions":[{"name":"elevation","units":"CRS:88","unitSymbol":"m","nearestValue":true,"default":"500","extent":"500,490,480"}]}}'::jsonb),
     (2, 'cite:Streams', 'CITE Streams layer', 'features', 'LineString', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
     (3, 'cite:Bridges', 'CITE Bridges layer', 'features', 'Point', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
     (4, 'cite:RoadSegments', 'CITE RoadSegments layer', 'features', 'LineString', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
@@ -60,8 +60,8 @@ VALUES
     (8, 'cite:NamedPlaces', 'CITE NamedPlaces layer', 'features', 'Point', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
     (9, 'cite:Ponds', 'CITE Ponds layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
     (10, 'cite:Forests', 'CITE Forests layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
-    (11, 'cite:Terrain', 'CITE Terrain layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-1, -1, 1, 1, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb),
-    (12, 'cite:Autos', 'CITE Autos layer', 'features', 'Point', 4326, ST_MakeEnvelope(-1, -1, 1, 1, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true}}'::jsonb)
+    (11, 'cite:Terrain', 'CITE Terrain layer', 'features', 'Polygon', 4326, ST_MakeEnvelope(-1, -1, 1, 1, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true},"wms":{"dimensions":[{"name":"elevation","units":"CRS:88","unitSymbol":"m","multipleValues":true,"default":"0/425","extent":"0/425/1"}]},"wmts":{"dimensions":[{"identifier":"elevation","values":["100","200","300"],"default":"100","supportsCurrent":true,"current":"300"},{"identifier":"scenario","values":["winter","summer"],"default":"winter"}]}}'::jsonb),
+    (12, 'cite:Autos', 'CITE Autos layer', 'features', 'Point', 4326, ST_MakeEnvelope(-1, -1, 1, 1, 4326), TRUE, '{"accessPolicy":{"allowAnonymous":true},"wms":{"dimensions":[{"name":"time","units":"ISO8601","multipleValues":true,"nearestValue":true,"default":"2000-01-01T00:00:30Z","extent":"2000-01-01T00:00:00Z/2000-01-01T00:01:00Z/PT5S"}]}}'::jsonb)
 ON CONFLICT (layer_id) DO UPDATE SET
     layer_name = EXCLUDED.layer_name,
     description = EXCLUDED.description,

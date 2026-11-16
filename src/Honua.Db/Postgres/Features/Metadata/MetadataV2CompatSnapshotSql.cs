@@ -123,6 +123,16 @@ internal static class MetadataV2CompatSnapshotSql
                             ))
                         ELSE NULL
                     END AS layer_temporal,
+                    -- Declared WMS/WMTS dimensions carried through from v1 layer metadata
+                    -- into the v2 resource extensions, where the WMS and WMTS handlers
+                    -- read them. Only object-valued keys are carried, so a layer without
+                    -- them keeps an empty extensions object.
+                    (CASE WHEN jsonb_typeof(l.metadata -> 'wms') = 'object'
+                          THEN jsonb_build_object('wms', l.metadata -> 'wms')
+                          ELSE '{}'::jsonb END
+                     || CASE WHEN jsonb_typeof(l.metadata -> 'wmts') = 'object'
+                             THEN jsonb_build_object('wmts', l.metadata -> 'wmts')
+                             ELSE '{}'::jsonb END) AS layer_extensions,
                     l.srid,
                     CASE WHEN l.extent IS NOT NULL THEN jsonb_build_object(
                         'west', ST_XMin(l.extent)::double precision,
@@ -241,7 +251,7 @@ internal static class MetadataV2CompatSnapshotSql
                         'spatial', spatial,
                         'accessPolicy', layer_access_policy,
                         'status', (SELECT value FROM status_doc),
-                        'extensions', '{}'::jsonb
+                        'extensions', layer_extensions
                     )
                     -- Attach the typed temporal slot only when the v1 layer declared a
                     -- start-time field, so non-time-aware layers stay free of a temporal

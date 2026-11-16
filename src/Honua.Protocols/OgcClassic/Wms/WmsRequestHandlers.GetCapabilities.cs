@@ -24,91 +24,111 @@ namespace Honua.Protocols.Ogc.Classic.Wms;
 
 internal static partial class WmsRequestHandlers
 {
-    private static void AppendWmsCiteDimensions(StringBuilder sb, WmsLayer layer, string indent, bool isWms111)
+    private static void AppendWmsDeclaredDimensions(StringBuilder sb, WmsLayer layer, string indent)
     {
-        var definition = GetCiteWmsDimensionDefinition(layer);
-        if (definition is null)
+        foreach (var definition in OgcClassicDeclaredDimensions.ReadWmsDimensions(layer.Resource))
         {
-            return;
+            AppendWmsDeclaredDimension(sb, definition, indent);
+        }
+    }
+
+    // The WMS 1.1.1 DTD orders a layer's Dimension elements before its Extent elements.
+    private static void AppendWms111DeclaredDimensions(StringBuilder sb, WmsLayer layer, string indent)
+    {
+        var definitions = OgcClassicDeclaredDimensions.ReadWmsDimensions(layer.Resource);
+        foreach (var definition in definitions)
+        {
+            AppendWms111DeclaredDimension(sb, definition, indent);
         }
 
-        if (isWms111)
+        foreach (var definition in definitions)
         {
-            sb.Append(indent)
-                .Append("<Dimension name=\"")
-                .Append(EscapeXml(definition.Value.Name))
-                .Append("\" units=\"")
-                .Append(EscapeXml(
-                    string.Equals(definition.Value.Name, "elevation", StringComparison.OrdinalIgnoreCase)
-                        ? "EPSG:5703"
-                        : definition.Value.Units))
-                .Append('"');
-
-            if (!string.IsNullOrWhiteSpace(definition.Value.UnitSymbol))
-            {
-                sb.Append(" unitSymbol=\"")
-                    .Append(EscapeXml(definition.Value.UnitSymbol!))
-                    .Append('"');
-            }
-
-            sb.AppendLine(" />");
-            sb.Append(indent)
-                .Append("<Extent name=\"")
-                .Append(EscapeXml(definition.Value.Name))
-                .Append('"');
-
-            if (!string.IsNullOrWhiteSpace(definition.Value.Default))
-            {
-                sb.Append(" default=\"")
-                    .Append(EscapeXml(definition.Value.Default!))
-                    .Append('"');
-            }
-
-            sb.Append(" nearestValue=\"")
-                .Append(definition.Value.NearestValue ? "1" : "0")
-                .Append("\">")
-                .Append(EscapeXml(definition.Value.Extent))
-                .AppendLine("</Extent>");
-            return;
+            AppendWms111DeclaredExtent(sb, definition, indent);
         }
+    }
 
+    private static void AppendWmsDeclaredDimension(StringBuilder sb, DeclaredWmsDimension definition, string indent)
+    {
         sb.Append(indent)
             .Append("<Dimension name=\"")
-            .Append(EscapeXml(definition.Value.Name))
+            .Append(EscapeXml(definition.Name))
             .Append("\" units=\"")
-            .Append(EscapeXml(definition.Value.Units))
+            .Append(EscapeXml(definition.Units))
             .Append('"');
 
-        if (!string.IsNullOrWhiteSpace(definition.Value.UnitSymbol))
+        if (!string.IsNullOrWhiteSpace(definition.UnitSymbol))
         {
             sb.Append(" unitSymbol=\"")
-                .Append(EscapeXml(definition.Value.UnitSymbol!))
+                .Append(EscapeXml(definition.UnitSymbol!))
                 .Append('"');
         }
 
         sb.Append(" multipleValues=\"")
-            .Append(definition.Value.MultipleValues ? "true" : "false")
+            .Append(definition.MultipleValues ? "true" : "false")
             .Append("\" nearestValue=\"")
-            .Append(definition.Value.NearestValue ? "true" : "false")
+            .Append(definition.NearestValue ? "true" : "false")
             .Append('"');
 
-        if (!string.IsNullOrWhiteSpace(definition.Value.Default))
+        if (!string.IsNullOrWhiteSpace(definition.Default))
         {
             sb.Append(" default=\"")
-                .Append(EscapeXml(definition.Value.Default!))
+                .Append(EscapeXml(definition.Default!))
                 .Append('"');
         }
 
-        if (!string.IsNullOrWhiteSpace(definition.Value.Current))
+        if (!string.IsNullOrWhiteSpace(definition.Current))
         {
             sb.Append(" current=\"")
-                .Append(EscapeXml(definition.Value.Current!))
+                .Append(EscapeXml(definition.Current!))
                 .Append('"');
         }
 
         sb.Append('>')
-            .Append(EscapeXml(definition.Value.Extent))
+            .Append(EscapeXml(definition.Extent))
             .AppendLine("</Dimension>");
+    }
+
+    private static void AppendWms111DeclaredDimension(StringBuilder sb, DeclaredWmsDimension definition, string indent)
+    {
+        sb.Append(indent)
+            .Append("<Dimension name=\"")
+            .Append(EscapeXml(definition.Name))
+            .Append("\" units=\"")
+            .Append(EscapeXml(
+                string.Equals(definition.Name, "elevation", StringComparison.OrdinalIgnoreCase)
+                    ? "EPSG:5703"
+                    : definition.Units))
+            .Append('"');
+
+        if (!string.IsNullOrWhiteSpace(definition.UnitSymbol))
+        {
+            sb.Append(" unitSymbol=\"")
+                .Append(EscapeXml(definition.UnitSymbol!))
+                .Append('"');
+        }
+
+        sb.AppendLine(" />");
+    }
+
+    private static void AppendWms111DeclaredExtent(StringBuilder sb, DeclaredWmsDimension definition, string indent)
+    {
+        sb.Append(indent)
+            .Append("<Extent name=\"")
+            .Append(EscapeXml(definition.Name))
+            .Append('"');
+
+        if (!string.IsNullOrWhiteSpace(definition.Default))
+        {
+            sb.Append(" default=\"")
+                .Append(EscapeXml(definition.Default!))
+                .Append('"');
+        }
+
+        sb.Append(" nearestValue=\"")
+            .Append(definition.NearestValue ? "1" : "0")
+            .Append("\">")
+            .Append(EscapeXml(definition.Extent))
+            .AppendLine("</Extent>");
     }
 
     private static async Task<Dictionary<int, MetadataV2TemporalRange>> PrefetchTemporalRangesAsync(
@@ -125,7 +145,7 @@ internal static partial class WmsRequestHandlers
         // Identify time-aware layers (gate matches the GetMap/capabilities emission path).
         var temporalLayers = layers
             .Where(layer =>
-                !IsCiteLayerNamed(layer, CiteAutosLayerTitle) &&
+                !HasDeclaredTimeDimension(layer) &&
                 TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
             .ToArray();
 
@@ -251,9 +271,9 @@ internal static partial class WmsRequestHandlers
         bool isWms111,
         Dictionary<int, MetadataV2TemporalRange> temporalRanges)
     {
-        // CITE Autos has its own hardcoded "time" dimension already emitted by
-        // AppendWmsCiteDimensions; do not duplicate.
-        if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
+        // A declared "time" dimension is already emitted by
+        // AppendWmsDeclaredDimensions; do not duplicate.
+        if (HasDeclaredTimeDimension(layer))
         {
             return;
         }
@@ -311,50 +331,6 @@ internal static partial class WmsRequestHandlers
         sb.Append("xlink:href=\"")
             .Append(EscapeXml(href))
             .AppendLine("\" />");
-    }
-
-    private static CiteWmsDimensionDefinition? GetCiteWmsDimensionDefinition(WmsLayer layer)
-    {
-        if (IsCiteLayerNamed(layer, CiteTerrainLayerTitle))
-        {
-            return new CiteWmsDimensionDefinition(
-                Name: "elevation",
-                Units: "CRS:88",
-                UnitSymbol: "m",
-                MultipleValues: true,
-                NearestValue: false,
-                Default: CiteTerrainDefaultElevation,
-                Current: null,
-                Extent: "0/425/1");
-        }
-
-        if (IsCiteLayerNamed(layer, CiteLakesLayerTitle))
-        {
-            return new CiteWmsDimensionDefinition(
-                Name: "elevation",
-                Units: "CRS:88",
-                UnitSymbol: "m",
-                MultipleValues: false,
-                NearestValue: true,
-                Default: "500",
-                Current: null,
-                Extent: "500,490,480");
-        }
-
-        if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
-        {
-            return new CiteWmsDimensionDefinition(
-                Name: "time",
-                Units: "ISO8601",
-                UnitSymbol: null,
-                MultipleValues: true,
-                NearestValue: true,
-                Default: CiteAutosDefaultTime,
-                Current: null,
-                Extent: CiteAutosExtent);
-        }
-
-        return null;
     }
 
     private static async Task<string> BuildWmsCapabilities(
@@ -514,10 +490,12 @@ internal static partial class WmsRequestHandlers
             var layerExtent = prepared.Extent ?? rootExtent;
             await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ") { IsWms111 = isWms111, DeclaredCrs = crsNames }, context).ConfigureAwait(false);
 
-            // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
-            // time on cite:Autos) alongside the dynamic dimensions advertised by
-            // the canonical resource metadata.
-            AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
+            // Dimensions declared in resource metadata come first, then the
+            // data-derived time dimension for layers that did not declare one.
+            if (isWms111)
+                AppendWms111DeclaredDimensions(sb, layer, "        ");
+            else
+                AppendWmsDeclaredDimensions(sb, layer, "        ");
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, prepared.TemporalRanges);
 
             var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, service);
@@ -786,14 +764,4 @@ internal static partial class WmsRequestHandlers
     private readonly record struct Wgs84Extent(double MinLon, double MinLat, double MaxLon, double MaxLat);
 
     private static readonly Wgs84Extent WorldWgs84Extent = new(-180d, -90d, 180d, 90d);
-
-    private readonly record struct CiteWmsDimensionDefinition(
-        string Name,
-        string Units,
-        string? UnitSymbol,
-        bool MultipleValues,
-        bool NearestValue,
-        string? Default,
-        string? Current,
-        string Extent);
 }

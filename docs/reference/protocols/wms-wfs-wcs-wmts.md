@@ -232,6 +232,68 @@ typed values. The `text/plain` / `.txt` representation is unchanged, including
 an empty value after `=` for NULL. This JSON compatibility behavior is separate
 from the WMTS core conformance results and Preview release status.
 
+## Declaring WMS and WMTS dimensions
+
+A layer can advertise dimensions such as elevation, time or a named scenario.
+You declare them on the layer's catalog resource, under `extensions.wms` and
+`extensions.wmts`. The server advertises what you declare in GetCapabilities.
+It does not check the declaration against the data.
+
+```json
+{
+  "extensions": {
+    "wms": {
+      "dimensions": [
+        {
+          "name": "elevation",
+          "units": "CRS:88",
+          "unitSymbol": "m",
+          "nearestValue": true,
+          "default": "500",
+          "extent": "500,490,480"
+        }
+      ]
+    },
+    "wmts": {
+      "queryable": true,
+      "dimensions": [
+        {
+          "identifier": "elevation",
+          "values": ["100", "200", "300"],
+          "default": "100",
+          "supportsCurrent": true,
+          "current": "300"
+        }
+      ]
+    }
+  }
+}
+```
+
+| Key | Fields |
+| --- | --- |
+| `extensions.wms.dimensions[]` | `name` (required), `units`, `extent`, and optional `unitSymbol`, `multipleValues`, `nearestValue`, `default`, `current`. |
+| `extensions.wmts.dimensions[]` | `identifier` (required), `values` (required, at least one), and optional `default`, `supportsCurrent`, `current`. |
+| `extensions.wmts.queryable` | `false` turns off WMTS GetFeatureInfo for the layer and removes its feature-info formats from GetCapabilities. Default `true`. |
+
+Rules to know:
+
+- An entry without a `name` (WMS) or without an `identifier` and `values` (WMTS)
+  is ignored. Malformed metadata never fails a request.
+- A WMS layer that declares a `time` dimension owns it. The server does not add
+  a time dimension computed from the data for that layer, and it does not filter
+  that layer by the `TIME` parameter. Other layers in the same request are still
+  filtered.
+- WMS 1.1.1 advertises a dimension named `elevation` with the units
+  `EPSG:5703`. WMS 1.3.0 advertises the `units` you declare.
+- A WMTS layer with declared dimensions advertises those instead of a time
+  dimension computed from the data. Requested values are checked against
+  `values`. Give each dimension a `default`, because a request that omits a
+  dimension without one is rejected with `MissingParameterValue`.
+
+A layer in the legacy layer catalog takes the same `wms` and `wmts` objects as
+top-level keys of its layer `metadata` JSON.
+
 ## Conformance
 
 The published classic-service profiles pass in full: WMS 1.1.1/1.3 (126/126 and 213/213), WFS 1.0/1.1/2.0 `basic` (162/162, 39/39 and 167/167), the separate WFS 2.0 Transactional profile (25/25), WCS 2.0 (82/82), and WMTS 1.0 (60/60). The passing counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status and receipt: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
