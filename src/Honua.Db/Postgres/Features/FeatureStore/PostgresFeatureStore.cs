@@ -42,7 +42,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
+internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -770,6 +770,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
         }
 
+        public bool SupportsDurableReceipts => inner.SupportsDurableReceipts;
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt,
+            CancellationToken cancellationToken = default)
+            => inner.CommitAsync(receipt, cancellationToken);
+
         public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
             => inner.CommitAsync(cancellationToken);
 
@@ -1157,7 +1164,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(int layerId, CancellationToken cancellationToken)
         => _readSecurity.ResolveEnforcedSqlFilterAsync(layerId, cancellationToken);
 
-    private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<MetadataV2Object> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider == null)
         {

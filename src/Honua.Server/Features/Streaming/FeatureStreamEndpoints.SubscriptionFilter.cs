@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Streaming;
 internal static partial class FeatureStreamEndpoints
 {
     private readonly record struct SubscriptionParseResult(
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         bool HasSubscription,
         FeatureStreamSubscriptionMode Mode,
         IResult? Error)
@@ -413,6 +413,7 @@ internal static partial class FeatureStreamEndpoints
     {
         var rowSource = policyServices.GetRequiredService<IRowLevelSecurityFilterSource>();
         var fieldSource = policyServices.GetRequiredService<IFieldMaskSource>();
+        var filterService = policyServices.GetRequiredService<IFilterExpressionService>();
         var exact = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var deniedNames = new HashSet<(string Service, int Layer)>();
@@ -424,7 +425,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 // Raster and other non-feature publications may reuse a numeric layer ID.
                 // They cannot supply feature events and must not contribute read policies.
-                if (layer.Resource.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
+                if (layer.Resource.Type is not (MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table))
                 {
                     continue;
                 }
@@ -451,7 +452,14 @@ internal static partial class FeatureStreamEndpoints
 
                 if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
                 {
-                    var predicates = await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+                    var predicates = (await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false)).ToList();
+                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates))
+                    {
+                        deniedNames.Add(nameKey);
+                        deniedExact.Add((service.Metadata.Id, layer.LayerId));
+                        continue;
+                    }
+
                     var masked = await fieldSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
                     policy = new StreamLayerReadPolicy(predicates, new HashSet<string>(masked, StringComparer.OrdinalIgnoreCase));
                     policies.Add(layer.Resource.Metadata.Id, policy);
@@ -525,7 +533,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static bool TryBuildStreamTemporalFilter(
         string? datetime,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out StreamTemporalFilter? temporalFilter,
         out string? errorMessage)
     {
@@ -667,7 +675,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static IResult? RequireStreamLayerAccess(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service)
         => AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
 
@@ -711,6 +719,31 @@ internal static partial class FeatureStreamEndpoints
         return null;
     }
 
+    // Resolve once per metadata refresh. Storage ids take precedence over public aliases, with
+    // the same primary-publication and service-name ordering as ResolveStreamLayer.
+    internal static Dictionary<int, string> ResolveStreamLayerServiceIds(MetadataV2GraphSnapshot snapshot)
+    {
+        var layers = ResolveAllStreamLayers(snapshot)
+            .OrderByDescending(layer => layer.Publication?.IsPrimary ?? false)
+            .ThenBy(layer => layer.Service?.Metadata.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var serviceIds = new Dictionary<int, string>();
+        foreach (var layer in layers)
+        {
+            serviceIds.TryAdd(layer.LayerId, layer.Service?.Metadata.Id ?? string.Empty);
+        }
+
+        foreach (var layer in layers)
+        {
+            if (layer.PublicLayerId.HasValue)
+            {
+                serviceIds.TryAdd(layer.PublicLayerId.Value, layer.Service?.Metadata.Id ?? string.Empty);
+            }
+        }
+
+        return serviceIds;
+    }
+
     private static IEnumerable<StreamLayerDescriptor> ResolveServiceStreamLayers(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
@@ -752,7 +785,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static StreamLayerDescriptor? CreateStreamLayer(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service? service)
     {
         var resource = snapshot.ResolveResource(publication);
@@ -777,13 +810,11 @@ internal static partial class FeatureStreamEndpoints
             publication.LayerIndex);
     }
 
-    private static MetadataV2Publication? ResolvePrimaryStreamPublication(
+    private static MetadataV2Layer? ResolvePrimaryStreamPublication(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource)
-        => snapshot.Graph.Publications
-            .Where(publication =>
-                string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
-                snapshot.IsRoutable(publication))
+        MetadataV2Object resource)
+        => snapshot.Index.PublicationsByResource[resource.Metadata.Id]
+            .Where(snapshot.IsRoutable)
             .OrderByDescending(static publication => publication.IsPrimary)
             .ThenBy(publication =>
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
@@ -793,9 +824,9 @@ internal static partial class FeatureStreamEndpoints
             .FirstOrDefault();
 
     internal sealed record StreamLayerDescriptor(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Service? Service,
-        MetadataV2Publication? Publication,
+        MetadataV2Layer? Publication,
         int LayerId,
         int? PublicLayerId);
 

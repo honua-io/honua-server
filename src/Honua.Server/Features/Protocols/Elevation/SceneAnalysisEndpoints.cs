@@ -16,6 +16,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+using Honua.Core.Features.Raster;
+
 namespace Honua.Server.Features.Protocols.Elevation;
 
 // Routes are anonymous so layer permissions can decide access; each handler checks layer authorization and the license before reading elevation.
@@ -67,7 +69,7 @@ internal static partial class SceneAnalysisEndpoints
     private static async Task<IResult> HandleSunShadow(
         string datasetId,
         HttpContext context,
-        ISceneAnalysisService sceneService,
+        SceneAnalysisService sceneService,
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
@@ -200,7 +202,7 @@ internal static partial class SceneAnalysisEndpoints
     private static async Task<IResult> HandleSlice(
         string datasetId,
         HttpContext context,
-        ISceneAnalysisService sceneService,
+        SceneAnalysisService sceneService,
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {

@@ -55,14 +55,14 @@ internal sealed class Cql2FilterProcessor(
     }
 
     public async Task<ProcessingResult> ProcessFilterAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         JsonElement? filter,
         string? filterLang,
         string? filterCrs,
         bool defaultFilterLangIsText,
         CancellationToken cancellationToken,
         string? collectionId = null,
-        IReadOnlyList<MetadataV2Resource>? crossCollectionResources = null)
+        IReadOnlyList<MetadataV2Object>? crossCollectionResources = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -173,7 +173,7 @@ internal sealed class Cql2FilterProcessor(
 
     internal static FilterExpression RewriteStacCoreQueryables(
         FilterExpression expression,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? collectionId)
     {
         var idField = StacItemIdentity.Resolve(resource).Field;
@@ -188,8 +188,8 @@ internal sealed class Cql2FilterProcessor(
     // A property missing here but declared by another selected collection becomes SQL NULL so AND, OR, and NOT stay three-valued; a property missing from every collection stays on the unknown-field path.
     internal static FilterExpression ApplyCrossCollectionNullSemantics(
         FilterExpression expression,
-        MetadataV2Resource resource,
-        IReadOnlyList<MetadataV2Resource> crossCollectionResources)
+        MetadataV2Object resource,
+        IReadOnlyList<MetadataV2Object> crossCollectionResources)
     {
         ArgumentNullException.ThrowIfNull(expression);
         ArgumentNullException.ThrowIfNull(resource);
@@ -202,7 +202,7 @@ internal sealed class Cql2FilterProcessor(
     private static MissingNodeRewrite RewriteMissingNode(
         FilterExpression expression,
         FilterFieldSchema localSchema,
-        IReadOnlyList<MetadataV2Resource> crossCollectionResources)
+        IReadOnlyList<MetadataV2Object> crossCollectionResources)
     {
         switch (expression)
         {
@@ -874,7 +874,7 @@ internal sealed class Cql2FilterProcessor(
 
     private static bool TryGetCrossCollectionFieldType(
         string propertyName,
-        IReadOnlyList<MetadataV2Resource> crossCollectionResources,
+        IReadOnlyList<MetadataV2Object> crossCollectionResources,
         out MetadataV2FieldType fieldType)
     {
         MetadataV2FieldType? resolvedFieldType = null;
@@ -924,7 +924,7 @@ internal sealed class Cql2FilterProcessor(
         return false;
     }
 
-    private static string? ResolveTemporalFieldName(MetadataV2Resource resource)
+    private static string? ResolveTemporalFieldName(MetadataV2Object resource)
     {
         var configured = resource.ReadTemporalFields().StartTimeField;
         if (!string.IsNullOrWhiteSpace(configured))

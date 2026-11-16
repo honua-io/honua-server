@@ -12,9 +12,9 @@ namespace Honua.Core.Features.Spec.Services;
 /// </summary>
 internal sealed class SpecPlanner : ISpecPlanner
 {
-    private readonly ISpecCostEstimator _costEstimator;
+    private readonly SpecCostEstimator _costEstimator;
 
-    public SpecPlanner(ISpecCostEstimator costEstimator)
+    public SpecPlanner(SpecCostEstimator costEstimator)
     {
         ArgumentNullException.ThrowIfNull(costEstimator);
         _costEstimator = costEstimator;

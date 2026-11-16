@@ -27,7 +27,7 @@ internal static class SharedCacheResponse
         => context.Items[SubjectKey] = subject;
 
     // A publication resolved without its service leaves the subject to the route.
-    internal static void UsePublication(HttpContext context, MetadataV2Service? service, MetadataV2Publication publication)
+    internal static void UsePublication(HttpContext context, MetadataV2Service? service, MetadataV2Layer publication)
     {
         if (service is not null)
         {
@@ -76,11 +76,12 @@ internal static class SharedCacheResponse
 
         var options = context.RequestServices.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
         context.Response.Headers.CacheControl = FormatCacheControl(context, cacheClass, options);
-        AddMissingVary(context.Response, VaryFor(cacheClass));
+        VaryHeader.AppendMissing(context.Response.Headers, VaryFor(cacheClass));
         if (options.CacheTagsEnabled && CdnCacheTags.ForResponse(Subject(context), context.Request.Path, context.Request.RouteValues["serviceId"]?.ToString())
                 is { Length: > 0 } tags)
         {
-            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags);
+            var tileOptions = context.RequestServices.GetService<IOptions<TileOptions>>()?.Value ?? new TileOptions();
+            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags.Concat(CdnTileRegionTags.ForNativeTile(context.Request.Path, tileOptions)));
         }
     }
 
@@ -163,15 +164,6 @@ internal static class SharedCacheResponse
     private static string Seconds(int seconds)
         => Math.Max(0, seconds).ToString(CultureInfo.InvariantCulture);
 
-    private static void AddMissingVary(HttpResponse response, string[] requestHeaders)
-    {
-        var present = response.Headers.Vary.ToString();
-        foreach (var requestHeader in requestHeaders.Where(header => !present.Contains(header, StringComparison.OrdinalIgnoreCase)))
-        {
-            response.Headers.Append(HeaderNames.Vary, requestHeader);
-        }
-    }
-
     // Origin is always listed: the CORS policy reflects the request origin, and only on requests that send one.
     // A tile without an explicit format is PNG or vector by Accept.
     private static string[] VaryFor(ResponseCacheClass cacheClass) => cacheClass switch
@@ -192,7 +184,7 @@ internal sealed record SharedCacheSubject(string ServiceId, string? LayerId = nu
     internal string? LayerKey => LayerId is null ? null : $"{ServiceId}/{LayerId}";
 
     // The same service and layer an operator sees in /rest/services/{serviceId}/FeatureServer/{layerId}, whichever surface serves the response.
-    internal static SharedCacheSubject ForPublication(MetadataV2Service service, MetadataV2Publication publication)
+    internal static SharedCacheSubject ForPublication(MetadataV2Service service, MetadataV2Layer publication)
         => new(service.EffectivePublicName, publication.LayerIndex?.ToString(CultureInfo.InvariantCulture));
 
     // Most routes name their service and layer in the address, so a handler only declares a subject when the route does not.

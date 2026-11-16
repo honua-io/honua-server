@@ -1154,7 +1154,7 @@ internal static partial class FeatureServerEndpoints
             // another upload get a fresh key. An in-flight duplicate is held off by a reservation and gets
             // 409 rather than racing the first attempt. Every upload that committed rows is recorded, a
             // partially failed one included, so a retry never applies committed rows a second time.
-            IReplicaUploadIdempotencyStore? uploadStore = null;
+            DistributedReplicaUploadIdempotencyStore? uploadStore = null;
             ReplicaUploadIdempotencyScope? uploadScope = null;
             string? uploadFingerprint = null;
             string? uploadReservation = null;
@@ -1176,7 +1176,7 @@ internal static partial class FeatureServerEndpoints
                         [IdempotencyCaller.UnbindableCallerMessage]);
                 }
 
-                uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
+                uploadStore = context.RequestServices.GetRequiredService<DistributedReplicaUploadIdempotencyStore>();
                 uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
                 // The replica's stored service id, not the route value: service lookup is case-insensitive,
@@ -1259,7 +1259,7 @@ internal static partial class FeatureServerEndpoints
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
-                var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
+                var syncService = context.RequestServices.GetRequiredService<ReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
                 // The server side of each conflict is snapshotted by the canonical sync service through
@@ -1560,7 +1560,7 @@ internal static partial class FeatureServerEndpoints
 
     // The receipt write is refused when another request owns the key, so an expired reservation cannot overwrite a newer one.
     private static Task RecordReplicaUploadAsync(
-        IReplicaUploadIdempotencyStore? store,
+        DistributedReplicaUploadIdempotencyStore? store,
         ReplicaUploadIdempotencyScope? scope,
         string? reservationToken,
         ReplicaUploadRecord record)
@@ -1570,7 +1570,7 @@ internal static partial class FeatureServerEndpoints
 
     // Release compares and deletes only this request's token, so it cannot discard a recorded upload or another request's reservation.
     private static Task ReleaseReplicaUploadReservationAsync(
-        IReplicaUploadIdempotencyStore? store,
+        DistributedReplicaUploadIdempotencyStore? store,
         ReplicaUploadIdempotencyScope? scope,
         string? reservationToken)
         => store is not null && scope is { } heldScope && reservationToken is not null
@@ -2015,7 +2015,7 @@ internal static partial class FeatureServerEndpoints
             property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static long? TryReadObjectId(GeoServicesFeature feature, MetadataV2Resource resource)
+    private static long? TryReadObjectId(GeoServicesFeature feature, MetadataV2Object resource)
     {
         if (feature.Attributes is null)
         {
@@ -2167,8 +2167,8 @@ internal static partial class FeatureServerEndpoints
     private sealed record ReplicaLayerV2(
         int PublicLayerId,
         int StorageLayerId,
-        MetadataV2Publication Publication,
-        MetadataV2Resource Resource);
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource);
 
     private static async Task<ReplicationServiceValidationResult> ValidateReplicationServiceV2Async(
         string serviceId,
@@ -2225,8 +2225,8 @@ internal static partial class FeatureServerEndpoints
                 // service-local layer ID (for example OData plus Esri FeatureServer).
                 // Replication needs one deterministic feature/table resource per public
                 // ID; otherwise dictionary lookups throw before access checks run.
-                .Where(layer => layer.Resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
-                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer ? 0 : 1)
+                .Where(layer => layer.Resource.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table)
+                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer ? 0 : 1)
                 .ThenByDescending(layer => layer.Publication.IsPrimary)
                 .ThenBy(layer => layer.Publication.Metadata.Id, StringComparer.Ordinal)
                 .DistinctBy(layer => layer.PublicLayerId)
@@ -2499,7 +2499,7 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
-    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource, int? deliverySrid = null)
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Object resource, int? deliverySrid = null)
     {
         var attributes = feature.Attributes
             .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
@@ -2521,7 +2521,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     // Z and M are requested because a plain WKB read strips them, and coordinates are reprojected to the advertised spatial reference so a storage-mapped resource is not returned in its storage CRS.
-    internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Resource resource)
+    internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Object resource)
         => query with
         {
             IncludeZ = true,
@@ -2529,9 +2529,9 @@ internal static partial class FeatureServerEndpoints
             OutputSrid = resource.HasGeometry() ? resource.ReadSrid() : null
         };
 
-    internal static int? ResolveReplicaLayerSrid(MetadataV2Resource resource)
+    internal static int? ResolveReplicaLayerSrid(MetadataV2Object resource)
         => resource.HasGeometry() ? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid : null;
 
-    internal static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Resource resource)
+    internal static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Object resource)
         => GeoServicesGeometryConverter.CreateSpatialReference(ResolveReplicaLayerSrid(resource));
 }

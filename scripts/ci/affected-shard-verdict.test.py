@@ -60,6 +60,15 @@ def decide(**overrides):
     return verdict.decide(selection=selection, **fields)
 
 
+def run_cli(timings: Path, receipt: Path, **environment: str) -> subprocess.CompletedProcess[str]:
+    """Run the verdict CLI as the workflow does, with its inputs in the environment."""
+    return subprocess.run(
+        [sys.executable, str(ROOT / "scripts/ci/affected-shard-verdict.py"),
+         "--timings", str(timings), "--receipt", str(receipt)],
+        check=False, capture_output=True, text=True, env={**os.environ, **environment},
+    )
+
+
 def messages(outcome) -> list[str]:
     return [message for _, message in outcome["annotations"]]
 
@@ -210,20 +219,27 @@ class AffectedShardVerdictTests(unittest.TestCase):
     def test_shard_artifacts_are_named_per_attempt_and_not_merged(self) -> None:
         import yaml
 
-        for filename, job_id, prefix in (
-            ("pr-gate.yml", "affected-shard", "pr-gate-affected-shard-"),
-            ("ci.yml", "server-tests", "server-test-results-"),
-        ):
-            with self.subTest(workflow=filename):
-                workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
-                upload = next(step for step in workflow["jobs"][job_id]["steps"]
-                              if step.get("with", {}).get("name", "").startswith(prefix))
-                self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
-                downloads = [step for job in workflow["jobs"].values() for step in job.get("steps", [])
-                             if step.get("with", {}).get("pattern") == f"{prefix}*"]
-                self.assertTrue(downloads)
-                for download in downloads:
-                    self.assertFalse(download["with"].get("merge-multiple", False))
+        gate = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        upload = next(step for step in gate["jobs"]["affected-shard"]["steps"]
+                      if str(step.get("with", {}).get("name", "")).startswith("pr-gate-affected-shard-"))
+        self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+        broad = [step for job in gate["jobs"].values() for step in job.get("steps", [])
+                 if step.get("with", {}).get("pattern") == "pr-gate-affected-shard-*"]
+        self.assertEqual(broad, [])
+        bounded = next(step for step in gate["jobs"]["affected-shards"]["steps"]
+                       if step.get("name") == "Download affected shard receipts")
+        self.assertIn("download-affected-receipts.py", bounded["run"])
+        self.assertIn("receipt_matrix", bounded["env"]["SELECT_MATRIX"])
+        self.assertNotIn("matrix_include", bounded["env"]["SELECT_MATRIX"])
+        full = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        full_upload = next(step for step in full["jobs"]["server-tests"]["steps"]
+                           if str(step.get("with", {}).get("name", "")).startswith("server-test-results-"))
+        self.assertTrue(full_upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+        downloads = [step for job in full["jobs"].values() for step in job.get("steps", [])
+                     if step.get("with", {}).get("pattern") == "server-test-results-*"]
+        self.assertTrue(downloads)
+        for download in downloads:
+            self.assertFalse(download["with"].get("merge-multiple", False))
 
     def test_every_shard_job_preserves_test_failure(self) -> None:
         import yaml
@@ -390,6 +406,34 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(outcome["exit_code"], 1)
         self.assertEqual(outcome["receipt"]["verdict"], "untrusted_skip")
 
+    def test_cli_creates_a_missing_receipt_parent_for_cancelled_shards(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "artifacts" / "server-shard-verdict.json"
+            timings = root / "missing-timings"
+            summary = root / "summary.md"
+            self.assertFalse(receipt.parent.exists())
+            self.assertFalse(timings.exists())
+            completed = run_cli(
+                timings, receipt,
+                MODE="enforce", SELECT_RESULT="success", SELECT_SKIP="false",
+                SELECT_REASON="selected_server_shards", SELECT_COUNT="2",
+                SELECT_MATRIX=json.dumps([{"shard_name": "Core"}, {"shard_name": "WFS"}]),
+                SHARDS_RESULT="cancelled", GITHUB_STEP_SUMMARY=str(summary),
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            self.assertIn(
+                "HONUA_AFFECTED_SHARD_UNAVAILABLE shard jobs concluded 'cancelled' with no timing receipt.",
+                completed.stdout,
+            )
+            body = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(body["verdict"], "no_receipts")
+            self.assertFalse(body["test_pass"])
+            self.assertEqual(body["check_exit"], 1)
+            self.assertFalse(timings.exists())
+            self.assertIn("no_receipts", summary.read_text(encoding="utf-8"))
+
     def test_cli_writes_the_report_mode_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -441,7 +485,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(workflow["env"]["AFFECTED_SHARDS_CAP"], "6")
         required = workflow["jobs"]["required"]
         self.assertIn("affected-shards", required["needs"])
-        step = required["steps"][0]
+        step = next(step for step in required["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")
         self.assertIn("needs.affected-shards.result", step["env"]["AFFECTED_SHARDS_RESULT"])
         self.assertIn('"${AFFECTED_SHARDS_RESULT}" != success', step["run"])
         self.assertIn('"${GITHUB_EVENT_NAME}" == pull_request', step["run"])
@@ -526,7 +570,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         import yaml
 
         workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
-        command = workflow["jobs"]["required"]["steps"][0]["run"]
+        command = next(step for step in workflow["jobs"]["required"]["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")["run"]
         for result in ("success", "failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",

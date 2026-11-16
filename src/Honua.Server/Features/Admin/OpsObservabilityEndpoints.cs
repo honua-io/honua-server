@@ -8,9 +8,10 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Features.Admin;
 
@@ -96,7 +97,7 @@ internal static class OpsObservabilityEndpoints
     }
 
     private static async Task<IResult> HandleGetOpsHealthHistory(
-        [FromServices] IOpsHealthHistoryService service,
+        [FromServices] OpsHealthHistoryService service,
         HttpContext context,
         string? window = null,
         string? resolution = null,
@@ -375,15 +376,38 @@ internal static class OpsObservabilityEndpoints
             return AutonomyStoreUnavailable();
         }
 
-        var settings = await store
-            .SetSettingsAsync(
-                new OpsAutonomySettings { KillSwitchEnabled = request.KillSwitchEnabled.Value },
-                context.GetUserIdentity(),
-                request.Reason,
-                context.RequestAborted)
-            .ConfigureAwait(false);
+        return await UpdateAutonomySettingsAsync(request, context, store).ConfigureAwait(false);
+    }
 
-        return Results.Json(MapSettings(settings), OpsObservabilityJsonContext.Default.OpsAutonomySettingsResponse);
+    private static async Task<IResult> UpdateAutonomySettingsAsync(
+        OpsAutonomySettingsUpdateRequest request,
+        HttpContext context,
+        IOpsAutonomyPolicyStore store)
+    {
+        var change = new OpsAutonomySettingsChange(
+            new OpsAutonomySettings { KillSwitchEnabled = request.KillSwitchEnabled!.Value },
+            context.GetUserIdentity(), request.Reason);
+        var writer = context.RequestServices.GetService<OpsAutonomySettingsWriter>();
+        try
+        {
+            var settings = writer is null
+                ? await store.SetSettingsAsync(change.Settings, change.ChangedBy, change.Reason,
+                    context.RequestAborted).ConfigureAwait(false)
+                : await writer.SetAsync(change, context.RequestAborted).ConfigureAwait(false);
+            return Results.Json(MapSettings(settings), OpsObservabilityJsonContext.Default.OpsAutonomySettingsResponse);
+        }
+        catch (NpgsqlException) when (writer is null)
+        {
+            return AutonomyStoreUnavailable();
+        }
+        catch (Exception exception) when (writer is not null
+            && exception is IOException or TimeoutException or NpgsqlException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status503ServiceUnavailable,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                "The autonomy control update could not be completed. The stop may be partially applied; retry the requested setting.");
+        }
     }
 
     private static IOpsAutonomyPolicyStore? ResolveAutonomyStore(HttpContext context)
@@ -458,11 +482,10 @@ internal static class OpsObservabilityEndpoints
 
         rules.UnionWith(options.Rules.Keys.Where(OpsAutonomyPolicyDefaults.IsValidRule));
 
-        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInAutoSafeRules);
+        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInKnownRules);
         var activeFindings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
         rules.UnionWith(activeFindings
-            .Where(finding => finding.RecommendedAction is { AutoSafe: true } &&
-                OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
+            .Where(finding => OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
             .Select(finding => finding.Rule));
 
         return rules.OrderBy(static rule => rule, StringComparer.Ordinal).ToArray();

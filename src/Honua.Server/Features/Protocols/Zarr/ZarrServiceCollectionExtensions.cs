@@ -12,8 +12,8 @@ internal static class ZarrServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<IZarrMetadataReader, ZarrMetadataExtractor>();
-        services.AddSingleton<IZarrSubsetReader, ZarrSubsetReader>();
+        services.AddSingleton<ZarrMetadataExtractor>();
+        services.AddSingleton<ZarrSubsetReader>();
         services.AddSingleton<IZarrStore, InMemoryZarrStore>();
         // Tile authorization and publication lookup use the current request scope.
         services.AddScoped<IZarrTileService, ZarrTileService>();

@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -33,6 +34,8 @@ using Microsoft.Extensions.Options;
 using SkiaSharp;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
+
+using Honua.Core.Features.Metadata.Services;
 
 namespace Honua.Protocols.Ogc.Classic.Wms;
 
@@ -100,8 +103,8 @@ internal static partial class WmsRequestHandlers
     private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
 
     private readonly record struct WmsLayer(
-        MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Object Resource,
+        MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier,
         MetadataV2GraphSnapshot Snapshot);
@@ -158,10 +161,13 @@ internal static partial class WmsRequestHandlers
 
             var wmsLayers = ResolveWmsLayers(snapshot, svcDef, context);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
-                context,
-                wmsLayers.Select(l => l.Resource),
-                svcDef);
+            var accessError = wmsLayers.Length == 0
+                ? await AccessPolicyHelpers.RequireServiceAccessAsync(
+                    context, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false)
+                : AccessPolicyHelpers.RequireAnyResourceAccess(
+                    context,
+                    wmsLayers.Select(l => l.Resource),
+                    svcDef);
             if (accessError != null)
             {
                 var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
@@ -176,7 +182,8 @@ internal static partial class WmsRequestHandlers
                         : StatusCodes.Status401Unauthorized);
             }
 
-            if (wmsLayers.Length == 0)
+            if (wmsLayers.Length == 0 && !string.IsNullOrWhiteSpace(requestType) &&
+                !string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
                 return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }
@@ -204,7 +211,8 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
-                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
+                var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
+                var xml = await BuildWmsCapabilities(context, metadataService, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 
@@ -330,12 +338,12 @@ internal static partial class WmsRequestHandlers
         return read.UseInjectedReader ? fallback : read.Reader;
     }
 
-    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -736,7 +744,7 @@ internal static partial class WmsRequestHandlers
         }
     }
 
-    private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Resource resource, string fieldName)
+    private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Object resource, string fieldName)
     {
         var field = resource.SchemaFields.FirstOrDefault(f =>
             string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
@@ -795,7 +803,7 @@ internal static partial class WmsRequestHandlers
     internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
         HttpContext context,
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string token)
     {
         FilterExpression expression;

@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import unittest
@@ -51,13 +52,14 @@ def evaluate(condition, event, context=None):
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
     for step_id in ("docs-only", "generated-only"):
         expression = expression.replace(f"steps.{step_id}", f'steps["{step_id}"]')
-    probe = """const {expression, github, needs, cancelled, env, steps} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps)));
+    probe = r"""const {expression, github, needs, cancelled, env, steps, matrix} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', 'matrix', 'format', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps, matrix, (template, ...args) => template.replace(/\{(\d+)\}/g, (_, index) => args[Number(index)]))));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
         "expression": expression, "github": event, "needs": context.get("needs", {}),
         "cancelled": context.get("cancelled", False),
         "env": context.get("env", {}), "steps": context.get("steps", {}),
+        "matrix": context.get("matrix", {}),
     }), text=True, capture_output=True, check=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -68,7 +70,8 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name, job=key):
                 condition = job.get("if", "true")
                 self.assertIn(DRAFT_GUARD, condition)
-                if job.get("needs"):
+                # The shared publish authorization runs only for a publishing dispatch, never for a PR.
+                if job.get("needs") or job.get("uses") == "./.github/workflows/publish-authorization.yml":
                     continue
                 event = {"event_name": "pull_request", "event": {
                     "pull_request": {"draft": True, "user": {"login": "contributor"}},
@@ -90,11 +93,84 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                if name in ("auto-merge-ready.yml", "review-gate.yml"):
+                    # Queued helpers. Auto-merge eligibility is applied in event
+                    # order: cancelling an in-flight enable can let that mutation
+                    # land after a newer hold or draft event has been shed. A
+                    # cancelled review helper would be a red mark on the PR page.
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
+                elif name == "normalize-derived-artifacts.yml":
+                    self.assertEqual(cancellation, "true")
+                    self.assertNotIn("queue", concurrency)
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+
+    def test_non_generating_normalization_events_cannot_cancel_producer(self):
+        producer = workflow("normalize-derived-artifacts.yml")
+        group = producer["concurrency"]["group"]
+
+        def admission(action, **subject):
+            event = {"event_name": "pull_request", "event": {
+                "action": action, "pull_request": {"number": subject.get("number", 7639),
+                    "draft": subject.get("draft", False), "head": {"sha": subject.get("head", "head-b")}},
+                "changes": {"base": {"ref": {"from": subject.get("base_from")}}},
+            }}
+            return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
+
+        ready = admission("ready_for_review")
+        for action in ("opened", "synchronize", "converted_to_draft", "edited"):
+            self.assertNotEqual(admission(action, draft=True), ready, action)
+        # A title/body edit during generation supplies no replacement envelope.
+        self.assertNotEqual(admission("edited"), ready)
+        self.assertEqual(admission("edited", base_from="old-base"), ready)
+        self.assertEqual(admission("synchronize"), ready)
+        self.assertNotEqual(admission("synchronize", number=7640), ready)
+        # A delayed event for A must not cancel B and then shed as stale.
+        for action in ("opened", "reopened", "synchronize", "ready_for_review", "edited"):
+            self.assertNotEqual(admission(action, head="head-a", base_from="old-base"), ready, action)
+
+    def test_normalization_cancels_only_eligible_pr_work(self):
+        definition = workflow("normalize-derived-artifacts.yml")
+        group = definition["concurrency"]["group"]
+        self.assertEqual(definition["concurrency"]["cancel-in-progress"], "true")
+        self.assertIn("!github.event.pull_request.draft", group)
+        self.assertIn("github.event.changes.base.ref.from != null", group)
+        self.assertIn("format('ignored-{0}', github.run_id)", group)
+        condition = definition["jobs"]["generate"]["if"]
+        for draft, action, changes, admitted in (
+            (True, "synchronize", {}, False),
+            (False, "synchronize", {}, True),
+            (False, "ready_for_review", {}, True),
+            (False, "edited", {"base": {"ref": {"from": "old-base"}}}, True),
+            (False, "edited", {"base": {"ref": {"from": None}}}, False),
+        ):
+            with self.subTest(draft=draft, action=action, changes=changes):
+                event = {"event_name": "pull_request", "event": {
+                    "pull_request": {"draft": draft}, "action": action, "changes": changes,
+                }}
+                self.assertEqual(evaluate(condition, event), admitted)
+
+    def test_stale_draft_events_cannot_cancel_ready_gate(self):
+        gate = workflow("pr-gate.yml")
+        group = gate["concurrency"]["group"]
+
+        def admission(action, *, draft, number=7639):
+            event = {"event_name": "pull_request", "ref": "refs/pull/7639/merge", "event": {
+                "action": action, "pull_request": {"number": number, "draft": draft},
+            }}
+            return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
+
+        ready = admission("ready_for_review", draft=False)
+        # GitHub may deliver a draft push after readiness starts the full gate.
+        # Cancellation is safe only within the same readiness state and PR.
+        for action in ("opened", "synchronize", "converted_to_draft"):
+            with self.subTest(action=action):
+                self.assertNotEqual(admission(action, draft=True), ready)
+        self.assertEqual(admission("synchronize", draft=False), ready)
+        self.assertEqual(admission("opened", draft=True), admission("synchronize", draft=True))
+        self.assertNotEqual(admission("ready_for_review", draft=False, number=7640), ready)
+        self.assertEqual(gate["concurrency"]["cancel-in-progress"], "true")
 
     def test_required_checks_keep_draft_admission_and_names(self):
         gate = workflow("pr-gate.yml")
@@ -144,7 +220,7 @@ class PullRequestLoadTests(unittest.TestCase):
         if "server-test-producer" in jobs:
             dependencies.add("server-test-producer")
         self.assertEqual(set(required["needs"]), dependencies)
-        verdict = next(step for step in required["steps"] if "run" in step)
+        verdict = next(step for step in required["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")
 
         def run_verdict(results, event_environment):
             environment = dict(os.environ, **event_environment)
@@ -239,8 +315,32 @@ class PullRequestLoadTests(unittest.TestCase):
                 with self.subTest(step=name or "checkout", draft=draft, attempt=attempt):
                     review_wait = not draft and attempt == 1
                     self.assertEqual(
-                        evaluate(step.get("if", "true"), event, {"env": env, "steps": steps}),
+                        evaluate(step.get("if", "true"), event, {
+                            "env": env, "steps": steps, "matrix": {"format": "true"},
+                        }),
                         review_wait if name == "Await exact-head review" else not review_wait,
+                    )
+
+    def test_only_formatter_restores_before_the_shared_action(self):
+        job = workflow("pr-gate.yml")["jobs"]["format"]
+        condition = next(step["if"] for step in job["steps"] if step.get("name") == "Restore")
+        event = {"event_name": "pull_request", "run_attempt": 2,
+                 "event": {"pull_request": {"draft": False}}}
+        rows = evaluate(job["strategy"]["matrix"]["include"], event)
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            for docs_only, generated_only in ((False, False), (True, False), (False, True)):
+                with self.subTest(check=row["check"], docs=docs_only, generated=generated_only):
+                    context = {
+                        "matrix": row, "env": {"REVIEW_FIRST_MODE": "enforce"},
+                        "steps": {
+                            "docs-only": {"outputs": {"docs_only": str(docs_only).lower()}},
+                            "generated-only": {"outputs": {"generated_only": str(generated_only).lower()}},
+                        },
+                    }
+                    self.assertEqual(
+                        evaluate(condition, event, context),
+                        row["format"] == "true" and not docs_only and not generated_only,
                     )
 
     def test_optional_pr_jobs_refuse_drafts(self):
@@ -253,7 +353,7 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=path.name):
                 types = definition["on"]["pull_request"].get("types", [])
                 self.assertIn("ready_for_review", types)
-                if definition.get("concurrency", {}).get("cancel-in-progress") != "false":
+                if path.name != "normalize-derived-artifacts.yml" and definition.get("concurrency", {}).get("cancel-in-progress") != "false":
                     self.assertIn("converted_to_draft", types)
             for key, job in definition["jobs"].items():
                 with self.subTest(workflow=path.name, job=key):
@@ -263,7 +363,27 @@ class PullRequestLoadTests(unittest.TestCase):
                     event = {"event_name": "pull_request", "ref": "refs/pull/1/merge", "event": {
                         "pull_request": {"draft": True}, "inputs": {},
                     }}
-                    self.assertFalse(evaluate(condition, event), condition)
+                    needs = {
+                        dependency: {"result": "success", "outputs": {"selected": '["fixture"]'}}
+                        for dependency in job.get("needs", [])
+                    }
+                    self.assertFalse(evaluate(condition, event, {"needs": needs}), condition)
+
+    def test_serving_boundary_requires_successful_detection_and_ready_pr(self):
+        condition = workflow("serving-image-boundary.yml")["jobs"]["build-and-verify"]["if"]
+        event = {"event_name": "pull_request", "event": {"pull_request": {"draft": False}}}
+        needs = {"detect": {"result": "success", "outputs": {"selected": '["fixture"]'}}}
+        self.assertTrue(evaluate(condition, event, {"needs": needs}))
+        event["event"]["pull_request"]["draft"] = True
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
+        event["event"]["pull_request"]["draft"] = False
+        needs["detect"]["result"] = "failure"
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
+        needs["detect"]["result"] = "success"
+        needs["detect"]["outputs"]["selected"] = "[]"
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
+        needs["detect"]["outputs"]["selected"] = '["fixture"]'
+        self.assertFalse(evaluate(condition, event, {"needs": needs, "cancelled": True}))
 
     def test_auto_merge_control_admits_draft_cleanup_only(self):
         condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]
@@ -279,7 +399,7 @@ class PullRequestLoadTests(unittest.TestCase):
         event["event"]["pull_request"]["head"]["repo"]["full_name"] = "fork/repo"
         self.assertFalse(evaluate(condition, event))
 
-    def test_review_gate_admits_draft_conversion_only_for_cancellation(self):
+    def test_review_gate_admits_draft_conversion_to_shed_it(self):
         gate = workflow("review-gate.yml")
         condition = gate["jobs"]["resolve"]["if"]
         for action, draft, admitted in (("opened", True, False),
@@ -290,22 +410,16 @@ class PullRequestLoadTests(unittest.TestCase):
                 event = {"event_name": "pull_request_target", "event": {
                     "action": action, "pull_request": {"draft": draft}}}
                 self.assertEqual(evaluate(condition, event), admitted)
-        self.assertEqual(gate["jobs"]["attest"]["concurrency"]["cancel-in-progress"], "true")
+        attest = gate["jobs"]["attest"]["concurrency"]
+        self.assertEqual(attest["cancel-in-progress"], "false")
+        self.assertEqual(attest["queue"], "max")
 
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")
         parity = workflow("server-test-prebuild-parity.yml")
-        claude = workflow("claude-review.yml")
         self.assertIn("if (resolved.pullRequest.draft)", job_scripts(observer["jobs"]["plan"]))
         self.assertIn("if (pr.draft)", job_scripts(parity["jobs"]["plan"]))
-        self.assertIn("if (pr.draft)", job_scripts(claude["jobs"]["resolve"]))
         self.assertEqual(observer["jobs"]["producer"]["concurrency"]["cancel-in-progress"], "true")
-        review = claude["jobs"]["review"]["concurrency"]
-        self.assertEqual(review["cancel-in-progress"], "false")
-        self.assertEqual(review["group"], "claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}")
-        admission = claude["jobs"]["resolve"]["concurrency"]
-        self.assertEqual(admission["cancel-in-progress"], "true")
-        self.assertIn("github.event.issue.number", admission["group"])
 
     def test_new_concurrency_preserves_independent_non_pr_runs(self):
         names = ("availability-evidence-contract.yml", "capacity-evidence-contract.yml",

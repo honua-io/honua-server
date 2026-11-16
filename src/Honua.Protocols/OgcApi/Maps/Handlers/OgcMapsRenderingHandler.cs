@@ -202,7 +202,7 @@ internal sealed class OgcMapsRenderingHandler
 
             // Resolve dataset entries (storage layer id + V2 resource + service) from explicit
             // selection or all accessible V2 resources that expose OGC API Maps.
-            var entries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
+            var entries = new List<(int LayerId, MetadataV2Object Resource, MetadataV2Service? Service)>();
             int[] resolvedLayerIds;
 
             if (layerIds.Length == 0)
@@ -579,7 +579,7 @@ internal sealed class OgcMapsRenderingHandler
     private async Task<IResult> RenderStyledVectorMapAsync(
         int layerId,
         string styleId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         string mapLibreStyleJson,
         MapRenderRequest renderRequest,
@@ -669,7 +669,7 @@ internal sealed class OgcMapsRenderingHandler
         return CreateMapFileResult(context, result, renderRequest);
     }
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -684,11 +684,11 @@ internal sealed class OgcMapsRenderingHandler
 
     internal static bool IsStyleAssociatedWithResource(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string styleId)
         => resource.StyleResourceIds.Any(styleResourceId =>
             snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
-            styleResource.Type == MetadataV2ResourceType.Style &&
+            styleResource.Type == MetadataV2ObjectType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
 
     /// <summary>
@@ -757,7 +757,7 @@ internal sealed class OgcMapsRenderingHandler
 
     private static (IReadOnlyDictionary<string, TemporalFilter>? Filters, string? Error) CreateVectorTemporalFilters(
         string? datetime,
-        IEnumerable<(int LayerId, MetadataV2Resource Resource)> layers)
+        IEnumerable<(int LayerId, MetadataV2Object Resource)> layers)
     {
         if (string.IsNullOrWhiteSpace(datetime))
         {
@@ -973,7 +973,7 @@ internal sealed class OgcMapsRenderingHandler
 
     private (MapRenderRequest?, string?) CreateMapRenderRequest(
         OgcMapRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         HttpContext? context = null,
         FeatureExtent? datasetExtentOverride = null)

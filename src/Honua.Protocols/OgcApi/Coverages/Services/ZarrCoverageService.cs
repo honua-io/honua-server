@@ -18,13 +18,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
 
-/// <summary>
-/// Serves registered Zarr stores through the OGC API Coverages surface
-/// (read-only, chunked-read access pattern, #1590). Adapts coverage collection
-/// metadata, field schemas, and grid-index subset requests onto the shared
-/// Zarr read pipeline (<see cref="ZarrCoverageSubsetPlanner"/> +
-/// <see cref="IZarrSubsetReader"/>); it never builds a parallel data path.
-/// </summary>
 internal sealed class ZarrCoverageService
 {
     /// <summary>
@@ -44,13 +37,13 @@ internal sealed class ZarrCoverageService
     private static readonly string[] AcceptableMediaTypes = [CoverageJsonContentType, MediaTypes.Json];
 
     private readonly IZarrStore _zarrStore;
-    private readonly IZarrSubsetReader _subsetReader;
+    private readonly ZarrSubsetReader _subsetReader;
     private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
     private readonly ILogger<ZarrCoverageService> _logger;
 
     public ZarrCoverageService(
         IZarrStore zarrStore,
-        IZarrSubsetReader subsetReader,
+        ZarrSubsetReader subsetReader,
         IEnumerable<ICloudRangeReader> rangeReaders,
         ILogger<ZarrCoverageService> logger)
     {
@@ -74,7 +67,7 @@ internal sealed class ZarrCoverageService
     /// Builds the OGC API Coverages collection document for a Zarr-backed layer.
     /// </summary>
     public static OgcCoverageCollection CreateCollection(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         ZarrRegistration registration,
         string baseUrl)
@@ -139,7 +132,7 @@ internal sealed class ZarrCoverageService
     /// Builds the field-selection schema for a Zarr-backed collection: one
     /// selectable property per discovered variable.
     /// </summary>
-    public static CoverageSchema CreateSchema(MetadataV2Resource resource, int storageLayerId, ZarrRegistration registration)
+    public static CoverageSchema CreateSchema(MetadataV2Object resource, int storageLayerId, ZarrRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(registration);

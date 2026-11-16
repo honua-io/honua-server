@@ -71,7 +71,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddKeyedScoped<IAiExecutionAdmissionStore>("postgres", (_, _) => store);
+        services.AddScoped<IAiExecutionAdmissionStore>(_ => store);
         services.AddAiExecutionAdmission(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         { ["AiExecutionAdmission:DeploymentId"] = "deployment", ["AiExecutionAdmission:Backend"] = "postgres" }).Build());
         return services.BuildServiceProvider();

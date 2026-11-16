@@ -15,7 +15,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-internal sealed class PbfQueryFormatter
+internal sealed partial class PbfQueryFormatter
 {
     // Esri PBF schema version
     private const string PbfVersion = "1.0";
@@ -193,7 +193,7 @@ internal sealed class PbfQueryFormatter
 
     public (byte[] response, string contentType) FormatAsPbf(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -243,7 +243,7 @@ internal sealed class PbfQueryFormatter
     private static void WriteFeatureResult(
         ref ProtobufWriter writer,
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         int srid,
         bool returnGeometry,
@@ -253,6 +253,51 @@ internal sealed class PbfQueryFormatter
         string[]? outFields,
         QuantizationTransform? quantizationTransform)
     {
+        var encoding = WriteFeatureHeader(ref writer, result, new FeatureHeaderOptions
+        {
+            Resource = resource,
+            ObjectIdFieldName = objectIdFieldName,
+            Srid = srid,
+            ReturnGeometry = returnGeometry,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            QuantizationTransform = quantizationTransform
+        });
+        foreach (var feature in result.Items)
+        {
+            var message = EncodeFeature(feature, encoding);
+            try
+            {
+                if (message.Length > 0)
+                {
+                    writer.WriteTag(15, 2);
+                    writer.WriteRawVarint((uint)message.Length);
+                    writer.WriteRawBytes(message.Buffer.AsSpan(0, message.Length));
+                }
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(message.Buffer);
+            }
+        }
+    }
+
+    private static FeatureEncoding WriteFeatureHeader(
+        ref ProtobufWriter writer,
+        QueryResult<Feature> result,
+        FeatureHeaderOptions options)
+    {
+        var resource = options.Resource;
+        var objectIdFieldName = options.ObjectIdFieldName;
+        var srid = options.Srid;
+        var returnGeometry = options.ReturnGeometry;
+        var returnZ = options.ReturnZ;
+        var returnM = options.ReturnM;
+        var geometryLimits = options.GeometryLimits;
+        var outFields = options.OutFields;
+        var quantizationTransform = options.QuantizationTransform;
         writer.WriteString(1, objectIdFieldName);
 
         var geometryType = resource.ReadGeometryType();
@@ -313,24 +358,8 @@ internal sealed class PbfQueryFormatter
         }
 
         double scale = ComputeScale(geometryLimits, quantizationTransform);
-        foreach (var feature in result.Items)
-        {
-            var featureMsg = new ProtobufWriter(256);
-            WriteFeature(
-                ref featureMsg,
-                feature,
-                queryFields,
-                fieldIndex,
-                objectIdFieldName,
-                returnGeometry,
-                effectiveZ,
-                effectiveM,
-                geometryLimits,
-                scale,
-                quantizationTransform);
-            writer.WriteMessage(15, ref featureMsg);
-            featureMsg.Dispose();
-        }
+        return new FeatureEncoding(queryFields, fieldIndex, objectIdFieldName, returnGeometry,
+            effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform);
     }
 
     private static void WriteFeature(

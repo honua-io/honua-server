@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Geoprocessing;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
@@ -45,6 +46,9 @@ public sealed class DurableJobSubstrateRegistrationTests
             .Should().BeOfType<PostgresGeoprocessingResultPackageStore>();
         HostedImplementations(services).Should().Contain(typeof(JobExecutionService));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(JobReconciliationService));
+        provider.GetRequiredService<PollWakeSignal<IJobQueue>>()
+            .Should().BeSameAs(provider.GetRequiredService<PollWakeSignal<IJobQueue>>(), "the queue and its claim loop share one signal")
+            .And.NotBeSameAs(provider.GetRequiredService<PollWakeSignal<IExecutionJobStore>>());
     }
 
     [UnitTest]

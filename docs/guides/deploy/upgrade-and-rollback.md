@@ -15,6 +15,16 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
 3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt. On an installed Compose project with the [Compose executor](../../get-started/quickstart.md#approved-operations-and-recovery) enabled, that restore is part of an approved rollback: the executor checks the backup, restores it, and only then starts the prior image.
 
+### Database migration deadlocks
+
+An upgrade can contend with writes from an older serving task. On PostgreSQL
+`40P01` (deadlock detected), the migration runner retries the upgrade up to three
+total attempts and waits 100 milliseconds between attempts. It holds the migration
+advisory lock across those attempts. Each failed attempt rolls back that attempt's
+schema changes and journal entries, then the next attempt runs the pending scripts
+again. An optional backup hook runs once, before the first attempt. Cancellation
+stops further attempts. Any other database error, or a third deadlock, fails the run.
+
 ### In-flight geoprocessing jobs
 
 During an ECS traffic shift, removing a task from the ALB does not cancel its GP
@@ -60,7 +70,7 @@ expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
-contracting fails CI unless its exact name and hash match the release boundary.
+contract by the reader fails CI unless its exact name and hash match the release boundary.
 Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
 by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
 Redesign incompatible changes as additive migrations with compatible application
@@ -72,6 +82,16 @@ truncation. Historical scripts that acquire a contract classification under thes
 broader checks use their exact frozen name and hash as the review record; their SQL
 is never rewritten to add annotations. They still require contract-apply approval
 when pending against a nonempty migration journal. Fresh installs remain unaffected.
+
+Reader compatibility and contract-apply approval are separate checks. The reader
+recognizes one reviewed removal of eight optional feature indexes, pinned by its
+normalized SQL hash and the numbered `RemoveUnusedFeatureIndexes.sql` basename.
+Its canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
+does not run as a migration. The removal remains contract-classified for upgrade
+approval, while a reader containing this review can verify its forward declaration.
+Other names or changed SQL remain refused. Deploy the prepared reader before
+introducing the separate removal migration, then prove rollback with that reader's
+published image. Readers predating this review still refuse the removal.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and
@@ -337,7 +357,7 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/submit` | Start the rollout |
 | `POST /api/v1/admin/deploy/operations/{operationId}/promote` | Force the cutover of a rollout parked awaiting promotion |
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
-| `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all serving targets in one call |
+| `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all server deployments in one call |
 
 Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
@@ -363,7 +383,7 @@ An MCP agent follows the same path with a human approval in the middle; it never
 
 1. `honua_platform_release_status` — read the declared release (`releaseVersion`), the serving/execution projections and `isCoVersioned`.
 2. `GET /api/v1/admin/deploy/preflight` — confirm readiness, pending migrations and database compatibility (its `platformRelease` block is the same projection).
-3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent serving target (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
+3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent server deployment (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
 4. A separate authorized principal approves each proposal in the Console inbox or with the Admin CLI; the agent polls the returned `honua://proposals/{proposalId}`. Approval submits the deploy to the product executor for that registered target. On ECS the executor registers a task definition pinned to the immutable serving-artifact digest, runs the product migrate-only task first when the deployment names one, updates the service to that task definition, and waits for steady state. The workflow operation id is the durable record. A GitOps hand-off is not a completed rollout, and a schema migration is not implied by the service or function update.
 5. `honua_propose_rollback` — if the observation window regresses, propose rolling the target back to its prior succeeded revision (again approved by a human). That rollback is a new deploy of the prior digest through the same executor, or a typed refusal when no prior revision exists.
 
@@ -639,6 +659,10 @@ The functional query is not inferred. Configure it on the deploy operation's par
 An expectation the correct answer cannot meet, such as the same text as both expected and forbidden, makes every rollback fail. The rollback window is `deployment.rollback.observation_timeout_seconds` (default 300, at most 1800). If proof does not arrive in time, the operation does not report a restore. It becomes `Failed` with `rollback.functional_query_failed` when the functional query got a wrong answer, an error envelope or no answer from the restored target. It becomes `ManualInterventionRequired` with `rollback.functional_query_unproven` when no functional query was configured or attempted, or with `rollback.readiness_unproven` when no restored endpoint was healthy. A serving revision that is not the prior one is `ManualInterventionRequired` with `rollback.identity_mismatch` at once.
 
 Restore the database only when a destructive migration already ran or data was corrupted: roll the app back first to stop writes, restore the last known-good snapshot, validate schema/version alignment, then readmit traffic — see [Back up and restore](backup-and-restore.md).
+
+### Catalog activations
+
+Each task watches a catalog change for 30 minutes after it is activated and compares serving errors per task before and after it. When errors regress, the server logs an error naming the activation and ends the watch; it does not change the catalog. Setting `ControlPlane:AutomaticCatalogRollback` (`ControlPlane__AutomaticCatalogRollback=true`) lets it restore the previous catalog document as a new revision instead, and then purge the CDN. Even then, a restore that would change access, lifecycle, editing, protocol, storage-binding or connection settings is refused and logged, because serving telemetry is not evidence for an access decision; review and revert such a change yourself.
 
 ## Verify
 

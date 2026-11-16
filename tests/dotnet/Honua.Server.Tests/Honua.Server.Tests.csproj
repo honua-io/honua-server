@@ -20,11 +20,11 @@
     <PackageReference Include="Grpc.Net.Client.Web" />
     <PackageReference Include="Honua.Sdk.Admin" />
     <PackageReference Include="Mapsui" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.OData.Client" />
     <PackageReference Include="Moq" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Newtonsoft.Json.Schema" />
     <PackageReference Include="ParquetSharp" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="System.Security.Cryptography.Xml" />
@@ -108,5 +108,6 @@
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/Ai/McpTestFactory.cs" Link="Shared/McpTestFactory.cs" />
     <Compile Include="../Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs" Link="Shared/SpecGroundingTestSupport.cs" />
+    <Compile Include="../Shared/MetadataReleaseSupport/MetadataReleaseParcelsGraph.cs" Link="Shared/MetadataReleaseParcelsGraph.cs" />
   </ItemGroup>
 </Project>

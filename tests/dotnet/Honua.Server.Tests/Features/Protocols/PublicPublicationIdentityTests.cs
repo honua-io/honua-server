@@ -40,7 +40,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
     {
         var style = JsonSerializer.Deserialize<JsonElement>(
             """{"version":8,"name":"publication-style","sources":{},"layers":[]}""");
-        _styles.GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _styles.GetStyleAsync(Arg.Any<MetadataV2Object>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new LayerStyleSnapshot(style, null));
         _fixture.ReplaceRequestService(_styles);
         await _fixture.InitializeAsync();
@@ -55,16 +55,16 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
     [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     [Endpoint("GET /wfs")]
-    public async Task WfsCapabilities_StorageRebound_UsesDistinctEncodedPublicationIds()
+    public async Task WfsCapabilities_StorageRebound_KeepsCanonicalDiscoveryAndResolvesEveryPublication()
     {
         var before = await WfsNamesAsync();
         RebindStorage();
         var after = await WfsNamesAsync();
 
         var expected = new[] { XmlConvert.EncodeLocalName(PublicationId), XmlConvert.EncodeLocalName(SecondPublicationId) };
-        before.Should().BeEquivalentTo(expected);
-        after.Should().BeEquivalentTo(expected);
-        before.Select(XmlConvert.DecodeName).Should().BeEquivalentTo([PublicationId, SecondPublicationId]);
+        // Global discovery lists each storage layer once; explicit typenames retain every publication.
+        before.Should().Equal(XmlConvert.EncodeLocalName(SecondPublicationId));
+        after.Should().Equal(before);
         foreach (var name in expected)
         {
             var schema = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES={Uri.EscapeDataString(name)}");
@@ -105,7 +105,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
             Revision = graph.Revision + 1,
             Publications = graph.Publications.Select(publication => publication with
             {
-                Identifier = new MetadataV2PublicationIdentifier(),
+                Identifier = new MetadataV2LayerIdentifier(),
                 ServiceLocalId = "0",
                 LayerIndex = 0,
             }).ToArray(),
@@ -129,7 +129,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
             Publications = [.. graph.Publications, primary with
             {
                 Metadata = primary.Metadata with { Id = "roads-map-view", Name = "roads-map-view" },
-                PublicationType = MetadataV2PublicationType.EsriMapLayer,
+                PublicationType = MetadataV2LayerType.EsriMapLayer,
                 IsPrimary = false,
             }],
         });
@@ -173,6 +173,8 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
     [Endpoint("GET /wfs")]
     public async Task WfsCapabilities_EscapedPublicationId_DoesNotCollideWithLiteralEscape()
     {
+        ConfigureDistinctStyleResources();
+        ConfigureDistinctStorageLayers();
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var ids = new[] { "a:b", "a_x003A_b" };
         SetGraph(graph with
@@ -256,7 +258,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
-    public async Task WmsCapabilities_DistinctResourcesShareIdentifier_RejectsAmbiguousName()
+    public async Task WmsCapabilities_DistinctResourcesShareIdentifier_OmitsAmbiguousName()
     {
         ConfigureDistinctStyleResources();
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
@@ -266,8 +268,13 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
             Revision = graph.Revision + 1,
             Publications = graph.Publications.Select(publication => publication with { ServiceId = primary.ServiceId }).ToArray(),
         });
-        using var response = await _fixture.Client.GetAsync(
+        var capabilities = await ReadXmlAsync(
             $"/ogc/services/{ServiceName}/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
+        XNamespace wms = "http://www.opengis.net/wms";
+        capabilities.Descendants(wms + "Layer").Elements(wms + "Name").Should().BeEmpty();
+
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{ServiceName}/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("LayerNotDefined");
@@ -328,7 +335,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
             snapshot.ResolveStorageLayerId(candidate) == WebAppFixture.TestLayerId &&
-            snapshot.ResolveResource(candidate)?.Type == MetadataV2ResourceType.FeatureDataset);
+            snapshot.ResolveResource(candidate)?.Type == MetadataV2ObjectType.FeatureDataset);
         var resource = snapshot.ResolveResource(publication)!;
         var binding = snapshot.ResolveStorageBinding(publication)!;
         var service = snapshot.Index.ServicesById[publication.ServiceId];
@@ -336,7 +343,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         {
             Metadata = publication.Metadata with { Id = PublicationId, Name = PublicationId },
             LayerIndex = 0,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true },
             IsPrimary = true,
         };
         var secondService = service with

@@ -31,6 +31,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
@@ -578,6 +579,9 @@ internal static partial class ImportEndpoints
             SourceKind = "url",
             SourceUrl = request.SourceUrl,
             SourceSrid = request.SourceSrid,
+            DatumTransformationWkid = request.DatumTransformationWkid,
+            DatumTransformationName = request.DatumTransformationName,
+            CoordinateEpoch = request.CoordinateEpoch,
             TargetSrid = request.TargetSrid,
             TargetSchema = request.TargetSchema,
             OverwriteExisting = request.OverwriteExisting,
@@ -714,6 +718,10 @@ internal static partial class ImportEndpoints
                 TableName = request.TableName,
                 TargetSchema = request.TargetSchema,
                 SourceSrid = request.SourceSrid,
+                SourceLayer = request.SourceLayer,
+                DatumTransformationWkid = request.DatumTransformationWkid,
+                DatumTransformationName = request.DatumTransformationName,
+                CoordinateEpoch = request.CoordinateEpoch,
                 TargetSrid = request.TargetSrid,
                 OverwriteExisting = request.OverwriteExisting
             };
@@ -1141,7 +1149,11 @@ internal static partial class ImportEndpoints
                 TableName = tableName,
                 UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
                 SourceSrid = ParseOptionalSrid(fields, "SourceSrid"),
+                SourceLayer = fields.GetValueOrDefault("SourceLayer") is { Length: > 0 } layer ? layer.Trim() : null,
                 TargetSrid = ParseOptionalSrid(fields, "TargetSrid"),
+                DatumTransformationWkid = ParseDatumTransformationWkid(fields),
+                DatumTransformationName = fields.GetValueOrDefault("DatumTransformationName"),
+                CoordinateEpoch = ParseCoordinateEpoch(fields),
                 TargetSchema = targetSchema,
                 OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
                 ForceBackground = TryParseBool(fields, "ForceBackground"),
@@ -1325,6 +1337,36 @@ internal static partial class ImportEndpoints
         throw new ArgumentException("The coordinate-system code must be an integer.");
     }
 
+    private static int? ParseDatumTransformationWkid(Dictionary<string, string> fields)
+    {
+        if (!fields.TryGetValue("DatumTransformationWkid", out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wkid) || wkid <= 0)
+        {
+            throw new ArgumentException("DatumTransformationWkid must be a positive integer.");
+        }
+
+        return wkid;
+    }
+
+    private static double? ParseCoordinateEpoch(Dictionary<string, string> fields)
+    {
+        if (!fields.TryGetValue("CoordinateEpoch", out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var epoch) || !double.IsFinite(epoch))
+        {
+            throw new ArgumentException("coordinateEpoch must be a finite decimal year.");
+        }
+
+        return epoch;
+    }
+
     private static string? NormalizeOptionalOperationId(Dictionary<string, string> fields, string fieldName)
     {
         if (!fields.TryGetValue(fieldName, out var value) || string.IsNullOrWhiteSpace(value))
@@ -1359,15 +1401,9 @@ internal static partial class ImportEndpoints
     // may be left under this path — a background job must never be queued referencing it.
     private static string CreateStagedImportFilePath(string fileName)
     {
-        // Not a path-combine drop risk: fileName is always FileUploadSecurity.SanitizeFileName
-        // output at call sites, which strips path separators, so extension can contain neither
-        // a separator nor a drive/root prefix; it is also appended as a suffix after the GUID,
-        // so this segment can never be rooted.
-        var extension = Path.GetExtension(fileName);
-        return Path.Join(
-            Path.GetTempPath(),
-            "honua-import-staging",
-            $"{Guid.NewGuid():N}{extension}");
+        // Directly under the temp path: no shared fixed directory another local user could
+        // pre-create; the copy creates the file exclusively and owner-only.
+        return PrivateTempFile.NewPath("honua-import-staging-", Path.GetExtension(fileName));
     }
 
     private static FileStream OpenSequentialReadStream(string path, int bufferSize)
@@ -1810,6 +1846,9 @@ internal sealed record ImportUrlImportRequest
     public required string TableName { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
+    public int? DatumTransformationWkid { get; init; }
+    public string? DatumTransformationName { get; init; }
+    public double? CoordinateEpoch { get; init; }
     public int? TargetSrid { get; init; }
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
@@ -1821,13 +1860,10 @@ internal sealed record StagedImportFile
     public required string FileName { get; init; }
     public string? ContentType { get; init; }
 
-    /// <summary>
-    /// Path to the within-request staging scratch file under <c>honua-import-staging/</c>.
-    /// This is transient local scratch only (ADR-0060): it is read and deleted inside the
-    /// same HTTP request. Durable, cross-request handoff to a background worker goes through
-    /// the shared object store (<c>ICloudFileStorage</c> / <c>ImportRequest.CloudFileId</c>),
-    /// never this local path.
-    /// </summary>
+    // Within-request staging scratch file (honua-import-staging-* under the temp path). This is
+    // transient local scratch only (ADR-0060): it is read and deleted inside the same HTTP
+    // request. Durable, cross-request handoff to a background worker goes through the shared
+    // object store (ICloudFileStorage / ImportRequest.CloudFileId), never this local path.
     public required string LocalFilePath { get; init; }
     public long SizeBytes { get; init; }
 }
@@ -1841,6 +1877,10 @@ internal sealed record ImportExecutionRequest
     public string? UploadId { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
+    public string? SourceLayer { get; init; }
+    public int? DatumTransformationWkid { get; init; }
+    public string? DatumTransformationName { get; init; }
+    public double? CoordinateEpoch { get; init; }
     public int? TargetSrid { get; init; }
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
