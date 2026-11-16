@@ -173,12 +173,12 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('--commit "${CANDIDATE_SHA}" --limit 100 --json status', workflow)
         self.assertNotIn('select(.status == \"completed\" and .conclusion == \"success\"', workflow)
         for job in ('build-aot', 'build-lambda-aot', 'build-jit', 'manifest-aot',
-                    'manifest-lambda-aot', 'manifest-jit', 'compose-executor', 'verify-functions-aot'):
+                    'manifest-lambda-aot', 'manifest-jit', 'compose-executor'):
             with self.subTest(job=job):
                 block = re.split(r'\n  [a-z][a-z0-9-]*:', workflow.split('\n  ' + job + ':\n', 1)[1], maxsplit=1)[0]
                 self.assertIn('concurrency:', block)
                 self.assertIn('group: nightly-publish-${{ needs.select-candidate.outputs.sha }}', block)
-        self.assertEqual(workflow.count('| python3 scripts/ci/promote-verified-image.py'), 3)
+        self.assertEqual(workflow.count('| python3 scripts/ci/promote-verified-image.py'), 2)
         self.assertEqual(workflow.count('scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"'), 4)
         self.assertIn('tags: ${{ steps.immutable_tags.outputs.tags }}', workflow)
         self.assertIn("if: steps.existing_executor.outputs.digest == ''", workflow)

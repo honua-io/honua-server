@@ -166,30 +166,6 @@ public sealed class RollbackDataPlaneHealthTests
     }
 
     [UnitTest]
-    public async Task ContainerApps_UnhealthyRevisionAtFullTraffic_CannotRollBack()
-    {
-        var client = new UnhealthyContainerAppsClient();
-        var backend = new AzureContainerAppsRevisionDeployBackend(
-            client,
-            NullLogger<AzureContainerAppsRevisionDeployBackend>.Instance,
-            RollbackDataPlaneTestSupport.HealthyProbe());
-
-        var waiting = await backend.ObserveAsync(CreateSimpleOperation(
-            DeployTargetKind.AzureContainerApps,
-            "honua-azure-container-apps-revision",
-            "myapp--v1",
-            expired: false));
-        waiting.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
-
-        var expired = await backend.ObserveAsync(CreateSimpleOperation(
-            DeployTargetKind.AzureContainerApps,
-            "honua-azure-container-apps-revision",
-            "myapp--v1",
-            expired: true));
-        expired.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
-    }
-
-    [UnitTest]
     public async Task Lambda_AliasConvergedButQueryServesCandidate_CannotRollBack()
     {
         var probe = RollbackDataPlaneTestSupport.HealthyProbe();
@@ -223,33 +199,6 @@ public sealed class RollbackDataPlaneHealthTests
             }));
         expired.Status.Should().Be(WorkflowOperationStatus.Failed);
         expired.ObservedRevision.Should().Be("41");
-    }
-
-    [UnitTest]
-    public async Task Functions_ImageConvergedButReadinessMissing_CannotRollBack()
-    {
-        var probe = RollbackDataPlaneTestSupport.HealthyProbe();
-        probe.ReadinessProven = false;
-        var backend = new AzureFunctionsGitOpsDeployBackend(
-            new FixedFunctionsSlots("ghcr.io/honua-io/honua-server:old"),
-            NullLogger<AzureFunctionsGitOpsDeployBackend>.Instance,
-            probe);
-
-        var waiting = await backend.ObserveAsync(CreateSimpleOperation(
-            DeployTargetKind.AzureFunctions,
-            "honua-gitops-azure-functions",
-            "production",
-            expired: false,
-            extra: FunctionsParameters()));
-        waiting.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
-
-        var expired = await backend.ObserveAsync(CreateSimpleOperation(
-            DeployTargetKind.AzureFunctions,
-            "honua-gitops-azure-functions",
-            "production",
-            expired: true,
-            extra: FunctionsParameters()));
-        expired.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
     [UnitTest]
@@ -378,20 +327,6 @@ public sealed class RollbackDataPlaneHealthTests
             parameters));
     }
 
-    private static Dictionary<string, string> FunctionsParameters()
-    {
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["target.resource_id"] = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/honua",
-            ["functions.app_name"] = "honua",
-            ["functions.slot_name"] = "staging",
-            ["functions.current_image"] = "ghcr.io/honua-io/honua-server:old",
-            ["functions.desired_image"] = "ghcr.io/honua-io/honua-server:new"
-        };
-        RollbackDataPlaneTestSupport.AddProof(parameters);
-        return parameters;
-    }
-
     private static Dictionary<string, string> ArgoParameters()
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -414,11 +349,6 @@ public sealed class RollbackDataPlaneHealthTests
         var parameters = extra is null
             ? new Dictionary<string, string>(StringComparer.Ordinal)
             : new Dictionary<string, string>(extra, StringComparer.Ordinal);
-        if (kind == DeployTargetKind.AzureContainerApps && parameters.Count == 0)
-        {
-            parameters["target.resource_id"] = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/honua";
-        }
-
         RollbackDataPlaneTestSupport.AddProof(parameters);
         if (expired)
         {
@@ -506,49 +436,12 @@ public sealed class RollbackDataPlaneHealthTests
             => Task.CompletedTask;
     }
 
-    private sealed class UnhealthyContainerAppsClient : IAzureContainerAppsRevisionClient
-    {
-        public Task<AzureContainerAppsTrafficState> GetTrafficStateAsync(string subscriptionId, string resourceGroupName, string appName, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AzureContainerAppsTrafficState
-            {
-                Traffic = [new AzureContainerAppsTrafficWeight { RevisionName = "myapp--v1", Weight = 100 }]
-            });
-
-        public Task<AzureContainerAppsRevisionState> GetRevisionAsync(string subscriptionId, string resourceGroupName, string appName, string revisionName, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AzureContainerAppsRevisionState
-            {
-                RevisionName = revisionName,
-                Active = true,
-                HealthState = "Unhealthy",
-                RunningState = "Degraded",
-                ProvisioningState = "Provisioned"
-            });
-
-        public Task<AzureContainerAppsTrafficUpdateResult> UpdateTrafficAsync(string subscriptionId, string resourceGroupName, string appName, IReadOnlyList<AzureContainerAppsTrafficWeight> weights, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task ActivateRevisionAsync(string subscriptionId, string resourceGroupName, string appName, string revisionName, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-    }
-
     private sealed class FixedLambdaAlias(string version) : IAwsLambdaAliasClient
     {
         public Task<AwsLambdaAliasState> GetAliasAsync(string functionName, string aliasName, string? region, string? serviceUrl = null, CancellationToken cancellationToken = default)
             => Task.FromResult(new AwsLambdaAliasState { AliasName = aliasName, FunctionVersion = version });
 
         public Task<AwsLambdaAliasState> UpdateAliasAsync(string functionName, string aliasName, string functionVersion, IReadOnlyDictionary<string, double>? additionalVersionWeights, string? region, string? serviceUrl = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
-
-    private sealed class FixedFunctionsSlots(string productionImage) : IAzureFunctionsSlotClient
-    {
-        public Task<AzureFunctionsSiteConfigState> GetSiteConfigAsync(string subscriptionId, string resourceGroupName, string functionAppName, string? slotName, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AzureFunctionsSiteConfigState
-            {
-                LinuxFxVersion = slotName is null ? $"DOCKER|{productionImage}" : "DOCKER|ghcr.io/honua-io/honua-server:new"
-            });
-
-        public Task<AzureFunctionsSlotSwapResult> SwapSlotWithProductionAsync(string subscriptionId, string resourceGroupName, string functionAppName, string slotName, bool preserveVnet, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 

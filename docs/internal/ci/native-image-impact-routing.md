@@ -5,7 +5,7 @@ savings and is not promoted; exact-input reuse is the measured candidate
 mechanism. Tracking: #3204. Architecture: ADR-0074.
 
 The legacy pull-request workflows use broad handwritten path filters. A normal
-server edit starts three serial native-AOT builds, while several solution,
+server edit starts serial native-AOT builds, while several solution,
 sample, fixture, and test-only edits start image work even when they cannot
 change a published root filesystem. The worker workflow has the inverse risk:
 its handwritten list can miss a vulnerability-policy input.
@@ -17,7 +17,7 @@ Explicit policy covers build-wide inputs, embedded files, Docker/rootfs inputs,
 verification policy, and these independently measured risk classes:
 
 - server AOT compilation;
-- generic, Lambda, and Azure Functions final root filesystems;
+- generic and Lambda final root filesystems;
 - worker managed graph and native root filesystem;
 - worker vulnerability policy.
 
@@ -39,7 +39,7 @@ manifest, base/head SHAs, exact project lists, graph fingerprints, normalized
 changed-path digest, per-class reason counts and digests, and `mutation: none`.
 It also binds one
 content digest per image class (`serving_generic`, `serving_lambda`,
-`serving_functions`, `worker`) over that class's exact build-input file set, so
+`worker`) over that class's exact build-input file set, so
 two heads that would consume byte-identical inputs are recognisable without
 rebuilding either of them. Reason evidence is a count and the canonical
 SHA-256 of the sorted paths for that class, not the path list. Repeating every

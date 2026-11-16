@@ -15,7 +15,7 @@ Environment variables:
   HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE    Optional expected deployment mode (SingleInstance or MultiNode).
   HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY
                                                Optional expected deploy readiness flag.
-  HONUA_CLOUD_TEST_PLATFORM                    Optional platform hint (kubernetes, aws-ecs, aws-lambda, azure-functions, azure-container-apps).
+  HONUA_CLOUD_TEST_PLATFORM                    Optional platform hint (kubernetes, aws-ecs, aws-lambda).
   HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT  Optional true/false override for deploy-plan cloud tests.
   HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT     Optional true/false override for staged-import mutation cloud tests.
   HONUA_CLOUD_TEST_DEPLOY_TARGET_ID            Optional deploy target id for a live deploy-plan check.
@@ -112,12 +112,6 @@ platform_capability_default() {
         aws-lambda:deploy-plan|aws-lambda:mutation)
             printf 'false\n'
             ;;
-        azure-functions:deploy-plan|azure-functions:mutation)
-            printf 'false\n'
-            ;;
-        azure-container-apps:deploy-plan|azure-container-apps:mutation)
-            printf 'false\n'
-            ;;
         kubernetes:deploy-plan)
             printf 'false\n'
             ;;
@@ -209,13 +203,6 @@ fi
 
 HONUA_CLOUD_TEST_BASE_URL="$(normalize_base_url "$HONUA_CLOUD_TEST_BASE_URL")"
 export HONUA_CLOUD_TEST_BASE_URL
-
-case "${HONUA_CLOUD_TEST_PLATFORM:-}" in
-    azure-functions)
-        export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-false}"
-        export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="${HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT:-false}"
-        ;;
-esac
 
 require_tool dotnet
 require_tool curl

@@ -305,27 +305,17 @@ public enum DeployTargetKind
     /// <summary>
     /// Kubernetes-based rollout target.
     /// </summary>
-    Kubernetes,
+    Kubernetes = 0,
 
     /// <summary>
     /// AWS ECS target using ALB traffic shifting and service-level rollout semantics.
     /// </summary>
-    AwsEcs,
-
-    /// <summary>
-    /// Azure Container Apps target using revision-based rollout semantics.
-    /// </summary>
-    AzureContainerApps,
+    AwsEcs = 1,
 
     /// <summary>
     /// AWS Lambda target using revisions, aliases, or traffic shifting.
     /// </summary>
-    AwsLambda,
-
-    /// <summary>
-    /// Azure Functions target using deployment slots or revision swaps.
-    /// </summary>
-    AzureFunctions,
+    AwsLambda = 3,
 
     /// <summary>
     /// Substrate-neutral, single-host rolling-replace target (ADR-0060). The Honua process fronts
@@ -334,7 +324,7 @@ public enum DeployTargetKind
     /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
     /// zero-cloud-dependency zero-downtime upgrade and rollback story.
     /// </summary>
-    SelfHostedRolling,
+    SelfHostedRolling = 5,
 
     /// <summary>
     /// Installed Docker Compose project. The server does not receive the Docker socket. A separately
@@ -342,7 +332,7 @@ public enum DeployTargetKind
     /// one project the operator registered. Reader-incompatible rollbacks restore a verified backup
     /// before the prior image is started.
     /// </summary>
-    LocalCompose
+    LocalCompose = 6
 }
 
 /// <summary>

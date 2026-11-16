@@ -340,7 +340,7 @@ kind's claim semantics.
   GDAL/PROJ/GEOS libraries, GDAL language bindings, or matching installed
   packages. Injection fixtures exercise every rejected class in the required,
   lightweight PR gate. A separate path-filtered, non-required serving-image
-  workflow rebuilds and smoke-starts the generic, Lambda, and Azure Functions
+  workflow rebuilds and smoke-starts the generic and Lambda
   AOT images for early PR feedback; release, deployment, and nightly publishers
   inspect the exact images they publish. `honua-worker-etl` has the inverse
   positive check for required GDAL tools and drivers plus its own vulnerability

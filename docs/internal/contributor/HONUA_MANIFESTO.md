@@ -25,7 +25,7 @@ Honua is the antidote: GIS democratized. We bring broad compatibility, cloud-nat
 ## Cloud-native commitments
 
 - First-class deployment options: Docker, Kubernetes (Helm), and Terraform-based cloud deployments.
-- Serverless-ready: optional deployments on AWS Lambda and Azure Functions.
+- Serverless-ready: optional deployment on AWS Lambda.
 - Efficient by default: scale down cleanly and avoid heavyweight operational overhead.
 
 ## The principles

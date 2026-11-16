@@ -6,14 +6,13 @@ name: Serving Image Boundary
 # feedback without lengthening the required merge-train floor.
 #
 # ROUTING CONTRACT (#3204). The `pull_request` trigger below is deliberately
-# limited to inputs that DEFINE the image: the three production AOT Dockerfiles,
-# the Azure Functions host assets they copy, the build context filter, the
-# in-image restore helper, the boundary verifier, its fixture harness, and this
-# workflow. Managed-source inputs (`src/**`, `eng/**`, the solution, the build
-# props, the embedded catalogs/fixtures) are NOT triggers, because they change on
-# nearly every pull request and invalidate all three variants at once - three
-# serial native builds, a ~140-minute median critical path, on every review-fix
-# push. Their evidence is placed elsewhere, and every class still has a named
+# limited to inputs that DEFINE the image: the production serving Dockerfiles,
+# the build context filter, the in-image restore helper, the boundary verifier,
+# its fixture harness, and this workflow. Managed-source inputs (`src/**`,
+# `eng/**`, the solution, the build props, the embedded catalogs/fixtures) are
+# NOT triggers, because they change on nearly every pull request and invalidate
+# every variant at once - serial native builds, a ~140-minute median critical
+# path, on every review-fix push. Their evidence is placed elsewhere, and every class still has a named
 # owner before the image is published:
 #
 #   * AOT compile risk (`src/**`, `eng/**`, props, solution) -> the merge train's
@@ -21,10 +20,10 @@ name: Serving Image Boundary
 #     job was gated on `full_ci`, which an ordinary selective batch reports as
 #     false, so it never ran on the landing path; #3204 rescoped it to the
 #     change classes it depends on. Compile risk is now paid once per batch
-#     instead of three container builds per review-fix push.
+#     instead of one container build per variant per review-fix push.
 #   * Boundary DETECTOR correctness -> `pr-gate.yml`, per PR, per push, on every
 #     clean and injected-rootfs fixture (no container build required).
-#   * Final-rootfs boundary for all three production variants -> post-merge
+#   * Final-rootfs boundary for every production variant -> post-merge
 #     `nightly-container-build.yml` (daily), and again in `deploy.yml`,
 #     `deploy-platform-images.yml`, and `release-bundle.yml` before any
 #     publication - each verifying the exact digest it is about to promote.
@@ -43,8 +42,6 @@ on:
       - 'Dockerfile'
       - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.lambda.aot'
-      - 'docker/Dockerfile.functions.aot'
-      - 'docker/cloud/azure-functions/**'
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/ci/serving-image-reuse.py'
@@ -74,7 +71,7 @@ jobs:
     secrets:
       wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
 
-  # Impact detection is its own job so the three variant builds can fan out in
+  # Impact detection is its own job so the variant builds can fan out in
   # parallel below. It is the only leg that needs full history for the
   # base..head diff; the build legs take a shallow checkout of the context.
   detect:
@@ -101,7 +98,7 @@ jobs:
           set -euo pipefail
 
           # `selected` is the JSON array the build matrix filters on. Emitting a
-          # list rather than three booleans keeps the matrix leg's condition to a
+          # list rather than one boolean per variant keeps the matrix leg's condition to a
           # single membership test.
           emit() {
             local selected="" variant
@@ -113,8 +110,8 @@ jobs:
           }
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            # A manual run has no base ref to diff against, so it proves all three.
-            emit generic lambda functions
+            # A manual run has no base ref to diff against, so it proves every variant.
+            emit generic lambda
             exit 0
           fi
 
@@ -122,7 +119,6 @@ jobs:
           printf '%s\n' "$changed"
           generic=false
           lambda=false
-          functions=false
 
           # Each production AOT image publishes the same Honua.Server graph, so
           # shared image inputs invalidate all variants. Dockerfile-only changes
@@ -134,7 +130,6 @@ jobs:
               .dockerignore|docker/runtime/*|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
-                functions=true
                 ;;
               Dockerfile|docker/Dockerfile.aot)
                 generic=true
@@ -142,16 +137,12 @@ jobs:
               docker/Dockerfile.lambda.aot)
                 lambda=true
                 ;;
-              docker/Dockerfile.functions.aot|docker/cloud/azure-functions/*)
-                functions=true
-                ;;
             esac
           done <<< "$changed"
 
           chosen=()
           if [[ "$generic" == "true" ]]; then chosen+=(generic); fi
           if [[ "$lambda" == "true" ]]; then chosen+=(lambda); fi
-          if [[ "$functions" == "true" ]]; then chosen+=(functions); fi
           emit ${chosen[@]+"${chosen[@]}"}
 
       # This is the v3 content address introduced by #3331: exact selected Git
@@ -165,9 +156,9 @@ jobs:
           echo "value=${value}" >> "${GITHUB_OUTPUT}"
           echo "Serving-image input digests: ${value}"
 
-      # Docker builds resolve mutable apt/apk repositories and, for Functions,
-      # the current .NET 10 channel. Bound successful evidence to one UTC day
-      # so a later run cannot reuse it indefinitely after upstream inputs move.
+      # Docker builds resolve mutable apt/apk repositories. Bound successful
+      # evidence to one UTC day so a later run cannot reuse it indefinitely after
+      # upstream inputs move.
       - name: Bound mutable-input freshness
         id: freshness
         shell: bash
@@ -178,7 +169,7 @@ jobs:
     needs: [detect, runner-select]
     if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') }}
     runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') || 'ubuntu-latest' }}
-    # Still 180, even though a leg now builds ONE variant instead of three in
+    # Still 180, even though a leg now builds ONE variant instead of all in
     # series. A cold native-AOT build of a single variant has been observed not
     # to fit in 90 minutes (nightly-container-build's build-lambda-aot carries
     # the same ceiling for the same reason), and a timeout is self-perpetuating:
@@ -204,12 +195,6 @@ jobs:
             dockerfile: docker/Dockerfile.lambda.aot
             tag: honua-server:lambda-aot-boundary
             cache_scope: honua-lambda-aot-amd64
-          - variant: functions
-            digest_key: serving_functions
-            description: Azure Functions native-AOT serving image
-            dockerfile: docker/Dockerfile.functions.aot
-            tag: honua-server:functions-aot-boundary
-            cache_scope: honua-functions-aot-amd64
     env:
       # `matrix` is not available in a job-level `if`, so selection is applied
       # per step. An unselected leg costs one shallow checkout instead of the
@@ -294,9 +279,8 @@ jobs:
         run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image ${{ matrix.tag }} --compilation ${{ matrix.variant == 'generic' && 'jit' || 'native-aot' }}
 
       - name: Smoke-test canonical serving image
-        # Only the canonical image serves HTTP; the Lambda and Azure Functions
-        # variants are invoked through their host runtimes and have no liveness
-        # endpoint to probe.
+        # Only the canonical image serves HTTP; the Lambda variant is invoked
+        # through its host runtime and has no liveness endpoint to probe.
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
         shell: bash
         run: |

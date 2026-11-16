@@ -2,7 +2,7 @@
 
 `Serving Image Boundary` runs the canonical production AOT image through
 `scripts/ci/verify-native-migration-refusal.py` before saving a successful
-verification marker. Lambda and Azure Functions host lifecycles are outside this
+verification marker. The Lambda host lifecycle is outside this
 regression. The image runs its real `/app/Honua.Server` entrypoint; this does not
 substitute a JIT executable or a test host.
 

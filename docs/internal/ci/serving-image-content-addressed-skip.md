@@ -7,8 +7,7 @@ variable `HONUA_SERVING_IMAGE_SKIP` is exactly `true`.
 
 The content address is the v3 digest introduced by #3331 and produced by
 `scripts/ci/native-image-impact.py`: a SHA-256 over the selected Git tree paths,
-file modes, and blob IDs for `serving_generic`, `serving_lambda`, or
-`serving_functions`. It therefore consumes the same selector contract built in
+file modes, and blob IDs for `serving_generic` or `serving_lambda`. It therefore consumes the same selector contract built in
 #3227 and moved into trusted default-branch observation by #3237. Branch names,
 commit proximity, Buildx cache hits, and path-only comparisons are not reuse
 evidence.

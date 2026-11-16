@@ -84,10 +84,9 @@ def uses_jit_default(sha):
 
 
 def publication_state(repository, sha, release_version):
-    suffixes = ['nightly', 'nightly-aot', 'nightly-lambda-aot', 'nightly-jit', 'nightly-compose-executor', 'nightly-functions-aot']
+    suffixes = ['nightly', 'nightly-aot', 'nightly-lambda-aot', 'nightly-jit', 'nightly-compose-executor']
     if repository.startswith('docker.io/'):
         suffixes.remove('nightly-compose-executor')
-        suffixes.remove('nightly-functions-aot')
     tags = [f'{repository}:{suffix}-{sha[:7]}' for suffix in suffixes]
     jit_default = uses_jit_default(sha)
     architecture_default = 'nightly-aot' if jit_default else 'nightly'

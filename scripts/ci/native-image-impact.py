@@ -39,12 +39,11 @@ TERMINAL_CONCLUSIONS = {
     "stale",
     "startup_failure",
 }
-SERVING_VARIANTS = ("generic", "lambda", "functions")
+SERVING_VARIANTS = ("generic", "lambda")
 IMAGE_INPUT_TREES = ("merge", "head")
 IMAGE_INPUT_CLASSES = (
     "serving_generic",
     "serving_lambda",
-    "serving_functions",
     "worker",
 )
 TREE_ENTRY = re.compile(rb"^([0-7]{6}) (blob|commit) ([0-9a-f]{40})\t(.*)$", re.DOTALL)
@@ -52,7 +51,6 @@ RISK_CLASSES = (
     "server_aot_compile",
     "generic_final_rootfs",
     "lambda_final_rootfs",
-    "functions_final_rootfs",
     "worker_managed_graph",
     "worker_native_rootfs",
     "worker_vulnerability",
@@ -260,7 +258,7 @@ def _legacy_serving_routes_from_workflow(path: Path) -> dict[str, list[str]]:
     starts = [index for index, line in enumerate(lines) if line.strip() == 'case "$path" in']
     if len(starts) != 1:
         raise PolicyError("serving workflow must contain one legacy variant case")
-    routes = {name: [] for name in ("common", "generic", "lambda", "functions")}
+    routes = {name: [] for name in ("common", "generic", "lambda")}
     current: list[str] | None = None
     outputs: set[str] = set()
     ended = False
@@ -281,13 +279,13 @@ def _legacy_serving_routes_from_workflow(path: Path) -> dict[str, list[str]]:
                     raise PolicyError("serving workflow variant case contains an unsafe pattern")
                 current.append(pattern[:-1] + "**" if pattern.endswith("/*") else pattern)
             continue
-        assignment = re.fullmatch(r"(generic|lambda|functions)=true", value)
+        assignment = re.fullmatch(r"(generic|lambda)=true", value)
         if assignment:
             outputs.add(assignment.group(1))
             continue
         if value != ";;":
             raise PolicyError("serving workflow variant case contains an unknown action")
-        if outputs == {"generic", "lambda", "functions"}:
+        if outputs == {"generic", "lambda"}:
             route = "common"
         elif len(outputs) == 1:
             route = next(iter(outputs))
@@ -335,8 +333,8 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
     if missing:
         raise PolicyError(f"policy is missing keys: {', '.join(missing)}")
     variants = policy["serving_variant_patterns"]
-    if set(variants) != {"generic", "lambda", "functions"}:
-        raise PolicyError("serving variants must be generic, lambda, and functions")
+    if set(variants) != {"generic", "lambda"}:
+        raise PolicyError("serving variants must be generic and lambda")
     for name, patterns in {
         "common_managed_patterns": policy["common_managed_patterns"],
         "serving_external_patterns": policy["serving_external_patterns"],
@@ -376,10 +374,8 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
     legacy_variants = legacy.get("serving_variant_patterns")
     if not isinstance(common, list) or not common or len(common) != len(set(common)):
         raise PolicyError("legacy serving common patterns must be non-empty and duplicate-free")
-    if not isinstance(legacy_variants, dict) or set(legacy_variants) != {
-        "generic", "lambda", "functions"
-    }:
-        raise PolicyError("legacy serving variants must be generic, lambda, and functions")
+    if not isinstance(legacy_variants, dict) or set(legacy_variants) != {"generic", "lambda"}:
+        raise PolicyError("legacy serving variants must be generic and lambda")
     for name, patterns in legacy_variants.items():
         if not isinstance(patterns, list) or not patterns or len(patterns) != len(set(patterns)):
             raise PolicyError(
@@ -387,7 +383,7 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
             )
     routed_patterns = common + [
         pattern
-        for name in ("generic", "lambda", "functions")
+        for name in ("generic", "lambda")
         for pattern in legacy_variants[name]
     ]
     if len(routed_patterns) != len(set(routed_patterns)):

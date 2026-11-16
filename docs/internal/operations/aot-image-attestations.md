@@ -1,9 +1,9 @@
 ---
 type: reference
-title: "Lambda and Functions AOT image attestations"
+title: "Lambda AOT image attestations"
 description: "Immutable OCI serving identities and digest-bound SBOM and provenance for release locks."
 ---
-# Lambda and Functions AOT image attestations
+# Lambda AOT image attestations
 
 The 2026.1 platform lock promise is that a signed platform lock binds immutable
 SBOM and provenance for every published component. This producer supplies the
@@ -13,19 +13,16 @@ from the build of its own candidate under honua-release#376 R18–R21.
 ## Published identities
 
 `nightly-container-build.yml` exports Lambda AOT separately for `linux/amd64`
-and `linux/arm64`, and Functions AOT for `linux/amd64`. Each build exports a
+and `linux/arm64`. Each build exports a
 single serving platform plus BuildKit attestations, using `provenance: mode=max`
-and `sbom: true`, in the same OCI index structure as the server image. Functions
-now exports a registry candidate rather than loading a local image, because the
-classic Docker image store discards attestations.
+and `sbom: true`, in the same OCI index structure as the server image.
 
 On trunk, verified Lambda architecture indexes are copied without changing their
-digests, then combined under the existing `nightly-lambda-aot` tags. Functions
-publishes verified `nightly-functions-aot` and `nightly-functions-aot-<short-sha>`
-tags. Tags are discovery pointers; the release pins
+digests, then combined under the existing `nightly-lambda-aot` tags.
+Tags are discovery pointers; the release pins
 `oci://ghcr.io/honua-io/honua-server@sha256:<index-digest>`.
 `deploy-platform-images.yml` also enables and verifies these attestations for
-its published Lambda and Functions AOT candidates. It retains the Lambda parent
+its published Lambda AOT candidates. It retains the Lambda parent
 in each registry under `attested-lambda-aot-<arch>-<full-source-sha>` for both
 `amd64` and `arm64`, and publishes each verified serving child under its
 `-lambda-aot-<arch>` deployment tags. The unsuffixed `-lambda-aot` and `-lambda`
@@ -69,8 +66,8 @@ match the layer annotation and contain data. Missing evidence, wrong subjects,
 mutable references, corrupted bytes and registry read failures fail the job
 before public tags move. Root filesystem verification also remains required.
 
-The nightly artifacts `lambda-attestations-amd64`, `lambda-attestations-arm64`
-and `functions-attestations-amd64` contain JSON discovery receipts with:
+The nightly artifacts `lambda-attestations-amd64` and `lambda-attestations-arm64`
+contain JSON discovery receipts with:
 
 | Field | Immutable identity |
 | --- | --- |
@@ -98,7 +95,7 @@ the locked aggregate directly and confirm it retains the same child and
 attestation descriptors; an architecture receipt alone does not name that final
 aggregate. Registry copies use `--all --preserve-digests` so evidence stays with
 the image. GitHub keyless build provenance is also attached to the final Lambda
-index and the Functions candidate, as it is to the canonical server index:
+index, as it is to the canonical server index:
 
 ```bash
 gh attestation verify "oci://$image" --repo honua-io/honua-server
@@ -112,7 +109,7 @@ passing local check alone does not certify a release lock.
 ## Branch proof
 
 Dispatch `nightly-container-build.yml` on the implementation branch. Branch runs
-build and verify Lambda and Functions immutable candidates and upload the
+build and verify Lambda immutable candidates and upload the
 receipts. They skip canonical/JIT builds and all public nightly tag promotion;
 trunk runs, and the `nightly-candidate-<sha7>` tag runs a trunk run hands a
 certified sha to (see [Nightly images](../../guides/operate/nightly-images.md#one-sha-per-image)),

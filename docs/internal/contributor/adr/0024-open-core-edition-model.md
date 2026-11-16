@@ -62,7 +62,7 @@ A complete, production-capable feature server for a single-process deployment.
 | **Rendering** | MVT + TileJSON + auto MapLibre styles, MapServer export/identify, WMS GetMap |
 | **Geocoding** | Single-address forward (`geocoding.forward`) and reverse (`geocoding.reverse`) geocoding through the GeoServices GeocodeServer surface (`findAddressCandidates`/`reverseGeocode`/`suggest`) — the demo/adoption showcase path, free so a prospect can see geocoding work end to end before buying anything. Batch geocoding (`geocoding.batch`) is Enterprise; see that tier below (#2981) |
 | **Caching** | In-memory cache (single process) |
-| **Deployment** | Docker, Docker Compose, Helm, Terraform (all cloud modules), serverless (Lambda, Azure Functions), .NET Aspire |
+| **Deployment** | Docker, Docker Compose, Helm, Terraform (all cloud modules), serverless (Lambda), .NET Aspire |
 | **Migration** | `honua-migrate` scan, codemod, reconcile CLI |
 | **Auth** | API key authentication, CORS |
 | **Observability** | Health endpoints, structured logging, Prometheus metrics, OpenTelemetry traces |

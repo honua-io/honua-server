@@ -81,9 +81,9 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
         catch (AuthenticationFailedException ex)
         {
             // Normalize credential failures to a null-status HttpRequestException so they flow
-            // through the same recoverable path as transport failures (mirrors the Container Apps /
-            // Functions ARM clients): the backend preserves durable rollout state on an ambiguous
-            // outcome instead of terminalizing on a transient managed-identity IMDS hiccup.
+            // through the same recoverable path as transport failures: the backend preserves durable
+            // rollout state on an ambiguous outcome instead of terminalizing on a transient
+            // managed-identity IMDS hiccup.
             throw new HttpRequestException(
                 "Azure Monitor Logs query credential acquisition failed.",
                 ex);

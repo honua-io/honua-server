@@ -121,15 +121,6 @@
       "testAttributes": 5
     },
     {
-      "original": "tests/dotnet/Honua.Architecture.Tests/FunctionsAotDockerfileTests.cs",
-      "current": "tests/dotnet/Honua.Architecture.SourceTests/FunctionsAotDockerfileTests.cs",
-      "namespace": "Honua.Architecture.Tests",
-      "classes": [
-        "FunctionsAotDockerfileTests"
-      ],
-      "testAttributes": 1
-    },
-    {
       "original": "tests/dotnet/Honua.Architecture.Tests/DockerfileWritableStorageDirectoryTests.cs",
       "current": "tests/dotnet/Honua.Architecture.SourceTests/DockerfileWritableStorageDirectoryTests.cs",
       "namespace": "Honua.Architecture.Tests",

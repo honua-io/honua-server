@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net;
 using System.Text.Json;
 using Amazon.Runtime;
 using Honua.ControlPlane;
@@ -37,9 +36,8 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
     private static readonly string[] AutomaticBackends =
     [
-        "honua-kubernetes-argo-rollouts", "honua-aws-ecs-alb",
-        "honua-azure-container-apps-revision", "honua-gitops-aws-lambda",
-        "honua-gitops-azure-functions", "honua-yarp-rolling", "honua-compose"
+        "honua-kubernetes-argo-rollouts", "honua-aws-ecs-alb", "honua-gitops-aws-lambda",
+        "honua-yarp-rolling", "honua-compose"
     ];
 
     [Fact]
@@ -157,8 +155,6 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.RemoveAll<IAwsAlbClient>();
         services.RemoveAll<IAwsEcsClient>();
         services.RemoveAll<IAwsLambdaAliasClient>();
-        services.RemoveAll<IAzureContainerAppsRevisionClient>();
-        services.RemoveAll<IAzureFunctionsSlotClient>();
         services.RemoveAll<IContainerRuntimeClient>();
         services.RemoveAll<IProxyStateSwapper>();
         services.RemoveAll<ILocalReplicaHealthProbe>();
@@ -166,8 +162,6 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.AddSingleton<IAwsAlbClient>(world);
         services.AddSingleton<IAwsEcsClient>(world);
         services.AddSingleton<IAwsLambdaAliasClient>(world);
-        services.AddSingleton<IAzureContainerAppsRevisionClient>(world);
-        services.AddSingleton<IAzureFunctionsSlotClient>(world);
         services.AddSingleton<IContainerRuntimeClient>(world);
         services.AddSingleton<IProxyStateSwapper>(world);
         services.AddSingleton<ILocalReplicaHealthProbe>(world);
@@ -201,9 +195,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         var kind = backend switch
         {
             "honua-aws-ecs-alb" => DeployTargetKind.AwsEcs,
-            "honua-azure-container-apps-revision" => DeployTargetKind.AzureContainerApps,
             "honua-gitops-aws-lambda" => DeployTargetKind.AwsLambda,
-            "honua-gitops-azure-functions" => DeployTargetKind.AzureFunctions,
             "honua-yarp-rolling" => DeployTargetKind.SelfHostedRolling,
             "honua-compose" => DeployTargetKind.LocalCompose,
             _ => DeployTargetKind.Kubernetes
@@ -227,22 +219,11 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 ["aws.alb.canary_target_group_arn"] = "canary-tg",
                 ["aws.alb.stable_target_group_arn"] = "stable-tg"
             },
-            DeployTargetKind.AzureContainerApps => new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["target.resource_id"] = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/honua"
-            },
             DeployTargetKind.AwsLambda => new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["aws.lambda.function_name"] = "honua",
                 ["aws.lambda.alias_name"] = "live",
                 ["aws.region"] = "us-east-1"
-            },
-            DeployTargetKind.AzureFunctions => new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["target.resource_id"] = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/honua",
-                ["functions.current_image"] = Prior,
-                ["functions.desired_image"] = Candidate,
-                ["functions.app_name"] = "honua"
             },
             DeployTargetKind.LocalCompose => new Dictionary<string, string>(StringComparer.Ordinal),
             _ => new Dictionary<string, string>(StringComparer.Ordinal)
@@ -301,7 +282,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         IReadOnlyList<WorkflowOperationStatus> TransitionSequence, string? ReasonCode);
 
     private sealed class ProviderWorld : IArgoRolloutsClient, IAwsAlbClient, IAwsEcsClient, IAwsLambdaAliasClient,
-        IAzureContainerAppsRevisionClient, IAzureFunctionsSlotClient, IContainerRuntimeClient,
+        IContainerRuntimeClient,
         IProxyStateSwapper, ILocalReplicaHealthProbe, IRollbackDataPlaneProbe, IComposeExecutorClient
     {
         private string _scenario = "exact-prior";
@@ -311,9 +292,6 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         private AwsEcsServiceState _ecs = Ecs(Candidate);
         private AwsEcsServiceState _stable = Ecs(Candidate);
         private AwsLambdaAliasState _lambda = Lambda(Candidate);
-        private AzureContainerAppsTrafficState _containerApp = ContainerApp(Candidate);
-        private AzureFunctionsSiteConfigState _production = Functions(Candidate);
-        private AzureFunctionsSiteConfigState _slot = Functions(Prior);
         private List<ContainerSummary> _containers = [];
         private string? _activeDestination = "http://127.0.0.1:18081/";
         private string _composeImage = Candidate;
@@ -328,9 +306,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             {
                 "honua-kubernetes-argo-rollouts" => $"phase={_argo.Phase};aborted={_argo.IsAborted};currentHash={_argo.CurrentPodHash ?? "<missing>"};stableHash={_argo.StableRevisionHash ?? "<missing>"};image={_argo.PodTemplateImage ?? "<missing>"}",
                 "honua-aws-ecs-alb" => $"canaryTaskDefinition={_ecs.TaskDefinitionArn ?? "<missing>"};stableTaskDefinition={_stable.TaskDefinitionArn ?? "<missing>"};status={_ecs.Status ?? "<missing>"};running={_ecs.RunningCount};desired={_ecs.DesiredCount}",
-                "honua-azure-container-apps-revision" => string.Join(',', _containerApp.Traffic.Select(weight => $"{weight.RevisionName}:{weight.Weight}")),
                 "honua-gitops-aws-lambda" => $"alias={_lambda.AliasName ?? "<missing>"};version={_lambda.FunctionVersion ?? "<missing>"}",
-                "honua-gitops-azure-functions" => $"productionImage={_production.LinuxFxVersion ?? "<missing>"};slotImage={_slot.LinuxFxVersion ?? "<missing>"}",
                 "honua-yarp-rolling" => string.Join(',', _containers.Select(container => $"{container.Labels.GetValueOrDefault(YarpRollingDeployBackend.LabelRole, "<missing>")}:{container.Labels.GetValueOrDefault(YarpRollingDeployBackend.LabelRevision, "<missing>")}:{container.Running}")),
                 "honua-compose" => $"image={_composeImage};readback={_composeReadback};ok={_composeOk}",
                 _ => "<unknown>"
@@ -340,8 +316,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         {
             _scenario = scenario; _rollbackCalls = 0;
             _argo = Argo(Candidate, false, "candidate-hash"); _alb = Alb(0, 100); _ecs = Ecs(Candidate); _stable = Ecs(Candidate);
-            _lambda = Lambda(Candidate); _containerApp = ContainerApp(Candidate); _production = Functions(Candidate);
-            _slot = Functions(Prior); _activeDestination = "http://127.0.0.1:18081/";
+            _lambda = Lambda(Candidate); _activeDestination = "http://127.0.0.1:18081/";
             _containers = [Container("rollback-contract-18081", YarpRollingDeployBackend.RoleStandby, Candidate, true)];
             _composeImage = Candidate;
             _composeReadback = scenario != "ambiguous-evidence";
@@ -354,7 +329,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             else if (scenario == "different-revision") SetRevision(backend, Other);
             else if (scenario == "ambiguous-evidence")
             {
-                _argo = Argo(Candidate, true, null); _ecs = Ecs(null); _containerApp = new(); _lambda = Lambda(null);
+                _argo = Argo(Candidate, true, null); _ecs = Ecs(null); _lambda = Lambda(null);
             }
         }
 
@@ -373,9 +348,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                     _stable = Ecs(revision);
                     _ecs = _scenario == "exact-prior" ? Ecs(Candidate) : Ecs(revision);
                     break;
-                case "honua-azure-container-apps-revision": _containerApp = ContainerApp(revision); break;
                 case "honua-gitops-aws-lambda": _lambda = Lambda(revision); break;
-                case "honua-gitops-azure-functions": _production = Functions(revision); break;
                 case "honua-yarp-rolling":
                     _containers = [Container("rollback-contract-18080", YarpRollingDeployBackend.RoleActive, revision, true)];
                     _activeDestination = "http://127.0.0.1:18080/"; break;
@@ -457,24 +430,6 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             if (!IsNoOp()) _lambda = Lambda(Prior); return Task.FromResult(_lambda);
         }
 
-        public Task<AzureContainerAppsTrafficState> GetTrafficStateAsync(string subscriptionId, string resourceGroupName, string appName, CancellationToken cancellationToken = default) => Task.FromResult(_containerApp);
-        public Task<AzureContainerAppsRevisionState> GetRevisionAsync(string subscriptionId, string resourceGroupName, string appName, string revisionName, CancellationToken cancellationToken = default) => Task.FromResult(new AzureContainerAppsRevisionState { RevisionName = revisionName, Active = true, HealthState = "Healthy" });
-        public Task<AzureContainerAppsTrafficUpdateResult> UpdateTrafficAsync(string subscriptionId, string resourceGroupName, string appName, IReadOnlyList<AzureContainerAppsTrafficWeight> weights, CancellationToken cancellationToken = default)
-        {
-            if (ShouldFailTransiently()) throw new HttpRequestException("transient provider failure");
-            if (!IsNoOp()) _containerApp = ContainerApp(Prior);
-            return Task.FromResult(new AzureContainerAppsTrafficUpdateResult { StatusCode = HttpStatusCode.OK });
-        }
-        public Task ActivateRevisionAsync(string subscriptionId, string resourceGroupName, string appName, string revisionName, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task<AzureFunctionsSiteConfigState> GetSiteConfigAsync(string subscriptionId, string resourceGroupName, string functionAppName, string? slotName, CancellationToken cancellationToken = default) => Task.FromResult(slotName is null ? _production : _slot);
-        public Task<AzureFunctionsSlotSwapResult> SwapSlotWithProductionAsync(string subscriptionId, string resourceGroupName, string functionAppName, string slotName, bool preserveVnet, CancellationToken cancellationToken = default)
-        {
-            if (ShouldFailTransiently()) throw new HttpRequestException("transient provider failure");
-            if (!IsNoOp()) _production = Functions(Prior);
-            return Task.FromResult(new AzureFunctionsSlotSwapResult { StatusCode = HttpStatusCode.OK });
-        }
-
         public Task<bool> IsAvailableAsync(string executable, CancellationToken cancellationToken) => Task.FromResult(true);
         public Task<string> RunAsync(ContainerRunRequest request, CancellationToken cancellationToken)
         {
@@ -539,8 +494,6 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             }]
         };
         private static AwsLambdaAliasState Lambda(string? revision) => new() { AliasName = "live", FunctionVersion = revision };
-        private static AzureContainerAppsTrafficState ContainerApp(string revision) => new() { Traffic = [new AzureContainerAppsTrafficWeight { RevisionName = revision, Weight = 100 }] };
-        private static AzureFunctionsSiteConfigState Functions(string image) => new() { LinuxFxVersion = $"DOCKER|{image}" };
         private static ContainerSummary Container(string name, string role, string revision, bool running) => new()
         {
             Id = name,

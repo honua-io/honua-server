@@ -146,11 +146,8 @@ deploy API shifts weights or swaps revisions through it:
 | Kubernetes + Argo Rollouts | `honua-kubernetes-argo-rollouts` | Canary analysis |
 | AWS ECS/Fargate | `honua-aws-ecs-alb` | ALB weighted target groups |
 | AWS Lambda | `honua-gitops-aws-lambda` | Alias weighted versions |
-| Azure Container Apps | `honua-azure-container-apps-revision` | Revision traffic split |
-| Azure Functions | `honua-gitops-azure-functions` | Staging slot swap |
 
-GitOps passthrough variants (`honua-gitops-kubernetes`, `honua-gitops-aws-ecs`,
-`honua-gitops-azure-container-apps`) hand off to your GitOps repository instead of acting directly;
+GitOps passthrough variants (`honua-gitops-kubernetes`, `honua-gitops-aws-ecs`) hand off to your GitOps repository instead of acting directly;
 they report `rollbackSupported: false`, because Honua cannot revert a workload it does not drive.
 
 **Self-hosted rolling.** For on-prem and air-gapped hosts with no platform control plane, the server
@@ -186,6 +183,6 @@ See [Authentication](../guides/secure/authentication.md) and [TLS and mTLS](../g
 - [Protocols](protocols.md) — the full protocol-to-endpoint matrix
 - [Data model](data-model.md) — connections, layers, services, and styles
 - [Docker Compose deployment](../guides/deploy/docker-compose.md) and [Kubernetes](../guides/deploy/kubernetes.md)
-- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, Container Apps, Functions, EKS/AKS
+- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, EKS/AKS
 - [Upgrade and roll back](../guides/deploy/upgrade-and-rollback.md) — canary gates, rollback taxonomy
 - [Operations](../guides/deploy/backup-and-restore.md) — jobs, workflows, monitoring

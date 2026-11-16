@@ -36,8 +36,8 @@ class ServingImageReuseTests(TestCase):
     def test_digest_mismatch_rebuilds(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "marker.json"
-            path.write_text(json.dumps(MODULE.marker("functions", "b" * 64)), encoding="utf-8")
-            skip, reason = MODULE.decide("true", "functions", DIGEST, path)
+            path.write_text(json.dumps(MODULE.marker("lambda", "b" * 64)), encoding="utf-8")
+            skip, reason = MODULE.decide("true", "lambda", DIGEST, path)
             self.assertFalse(skip)
             self.assertIn("does not match", reason)
 

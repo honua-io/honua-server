@@ -41,10 +41,6 @@
     "authorization": "Proof runs mirror into a proof-scoped repository (BASE_REPO). That expression compares without case, so a branch named like trunk would mirror into the production base repository, which holds only digest-pinned copies of public base images.",
     "environment": "Added with the nightly proof-scope change, so that proof runs do not need the publish environment."
   },
-  "nightly-container-build.yml:verify-functions-aot": {
-    "authorization": "Runs on other refs as a proof and pushes untagged candidate digests; tags are assigned only when select-candidate sets publish. Proof pushes move to a proof-scoped repository with the nightly environment change.",
-    "environment": "Added with the nightly proof-scope change, so that proof runs do not need the publish environment."
-  },
   "release-bundle.yml:promote": {
     "authorization": "Runs only for a trunk candidate (release-context) and in the release-promote environment."
   },

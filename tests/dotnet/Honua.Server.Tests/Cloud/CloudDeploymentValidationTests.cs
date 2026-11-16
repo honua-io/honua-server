@@ -111,8 +111,7 @@ public sealed class CloudDeploymentValidationTests
         else
         {
             var platform = Environment.GetEnvironmentVariable(PlatformEnv);
-            if (string.Equals(platform, "aws-lambda", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(platform, "azure-functions", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(platform, "aws-lambda", StringComparison.OrdinalIgnoreCase))
             {
                 root.GetProperty("deploymentMode").GetString().Should().Be("SingleInstance");
             }

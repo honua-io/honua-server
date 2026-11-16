@@ -160,32 +160,6 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_UsesDefaultHonuaHttpPreset_ForAzureContainerAppsTargets()
-    {
-        var capturedQueries = new ConcurrentQueue<string>();
-        var evaluator = CreateEvaluator(
-            capturedQueries,
-            responses: CreateSuccessfulResponses("25", "0.02", "130"));
-
-        var decision = await evaluator.EvaluateAsync(CreateOperation(
-            DeployTargetKind.AzureContainerApps,
-            new Dictionary<string, string>
-            {
-                ["telemetry.connection"] = "prod-prom",
-                ["telemetry.prometheus.job"] = "honua-aca"
-            },
-            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
-
-        decision.Should().NotBeNull();
-
-        var queries = capturedQueries.ToArray();
-        queries.Should().HaveCount(3);
-        queries[0].Should().Contain("honua_http_request_total{job=\"honua-aca\"}[5m]");
-        queries[1].Should().Contain("honua_http_request_total{job=\"honua-aca\",status_code=~\"5..\"}[5m]");
-        queries[2].Should().Contain("honua_http_request_duration_ms_bucket{job=\"honua-aca\"}[5m]");
-    }
-
-    [Fact]
     public async Task EvaluateAsync_UsesExplicitQueryOverrides_WhenProvidedAlongsidePreset()
     {
         var capturedQueries = new ConcurrentQueue<string>();

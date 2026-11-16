@@ -109,7 +109,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
         var decision = await evaluator.EvaluateAsync(CreateOperation(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-azmon",
-            ["telemetry.policy"] = "azure-aca-canary",
+            ["telemetry.policy"] = "kubernetes-canary",
             ["telemetry.prometheus.canary_job"] = "honua-canary"
         }));
 
@@ -367,8 +367,8 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
             Deploy = new DeployOperationSpec
             {
                 TargetId = "prod-api",
-                TargetKind = DeployTargetKind.AzureContainerApps,
-                Backend = "honua-azure-container-apps-revision",
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-kubernetes-argo-rollouts",
                 Environment = "production",
                 TargetName = "honua-server",
                 ArtifactReference = "ghcr.io/honua/server",

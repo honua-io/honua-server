@@ -36,7 +36,6 @@ public sealed partial class NightlyImageCertificationTests
         "mirror-base-images",
         "build-aot",
         "build-lambda-aot",
-        "verify-functions-aot",
         "build-jit",
         "compose-executor",
     ];
@@ -76,19 +75,19 @@ public sealed partial class NightlyImageCertificationTests
 
         nightly.Should().NotContain("type=sha", "metadata-action sha tags name github.sha, not the candidate");
         nightly.Should().NotContain("HONUA_GIT_SHA=${{ github.sha }}");
-        nightly.Should().Contain($"HONUA_GIT_SHA={CandidateSha}", Exactly.Times(4),
-            "AOT, Lambda AOT, Functions AOT and JIT are all stamped with the candidate sha");
-        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(5),
+        nightly.Should().Contain($"HONUA_GIT_SHA={CandidateSha}", Exactly.Times(3),
+            "AOT, Lambda AOT and JIT are all stamped with the candidate sha");
+        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
             "the serving variants and Compose executor must bind their config revision to the candidate sha");
-        nightly.Should().Contain($"annotations: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
+        nightly.Should().Contain($"annotations: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(3),
             "metadata-action's default revision annotation names github.sha too; it must name the candidate");
-        nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(4));
+        nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(3));
         nightly.Should().Contain("--annotation \"index:org.opencontainers.image.revision=${CANDIDATE_SHA}\"", Exactly.Times(3),
             "every published multi-arch index is annotated with the candidate sha");
-        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(10),
+        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(9),
             "only the selector itself checks out the workflow revision; every build, including the Compose executor, checks out the candidate");
-        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(9),
-            "six builds plus the three manifest jobs' sparse checkout of the immutable-tag guard");
+        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(8),
+            "five builds plus the three manifest jobs' sparse checkout of the immutable-tag guard");
         foreach (var manifest in new[] { "manifest-aot", "manifest-lambda-aot", "manifest-jit" })
         {
             var block = Job(nightly, manifest);
@@ -198,11 +197,8 @@ public sealed partial class NightlyImageCertificationTests
             steps.Should().Contain("if [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then", job);
         }
 
-        foreach (var job in new[] { "mirror-base-images", "verify-functions-aot" })
-        {
-            IfOf(Job(nightly, job)).Should().Be("needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'",
-                $"{job} must not build in a run that handed the candidate off");
-        }
+        IfOf(Job(nightly, "mirror-base-images")).Should().Be("needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'",
+            "mirror-base-images must not build in a run that handed the candidate off");
     }
 
     [ArchitectureTest]
@@ -250,7 +246,6 @@ public sealed partial class NightlyImageCertificationTests
                      "type=raw,value=nightly-aot\n",
                      "type=raw,value=nightly-lambda-aot\n",
                      $"type=raw,value=nightly-jit-{CandidateSha7}",
-                     $"type=raw,value=nightly-functions-aot-{CandidateSha7}",
                  })
         {
             nightly.Should().Contain(tag);
@@ -260,7 +255,6 @@ public sealed partial class NightlyImageCertificationTests
                  {
                      "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
                      "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
-                     "boundary-candidate-nightly-functions-aot-${{ github.run_id }}-${{ github.run_attempt }}",
                  })
         {
             nightly.Should().Contain(staging);
@@ -272,7 +266,7 @@ public sealed partial class NightlyImageCertificationTests
     {
         var nightly = Read(NightlyPath);
 
-        foreach (var job in new[] { "build-aot", "build-lambda-aot", "verify-functions-aot" })
+        foreach (var job in new[] { "build-aot", "build-lambda-aot" })
         {
             var block = Job(nightly, job);
             block.Should().Contain("git archive \"${GITHUB_SHA}\" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py",

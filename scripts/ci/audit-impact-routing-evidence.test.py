@@ -184,12 +184,11 @@ def native_receipt(
     changed_paths: list[str] | None = None,
 ) -> dict:
     if serving is None:
-        serving = {"generic": True, "lambda": False, "functions": False}
+        serving = {"generic": True, "lambda": False}
     if legacy_serving is None:
         legacy_serving = {
             "generic": True,
             "lambda": True,
-            "functions": True,
         }
     if image_inputs is None:
         image_inputs = {
@@ -643,7 +642,7 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         archive(archives, 101, MODULE.PR_GATE_STREAM, pr_gate_receipt(blobs))
         archive(archives, 102, MODULE.NATIVE_STREAM, native_receipt(blobs, pr=11, head=HEAD_B, worker=True))
         archive(archives, 103, MODULE.NATIVE_STREAM, native_receipt(blobs, pr=12, head=HEAD_C, worker=False))
-        lambda_only = {"generic": False, "lambda": True, "functions": False}
+        lambda_only = {"generic": False, "lambda": True}
         archive(
             archives,
             104,
@@ -1095,7 +1094,7 @@ def test_empty_diff_receipts_are_evidence_not_integrity_failures() -> None:
     commit with a genuinely empty diff and an all-false routing decision.
     """
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
-    quiet = {"generic": False, "lambda": False, "functions": False}
+    quiet = {"generic": False, "lambda": False}
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         archives = root / "archives"
@@ -1141,8 +1140,8 @@ def test_empty_diff_receipts_are_evidence_not_integrity_failures() -> None:
             ),
             native_receipt(
                 blobs, pr=4138, head=HEAD_B, worker=False,
-                serving={"generic": True, "lambda": False, "functions": False},
-                legacy_serving={"generic": True, "lambda": False, "functions": False},
+                serving={"generic": True, "lambda": False},
+                legacy_serving={"generic": True, "lambda": False},
                 legacy_worker=False,
                 changed_paths=[],
             ),
@@ -1256,7 +1255,7 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     )
 
 
-ALL_VARIANTS = {"generic": True, "lambda": True, "functions": True}
+ALL_VARIANTS = {"generic": True, "lambda": True}
 
 
 def shared_digests(tag: str = "shared") -> dict:
@@ -1403,12 +1402,12 @@ def test_reuse_only_credits_variants_the_workflow_actually_built() -> None:
     """Legacy case arms gate each variant, so an unbuilt variant is not evidence."""
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     shared = shared_digests()
-    generic_only = {"generic": True, "lambda": False, "functions": False}
+    generic_only = {"generic": True, "lambda": False}
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         ledger = reuse_ledger(
             [
-                # Legacy built generic only, even though the candidate wanted all three.
+                # Legacy built generic only, even though the candidate wanted every variant.
                 native_receipt(
                     blobs, pr=11, head=HEAD_B, worker=False, serving=ALL_VARIANTS,
                     legacy_serving=generic_only, legacy_worker=False,
@@ -1436,21 +1435,21 @@ def test_reuse_keys_are_scoped_per_variant() -> None:
     """A collapsed variant digest must not credit one variant's build to another."""
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     collapsed = dict(shared_digests())
-    collapsed["serving_functions"] = collapsed["serving_lambda"]
-    lambda_only = {"generic": False, "lambda": True, "functions": False}
-    functions_only = {"generic": False, "lambda": False, "functions": True}
+    collapsed["serving_lambda"] = collapsed["serving_generic"]
+    generic_only = {"generic": True, "lambda": False}
+    lambda_only = {"generic": False, "lambda": True}
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         ledger = reuse_ledger(
             [
                 native_receipt(
-                    blobs, pr=11, head=HEAD_B, worker=False, serving=lambda_only,
-                    legacy_serving=lambda_only, legacy_worker=False,
+                    blobs, pr=11, head=HEAD_B, worker=False, serving=generic_only,
+                    legacy_serving=generic_only, legacy_worker=False,
                     image_inputs=collapsed, gate_run_id=1000,
                 ),
                 native_receipt(
-                    blobs, pr=11, head=HEAD_C, worker=False, serving=functions_only,
-                    legacy_serving=functions_only, legacy_worker=False,
+                    blobs, pr=11, head=HEAD_C, worker=False, serving=lambda_only,
+                    legacy_serving=lambda_only, legacy_worker=False,
                     image_inputs=collapsed, gate_run_id=1001,
                 ),
             ],
@@ -1505,7 +1504,7 @@ def test_supersession_can_be_witnessed_by_a_later_receipt() -> None:
     past. Still fail closed when no witness of either kind exists.
     """
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
-    ALL = {"generic": True, "lambda": True, "functions": True}
+    ALL = {"generic": True, "lambda": True}
 
     def receipt(head: str, gate: int) -> dict:
         return native_receipt(
@@ -2015,7 +2014,7 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
 def test_seven_day_receipt_store_replay() -> None:
     """Replay concurrent, independent run/attempt artifacts and discarded heads."""
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
-    quiet = {"generic": False, "lambda": False, "functions": False}
+    quiet = {"generic": False, "lambda": False}
     now = datetime(2026, 9, 8, 0, tzinfo=timezone.utc)
     window_policy = MODULE.load_policy(json.loads(
         (REPOSITORY_ROOT / ".github/impact-routing-promotion.json").read_text()

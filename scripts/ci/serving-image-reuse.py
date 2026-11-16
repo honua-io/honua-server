@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = "honua.ci.serving-image-verification/v1"
-VARIANTS = ("generic", "lambda", "functions")
+VARIANTS = ("generic", "lambda")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 
 

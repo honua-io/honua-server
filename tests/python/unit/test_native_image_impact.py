@@ -58,7 +58,7 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
         self.assertEqual(
             result["candidate"]["serving_variants"],
-            {"generic": True, "lambda": True, "functions": True},
+            {"generic": True, "lambda": True},
         )
         self.assertFalse(result["candidate"]["worker_build"])
 
@@ -77,38 +77,28 @@ class NativeImageImpactTests(unittest.TestCase):
         result = report("Dockerfile")
         for detector in ("candidate", "legacy"):
             self.assertEqual(result[detector]["serving_variants"],
-                             {"generic": True, "lambda": False, "functions": False})
+                             {"generic": True, "lambda": False})
         self.assertIn("Dockerfile", SELECTION["serving_generic"])
         self.assertNotIn("Dockerfile", SELECTION["serving_lambda"])
-        self.assertNotIn("Dockerfile", SELECTION["serving_functions"])
 
     def test_variant_dockerfiles_remain_independent(self) -> None:
         generic = report("docker/Dockerfile.aot")
         self.assertEqual(
             generic["candidate"]["serving_variants"],
-            {"generic": True, "lambda": False, "functions": False},
+            {"generic": True, "lambda": False},
         )
         self.assertEqual(
             generic["legacy"]["serving_variants"],
-            {"generic": True, "lambda": False, "functions": False},
+            {"generic": True, "lambda": False},
         )
         lambda_only = report("docker/Dockerfile.lambda.aot")
         self.assertEqual(
             lambda_only["legacy"]["serving_variants"],
-            {"generic": False, "lambda": True, "functions": False},
+            {"generic": False, "lambda": True},
         )
         self.assertEqual(
             lambda_only["candidate"]["serving_variants"],
             lambda_only["legacy"]["serving_variants"],
-        )
-        functions = report("docker/cloud/azure-functions/host.json")
-        self.assertEqual(
-            functions["candidate"]["serving_variants"],
-            {"generic": False, "lambda": False, "functions": True},
-        )
-        self.assertEqual(
-            functions["candidate"]["serving_variants"],
-            functions["legacy"]["serving_variants"],
         )
 
     def test_worker_rootfs_change_does_not_select_serving(self) -> None:
@@ -546,7 +536,7 @@ class PolicyDriftTests(unittest.TestCase):
 
     def test_variant_pattern_claimed_by_two_variants_fails_closed(self) -> None:
         broken = json.loads(json.dumps(POLICY))
-        broken["serving_variant_patterns"]["functions"] = ["docker/Dockerfile.aot"]
+        broken["serving_variant_patterns"]["lambda"] = ["docker/Dockerfile.aot"]
         with self.assertRaises(MODULE.PolicyError):
             MODULE.validate_policy(ROOT, broken)
 

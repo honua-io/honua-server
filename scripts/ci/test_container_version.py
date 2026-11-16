@@ -46,8 +46,8 @@ class ContainerVersionTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
         self.assertIn('release_version:', workflow)
         self.assertIn('-f release_version="${RELEASE_VERSION}"', workflow)
-        self.assertEqual(workflow.count('VERSION=${{ needs.select-candidate.outputs.version }}'), 4)
-        self.assertEqual(workflow.count('org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}'), 8)
+        self.assertEqual(workflow.count('VERSION=${{ needs.select-candidate.outputs.version }}'), 3)
+        self.assertEqual(workflow.count('org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}'), 6)
         self.assertEqual(workflow.count('index:org.opencontainers.image.version=${IMAGE_VERSION}'), 3)
 
     def test_handoff_handles_existing_images_and_older_workflow_inputs(self):
@@ -85,7 +85,7 @@ class ContainerVersionTests(unittest.TestCase):
 
     def test_dockerfiles_stamp_publish_and_runtime_label(self):
         for name in ('Dockerfile', 'docker/Dockerfile.aot', 'docker/Dockerfile.lambda',
-                     'docker/Dockerfile.lambda.aot', 'docker/Dockerfile.functions.aot'):
+                     'docker/Dockerfile.lambda.aot'):
             with self.subTest(name=name):
                 dockerfile = (ROOT / name).read_text()
                 self.assertIn('ARG VERSION=', dockerfile)
@@ -95,7 +95,7 @@ class ContainerVersionTests(unittest.TestCase):
 
     def test_publish_flags_expand_as_individual_arguments_and_preserve_local_default(self):
         for name in ('Dockerfile', 'docker/Dockerfile.aot', 'docker/Dockerfile.lambda',
-                     'docker/Dockerfile.lambda.aot', 'docker/Dockerfile.functions.aot'):
+                     'docker/Dockerfile.lambda.aot'):
             text = (ROOT / name).read_text()
             flags = text.split('dotnet publish src/Honua.Server/Honua.Server.csproj', 1)[1].split('--configuration', 1)[0]
             command = 'dotnet() { printf "%s\\n" "$@"; }; dotnet' + flags
