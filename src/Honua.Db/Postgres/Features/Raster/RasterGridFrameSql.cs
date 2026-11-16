@@ -3,17 +3,8 @@
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Pads and crops an aligned raster to an explicit output grid without stretching its pixels.
-/// </summary>
 internal static class RasterGridFrameSql
 {
-    /// <summary>
-    /// Frames trusted SQL raster expressions onto the reference grid. Resampling alone preserves
-    /// the source extent; the canvas supplies uncovered cells and clipping removes overflow.
-    /// Source NoData metadata is restored after union/clipping so valid zero pixels survive.
-    /// Bands without a NoData value retain opaque zero background in uncovered cells.
-    /// </summary>
     internal static string FrameAlignedRaster(string rasterExpression, string gridExpression)
         => $"""
             (

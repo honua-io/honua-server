@@ -5,39 +5,26 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Abstractions;
 
-/// <summary>
-/// Persistence contract for Studio package drafts, immutable versions, and lifecycle requests.
-/// </summary>
 public interface IStudioPackageStore
 {
-    /// <summary>Gets the persistence mode backing the store.</summary>
     StudioPackagePersistenceMode PersistenceMode { get; }
 
-    /// <summary>Creates a mutable package draft.</summary>
     Task<StudioPackageDraft> CreateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets a mutable package draft by identifier.</summary>
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates a mutable package draft.</summary>
     Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default);
 
-    /// <summary>Deletes a mutable package draft.</summary>
     Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates an immutable package content version.</summary>
     Task<StudioContentVersion> CreateVersionAsync(StudioPackageDraft draft, string? changeNote, string? actorId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Creates an immutable version and durably associates it with the saved-map operation cursor
-    /// it contains. Durable stores must commit both records atomically.
-    /// </summary>
     Task<StudioContentVersion> CreateCheckpointVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -45,90 +32,41 @@ public interface IStudioPackageStore
         StudioVersionCheckpoint checkpoint,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets the newest unacknowledged checkpoint version for a map whose cursor is within the
-    /// supplied inclusive bounds.
-    /// </summary>
     Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
         long throughCursor,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Marks a checkpoint version as reflected in the operation-log cursor.</summary>
     Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists immutable versions for a content item.</summary>
     Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets one immutable content version.</summary>
     Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets current and published pointers (and recorded owner) for a content item.</summary>
     Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists Studio content items matching the supplied query, ordered by <c>updatedAt</c>
-    /// descending with <c>itemId</c> descending as a stable tiebreak.
-    /// </summary>
     Task<StudioContentItemListResult> ListContentItemsAsync(StudioContentItemQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists mutable Studio package drafts matching the supplied query, ordered by
-    /// <c>updatedAt</c> descending with <c>draftId</c> descending as a stable tiebreak.
-    /// </summary>
     Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Creates a persisted publication request for an immutable version and, when the request is
-    /// accepted, advances the item's published pointer.
-    /// </summary>
-    /// <param name="request">The publication request to persist.</param>
-    /// <param name="expectedCurrentVersionId">
-    /// Compare-and-set precondition (honua-server#3980): the item's <c>current_version_id</c> as
-    /// observed when the proposal was validated/approved. Implementations must compare it against
-    /// the live pointer <em>atomically with</em> the published-pointer update, so a draft saved
-    /// between validation and actuation cannot publish a version the reviewer never approved as
-    /// current. <see langword="null"/> waives the precondition and is reserved for callers that
-    /// have no approved pointer expectation to assert.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <exception cref="StudioPublicationPointerConflictException">
-    /// The item's current pointer no longer equals <paramref name="expectedCurrentVersionId"/>;
-    /// nothing is persisted.
-    /// </exception>
-    /// <exception cref="StudioPublicationRouteConflictException">
-    /// An accepted request names a route already governed by a different content item.
-    /// Nothing is persisted.
-    /// </exception>
     Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
         Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Gets one persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
         Guid requestId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets the accepted publication request that currently governs <paramref name="route"/>
-    /// (honua-server#4907). Each item is governed by its newest accepted publication request.
-    /// A route has one governing item: creating an accepted request for a route another item
-    /// already governs is rejected. Republishing an item at another route retires the old
-    /// one. Returns <see langword="null"/> when nothing is published at the route. Callers
-    /// serve the item's published pointer rather than the request's version, so a rollback
-    /// is honoured.
-    /// </summary>
     Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Creates a persisted rollback request and updates item pointers.</summary>
     Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -138,16 +76,8 @@ public interface IStudioPackageStore
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Raised when a publication request cannot advance an item's published pointer because the
-/// item's current pointer no longer equals the version the approval validated
-/// (honua-server#3980). Derives from <see cref="InvalidOperationException"/> so it flows through
-/// the existing Studio conflict mapping (<c>409 Conflict</c> on the REST surface, a failed
-/// operation handle with <c>errorKind=conflict</c> on the durable operation runtime).
-/// </summary>
 public sealed class StudioPublicationPointerConflictException : InvalidOperationException
 {
-    /// <summary>Initializes the conflict with the observed and expected pointers.</summary>
     public StudioPublicationPointerConflictException(Guid itemId, Guid? expectedCurrentVersionId, Guid? actualCurrentVersionId)
         : base(
             $"Studio content item '{itemId:D}' advanced past the approved version; " +
@@ -159,33 +89,17 @@ public sealed class StudioPublicationPointerConflictException : InvalidOperation
         ActualCurrentVersionId = actualCurrentVersionId;
     }
 
-    /// <summary>Content item whose pointer moved.</summary>
     public Guid ItemId { get; }
 
-    /// <summary>Current version the approval validated against.</summary>
     public Guid? ExpectedCurrentVersionId { get; }
 
-    /// <summary>
-    /// Current version observed at actuation, or <see langword="null"/> when the durable store
-    /// rejected the compare-and-set without reporting the winning pointer.
-    /// </summary>
     public Guid? ActualCurrentVersionId { get; }
 
     private static string Describe(Guid? versionId) => versionId?.ToString("D") ?? "(none)";
 }
 
-/// <summary>
-/// Raised when an accepted publication request names a route that another content item
-/// already governs. Derives from <see cref="InvalidOperationException"/> so it flows
-/// through the existing Studio conflict mapping (<c>409 Conflict</c> on the REST surface,
-/// a failed operation handle with <c>errorKind=conflict</c> on the durable operation runtime).
-/// </summary>
 public sealed class StudioPublicationRouteConflictException : InvalidOperationException
 {
-    /// <summary>Initializes the conflict for a route owned by another item.</summary>
-    /// <param name="route">The intent route that is already claimed.</param>
-    /// <param name="itemId">The item that tried to claim <paramref name="route"/>.</param>
-    /// <param name="owningItemId">The item whose governing request already owns the route.</param>
     public StudioPublicationRouteConflictException(string route, Guid itemId, Guid owningItemId)
         : base($"Route '{route}' is already claimed by another Studio publication.")
     {
@@ -194,70 +108,38 @@ public sealed class StudioPublicationRouteConflictException : InvalidOperationEx
         OwningItemId = owningItemId;
     }
 
-    /// <summary>Intent route that is already claimed.</summary>
     public string Route { get; }
 
-    /// <summary>Content item that tried to claim <see cref="Route"/>.</summary>
     public Guid ItemId { get; }
 
-    /// <summary>Content item whose governing request already owns <see cref="Route"/>.</summary>
     public Guid OwningItemId { get; }
 }
 
-/// <summary>
-/// Validates Studio package envelopes.
-/// </summary>
 public interface IStudioPackageValidator
 {
-    /// <summary>Validates the supplied envelope.</summary>
     StudioValidationSummary Validate(StudioPackageEnvelope envelope);
 
-    /// <summary>Validates a publication intent override.</summary>
     StudioValidationSummary ValidatePublicationIntent(StudioPublicationIntent? intent);
 }
 
-/// <summary>
-/// Canonical Studio package lifecycle service.
-/// </summary>
 public interface IStudioPackageLifecycleService
 {
-    /// <summary>Gets package-family capability data.</summary>
     StudioPackageFamilyCapabilities GetCapabilities();
 
-    /// <summary>Creates a mutable package draft.</summary>
     Task<StudioPackageDraft> CreateDraftAsync(CreateStudioPackageDraftCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets a mutable package draft.</summary>
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates a mutable package draft.</summary>
     Task<StudioPackageDraft?> UpdateDraftAsync(Guid draftId, UpdateStudioPackageDraftCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>Deletes a mutable package draft.</summary>
     Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default);
 
-    /// <summary>Validates a mutable package draft and persists the validation summary.</summary>
     Task<StudioValidationSummary?> ValidateDraftAsync(Guid draftId, string? actorId, CancellationToken cancellationToken = default);
 
-    /// <summary>Builds a preview plan for a mutable package draft.</summary>
     Task<StudioPreviewPlan?> PreviewPlanAsync(Guid draftId, string? actorId, CancellationToken cancellationToken = default);
 
-    /// <summary>Saves a mutable package draft as an immutable content version.</summary>
-    /// <param name="draftId">Draft to version.</param>
-    /// <param name="changeNote">Optional note recorded on the immutable version.</param>
-    /// <param name="actorId">Identifier of the actor creating the version.</param>
-    /// <param name="expectedGeneration">
-    /// When supplied, the draft must still be at this generation or the save is refused with an
-    /// <see cref="InvalidOperationException"/>. Callers that first apply their own edit through
-    /// <see cref="UpdateDraftAsync(Guid, UpdateStudioPackageDraftCommand, CancellationToken)"/>
-    /// MUST pass the generation that update returned: without it the version is minted from
-    /// whatever generation happens to be current, so a concurrent write landing in between is
-    /// versioned instead — silently dropping the caller's just-applied edit
-    /// (honua-server#2999 review). Omit it to version the current generation, whatever it is.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<StudioContentVersion?> SaveDraftAsVersionAsync(
         Guid draftId,
         string? changeNote,
@@ -265,10 +147,6 @@ public interface IStudioPackageLifecycleService
         long? expectedGeneration = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Saves a draft as an immutable checkpoint version and atomically records the operation cursor
-    /// represented by that version.
-    /// </summary>
     Task<StudioContentVersion?> SaveDraftAsCheckpointVersionAsync(
         Guid draftId,
         string? changeNote,
@@ -277,65 +155,28 @@ public interface IStudioPackageLifecycleService
         StudioVersionCheckpoint checkpoint,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Finds a previously completed checkpoint that has not yet been reflected in the operation
-    /// log's checkpoint cursor.
-    /// </summary>
     Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
         long throughCursor,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Marks a checkpoint completion record as reflected in the operation log.</summary>
     Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists immutable content versions for an item.</summary>
     Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets current/published pointers and the recorded owner for a content item
-    /// (honua-server#3001), or <see langword="null"/> when the item does not exist.
-    /// </summary>
     Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists Studio content items matching the supplied query, ordered by <c>updatedAt</c>
-    /// descending with <c>itemId</c> descending as a stable tiebreak.
-    /// </summary>
     Task<StudioContentItemListResult> ListContentItemsAsync(StudioContentItemQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists mutable Studio package drafts matching the supplied query, ordered by
-    /// <c>updatedAt</c> descending with <c>draftId</c> descending as a stable tiebreak.
-    /// </summary>
     Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets one immutable content version.</summary>
     Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Compares two immutable content versions.</summary>
     Task<StudioVersionComparison?> CompareVersionsAsync(Guid itemId, Guid leftVersionId, Guid rightVersionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates a publication request for an immutable version.</summary>
-    /// <param name="itemId">Content item identifier.</param>
-    /// <param name="versionId">Immutable version requested for publication.</param>
-    /// <param name="expectedCurrentVersionId">
-    /// Compare-and-set precondition passed through to
-    /// <see cref="IStudioPackageStore.CreatePublicationRequestAsync"/> (honua-server#3980).
-    /// </param>
-    /// <param name="intent">Publication intent override.</param>
-    /// <param name="warningAcknowledgement">Optional acknowledgement for validation warnings.</param>
-    /// <param name="actorId">Requesting actor.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <exception cref="StudioPublicationPointerConflictException">
-    /// The item's current pointer moved after the proposal was validated.
-    /// </exception>
-    /// <exception cref="StudioPublicationRouteConflictException">
-    /// The effective route is already governed by a different content item.
-    /// </exception>
     Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -345,7 +186,6 @@ public interface IStudioPackageLifecycleService
         string? actorId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Creates a publication request with a caller-allocated polling identifier.</summary>
     Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -358,25 +198,18 @@ public interface IStudioPackageLifecycleService
         => CreatePublicationRequestAsync(
             itemId, versionId, expectedCurrentVersionId, intent, warningAcknowledgement, actorId, cancellationToken);
 
-    /// <summary>Gets one persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
         Guid requestId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets the accepted publication request that currently governs <paramref name="route"/>
-    /// (honua-server#4907); see <see cref="IStudioPackageStore.GetActivePublicationRequestByRouteAsync"/>.
-    /// </summary>
     Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Reopens an immutable version as a new mutable draft.</summary>
     Task<StudioPackageDraft?> ReopenVersionAsync(Guid itemId, Guid versionId, string? actorId, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates a rollback request and updates item pointers.</summary>
     Task<StudioRollbackRequest?> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -386,59 +219,38 @@ public interface IStudioPackageLifecycleService
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Command for creating a Studio package draft.
-/// </summary>
 public sealed record CreateStudioPackageDraftCommand
 {
-    /// <summary>Optional existing content item id; omitted for a new Studio content item.</summary>
     public Guid? ItemId { get; init; }
 
-    /// <summary>Machine-friendly package key.</summary>
     public required string PackageKey { get; init; }
 
-    /// <summary>Workspace identifier.</summary>
     public string? WorkspaceId { get; init; }
 
-    /// <summary>Owner principal identifier.</summary>
     public string? OwnerId { get; init; }
 
-    /// <summary>Owner observed during authorization when attaching to an existing item.</summary>
     public string? ExpectedExistingItemOwnerId { get; init; }
 
-    /// <summary>Whether authorization observed an existing item, including ownerless items.</summary>
     public bool ExpectedExistingItemPresent { get; init; }
 
-    /// <summary>Package envelope.</summary>
     public required StudioPackageEnvelope Envelope { get; init; }
 
-    /// <summary>Identifier of the actor creating the draft.</summary>
     public string? ActorId { get; init; }
 
-    /// <summary>Base immutable version when reopening.</summary>
     public Guid? BaseVersionId { get; init; }
 }
 
-/// <summary>
-/// Command for updating a Studio package draft.
-/// </summary>
 public sealed record UpdateStudioPackageDraftCommand
 {
-    /// <summary>Machine-friendly package key.</summary>
     public required string PackageKey { get; init; }
 
-    /// <summary>Workspace identifier.</summary>
     public string? WorkspaceId { get; init; }
 
-    /// <summary>Owner principal identifier.</summary>
     public string? OwnerId { get; init; }
 
-    /// <summary>Package envelope.</summary>
     public required StudioPackageEnvelope Envelope { get; init; }
 
-    /// <summary>Expected draft generation for optimistic concurrency.</summary>
     public long? Generation { get; init; }
 
-    /// <summary>Identifier of the actor updating the draft.</summary>
     public string? ActorId { get; init; }
 }

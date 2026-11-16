@@ -6,10 +6,6 @@ using Microsoft.Extensions.ObjectPool;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// PERFORMANCE OPTIMIZATION: Pooled object policy for dictionary allocations
-/// Reduces garbage collection pressure for frequently allocated dictionaries in ReadFeatureAsync
-/// </summary>
 internal sealed class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictionary<string, object?>>
 {
     public override Dictionary<string, object?> Create() => new();
@@ -27,10 +23,6 @@ internal sealed class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictiona
     }
 }
 
-/// <summary>
-/// PERFORMANCE OPTIMIZATION: Pooled object policy for StringBuilder allocations
-/// Reduces garbage collection pressure for frequently allocated StringBuilders in SQL generation
-/// </summary>
 internal sealed class StringBuilderPooledObjectPolicy : PooledObjectPolicy<StringBuilder>
 {
     public override StringBuilder Create() => new();

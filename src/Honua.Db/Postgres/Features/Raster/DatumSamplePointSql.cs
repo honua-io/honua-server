@@ -6,10 +6,6 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Sample-point reprojection for raster identify. A catalog entry uses that pipeline.
-/// No entry keeps two-argument <c>ST_Transform</c>.
-/// </summary>
 internal static class DatumSamplePointSql
 {
     internal static string Build(int pointSrid, int rasterSrid)

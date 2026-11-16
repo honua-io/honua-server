@@ -11,20 +11,6 @@ using Honua.Db.Redshift.Features.FeatureStore.Services;
 
 namespace Honua.Db.Redshift.Features.FeatureStore;
 
-/// <summary>
-/// Read-only Amazon Redshift feature provider (#1712).
-/// </summary>
-/// <remarks>
-/// <para>Implements the canonical <see cref="IFeatureDataProvider"/> + <see cref="IFeatureReader"/>
-/// surface for layers backed by Redshift <c>GEOMETRY</c>/<c>GEOGRAPHY</c> columns. Connectivity uses
-/// Npgsql (Redshift speaks the PostgreSQL wire protocol), but spatial behavior relies on Redshift's
-/// native spatial SQL functions rather than PostGIS. Statistics aggregates (COUNT/SUM/MIN/MAX/AVG/
-/// STDDEV/VAR plus GROUP BY) honor the same WHERE and spatial filter as SELECT. Edits, native MVT,
-/// native FlatGeobuf/Geobuf/GML, top-features, bins, and H3 are deliberately disabled on this slice
-/// and are advertised as such via <see cref="FeatureProviderCapabilities"/>.</para>
-/// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
-/// <see cref="FeatureProviderQueryRouter"/>.</para>
-/// </remarks>
 internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
@@ -65,19 +51,14 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         _boundConnection = binding?.Connection;
     }
 
-    /// <inheritdoc />
     public string ProviderName => DataProviderNames.Redshift;
 
-    /// <inheritdoc />
     public FeatureProviderCapabilities Capabilities => _capabilities;
 
-    /// <inheritdoc />
     public IFeatureReader Reader => this;
 
-    /// <inheritdoc />
     public IFeatureWriter? Writer => null;
 
-    /// <inheritdoc />
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
@@ -85,7 +66,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return new RedshiftFeatureStore(_dataAccess, _readSecurity, binding);
     }
 
-    /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -100,7 +80,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return features.Length == 0 ? null : features[0];
     }
 
-    /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -134,7 +113,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
-    /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         // The provider does not advertise native FlatGeobuf; return null so the server adapter
@@ -142,7 +120,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return Task.FromResult<byte[]?>(null);
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -150,7 +127,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -158,7 +134,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -166,7 +141,6 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -175,12 +149,10 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(GetTemporalExtentAsync), layerId);
 
-    /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -197,22 +169,18 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         };
     }
 
-    /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryTopFeaturesAsync), layerId);
 
-    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryDateBinsAsync), layerId);
 
-    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryBinsAsync), layerId);
 
-    /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);

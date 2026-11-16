@@ -18,11 +18,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IMigrationRunCatalog"/>. Persists
-/// run lifecycle records into <c>honua.migration_runs</c> using ON CONFLICT
-/// guards so apply services can retry safely. Slice 5 of issue #1015.
-/// </summary>
 internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
 {
     private const int MaxPageLimit = 100;

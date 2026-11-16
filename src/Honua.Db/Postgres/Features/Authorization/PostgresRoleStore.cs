@@ -10,13 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Authorization;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IRoleStore"/> (#1374). Persists role
-/// definitions, their per-operation permission grants, and role memberships to
-/// the <c>honua.rbac_*</c> tables created by migration 041, so RBAC survives
-/// process restart and is shared across scaled nodes. Replaces the process-local
-/// <c>InMemoryRoleStore</c> as the registered implementation.
-/// </summary>
 internal sealed class PostgresRoleStore : IRoleStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -24,12 +17,6 @@ internal sealed class PostgresRoleStore : IRoleStore
     private readonly string _permissionsTable;
     private readonly string _managedUserRolesTable;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresRoleStore"/> class.
-    /// </summary>
-    /// <param name="connectionProvider">The database connection provider.</param>
-    /// <param name="schemaName">Optional schema override (used by tests for
-    /// isolated schemas); defaults to the application schema.</param>
     public PostgresRoleStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
@@ -39,7 +26,6 @@ internal sealed class PostgresRoleStore : IRoleStore
         _managedUserRolesTable = SchemaSearchPath.QualifyTable("managed_user_roles", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -47,7 +33,6 @@ internal sealed class PostgresRoleStore : IRoleStore
         return roles;
     }
 
-    /// <inheritdoc />
     public async Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -55,7 +40,6 @@ internal sealed class PostgresRoleStore : IRoleStore
         return roles.Count == 0 ? null : roles[0];
     }
 
-    /// <inheritdoc />
     public async Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(role);
@@ -93,7 +77,6 @@ internal sealed class PostgresRoleStore : IRoleStore
         return role;
     }
 
-    /// <inheritdoc />
     public async Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(role);
@@ -153,7 +136,6 @@ internal sealed class PostgresRoleStore : IRoleStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -201,14 +183,12 @@ internal sealed class PostgresRoleStore : IRoleStore
         return true;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await ReadPermissionsAsync(connection.Connection, transaction: null, roleId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
         Guid roleId,
         IReadOnlyList<PermissionGrant> permissions,
@@ -238,7 +218,6 @@ internal sealed class PostgresRoleStore : IRoleStore
         return permissions;
     }
 
-    /// <inheritdoc />
     public async Task<EffectivePermissions> GetEffectivePermissionsAsync(
         string userId,
         IReadOnlyList<string> roles,

@@ -21,13 +21,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Apply-plan construction and execution for the GeoServer import: turns a
-/// filtered source inventory into a deterministic
-/// <see cref="MigrationApplyPlanArtifact"/>, executes each step against the
-/// catalog (workspaces, data sources, styles, layer groups), and aggregates the
-/// per-step results into the final <see cref="GeoServerImportResult"/>.
-/// </summary>
 internal sealed partial class GeoServerImportService
 {
     private async Task<MigrationApplyPlanArtifact> CreateApplyPlanAsync(
@@ -493,15 +486,6 @@ internal sealed partial class GeoServerImportService
         }
     }
 
-    /// <summary>
-    /// Persist a catalog service entry for each filtered GeoServer workspace.
-    /// </summary>
-    /// <remarks>
-    /// This is the slice-1 application of the migration manifest: workspaces become
-    /// idempotent <c>honua.services</c> rows so that subsequent layer-group and layer
-    /// apply steps can attach to them. Re-running the same manifest does not create
-    /// duplicates because the underlying writer uses <c>ON CONFLICT DO NOTHING</c>.
-    /// </remarks>
     private async Task<IReadOnlyList<MigrationApplyExecutionStepResult>> ApplyWorkspaceCatalogStepsAsync(
         FilteredResources filteredResources,
         GeoServerImportRequest request,
@@ -554,17 +538,6 @@ internal sealed partial class GeoServerImportService
         return results;
     }
 
-    /// <summary>
-    /// Persist a migration data-source row per filtered GeoServer data store.
-    /// </summary>
-    /// <remarks>
-    /// Slice 2 of issue #1015. GeoServer data stores are recorded in the
-    /// inventory as <c>ExternalDependency</c> entries — they do not appear as
-    /// resource-level apply-plan steps. We therefore iterate the filtered data
-    /// stores directly here so each apply run produces a deterministic step
-    /// result with create / skip / error outcomes per data source. Persistence
-    /// is idempotent via <c>ON CONFLICT (source_kind, source_id) DO NOTHING</c>.
-    /// </remarks>
     private async Task<IReadOnlyList<MigrationApplyExecutionStepResult>> ApplyDataSourceStepsAsync(
         FilteredResources filteredResources,
         GeoServerImportRequest request,
@@ -737,24 +710,6 @@ internal sealed partial class GeoServerImportService
         return string.Join(";", parts);
     }
 
-    /// <summary>
-    /// Persist a migration style row per filtered GeoServer style.
-    /// </summary>
-    /// <remarks>
-    /// Slice 3 of issue #1015. Each style apply-plan step produces an
-    /// idempotent row in <c>honua.migration_styles</c> with the original
-    /// source body, any converter output, and structured conversion
-    /// diagnostics. SLD styles are run through the registered
-    /// <see cref="ISldStyleConverter"/> when available; conversion warnings
-    /// and errors are persisted so operators can audit the deterministic
-    /// migration outcome. When the converter reports errors (or when no
-    /// converter is registered) the row is persisted with disposition
-    /// <c>manual-review</c> — we do not claim perfect SLD visual parity
-    /// when diagnostics report manual review (issue #1015 AC). Re-apply
-    /// is idempotent via PK on (source_kind, source_id). Cross-workspace
-    /// styles outside the operator's requested scope are rejected per
-    /// issue #1098.
-    /// </remarks>
     private async Task<MigrationApplyExecutionStepResult> ApplyStyleCatalogStepAsync(
         MigrationApplyPlanStep step,
         Dictionary<string, GeoServerStyleInfo> stylesById,

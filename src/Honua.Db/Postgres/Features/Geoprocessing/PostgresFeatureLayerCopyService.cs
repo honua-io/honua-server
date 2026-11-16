@@ -23,7 +23,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>Materializes a canonical filtered stream and publishes an independent typed layer.</summary>
 internal sealed class PostgresFeatureLayerCopyService(
     FeatureProviderQueryRouter router,
     IAdoNetDatabaseConnectionProvider connections,

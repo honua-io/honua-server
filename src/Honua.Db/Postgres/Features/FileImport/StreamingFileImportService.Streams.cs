@@ -51,10 +51,6 @@ internal sealed partial class StreamingFileImportService
         yield break;
     }
 
-    /// <summary>
-    /// Copies a non-seekable stream into a seekable temporary file (DeleteOnClose).
-    /// Delegates to <see cref="ImportStreamHelper.SpillToSeekableTempAsync"/>.
-    /// </summary>
     private static Task<FileStream> SpillToSeekableTempAsync(Stream source, CancellationToken cancellationToken)
         => ImportStreamHelper.SpillToSeekableTempAsync(source, cancellationToken);
 

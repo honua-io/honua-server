@@ -11,10 +11,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-/// <summary>
-/// Catalog receipt for job-artifact imports. A session advisory lock covers the attempt.
-/// The committed update runs on the import transaction, not on this connection.
-/// </summary>
 internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifactImportLedger
 {
     private const string Reserved = "reserved";

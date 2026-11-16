@@ -14,12 +14,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Inventory-artifact construction for the GeoServer source scan: builds
-/// containers, resources, styles, and external dependencies from the discovered
-/// <c>GeoServerServiceInfo</c>, then assembles a single
-/// <c>MigrationSourceInventoryArtifact</c> with summary/compatibility metadata.
-/// </summary>
 internal sealed partial class GeoServerImportService
 {
     private async Task<MigrationSourceInventoryArtifact> BuildInventoryArtifactAsync(

@@ -14,11 +14,6 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Db.Oracle.Features.Security;
 
-/// <summary>
-/// Oracle <see cref="IConnectionDriver"/>: builds an Oracle.ManagedDataAccess Easy Connect string
-/// (<c>Data Source=host:port/service</c>, where the connection's "database" is the service name / SID) and
-/// probes health with a real <see cref="OracleConnection"/> + <c>SELECT 1 FROM DUAL</c>.
-/// </summary>
 internal sealed partial class OracleConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<OracleConnectionDriver> _logger;
@@ -136,10 +131,8 @@ internal sealed partial class OracleConnectionDriver : IConnectionDriver, ISecur
     private partial void LogProbeFailed(Exception exception);
 }
 
-/// <summary>DI helper that registers the Oracle connection driver.</summary>
 public static class OracleConnectionDriverServiceCollectionExtensions
 {
-    /// <summary>Registers the Oracle <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
     public static IServiceCollection AddOracleConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

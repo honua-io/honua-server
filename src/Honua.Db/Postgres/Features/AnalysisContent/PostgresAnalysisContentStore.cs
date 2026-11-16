@@ -462,12 +462,6 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             return artifacts;
         });
 
-    /// <summary>
-    /// Runs a store operation and maps provider connectivity / transient / operational failures
-    /// to <see cref="AnalysisContentStoreUnavailableException"/> so a store outage surfaces as a
-    /// retryable 503 instead of a generic 500. Request-level conflicts and not-found results are
-    /// raised by the operation itself and pass through unchanged.
-    /// </summary>
     private static async Task<T> TranslateStoreFailuresAsync<T>(Func<Task<T>> operation)
     {
         try

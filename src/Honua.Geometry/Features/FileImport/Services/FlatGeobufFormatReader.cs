@@ -16,25 +16,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming FlatGeobuf format reader. Deserializes .fgb files into NTS features
-/// using forward-only sequential reads for memory-efficient processing.
-/// </summary>
 internal static class FlatGeobufFormatReader
 {
-    /// <summary>
-    /// Streams features from a FlatGeobuf file. Wraps the library's synchronous
-    /// lazy <see cref="FeatureCollectionConversions.Deserialize(Stream, NetTopologySuite.Geometries.Envelope)"/>
-    /// as an async enumerable with cancellation checks between features.
-    /// Passes no bounding-box filter so the library performs a forward-only sequential scan.
-    /// </summary>
-    /// <remarks>
-    /// The FlatGeobuf library requires <see cref="Stream.Position"/> and <see cref="Stream.Length"/>
-    /// to navigate past the spatial index. When the input stream does not support seeking
-    /// (e.g. <c>PrefixedReadStream</c> from the non-seekable CRS detection path or cloud-staged
-    /// downloads), the content is spilled to a temporary file with
-    /// <see cref="FileOptions.DeleteOnClose"/> to preserve constant-memory behavior for large files.
-    /// </remarks>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -73,11 +56,6 @@ internal static class FlatGeobufFormatReader
         }
     }
 
-    /// <summary>
-    /// Reads the feature count from a FlatGeobuf header. Returns null when the header
-    /// is unreadable or the count is zero (which the FlatGeobuf spec uses for "unknown").
-    /// The caller is responsible for resetting the stream position if needed.
-    /// </summary>
     internal static int? ReadHeaderFeatureCount(Stream stream)
     {
         try
@@ -92,13 +70,6 @@ internal static class FlatGeobufFormatReader
         }
     }
 
-    /// <summary>
-    /// Reads the SRID and, when code-based resolution fails, the raw CRS WKT from a
-    /// FlatGeobuf stream header. The caller can pass the WKT to
-    /// <see cref="Honua.Core.Features.Infrastructure.Abstractions.ICrsDetectionService.DetectFromWktAsync"/>
-    /// for authority-based SRID lookup.
-    /// The caller is responsible for resetting the stream position if needed.
-    /// </summary>
     internal static (int? Srid, string? CrsWkt, bool Declared) ReadCrsInfo(Stream stream)
     {
         try
@@ -116,10 +87,6 @@ internal static class FlatGeobufFormatReader
         }
     }
 
-    /// <summary>
-    /// Buffer-based variant of <see cref="ReadCrsInfo(Stream)"/> for non-seekable streams
-    /// where the first 8 KB has been read into a buffer.
-    /// </summary>
     internal static (int? Srid, string? CrsWkt) ReadCrsInfoFromHeader(byte[] headerBytes)
     {
         try
@@ -138,10 +105,6 @@ internal static class FlatGeobufFormatReader
         }
     }
 
-    /// <summary>
-    /// Extracts the raw WKT string from a parsed FlatGeobuf header CRS, if present.
-    /// Returns null when the header has no CRS or the WKT field is empty.
-    /// </summary>
     internal static string? ExtractCrsWkt(Header header)
     {
         var crs = header.Crs;
@@ -150,12 +113,6 @@ internal static class FlatGeobufFormatReader
         return string.IsNullOrEmpty(wkt) ? null : wkt;
     }
 
-    /// <summary>
-    /// Resolves the SRID from a parsed FlatGeobuf header. Per the FlatGeobuf spec,
-    /// an omitted <c>org</c> implies EPSG, so the numeric <c>code</c> is only trusted
-    /// when the authority is absent or explicitly EPSG. Non-EPSG authorities
-    /// (e.g. ESRI:102100) fall through to authority/codeString resolution or return null.
-    /// </summary>
     internal static int? ResolveSrid(Header header)
     {
         var crs = header.Crs;

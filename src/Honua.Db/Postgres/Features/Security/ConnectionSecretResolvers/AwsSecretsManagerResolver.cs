@@ -70,7 +70,6 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     private AwsCredentials? _cachedCredentials;
     private CredentialSource? _selectedCredentialSource;
 
-    /// <inheritdoc />
     public string ProviderName => ProviderType;
 
     public AwsSecretsManagerResolver(IHttpClientFactory httpClientFactory, ILogger<AwsSecretsManagerResolver> logger)
@@ -81,13 +80,6 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     {
     }
 
-    /// <summary>
-    /// Bootstrap constructor for callers that must resolve a secret-backed connection string before the
-    /// DI container exists — e.g. Program.cs's Redis <c>ConnectionMultiplexer</c> wiring, which runs
-    /// ahead of <c>WebApplicationBuilder.Build()</c> and therefore has no <see cref="IHttpClientFactory"/>
-    /// to pull the named resilient clients from (honua-server#3011). Callers own the supplied
-    /// <see cref="HttpClient"/> instances and are responsible for disposing them.
-    /// </summary>
     internal AwsSecretsManagerResolver(
         HttpClient secretsClient,
         HttpClient metadataClient,
@@ -100,7 +92,6 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         _retryDelay = retryDelay ?? DefaultRetryDelay;
     }
 
-    /// <inheritdoc />
     public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
@@ -276,7 +267,6 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         return Task.Delay(delayMs, cancellationToken);
     }
 
-    /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {
         if (string.IsNullOrWhiteSpace(secretKey))
@@ -314,13 +304,9 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         return true;
     }
 
-    /// <summary>
-    /// Compatibility shim for callers still invoking the older async capability probe directly on this concrete type.
-    /// </summary>
     public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
         => Task.FromResult(CanResolve(secretKey));
 
-    /// <inheritdoc />
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))
@@ -841,15 +827,6 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         }
     }
 
-    /// <summary>
-    /// Resolves the <c>Authorization</c> header value for the container credentials endpoint:
-    /// <c>AWS_CONTAINER_AUTHORIZATION_TOKEN</c> wins when set (ECS / custom agents);
-    /// otherwise <c>AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE</c> is read (EKS Pod Identity, whose agent at
-    /// <c>http://169.254.170.23/v1/credentials</c> rejects requests without the projected token). The
-    /// file is read fresh on every call because the kubelet rotates it. Returns <see langword="false"/>
-    /// only when the token file is configured but unusable; <paramref name="problem"/> then names the
-    /// failure without ever carrying the token contents.
-    /// </summary>
     internal static bool TryResolveContainerAuthorizationToken(out string? token, out string? problem)
     {
         problem = null;

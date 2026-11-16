@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Styling;
 
-/// <summary>
-/// PostgreSQL implementation of layer style persistence.
-/// </summary>
 internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
 {
     private const string SelectColumns = """
@@ -38,7 +35,6 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         _refsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_style_refs", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<LayerStyleDefinition?> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default)
     {
         string sql = $"""
@@ -82,7 +78,6 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         };
     }
 
-    /// <inheritdoc />
     public async Task<LayerStyleDefinition?> SetMapLibreStyleAsync(
         int layerId,
         string mapLibreStyleJson,
@@ -121,7 +116,6 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         return ReadStyle(reader);
     }
 
-    /// <inheritdoc />
     public async Task<LayerStyleDefinition?> SetStyleAsync(
         int layerId,
         string mapLibreStyleJson,
@@ -165,7 +159,6 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         return ReadStyle(reader);
     }
 
-    /// <inheritdoc />
     public async Task<LayerStyleDefinition?> SetDrawingInfoAsync(
         int layerId,
         string drawingInfoJson,

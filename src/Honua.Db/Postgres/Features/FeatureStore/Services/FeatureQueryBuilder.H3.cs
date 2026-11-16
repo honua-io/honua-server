@@ -13,16 +13,6 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
-    /// <summary>
-    /// Builds an H3 hexagonal grid aggregation query.
-    /// Uses h3-pg functions to convert feature geometries into H3 cell indices,
-    /// then groups by cell and computes requested statistics.
-    /// </summary>
-    /// <remarks>
-    /// H3 operates in geographic coordinates (WGS 84 / SRID 4326).
-    /// Source geometries are transformed to 4326 before indexing.
-    /// The query returns cell index, GeoJSON boundary, and statistics per cell.
-    /// </remarks>
     public CoreParameterizedQuery BuildH3AggregationQuery(
         int layerId,
         FeatureQuery query,
@@ -175,10 +165,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Builds an MVT tile query that renders H3 cell boundaries as vector tile features.
-    /// Resolution is selected explicitly rather than derived from zoom.
-    /// </summary>
     public CoreParameterizedQuery BuildH3TileQuery(
         int layerId,
         int x,
@@ -299,13 +285,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Ensures a geometry expression is in WGS 84 (SRID 4326) for H3 operations.
-    /// When <paramref name="sourceSrid"/> is null (layer has no defined spatial reference),
-    /// the geometry is assumed to already be in WGS 84. Layers stored in a different CRS
-    /// without SRID metadata will produce incorrect H3 cell assignments — this is an
-    /// operator configuration issue, not a runtime-recoverable error.
-    /// </summary>
     private static string EnsureWgs84(string geometryOperand, int? sourceSrid)
     {
         if (sourceSrid is int from && from != 4326)
@@ -616,12 +595,6 @@ internal sealed partial class FeatureQueryBuilder
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Summary kind is not a metric statistic.")
     };
 
-    /// <summary>
-    /// Appends re-aggregation expressions for the kRing outer GROUP BY.
-    /// Each statistic from the inner aggregation is re-aggregated with a
-    /// type-appropriate function so that overlapping neighbor cells are
-    /// merged correctly rather than producing duplicate rows.
-    /// </summary>
     private static void AppendH3KRingReaggregate(System.Text.StringBuilder sql, H3AggregationQuery h3Query)
     {
         if (h3Query.SummaryDefinitions.HasValue && !h3Query.SummaryDefinitions.Value.IsDefaultOrEmpty)
@@ -654,10 +627,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Maps an inner-aggregation statistic type to the appropriate outer
-    /// re-aggregation function for kRing deduplication.
-    /// </summary>
     private static string GetKRingReaggregateFunction(StatisticType statisticType) => statisticType switch
     {
         StatisticType.Count => "SUM",

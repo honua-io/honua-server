@@ -9,7 +9,6 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    /// <inheritdoc />
     public async Task<PublishedLayerSummary?> RewritePublishedLayerFieldsAsync(
         string connectionString,
         int layerId,
@@ -129,10 +128,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    /// <summary>
-    /// Projects a replaced source schema onto an existing published resource without
-    /// changing its identity, storage binding, or unrelated display settings.
-    /// </summary>
     internal static MetadataV2Object ApplyReplacementFieldMetadata(
         MetadataV2Object resource,
         IReadOnlyList<MetadataV2Field> schemaFields,

@@ -5,252 +5,102 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Domain;
 
-/// <summary>
-/// Workflow-style control-plane operations that converge toward a desired state.
-/// </summary>
 public enum WorkflowOperationKind
 {
-    /// <summary>
-    /// Deploy a target revision or version.
-    /// </summary>
     Deploy,
 
-    /// <summary>
-    /// Roll back to a known-good revision or version.
-    /// </summary>
     Rollback,
 
-    /// <summary>
-    /// Coordinate a migration or schema gate outside the request path.
-    /// </summary>
     Migration,
 
-    /// <summary>
-    /// Track a GitOps metadata release package through deploy, evidence, and rollback lifecycle stages.
-    /// </summary>
     MetadataRelease,
 
-    /// <summary>
-    /// Conduct a coordinated platform-upgrade release that composes a container rollout, an additive DB
-    /// script migration, and a metadata-v2 activation as one ordered, gated, rollback-able operation.
-    /// </summary>
     CoordinatedRelease,
 
-    /// <summary>Restore a verified pre-migration backup before a rollback.</summary>
     PreMigrationRestore
 }
 
-/// <summary>
-/// Status values for reconciled workflow operations.
-/// </summary>
 public enum WorkflowOperationStatus
 {
-    /// <summary>
-    /// Operation has been planned but not yet submitted.
-    /// </summary>
     Planned,
 
-    /// <summary>
-    /// Operation is blocked pending an explicit approval step.
-    /// </summary>
     AwaitingApproval,
 
-    /// <summary>
-    /// Operation was submitted to the provider backend.
-    /// </summary>
     Submitted,
 
-    /// <summary>
-    /// Operation is actively reconciling desired and observed state.
-    /// </summary>
     Reconciling,
 
-    /// <summary>
-    /// Operation reached the desired outcome successfully.
-    /// </summary>
     Succeeded,
 
-    /// <summary>
-    /// Operation failed and requires investigation.
-    /// </summary>
     Failed,
 
-    /// <summary>
-    /// Rollback was requested and is waiting to be observed.
-    /// </summary>
     RollbackRequested,
 
-    /// <summary>
-    /// Operation was rolled back successfully.
-    /// </summary>
     RolledBack,
 
-    /// <summary>
-    /// Operation needs explicit operator action beyond automatic reconciliation.
-    /// </summary>
     ManualInterventionRequired
 }
 
-/// <summary>
-/// Fine-grained lifecycle stage for a metadata release workflow.
-/// </summary>
 public enum MetadataReleaseStage
 {
-    /// <summary>
-    /// Release package and target prerequisites are being checked.
-    /// </summary>
     Preflight,
 
-    /// <summary>
-    /// Required metadata or data backups are being captured.
-    /// </summary>
     Backup,
 
-    /// <summary>
-    /// Release-associated scripts or migrations are being executed.
-    /// </summary>
     ScriptMigration,
 
-    /// <summary>
-    /// Metadata package changes are being applied.
-    /// </summary>
     MetadataApply,
 
-    /// <summary>
-    /// Updated service content is being published.
-    /// </summary>
     ServicePublication,
 
-    /// <summary>
-    /// Smoke verification is running against the published release.
-    /// </summary>
     Smoke,
 
-    /// <summary>
-    /// Service-level-objective watch checks are running before promotion.
-    /// </summary>
     SloWatch,
 
-    /// <summary>
-    /// The release is being promoted to the target environment.
-    /// </summary>
     Promotion,
 
-    /// <summary>
-    /// The metadata release completed successfully.
-    /// </summary>
     Complete,
 
-    /// <summary>
-    /// The metadata release failed before completion.
-    /// </summary>
     Failed,
 
-    /// <summary>
-    /// A rollback was requested for the metadata release.
-    /// </summary>
     RollbackRequested
 }
 
-/// <summary>
-/// Rollback classes supported by metadata release operation records.
-/// </summary>
 public enum MetadataRollbackClass
 {
-    /// <summary>
-    /// Revert metadata package state only; data restore is not required.
-    /// </summary>
     MetadataOnly,
 
-    /// <summary>
-    /// Repoint a service or DNS alias to a previous revision.
-    /// </summary>
     AliasRepoint,
 
-    /// <summary>
-    /// Revert a published service revision.
-    /// </summary>
     ServiceRevisionRevert,
 
-    /// <summary>
-    /// Execute a compensating rollback script.
-    /// </summary>
     ScriptRollback,
 
-    /// <summary>
-    /// Restore data from a database, object-store, or filesystem snapshot.
-    /// </summary>
     SnapshotRestore,
 
-    /// <summary>
-    /// Require an operator-managed recovery path outside automatic rollback.
-    /// </summary>
     ManualRecovery
 }
 
-/// <summary>
-/// Batch-style execution jobs that run to completion.
-/// </summary>
 public enum ExecutionJobKind
 {
-    /// <summary>
-    /// Geoprocessing or analytical compute workload.
-    /// </summary>
     Geoprocessing,
 
-    /// <summary>
-    /// Extract-transform-load or data movement workload.
-    /// </summary>
     ExtractTransformLoad,
 
-    /// <summary>
-    /// Tile cache generation or refresh workload.
-    /// </summary>
     TileCache,
 
-    /// <summary>
-    /// Scheduled Share export workload.
-    /// </summary>
     ShareExport,
 
-    /// <summary>
-    /// Per-area geocoder/locator build workload. Clips an address feedstock layer to
-    /// an area and emits a self-hostable locator artifact the GeocodeServer can serve.
-    /// </summary>
     GeocoderBuild,
 
-    /// <summary>
-    /// Per-area routing-graph build workload. Clips a road-network feedstock layer to
-    /// an area and emits a pgRouting topology artifact a routing endpoint can solve over.
-    /// </summary>
     RouterBuild,
 
-    /// <summary>
-    /// Durable map or imagery tile-package export workload.
-    /// </summary>
     TileExport,
 
-    /// <summary>
-    /// Isolated shadow-topology rebuild workload for a non-active network-topology
-    /// generation (#2718): stages a generation-scoped pgRouting-shaped edge/vertex shadow
-    /// topology from its staged content edits, validates graph integrity, and transitions
-    /// the generation from <c>dirty</c> to <c>ready</c> (or <c>failed</c>) without ever
-    /// touching the active solve tables.
-    /// </summary>
     NetworkTopologyRebuild,
 
-    /// <summary>
-    /// Background file import (honua-server#5916): the accepting host stages the source in
-    /// file storage and the worker downloads it and runs the streaming import pipeline,
-    /// reporting progress through the import job document.
-    /// </summary>
     FileImport,
 
-    /// <summary>
-    /// Background layer publish (honua-server#5948): a table above the row threshold is copied
-    /// in batches on the shared execution-job queue and reports rows materialized plus the
-    /// published layer id. Same queue and worker loop as <see cref="FileImport"/>.
-    /// </summary>
     LayerPublish,
 
     // Asynchronous admin layer export (CSV, Shapefile, GeoPackage) above the synchronous threshold.
@@ -261,511 +111,198 @@ public enum ExecutionJobKind
     GeoServerImport
 }
 
-/// <summary>
-/// Status values for provider-backed execution jobs.
-/// </summary>
 public enum ExecutionJobStatus
 {
-    /// <summary>
-    /// Job is queued and not yet running.
-    /// </summary>
     Queued,
 
-    /// <summary>
-    /// Provider resources are being provisioned.
-    /// </summary>
     Provisioning,
 
-    /// <summary>
-    /// Job is actively running.
-    /// </summary>
     Running,
 
-    /// <summary>
-    /// Job completed successfully.
-    /// </summary>
     Succeeded,
 
-    /// <summary>
-    /// Job failed.
-    /// </summary>
     Failed,
 
-    /// <summary>
-    /// Job was cancelled.
-    /// </summary>
     Cancelled
 }
 
-/// <summary>
-/// Supported deploy target families.
-/// </summary>
 public enum DeployTargetKind
 {
-    /// <summary>
-    /// Kubernetes-based rollout target.
-    /// </summary>
     Kubernetes,
 
-    /// <summary>
-    /// AWS ECS target using ALB traffic shifting and service-level rollout semantics.
-    /// </summary>
     AwsEcs,
 
-    /// <summary>
-    /// Azure Container Apps target using revision-based rollout semantics.
-    /// </summary>
     AzureContainerApps,
 
-    /// <summary>
-    /// AWS Lambda target using revisions, aliases, or traffic shifting.
-    /// </summary>
     AwsLambda,
 
-    /// <summary>
-    /// Azure Functions target using deployment slots or revision swaps.
-    /// </summary>
     AzureFunctions,
 
-    /// <summary>
-    /// Substrate-neutral, single-host rolling-replace target (ADR-0060). The Honua process fronts
-    /// traffic with embedded YARP and owns the cutover: it starts a standby replica of the desired
-    /// revision on a co-located port, health-gates it, atomically swaps the reverse-proxy destination,
-    /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
-    /// zero-cloud-dependency zero-downtime upgrade and rollback story.
-    /// </summary>
     SelfHostedRolling,
 
-    /// <summary>
-    /// Installed Docker Compose project. The server does not receive the Docker socket. A separately
-    /// configured executor, reached over a local socket, applies an allowlisted compose change for the
-    /// one project the operator registered. Reader-incompatible rollbacks restore a verified backup
-    /// before the prior image is started.
-    /// </summary>
     LocalCompose
 }
 
-/// <summary>
-/// Supported batch compute backend families.
-/// </summary>
 public enum BatchComputeTargetKind
 {
-    /// <summary>
-    /// Kubernetes Job backend.
-    /// </summary>
     KubernetesJob,
 
-    /// <summary>
-    /// AWS Batch backend.
-    /// </summary>
     AwsBatch,
 
-    /// <summary>
-    /// Azure Batch backend.
-    /// </summary>
     AzureBatch,
 
-    /// <summary>
-    /// Substrate-neutral, single-host local process pool (ADR-0060). Runs a run-to-completion
-    /// workload as a child process on the host, bounded by a configurable max-concurrency pool.
-    /// Delivers a true process-spawning geoprocessing executor for single-host/air-gapped
-    /// deployments with no container runtime or cloud batch service dependency.
-    /// </summary>
     LocalProcess
 }
 
-/// <summary>
-/// Relative operator priority for workflow or execution requests.
-/// </summary>
 public enum OperationPriority
 {
-    /// <summary>
-    /// Low-priority background work.
-    /// </summary>
     Low,
 
-    /// <summary>
-    /// Default operational priority.
-    /// </summary>
     Normal,
 
-    /// <summary>
-    /// Elevated operational priority.
-    /// </summary>
     High,
 
-    /// <summary>
-    /// Highest operational priority.
-    /// </summary>
     Critical
 }
 
-/// <summary>
-/// Operator identity and request metadata captured when an operation is created.
-/// </summary>
 public sealed record OperationAuditInfo
 {
-    /// <summary>
-    /// Canonical typed-operation invocation identity, when applicable.
-    /// </summary>
     public string? OperationInstanceId { get; init; }
 
-    /// <summary>
-    /// Durable audit identity assigned when this operation was accepted.
-    /// </summary>
     public string? AuditId { get; init; }
 
-    /// <summary>
-    /// Operator or service principal that requested the operation.
-    /// </summary>
     public string? RequestedBy { get; init; }
 
-    /// <summary>
-    /// Tenant binding of <see cref="RequestedBy"/>, taken from the validated identity when the
-    /// operation was accepted (honua-server#4958). Null on a single-tenant installation and for
-    /// principals that carry no tenant claim.
-    /// </summary>
     public string? TenantId { get; init; }
 
-    /// <summary>
-    /// Free-form operator reason or change note.
-    /// </summary>
     public string? Reason { get; init; }
 
-    /// <summary>
-    /// Stable idempotency key used to deduplicate submissions.
-    /// </summary>
     public string? IdempotencyKey { get; init; }
 
-    /// <summary>
-    /// Correlation ID propagated from upstream systems.
-    /// </summary>
     public string? CorrelationId { get; init; }
 
-    /// <summary>
-    /// W3C <c>traceparent</c> of the span that submitted the operation. Persisted with the durable
-    /// record so the worker that later executes it — possibly on another node or after a restart —
-    /// can link its execution span back to the submission trace (honua-server#5474).
-    /// </summary>
     public string? TraceParent { get; init; }
 
-    /// <summary>
-    /// W3C <c>tracestate</c> accompanying <see cref="TraceParent"/>, when the submission carried one.
-    /// </summary>
     public string? TraceState { get; init; }
 
-    /// <summary>Approved proposal identity explicitly joined to this operation.</summary>
     public string? ProposalId { get; init; }
 
-    /// <summary>
-    /// Principal that approved this operation when approval is a separate duty from
-    /// <see cref="RequestedBy"/>. Empty until a different principal submits an approved Compose
-    /// operation. Ignored by backends that do not enforce separation of duties.
-    /// </summary>
     public string? ApprovedBy { get; init; }
 
-    /// <summary>
-    /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
-    /// </summary>
     public string? RequestFingerprint { get; init; }
 
-    /// <summary>
-    /// Reference to the approval policy that was evaluated, if any.
-    /// </summary>
     public string? ApprovalPolicyRef { get; init; }
 
-    /// <summary>
-    /// Machine-readable reason codes from the approval evaluation.
-    /// </summary>
     public IReadOnlyList<string> ApprovalReasonCodes { get; init; } = [];
 
-    /// <summary>
-    /// Durable owner snapshot pinned at submit time for custom-code geoprocessing
-    /// jobs (Phase 0 auth spine). Captures the submitter's tenant, role snapshot,
-    /// and the already-validated (⊆ submitter) declared resource scope so a
-    /// scoped-job callback token can be attenuated to ≤ the submitter's
-    /// permissions. <see langword="null"/> for ordinary (non-custom-code) jobs,
-    /// which carry no declared scope — preserving existing behavior.
-    /// </summary>
     public CustomCodeOwnerScope? CustomCodeOwnerScope { get; init; }
 
-    /// <summary>
-    /// Durable snapshot of the submitting principal's row/field security identity
-    /// (honua-server#3068). Pinned at submit time — where the principal is still in hand —
-    /// so the background worker can resolve the SAME row-level-security predicate and field
-    /// mask the synchronous protocol surfaces resolve for that caller. Persisted with the job
-    /// record, so it survives a worker restart and is available to a job dequeued by a
-    /// different node. <see langword="null"/> for job records created by paths that do not
-    /// read catalog layers (and for records written before this field existed), which the
-    /// catalog-layer read seam treats as fail-closed.
-    /// </summary>
     public JobSecurityContext? SubmitterSecurityContext { get; init; }
 }
 
-/// <summary>
-/// Coordination hints for operations that should serialize by environment or target.
-/// </summary>
 public sealed record OperationConcurrencyPolicy
 {
-    /// <summary>
-    /// Partition key used for distributed locking or serialization.
-    /// </summary>
     public string? PartitionKey { get; init; }
 
-    /// <summary>
-    /// Whether the operation requires exclusive access to its partition.
-    /// </summary>
     public bool RequiresExclusiveLease { get; init; } = true;
 }
 
-/// <summary>
-/// Deploy-specific desired state for a workflow operation.
-/// </summary>
 public sealed record DeployOperationSpec
 {
-    /// <summary>
-    /// Stable target identifier resolved through the deploy target registry.
-    /// </summary>
     public required string TargetId { get; init; }
 
-    /// <summary>
-    /// Target deployment backend family.
-    /// </summary>
     public required DeployTargetKind TargetKind { get; init; }
 
-    /// <summary>
-    /// Backend name or provider adapter identifier.
-    /// </summary>
     public required string Backend { get; init; }
 
-    /// <summary>
-    /// Environment or stage being changed.
-    /// </summary>
     public required string Environment { get; init; }
 
-    /// <summary>
-    /// Logical target name such as cluster/service/function/app.
-    /// </summary>
     public required string TargetName { get; init; }
 
-    /// <summary>
-    /// Resolved image, artifact, or package base reference for this operation.
-    /// </summary>
     public string? ArtifactReference { get; init; }
 
-    /// <summary>
-    /// Optional specialized worker or runtime profile resolved for this operation.
-    /// </summary>
     public string? RuntimeProfile { get; init; }
 
-    /// <summary>
-    /// Currently observed revision, alias, or image before the change.
-    /// </summary>
     public string? CurrentRevision { get; init; }
 
-    /// <summary>
-    /// Desired revision, version, image, or artifact after the change.
-    /// </summary>
     public required string DesiredRevision { get; init; }
 
-    /// <summary>
-    /// Whether migrations must be managed outside the deploy workflow.
-    /// </summary>
     public bool RequiresOutOfBandMigrations { get; init; }
 
-    /// <summary>
-    /// Whether the operation should stop for explicit approval before submission.
-    /// </summary>
     public bool RequiresApproval { get; init; }
 
-    /// <summary>Verified recovery selection carried from a sealed rollback proposal, never from backend parameters.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? PreMigrationBackupId { get; init; }
 
-    /// <summary>
-    /// Opaque backend-specific parameters.
-    /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 
-    /// <summary>
-    /// Optional progressive canary ramp that advances the deploy through a sequence of
-    /// canary traffic weights with a per-step telemetry gate between steps. When null the
-    /// deploy uses the default single-step bake-then-promote behavior.
-    /// </summary>
     public CanaryRampSpec? CanaryRamp { get; init; }
 
-    /// <summary>
-    /// Timestamp the candidate revision first began receiving live traffic, stamped once by the
-    /// reconciler (honua-server#4617): the first time the backend reports
-    /// <see cref="WorkflowOperationStatus.Reconciling"/>, or, for a backend that stages the candidate
-    /// without traffic (<see cref="DeployBackendCapabilities.StagesCandidateWithoutTraffic"/>), when
-    /// promotion cuts over to it. Telemetry warmup/bake windows anchor on this rather than
-    /// <see cref="WorkflowOperationRecord.CreatedAt"/>, which can precede actual traffic exposure by an
-    /// unbounded amount of backend provisioning time. Null while the operation is still provisioning
-    /// (including for operations persisted before this field existed), in which case evaluators fall
-    /// back to <c>CreatedAt</c> so existing in-flight deploys keep their prior behavior.
-    /// </summary>
     public DateTimeOffset? TrafficExposedAt { get; init; }
 
-    /// <summary>
-    /// Durable post-activation observation/recovery state (honua-server#4618). Set by the reconciler
-    /// when a candidate is fully promoted and cleared once the protection window completes or a
-    /// triggered recovery finishes; null before promotion and for operations that never activate a
-    /// candidate.
-    /// </summary>
     public DeployProtectionState? Protection { get; init; }
 }
 
-/// <summary>
-/// Post-activation protection phase for a durable deploy operation observing a newly promoted
-/// candidate before the rollback protection window elapses (honua-server#4618). Distinct from
-/// <see cref="WorkflowOperationStatus"/>: while a protection window is open the operation's status
-/// stays <see cref="WorkflowOperationStatus.Reconciling"/> so the reconciler keeps driving it, and this
-/// phase carries the finer-grained, operator/API-facing detail the status alone cannot express.
-/// </summary>
 public enum DeployProtectionPhase
 {
-    /// <summary>The candidate was just exposed and is being observed against the durable policy.</summary>
     Observing,
 
-    /// <summary>The observation window is holding a healthy candidate open for the full protection window.</summary>
     Protected,
 
-    /// <summary>An approved safety policy triggered rollback and deterministic recovery is executing.</summary>
     Recovering,
 
-    /// <summary>The observation window elapsed without a policy trigger; the previous revision was retired.</summary>
     Expired,
 
-    /// <summary>Recovery was triggered but the previous revision or its controller could not be reached.</summary>
     Unavailable
 }
 
-/// <summary>
-/// Durable post-activation observation/recovery state persisted on a promoted deploy operation
-/// (honua-server#4618). Created the first time a candidate is fully exposed to traffic and cleared once
-/// the observation window completes cleanly or a triggered recovery finishes; retained (with
-/// <see cref="Phase"/> set to <see cref="DeployProtectionPhase.Unavailable"/>) when recovery itself
-/// cannot be proven, so the durable record keeps the evidence an operator needs.
-/// </summary>
 public sealed record DeployProtectionState
 {
-    /// <summary>Revision, alias, or image that was serving before the candidate was activated.</summary>
     public required string PreviousRevision { get; init; }
 
-    /// <summary>Revision, alias, or image activated and currently under observation.</summary>
     public required string CandidateRevision { get; init; }
 
-    /// <summary>Time the candidate first received live traffic.</summary>
     public required DateTimeOffset FirstExposureAt { get; init; }
 
-    /// <summary>Time the observation window closes if no recovery trigger fires before it.</summary>
     public required DateTimeOffset ObservationDeadline { get; init; }
 
-    /// <summary>
-    /// Bound on how long a triggered recovery may take to settle before it is treated as unavailable.
-    /// Null until a recovery trigger sets it.
-    /// </summary>
     public DateTimeOffset? RecoveryDeadline { get; init; }
 
-    /// <summary>
-    /// Stable digest of the safety-policy configuration (promotion gate, telemetry/rollback
-    /// parameters) in effect when the candidate was activated, so policy drift mid-window is
-    /// detectable and recovery always replays the policy that was actually approved.
-    /// </summary>
     public required string PolicyDigest { get; init; }
 
-    /// <summary>Approval policy reference in effect for this activation, when the operation required approval.</summary>
     public string? ApprovalScope { get; init; }
 
-    /// <summary>Current post-activation protection phase.</summary>
     public DeployProtectionPhase Phase { get; init; } = DeployProtectionPhase.Observing;
 
-    /// <summary>Bounded, operator-safe reason code for the current phase (for example a telemetry breach or backend signal), when applicable.</summary>
     public string? ReasonCode { get; init; }
 
-    /// <summary>
-    /// Stable identity of the recovery grant sealed when the candidate was activated (honua-server#4958).
-    /// A fenced rollback must quote this value, so a grant minted for a different activation — or for a
-    /// superseded one — cannot actuate this operation's compensation.
-    /// </summary>
     public string? GrantId { get; init; }
 
-    /// <summary>
-    /// Operator or service principal that requested the protected activation (honua-server#4958).
-    /// The recovery grant is bound to this identity: a rollback from a different principal is refused
-    /// unless that principal holds an explicitly broader platform role.
-    /// </summary>
     public string? Actor { get; init; }
 
-    /// <summary>
-    /// Tenant binding of <see cref="Actor"/> at activation time, or null on a single-tenant installation
-    /// and for principals with no tenant binding (honua-server#4958).
-    /// </summary>
     public string? TenantId { get; init; }
 
-    /// <summary>
-    /// The single compensation this protection window preauthorizes, declared at activation time
-    /// (honua-server#4958). See <see cref="DeployRecoveryCompensations"/>. A rollback that asks for
-    /// anything else is broader than what was approved and is refused fail-closed.
-    /// </summary>
     public string? PermittedCompensation { get; init; }
 }
 
-/// <summary>
-/// The closed vocabulary of compensations a deploy protection window can preauthorize
-/// (honua-server#4958). The set is deliberately tiny: a protected activation declares exactly one
-/// permitted compensation, and the rollback surface refuses anything that is not that exact value —
-/// an undeclared compensation is by definition broader than the approved one.
-/// </summary>
 public static class DeployRecoveryCompensations
 {
-    /// <summary>
-    /// Restore <see cref="DeployProtectionState.PreviousRevision"/> on the operation's own target,
-    /// which is the only compensation the server itself ever actuates.
-    /// </summary>
     public const string RestorePreviousRevision = "restore-previous-revision";
 
-    /// <summary>Whether <paramref name="value"/> is a recognised compensation identifier.</summary>
     public static bool IsKnown(string? value)
         => string.Equals(value, RestorePreviousRevision, StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>
-/// Optional multi-step canary ramp configuration. Each step shifts an increasing share of
-/// traffic to the canary and bakes for a configured duration before the telemetry gate is
-/// evaluated; a breach at any step triggers automatic rollback. The terminal step promotes
-/// the deploy to full traffic.
-/// </summary>
 public sealed record CanaryRampSpec
 {
-    /// <summary>
-    /// Ordered canary traffic weights as whole percentages (for example <c>[5, 25, 50, 100]</c>).
-    /// Values must be strictly increasing in the range 1-100, and the final value must be 100.
-    /// </summary>
     public required IReadOnlyList<int> StepWeights { get; init; } = Array.Empty<int>();
 
-    /// <summary>
-    /// Bake duration applied at each ramp step before its telemetry gate is evaluated.
-    /// </summary>
     public required TimeSpan StepBakeDuration { get; init; }
 
-    /// <summary>
-    /// Zero-based index of the ramp step the deploy is currently baking at. Advanced by the
-    /// reconciler each time a step's telemetry gate passes.
-    /// </summary>
     public int CurrentStepIndex { get; init; }
 
-    /// <summary>
-    /// Time the current ramp step began baking. Used to enforce the per-step bake duration
-    /// independently of the operation's overall warmup window.
-    /// </summary>
     public DateTimeOffset? CurrentStepStartedAt { get; init; }
 
-    /// <summary>
-    /// Whether the ramp configuration is well-formed: at least one step, strictly increasing
-    /// weights within 1-100, and a terminal weight of 100.
-    /// </summary>
     public bool IsValid =>
         StepWeights.Count > 0 &&
         StepBakeDuration > TimeSpan.Zero &&
@@ -773,17 +310,11 @@ public sealed record CanaryRampSpec
         StepWeights.All(static weight => weight is >= 1 and <= 100) &&
         IsStrictlyIncreasing(StepWeights);
 
-    /// <summary>
-    /// Canary weight for the current ramp step, or null when the ramp has no steps.
-    /// </summary>
     public int? CurrentStepWeight =>
         CurrentStepIndex >= 0 && CurrentStepIndex < StepWeights.Count
             ? StepWeights[CurrentStepIndex]
             : null;
 
-    /// <summary>
-    /// Whether the current step is the terminal (100%) ramp step.
-    /// </summary>
     public bool IsFinalStep => CurrentStepIndex >= StepWeights.Count - 1;
 
     private static bool IsStrictlyIncreasing(IReadOnlyList<int> weights)
@@ -800,675 +331,286 @@ public sealed record CanaryRampSpec
     }
 }
 
-/// <summary>
-/// Metadata-release-specific context embedded in a durable workflow operation.
-/// </summary>
 public sealed record MetadataReleaseContext
 {
-    /// <summary>
-    /// Metadata release package identifier. TODO(#1163): upgrade to typed MetadataPackageId once the package domain is stable.
-    /// </summary>
     public required string PackageId { get; init; }
 
-    /// <summary>
-    /// Verified provisioning root from the DevOps handoff
-    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
-    /// Null when this release is not part of a federated handoff.
-    /// </summary>
     public string? RootProvisioningOperationId { get; init; }
 
-    /// <summary>
-    /// Git operation identifier that wrote the release package, if known.
-    /// </summary>
     public string? GitOperationId { get; init; }
 
-    /// <summary>
-    /// Pull request URL associated with the release package, if one exists.
-    /// </summary>
     public string? PrUrl { get; init; }
 
-    /// <summary>
-    /// Commit SHA that pins the release revision.
-    /// </summary>
     public string? CommitSha { get; init; }
 
-    /// <summary>
-    /// Desired Git revision, tag, or ref for the metadata release.
-    /// </summary>
     public required string DesiredRevision { get; init; }
 
-    /// <summary>
-    /// Target environment label for the metadata release.
-    /// </summary>
     public required string TargetEnvironment { get; init; }
 
-    /// <summary>
-    /// Linked deploy workflow operation identifier, if the release triggered service publication.
-    /// </summary>
     public string? DeployOperationId { get; init; }
 
-    /// <summary>
-    /// Linked data or publication job identifiers for the release.
-    /// </summary>
     public IReadOnlyList<string> JobIds { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Evidence artifacts captured for compatibility, smoke, SLO, or promotion gates.
-    /// </summary>
     public IReadOnlyList<MetadataEvidenceRef> EvidenceRefs { get; init; } = Array.Empty<MetadataEvidenceRef>();
 
-    /// <summary>
-    /// Current fine-grained release stage.
-    /// </summary>
     public MetadataReleaseStage CurrentStage { get; init; } = MetadataReleaseStage.Preflight;
 
-    /// <summary>
-    /// Precomputed rollback plan retained with the operation record.
-    /// </summary>
     public MetadataRollbackPlan? RollbackPlan { get; init; }
 
-    /// <summary>
-    /// Executable additive layer-evolution plan for the metadata-release reconciler. Carries the
-    /// forward schema script and its reversible inverse so the lifecycle can advance the additive
-    /// stages and roll back without a snapshot. Null for releases that do not use the additive
-    /// execution lifecycle.
-    /// </summary>
     public MetadataReleaseExecutionPlan? ExecutionPlan { get; init; }
 
-    /// <summary>
-    /// Active Metadata v2 revision captured before any mutation. The candidate is prepared from
-    /// this immutable revision and activation is conditional on it still being current. A rebase
-    /// onto a concurrent update replaces it with the revision the candidate was rebased onto.
-    /// </summary>
     public long? PriorRevision { get; init; }
 
-    /// <summary>
-    /// ETag of <see cref="PriorRevision"/>, used as the optimistic-concurrency precondition for
-    /// activation.
-    /// </summary>
     public string? PriorEtag { get; init; }
 
-    /// <summary>
-    /// Staged, immutable candidate revision prepared from <see cref="PriorRevision"/>. Invisible to
-    /// canonical readers until activation. Null until staged.
-    /// </summary>
     public long? CandidateRevision { get; init; }
 
-    /// <summary>
-    /// ETag of <see cref="CandidateRevision"/>.
-    /// </summary>
     public string? CandidateEtag { get; init; }
 
-    /// <summary>
-    /// Schema operations this release actually changed relative to <see cref="PriorRevision"/>.
-    /// Rollback reverts only these, so fields that already existed and unrelated updates survive.
-    /// </summary>
     public IReadOnlyList<MetadataReleaseScriptOperation> OwnedOperations { get; init; } = Array.Empty<MetadataReleaseScriptOperation>();
 
-    /// <summary>
-    /// When the candidate was confirmed active. Null while canonical readers stay on the prior revision.
-    /// </summary>
     public DateTimeOffset? ActivatedAt { get; init; }
 
-    /// <summary>
-    /// Number of times the candidate was rebased onto a concurrent update before activation.
-    /// </summary>
     public int RebaseCount { get; init; }
 
-    /// <summary>
-    /// Blocking reason codes or messages specific to metadata release progression.
-    /// </summary>
     public IReadOnlyList<string> Blockers { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Non-blocking advisory messages specific to metadata release progression.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// Rollback plan persisted with a metadata release workflow operation.
-/// </summary>
 public sealed record MetadataRollbackPlan
 {
-    /// <summary>
-    /// Rollback class that describes the recovery mechanism.
-    /// </summary>
     public required MetadataRollbackClass Class { get; init; }
 
-    /// <summary>
-    /// Whether rollback can affect service routing, scripts, or data state.
-    /// </summary>
     public bool IsDataAffecting => Class is not MetadataRollbackClass.MetadataOnly;
 
-    /// <summary>
-    /// Whether the plan requires explicit operator approval. Data-affecting plans are treated as requiring approval even when this value is false.
-    /// </summary>
     public bool RequiresExplicitApproval { get; init; }
 
-    /// <summary>
-    /// Ordered operator-facing rollback steps.
-    /// </summary>
     public IReadOnlyList<string> Steps { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Evidence labels that must be available before executing the rollback.
-    /// </summary>
     public IReadOnlyList<string> EvidenceRequired { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Approval policy reference to use when rollback requires an approval gate.
-    /// </summary>
     public string? ApprovalPolicyRef { get; init; }
 }
 
-/// <summary>
-/// Lightweight reference to a metadata release evidence artifact.
-/// </summary>
 public sealed record MetadataEvidenceRef
 {
-    /// <summary>
-    /// Evidence kind, such as compatibility prevalidation, smoke result, or SLO snapshot.
-    /// </summary>
     public required string Kind { get; init; }
 
-    /// <summary>
-    /// Opaque evidence identifier in the originating system.
-    /// </summary>
     public required string RefId { get; init; }
 
-    /// <summary>
-    /// Optional resolvable evidence URI.
-    /// </summary>
     public string? Uri { get; init; }
 
-    /// <summary>
-    /// Time when the evidence was captured.
-    /// </summary>
     public required DateTimeOffset At { get; init; }
 }
 
-/// <summary>
-/// Stable deploy target definition used to resolve provider-specific metadata for workflow operations.
-/// </summary>
 public sealed record DeployTargetDefinition
 {
-    /// <summary>
-    /// Stable identifier used by the control-plane API and workers.
-    /// </summary>
     public required string TargetId { get; init; }
 
-    /// <summary>
-    /// Deploy backend family used by this target.
-    /// </summary>
     public required DeployTargetKind TargetKind { get; init; }
 
-    /// <summary>
-    /// Backend adapter identifier that should execute operations for this target.
-    /// </summary>
     public required string Backend { get; init; }
 
-    /// <summary>
-    /// Environment or stage represented by this target.
-    /// </summary>
     public required string Environment { get; init; }
 
-    /// <summary>
-    /// Human-readable target name such as cluster/service/function/app.
-    /// </summary>
     public required string TargetName { get; init; }
 
-    /// <summary>
-    /// Stable artifact or image base reference for this target.
-    /// </summary>
     public string? ArtifactReference { get; init; }
 
-    /// <summary>
-    /// Optional specialized worker or runtime profile for this target.
-    /// </summary>
     public string? RuntimeProfile { get; init; }
 
-    /// <summary>
-    /// Whether deploys for this target require explicit approval before submission.
-    /// </summary>
     public bool RequiresApproval { get; init; }
 
-    /// <summary>
-    /// Whether schema migrations must be handled outside the deploy workflow for this target.
-    /// </summary>
     public bool RequiresOutOfBandMigrations { get; init; }
 
-    /// <summary>
-    /// Provider-specific metadata such as namespace, release, alias, or function name.
-    /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 
-/// <summary>
-/// Durable workflow operation record used by the control plane.
-/// </summary>
 public sealed record WorkflowOperationRecord
 {
-    /// <summary>
-    /// Stable workflow operation identifier.
-    /// </summary>
     public required string OperationId { get; init; }
 
-    /// <summary>
-    /// Workflow operation kind.
-    /// </summary>
     public required WorkflowOperationKind Kind { get; init; }
 
-    /// <summary>
-    /// Current workflow status.
-    /// </summary>
     public required WorkflowOperationStatus Status { get; init; }
 
-    /// <summary>
-    /// Optimistic concurrency version token incremented on every store write. Used by
-    /// <c>IWorkflowOperationStore.TrySetAsync</c> to detect concurrent modifications.
-    /// </summary>
     public long Version { get; init; }
 
-    /// <summary>
-    /// Relative operator priority.
-    /// </summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;
 
-    /// <summary>
-    /// Time when the workflow operation record was created.
-    /// </summary>
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>
-    /// Time when the workflow record was most recently updated.
-    /// </summary>
     public required DateTimeOffset UpdatedAt { get; init; }
 
-    /// <summary>
-    /// Time when the workflow reached a terminal state.
-    /// </summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>
-    /// Provider operation ID, deployment ID, or rollout ID when available.
-    /// </summary>
     public string? ProviderOperationId { get; init; }
 
-    /// <summary>
-    /// Current operator-facing phase description.
-    /// </summary>
     public string? CurrentPhase { get; init; }
 
-    /// <summary>
-    /// Current observed state from the provider.
-    /// </summary>
     public string? ObservedState { get; init; }
 
-    /// <summary>
-    /// Error message for failed workflow operations.
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>
-    /// Warning messages collected during reconciliation.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Blocking reasons that currently prevent the workflow from being submitted or reconciled.
-    /// </summary>
     public IReadOnlyList<string> BlockingReasons { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Request metadata captured when the workflow was created.
-    /// </summary>
     public OperationAuditInfo Audit { get; init; } = new();
 
-    /// <summary>
-    /// Coordination and lease policy for this operation.
-    /// </summary>
     public OperationConcurrencyPolicy Concurrency { get; init; } = new();
 
-    /// <summary>
-    /// Deploy-specific desired state for deploy or rollback workflows.
-    /// </summary>
     public DeployOperationSpec? Deploy { get; init; }
 
-    /// <summary>
-    /// Metadata-release-specific desired state and rollback context.
-    /// </summary>
     public MetadataReleaseContext? MetadataRelease { get; init; }
 
-    /// <summary>
-    /// Verified provisioning root from the DevOps handoff. This is the canonical field
-    /// on the workflow record. The same value is copied onto <see cref="MetadataRelease"/>
-    /// so a nested read cannot disagree with the record. Null when the operation was not federated.
-    /// </summary>
     public string? RootProvisioningOperationId { get; init; }
 
-    /// <summary>
-    /// Coordinated-release context for <see cref="WorkflowOperationKind.CoordinatedRelease"/> operations
-    /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
-    /// </summary>
     public CoordinatedReleaseContext? CoordinatedRelease { get; init; }
 
-    /// <summary>Durable, non-secret checkpoint for a pre-migration restore.</summary>
     public PreMigrationRestoreContext? PreMigrationRestore { get; init; }
 }
 
-/// <summary>Saved inputs and phase for a governed pre-migration restore.</summary>
 public sealed record PreMigrationRestoreContext
 {
-    /// <summary>Sealed deploy payload; it contains no connection credentials.</summary>
     public required string Payload { get; init; }
 
-    /// <summary>Restore phase: queued, acting, or awaiting-deploy.</summary>
     public required string Phase { get; init; }
 
-    /// <summary>Separate principal who approved the operation.</summary>
     public required string ApprovedBy { get; init; }
 
-    /// <summary>Prior deploy workflow id, persisted before its submission.</summary>
     public string? DeployOperationId { get; init; }
 
-    /// <summary>Verified backup schema expected after restoration.</summary>
     public int? ExpectedSchema { get; init; }
 
-    /// <summary>SHA-256 of the restored database host, without credentials.</summary>
     public string? RestoredHostHash { get; init; }
 
-    /// <summary>Cell-bounded replacement database identifier.</summary>
     public string? RestoredInstanceId { get; init; }
 
-    /// <summary>Immutable provider resource identity returned by the restore submission.</summary>
     public string? RestoredResourceId { get; init; }
 }
 
-/// <summary>
-/// Batch-compute execution specification.
-/// </summary>
 public sealed record ExecutionJobSpec : Honua.Core.Serialization.ExtensibleJsonRecord
 {
-    /// <summary>
-    /// Server-owned GPServer binding, stamped after scoped execution authorization.
-    /// Arbitrary protocol parameters cannot create this binding. Null on legacy or other-protocol jobs.
-    /// </summary>
     public GPServerJobBinding? GPServerBinding { get; init; }
 
-    /// <summary>
-    /// Stable workload definition identifier resolved through the job-definition registry.
-    /// </summary>
     public string? WorkloadId { get; init; }
 
-    /// <summary>
-    /// Target batch backend family.
-    /// </summary>
     public required BatchComputeTargetKind TargetKind { get; init; }
 
-    /// <summary>
-    /// Backend name or provider adapter identifier.
-    /// </summary>
     public required string Backend { get; init; }
 
-    /// <summary>
-    /// Workload category executed by the backend.
-    /// </summary>
     public required ExecutionJobKind Kind { get; init; }
 
-    /// <summary>
-    /// Human-readable workload name.
-    /// </summary>
     public required string WorkloadName { get; init; }
 
-    /// <summary>
-    /// Container image or backend-specific artifact reference.
-    /// </summary>
     public string? Artifact { get; init; }
 
-    /// <summary>
-    /// Optional specialized worker or runtime profile resolved for this job.
-    /// </summary>
     public string? RuntimeProfile { get; init; }
 
-    /// <summary>
-    /// The serving↔worker job-contract version this job requires (ADR-0060 principle #3b). The
-    /// dispatcher rejects submission when this exceeds the target backend's
-    /// <see cref="BatchComputeBackendCapabilities.MaxSupportedContractVersion"/> so a vX server never
-    /// submits a job a vY worker cannot run during a rolling version step. Defaults to 1 (the initial
-    /// contract) so existing/back-compat specs remain valid.
-    /// </summary>
     public int ContractVersion { get; init; } = 1;
 
-    /// <summary>
-    /// Opaque backend-specific parameters.
-    /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 
-/// <summary>Durable service, published task, and canonical process identity of a GPServer job.</summary>
 public sealed record GPServerJobBinding(string ServiceId, string TaskName, string ProcessId);
 
-/// <summary>
-/// Stable workload definition used to resolve specialized compute images and runtime settings.
-/// </summary>
 public sealed record ExecutionJobDefinition
 {
-    /// <summary>
-    /// Stable workload identifier used by the control plane and job workers.
-    /// </summary>
     public required string WorkloadId { get; init; }
 
-    /// <summary>
-    /// Batch backend family used by this workload.
-    /// </summary>
     public required BatchComputeTargetKind TargetKind { get; init; }
 
-    /// <summary>
-    /// Backend adapter identifier that should execute this workload.
-    /// </summary>
     public required string Backend { get; init; }
 
-    /// <summary>
-    /// Workload category executed by the backend.
-    /// </summary>
     public required ExecutionJobKind Kind { get; init; }
 
-    /// <summary>
-    /// Human-readable workload name.
-    /// </summary>
     public required string WorkloadName { get; init; }
 
-    /// <summary>
-    /// Stable image, package, or artifact reference for this workload.
-    /// </summary>
     public string? ArtifactReference { get; init; }
 
-    /// <summary>
-    /// Optional specialized worker or runtime profile such as a Python/GDAL image family.
-    /// </summary>
     public string? RuntimeProfile { get; init; }
 
-    /// <summary>
-    /// The serving↔worker job-contract version jobs built for this workload require (ADR-0060
-    /// principle #3b). Defaults to 1 (the initial contract).
-    /// </summary>
     public int ContractVersion { get; init; } = 1;
 
-    /// <summary>
-    /// Provider-specific workload metadata such as queue, CPU, memory, or timeout.
-    /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 
-/// <summary>
-/// Durable execution-job record for run-to-completion workloads.
-/// </summary>
 public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJsonRecord
 {
-    /// <summary>
-    /// Stable execution job identifier.
-    /// </summary>
     public required string OperationId { get; init; }
 
-    /// <summary>
-    /// Current execution job status.
-    /// </summary>
     public required ExecutionJobStatus Status { get; init; }
 
-    /// <summary>
-    /// Optimistic concurrency version token incremented on every store write.
-    /// </summary>
     public long Version { get; init; }
 
     public long ManualRetryGeneration { get; init; }
 
-    /// <summary>
-    /// Relative operator priority.
-    /// </summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;
 
-    /// <summary>
-    /// Time when the job was created.
-    /// </summary>
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>
-    /// Time when the job record was most recently updated.
-    /// </summary>
     public required DateTimeOffset UpdatedAt { get; init; }
 
-    /// <summary>
-    /// Time when the job reached a terminal state.
-    /// </summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>
-    /// Provider job ID when available.
-    /// </summary>
     public string? ProviderOperationId { get; init; }
 
-    /// <summary>
-    /// Reported completion percentage when the backend can provide it.
-    /// </summary>
     public double? PercentComplete { get; init; }
 
-    /// <summary>
-    /// Current operator-facing phase description.
-    /// </summary>
     public string? CurrentPhase { get; init; }
 
-    /// <summary>
-    /// Error message for failed jobs.
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>
-    /// Warning messages collected during execution.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Request metadata captured when the job was created.
-    /// </summary>
     public OperationAuditInfo Audit { get; init; } = new();
 
-    /// <summary>
-    /// Coordination and lease policy for this job.
-    /// </summary>
     public OperationConcurrencyPolicy Concurrency { get; init; } = new();
 
-    /// <summary>
-    /// Backend execution specification.
-    /// </summary>
     public required ExecutionJobSpec Spec { get; init; }
 
     // -----------------------------------------------------------------------
     // Claim and heartbeat fields (ticket #681)
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Stable identifier of the worker that claimed this job for execution.
-    /// Null when the job has not been claimed.
-    /// </summary>
     public string? ClaimedBy { get; init; }
 
-    /// <summary>
-    /// Time when the job was claimed by a worker.
-    /// </summary>
     public DateTimeOffset? ClaimedAt { get; init; }
 
-    /// <summary>
-    /// Time of the most recent heartbeat signal from the executing worker.
-    /// </summary>
     public DateTimeOffset? LastHeartbeatAt { get; init; }
 
-    /// <summary>
-    /// Time when cancellation was durably requested via the API. Workers observe
-    /// this signal during heartbeat and cancel locally; the reconciler honours it
-    /// when the worker's heartbeat expires before the signal is processed.
-    /// </summary>
     public DateTimeOffset? CancellationRequestedAt { get; init; }
 
     // -----------------------------------------------------------------------
     // Retry tracking (ticket #681)
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Number of execution attempts completed so far (including the current attempt).
-    /// </summary>
     public int AttemptCount { get; init; }
 
-    /// <summary>
-    /// Earliest time the next retry attempt may begin.
-    /// Null when no retry is pending.
-    /// </summary>
     public DateTimeOffset? NextRetryAt { get; init; }
 
     // -----------------------------------------------------------------------
     // Policies (ticket #681)
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// Retry policy governing failure retry behavior. Null uses the system default.
-    /// </summary>
     public JobRetryPolicy? RetryPolicy { get; init; }
 
-    /// <summary>
-    /// Heartbeat policy governing worker liveness detection. Null uses the system default.
-    /// </summary>
     public JobHeartbeatPolicy? HeartbeatPolicy { get; init; }
 
-    /// <summary>
-    /// Timeout policy governing maximum execution duration. Null uses the system default.
-    /// </summary>
     public JobTimeoutPolicy? TimeoutPolicy { get; init; }
 
     // -----------------------------------------------------------------------
     // Artifact references (ticket #681)
     // -----------------------------------------------------------------------
 
-    /// <summary>
-    /// References to artifacts produced during execution, appended by the worker
-    /// through the execution context.
-    /// </summary>
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> CleanupArtifactReferences { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Receipts for already committed sink effects, also exposed in artifact references.
-    /// These survive operator cancellation and distinguish committed work from fenced output.
-    /// </summary>
     public IReadOnlyList<string> CommittedEffectReferences { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Normalized execution-admission cost weight pinned at submit time for jobs whose exact-key spec
-    /// contract forbids carrying the admission cost in <see cref="ExecutionJobSpec.Parameters"/>
-    /// (for example durable tile-export jobs). The admission evaluator sums this when computing active
-    /// per-partition cost. <see langword="null"/> for jobs that carry their cost weight in the spec
-    /// parameters, preserving their existing accounting.
-    /// </summary>
     public double? AdmissionCostWeight { get; init; }
 
     // The admission rate principal charged for this submission; the per-principal rate window counts
@@ -1476,240 +618,97 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     public string? AdmissionRatePrincipal { get; init; }
 }
 
-/// <summary>
-/// Provider-neutral deploy plan returned before a workflow is submitted.
-/// </summary>
 public sealed record DeployPlan
 {
-    /// <summary>
-    /// Whether the deploy can be submitted immediately.
-    /// </summary>
     public bool IsReadyToSubmit { get; init; }
 
-    /// <summary>
-    /// Whether explicit approval is required before submit.
-    /// </summary>
     public bool RequiresApproval { get; init; }
 
-    /// <summary>
-    /// Whether the target requires migrations to run out-of-band.
-    /// </summary>
     public bool RequiresOutOfBandMigrations { get; init; }
 
-    /// <summary>
-    /// Blocking reasons that prevent submission.
-    /// </summary>
     public IReadOnlyList<string> BlockingReasons { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Non-blocking warnings for operators.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// Capabilities for deploy backends.
-/// </summary>
 public sealed record DeployBackendCapabilities
 {
-    /// <summary>
-    /// Whether the backend can roll back to a previous revision.
-    /// </summary>
     public bool SupportsRollback { get; init; }
 
-    /// <summary>
-    /// Whether the backend can cancel an in-flight deploy.
-    /// </summary>
     public bool SupportsCancellation { get; init; }
 
-    /// <summary>
-    /// Whether the backend supports partial traffic shifting.
-    /// </summary>
     public bool SupportsTrafficShifting { get; init; }
 
-    /// <summary>
-    /// Whether migrations must run outside the deploy workflow.
-    /// </summary>
     public bool RequiresOutOfBandMigrations { get; init; }
 
-    /// <summary>
-    /// Whether the backend exposes pollable progress or rollout state.
-    /// </summary>
     public bool SupportsProgressPolling { get; init; }
 
-    /// <summary>
-    /// Whether the backend can pin or restore a specific revision.
-    /// </summary>
     public bool SupportsRevisionPinning { get; init; }
 
-    /// <summary>
-    /// Whether the backend stages the candidate revision without live traffic until promotion, as a
-    /// single-switch cutover does (the self-hosted rolling backend health-gates a standby replica that
-    /// serves nothing until the proxy swaps to it). Such a backend reports
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> while the candidate is staged, so traffic
-    /// exposure starts at the promotion cutover rather than at that observation (honua-server#4617).
-    /// </summary>
     public bool StagesCandidateWithoutTraffic { get; init; }
 }
 
-/// <summary>
-/// Result of submitting a deploy workflow to a provider backend.
-/// </summary>
 public sealed record DeploySubmissionResult
 {
-    /// <summary>
-    /// Initial workflow status after submission.
-    /// </summary>
     public required WorkflowOperationStatus Status { get; init; }
 
-    /// <summary>
-    /// Provider-specific deployment or rollout identifier.
-    /// </summary>
     public string? ProviderOperationId { get; init; }
 
-    /// <summary>
-    /// Previously observed provider revision before submission when the backend can determine it.
-    /// </summary>
     public string? ObservedRevision { get; init; }
 
-    /// <summary>
-    /// Operator-facing message from submission.
-    /// </summary>
     public string? Message { get; init; }
 }
 
-/// <summary>
-/// Observation returned by a deploy backend during reconciliation.
-/// </summary>
 public sealed record DeployObservation
 {
-    /// <summary>
-    /// Observed workflow status.
-    /// </summary>
     public required WorkflowOperationStatus Status { get; init; }
 
-    /// <summary>
-    /// Provider-specific deployment or rollout identifier.
-    /// </summary>
     public string? ProviderOperationId { get; init; }
 
-    /// <summary>
-    /// Currently observed provider revision or alias.
-    /// </summary>
     public string? ObservedRevision { get; init; }
 
-    /// <summary>
-    /// Operator-facing message from observation.
-    /// </summary>
     public string? Message { get; init; }
 
-    /// <summary>
-    /// Whether the backend has reached a staged state that is ready for final promotion.
-    /// </summary>
     public bool PromotionRecommended { get; init; }
 
-    /// <summary>
-    /// Whether the backend recommends rollback based on observed state.
-    /// </summary>
     public bool RollbackRecommended { get; init; }
 }
 
-/// <summary>
-/// Capabilities for batch-compute backends.
-/// </summary>
 public sealed record BatchComputeBackendCapabilities
 {
-    /// <summary>
-    /// Whether the backend can cancel submitted jobs.
-    /// </summary>
     public bool SupportsCancellation { get; init; }
 
-    /// <summary>
-    /// Whether the backend can stream live logs.
-    /// </summary>
     public bool SupportsLogStreaming { get; init; }
 
-    /// <summary>
-    /// Whether the backend exposes pollable job progress.
-    /// </summary>
     public bool SupportsProgressPolling { get; init; }
 
-    /// <summary>
-    /// Whether failed jobs can be retried through the backend.
-    /// </summary>
     public bool SupportsRetry { get; init; }
 
-    /// <summary>
-    /// Whether the backend can stage or materialize workload artifacts.
-    /// </summary>
     public bool SupportsArtifactStaging { get; init; }
 
-    /// <summary>
-    /// The highest serving↔worker job-contract version this backend's workers can run (ADR-0060
-    /// principle #3b). The dispatcher refuses to submit a job whose
-    /// <see cref="ExecutionJobSpec.ContractVersion"/> exceeds this. Defaults to 1 (the initial
-    /// contract) so backends that do not report a version are treated as v1-capable.
-    /// </summary>
     public int MaxSupportedContractVersion { get; init; } = 1;
 }
 
-/// <summary>
-/// Result of submitting an execution job to a provider backend.
-/// </summary>
 public sealed record BatchComputeSubmissionResult
 {
-    /// <summary>
-    /// Initial execution job status after submission.
-    /// </summary>
     public required ExecutionJobStatus Status { get; init; }
 
-    /// <summary>
-    /// Provider-specific job identifier.
-    /// </summary>
     public string? ProviderOperationId { get; init; }
 
-    /// <summary>
-    /// Operator-facing message from submission.
-    /// </summary>
     public string? Message { get; init; }
 
-    /// <summary>
-    /// Provider-resolved spec parameters that should be persisted back onto the durable
-    /// execution-job record so subsequent observe, cancel, and retry calls target the same
-    /// remote coordinates the adapter picked at submission time. Backends use this to pin
-    /// values resolved from ambient configuration (for example the Kubernetes namespace)
-    /// that would otherwise drift if the operator changes the default between a submission
-    /// and a later lifecycle call. Entries are merged into <see cref="ExecutionJobSpec.Parameters"/>
-    /// and override any prior values. Leave null when the adapter has nothing to persist.
-    /// </summary>
     public IReadOnlyDictionary<string, string>? ResolvedParameters { get; init; }
 }
 
-/// <summary>
-/// Observation returned by a batch-compute backend during reconciliation.
-/// </summary>
 public sealed record BatchComputeObservation
 {
-    /// <summary>Provider-confirmed submitted attempt recovered after a lost post-submit commit.</summary>
     public int? RecoveredAttemptCount { get; init; }
 
-    /// <summary>
-    /// Observed execution status.
-    /// </summary>
     public required ExecutionJobStatus Status { get; init; }
 
-    /// <summary>
-    /// Provider-specific job identifier.
-    /// </summary>
     public string? ProviderOperationId { get; init; }
 
-    /// <summary>
-    /// Observed completion percentage when available.
-    /// </summary>
     public double? PercentComplete { get; init; }
 
-    /// <summary>
-    /// Operator-facing observation message.
-    /// </summary>
     public string? Message { get; init; }
 }

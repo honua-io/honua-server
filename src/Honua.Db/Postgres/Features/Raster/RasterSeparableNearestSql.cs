@@ -3,31 +3,12 @@
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Samples bounded north-up target pages using separable canonical source coordinates.
-/// </summary>
 internal static class RasterSeparableNearestSql
 {
-    /// <summary>
-    /// Tries north-up same-CRS or EPSG:4326-to-3857 nearest sampling. Other inputs return
-    /// null and require an exact general fallback. A source cell is read once per band;
-    /// projection and canonical coordinate conversion run once per target row or column.
-    /// Mosaic inputs use a temporary coverage mask rather than opaque outside zero.
-    /// The general fallback remains available when this bounded path is not admitted.
-    /// Larger request sets dump only a bounded native-cell rectangle once per band. Raw values
-    /// preserve valid zero even if clipping temporarily supplies a default NoData marker.
-    /// An unaligned or over-budget rectangle retains canonical individual cell reads.
-    /// The lateral offset barrier holds each band's raster/array outside the requested-cell
-    /// scan, avoiding repeated materialization of large tuples for individual pixel lookups.
-    /// </summary>
     internal static string TrySample(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
         => RasterSamplingSql.FunctionCall(
             RasterSamplerKind.SeparableNearest, rasterExpression, gridExpression, preserveCoverageMask);
 
-    /// <summary>
-    /// Body of <c>honua_raster.separable_nearest_v1</c>. Callers use <see cref="TrySample"/> so
-    /// an unused separable fallback is not compiled into the native-window plan.
-    /// </summary>
     internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var pixelType = preserveCoverageMask ? "'64BF'" : "m.pixeltype";

@@ -11,12 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Production <see cref="IGdalCommandRunner"/> that invokes the GDAL/OGR CLI
-/// tools as child processes. The tools are provided by the GDAL base image the
-/// worker container is built from; this runner does not bundle managed GDAL
-/// bindings so it adds no native package dependencies to any managed assembly.
-/// </summary>
 internal sealed partial class ProcessGdalCommandRunner(
     IOptions<GdalHardeningOptions> hardening,
     IOptions<AwsS3Options> s3Options,
@@ -43,7 +37,6 @@ internal sealed partial class ProcessGdalCommandRunner(
         "AZURE_TENANT_ID"
     ];
 
-    /// <inheritdoc />
     public async Task<GdalCommandResult> RunAsync(
         string tool,
         IReadOnlyList<string> arguments,

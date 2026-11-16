@@ -284,28 +284,6 @@ internal sealed partial class FeatureQueryBuilder
                $"ELSE ST_Intersects({geometryOperand}, {filterGeometry}) END";
     }
 
-    /// <summary>
-    /// Builds an index-usable <c>&amp;&amp;</c> bounding-box pre-filter for a WithinDistance predicate.
-    /// The exact <c>ST_DWithin(...::geography)</c> check runs only on rows the box admits, so the box
-    /// must contain the whole geodesic neighbourhood of the filter or true matches are lost (#5461).
-    /// A metre expansion in the storage CRS cannot promise that: projections scale distances (Web
-    /// Mercator doubles them at latitude 60), a spherical degree overstates the equatorial meridian
-    /// degree, and longitudes converge at the poles.
-    /// </summary>
-    /// <remarks>
-    /// The box is derived on the WGS 84 ellipsoid from the same geography the exact check uses. Along
-    /// any geodesic of length d, latitude changes by at most d / M(0) (the meridian radius is smallest
-    /// at the equator) and longitude by at most d / (a cos(phi)) while |phi| stays below the reach
-    /// latitude (N(phi) is never below a), so the lat/lon box around the filter expanded by those
-    /// amounts holds every match. Filter edges are great-circle arcs that can bulge poleward of their
-    /// vertices; segmentizing them puts every edge point within half a segment of a vertex, so the
-    /// reach grows by that half for non-point filters. A reach past a pole spans all longitudes.
-    /// WGS 84 storage probes the box directly, shifted by +/-360 degrees for the antimeridian. Other
-    /// storage CRSes probe the bounding box of the densified box transformed into the stored CRS,
-    /// with a margin for the densification; when the box crosses the antimeridian or a pole, or is
-    /// too wide to transform reliably, the probe admits every geometry instead of guessing. The
-    /// probe is one uncorrelated scalar subquery, evaluated once per statement.
-    /// </remarks>
     private static string BuildDistanceEnvelopePrefilter(
         string geometryOperand,
         string storageFilterGeometry,

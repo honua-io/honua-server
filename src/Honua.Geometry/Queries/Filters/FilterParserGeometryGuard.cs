@@ -7,17 +7,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Geometry-shaped guardrails for filter-parser hostile-input handling.
-/// </summary>
-/// <remarks>
-/// Split out from <see cref="FilterParserGuard"/> when the NetTopologySuite
-/// dependency was moved out of <c>Honua.Core</c> and into
-/// <c>Honua.Geometry</c>. Numeric / string-length / depth caps remain on
-/// <see cref="FilterParserGuard"/> so non-geometry parsers (the CQL2 / OData
-/// lexers, the GeoServicesSQL parser) keep using them without dragging NTS
-/// into Core.
-/// </remarks>
 internal static class FilterParserGeometryGuard
 {
     public static Geometry ParseGeoJsonGeometry(string geoJson, string description, int? srid = null)

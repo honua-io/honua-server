@@ -6,15 +6,6 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Validation;
 
-/// <summary>
-/// First validator pass — resolves every <c>@</c>-reference to either a
-/// local binding (<c>sources</c>/<c>compute</c>/<c>outputs</c>) or a catalog
-/// entry (via <see cref="ISpecCatalogSnapshot"/>). Emits
-/// <see cref="SpecDiagnosticCode.UnknownReference"/> for targets that cannot
-/// be bound, <see cref="SpecDiagnosticCode.DuplicateIdentifier"/> for
-/// duplicate ids, and <see cref="SpecDiagnosticCode.CatalogUnavailable"/>
-/// when the snapshot is the empty one.
-/// </summary>
 internal sealed class ReferenceResolver
 {
     private readonly SpecDocument _document;
@@ -23,30 +14,17 @@ internal sealed class ReferenceResolver
     private readonly List<SpecDiagnostic> _diagnostics = [];
     private bool _catalogWarned;
 
-    /// <summary>
-    /// Creates a resolver bound to <paramref name="document"/> and
-    /// <paramref name="catalog"/>.
-    /// </summary>
     public ReferenceResolver(SpecDocument document, ISpecCatalogSnapshot catalog)
     {
         _document = document;
         _catalog = catalog;
     }
 
-    /// <summary>
-    /// Gets the diagnostics produced during <see cref="Resolve"/>.
-    /// </summary>
     public IReadOnlyList<SpecDiagnostic> Diagnostics => _diagnostics;
 
-    /// <summary>
-    /// Gets the local binding table populated by <see cref="Resolve"/>.
-    /// </summary>
     public IReadOnlyDictionary<string, TypeRef> Locals =>
         _locals.ToDictionary(kv => kv.Key, kv => kv.Value.Type, StringComparer.Ordinal);
 
-    /// <summary>
-    /// Walks the document, binding local ids and resolving external sources.
-    /// </summary>
     public void Resolve()
     {
         _diagnostics.Clear();

@@ -6,12 +6,8 @@ using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 namespace Honua.Geocoding.Features.Geocoding.Domain;
 
-/// <summary>
-/// Validator for geocoding configuration
-/// </summary>
 public sealed class GeocodingConfigurationValidator : ConfigurationValidator<GeocodingConfiguration>
 {
-    /// <inheritdoc />
     protected override void PerformFeatureSpecificValidation(GeocodingConfiguration options, List<string> errors)
     {
         ArgumentNullException.ThrowIfNull(options);

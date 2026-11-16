@@ -18,15 +18,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// <c>source.honua-layer</c> DAG connector. Streams features from a Honua catalog
-/// layer by REUSING the canonical query pipeline
-/// (<see cref="IStreamingFeatureStore.StreamFeaturesAsync"/>) rather than touching
-/// SQL directly, so the layer's permanent filters, paging, CRS handling, and field
-/// masking are inherited. The where/bbox/since inputs are translated into a
-/// <see cref="FeatureQuery"/>; the streamed WKB geometry is converted to GeoJSON
-/// through the shared managed NetTopologySuite reader/writer (no native dependency).
-/// </summary>
 internal sealed class HonuaLayerDagSource : IDagFeatureSource
 {
     private readonly IStreamingFeatureStore _streamingStore;
@@ -117,16 +108,6 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         }
     }
 
-    /// <summary>
-    /// Applies the geometry/time selectors through the canonical
-    /// <see cref="ILayerSelectionFilterTranslator"/> — the same translation the synchronous
-    /// analytics endpoints use (#4624) — instead of a connector-local reinterpretation. The
-    /// translated where/time predicate replaces the plain where clause (SqlFilter takes
-    /// precedence over Where in the store), and the geometry filter replaces any bbox. The
-    /// store still ANDs the layer's permanent filter and row-level security ahead of this
-    /// selection and masks restricted fields, so the caller's selectors only ever narrow what
-    /// the submitter may read.
-    /// </summary>
     private async Task<FeatureQuery> ApplyCanonicalSelectionAsync(
         DagSourceRequest request,
         MetadataV2Object? resource,

@@ -9,7 +9,6 @@ using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>Reconstructs nested Parquet values through Arrow's canonical nested arrays.</summary>
 internal static class GeoParquetNestedAttributeReader
 {
     internal static async Task<Dictionary<string, List<JsonElement?>>> ReadRowGroupAsync(

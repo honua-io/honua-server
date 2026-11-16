@@ -13,10 +13,6 @@ using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHea
 
 namespace Honua.Db.SqlServer.Features.Security;
 
-/// <summary>
-/// SQL Server <see cref="IConnectionDriver"/>: builds a Microsoft.Data.SqlClient connection string
-/// (<c>Data Source=host,port</c>) and probes health with a real <see cref="SqlConnection"/> + <c>SELECT 1</c>.
-/// </summary>
 internal sealed partial class SqlServerConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<SqlServerConnectionDriver> _logger;
@@ -135,10 +131,8 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver, ISe
     private partial void LogProbeFailed(Exception exception);
 }
 
-/// <summary>DI helper that registers the SQL Server connection driver.</summary>
 public static class SqlServerConnectionDriverServiceCollectionExtensions
 {
-    /// <summary>Registers the SQL Server <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
     public static IServiceCollection AddSqlServerConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

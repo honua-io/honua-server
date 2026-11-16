@@ -11,14 +11,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// Secure connection resolver that combines the registry, encryption, and secret resolution
-/// to provide actual database connection strings for application use.
-/// </summary>
-/// <remarks>
-/// This service provides the primary interface for resolving database connections
-/// while maintaining security. All operations are logged and include comprehensive error handling.
-/// </remarks>
 internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IResolvedConnectionStringValidator
 {
     private static readonly Action<ILogger, string, Exception?> _logConnectionNotFound =
@@ -189,12 +181,6 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
         }
     }
 
-    /// <summary>
-    /// Internal method to resolve connection strings with comprehensive error handling.
-    /// </summary>
-    /// <param name="connection">Connection configuration</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Resolved plaintext connection string</returns>
     private async Task<string> ResolveConnectionStringInternalAsync(DataConnection connection, CancellationToken cancellationToken)
     {
         // Check if connection is active
@@ -260,7 +246,6 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
         }
     }
 
-    /// <inheritdoc />
     public async Task ValidateConnectionStringAsync(
         DataConnection connection,
         string connectionString,
@@ -364,10 +349,6 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
         }
     }
 
-    /// <summary>
-    /// Applies the connection host policy to every host the resolved string names, so a stored
-    /// string cannot reach a destination the policy would refuse at registration (SEC-23).
-    /// </summary>
     private async Task EnsureResolvedHostsPermittedAsync(string? hostList, string connectionName, CancellationToken cancellationToken)
     {
         if (_hostAllowlist is null || !_hostAllowlist.IsEnforced)
@@ -405,13 +386,6 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
             _ => throw new InvalidOperationException($"Unsupported Npgsql SSL mode '{sslMode}'.")
         };
 
-    /// <summary>
-    /// Tests an actual database connection to verify connectivity.
-    /// </summary>
-    /// <param name="connectionString">Connection string to test</param>
-    /// <param name="connection">Connection configuration for logging</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if connection is successful</returns>
     private async Task<bool> TestActualConnectionAsync(string connectionString, DataConnection connection, CancellationToken cancellationToken)
     {
         // Provider-aware path: route to the engine driver (MySQL/SQL Server/Oracle/PostgreSQL) so the probe

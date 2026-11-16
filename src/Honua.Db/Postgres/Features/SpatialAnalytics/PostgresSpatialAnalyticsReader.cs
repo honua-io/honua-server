@@ -15,26 +15,6 @@ using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.Parameter
 
 namespace Honua.Db.Postgres.Features.SpatialAnalytics;
 
-/// <summary>
-/// PostgreSQL/PostGIS implementation of <see cref="ISpatialAnalyticsReader"/>.
-/// Each method is a thin façade over <see cref="IFeatureQueryBuilder"/> (which
-/// emits the SQL) and <see cref="IFeatureDataAccess.ExecuteStatisticsQueryAsync"/>
-/// (which runs the query and reshapes the rows into the dictionary form shared
-/// with statistics, date bins, H3 and other analytics endpoints).
-/// </summary>
-/// <remarks>
-/// The reader keeps the same shape as <c>PostgresFeatureStoreRefactored.QueryH3Async</c>
-/// so that telemetry, slow-query logging and result conversion all flow through
-/// the existing data-access pipeline. Cross-cutting concerns like edition gating,
-/// limit enforcement and overflow detection live in the request handler so the
-/// reader stays focused on storage interaction.
-/// <para>
-/// Read policy (permanent filter, row-level security, field masks) is resolved through
-/// <see cref="LayerReadSecurityResolver"/>, the same implementation the feature store
-/// uses, so an analytics operation sees exactly the rows and fields a direct query by
-/// the same caller would. A spatial join resolves the policy of both layers.
-/// </para>
-/// </remarks>
 internal sealed class PostgresSpatialAnalyticsReader : ISpatialAnalyticsReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;

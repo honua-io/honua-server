@@ -8,38 +8,8 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.Generation;
 
-/// <summary>
-/// Translates a layer's authoring-side <see cref="Symbology3D"/> into the
-/// emitted <see cref="TileStyleSpec"/> style-metadata contract, mapping each
-/// rule onto a 3D Tiles Styling <c>conditions</c> expression.
-/// </summary>
-/// <remarks>
-/// The translation is deterministic and order-preserving: rules become ordered
-/// condition pairs in authoring order, with a trailing <c>true</c> fallback
-/// that yields the default material so the client expression is total (every
-/// feature resolves to a value). This mirrors <see cref="Symbology3DResolver"/>'s
-/// first-match-wins semantics exactly, so a client that evaluates the emitted
-/// expression sees the same result the server baked into the GLB.
-/// </remarks>
 public static class TileStyleSpecWriter
 {
-    /// <summary>
-    /// Builds the style-metadata contract for a layer's symbology. Returns a
-    /// spec whose default material is always populated; the <c>color</c> /
-    /// <c>show</c> expressions are present only when the symbology declares
-    /// rules that affect them.
-    /// </summary>
-    /// <param name="symbology">The authoring-side symbology to translate.</param>
-    /// <param name="attributeSchemas">
-    /// Optional metadata-schema entries produced by the publish executor. When
-    /// supplied, the emitted <c>${...}</c> property references are rewritten
-    /// from each rule's raw authoring attribute name to the sanitized /
-    /// de-duplicated <see cref="SceneAttributeSchema.PropertyId"/> that is
-    /// actually written into the tile's <c>EXT_structural_metadata</c> schema,
-    /// so the runtime expression resolves against a property that exists. When
-    /// null (or a rule's attribute has no matching schema entry), the raw
-    /// attribute name is emitted unchanged.
-    /// </param>
     public static TileStyleSpec Build(
         Symbology3D? symbology,
         IReadOnlyList<SceneAttributeSchema>? attributeSchemas = null)
@@ -131,11 +101,6 @@ public static class TileStyleSpecWriter
         return spec;
     }
 
-    /// <summary>
-    /// Builds a case-insensitive map from a source field name to the sanitized
-    /// metadata property id the publish executor emitted for it. Returns null
-    /// when no schema mapping is supplied so the caller emits raw names.
-    /// </summary>
     private static Dictionary<string, string>? BuildPropertyIdMap(
         IReadOnlyList<SceneAttributeSchema>? attributeSchemas)
     {
@@ -154,10 +119,6 @@ public static class TileStyleSpecWriter
         return map;
     }
 
-    /// <summary>
-    /// Serializes the style-metadata contract to a deterministic UTF-8 byte
-    /// sequence using the source-generated context.
-    /// </summary>
     public static byte[] Serialize(TileStyleSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);

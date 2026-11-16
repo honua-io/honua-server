@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.AnomalyDetection;
 
-/// <summary>
-/// Deterministic anomaly analyzer backed by PostGIS aggregate queries.
-/// Detects geometry and attribute anomalies using SQL-based statistical analysis.
-/// </summary>
 internal sealed partial class PostgresAnomalyAnalyzer(
     IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<PostgresAnomalyAnalyzer> logger) : IAnomalyAnalyzer
@@ -30,7 +26,6 @@ internal sealed partial class PostgresAnomalyAnalyzer(
     private const double OutlierStdDevMultiplier = 3.0;
     private const double SuspiciousAreaPerimeterRatio = 0.001;
 
-    /// <inheritdoc />
     public async Task<AnomalyReport> AnalyzeAsync(
         AnomalyAnalysisRequest request,
         CancellationToken cancellationToken = default)
@@ -551,10 +546,6 @@ internal sealed partial class PostgresAnomalyAnalyzer(
         return ids;
     }
 
-    /// <summary>
-    /// Validates and quotes a SQL identifier for safe interpolation.
-    /// Matches the project-wide QuoteIdentifier pattern.
-    /// </summary>
     private static string QuoteIdentifier(string identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier) || !ValidIdentifierRegex().IsMatch(identifier))

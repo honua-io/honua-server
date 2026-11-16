@@ -7,11 +7,6 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Grammar;
 
-/// <summary>
-/// Lexical analyzer for the brace-based Honua spec text form. Emits tokens
-/// annotated with 1-based line/column so diagnostics can surface precise
-/// positions (improvement over CQL2's character-offset-only tokens).
-/// </summary>
 public sealed class SpecLexer
 {
     private const int MaxInputLength = 1024 * 1024; // 1 MiB safety cap.
@@ -33,10 +28,6 @@ public sealed class SpecLexer
     private int _line = 1;
     private int _column = 1;
 
-    /// <summary>
-    /// Creates a new lexer over <paramref name="input"/>.
-    /// </summary>
-    /// <param name="input">Spec source text.</param>
     public SpecLexer(string input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -48,20 +39,8 @@ public sealed class SpecLexer
         _input = input;
     }
 
-    /// <summary>
-    /// Gets comments collected during tokenization, in source order. Each item
-    /// pairs a placeholder location key (<c>line:column</c>) with the raw
-    /// comment text. The parser converts these into JSON-Pointer–keyed
-    /// sidecar entries based on the surrounding block.
-    /// </summary>
     public IReadOnlyList<(string LocationKey, string Text)> Comments => _comments;
 
-    /// <summary>
-    /// Tokenizes the input. Lexer errors become <see cref="SpecDiagnostic"/>
-    /// instances rather than exceptions; an <c>EndOfInput</c> token is always
-    /// appended so parsers can rely on look-ahead.
-    /// </summary>
-    /// <returns>Ordered token list.</returns>
     public IReadOnlyList<SpecToken> Tokenize()
     {
         _tokens.Clear();
@@ -156,10 +135,6 @@ public sealed class SpecLexer
         return _tokens;
     }
 
-    /// <summary>
-    /// Diagnostics collected during tokenization. Consumed by the parser and
-    /// surfaced in <see cref="SpecParseResult.Diagnostics"/>.
-    /// </summary>
     public IReadOnlyList<SpecDiagnostic> Diagnostics => _diagnostics;
 
     private static bool IsInlineWhitespace(char ch) => ch == ' ' || ch == '\t';

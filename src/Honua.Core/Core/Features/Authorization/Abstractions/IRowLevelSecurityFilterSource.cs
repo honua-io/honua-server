@@ -6,35 +6,9 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.Authorization.Abstractions;
 
-/// <summary>
-/// Request-scoped source of the row-level security (RLS) predicate (#502) for a
-/// resource. Resolved per query from the current principal's roles/claims and the
-/// layer's <see cref="Domain.RlsPolicy"/> set, the returned fragment is AND-ed into the
-/// provider's enforced WHERE clause alongside any metadata permanent filter so the same
-/// row-visibility rules apply across every query protocol (GeoServices, OGC, OData).
-/// </summary>
-/// <remarks>
-/// The fragment is always parameterized: attribute names are validated against the
-/// resource schema and claim values are bound as query parameters, so the predicate is
-/// injection-safe regardless of claim contents. A <see langword="null"/> result means
-/// "no RLS applies" (the principal/role has no matching policy); a fragment that
-/// resolves to <c>FALSE</c> means "matching policy but no permitted rows" (fail-secure).
-/// </remarks>
 public interface IRowLevelSecurityFilterSource
 {
-    /// <summary>
-    /// Resolves the enforced RLS predicate for the current request against
-    /// <paramref name="resource"/>, or <see langword="null"/> when no policy applies.
-    /// </summary>
-    /// <param name="resource">The resource (layer) being queried.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default);
-    /// <summary>
-    /// Resolves the same schema-normalized row predicates used by REST reads for
-    /// in-memory event delivery. Every returned predicate must hold. An empty list
-    /// means no row policy applies; implementations that cannot provide predicates
-    /// refuse streaming rather than silently dropping their security constraints.
-    /// </summary>
     Task<IReadOnlyList<FilterExpression>> ResolveExpressionsAsync(
         MetadataV2Object resource, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This row policy source does not support event delivery.");

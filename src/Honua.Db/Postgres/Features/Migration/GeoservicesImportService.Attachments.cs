@@ -12,13 +12,6 @@ internal sealed partial class GeoservicesImportService
 {
     private const int AttachmentQueryBatchSize = 50;
 
-    /// <summary>
-    /// Copies the source layer's attachments into the Honua attachment store and reports the
-    /// attachment inventory independently of the feature counts (issue #4600). The advertised total
-    /// is what the source said exists; <c>UnverifiedParents</c> counts imported features whose
-    /// attachment inventory could not be read at all, so the fidelity gate can tell "no attachments"
-    /// apart from "we never found out".
-    /// </summary>
     private async Task<AttachmentCopyOutcome> CopyAttachmentsAsync(
         GeoservicesImportRequest request,
         GeoservicesLayerInfo layerInfo,
@@ -289,25 +282,16 @@ internal sealed partial class GeoservicesImportService
         };
     }
 
-    /// <summary>
-    /// Attachment-copy accounting for one import run. Kept separate from the feature counters so
-    /// attachment parity is reconciled on its own evidence (issue #4600 acceptance criterion 6).
-    /// </summary>
     internal readonly record struct AttachmentCopyOutcome
     {
-        /// <summary>Attachments whose bytes reached the Honua attachment store.</summary>
         public int Copied { get; init; }
 
-        /// <summary>Advertised attachments that could not be copied.</summary>
         public int Failed { get; init; }
 
-        /// <summary>Attachments the source advertised across every parent feature that was probed.</summary>
         public int Advertised { get; init; }
 
-        /// <summary>Imported features whose source attachment inventory could not be read.</summary>
         public int UnverifiedParents { get; init; }
 
-        /// <summary>Retained untracked rows or failed reconciliation prevent verifying the target set.</summary>
         public bool TargetUnverified { get; init; }
     }
 }

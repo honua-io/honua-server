@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads the change-tracking log from Postgres for incremental replication sync
-/// </summary>
 internal sealed class PostgresChangeTracker : IChangeTracker
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

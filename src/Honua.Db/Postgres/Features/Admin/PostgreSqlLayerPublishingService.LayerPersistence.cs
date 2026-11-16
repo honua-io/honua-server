@@ -21,15 +21,6 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    /// <summary>
-    /// Serializes concurrent publishes of the same source table for the duration of
-    /// the transaction. honua.layers has no unique constraint on
-    /// (table_schema, table_name), so without this two concurrent publishes (e.g.
-    /// parallel AutoPublish imports) could both pass <see cref="FindExistingLayerAsync"/>
-    /// and insert duplicate layer rows. The transaction-scoped advisory lock is
-    /// released automatically at commit/rollback; the loser then re-runs the
-    /// existence check against the committed row and surfaces the Conflict error.
-    /// </summary>
     private static async Task AcquireLayerPublishLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -182,7 +173,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<long> CountSourceRowsAsync(
         string connectionString,
         string schema,
@@ -297,13 +287,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>One keyset page of a canonical snapshot copy.</summary>
     internal readonly record struct SnapshotPage(int Inserted, uint? TableOid, string? Ctid);
 
-    /// <summary>
-    /// Copies snapshot pages until a short or empty page. A full page without a cursor fails
-    /// rather than looping. <paramref name="report"/> runs after every page, including the last.
-    /// </summary>
     internal static async Task<long> CopySnapshotPagesAsync(
         int batchSize,
         Func<bool, uint, string?, CancellationToken, Task<SnapshotPage>> copyPage,
@@ -357,7 +342,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    /// <summary>Single-statement snapshot copy used for views and unknown relkinds.</summary>
     internal static string BuildUnboundedSnapshotSql(
         string featuresTable,
         string sourceTable,
@@ -533,10 +517,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return new SnapshotPage(inserted, sourceOid, sourceTid);
     }
 
-    /// <summary>
-    /// Runs the keyset copy under one publication budget. Statement timeout is set once,
-    /// transaction-local, for every page.
-    /// </summary>
     private async Task<T> ExecuteUnderSnapshotBudgetAsync<T>(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -567,15 +547,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    /// <summary>Seconds the driver read timeout extends past the snapshot budget.</summary>
     internal const int SnapshotCommandTimeoutGraceSeconds = 30;
 
-    /// <summary>
-    /// Runs one canonical snapshot command (copy or pre-refresh delete) under the publication
-    /// budget instead of the connection's ordinary command timeout. The command stays inside the
-    /// caller's transaction, so expiry or caller cancellation leaves it to roll back; the source
-    /// table is never modified.
-    /// </summary>
     internal async Task<object?> ExecuteSnapshotCommandAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         if (command.Transaction is null)

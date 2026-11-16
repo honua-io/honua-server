@@ -6,10 +6,6 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Db.Postgres.Features.WorkflowPackages;
 
-/// <summary>
-/// Source-generated JSON for workflow package rows. Property names and enum
-/// spellings are the storage contract; they are not the Console wire format.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

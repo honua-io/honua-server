@@ -11,14 +11,6 @@ public sealed class PortalAccessProjection
 {
     private readonly bool _enabled;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PortalAccessProjection"/> class.
-    /// </summary>
-    /// <param name="enabled">
-    /// Whether the Portal access projection is enabled. Defaults to
-    /// <see langword="false"/> so the facade stays off-by-default and never
-    /// exposes a discovery surface unless an operator opts in (#1370).
-    /// </param>
     public PortalAccessProjection(bool enabled = false)
     {
         _enabled = enabled;

@@ -6,10 +6,6 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// AOT-safe JSON serialization context for cloud-optimized HDF5 / NetCDF4
-/// multidimensional coverage persistence types.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(MultidimensionalCoverageMetadata))]
 [JsonSerializable(typeof(string[]))]

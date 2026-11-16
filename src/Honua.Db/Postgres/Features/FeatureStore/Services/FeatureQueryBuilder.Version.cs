@@ -24,13 +24,6 @@ internal sealed partial class FeatureQueryBuilder
 
     private const string VersionEditsTable = "honua.version_edits";
 
-    /// <summary>
-    /// Returns the feature-source SQL to substitute for the base table reference. For the DEFAULT version
-    /// this is the bare base table name, so the emitted SQL is byte-identical to the non-versioned path.
-    /// For a branch version it is a parenthesized overlay subquery aliased to <paramref name="alias"/>
-    /// that yields the same columns as the base table. The overlay's version parameter is appended to
-    /// <paramref name="parameters"/> in positional order at the point the source is emitted.
-    /// </summary>
     private string BuildVersionedFeatureSource(
         FeatureQuery query,
         string alias,
@@ -78,17 +71,9 @@ internal sealed partial class FeatureQueryBuilder
             $"WHERE o.version_id = {versionParam} AND o.operation <> 3) AS {alias}");
     }
 
-    /// <summary>
-    /// Whether the query targets a non-DEFAULT branch version. DEFAULT (null/IsDefault) always returns
-    /// false so the byte-identical base path is taken.
-    /// </summary>
     private static bool IsVersionedQuery(FeatureQuery query)
         => query.VersionContext is { IsDefault: false };
 
-    /// <summary>
-    /// Guards a query shape that does not support the v1 branch-versioning overlay. Throws for a
-    /// non-DEFAULT version; no-op for DEFAULT so the base path is unaffected.
-    /// </summary>
     private static void GuardVersionedReadSupported(FeatureQuery query, string shape)
     {
         if (IsVersionedQuery(query))
@@ -99,10 +84,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Nullable overload of <see cref="GuardVersionedReadSupported(FeatureQuery, string)"/> for builder
-    /// entry points that accept an optional query. A null query is DEFAULT (no guard).
-    /// </summary>
     private static void GuardVersionedReadSupported(FeatureQuery? query, string shape)
     {
         if (query.HasValue)

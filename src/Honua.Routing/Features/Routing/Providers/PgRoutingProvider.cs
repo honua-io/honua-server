@@ -10,24 +10,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// pgRouting-backed routing provider. Solves routes with <c>pgr_dijkstra</c> and
-/// service areas with <c>pgr_drivingDistance</c> over the osm2pgrouting-style
-/// <c>ways</c> / <c>ways_vertices_pgr</c> topology provisioned by migration
-/// 043_CreatePgRoutingTopology.sql.
-/// </summary>
-/// <remarks>
-/// Sessions are acquired from the shared <see cref="IDatabaseSessionFactory"/>
-/// (registered by the active Postgres provider) so routing reuses the application's
-/// pooled, secure connection substrate rather than opening its own data source. All
-/// queries are read-only and parameterized; no user value is string-interpolated
-/// into SQL. SQL targets pgRouting 3.x.
-/// </remarks>
 internal sealed class PgRoutingProvider : IRoutingProvider
 {
-    /// <summary>
-    /// pgRouting provider name constant.
-    /// </summary>
     public const string ProviderName = "pgrouting";
 
     private readonly IDatabaseSessionFactory _sessionFactory;
@@ -46,14 +30,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     // applied in exactly one place.
     private readonly RoutingCostUnit _costUnit;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class
-    /// bound to the built-in default network dataset (the existing
-    /// <c>public.ways</c> topology). Retained for direct construction (tests) that
-    /// do not exercise multi-dataset resolution.
-    /// </summary>
-    /// <param name="sessionFactory">Shared database session factory.</param>
-    /// <param name="logger">Logger.</param>
     public PgRoutingProvider(
         IDatabaseSessionFactory sessionFactory,
         ILogger<PgRoutingProvider> logger)
@@ -70,16 +46,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     {
     }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class
-    /// resolving its edge/vertex tables from the configured network dataset
-    /// (Phase 0 of #1882).
-    /// </summary>
-    /// <param name="sessionFactory">Shared database session factory.</param>
-    /// <param name="logger">Logger.</param>
-    /// <param name="datasetResolver">Network-dataset resolver.</param>
-    /// <param name="options">Bound routing configuration (selects the dataset id).</param>
-    /// <param name="capacityLimiter">Process-wide gate on concurrent solves.</param>
     public PgRoutingProvider(
         IDatabaseSessionFactory sessionFactory,
         ILogger<PgRoutingProvider> logger,
@@ -125,11 +91,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         _capacityLimiter = capacityLimiter ?? throw new ArgumentNullException(nameof(capacityLimiter));
     }
 
-    /// <summary>
-    /// Resolves the active network dataset, throwing a clear error when the
-    /// configured id is not registered. The dataset's edge/vertex table names are
-    /// threaded into the solve SQL.
-    /// </summary>
     private async Task<NetworkDataset> ResolveDatasetAsync(CancellationToken cancellationToken)
     {
         var dataset = await _datasetResolver.ResolveAsync(_networkDatasetId, cancellationToken).ConfigureAwait(false);
@@ -175,19 +136,10 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return profile;
     }
 
-    /// <inheritdoc />
     public string Name => ProviderName;
 
-    /// <summary>
-    /// The single travel mode pgRouting can route: the topology stores one
-    /// <c>cost</c>/<c>reverse_cost</c> weight pair, so there is no per-mode
-    /// impedance. The MVP weight is documented as a driving cost, so the provider
-    /// advertises <c>driving</c> only. Walking/cycling/truck require additional
-    /// per-mode cost columns (deferred — see ADR-0050 and the parity doc).
-    /// </summary>
     public const string DrivingTravelMode = "driving";
 
-    /// <inheritdoc />
     public RoutingProviderCapabilities Capabilities { get; } = new(
         SupportsRoute: true,
         SupportsServiceArea: true,
@@ -220,7 +172,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         ],
     };
 
-    /// <inheritdoc />
     public async Task<RoutingProviderCapabilities> GetCapabilitiesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -231,7 +182,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         };
     }
 
-    /// <inheritdoc />
     public async Task<RouteSolveResult> SolveRouteAsync(
         RouteSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -357,7 +307,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
     }
 
-    /// <inheritdoc />
     public async Task<ServiceAreaSolveResult> SolveServiceAreaAsync(
         ServiceAreaSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -460,7 +409,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
     }
 
-    /// <inheritdoc />
     public async Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
         ClosestFacilitySolveRequest request,
         CancellationToken cancellationToken = default)
@@ -609,7 +557,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
     }
 
-    /// <inheritdoc />
     public async Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
         OdCostMatrixSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -745,12 +692,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
     }
 
-    /// <summary>
-    /// Materializes all requested OD straight lines in one parameterized query.
-    /// This keeps the cost-only path unchanged and avoids a per-cell reprojection
-    /// query while delegating CRS handling to the same PostGIS substrate used by
-    /// route and service-area geometry.
-    /// </summary>
     private static async Task<IReadOnlyList<string>> MaterializeOdStraightLinesAsync(
         IDatabaseSession session,
         OdCostMatrixSolveRequest request,
@@ -818,7 +759,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return geometries;
     }
 
-    /// <inheritdoc />
     public async Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
         LocationAllocationSolveRequest request,
         CancellationToken cancellationToken = default)
@@ -915,10 +855,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
     }
 
-    /// <summary>
-    /// Snaps a list of points to their nearest graph vertices, preserving input order
-    /// (null vertex id for a point that could not be snapped).
-    /// </summary>
     private static async Task<IReadOnlyList<(RoutePoint Point, long? VertexId)>> SnapAllAsync(
         IDatabaseSession session,
         NetworkDataset dataset,
@@ -938,13 +874,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return snapped;
     }
 
-    /// <summary>
-    /// Runs a one-to-many <c>pgr_dijkstraCost</c> from a single source vertex to the
-    /// supplied destination vertices over the (already barrier-filtered) edges-SQL,
-    /// returning a destination-vertex → aggregate-cost map. The edges-SQL is bound as
-    /// a parameter; the source/destination vertex ids are server-derived bound
-    /// arrays.
-    /// </summary>
     private static async Task<IReadOnlyDictionary<long, double>> OneToManyCostAsync(
         IDatabaseSession session,
         string edgesSql,
@@ -1102,10 +1031,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return any ? (steps, cost) : null;
     }
 
-    /// <summary>
-    /// A zero-length line at a stop whose every leg stayed on one vertex, in the
-    /// request output SRID. Empty when PostGIS does not return a geometry.
-    /// </summary>
     private static async Task<string> DegenerateSameVertexGeometryAsync(
         IDatabaseSession session,
         RoutePoint point,
@@ -1251,27 +1176,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             .ConfigureAwait(false) ?? string.Empty;
     }
 
-    /// <summary>
-    /// Session-local table of edge gids restricted by the current solve's barriers.
-    /// Created only when barriers are present. Pool reset discards it with the
-    /// connection, so the next checkout does not see a previous solve's rows.
-    /// </summary>
     private const string BlockedEdgesTable = "pg_temp.honua_blocked_edges";
 
-    /// <summary>
-    /// Materializes the graph edge gids restricted by the supplied barriers into
-    /// <see cref="BlockedEdgesTable"/> and returns how many rows were inserted.
-    /// Zero (no barriers, or none intersect an edge) leaves the unrestricted graph
-    /// in use. Point barriers block the single nearest edge; line and polygon
-    /// barriers block every edge they intersect.
-    /// </summary>
-    /// <remarks>
-    /// Barrier geometries are bound as GeoJSON text plus a kind code and rebuilt
-    /// with <c>ST_GeomFromGeoJSON</c>. The intersected gids stay in the session
-    /// temp table. Edges SQL names that table instead of inlining every gid, so
-    /// its length does not grow with the network (#6158). Statements are separate
-    /// because the driver rejects multi-statement commands.
-    /// </remarks>
     private static async Task<int> ResolveBlockedEdgesAsync(
         IDatabaseSession session,
         NetworkDataset dataset,
@@ -1353,26 +1259,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Builds the inner pgr_dijkstra edges-SQL for the dataset. When barriers
-    /// matched any edge, the exclusion names <see cref="BlockedEdgesTable"/>
-    /// instead of embedding gid literals. Only the validated edge-table identifier
-    /// is embedded; no user string ever enters the SQL text.
-    /// </summary>
     private static string BuildRouteEdgesSql(
         NetworkDataset dataset,
         RoutingTravelProfile profile,
         int blockedEdgeCount)
         => ApplyBlockedEdgeFilter(RouteBaseEdgesSqlFor(dataset, profile), blockedEdgeCount);
 
-    /// <summary>
-    /// Appends a <c>WHERE gid NOT IN (SELECT ...)</c> exclusion against
-    /// <see cref="BlockedEdgesTable"/> when <paramref name="blockedEdgeCount"/> is
-    /// positive. The base SQL has no existing <c>WHERE</c>. The fragment contains
-    /// no quotes so it can be embedded in the single-quoted edges SQL that
-    /// <c>pgr_dijkstra</c> re-parses. Returns the base SQL unchanged when nothing
-    /// is blocked.
-    /// </summary>
     private static string ApplyBlockedEdgeFilter(string baseEdgesSql, int blockedEdgeCount)
     {
         if (blockedEdgeCount <= 0)
@@ -1383,10 +1275,5 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return $"{baseEdgesSql} WHERE gid NOT IN (SELECT gid FROM {BlockedEdgesTable})";
     }
 
-    /// <summary>
-    /// One step of a Dijkstra leg: the node visited and the edge traversed from it.
-    /// Carrying the node lets the geometry merge orient each edge to start at the
-    /// step's node, preserving traversal order across legs and revisits.
-    /// </summary>
     private readonly record struct RouteStep(long Node, long Edge);
 }

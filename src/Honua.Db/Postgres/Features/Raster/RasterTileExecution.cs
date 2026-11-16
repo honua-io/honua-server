@@ -6,7 +6,6 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>Executes bounded tile SQL without compiling unused sampler fallback branches.</summary>
 internal static class RasterTileExecution
 {
     internal static async Task DisableJitAsync(

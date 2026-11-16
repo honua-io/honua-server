@@ -21,7 +21,6 @@ internal static class DatabricksFeatureQueryBuilder
     private const string IdAlias = "__honua_id";
     private static readonly DatabricksSqlDialect Dialect = DatabricksSqlDialect.Instance;
 
-    /// <inheritdoc />
     public static DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -46,7 +45,6 @@ internal static class DatabricksFeatureQueryBuilder
         return new DatabricksSqlStatement(sql.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public static DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -60,7 +58,6 @@ internal static class DatabricksFeatureQueryBuilder
         return new DatabricksSqlStatement(sql.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public static DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -80,7 +77,6 @@ internal static class DatabricksFeatureQueryBuilder
         return new DatabricksSqlStatement(sql.ToString(), parameters);
     }
 
-    /// <inheritdoc />
     public static DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -96,10 +92,8 @@ internal static class DatabricksFeatureQueryBuilder
         return new DatabricksSqlStatement(sql.ToString(), parameters);
     }
 
-    /// <summary>Geometry-hex column alias produced by SELECT/extent statements.</summary>
     public static string GeometryHexColumn => GeometryHexAlias;
 
-    /// <summary>Identifier column alias produced by SELECT statements.</summary>
     public static string IdColumn => IdAlias;
 
     private static IReadOnlyList<string> ResolveAttributeColumns(DatabricksLayerMapping mapping, FeatureQuery query)
@@ -233,7 +227,6 @@ internal static class DatabricksFeatureQueryBuilder
         }
     }
 
-    /// <inheritdoc />
     public static DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -309,14 +302,6 @@ internal static class DatabricksFeatureQueryBuilder
         return string.Join(", ", columns);
     }
 
-    /// <summary>
-    /// Translates the canonical <see cref="FeatureQuery.Where"/> clause into a parameterized
-    /// Spark-SQL predicate. The GeoServices REST where string is parsed into the shared filter
-    /// AST and walked by <see cref="DatabricksSqlFilterTranslator"/>; translated literal operands
-    /// are appended to <paramref name="parameters"/> as <c>:pN</c> bindings. Returns null when no
-    /// filter is present. A Postgres-flavored <see cref="FeatureQuery.SqlFilter"/> (produced by the
-    /// shared translator pipeline) is ignored in favor of re-parsing the canonical Where text.
-    /// </summary>
     private static string? TranslateWhere(
         DatabricksLayerMapping mapping,
         FeatureQuery query,

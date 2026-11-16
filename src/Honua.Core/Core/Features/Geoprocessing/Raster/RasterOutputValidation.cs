@@ -5,76 +5,42 @@ using System.Security.Cryptography;
 
 namespace Honua.Core.Features.Geoprocessing.Raster;
 
-/// <summary>Bounded validation options for raster output descriptors.</summary>
 public sealed record RasterOutputValidationOptions
 {
-    /// <summary>Shared default options.</summary>
     public static RasterOutputValidationOptions Default { get; } = new();
 
-    /// <summary>
-    /// Deployment ceiling for inline output payload bytes. Clamped to
-    /// <see cref="RasterOutputContract.MaximumInlinePayloadBytes"/>.
-    /// </summary>
     public int MaxInlineBytes { get; init; } = RasterOutputContract.MaximumInlinePayloadBytes;
 }
 
-/// <summary>Stable validation codes for raster output descriptors.</summary>
 public static class RasterOutputValidationCodes
 {
-    /// <summary>The descriptor version is outside the supported range.</summary>
     public const string UnsupportedContractVersion = "RASTER_OUTPUT_UNSUPPORTED_CONTRACT_VERSION";
 
-    /// <summary>A required field is missing or malformed.</summary>
     public const string InvalidField = "RASTER_OUTPUT_INVALID_FIELD";
 
-    /// <summary>The content identity block is missing or malformed.</summary>
     public const string InvalidContentIdentity = "RASTER_OUTPUT_INVALID_CONTENT_IDENTITY";
 
-    /// <summary>An object locator contains traversal, URI, or control syntax.</summary>
     public const string UnsafeLocator = "RASTER_OUTPUT_UNSAFE_LOCATOR";
 
-    /// <summary>The inline payload exceeds the configured ceiling.</summary>
     public const string InlinePayloadTooLarge = "RASTER_OUTPUT_INLINE_PAYLOAD_TOO_LARGE";
 
-    /// <summary>The inline payload does not match its declared checksum.</summary>
     public const string ChecksumMismatch = "RASTER_OUTPUT_CHECKSUM_MISMATCH";
 
-    /// <summary>
-    /// A native Zarr result is a multi-object hierarchy, not one publishable object.
-    /// Single-object Zarr publication is rejected fail-closed until #3103 lands the
-    /// hierarchy-aware protocol; Zarr is never inserted into the COG catalog.
-    /// </summary>
     public const string ZarrOutputUnsupported = "RASTER_OUTPUT_ZARR_UNSUPPORTED";
 }
 
-/// <summary>A single raster output descriptor validation failure.</summary>
-/// <param name="Code">Stable machine-readable code.</param>
-/// <param name="Field">Descriptor field path.</param>
-/// <param name="Message">Client-safe message.</param>
 public sealed record RasterOutputValidationError(string Code, string Field, string Message);
 
-/// <summary>Validation outcome for a raster output descriptor.</summary>
 public sealed record RasterOutputValidationResult
 {
-    /// <summary>Validation failures; empty when the descriptor is valid.</summary>
     public IReadOnlyList<RasterOutputValidationError> Errors { get; init; } =
         Array.Empty<RasterOutputValidationError>();
 
-    /// <summary>Whether the descriptor passed validation.</summary>
     public bool IsValid => Errors.Count == 0;
 }
 
-/// <summary>
-/// Bounded, allocation-conscious validation for durable raster output descriptors.
-/// Applied by the publishing worker before a descriptor becomes a durable artifact
-/// reference and re-applied by server-side readers before resolving one.
-/// </summary>
 public static class RasterOutputDescriptorValidator
 {
-    /// <summary>Validates one descriptor against the configured bounds.</summary>
-    /// <param name="descriptor">Descriptor to validate.</param>
-    /// <param name="options">Bounded validation options.</param>
-    /// <returns>The validation outcome.</returns>
     public static RasterOutputValidationResult Validate(
         RasterOutputDescriptor descriptor,
         RasterOutputValidationOptions? options = null)
@@ -275,13 +241,6 @@ public static class RasterOutputDescriptorValidator
         }
     }
 
-    /// <summary>
-    /// Detects a Zarr result by media type or object-key shape so single-object Zarr
-    /// publication fails closed (#3103 owns the multi-object protocol).
-    /// </summary>
-    /// <param name="mediaType">Candidate media type, with or without parameters.</param>
-    /// <param name="objectKey">Candidate object key or file name.</param>
-    /// <returns>Whether the output looks like a Zarr hierarchy member.</returns>
     public static bool LooksLikeZarr(string? mediaType, string? objectKey)
     {
         if (mediaType is { Length: > 0 } && mediaType.Contains("zarr", StringComparison.OrdinalIgnoreCase))

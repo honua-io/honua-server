@@ -6,37 +6,17 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-/// <summary>
-/// Deterministic <see cref="AppPackage"/> draft factory (ADR-0076, decision D5).
-/// </summary>
-/// <remarks>
-/// The app-side counterpart to <see cref="MapPackageDraftFactory"/>: it replaces
-/// the prompt-driven <c>AppGenerationService</c> entry point with a pure
-/// projection of structured input. It carries the same two retained postures —
-/// the server owns <see cref="AppPackage.Format"/> and
-/// <see cref="AppPackage.Status"/> (retained knowledge §5), and every draft
-/// starts with the closed-by-default <see cref="AppSharePolicy.Closed"/> sharing
-/// posture, which the caller cannot widen through this entry point.
-/// </remarks>
 public sealed class AppPackageDraftFactory
 {
-    /// <summary>Server-owned package format discriminator.</summary>
     public const string AppPackageFormat = "honua_app_package.v1";
 
-    /// <summary>Identifier prefix, producing <c>app_…</c> identifiers.</summary>
     public const string IdentifierPrefix = "app";
 
-    /// <summary>Target SDK applied when the request does not name one.</summary>
     public const string DefaultTargetSdk = "honua-sdk-js";
 
     private readonly IDraftIdentifierGenerator _identifiers;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AppPackageDraftFactory"/> class.
-    /// </summary>
-    /// <param name="identifiers">Generator for the <c>app_…</c> identifier.</param>
-    /// <param name="timeProvider">Clock supplying <see cref="AppPackage.CreatedAt"/>.</param>
     public AppPackageDraftFactory(IDraftIdentifierGenerator identifiers, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(identifiers);
@@ -45,7 +25,6 @@ public sealed class AppPackageDraftFactory
         _timeProvider = timeProvider;
     }
 
-    /// <inheritdoc />
     public AppPackageDraftResult CreateDraft(AppPackageDraftRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

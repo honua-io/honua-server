@@ -6,36 +6,10 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Scene;
 
-/// <summary>
-/// Builds the I3S per-field statistics summary served at
-/// <c>statistics/f_{n}/0</c> (#1811). The summary lets an ArcGIS client drive
-/// identify, classification, and renderer ranges for one attribute field.
-/// </summary>
-/// <remarks>
-/// The statistics are derived honestly from what the hosted scene knows without
-/// decoding tile content: the count of content-bearing tiles in the projected
-/// node tree gives the number of addressable node geometries (a defensible lower
-/// bound on distinct <c>OBJECTID</c> values for identify discovery). Per-value
-/// min/max for arbitrary user attribute fields requires decoding the glTF
-/// <c>EXT_structural_metadata</c> property tables — that decode is the deferred
-/// hard-lane work (#1810/#1811), so this builder emits the field-presence /
-/// count summary the descriptor can back today rather than fabricating ranges.
-/// </remarks>
 public static class I3sSceneStatisticsBuilder
 {
-    /// <summary>
-    /// The descriptor's default key for the synthetic <c>OBJECTID</c> field every
-    /// served 3D Object node carries.
-    /// </summary>
     public const string ObjectIdFieldKey = "f_0";
 
-    /// <summary>
-    /// Builds the statistics summary for one attribute-storage field of a hosted
-    /// scene.
-    /// </summary>
-    /// <param name="scene">The hosted scene dataset.</param>
-    /// <param name="field">The attribute-storage descriptor for the field.</param>
-    /// <returns>The statistics document for the field.</returns>
     public static I3sAttributeStatisticsDocument Build(
         SceneDataset scene,
         I3sAttributeStorageInfo field)
@@ -62,22 +36,6 @@ public static class I3sSceneStatisticsBuilder
         };
     }
 
-    /// <summary>
-    /// Builds the statistics summary for one attribute-storage field directly
-    /// from the ordered scene features, computing real numeric ranges instead of
-    /// the node-count lower bound.
-    /// </summary>
-    /// <remarks>
-    /// For the synthetic <c>OBJECTID</c> field and any <c>Float64</c> user field
-    /// the summary carries the true <c>totalValuesCount</c> (features with a
-    /// non-null value), <c>min</c>/<c>max</c>, and distinct-value <c>count</c>
-    /// derived from the features' projected attributes. A <c>String</c> field
-    /// has no numeric range, so only <c>totalValuesCount</c> and the distinct
-    /// <c>count</c> are emitted.
-    /// </remarks>
-    /// <param name="features">The ordered scene features supplying attribute values.</param>
-    /// <param name="field">The attribute-storage descriptor for the field.</param>
-    /// <returns>The statistics document for the field.</returns>
     public static I3sAttributeStatisticsDocument Build(
         IReadOnlyList<SceneFeature> features,
         I3sAttributeStorageInfo field)

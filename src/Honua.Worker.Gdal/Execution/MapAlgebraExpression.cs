@@ -5,29 +5,8 @@ using System.Collections.Frozen;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Strict allow-list validator for the user-supplied <c>raster.map-algebra</c>
-/// expression (#2239). <c>gdal_calc.py</c> evaluates the <c>--calc</c> string with
-/// Python <c>eval()</c> in a NumPy namespace, so an un-vetted expression is remote
-/// code execution. This validator admits ONLY:
-/// <list type="bullet">
-/// <item>single-uppercase band variables A–Z, each within the supplied band count;</item>
-/// <item>a fixed set of arithmetic / comparison / logical operators and grouping;</item>
-/// <item>numeric literals; and</item>
-/// <item>a small allow-list of safe NumPy element-wise functions.</item>
-/// </list>
-/// Underscores, quotes, attribute access, indexing, and any other character are
-/// rejected, which blocks dunder / import / attribute-traversal escapes.
-///
-/// <para>
-/// The same rule is mirrored at submit time in
-/// <c>ProcessPlanValidator.ValidateRasterMapAlgebraSemantics</c> so a plan accepted
-/// at submit is also accepted by the executor.
-/// </para>
-/// </summary>
 internal static class MapAlgebraExpression
 {
-    /// <summary>Defensive upper bound on the expression length.</summary>
     public const int MaxLength = 2048;
 
     // Element-wise NumPy functions safe to expose in the calc namespace. No I/O,
@@ -39,11 +18,6 @@ internal static class MapAlgebraExpression
         "sin", "cos", "tan", "arctan", "nan_to_num",
     }.ToFrozenSet(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Validates <paramref name="expression"/> against the allow-list for a calc
-    /// with <paramref name="bandCount"/> source rasters (band variables A …
-    /// A+bandCount-1).
-    /// </summary>
     public static bool IsAllowed(string expression, int bandCount, out string error)
     {
         error = "";

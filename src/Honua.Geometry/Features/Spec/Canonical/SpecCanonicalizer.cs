@@ -10,23 +10,10 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Features.Spec.Canonical;
 
-/// <summary>
-/// Deterministic canonical-JSON emitter for <see cref="SpecDocument"/>.
-/// Emits UTF-8 bytes via <see cref="Utf8JsonWriter"/> with alphabetically
-/// sorted object keys, arrays preserving declaration order, and no ambient
-/// state. Comments from the text form are preserved under
-/// <c>meta.comments</c> keyed by JSON-Pointer path.
-/// </summary>
 public sealed class SpecCanonicalizer : ISpecCanonicalizer
 {
     private static readonly WKTWriter _wktWriter = new();
 
-    /// <summary>
-    /// Serializes <paramref name="document"/> to canonical-JSON UTF-8 bytes.
-    /// </summary>
-    /// <param name="document">AST to serialize.</param>
-    /// <param name="indent"><c>true</c> for pretty-printed output (testing/tools only — hash inputs should pass <c>false</c>).</param>
-    /// <returns>Canonical JSON bytes.</returns>
     public byte[] ToUtf8(SpecDocument document, bool indent = false)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -45,12 +32,6 @@ public sealed class SpecCanonicalizer : ISpecCanonicalizer
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Serializes <paramref name="document"/> to a canonical-JSON UTF-16 string.
-    /// </summary>
-    /// <param name="document">AST to serialize.</param>
-    /// <param name="indent"><c>true</c> for pretty-printed output.</param>
-    /// <returns>Canonical JSON.</returns>
     public string ToJson(SpecDocument document, bool indent = false)
     {
         var bytes = ToUtf8(document, indent);

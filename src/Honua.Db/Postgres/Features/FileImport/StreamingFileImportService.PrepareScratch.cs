@@ -232,9 +232,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Buffer a GeoParquet stream to a seekable stream if needed.
-    /// </summary>
     private async Task<GeoParquetScratch> PrepareGeoParquetScratchAsync(
         Stream stream,
         CancellationToken cancellationToken)
@@ -285,9 +282,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Extract a FileGDB .gdb.zip archive to a scratch directory.
-    /// </summary>
     private async Task<FileGdbScratch> PrepareFileGdbScratchAsync(
         Stream stream,
         CancellationToken cancellationToken)
@@ -532,15 +526,6 @@ internal sealed partial class StreamingFileImportService
         return new ArchiveExtractionBudget(maxTotalBytes, maxEntryBytes, maxCompressionRatio);
     }
 
-    /// <summary>
-    /// Combines a scratch directory with a filename component derived from untrusted zip
-    /// entry data (e.g. <c>entries.BaseName</c> from <see cref="SelectShapefileEntries"/>).
-    /// <see cref="ZipArchiveEntry.Name"/> cannot contain a path separator, but a malicious
-    /// or malformed archive could still supply a component that <see cref="Path.IsPathRooted(string)"/>
-    /// treats as absolute (e.g. a Windows drive-relative "C:name" segment), which would make
-    /// <see cref="Path.Combine(string, string)"/> silently discard <paramref name="scratchDir"/>
-    /// and write outside the scratch sandbox. Reject that case explicitly instead.
-    /// </summary>
     private static string CombineScratchComponentPath(string scratchDir, string componentName)
     {
         if (Path.IsPathRooted(componentName))

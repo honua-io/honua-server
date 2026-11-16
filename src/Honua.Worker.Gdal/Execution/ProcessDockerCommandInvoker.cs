@@ -7,18 +7,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Production <see cref="IDockerCommandInvoker"/> that launches the container
-/// runtime (<c>docker</c> / <c>podman</c>) as a child process. Mirrors the child-
-/// process management of <see cref="ProcessGdalCommandRunner"/> (no shell, captured
-/// stdout/stderr, kill-on-cancel). It is exercised end-to-end only where a Docker
-/// daemon is present (CI / local-Docker dev box); the argv it receives is the part
-/// verified offline by <see cref="DockerGdalCommandRunner"/>'s unit tests.
-/// </summary>
 internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerCommandInvoker> logger)
     : IDockerCommandInvoker
 {
-    /// <inheritdoc />
     public async Task<GdalCommandResult> RunAsync(
         string executable,
         IReadOnlyList<string> arguments,
@@ -42,7 +33,6 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         };
     }
 
-    /// <inheritdoc />
     public async Task<bool> ImageExistsAsync(
         string executable,
         string image,

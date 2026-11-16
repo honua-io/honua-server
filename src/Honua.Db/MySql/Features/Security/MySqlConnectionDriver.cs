@@ -12,10 +12,6 @@ using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHea
 
 namespace Honua.Db.MySql.Features.Security;
 
-/// <summary>
-/// MySQL/MariaDB <see cref="IConnectionDriver"/>: builds a MySqlConnector connection string and probes health
-/// with a real <see cref="MySqlConnection"/> + <c>SELECT 1</c>.
-/// </summary>
 internal sealed partial class MySqlConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<MySqlConnectionDriver> _logger;
@@ -101,10 +97,8 @@ internal sealed partial class MySqlConnectionDriver : IConnectionDriver, ISecure
     };
 }
 
-/// <summary>DI helper that registers the MySQL connection driver.</summary>
 public static class MySqlConnectionDriverServiceCollectionExtensions
 {
-    /// <summary>Registers the MySQL/MariaDB <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
     public static IServiceCollection AddMySqlConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

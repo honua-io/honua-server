@@ -5,99 +5,30 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
-/// <summary>
-/// Worker-side contract for executing a claimed job. Implementations are registered
-/// per <see cref="ExecutionJobKind"/> and invoked by the worker host when a job
-/// is claimed from the queue.
-/// </summary>
 public interface IJobExecutor
 {
-    /// <summary>
-    /// The job kind this executor handles.
-    /// </summary>
     ExecutionJobKind Kind { get; }
 
-    /// <summary>
-    /// The set of runtime profiles this executor is willing to run.
-    /// </summary>
-    /// <remarks>
-    /// This is the worker-side half of the runtime-profile claim fence. The default
-    /// implementation returns <see cref="RuntimeProfiles.DefaultAccepted"/>
-    /// (managed/default only) so that every existing executor — and the lean
-    /// dispatcher composed from them — is correctly fenced and can NEVER claim a
-    /// <see cref="RuntimeProfiles.Native"/> job without opting in. An undeclared set
-    /// therefore means "managed/default only", NOT "accept any profile". The
-    /// heavyweight GDAL worker (added in a later stream) overrides this to declare
-    /// <c>{ "native" }</c>.
-    ///
-    /// <para>
-    /// A job whose <see cref="ExecutionJobSpec.RuntimeProfile"/> is <c>null</c> or
-    /// empty is treated as the managed/default profile (see
-    /// <see cref="RuntimeProfiles.Normalize(string?)"/>), so pre-profile jobs remain
-    /// claimable by managed workers and are never starved.
-    /// </para>
-    /// </remarks>
     IReadOnlySet<string> AcceptedRuntimeProfiles => RuntimeProfiles.DefaultAccepted;
 
-    /// <summary>
-    /// Executes the job. The implementation should report progress, append structured
-    /// logs, and publish artifact references through <paramref name="context"/>.
-    /// </summary>
-    /// <param name="job">The claimed execution job record.</param>
-    /// <param name="context">
-    /// Runtime context providing progress reporting, structured logging,
-    /// artifact publication, and cooperative cancellation.
-    /// </param>
-    /// <param name="cancellationToken">
-    /// Cancellation token that is triggered when the job is cancelled or
-    /// the worker is shutting down.
-    /// </param>
-    /// <returns>
-    /// The terminal status of the job. Implementations should return
-    /// <see cref="ExecutionJobStatus.Succeeded"/> or <see cref="ExecutionJobStatus.Failed"/>.
-    /// </returns>
     Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
         CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Result returned by an <see cref="IJobExecutor"/> after execution completes.
-/// </summary>
 public sealed record JobExecutionResult
 {
-    /// <summary>
-    /// Terminal status of the execution.
-    /// </summary>
     public required ExecutionJobStatus Status { get; init; }
 
-    /// <summary>
-    /// Error message when the execution failed.
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>
-    /// Whether a failed execution may consume the remaining retry budget.
-    /// Deterministic capability or input failures set this to false.
-    /// </summary>
     public bool IsRetryable { get; init; } = true;
 
-    /// <summary>
-    /// Warnings collected during execution.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
-    /// <summary>
-    /// Whether successful execution completed by committing sink effects. A later
-    /// operator cancellation cannot undo this completion. Finalization also requires
-    /// a durable committed-effect receipt before honouring this indication.
-    /// </summary>
     public bool CompletedWithCommittedEffects { get; init; }
 
-    /// <summary>
-    /// Creates a successful result.
-    /// </summary>
     public static JobExecutionResult Succeeded(IReadOnlyList<string>? warnings = null)
         => new()
         {
@@ -105,9 +36,6 @@ public sealed record JobExecutionResult
             Warnings = warnings ?? []
         };
 
-    /// <summary>
-    /// Creates a failed result.
-    /// </summary>
     public static JobExecutionResult Failed(string errorMessage, IReadOnlyList<string>? warnings = null)
         => new()
         {
@@ -117,52 +45,23 @@ public sealed record JobExecutionResult
         };
 }
 
-/// <summary>
-/// Runtime context provided to <see cref="IJobExecutor"/> implementations during execution.
-/// Mediates all side effects (progress, logs, artifacts) through the substrate rather than
-/// requiring executors to depend on infrastructure directly.
-/// </summary>
 public interface IJobExecutionContext
 {
-    /// <summary>
-    /// Stable identifier of the executing job.
-    /// </summary>
     string OperationId { get; }
 
-    /// <summary>
-    /// Reports progress for the executing job.
-    /// </summary>
-    /// <param name="percentComplete">Completion percentage (0-100), or null if indeterminate.</param>
-    /// <param name="phase">Human-readable phase description.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReportProgressAsync(
         double? percentComplete,
         string? phase,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Appends a structured log entry for the executing job.
-    /// </summary>
-    /// <param name="entry">Log entry to append.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task AppendLogAsync(
         ExecutionLogEntry entry,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Registers an artifact reference produced by the executing job.
-    /// </summary>
-    /// <param name="artifactReference">Stable artifact reference string.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task PublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Publishes an artifact and reports whether the execution fence accepted it.
-    /// Durable contexts must return false when ownership, attempt identity, or
-    /// cancellation rejects publication. Lease-free contexts accept completed writes.
-    /// </summary>
     async Task<bool> TryPublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default)
@@ -171,12 +70,6 @@ public interface IJobExecutionContext
         return true;
     }
 
-    /// <summary>
-    /// Records a receipt for a sink transaction that has already committed. Durable
-    /// contexts preserve this evidence after operator cancellation, while retaining
-    /// worker ownership and attempt fences. Rejection must be surfaced to the executor.
-    /// Use an independent cleanup token after commit rather than the cancelled job token.
-    /// </summary>
     async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
     {
         if (!await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false))
@@ -185,16 +78,6 @@ public interface IJobExecutionContext
         }
     }
 
-    /// <summary>
-    /// Verifies that the worker still owns the active execution attempt before an
-    /// executor performs an external side effect. Lightweight contexts that do not
-    /// have a durable lease may keep the default no-op implementation.
-    /// </summary>
-    /// <remarks>
-    /// Publication is fenced independently, but publication fencing cannot undo a
-    /// row already committed to an external sink. Durable worker contexts therefore
-    /// re-read the job and throw when ownership or attempt identity has moved.
-    /// </remarks>
     Task ThrowIfExecutionLeaseLostAsync(
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;

@@ -7,38 +7,10 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.PointCloud;
 
-/// <summary>
-/// Pure-managed reader for ASPRS LAS point-cloud files (#1201). Parses the LAS
-/// public header block and streams point records, decoding position
-/// (descaled to the file's CRS units), intensity, classification, and — for
-/// colour-bearing point data record formats — per-point RGB.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Supports the uncompressed LAS 1.1-1.4 point data record formats 0, 1, 2, 3,
-/// 6, 7, and 8 (the formats produced by the overwhelming majority of LiDAR and
-/// drone-photogrammetry exporters). Compressed LAZ and Cloud-Optimized Point
-/// Cloud (COPC) inputs are detected and rejected with a clear error so callers
-/// route them through the existing out-of-process point-cloud worker for
-/// LAZ/COPC decompression before managed tiling.
-/// </para>
-/// <para>
-/// The reader is deterministic and allocation-conscious: it reads point records
-/// sequentially in file order, applies the header scale/offset, and yields a
-/// <see cref="LasPoint"/> per record without buffering the whole cloud. Position
-/// is returned in the file's stored horizontal units; the tiling pipeline is
-/// responsible for any datum/CRS interpretation.
-/// </para>
-/// </remarks>
 public static class LasPointCloudReader
 {
     private const int PublicHeaderMinLength = 227; // LAS 1.2 public header size.
 
-    /// <summary>
-    /// Reads the LAS public header block from <paramref name="source"/> and
-    /// validates that the file is a supported, uncompressed LAS.
-    /// </summary>
-    /// <exception cref="LasFormatException">The stream is not a supported LAS file.</exception>
     public static LasHeader ReadHeader(ReadOnlySpan<byte> source)
     {
         if (source.Length < PublicHeaderMinLength)
@@ -146,12 +118,6 @@ public static class LasPointCloudReader
         };
     }
 
-    /// <summary>
-    /// Streams the decoded points from a LAS buffer in file order. The header is
-    /// parsed first; each yielded <see cref="LasPoint"/> carries descaled
-    /// position plus the preserved intensity, classification, and (when present)
-    /// RGB attributes.
-    /// </summary>
     public static IEnumerable<LasPoint> ReadPoints(byte[] source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -159,10 +125,6 @@ public static class LasPointCloudReader
         return ReadPoints(source, header);
     }
 
-    /// <summary>
-    /// Streams the decoded points using a pre-parsed <paramref name="header"/>,
-    /// avoiding a second header parse when the caller already has it.
-    /// </summary>
     public static IEnumerable<LasPoint> ReadPoints(byte[] source, LasHeader header)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -271,9 +233,6 @@ public static class LasPointCloudReader
 
     private static bool FormatHasColor(byte format) => format is 2 or 3 or 7 or 8;
 
-    /// <summary>
-    /// Minimum record length for each supported point data record format.
-    /// </summary>
     private static int MinRecordLength(byte format) => format switch
     {
         0 => 20,
@@ -286,15 +245,8 @@ public static class LasPointCloudReader
         _ => int.MaxValue
     };
 
-    /// <summary>
-    /// Byte offset of the classification field within a point record. Formats
-    /// 0-5 pack it at offset 15; the extended formats 6-10 move it to offset 16.
-    /// </summary>
     private static int ClassificationByteOffset(byte format) => format >= 6 ? 16 : 15;
 
-    /// <summary>
-    /// Byte offset of the first RGB channel within a colour-bearing record.
-    /// </summary>
     private static int ColorByteOffset(byte format) => format switch
     {
         2 => 20, // base record (20 bytes) + RGB.
@@ -305,22 +257,13 @@ public static class LasPointCloudReader
     };
 }
 
-/// <summary>
-/// Raised when a LAS buffer is malformed or uses an unsupported format. Carries
-/// a stable <see cref="SceneGenerationErrorCodes"/> code so the ingest executor
-/// can surface a problem-detail without leaking parser internals.
-/// </summary>
 public sealed class LasFormatException : Exception
 {
-    /// <summary>Creates a <see cref="LasFormatException"/>.</summary>
-    /// <param name="code">Stable scene error code (see <see cref="SceneGenerationErrorCodes"/>).</param>
-    /// <param name="message">Human-readable, non-sensitive description.</param>
     public LasFormatException(string code, string message)
         : base(message)
     {
         Code = code;
     }
 
-    /// <summary>Stable error code forwarded through problem-detail helpers.</summary>
     public string Code { get; }
 }

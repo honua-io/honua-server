@@ -14,17 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// <c>source.postgis</c> DAG connector. Streams features from a customer-owned
-/// PostGIS table/view identified by a registered secure connection — the read-side
-/// mirror of <c>sink.external-postgis</c>. The connection string is resolved by the
-/// executor from the same secure-connection secret handling the sink uses (raw
-/// connection strings never cross the DAG); this reader only consumes the resolved
-/// string. Geometry is projected to GeoJSON server-side with <c>ST_AsGeoJSON</c> so
-/// no native client geometry library is needed, and rows stream through a forward-only
-/// reader to keep memory bounded for large extracts. Identifiers are validated against
-/// a strict pattern before interpolation since they cannot be parameterised in SQL.
-/// </summary>
 internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
 {
     private readonly NpgsqlDataSource? _injectedDataSource;

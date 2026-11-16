@@ -9,11 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Styling;
 
-/// <summary>
-/// PostgreSQL implementation of the independent, styleId-keyed style catalog
-/// (ADR-0048, Phase 2). Backed by <c>honua.styles</c> and the ordered
-/// <c>honua.layer_style_refs</c> association table (migration 042).
-/// </summary>
 internal sealed class PostgresStyleCatalog : IStyleCatalog
 {
     private const string SelectColumns = """
@@ -42,7 +37,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<StyleCatalogRecord?> GetStyleAsync(string styleId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
@@ -66,7 +60,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         return ReadStyle(reader);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StyleCatalogRecord>> ListStylesAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -88,7 +81,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StyleCatalogRecord>> GetStylesForLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -113,7 +105,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StyleLayerAssociation>> ListAssociationsAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -135,7 +126,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<StyleCatalogRecord?> CreateStyleAsync(
         string styleId,
         string mapLibreStyleJson,
@@ -179,7 +169,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         return ReadStyle(reader);
     }
 
-    /// <inheritdoc />
     public async Task<StyleCatalogRecord> UpsertStyleAsync(
         string styleId,
         string mapLibreStyleJson,
@@ -227,7 +216,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         return ReadStyle(reader);
     }
 
-    /// <inheritdoc />
     public async Task<StyleCatalogRecord?> UpdateStyleAsync(
         string styleId,
         string mapLibreStyleJson,
@@ -271,7 +259,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
             : null;
     }
 
-    /// <inheritdoc />
     public async Task<StyleCatalogDeleteResult> DeleteStyleAsync(
         string styleId,
         int? protectedLayerId = null,
@@ -328,7 +315,6 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
             associatedLayerIds.Distinct().ToArray());
     }
 
-    /// <inheritdoc />
     public async Task<bool> AssociateLayerAsync(int layerId, string styleId, int ordinal = 0, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);

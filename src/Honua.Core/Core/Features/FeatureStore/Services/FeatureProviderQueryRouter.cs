@@ -10,9 +10,6 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves provider-backed feature query operations from Metadata v2 service and publication metadata.
-/// </summary>
 public sealed class FeatureProviderQueryRouter
 {
     // PA-019: every query goes through this resolution hot path, and it previously emitted no
@@ -23,16 +20,6 @@ public sealed class FeatureProviderQueryRouter
     private readonly IFeatureDataProviderRegistry _providerRegistry;
     private readonly string _defaultProviderName;
 
-    /// <summary>
-    /// Creates a provider query router that resolves readers from Metadata v2
-    /// service/publication/storage-binding inputs.
-    /// </summary>
-    /// <param name="connectionRegistry">Secure connection registry used to materialize
-    /// Metadata v2 connection ids into <see cref="DataConnection"/> records.</param>
-    /// <param name="providerRegistry">Feature provider registry used to look up
-    /// providers by name.</param>
-    /// <param name="defaultProviderName">Default provider used for V2 publications
-    /// whose backing storage binding does not declare a connection.</param>
     public FeatureProviderQueryRouter(
         ISecureConnectionRegistry connectionRegistry,
         IFeatureDataProviderRegistry providerRegistry,
@@ -43,22 +30,6 @@ public sealed class FeatureProviderQueryRouter
         _defaultProviderName = DataProviderNames.Normalize(defaultProviderName);
     }
 
-    /// <summary>
-    /// Resolves the feature reader for a V2 provider-backed read operation.
-    /// </summary>
-    /// <param name="snapshot">Current metadata V2 graph snapshot. Used to walk
-    /// publication → storage binding → connection.</param>
-    /// <param name="service">V2 service hosting the publication.</param>
-    /// <param name="resource">Canonical V2 resource being queried.</param>
-    /// <param name="publication">V2 publication on the service.</param>
-    /// <param name="storageLayerId">Integer storage handle the resolved reader
-    /// expects on its <c>QueryAsync(int layerId, …)</c> entry points.</param>
-    /// <param name="operation">Read operation being executed.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Resolved feature reader.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the V2 graph is
-    /// misconfigured, the connection is missing, the provider is unregistered, or
-    /// the provider does not support the operation.</exception>
     public async Task<IFeatureReader> ResolveReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -82,18 +53,6 @@ public sealed class FeatureProviderQueryRouter
             : providerBinding.Provider.Reader;
     }
 
-    /// <summary>
-    /// Resolves the provider binding for a V2 feature operation without discarding
-    /// the selected provider and its write capability.
-    /// </summary>
-    /// <param name="snapshot">Authorized metadata snapshot.</param>
-    /// <param name="service">Service hosting the publication.</param>
-    /// <param name="resource">Published resource.</param>
-    /// <param name="publication">Publication being resolved.</param>
-    /// <param name="storageLayerId">Fallback integer storage handle.</param>
-    /// <param name="operation">Read capability required by the caller.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The resolved provider binding.</returns>
     public async Task<FeatureProviderBinding> ResolveBindingAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -157,17 +116,6 @@ public sealed class FeatureProviderQueryRouter
         }
     }
 
-    /// <summary>
-    /// Resolves the provider that serves reads of <paramref name="storageBinding"/>, using the
-    /// same connection-to-provider rules as <see cref="ResolveBindingAsync"/>. A binding without
-    /// a connection (or a <see langword="null"/> binding) is served by the default provider.
-    /// </summary>
-    /// <param name="snapshot">Current metadata V2 graph snapshot.</param>
-    /// <param name="storageBinding">Storage binding to resolve, or <see langword="null"/> for
-    /// the default provider.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The serving provider, or <see langword="null"/> when the binding's connection
-    /// or provider cannot be resolved (reads of such a binding are refused by the router).</returns>
     public async Task<IFeatureDataProvider?> TryResolveProviderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2StorageBinding? storageBinding,

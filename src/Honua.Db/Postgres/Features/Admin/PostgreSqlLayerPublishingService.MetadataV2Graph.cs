@@ -27,14 +27,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Db.Postgres.Features.Admin;
 
-/// <summary>
-/// AOT-safe source-generated context for the primitive storage-binding option values.
-/// The published server image sets <c>JsonSerializerIsReflectionEnabledByDefault=false</c>,
-/// so the reflection-based <c>JsonSerializer.SerializeToElement(value)</c> overload throws at
-/// runtime ("Reflection-based serialization has been disabled"). Building the option
-/// <see cref="JsonElement"/>s through these typed metadata providers keeps the first layer
-/// publish working on a real (trimmed/AOT) deployment (honua-server#1341).
-/// </summary>
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(string))]
@@ -489,11 +481,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    /// <summary>
-    /// Rebases the inverse of one failed layer-publication mutation onto a newer graph revision. Only
-    /// identities introduced by that mutation are removed; unrelated resources/publications written
-    /// after it remain intact.
-    /// </summary>
     internal static MetadataV2Graph BuildRebasedCompensatingMetadataV2Graph(
         MetadataV2Graph currentGraph,
         MetadataV2Graph previousGraph,
@@ -1104,11 +1091,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 persisted.Extensions),
         };
 
-    /// <summary>
-    /// Applies a field-level three-way inverse to the existing service that publication updated.
-    /// Fields still equal to the failed persisted mutation return to their pre-mutation values;
-    /// fields a later graph writer changed remain untouched.
-    /// </summary>
     private static MetadataV2Service RestoreServiceMutation(
         MetadataV2Service current,
         MetadataV2Service previous,

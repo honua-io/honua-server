@@ -12,12 +12,6 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Publishing;
 
-/// <summary>
-/// Postgres-backed <see cref="IContentPublicationStore"/>. Version and event rows are
-/// append-only (enforced by table rules); the route row is the single mutable pointer.
-/// Publish/republish/rollback/policy writes are applied atomically inside a transaction
-/// alongside the append-only event so route pointer state and history never diverge.
-/// </summary>
 internal sealed class PostgresContentPublicationStore : IContentPublicationStore
 {
     private const string VersionColumns =
@@ -51,7 +45,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         _eventsTable = Infrastructure.SchemaSearchPath.QualifyTable("content_publication_events", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationRouteState?> GetRouteByPublicationIdAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid))
@@ -66,7 +59,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapRoute(reader) : null;
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationRouteState?> GetRouteBySlugAsync(string routeSlug, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -76,7 +68,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapRoute(reader) : null;
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationVersion?> GetVersionByIdAsync(string publicationId, string versionId, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid)
@@ -94,7 +85,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapVersion(reader) : null;
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationVersion?> GetVersionByRevisionAsync(string publicationId, long revision, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid))
@@ -111,7 +101,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapVersion(reader) : null;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<ContentPublicationVersion>> ListVersionsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid))
@@ -134,7 +123,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
         IReadOnlyCollection<string> publicationIds,
         int limit,
@@ -210,7 +198,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return result;
     }
 
-    /// <inheritdoc />
     public async Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
         ContentPublicationLifecycle? lifecycle,
         int offset,
@@ -261,7 +248,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return (routes, total);
     }
 
-    /// <inheritdoc />
     public async Task<long> GetMaxRevisionAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid))
@@ -277,7 +263,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return value is long revision ? revision : 0L;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
         IReadOnlyCollection<string> sourceContentIds,
         CancellationToken cancellationToken = default)
@@ -312,7 +297,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return result;
     }
 
-    /// <inheritdoc />
     public async Task AppendVersionAndSetRouteAsync(
         ContentPublicationVersion version,
         ContentPublicationRouteState routeState,
@@ -359,7 +343,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public async Task SetRouteAsync(
         ContentPublicationRouteState routeState,
         ContentPublicationEvent auditEvent,
@@ -395,7 +378,6 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<ContentPublicationEvent>> ListEventsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid))

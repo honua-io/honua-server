@@ -5,18 +5,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Shared scratch-workspace cleanup helper. Every native-profile executor
-/// allocates a per-job subdirectory under <c>GdalWorkerOptions.ScratchRoot</c>
-/// and must delete it after execution; the cleanup is best-effort and structured
-/// so transient filesystem failures do not surface as job failures.
-/// </summary>
 internal static partial class GdalScratch
 {
-    /// <summary>
-    /// Creates a per-job workspace under <paramref name="scratchRoot"/> after
-    /// validating that <paramref name="operationId"/> cannot escape the root.
-    /// </summary>
     public static string CreateWorkspace(string scratchRoot, string operationId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scratchRoot);
@@ -49,10 +39,6 @@ internal static partial class GdalScratch
         return workspace;
     }
 
-    /// <summary>
-    /// Best-effort recursive delete of a per-job scratch workspace. Logs and
-    /// swallows IO/permission errors so the executor's finally block never throws.
-    /// </summary>
     public static void TryCleanup<T>(string workspace, ILogger<T> logger)
     {
         try

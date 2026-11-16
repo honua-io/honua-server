@@ -8,10 +8,6 @@ using Honua.Db.Postgres.Features.Security;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Opens source-bound pools through shared admission, retry, timeout and tracking
-/// behavior while retaining the source's own search path. The singleton cache owns pools.
-/// </summary>
 internal sealed class PostgresBoundConnectionProvider(
     SecureConnectionDataSourceCache dataSources,
     CachingDatabaseConnectionProvider connections)

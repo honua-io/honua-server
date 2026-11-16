@@ -11,13 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FieldWorkflows;
 
-/// <summary>
-/// PostgreSQL-backed store for back-office field export packages (#1160). Selects
-/// the reviewed submission record set via the same projection the review surface
-/// uses (<c>honua.form_submissions</c> joined with
-/// <c>honua.field_submission_reviews</c>) and persists an audited export record in
-/// <c>honua.field_export_records</c>.
-/// </summary>
 internal sealed class PostgresFieldExportStore : IFieldExportStore
 {
     private const int MaxListLimit = 500;

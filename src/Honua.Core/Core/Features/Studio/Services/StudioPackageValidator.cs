@@ -8,17 +8,11 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// Envelope and baseline family validator for Studio package lifecycle operations.
-/// </summary>
 public sealed partial class StudioPackageValidator : IStudioPackageValidator
 {
     private readonly StudioPackageFamilyRegistry _registry;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Initializes a new Studio package validator.
-    /// </summary>
     public StudioPackageValidator(StudioPackageFamilyRegistry registry, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(registry);
@@ -27,7 +21,6 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
         _timeProvider = timeProvider;
     }
 
-    /// <inheritdoc />
     public StudioValidationSummary Validate(StudioPackageEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -116,7 +109,6 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
         };
     }
 
-    /// <inheritdoc />
     public StudioValidationSummary ValidatePublicationIntent(StudioPublicationIntent? intent)
     {
         var diagnostics = new List<StudioValidationDiagnostic>();
@@ -301,22 +293,6 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
         }
     }
 
-    /// <summary>
-    /// Gates the standard-owned <c>interactions</c>/<c>layout</c> (geospatial-mcp ADR-0030)
-    /// and <c>controls</c> (ADR-0031) blocks of a map/app/dashboard composition body. All three
-    /// blocks are OPTIONAL: a body that declares none is still checked for layers/widgets/view validity. When present
-    /// they must satisfy the closed event/verb/control-kind sets, the component-reference
-    /// grammar, in-document reference resolution, id uniqueness, the
-    /// per-<c>(on.ref, on.event)</c> fan-out cap, and the layout grid/placement bounds.
-    /// </summary>
-    /// <remarks>
-    /// The rules are enforced HERE as well as at the composition-tool admission gate
-    /// (<see cref="StudioCompositionBodyEditor.BindInteraction"/>,
-    /// <see cref="StudioCompositionBodyEditor.AddControl"/>) because a body can be
-    /// authored wholesale through the draft-update surface, which never passes through the
-    /// editor. Both call the shared <see cref="StudioInteractionVocabulary"/> checks, so
-    /// the two gates cannot drift.
-    /// </remarks>
     private static void ValidateCompositionBlocks(
         StudioPackageEnvelope envelope,
         List<StudioValidationDiagnostic> diagnostics)
@@ -772,12 +748,6 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
     private static string EscapeJsonPointerSegment(string value)
         => value.Replace("~", "~0", StringComparison.Ordinal).Replace("/", "~1", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Gates the <c>controls</c> collection (geospatial-mcp ADR-0031): id present, bounded
-    /// and unique within the block, and a kind drawn from the closed vocabulary. The same
-    /// rules are enforced at the tool-admission gate by
-    /// <see cref="StudioCompositionBodyEditor.AddControl"/>.
-    /// </summary>
     private static void ValidateControls(
         StudioCompositionBody composition,
         List<StudioValidationDiagnostic> diagnostics)
@@ -1112,12 +1082,8 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
     };
 }
 
-/// <summary>
-/// Non-reflection enum helpers for Studio package contracts.
-/// </summary>
 public static class StudioPackageEnumHelpers
 {
-    /// <summary>Returns true when the family enum value is defined by the contract.</summary>
     public static bool IsDefined(StudioPackageFamily family)
         => family is StudioPackageFamily.Query
             or StudioPackageFamily.Analysis
@@ -1130,19 +1096,16 @@ public static class StudioPackageEnumHelpers
             or StudioPackageFamily.Geoprocessing
             or StudioPackageFamily.Etl;
 
-    /// <summary>Returns true when the rollback pointer enum value is defined by the contract.</summary>
     public static bool IsDefined(StudioRollbackPointer target)
         => target is StudioRollbackPointer.Current
             or StudioRollbackPointer.Published
             or StudioRollbackPointer.Both;
 
-    /// <summary>Returns true when the publication request status enum value is defined by the contract.</summary>
     public static bool IsDefined(StudioPublicationRequestStatus status)
         => status is StudioPublicationRequestStatus.Accepted
             or StudioPublicationRequestStatus.Pending
             or StudioPublicationRequestStatus.Rejected;
 
-    /// <summary>Returns true when the derived content item state enum value is defined by the contract.</summary>
     public static bool IsDefined(StudioContentItemState state)
         => state is StudioContentItemState.Draft
             or StudioContentItemState.Current

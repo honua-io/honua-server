@@ -19,12 +19,6 @@ public sealed partial class ReplicaSyncService
     private readonly IReplicaConflictRepository _conflictRepository;
     private readonly ILogger<ReplicaSyncService> _logger;
 
-    /// <summary>
-    /// Initializes a new <see cref="ReplicaSyncService"/>.
-    /// </summary>
-    /// <param name="changeTracker">Change-log reader used for conflict detection.</param>
-    /// <param name="conflictRepository">Durable conflict-record store (#1287 owns the resolution API).</param>
-    /// <param name="logger">Logger.</param>
     public ReplicaSyncService(
         IChangeTracker changeTracker,
         IReplicaConflictRepository conflictRepository,
@@ -35,7 +29,6 @@ public sealed partial class ReplicaSyncService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<ReplicaSyncUploadReport> ApplyUploadAsync(
         ReplicaSyncRequest request,
         IReplicaEditApplier editApplier,
@@ -520,37 +513,6 @@ public sealed partial class ReplicaSyncService
             _ => ReplicaConflictType.Attribute,
         };
 
-    /// <summary>
-    /// Promotes each conflict whose own uploaded edit committed to "the client edit landed", on both
-    /// the transient report and the durable record. Recorded after the fact so the flag describes what
-    /// actually committed rather than the requested conflict policy (#2430).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Attribution is <b>per edit</b>, not per layer. With <c>rollbackOnFailure=false</c> the shared
-    /// edit pipeline commits rows independently, so one conflicting edit can land while an unrelated
-    /// sibling in the same batch fails and marks the whole layer failed. Promoting off the layer flag
-    /// would leave a committed client overwrite recorded as not-applied, and a later keep-server
-    /// resolution would then plan a no-op and mark the conflict resolved with the overwrite still in
-    /// place. Only ids the applier reports as committed are promoted; a conflict the applier cannot
-    /// attribute keeps the conservative <c>false</c>, which makes a later accept-client a real write.
-    /// </para>
-    /// <para>
-    /// The durable write is the guarded detection-state update, never a whole-record upsert: an
-    /// operator can resolve a freshly listed conflict while this post-processing is still running, and
-    /// rewriting the record from a stale read would reopen that resolution.
-    /// </para>
-    /// </remarks>
-    /// <summary>
-    /// Position of an operation kind in the shared edit pipeline's fixed execution order. The pipeline
-    /// groups a batch into creates, then updates, then deletes rather than honouring the order the
-    /// operations were listed in, so this — not the request slot — is what decides which of several
-    /// edits to the same object leaves its state in the row.
-    /// </summary>
-    /// <summary>
-    /// Whether <paramref name="candidate"/> executes after <paramref name="current"/> in the shared
-    /// edit pipeline's fixed order (kind first, then request slot).
-    /// </summary>
     private static bool Outranks((int Rank, int Slot) candidate, (int Rank, int Slot) current)
         => candidate.Rank > current.Rank || (candidate.Rank == current.Rank && candidate.Slot > current.Slot);
 

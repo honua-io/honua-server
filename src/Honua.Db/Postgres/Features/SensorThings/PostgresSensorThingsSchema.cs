@@ -9,10 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.SensorThings;
 
-/// <summary>
-/// Resolves the immutable physical sensing family left behind when migration 109 adopts
-/// the earlier SensorThings family. Catalog inspection never creates, moves or repairs objects.
-/// </summary>
 internal static class PostgresSensorThingsSchema
 {
     internal const string DeferredBaseSchemaToken = "__honua_sensing_base__";

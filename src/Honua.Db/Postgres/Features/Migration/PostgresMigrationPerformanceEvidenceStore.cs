@@ -20,16 +20,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IMigrationPerformanceEvidenceStore"/> backed
-/// by <c>honua.migration_performance_evidence</c> (#1033 slice 5).
-/// </summary>
-/// <remarks>
-/// The artifact JSON is round-tripped through a caller-supplied
-/// <see cref="JsonTypeInfo{T}"/> so the implementation stays AOT-safe and works whether
-/// the Server's source-generated JSON context or a fallback reflection context is
-/// supplied at registration time.
-/// </remarks>
 internal sealed class PostgresMigrationPerformanceEvidenceStore : IMigrationPerformanceEvidenceStore
 {
     private const int MaxLimit = 200;
@@ -46,7 +36,6 @@ internal sealed class PostgresMigrationPerformanceEvidenceStore : IMigrationPerf
         _artifactTypeInfo = artifactTypeInfo ?? throw new ArgumentNullException(nameof(artifactTypeInfo));
     }
 
-    /// <inheritdoc />
     public async ValueTask SaveAsync(MigrationPerformanceEvidenceRecord record, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -80,7 +69,6 @@ internal sealed class PostgresMigrationPerformanceEvidenceStore : IMigrationPerf
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<MigrationPerformanceEvidenceRecord?> GetLatestPassingAsync(CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -103,7 +91,6 @@ internal sealed class PostgresMigrationPerformanceEvidenceStore : IMigrationPerf
         return ReadRecord(reader);
     }
 
-    /// <inheritdoc />
     public async ValueTask<MigrationPerformanceEvidenceRecord?> GetByIdAsync(
         string evidenceId,
         CancellationToken cancellationToken = default)
@@ -130,7 +117,6 @@ internal sealed class PostgresMigrationPerformanceEvidenceStore : IMigrationPerf
         return ReadRecord(reader);
     }
 
-    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<MigrationPerformanceEvidenceRecord>> GetHistoryAsync(
         string? sourceFamily,
         string? fixtureSize,

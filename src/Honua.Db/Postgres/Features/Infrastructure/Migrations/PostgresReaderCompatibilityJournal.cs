@@ -7,21 +7,10 @@ using Honua.Core.Features.Infrastructure.Migrations;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-/// <summary>
-/// Read-only access to the forward-compatibility declarations recorded beside the DbUp journal
-/// (#6477). Both the migration runner and the startup schema guard (the
-/// <c>HONUA_SKIP_MIGRATIONS=true</c> and degraded-start paths) qualify journal entries their image
-/// does not ship through <see cref="QualifyAsync"/>, so the two paths cannot disagree.
-/// </summary>
 internal static class PostgresReaderCompatibilityJournal
 {
-    /// <summary>
-    /// The declaration table, created by the expand migration
-    /// <c>135_RecordMigrationReaderCompatibility.sql</c>.
-    /// </summary>
     internal const string Table = "public.schema_version_reader_compatibility";
 
-    /// <summary>Whether the declaration table exists.</summary>
     internal static async Task<bool> TableExistsAsync(DbConnection connection, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -29,17 +18,6 @@ internal static class PostgresReaderCompatibilityJournal
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
 
-    /// <summary>
-    /// Accepts the unknown journal entries whose recorded declaration this reader re-verifies as
-    /// expand-only, and throws <see cref="DatabaseSchemaCompatibilityException"/> naming every other
-    /// one. Reads only; never writes. Without the declaration table every entry is refused exactly as
-    /// before declarations existed.
-    /// </summary>
-    /// <param name="connection">Open connection to the target database.</param>
-    /// <param name="unknownMigrations">Journal entries this reader does not ship.</param>
-    /// <param name="readerSchema">This reader's own schema number.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The accepted entries (all of <paramref name="unknownMigrations"/> when it returns).</returns>
     internal static async Task<IReadOnlySet<string>> QualifyAsync(
         DbConnection connection,
         IReadOnlyList<string> unknownMigrations,

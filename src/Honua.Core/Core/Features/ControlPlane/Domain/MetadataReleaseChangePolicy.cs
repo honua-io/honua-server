@@ -3,54 +3,27 @@
 
 namespace Honua.Core.Features.ControlPlane.Domain;
 
-/// <summary>
-/// Outcome of the pre-mutation change policy for a metadata-release plan.
-/// </summary>
 public sealed record MetadataReleaseChangePolicyResult
 {
-    /// <summary>
-    /// Whether the plan may proceed to mutation.
-    /// </summary>
     public bool IsAllowed => Blockers.Count == 0;
 
-    /// <summary>
-    /// Stable blocker codes.
-    /// </summary>
     public IReadOnlyList<string> Blockers { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Operator-facing reasons, one per blocker.
-    /// </summary>
     public IReadOnlyList<string> Reasons { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// Protected-change policy evaluated before any mutation. The staged-activation lifecycle can only
-/// promise verified recovery for changes it can revert without restoring data, so it admits only
-/// nullable additive field changes whose inverse drops exactly what the release adds, and an ETL
-/// workload only when it writes nothing but those new nullable fields (old readers and writers
-/// never depend on them). Everything else is rejected before the first write.
-/// </summary>
 public static class MetadataReleaseChangePolicy
 {
-    /// <summary>Forward script contains a non-additive (destructive) operation.</summary>
     public const string DestructiveChange = "metadata-release-destructive-change";
 
-    /// <summary>Forward script adds a non-nullable field, which breaks old writers.</summary>
     public const string NonNullableAdd = "metadata-release-non-nullable-add";
 
-    /// <summary>Script is not reversible or declares no forward operations.</summary>
     public const string NotReversible = "metadata-release-not-reversible";
 
-    /// <summary>Declared inverse drops a field the release does not add.</summary>
     public const string InverseNotOwned = "metadata-release-inverse-not-owned";
 
-    /// <summary>ETL workload writes data that the release cannot revert without compensation.</summary>
     public const string EtlUnprovenCompensation = "metadata-release-etl-unproven-compensation";
 
-    /// <summary>
-    /// Evaluates <paramref name="plan"/> against the protected-change policy.
-    /// </summary>
     public static MetadataReleaseChangePolicyResult Evaluate(MetadataReleaseExecutionPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);

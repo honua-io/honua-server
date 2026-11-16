@@ -48,9 +48,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Detect CRS from stream without loading entire file.
-    /// </summary>
     private async Task<int?> DetectCrsStreamingAsync(
         Stream stream,
         SupportedFileFormat format,
@@ -88,15 +85,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Resolves the source SRID of discovered FileGDB feature classes. A layer whose WKT carries
-    /// an EPSG authority (or a plain WGS84/NAD83 geographic name) already has an SRID; otherwise the
-    /// layer's ESRI WKT is resolved through <see cref="ICrsDetectionService"/> exactly like a
-    /// shapefile <c>.prj</c> sidecar (ESRI projected-name table, then spatial_ref_sys WKT match).
-    /// ArcGIS writes ESRI WKT1 without AUTHORITY nodes for every State Plane / UTM / Web Mercator
-    /// class, so skipping this step silently stored projected coordinates as EPSG:4326 (#6114).
-    /// Returns null when nothing resolves so the caller reports <c>SourceSridRequired</c>.
-    /// </summary>
     private async Task<int?> ResolveFileGdbSridAsync(
         Honua.Core.Features.FileImport.Services.FileGdb.FileGdbReader.FileGdbLayerInfo[] layers,
         CancellationToken cancellationToken)
@@ -136,12 +124,6 @@ internal sealed partial class StreamingFileImportService
         return null;
     }
 
-    /// <summary>
-    /// Detects the SRID from a FlatGeobuf stream by reading the binary header.
-    /// Tries code/codeString/authority resolution first, then falls back to WKT
-    /// parsing via <see cref="ICrsDetectionService.DetectFromWktAsync"/> when the
-    /// header embeds CRS as WKT only.
-    /// </summary>
     private async Task<int?> DetectFlatGeobufCrsAsync(Stream stream, CancellationToken cancellationToken = default)
         => (await InspectFlatGeobufCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
 
@@ -192,11 +174,6 @@ internal sealed partial class StreamingFileImportService
         };
     }
 
-    /// <summary>
-    /// Defensive buffer-based FlatGeobuf CRS detection with WKT fallback.
-    /// Currently unreachable — non-seekable FlatGeobuf streams are spilled to
-    /// seekable temp files before the header-buffer path.
-    /// </summary>
     private async Task<int?> DetectFlatGeobufCrsFromHeaderAsync(byte[] headerBytes, CancellationToken cancellationToken = default)
     {
         var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfoFromHeader(headerBytes);

@@ -10,12 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Postgres implementation of the feature-change outbox. Uses
-/// <c>SELECT ... FOR UPDATE SKIP LOCKED</c> for safe multi-node claim and
-/// partial indexes (defined in migration 024) to keep the dispatcher hot path
-/// off the dispatched-row tail.
-/// </summary>
 internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutboxRepository, IFeatureChangeOutboxWriter
 {
     private const string TableName = "honua.feature_change_outbox";

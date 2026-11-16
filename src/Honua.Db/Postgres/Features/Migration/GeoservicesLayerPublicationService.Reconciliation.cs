@@ -11,46 +11,21 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Outcome of the post-publish reconciliation gate (issues #1247, #1380). Carries the
-/// data-reconciliation artifact, the optional catalog-parity report, and the aggregated verdict
-/// the import pipeline uses to decide between <see cref="GeoservicesImportStatus.Completed"/> and
-/// <see cref="GeoservicesImportStatus.NeedsReview"/>.
-/// </summary>
 internal readonly record struct GeoservicesReconciliationGateOutcome
 {
-    /// <summary>A gate outcome for runs where reconciliation did not run (no publish or no service registered).</summary>
     public static GeoservicesReconciliationGateOutcome Skipped => default;
 
-    /// <summary>Per-layer data-reconciliation artifact, when reconciliation ran.</summary>
     public MigrationReconciliationArtifact? Artifact { get; init; }
 
-    /// <summary>Catalog parity report, when one was produced.</summary>
     public MigrationCatalogReconciliationReport? CatalogReport { get; init; }
 
-    /// <summary>
-    /// True when the data-movement reconciliation probe actually ran. <c>false</c> when no
-    /// reconciliation service is registered or the probe threw. Distinguishes "ran and passed" from
-    /// "never ran", which <see cref="Artifact"/> being non-null cannot (#4600).
-    /// </summary>
     public bool DataCheckExecuted { get; init; }
 
-    /// <summary>
-    /// True when the catalog reconciliation pass actually ran against a published catalog entry.
-    /// <c>false</c> when there was no read-back seam, no activated snapshot, or no published entry
-    /// to locate — in each case schema parity is unproven rather than proven good (#4600).
-    /// </summary>
     public bool CatalogCheckExecuted { get; init; }
 }
 
 internal sealed partial class GeoservicesLayerPublicationService
 {
-    /// <summary>
-    /// Runs the post-publish reconciliation gate for a single imported + published layer. Builds the
-    /// reconciliation request from the apply-time source snapshot (<paramref name="layerInfo"/>) so
-    /// the gate is deterministic against the apply moment, runs the
-    /// <see cref="ILayerReconciliationService"/>, and aggregates the verdict.
-    /// </summary>
     public async Task<GeoservicesReconciliationGateOutcome> RunReconciliationGateAsync(
         GeoservicesImportRequest request,
         string jobId,
@@ -123,12 +98,6 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
     }
 
-    /// <summary>
-    /// Builds the per-run reconciliation request from the apply-time source snapshot. The source
-    /// facts (feature count, extent, field names, where-clause mirror) are read from
-    /// <paramref name="layerInfo"/> and the import request so the gate does not re-issue source HTTP
-    /// calls and stays deterministic against the apply moment.
-    /// </summary>
     private static LayerReconciliationRequest BuildReconciliationRequest(
         GeoservicesImportRequest request,
         string jobId,
@@ -179,11 +148,6 @@ internal sealed partial class GeoservicesLayerPublicationService
         };
     }
 
-    /// <summary>
-    /// Source name to physical column when the import renamed the field. A dedicated target
-    /// does not execute the filter; the map is there for a shared-target compiler. Object ids
-    /// stay unmapped because the target surrogate key is not the source OBJECTID.
-    /// </summary>
     private static Dictionary<string, string>? BuildFilterFieldMappings(GeoservicesLayerInfo layerInfo)
     {
         var map = GeoservicesImportColumns.Map(layerInfo);
@@ -211,15 +175,6 @@ internal sealed partial class GeoservicesLayerPublicationService
         return mappings.Count == 0 ? null : mappings;
     }
 
-    /// <summary>
-    /// Catalog reconciliation pass for issue #1379. Reads the published Metadata v2 catalog entry
-    /// that the AutoPublish step materialized for <paramref name="publishedLayer"/> back out of the
-    /// persisted graph, builds a source inventory resource from the apply-time
-    /// <paramref name="layerInfo"/> snapshot, and runs the deterministic
-    /// <see cref="MigrationCatalogReconciler"/> over the pair. Returns <c>null</c> (skipping the
-    /// pass without failing the import) when no read-back seam is available or the published entry
-    /// cannot be located — a reconciliation-infrastructure gap is not evidence of a faithless import.
-    /// </summary>
     private async Task<MigrationCatalogReconciliationReport?> RunCatalogReconciliationAsync(
         string jobId,
         GeoservicesLayerInfo layerInfo,
@@ -278,13 +233,6 @@ internal sealed partial class GeoservicesLayerPublicationService
             ]);
     }
 
-    /// <summary>
-    /// Projects the apply-time <see cref="GeoservicesLayerInfo"/> snapshot into the
-    /// <see cref="MigrationInventoryResource"/> shape the catalog reconciler consumes. Only the facts
-    /// the reconciler probes are mapped (fields + types + captured domains, geometry type, declared
-    /// SRID, attachment advertisement). Coded-value domains that exceeded the capture cap surface
-    /// with no captured values so the reconciler's cap guard does not false-fail them.
-    /// </summary>
     internal static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
     {
         var srid = layerInfo.SpatialReferenceWkid

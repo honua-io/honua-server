@@ -16,12 +16,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Identifier, URL, capability, and style-resource link helpers used by the
-/// GeoServer import pipeline. These are pure-static and have no instance
-/// dependencies; they live in their own partial so the main file can focus on
-/// orchestration.
-/// </summary>
 internal sealed partial class GeoServerImportService
 {
     private static Dictionary<string, string[]> BuildStyleResourceMap(GeoServerServiceInfo serviceInfo)

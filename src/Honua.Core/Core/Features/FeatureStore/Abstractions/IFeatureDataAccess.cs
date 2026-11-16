@@ -8,83 +8,50 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-/// <summary>
-/// Abstraction for database data access operations
-/// </summary>
 internal interface IFeatureDataAccess
 {
-    /// <summary>
-    /// Executes a count query and returns the result
-    /// </summary>
     Task<long> ExecuteCountQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a select query and returns features
-    /// </summary>
     Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a projected-point query and returns point coordinates.
-    /// </summary>
     Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a select query and returns GML features
-    /// </summary>
     Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a select query and returns GeoJSON-encoded features.
-    /// </summary>
     Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a select query and returns raw GeoJSON feature fragments.
-    /// </summary>
     Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a select query and returns KML features.
-    /// </summary>
     Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a provider-native FlatGeobuf query and returns raw bytes.
-    /// </summary>
     Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes a provider-native Geobuf query and returns raw bytes.
-    /// </summary>
     Task<byte[]?> ExecuteSelectGeobufQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes an object ID query and returns matching IDs.
-    /// </summary>
     Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
@@ -103,24 +70,12 @@ internal interface IFeatureDataAccess
         }
     }
 
-    /// <summary>
-    /// Executes a related records query and returns matching features
-    /// </summary>
     Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Creates a single feature
-    /// </summary>
     Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Updates a single feature
-    /// </summary>
     Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Deletes a single feature
-    /// </summary>
     Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken);
 
     Task<Feature> CreateFeatureAsync(FeatureWritePolicy policy, Feature feature, CancellationToken cancellationToken)
@@ -138,66 +93,33 @@ internal interface IFeatureDataAccess
             ? DeleteFeatureAsync(policy.LayerId, featureId, cancellationToken)
             : throw new NotSupportedException("The provider does not support row-policy checked writes.");
 
-    /// <summary>
-    /// Gets a single feature by ID
-    /// </summary>
     Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Calculates feature extent
-    /// </summary>
     Task<FeatureExtent?> GetExtentAsync(
         int layerId,
         ParameterizedQuery? query,
         FeatureQuery featureQuery,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Calculates temporal extent for a temporal field.
-    /// </summary>
     Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
         ParameterizedQuery? query,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Executes an aggregate statistics query and returns rows of field-value pairs
-    /// </summary>
     Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Generates MVT tile data
-    /// </summary>
     Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Streams features for large result sets
-    /// </summary>
     IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Streams GML features for large result sets
-    /// </summary>
     IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Processes batch edits with transaction support
-    /// </summary>
     Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Applies a batch and, when this provider can, persists <paramref name="receipt"/> in the
-    /// same transaction as the edit. The default cannot.
-    /// </summary>
-    /// <param name="layerId">Layer identifier for the operations.</param>
-    /// <param name="editBatch">Batch of operations to apply.</param>
-    /// <param name="receipt">Receipt that must commit with a committed edit.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The edit result and whether the receipt committed with it.</returns>
     Task<FeatureEditApplication> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -214,9 +136,6 @@ internal interface IFeatureDataAccess
         }
     }
 
-    /// <summary>
-    /// Opens a transaction that can apply edit batches across multiple layers atomically.
-    /// </summary>
     Task<IFeatureWriterTransaction> BeginTransactionAsync(
         IsolationLevel isolationLevel,
         CancellationToken cancellationToken)

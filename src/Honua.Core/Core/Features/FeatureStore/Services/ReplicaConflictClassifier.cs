@@ -6,41 +6,11 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Refines the coarse, detection-time classification of a disconnected-sync conflict once the client
-/// (uploaded) and server (pre-apply) feature states have been captured (#1287). The canonical
-/// <see cref="ReplicaSyncService"/> classifies conflicts from operation kinds alone (it cannot see
-/// geometry or attribute values), so an <c>update vs concurrent server update</c> is recorded as the
-/// generic <see cref="ReplicaConflictType.Attribute"/>. When the captured states show the client
-/// changed no attribute but the geometry differs, the protocol adapter re-classifies the conflict as
-/// <see cref="ReplicaConflictType.Geometry"/> before persisting the durable record.
-/// </summary>
-/// <remarks>
-/// The states are the conflict-review envelope <c>{"attributes": { ... }, "geometry": ...}</c> produced
-/// by the protocol adapter, with geometry serialized identically on both sides so it is directly
-/// comparable. This classifier answers the single yes/no question "is this geometry-only?"; the richer
-/// field-level detail surfaced by the review API is computed separately by <c>ReplicaConflictDiff</c> on
-/// the server. "The client changed no attribute" is evaluated against the fields the client actually
-/// supplied — server-only business/system fields the client did not touch are ignored, and field-name
-/// matching is case-insensitive (Esri field-name convention). Structural conflict types
-/// (<see cref="ReplicaConflictType.DeleteUpdate"/>/<see cref="ReplicaConflictType.UpdateDelete"/>) and
-/// the not-yet-detectable types (<see cref="ReplicaConflictType.DuplicateInsert"/>,
-/// <see cref="ReplicaConflictType.Attachment"/>, <see cref="ReplicaConflictType.Relationship"/>, which
-/// the replica upload model does not carry the inputs to detect) are never reclassified here.
-/// </remarks>
 public static class ReplicaConflictClassifier
 {
     private const string AttributesProperty = "attributes";
     private const string GeometryProperty = "geometry";
 
-    /// <summary>
-    /// Returns a refined conflict type for the captured states, or <paramref name="current"/> unchanged
-    /// when no refinement applies (non-attribute conflict, missing/unparseable states, the client
-    /// changed an attribute, or the geometry is unknown/unchanged).
-    /// </summary>
-    /// <param name="current">The detection-time classification recorded by the sync service.</param>
-    /// <param name="clientStateJson">The client (uploaded) state envelope, when captured.</param>
-    /// <param name="serverStateJson">The pre-apply server state envelope, when captured.</param>
     public static ReplicaConflictType Refine(
         ReplicaConflictType current,
         string? clientStateJson,

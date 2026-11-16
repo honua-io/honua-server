@@ -6,10 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Structured logging for PostgreSQL raster import operations.
-/// Event ID range: 7820-7839 (adjacent to existing raster events 7800-7819).
-/// </summary>
 internal static partial class PostgresRasterImportLog
 {
     [LoggerMessage(

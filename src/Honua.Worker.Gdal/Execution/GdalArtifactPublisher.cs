@@ -11,23 +11,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Publishes a produced output file as a durable artifact reference (#3089).
-/// When the dispatch context carries a staged-output store, outputs above the
-/// configured inline ceiling are streamed to an attempt-scoped immutable object key
-/// and published as a typed <see cref="StagedObjectRasterOutputDescriptor"/>; outputs
-/// at or below the ceiling publish as bounded typed inline descriptors. Payload bytes
-/// never enter the durable job record on this path. Without a store the legacy
-/// bounded <c>data:</c>-URI publication (capped by
-/// <see cref="GdalWorkerOptions.MaxArtifactBytes"/>) is preserved unchanged.
-/// </summary>
 internal static partial class GdalArtifactPublisher
 {
-    /// <summary>
-    /// Publishes <paramref name="outputPath"/> and returns null on success, or a
-    /// client-safe failure message the caller should surface as
-    /// <c>JobExecutionResult.Failed</c>.
-    /// </summary>
     public static async Task<string?> PublishFileAsync(
         IJobExecutionContext context,
         GdalWorkerOptions options,
@@ -225,10 +210,6 @@ internal static partial class GdalArtifactPublisher
         return null;
     }
 
-    /// <summary>
-    /// Resolves the stable logical output name the submit path recorded for the slot,
-    /// falling back to a deterministic positional name.
-    /// </summary>
     internal static string ResolveOutputName(IReadOnlyDictionary<string, string> parameters, int index)
     {
         var candidate = parameters.GetValueOrDefault($"{GdalWorkerParameterKeys.OutputNamePrefix}{index}")
@@ -241,7 +222,6 @@ internal static partial class GdalArtifactPublisher
         return $"output{index + 1}";
     }
 
-    /// <summary>Strips transport parameters, keeping the bare IANA media type.</summary>
     internal static string NormalizeMediaType(string contentType)
     {
         var separator = contentType.IndexOf(';');
@@ -286,10 +266,6 @@ internal static partial class GdalArtifactPublisher
         };
     }
 
-    /// <summary>
-    /// Bounded TIFF header probe for the grid summary; non-TIFF outputs and probe
-    /// failures produce a null grid rather than failing publication.
-    /// </summary>
     private static async Task<RasterOutputGridSummary?> TryProbeGridAsync(
         string outputPath,
         string contentType,
@@ -356,23 +332,8 @@ internal static partial class GdalArtifactPublisher
         public static partial void ZarrOutputRefused(ILogger logger, string operationId);
     }
 
-    /// <summary>
-    /// Bytes read from a file that stayed within <paramref name="Length"/>'s cap.
-    /// <see cref="ExceededLimit"/> is set when the file was already over the cap
-    /// or grew past it during the read; <see cref="Payload"/> is then null.
-    /// </summary>
-    /// <param name="Payload">The file bytes when the read stayed within the cap.</param>
-    /// <param name="Length">Observed length, including a byte that pushed the file over the cap.</param>
-    /// <param name="ExceededLimit">True when the cap was exceeded and no payload is retained.</param>
     internal readonly record struct BoundedPayload(byte[]? Payload, long Length, bool ExceededLimit);
 
-    /// <summary>
-    /// Reads <paramref name="path"/> only when its length is within
-    /// <paramref name="maxBytes"/> and fits in one array. A missing or empty file
-    /// returns a null payload. A file that is already over the cap, or that grows
-    /// past the cap while it is read, returns <see cref="BoundedPayload.ExceededLimit"/>
-    /// without retaining the bytes.
-    /// </summary>
     internal static async Task<BoundedPayload> ReadBoundedPayloadAsync(
         string path,
         long maxBytes,
@@ -426,10 +387,6 @@ internal static partial class GdalArtifactPublisher
         return new BoundedPayload(buffer, offset, false);
     }
 
-    /// <summary>
-    /// Raised when a staged read observes a byte past the configured cap.
-    /// The extra byte is not returned to the caller.
-    /// </summary>
     private sealed class ArtifactByteLimitException : IOException
     {
         public ArtifactByteLimitException(long observedLength)
@@ -441,10 +398,6 @@ internal static partial class GdalArtifactPublisher
         public long ObservedLength { get; }
     }
 
-    /// <summary>
-    /// Forwards reads up to a byte cap. <see cref="CanSeek"/> is false so a copy
-    /// cannot bypass the cap by seeking. The caller owns the inner stream.
-    /// </summary>
     private sealed class BoundedReadStream : Stream
     {
         private readonly Stream _inner;

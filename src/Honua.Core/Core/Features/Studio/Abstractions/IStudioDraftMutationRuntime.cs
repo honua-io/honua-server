@@ -6,7 +6,6 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Abstractions;
 
-/// <summary>Canonical durable operation boundary for Studio draft mutations.</summary>
 public interface IStudioDraftMutationRuntime
 {
     Task<StudioDraftMutationReceipt<StudioPackageDraft>> CreateAsync(
@@ -61,7 +60,6 @@ public interface IStudioDraftMutationRuntime
         StudioDraftMutationContext context, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Trusted evidence supplied by an authorized protocol adapter.</summary>
 public sealed record StudioDraftMutationContext
 {
     public const string CreateOperationId = "studio.draft.create";
@@ -86,17 +84,11 @@ public sealed record StudioDraftMutationContext
     public bool ScopeGoverned { get; init; }
     public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 
-    /// <summary>
-    /// Optional guardrail action the adapter declares for this mutation (for example
-    /// <c>studio.publication_proposal</c>). The action tier can only tighten the edition policy.
-    /// </summary>
     public string? ActionDiscriminator { get; init; }
 
-    /// <summary>Operation id of a Studio publication request.</summary>
     public const string PublicationOperationId = "studio.content.create-publication-request";
 }
 
-/// <summary>Durable envelope plus the typed projection produced by its actuator.</summary>
 public sealed record StudioDraftMutationReceipt<T>
 {
     public required OperationHandle Operation { get; init; }

@@ -6,22 +6,8 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks;
 
-/// <summary>
-/// Validates <see cref="DatabricksOptions"/> at startup so misconfiguration fails
-/// fast rather than surfacing as opaque runtime HTTP errors.
-/// </summary>
 internal static class DatabricksOptionsValidator
 {
-    /// <summary>
-    /// Throws <see cref="InvalidOperationException"/> when the options are invalid.
-    /// Only validates when the provider is enabled <em>and</em> actually configured:
-    /// like the other optional read-through providers (SQL Server, Oracle, Redshift),
-    /// Databricks is enabled by default but stays dormant until an operator supplies a
-    /// <c>Databricks:Host</c>. An enabled-but-unconfigured section therefore does not
-    /// fail host startup; once a host is supplied, the remaining connection details are
-    /// enforced fail-fast so misconfiguration never surfaces as opaque runtime HTTP errors.
-    /// </summary>
-    /// <param name="options">Bound options.</param>
     public static void ThrowIfInvalid(DatabricksOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

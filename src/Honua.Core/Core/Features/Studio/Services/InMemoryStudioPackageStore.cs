@@ -8,9 +8,6 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// In-memory Studio package store for tests and local fallback scenarios.
-/// </summary>
 public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
 {
     private const int DefaultListLimit = 25;
@@ -25,10 +22,8 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
     private readonly Dictionary<Guid, StudioPublicationRequest> _publicationRequests = new();
     private readonly Dictionary<Guid, StudioRollbackRequest> _rollbackRequests = new();
 
-    /// <inheritdoc />
     public StudioPackagePersistenceMode PersistenceMode => StudioPackagePersistenceMode.InMemory;
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft> CreateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -66,7 +61,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -77,7 +71,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -111,7 +104,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => DeleteDraftCoreAsync(draftId, null, cancellationToken);
 
@@ -152,7 +144,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -160,7 +151,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default) =>
         CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateCheckpointVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -172,7 +162,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         return CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
@@ -202,7 +191,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default)
@@ -276,7 +264,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -287,7 +274,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -298,7 +284,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -317,7 +302,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioContentItemListResult> ListContentItemsAsync(
         StudioContentItemQuery query,
         CancellationToken cancellationToken = default)
@@ -360,7 +344,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraftListResult> ListDraftsAsync(
         StudioPackageDraftQuery query,
         CancellationToken cancellationToken = default)
@@ -477,11 +460,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         return true;
     }
 
-    /// <summary>
-    /// Applies the honua-server#4905 tenant scope to one row. A row with no recorded tenant
-    /// belongs to the deployment default, so it is only enumerable when the caller's scope says
-    /// the request resolved to that default.
-    /// </summary>
     private static bool MatchesTenant(string? recordTenantId, TenantScopeFilter? scope)
     {
         if (scope is null)
@@ -518,7 +496,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
                 ? StudioContentItemState.Current
                 : StudioContentItemState.Draft;
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
         Guid? expectedCurrentVersionId,
@@ -596,7 +573,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -615,7 +591,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
         CancellationToken cancellationToken = default)
@@ -645,7 +620,6 @@ public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
             .FirstOrDefault();
     }
 
-    /// <inheritdoc />
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,

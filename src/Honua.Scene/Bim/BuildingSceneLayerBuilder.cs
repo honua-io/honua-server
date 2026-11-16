@@ -6,60 +6,20 @@ using Honua.Core.Features.Scene.Generation;
 
 namespace Honua.Core.Features.Scene.Bim;
 
-/// <summary>
-/// Converts a parsed <see cref="CityGmlModel"/> into a deterministic 3D Tiles
-/// tileset with Building Scene Layer (BSL) semantics (#1207): one GLB tile whose
-/// triangulated boundary surfaces carry per-feature BSL attributes (building id,
-/// storey, surface type, discipline / sub-layer, and the parsed generic
-/// attributes) through the existing <c>EXT_structural_metadata</c> path, plus a
-/// servable <c>tileset.json</c>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Each CityGML boundary surface (wall / roof / ground / ...) becomes one
-/// <see cref="SceneFeature"/> polygon. The model's source coordinates are placed
-/// on the WGS-84 ellipsoid by a caller-supplied <see cref="CityGmlGeoTransform"/>
-/// (which interprets the document CRS), exactly mirroring how the point-cloud
-/// pipeline projects LAS coordinates. The resulting features are handed to the
-/// shared <see cref="GeometryTileBuilder"/> so geometry &#8594; ECEF projection,
-/// triangulation, and the per-feature metadata table are reused rather than
-/// reimplemented.
-/// </para>
-/// <para>
-/// Output is byte-stable: features keep document order, BSL attribute columns
-/// are emitted in a fixed schema order, and the GLB/tileset writers are
-/// deterministic, so identical input produces identical bytes across runs.
-/// </para>
-/// </remarks>
 public static class BuildingSceneLayerBuilder
 {
-    /// <summary>BSL attribute: the owning building's <c>gml:id</c>.</summary>
     public const string AttributeBuildingId = "bsl_building_id";
 
-    /// <summary>BSL attribute: the owning building's name (when present).</summary>
     public const string AttributeBuildingName = "bsl_building_name";
 
-    /// <summary>BSL attribute: the owning storey identifier (the BSL level sub-layer).</summary>
     public const string AttributeStoreyId = "bsl_storey_id";
 
-    /// <summary>BSL attribute: the CityGML surface type (WallSurface, RoofSurface, ...).</summary>
     public const string AttributeSurfaceType = "bsl_surface_type";
 
-    /// <summary>BSL attribute: the BIM discipline / Building Scene Layer sub-layer.</summary>
     public const string AttributeDiscipline = "bsl_discipline";
 
-    /// <summary>BSL attribute: the boundary-surface component <c>gml:id</c>.</summary>
     public const string AttributeComponentId = "bsl_component_id";
 
-    /// <summary>
-    /// Builds the deterministic tileset artifacts (tileset.json bytes plus the
-    /// GLB tile bytes) for a CityGML building model with BSL attributes.
-    /// </summary>
-    /// <param name="model">The parsed CityGML model. Must contain at least one surface.</param>
-    /// <param name="transform">Projects a model (x, y, z) to (lon&#176;, lat&#176;, heightMeters), interpreting the document CRS.</param>
-    /// <param name="generatorTag">Optional generator label for the tileset/GLB asset blocks.</param>
-    /// <returns>The deterministic BSL tileset artifacts.</returns>
-    /// <exception cref="ArgumentException">The model carries no boundary surfaces.</exception>
     public static BuildingSceneLayerResult Build(
         CityGmlModel model,
         CityGmlGeoTransform transform,
@@ -264,29 +224,8 @@ public static class BuildingSceneLayerBuilder
         => GeodesicError.RootGeometricError(bounds, minHeight, maxHeight);
 }
 
-/// <summary>
-/// Projects a CityGML model coordinate to (longitude&#176;, latitude&#176;,
-/// height m). Implementations interpret the document CRS (geographic documents
-/// pass through; projected documents apply the inverse projection).
-/// </summary>
-/// <param name="x">Model X in the document's horizontal units.</param>
-/// <param name="y">Model Y in the document's horizontal units.</param>
-/// <param name="z">Model Z (elevation) in meters.</param>
-/// <returns>Geographic longitude/latitude in degrees and ellipsoidal height in meters.</returns>
 public delegate (double Longitude, double Latitude, double Height) CityGmlGeoTransform(double x, double y, double z);
 
-/// <summary>
-/// Deterministic artifacts produced from a CityGML building model (#1207): the
-/// serialized <c>tileset.json</c> bytes, the GLB tile bytes, and BSL summary
-/// fields (building / surface counts and the discovered discipline sub-layers).
-/// </summary>
-/// <param name="TilesetJsonBytes">Serialized tileset document.</param>
-/// <param name="Tiles">Map of relative GLB uri to tile bytes.</param>
-/// <param name="BoundsDegrees">Dataset envelope [west, south, east, north] in degrees.</param>
-/// <param name="BuildingCount">Number of buildings ingested.</param>
-/// <param name="SurfaceCount">Number of boundary-surface components emitted.</param>
-/// <param name="Disciplines">Distinct BSL disciplines / sub-layers present, in sorted order.</param>
-/// <param name="Warnings">Non-fatal coercion warnings raised by the metadata writer.</param>
 public readonly record struct BuildingSceneLayerResult(
     byte[] TilesetJsonBytes,
     IReadOnlyDictionary<string, byte[]> Tiles,

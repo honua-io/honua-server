@@ -8,26 +8,10 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Features.Spec.Canonical;
 
-/// <summary>
-/// Reads a canonical-JSON spec document back into a <see cref="SpecDocument"/>
-/// AST. Used by the round-trip tests and by downstream consumers (grounding,
-/// plan/apply) that receive the canonical form over the wire.
-/// </summary>
-/// <remarks>
-/// The reader is a focused structural deserializer rather than a general
-/// <see cref="System.Text.Json.JsonSerializer"/> adapter: it consumes
-/// <see cref="JsonElement"/> nodes directly so no reflection or runtime
-/// polymorphism is involved (keeping the path AOT-safe).
-/// </remarks>
 public static class SpecJsonReader
 {
     private static readonly WKTReader _wktReader = new();
 
-    /// <summary>
-    /// Reads the canonical JSON string into a <see cref="SpecDocument"/>.
-    /// </summary>
-    /// <param name="json">Canonical JSON.</param>
-    /// <returns>Parsed AST.</returns>
     public static SpecDocument Read(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
@@ -35,11 +19,6 @@ public static class SpecJsonReader
         return ReadDocument(doc.RootElement);
     }
 
-    /// <summary>
-    /// Reads the canonical JSON from a UTF-8 byte sequence.
-    /// </summary>
-    /// <param name="utf8">Canonical JSON bytes.</param>
-    /// <returns>Parsed AST.</returns>
     public static SpecDocument Read(ReadOnlySpan<byte> utf8)
     {
         using var doc = JsonDocument.Parse(utf8.ToArray());

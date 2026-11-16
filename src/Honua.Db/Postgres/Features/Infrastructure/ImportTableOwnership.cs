@@ -7,7 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>Proves importer ownership before destructive table operations.</summary>
 internal static class ImportTableOwnership
 {
     internal const string Marker = "honua:import-owned:v1";

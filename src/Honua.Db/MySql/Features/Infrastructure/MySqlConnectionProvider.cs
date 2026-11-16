@@ -8,10 +8,6 @@ using MySqlConnector;
 
 namespace Honua.Db.MySql.Features.Infrastructure;
 
-/// <summary>
-/// MySQL/MariaDB implementation of <see cref="IAdoNetDatabaseConnectionProvider"/>.
-/// Wraps a pooled <see cref="MySqlDataSource"/> for read-only feature workloads.
-/// </summary>
 internal sealed class MySqlConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly MySqlDataSource _dataSource;
@@ -21,16 +17,13 @@ internal sealed class MySqlConnectionProvider : IAdoNetDatabaseConnectionProvide
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     }
 
-    /// <inheritdoc />
     public string GetConnectionString() => _dataSource.ConnectionString;
 
-    /// <inheritdoc />
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         return await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
@@ -48,7 +41,6 @@ internal sealed class MySqlConnectionProvider : IAdoNetDatabaseConnectionProvide
         }
     }
 
-    /// <inheritdoc />
     public async Task<T> ExecuteWithDeadlockRetryAsync<T>(
         Func<Task<T>> operation,
         CancellationToken cancellationToken = default)
@@ -57,7 +49,6 @@ internal sealed class MySqlConnectionProvider : IAdoNetDatabaseConnectionProvide
         return await operation().ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task ExecuteWithDeadlockRetryAsync(
         Func<Task> operation,
         CancellationToken cancellationToken = default)

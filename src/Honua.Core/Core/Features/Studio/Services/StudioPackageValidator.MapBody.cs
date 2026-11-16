@@ -7,29 +7,6 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// Map-family body gate: the published portable <c>honua_map_package.v1</c> schema
-/// (honua-sdk-js <c>schemas/honua-map-package.v1.json</c>), checked member by member.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The body used to be admitted by deserializing it into the geoprocessing
-/// <c>MapPackage</c> record. That record is narrower than the schema — it required
-/// <c>initialView.bbox</c> and <c>initialView.crs</c>, a locator <c>url</c>, a legend
-/// <c>color</c>, a popup <c>fieldName</c>, a string <c>layerId</c>, and
-/// <c>status</c>/<c>createdAt</c> — so the SDK's own canonical artifact was refused, and
-/// every mismatch collapsed into one opaque <c>/body</c> diagnostic (honua-server#4898).
-/// </para>
-/// <para>
-/// This walk admits what the schema admits for every member the server models and names
-/// the offending member path otherwise. Two schema-required members,
-/// <c>sourceBindings</c> and <c>mapSpec</c>, stay optional because server-authored
-/// composition bodies predate them. A JSON <c>null</c> on an optional member reads as
-/// absent, as it did through the record. Unknown members are permitted, as the schema
-/// permits them. <c>widgets</c>, <c>layers</c> and <c>view</c> are gated by
-/// <see cref="ValidateCompositionBlocks"/>.
-/// </para>
-/// </remarks>
 public sealed partial class StudioPackageValidator
 {
     private const string MapPackageFormat = "honua_map_package.v1";

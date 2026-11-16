@@ -9,59 +9,19 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-/// <summary>
-/// Provides write access to features with create, update, and delete operations.
-/// Segregated from read operations to support different authorization and caching policies.
-/// </summary>
 public interface IFeatureWriter
 {
-    /// <summary>
-    /// Opens a writer transaction that can apply batches to more than one layer atomically.
-    /// </summary>
-    /// <param name="isolationLevel">Database isolation level for the transaction.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A transaction-bound feature writer.</returns>
-    /// <exception cref="NotSupportedException">The provider does not support cross-layer transactions.</exception>
     Task<IFeatureWriterTransaction> BeginTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This feature writer does not support cross-layer transactions.");
 
-    /// <summary>
-    /// Creates a new feature
-    /// </summary>
-    /// <param name="layerId">Layer identifier where the feature should be created</param>
-    /// <param name="feature">Feature to create (Id may be ignored and auto-generated)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Created feature with assigned ID</returns>
     Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Updates an existing feature
-    /// </summary>
-    /// <param name="layerId">Layer identifier containing the feature</param>
-    /// <param name="feature">Feature with updated values (must include valid Id)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Updated feature</returns>
-    /// <exception cref="ResourceNotFoundException">Thrown if feature with the specified ID does not exist</exception>
     Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Deletes a feature by its unique identifier
-    /// </summary>
-    /// <param name="layerId">Layer identifier containing the feature</param>
-    /// <param name="featureId">Unique feature identifier to delete</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if feature was deleted, false if not found</returns>
     Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Applies a batch of create, update, and delete operations in a single transaction
-    /// </summary>
-    /// <param name="layerId">Layer identifier for the operations</param>
-    /// <param name="editBatch">Batch of operations to apply</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Result summary of the batch operation</returns>
     Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default);
 
     // Resolves the storage-layer id from the resource's primary storage binding through the graph
@@ -83,17 +43,6 @@ public interface IFeatureWriter
         return await ApplyEditsAsync(storageLayerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Applies a batch and, when this writer can, persists <paramref name="receipt"/> in the
-    /// same transaction as the edit. The default cannot: <see cref="FeatureEditApplication.ReceiptDurable"/>
-    /// is false and the batch follows
-    /// <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>.
-    /// </summary>
-    /// <param name="layerId">Layer identifier for the operations.</param>
-    /// <param name="editBatch">Batch of operations to apply.</param>
-    /// <param name="receipt">Receipt that must commit with a committed edit.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The edit result and whether the receipt committed with it.</returns>
     Task<FeatureEditApplication> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -111,10 +60,6 @@ public interface IFeatureWriter
     }
 }
 
-/// <summary>
-/// Applies feature-edit batches through one provider transaction, including batches for
-/// different layers.
-/// </summary>
 public interface IFeatureWriterTransaction : IAsyncDisposable
 {
     bool SupportsDurableReceipts => false;
@@ -124,40 +69,20 @@ public interface IFeatureWriterTransaction : IAsyncDisposable
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This writer transaction does not support durable receipts.");
 
-    /// <summary>
-    /// Applies one layer batch without committing the enclosing transaction.
-    /// </summary>
-    /// <param name="layerId">Storage layer identifier.</param>
-    /// <param name="editBatch">Ordered edits to apply.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The edit result for this layer batch.</returns>
     Task<FeatureEditResult> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Commits every batch applied through this transaction.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Rolls back every batch applied through this transaction.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task RollbackAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Describes whether a writer transaction's commit was acknowledged.
-/// </summary>
 public enum FeatureWriterTransactionCommitOutcome
 {
-    /// <summary>The provider acknowledged that the transaction committed.</summary>
     Committed,
 
-    /// <summary>The commit may be durable, but its acknowledgement was lost.</summary>
     Unknown,
 
     SupersededByExistingReceipt

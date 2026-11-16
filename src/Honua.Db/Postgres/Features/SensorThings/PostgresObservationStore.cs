@@ -15,11 +15,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.SensorThings;
 
-/// <summary>
-/// Postgres implementation of <see cref="IObservationStore"/> over the
-/// configured-schema <c>sta_*</c> catalog tables and the range-partitioned
-/// <c>sta_observation</c> time-series table (migration 059).
-/// </summary>
 internal sealed partial class PostgresObservationStore : IObservationStore, ISensorThingsEntityStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -330,12 +325,6 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, Math.Max(0, query.Top));
     }
 
-    /// <summary>
-    /// Binds the translated <c>$filter</c> values with the PostgreSQL type their column
-    /// expects. The translator already refused any literal that does not match the column,
-    /// so the CLR type here is authoritative; binding it explicitly keeps an inferred
-    /// parameter type from reintroducing a text-versus-double comparison (#4203).
-    /// </summary>
     private static void AddFilterParameters(NpgsqlCommand command, IReadOnlyList<object?> parameters)
     {
         for (var i = 0; i < parameters.Count; i++)

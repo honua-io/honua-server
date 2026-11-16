@@ -6,9 +6,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// AOT-safe JSON serialization context for raster persistence types.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(CogOverviewLevelSummary[]))]
 internal sealed partial class RasterJsonContext : JsonSerializerContext

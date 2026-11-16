@@ -13,47 +13,8 @@ using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.Parameter
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Cross-layer spatial join SQL — split out from <c>FeatureQueryBuilder.Analytics.cs</c>
-/// because the join shape needs a target CTE plus an aliased outer JOIN, which is
-/// noticeably different from the single-source clustering / buffer / density builders.
-/// </summary>
 internal sealed partial class FeatureQueryBuilder
 {
-    /// <summary>
-    /// Builds a spatial join query that filters the target layer with the shared
-    /// <see cref="FeatureQuery"/> AST and joins each target row to matching join-layer
-    /// rows using the requested spatial predicate. Each output row carries the target
-    /// feature plus a match count, optional aggregated carry fields, and optional
-    /// aggregate statistics computed across matching join rows.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The target layer is materialised in a <c>WITH target_src AS (...)</c> CTE so the
-    /// existing <c>AppendWhereClause</c> / <c>AppendTemporalFilter</c> / <c>AppendSpatialFilter</c>
-    /// helpers can keep emitting unqualified column references. The CTE applies
-    /// <c>LIMIT (maxInputFeatures + 1)</c> so the handler can detect overflow without
-    /// scanning the full target layer.
-    /// </para>
-    /// <para>
-    /// The join uses <c>LEFT JOIN</c> so target rows with zero matches still appear in
-    /// the result with <c>matchCount = 0</c>. Carry-field arrays are filtered to
-    /// non-matching rows so the empty case yields an empty array rather than
-    /// <c>{NULL}</c>.
-    /// </para>
-    /// <para>
-    /// The two layers may live in different SRIDs. The builder uses
-    /// <see cref="SpatialJoinQuery.JoinLayerSrid"/> to tag the join geometry column
-    /// (necessary for Bytea storage where the raw column has no SRID), and wraps
-    /// the join operand with <c>ST_Transform</c> when the join layer's SRID
-    /// differs from the target layer's SRID so the spatial predicate evaluates in
-    /// a single CRS. This matches how the rest of the slice handles cross-CRS
-    /// spatial filters via <c>BuildSpatialFilterGeometryExpression</c>. The
-    /// per-row transform is unavoidable in cross-CRS joins; same-CRS joins skip
-    /// the wrap entirely so the GiST-index friendly <c>&amp;&amp;</c> fast-path
-    /// stays intact.
-    /// </para>
-    /// </remarks>
     public CoreParameterizedQuery BuildSpatialJoinQuery(
         int targetLayerId,
         FeatureQuery targetQuery,
@@ -61,12 +22,6 @@ internal sealed partial class FeatureQueryBuilder
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
         => BuildSpatialJoinQuery(targetLayerId, targetQuery, joinQuery, joinLayerEnforcedFilter: null, geometryStorageType);
 
-    /// <summary>
-    /// Postgres-specific overload that additionally applies the join layer's
-    /// permanent (row-visibility) filter on the join side of the LEFT JOIN, so
-    /// matchCount, carry-field arrays and join-side statistics cannot aggregate
-    /// rows the join layer's PermanentFilter hides from direct queries.
-    /// </summary>
     public CoreParameterizedQuery BuildSpatialJoinQuery(
         int targetLayerId,
         FeatureQuery targetQuery,
@@ -204,15 +159,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Builds the SQL predicate that connects the target geometry expression to the
-    /// join geometry expression. For <see cref="SpatialJoinPredicate.DWithin"/> the
-    /// distance is pushed through as a positional parameter and applied against the
-    /// geography projection so the threshold is interpreted in meters regardless of
-    /// layer SRID. Callers are responsible for supplying storage-aware expressions
-    /// (see <see cref="GeometryProcessor.GetGeometryOperand"/>) so the predicate
-    /// works across Geometry, Geography and Bytea storage modes.
-    /// </summary>
     private static string BuildSpatialJoinPredicate(
         SpatialJoinQuery joinQuery,
         string targetGeometryExpression,
@@ -258,12 +204,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Appends carry-field columns aggregated as <c>array_agg</c> over the matching
-    /// join rows. Field names are validated against the same regex as the rest of
-    /// the builder before they are emitted as JSON path expressions qualified with
-    /// the <c>j</c> alias.
-    /// </summary>
     private static void AppendJoinCarryFieldColumns(
         StringBuilder sql, ImmutableArray<string>? carryFields)
     {
@@ -289,11 +229,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Appends aggregate statistic columns computed over the join-side rows. Field
-    /// names are validated and reused via <see cref="BuildAggregateExpression"/>
-    /// for parity with <c>queryStatistics</c> / <c>queryH3</c>.
-    /// </summary>
     private static void AppendJoinStatisticsColumns(
         StringBuilder sql, ImmutableArray<StatisticDefinition>? outStatistics)
     {
@@ -321,13 +256,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Returns the SQL expression that resolves <paramref name="fieldName"/> against
-    /// the join-side alias <c>j</c>. <c>objectid</c> is treated as a direct column;
-    /// every other field name is rendered as a JSONB text extraction against
-    /// <c>j.attributes</c> using <see cref="DatabaseSchema.BuildJsonPath"/> so single
-    /// quotes are escaped consistently with the rest of the builder.
-    /// </summary>
     private static string GetJoinFieldExpression(string fieldName)
     {
         if (string.Equals(fieldName, DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase))

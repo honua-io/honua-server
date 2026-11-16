@@ -3,11 +3,6 @@
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-/// <summary>
-/// Exact public-journal identities for application-owned migrations whose physical effects
-/// the PostgreSQL guard verifies. The application composition root owns these values so the
-/// provider never depends on an application assembly or namespace.
-/// </summary>
 internal sealed class PostgresCoreSchemaMigrationManifest
 {
     public PostgresCoreSchemaMigrationManifest(
@@ -50,13 +45,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
 
     public string ApplicationMigrationAssemblyName { get; }
 
-    /// <summary>Application-owned attachment contract; synthetic manifests may omit it.</summary>
     public PostgresAttachmentMigrationContract? Attachments { get; init; }
 
-    /// <summary>
-    /// Complete reader-qualified migration identities supplied by the application. Synthetic
-    /// manifests may omit this when testing an isolated schema floor.
-    /// </summary>
     public IReadOnlySet<string>? KnownMigrationNames { get; init; }
 
     public string MetadataV2SnapshotMigration { get; }
@@ -75,19 +65,9 @@ internal sealed class PostgresCoreSchemaMigrationManifest
 
     public string GovernedLineageMigration { get; }
 
-    /// <summary>
-    /// Journal identity for the foundational Honua metadata schema. Older synthetic manifests
-    /// may omit this because they intentionally exercise only provider-owned floors.
-    /// </summary>
     public string? InitialSchemaMigration { get; }
 
-    /// <summary>
-    /// Journal identity for the migration that creates the SensorThings identifier
-    /// sequences the ingest path allocates <c>@iot.id</c>s from. Synthetic manifests that
-    /// predate the sequences leave this null and the guard skips the check.
-    /// </summary>
     public string? SensorThingsIdSequencesMigration { get; }
 
-    /// <summary>Migration owning the full eight-entity sensing schema.</summary>
     public string? SensorThingsSensingMigration { get; }
 }

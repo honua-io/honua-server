@@ -115,26 +115,6 @@ internal static class GdalWorkerServiceCollectionExtensions
         IConfiguration configuration)
         => services.AddGdalProcessExecutors(configuration, GdalProcessExecutorMode.InProcess);
 
-    /// <summary>
-    /// Registers the native GDAL <see cref="IProcessExecutor"/> set with an explicit
-    /// command-runner mode (issue #2180).
-    /// <list type="bullet">
-    /// <item><see cref="GdalProcessExecutorMode.InProcess"/> — the default fast path:
-    /// each GDAL tool is shelled out via <see cref="ProcessGdalCommandRunner"/> against
-    /// the host's GDAL CLIs, keeping the GP Devkit sub-second loop on managed ops.</item>
-    /// <item><see cref="GdalProcessExecutorMode.Container"/> — the opt-in
-    /// <c>--real-worker</c> fidelity path: each GDAL tool runs inside the real
-    /// <c>honua-worker-etl</c> image via <see cref="DockerGdalCommandRunner"/>, so the
-    /// image / CRS data / driver-set / arg-handling boundary a production native submit
-    /// crosses is actually exercised locally.</item>
-    /// </list>
-    /// Both modes register the IDENTICAL executor set and read the IDENTICAL durable
-    /// spec — only the <see cref="IGdalCommandRunner"/> implementation differs, so the
-    /// managed fast path is unaffected and the spec a job carries is the same.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Host configuration; binds the <c>GdalWorker</c> section.</param>
-    /// <param name="mode">Which command-runner implementation to register.</param>
     public static IServiceCollection AddGdalProcessExecutors(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -248,21 +228,6 @@ internal static class GdalWorkerServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// DEV-ONLY: decorates the registered native <see cref="IGdalCommandRunner"/> with the
-    /// glass-box capturing runner so the supplied <see cref="GlassBoxCapture"/> collects the
-    /// fully unsanitized command line, real scratch working directory, and complete
-    /// stdout/stderr of every native invocation (GP Devkit, issue #2128).
-    /// </summary>
-    /// <remarks>
-    /// This MUST be called only by the dev <c>honua gp</c> CLI under its explicit glass-box
-    /// flag/env. The production worker host (<see cref="AddGdalWorker"/>) never calls it, so
-    /// the sanitized <see cref="GdalErrorSanitizer"/> / <see cref="GdalCommandLog"/> path
-    /// stays the default and no raw paths or untruncated output ever reach a client. Call it
-    /// after <see cref="AddGdalProcessExecutors(IServiceCollection, IConfiguration)"/> so the bare runner is already registered.
-    /// </remarks>
-    /// <param name="services">Service collection that has the GDAL executors registered.</param>
-    /// <param name="capture">The sink the decorator records unsanitized invocations into.</param>
     public static IServiceCollection AddGlassBoxGdalCapture(
         this IServiceCollection services,
         GlassBoxCapture capture)
@@ -282,14 +247,6 @@ internal static class GdalWorkerServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// When <paramref name="section"/> actually supplies values, REPLACES the
-    /// pre-populated <paramref name="target"/> list contents with exactly the configured
-    /// values (trimmed, blanks dropped, de-duplicated case-insensitively). This undoes
-    /// ConfigurationBinder's append-onto-defaults behavior so an operator can genuinely
-    /// TIGHTEN (or shrink) a default list — not only grow it. When the section is empty
-    /// the defaults are left intact.
-    /// </summary>
     private static void ReplaceListWhenConfigured(IConfigurationSection section, IList<string> target)
     {
         var children = section.GetChildren().ToList();
@@ -335,13 +292,6 @@ internal static class GdalWorkerServiceCollectionExtensions
         return (IGdalCommandRunner)ActivatorUtilities.CreateInstance(sp, implementationType);
     }
 
-    /// <summary>
-    /// Registers the shared durable execution-loop services used by the worker host.
-    /// Intentionally does NOT register the serving image's
-    /// <c>GeoprocessingJobTerminalCallback</c> (an API-side result-projection
-    /// concern); the worker leaves the terminal-callback set empty, which the loop
-    /// supports.
-    /// </summary>
     private static IServiceCollection AddGdalWorkerExecutionLoop(this IServiceCollection services)
     {
         services.TryAddSingleton<ExecutionJobCancellationTokens>();
@@ -354,12 +304,6 @@ internal static class GdalWorkerServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers a GDAL <see cref="IProcessExecutor"/> as its concrete type and
-    /// surfaces the same singleton into the enumerable <see cref="IProcessExecutor"/>
-    /// set <see cref="GdalDispatchJobExecutor"/> consumes — both bound to one
-    /// instance via a resolving factory (GP Devkit authoring contract #2122).
-    /// </summary>
     private static void RegisterGdalExecutor<TExecutor>(IServiceCollection services)
         where TExecutor : class, IProcessExecutor
     {

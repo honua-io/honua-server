@@ -9,13 +9,8 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// GeoServices point JSON fast path for a source-backed reader. FeatureServer selects this
-/// interface instead of materializing WKB and a feature dictionary for compact point JSON.
-/// </summary>
 internal sealed partial class PostgresStorageMappedFeatureReader : IPagedRawGeoServicesFeatureStore
 {
-    /// <inheritdoc />
     public async Task<PagedQueryResult<RawGeoServicesFeature>> QueryGeoServicesRawPointPageAsync(
         int layerId,
         FeatureQuery query,

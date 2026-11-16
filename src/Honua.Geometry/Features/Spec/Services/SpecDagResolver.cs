@@ -5,18 +5,8 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// Resolves the dependency graph declared by a <see cref="CanonicalSpecDocument"/>.
-/// Produces a topological ordering plus a per-node dependency list, and emits
-/// structural diagnostics for cycles, duplicates, and unresolved references.
-/// </summary>
 internal static class SpecDagResolver
 {
-    /// <summary>
-    /// Returns the resolution result. When <see cref="SpecDagResolution.HasFatalErrors"/>
-    /// is true, <see cref="SpecDagResolution.Order"/> is empty and the caller
-    /// must surface <see cref="SpecDagResolution.Diagnostics"/> without building a plan.
-    /// </summary>
     public static SpecDagResolution Resolve(CanonicalSpecDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -289,9 +279,6 @@ internal static class SpecDagResolver
     private readonly record struct DfsFrame(string Id, int Index);
 }
 
-/// <summary>
-/// Result of <see cref="SpecDagResolver.Resolve"/>.
-/// </summary>
 internal sealed record SpecDagResolution(
     IReadOnlyList<string> Order,
     IReadOnlyDictionary<string, List<string>> Dependencies,

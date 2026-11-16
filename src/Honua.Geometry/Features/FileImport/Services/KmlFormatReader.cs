@@ -18,17 +18,10 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming KML format reader. Parses KML Placemark elements into features
-/// using XmlReader for memory-efficient processing.
-/// </summary>
 internal static class KmlFormatReader
 {
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
 
-    /// <summary>
-    /// Streams features from a KML file using XmlReader for memory efficiency.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -363,12 +356,6 @@ internal static class KmlFormatReader
         return null;
     }
 
-    /// <summary>
-    /// Ensures a ring's coordinates form a closed loop. NTS <c>CreateLinearRing</c>
-    /// throws if the first and last coordinates differ, which would otherwise abort
-    /// the entire import stream for a single malformed ring. Mirrors the closure
-    /// logic in <c>GdbGeometryReader.BuildPolygon</c>.
-    /// </summary>
     private static Coordinate[] EnsureClosedRing(Coordinate[] coordinates)
     {
         if (coordinates.Length < 2 || coordinates[0].Equals2D(coordinates[^1]))

@@ -8,11 +8,6 @@ using Oracle.ManagedDataAccess.Client;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
-/// <summary>
-/// Default <see cref="IOracleSpatialMetadataProbe"/> implementation. Opens an Oracle connection
-/// via the configured factory and queries <c>ALL_TAB_COLUMNS</c> for the geometry column type
-/// and any ArcSDE versioning columns.
-/// </summary>
 internal sealed class OracleSpatialMetadataProbe : IOracleSpatialMetadataProbe
 {
     private readonly IOracleConnectionFactory _connectionFactory;

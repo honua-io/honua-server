@@ -12,26 +12,16 @@ public static class ErrorMessages
 {
     public static class NotFound
     {
-        public const string         /// <inheritdoc/>
-Service = "Service '{0}' not found.";
-        public const string         /// <inheritdoc/>
-ServiceGeneric = "Service not found.";
-        public const string         /// <inheritdoc/>
-Layer = "Layer {0} not found.";
-        public const string         /// <inheritdoc/>
-LayerGeneric = "Layer not found.";
-        public const string         /// <inheritdoc/>
-LayerInService = "Layer {0} not found in service '{1}'.";
-        public const string         /// <inheritdoc/>
-Collection = "Collection '{0}' not found.";
-        public const string         /// <inheritdoc/>
-CollectionGeneric = "Collection not found.";
-        public const string         /// <inheritdoc/>
-Field = "Field '{0}' not found in layer '{1}'.";
-        public const string         /// <inheritdoc/>
-Resource = "The requested resource was not found.";
-        public const string         /// <inheritdoc/>
-ResourceGeneric = "{0} not found";
+        public const string Service = "Service '{0}' not found.";
+        public const string ServiceGeneric = "Service not found.";
+        public const string Layer = "Layer {0} not found.";
+        public const string LayerGeneric = "Layer not found.";
+        public const string LayerInService = "Layer {0} not found in service '{1}'.";
+        public const string Collection = "Collection '{0}' not found.";
+        public const string CollectionGeneric = "Collection not found.";
+        public const string Field = "Field '{0}' not found in layer '{1}'.";
+        public const string Resource = "The requested resource was not found.";
+        public const string ResourceGeneric = "{0} not found";
         private static readonly CompositeFormat _serviceFormat = CompositeFormat.Parse(Service);
         private static readonly CompositeFormat _layerFormat = CompositeFormat.Parse(Layer);
         private static readonly CompositeFormat _layerInServiceFormat = CompositeFormat.Parse(LayerInService);
@@ -60,38 +50,22 @@ ResourceGeneric = "{0} not found";
 
     public static class Validation
     {
-        public const string         /// <inheritdoc/>
-InvalidParameter = "Invalid query parameters";
-        public const string         /// <inheritdoc/>
-InvalidQueryParameter = "Invalid query parameter.";
-        public const string         /// <inheritdoc/>
-InvalidRequestParameters = "Invalid request parameters.";
-        public const string         /// <inheritdoc/>
-InvalidPaginationParameters = "Invalid pagination parameters.";
-        public const string         /// <inheritdoc/>
-InvalidPagingParameters = "Invalid paging parameters.";
-        public const string         /// <inheritdoc/>
-InvalidGeometryParameter = "Invalid geometry parameter";
-        public const string         /// <inheritdoc/>
-InvalidJsonFormat = "Invalid JSON format in geometry parameter";
-        public const string         /// <inheritdoc/>
-InvalidBboxFormat = "Invalid bbox parameter format.";
-        public const string         /// <inheritdoc/>
-InvalidDatetimeFormat = "Invalid datetime parameter format.";
-        public const string         /// <inheritdoc/>
-InvalidDatetimeParameter = "Invalid datetime parameter.";
-        public const string         /// <inheritdoc/>
-InvalidCollectionsParameter = "Invalid collections parameter.";
-        public const string         /// <inheritdoc/>
-InvalidQueryParameterValue = "Invalid query parameter value.";
-        public const string         /// <inheritdoc/>
-RequiredParameterMissing = "A required parameter was not provided.";
-        public const string         /// <inheritdoc/>
-CollectionIdRequired = "Collection ID is required.";
-        public const string         /// <inheritdoc/>
-ServiceIdRequired = "Service ID is required.";
-        public const string         /// <inheritdoc/>
-CollectionIdInvalid = "Collection '{0}' is invalid.";
+        public const string InvalidParameter = "Invalid query parameters";
+        public const string InvalidQueryParameter = "Invalid query parameter.";
+        public const string InvalidRequestParameters = "Invalid request parameters.";
+        public const string InvalidPaginationParameters = "Invalid pagination parameters.";
+        public const string InvalidPagingParameters = "Invalid paging parameters.";
+        public const string InvalidGeometryParameter = "Invalid geometry parameter";
+        public const string InvalidJsonFormat = "Invalid JSON format in geometry parameter";
+        public const string InvalidBboxFormat = "Invalid bbox parameter format.";
+        public const string InvalidDatetimeFormat = "Invalid datetime parameter format.";
+        public const string InvalidDatetimeParameter = "Invalid datetime parameter.";
+        public const string InvalidCollectionsParameter = "Invalid collections parameter.";
+        public const string InvalidQueryParameterValue = "Invalid query parameter value.";
+        public const string RequiredParameterMissing = "A required parameter was not provided.";
+        public const string CollectionIdRequired = "Collection ID is required.";
+        public const string ServiceIdRequired = "Service ID is required.";
+        public const string CollectionIdInvalid = "Collection '{0}' is invalid.";
         private static readonly CompositeFormat _collectionIdInvalidFormat = CompositeFormat.Parse(CollectionIdInvalid);
 
         public static string FormatRange(string field, object min, object max) =>
@@ -109,174 +83,98 @@ CollectionIdInvalid = "Collection '{0}' is invalid.";
 
     public static class RangeValidation
     {
-        public const string         /// <inheritdoc/>
-MaxRecordCount = "MaxRecordCount must be between 100 and 10,000";
-        public const string         /// <inheritdoc/>
-DefaultRecordCount = "DefaultRecordCount must be at least 100";
-        public const string         /// <inheritdoc/>
-MaxOffset = "MaxOffset must be between 1,000 and 1,000,000";
-        public const string         /// <inheritdoc/>
-QueryTimeout = "Query.QueryTimeout must be between 5 seconds and 2 minutes";
-        public const string         /// <inheritdoc/>
-MaxH3CellsPerQuery = "MaxH3CellsPerQuery must be between 100 and 1,000,000";
-        public const string         /// <inheritdoc/>
-MaxVerticesPerGeometry = "MaxVerticesPerGeometry must be between 1,000 and 1,000,000";
-        public const string         /// <inheritdoc/>
-MaxGeometrySize = "MaxGeometrySize must be between 1MB and 100MB";
-        public const string         /// <inheritdoc/>
-MaxCoordinatePrecision = "MaxCoordinatePrecision must be between 1 and 15";
-        public const string         /// <inheritdoc/>
-SimplifyTolerance = "SimplifyTolerance must be between 0 and 1000 meters";
-        public const string         /// <inheritdoc/>
-MaxFeaturesPerEdit = "MaxFeaturesPerEdit must be between 1 and 10,000";
-        public const string         /// <inheritdoc/>
-MaxEditsPerTransaction = "MaxEditsPerTransaction must be between 100 and 50,000";
-        public const string         /// <inheritdoc/>
-MaxPayloadSize = "MaxPayloadSize must be between 1MB and 500MB";
-        public const string         /// <inheritdoc/>
-MaxAttachmentSize = "MaxAttachmentSize must be between 1MB and 100MB";
-        public const string         /// <inheritdoc/>
-MaxAttachmentsPerFeature = "MaxAttachmentsPerFeature must be between 1 and 100";
-        public const string         /// <inheritdoc/>
-MaxTotalAttachmentSize = "MaxTotalAttachmentSize must be between 10MB and 1GB";
-        public const string         /// <inheritdoc/>
-MaxTileZoom = "MaxTileZoom must be between 1 and 24";
-        public const string         /// <inheritdoc/>
-MinTileZoom = "MinTileZoom must be between 0 and 10";
-        public const string         /// <inheritdoc/>
-MaxFeaturesPerTile = "MaxFeaturesPerTile must be between 1,000 and 1,000,000";
-        public const string         /// <inheritdoc/>
-TileTimeout = "Tiles.TileTimeout must be between 1 second and 1 minute";
-        public const string         /// <inheritdoc/>
-MaxTileSize = "MaxTileSize must be a positive number of encoded vector tile bytes";
-        public const string         /// <inheritdoc/>
-MaxConcurrentQueries = "MaxConcurrentQueries must be between 10 and 1,000";
-        public const string         /// <inheritdoc/>
-MaxConnectionPoolSize = "MaxConnectionPoolSize must be between 1 and 1000";
-        public const string         /// <inheritdoc/>
-RequestTimeout = "Connections.RequestTimeout must be between 10 seconds and 10 minutes";
-        public const string         /// <inheritdoc/>
-MaxPreviewSize = "MaxPreviewSize must be between 1MB and 50MB";
-        public const string         /// <inheritdoc/>
-MaxSyncImportSize = "MaxSyncImportSize must be between 10MB and 500MB";
-        public const string         /// <inheritdoc/>
-MaxImportSize = "MaxImportSize must be between 50MB and 5GB";
-        public const string         /// <inheritdoc/>
-MaxPreviewFeatures = "MaxPreviewFeatures must be between 10 and 1,000";
-        public const string         /// <inheritdoc/>
-MaxPreviewCountScan = "MaxPreviewCountScan must be between 10 and 1,000,000";
-        public const string         /// <inheritdoc/>
-BatchSize = "BatchSize must be between 100 and 10,000";
-        public const string         /// <inheritdoc/>
-MaxVertices = "MaxVertices must be between 1,000 and 100,000";
-        public const string         /// <inheritdoc/>
-MaxRings = "MaxRings must be between 10 and 1,000";
-        public const string         /// <inheritdoc/>
-CoordinatePrecision = "CoordinatePrecision must be between 1 and 15";
-        public const string         /// <inheritdoc/>
-MaxWkbSize = "MaxWkbSize must be between 100KB and 10MB";
-        public const string         /// <inheritdoc/>
-MaxAttributeLength = "MaxAttributeLength must be between 1,000 and 1,000,000";
+        public const string MaxRecordCount = "MaxRecordCount must be between 100 and 10,000";
+        public const string DefaultRecordCount = "DefaultRecordCount must be at least 100";
+        public const string MaxOffset = "MaxOffset must be between 1,000 and 1,000,000";
+        public const string QueryTimeout = "Query.QueryTimeout must be between 5 seconds and 2 minutes";
+        public const string MaxH3CellsPerQuery = "MaxH3CellsPerQuery must be between 100 and 1,000,000";
+        public const string MaxVerticesPerGeometry = "MaxVerticesPerGeometry must be between 1,000 and 1,000,000";
+        public const string MaxGeometrySize = "MaxGeometrySize must be between 1MB and 100MB";
+        public const string MaxCoordinatePrecision = "MaxCoordinatePrecision must be between 1 and 15";
+        public const string SimplifyTolerance = "SimplifyTolerance must be between 0 and 1000 meters";
+        public const string MaxFeaturesPerEdit = "MaxFeaturesPerEdit must be between 1 and 10,000";
+        public const string MaxEditsPerTransaction = "MaxEditsPerTransaction must be between 100 and 50,000";
+        public const string MaxPayloadSize = "MaxPayloadSize must be between 1MB and 500MB";
+        public const string MaxAttachmentSize = "MaxAttachmentSize must be between 1MB and 100MB";
+        public const string MaxAttachmentsPerFeature = "MaxAttachmentsPerFeature must be between 1 and 100";
+        public const string MaxTotalAttachmentSize = "MaxTotalAttachmentSize must be between 10MB and 1GB";
+        public const string MaxTileZoom = "MaxTileZoom must be between 1 and 24";
+        public const string MinTileZoom = "MinTileZoom must be between 0 and 10";
+        public const string MaxFeaturesPerTile = "MaxFeaturesPerTile must be between 1,000 and 1,000,000";
+        public const string TileTimeout = "Tiles.TileTimeout must be between 1 second and 1 minute";
+        public const string MaxTileSize = "MaxTileSize must be a positive number of encoded vector tile bytes";
+        public const string MaxConcurrentQueries = "MaxConcurrentQueries must be between 10 and 1,000";
+        public const string MaxConnectionPoolSize = "MaxConnectionPoolSize must be between 1 and 1000";
+        public const string RequestTimeout = "Connections.RequestTimeout must be between 10 seconds and 10 minutes";
+        public const string MaxPreviewSize = "MaxPreviewSize must be between 1MB and 50MB";
+        public const string MaxSyncImportSize = "MaxSyncImportSize must be between 10MB and 500MB";
+        public const string MaxImportSize = "MaxImportSize must be between 50MB and 5GB";
+        public const string MaxPreviewFeatures = "MaxPreviewFeatures must be between 10 and 1,000";
+        public const string MaxPreviewCountScan = "MaxPreviewCountScan must be between 10 and 1,000,000";
+        public const string BatchSize = "BatchSize must be between 100 and 10,000";
+        public const string MaxVertices = "MaxVertices must be between 1,000 and 100,000";
+        public const string MaxRings = "MaxRings must be between 10 and 1,000";
+        public const string CoordinatePrecision = "CoordinatePrecision must be between 1 and 15";
+        public const string MaxWkbSize = "MaxWkbSize must be between 100KB and 10MB";
+        public const string MaxAttributeLength = "MaxAttributeLength must be between 1,000 and 1,000,000";
 
         // Cache options validation messages
-        public const string         /// <inheritdoc/>
-DefaultTtlSeconds = "DefaultTtlSeconds must be between 1 and 86400 (24 hours)";
-        public const string         /// <inheritdoc/>
-ServiceTtlSeconds = "ServiceTtlSeconds must be between 1 and 86400 (24 hours)";
-        public const string         /// <inheritdoc/>
-LayerTtlSeconds = "LayerTtlSeconds must be between 1 and 86400 (24 hours)";
-        public const string         /// <inheritdoc/>
-QueryTtlSeconds = "QueryTtlSeconds must be between 1 and 3600 (1 hour)";
-        public const string         /// <inheritdoc/>
-NegativeTtlSeconds = "NegativeTtlSeconds must be between 1 and 3600 (1 hour)";
-        public const string         /// <inheritdoc/>
-JitterPercentage = "JitterPercentage must be between 0 and 0.5 (50%)";
-        public const string         /// <inheritdoc/>
-MaxEntries = "MaxEntries must be between 10 and 500000";
-        public const string         /// <inheritdoc/>
-BackgroundRefreshThreshold = "BackgroundRefreshThreshold must be between 0.05 and 0.75";
-        public const string         /// <inheritdoc/>
-MaxConcurrentRefreshes = "MaxConcurrentRefreshes must be between 1 and 100";
-        public const string         /// <inheritdoc/>
-RefreshTimeoutSeconds = "RefreshTimeoutSeconds must be between 5 and 120";
+        public const string DefaultTtlSeconds = "DefaultTtlSeconds must be between 1 and 86400 (24 hours)";
+        public const string ServiceTtlSeconds = "ServiceTtlSeconds must be between 1 and 86400 (24 hours)";
+        public const string LayerTtlSeconds = "LayerTtlSeconds must be between 1 and 86400 (24 hours)";
+        public const string QueryTtlSeconds = "QueryTtlSeconds must be between 1 and 3600 (1 hour)";
+        public const string NegativeTtlSeconds = "NegativeTtlSeconds must be between 1 and 3600 (1 hour)";
+        public const string JitterPercentage = "JitterPercentage must be between 0 and 0.5 (50%)";
+        public const string MaxEntries = "MaxEntries must be between 10 and 500000";
+        public const string BackgroundRefreshThreshold = "BackgroundRefreshThreshold must be between 0.05 and 0.75";
+        public const string MaxConcurrentRefreshes = "MaxConcurrentRefreshes must be between 1 and 100";
+        public const string RefreshTimeoutSeconds = "RefreshTimeoutSeconds must be between 5 and 120";
 
         // StandardTtl options validation messages
-        public const string         /// <inheritdoc/>
-VeryShortTtlSeconds = "VeryShortTtlSeconds must be between 1 and 300 (5 minutes)";
-        public const string         /// <inheritdoc/>
-ShortTtlSeconds = "ShortTtlSeconds must be between 1 and 600 (10 minutes)";
-        public const string         /// <inheritdoc/>
-MediumTtlSeconds = "MediumTtlSeconds must be between 1 and 3600 (1 hour)";
-        public const string         /// <inheritdoc/>
-LongTtlSeconds = "LongTtlSeconds must be between 1 and 86400 (1 day)";
-        public const string         /// <inheritdoc/>
-VeryLongTtlSeconds = "VeryLongTtlSeconds must be between 1 and 86400 (1 day)";
+        public const string VeryShortTtlSeconds = "VeryShortTtlSeconds must be between 1 and 300 (5 minutes)";
+        public const string ShortTtlSeconds = "ShortTtlSeconds must be between 1 and 600 (10 minutes)";
+        public const string MediumTtlSeconds = "MediumTtlSeconds must be between 1 and 3600 (1 hour)";
+        public const string LongTtlSeconds = "LongTtlSeconds must be between 1 and 86400 (1 day)";
+        public const string VeryLongTtlSeconds = "VeryLongTtlSeconds must be between 1 and 86400 (1 day)";
 
         // Adaptive sampling options validation messages
-        public const string         /// <inheritdoc/>
-BaseSamplingRate = "BaseSamplingRate must be between 0.001 and 1.0";
-        public const string         /// <inheritdoc/>
-MinSamplingRate = "MinSamplingRate must be between 0.001 and 0.5";
-        public const string         /// <inheritdoc/>
-MaxSamplingRate = "MaxSamplingRate must be between 0.1 and 1.0";
-        public const string         /// <inheritdoc/>
-CpuThreshold = "CpuThreshold must be between 30 and 95";
-        public const string         /// <inheritdoc/>
-MemoryThreshold = "MemoryThreshold must be between 30 and 95";
-        public const string         /// <inheritdoc/>
-ActiveRequestThreshold = "ActiveRequestThreshold must be between 10 and 1000";
-        public const string         /// <inheritdoc/>
-ResponseTimeThresholdMs = "ResponseTimeThresholdMs must be between 100 and 10000";
-        public const string         /// <inheritdoc/>
-ErrorRateThreshold = "ErrorRateThreshold must be between 0.1 and 50";
-        public const string         /// <inheritdoc/>
-ErrorMultiplier = "ErrorMultiplier must be between 1.5 and 10";
-        public const string         /// <inheritdoc/>
-ErrorWindowMinutes = "ErrorWindowMinutes must be between 1 and 30";
-        public const string         /// <inheritdoc/>
-CriticalRate = "CriticalRate must be between 0.1 and 1.0";
-        public const string         /// <inheritdoc/>
-ImportantRate = "ImportantRate must be between 0.05 and 1.0";
-        public const string         /// <inheritdoc/>
-NormalRate = "NormalRate must be between 0.01 and 1.0";
-        public const string         /// <inheritdoc/>
-BackgroundRate = "BackgroundRate must be between 0.001 and 0.1";
+        public const string BaseSamplingRate = "BaseSamplingRate must be between 0.001 and 1.0";
+        public const string MinSamplingRate = "MinSamplingRate must be between 0.001 and 0.5";
+        public const string MaxSamplingRate = "MaxSamplingRate must be between 0.1 and 1.0";
+        public const string CpuThreshold = "CpuThreshold must be between 30 and 95";
+        public const string MemoryThreshold = "MemoryThreshold must be between 30 and 95";
+        public const string ActiveRequestThreshold = "ActiveRequestThreshold must be between 10 and 1000";
+        public const string ResponseTimeThresholdMs = "ResponseTimeThresholdMs must be between 100 and 10000";
+        public const string ErrorRateThreshold = "ErrorRateThreshold must be between 0.1 and 50";
+        public const string ErrorMultiplier = "ErrorMultiplier must be between 1.5 and 10";
+        public const string ErrorWindowMinutes = "ErrorWindowMinutes must be between 1 and 30";
+        public const string CriticalRate = "CriticalRate must be between 0.1 and 1.0";
+        public const string ImportantRate = "ImportantRate must be between 0.05 and 1.0";
+        public const string NormalRate = "NormalRate must be between 0.01 and 1.0";
+        public const string BackgroundRate = "BackgroundRate must be between 0.001 and 0.1";
 
         // File storage validation messages
-        public const string         /// <inheritdoc/>
-AwsS3BucketName = "AwsS3.BucketName must be between 3 and 63 characters";
-        public const string         /// <inheritdoc/>
-AzureBlobContainerName = "AzureBlob.ContainerName must be between 3 and 63 characters";
+        public const string AwsS3BucketName = "AwsS3.BucketName must be between 3 and 63 characters";
+        public const string AzureBlobContainerName = "AzureBlob.ContainerName must be between 3 and 63 characters";
 
         // Geometry and spatial validation messages
-        public const string         /// <inheritdoc/>
-SridRange = "SRID must be between 0 and 999,999.";
-        public const string         /// <inheritdoc/>
-LongitudeRange = "Longitude must be between -180 and 180 degrees.";
-        public const string         /// <inheritdoc/>
-LatitudeRange = "Latitude must be between -90 and 90 degrees.";
+        public const string SridRange = "SRID must be between 0 and 999,999.";
+        public const string LongitudeRange = "Longitude must be between -180 and 180 degrees.";
+        public const string LatitudeRange = "Latitude must be between -90 and 90 degrees.";
 
         // Configuration validation messages
-        public const string         /// <inheritdoc/>
-AdaptiveSamplingLoadCpuThreshold = "AdaptiveSampling:Load:CpuThreshold must be between 30 and 95";
-        public const string         /// <inheritdoc/>
-AdaptiveSamplingLoadMemoryThreshold = "AdaptiveSampling:Load:MemoryThreshold must be between 30 and 95";
-        public const string         /// <inheritdoc/>
-AdaptiveSamplingBaseSamplingRate = "AdaptiveSampling:BaseSamplingRate must be between 0.0 and 1.0";
+        public const string AdaptiveSamplingLoadCpuThreshold = "AdaptiveSampling:Load:CpuThreshold must be between 30 and 95";
+        public const string AdaptiveSamplingLoadMemoryThreshold = "AdaptiveSampling:Load:MemoryThreshold must be between 30 and 95";
+        public const string AdaptiveSamplingBaseSamplingRate = "AdaptiveSampling:BaseSamplingRate must be between 0.0 and 1.0";
     }
 
     public static class Security
     {
-        public const string         /// <inheritdoc/>
-Unauthorized = "Authentication is required to access this resource.";
-        public const string         /// <inheritdoc/>
-Forbidden = "Forbidden to perform {0}";
-        public const string         /// <inheritdoc/>
-UnauthorizedOperation = "Unauthorized to perform {0}";
-        public const string         /// <inheritdoc/>
-InvalidToken = "Invalid or expired authentication token.";
-        public const string         /// <inheritdoc/>
-TokenRequired = "Authentication token is required.";
+        public const string Unauthorized = "Authentication is required to access this resource.";
+        public const string Forbidden = "Forbidden to perform {0}";
+        public const string UnauthorizedOperation = "Unauthorized to perform {0}";
+        public const string InvalidToken = "Invalid or expired authentication token.";
+        public const string TokenRequired = "Authentication token is required.";
         private static readonly CompositeFormat _forbiddenFormat = CompositeFormat.Parse(Forbidden);
         private static readonly CompositeFormat _unauthorizedOperationFormat = CompositeFormat.Parse(UnauthorizedOperation);
 
@@ -340,25 +238,17 @@ TokenRequired = "Authentication token is required.";
 
     public static class OData
     {
-        public const string         /// <inheritdoc/>
-ApplyParameterRequired = "$apply parameter is required.";
-        public const string         /// <inheritdoc/>
-SearchParameterRequired = "$search parameter is required.";
+        public const string ApplyParameterRequired = "$apply parameter is required.";
+        public const string SearchParameterRequired = "$search parameter is required.";
     }
 
     public static class Import
     {
-        public const string         /// <inheritdoc/>
-FileNotFound = "File not found.";
-        public const string         /// <inheritdoc/>
-InvalidFileFormat = "Invalid file format.";
-        public const string         /// <inheritdoc/>
-UnsupportedFileType = "Unsupported file type.";
-        public const string         /// <inheritdoc/>
-FileTooLarge = "File is too large.";
-        public const string         /// <inheritdoc/>
-ImportFailed = "Import operation failed.";
-        public const string         /// <inheritdoc/>
-ProcessingFailed = "File processing failed.";
+        public const string FileNotFound = "File not found.";
+        public const string InvalidFileFormat = "Invalid file format.";
+        public const string UnsupportedFileType = "Unsupported file type.";
+        public const string FileTooLarge = "File is too large.";
+        public const string ImportFailed = "Import operation failed.";
+        public const string ProcessingFailed = "File processing failed.";
     }
 }

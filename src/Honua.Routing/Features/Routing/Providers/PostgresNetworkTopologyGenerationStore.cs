@@ -8,11 +8,6 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Postgres-backed read/allocation store for topology generations (#2716). Reads from the
-/// <c>honua.network_topology_generations</c> table provisioned by migration 084 and adds
-/// draft-generation allocation. Never changes a dataset's active generation pointer.
-/// </summary>
 internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyGenerationStore
 {
     private const string SelectColumns =
@@ -21,13 +16,9 @@ internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyG
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresNetworkTopologyGenerationStore"/> class.
-    /// </summary>
     public PostgresNetworkTopologyGenerationStore(IDatabaseSessionFactory sessionFactory)
         => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<NetworkTopologyGeneration>> ListAsync(
         string datasetId,
         CancellationToken cancellationToken = default)
@@ -56,7 +47,6 @@ internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyG
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyGeneration?> GetAsync(
         string datasetId,
         long generation,
@@ -80,7 +70,6 @@ internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyG
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyGeneration> AllocateDraftAsync(
         string datasetId,
         CancellationToken cancellationToken = default)
@@ -180,14 +169,8 @@ internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyG
     };
 }
 
-/// <summary>
-/// Converts between the provider-neutral <see cref="NetworkTopologyGenerationState"/> enum
-/// and the lowercase text values stored in <c>honua.network_topology_generations.state</c>
-/// (constrained by migration 084's <c>CHECK</c>).
-/// </summary>
 internal static class NetworkTopologyGenerationStateFormat
 {
-    /// <summary>Formats a state as its lowercase storage/wire representation.</summary>
     public static string Format(NetworkTopologyGenerationState state) => state switch
     {
         NetworkTopologyGenerationState.Draft => "draft",
@@ -200,7 +183,6 @@ internal static class NetworkTopologyGenerationStateFormat
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Unrecognised topology generation state."),
     };
 
-    /// <summary>Parses the lowercase storage/wire representation back to the enum.</summary>
     public static NetworkTopologyGenerationState Parse(string value) => value switch
     {
         "draft" => NetworkTopologyGenerationState.Draft,

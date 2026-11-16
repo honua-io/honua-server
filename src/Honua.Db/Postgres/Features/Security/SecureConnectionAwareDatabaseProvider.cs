@@ -17,23 +17,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// Database connection provider that can optionally use secure connection registry.
-/// </summary>
-/// <remarks>
-/// This provider maintains backward compatibility with the existing DefaultConnection
-/// configuration while adding the capability to resolve connections from the secure
-/// connection registry when a connection name is specified.
-///
-/// Usage patterns:
-/// 1. Legacy mode: Uses DefaultConnection from configuration (existing behavior)
-/// 2. Secure mode: Uses named connection from secure registry
-/// 3. Mixed mode: Falls back to DefaultConnection if named connection not found —
-///    opt-in via Database:SecureConnection:AllowFallback=true. By default a
-///    resolution failure fails closed (503) instead of silently routing queries
-///    to the default database, because resolution failures include security
-///    checks (decryption, secret resolution, SSL-requirement violations).
-/// </remarks>
 internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseConnectionProvider, IDisposable
 {
     private readonly IAdoNetDatabaseConnectionProvider _defaultProvider;
@@ -44,7 +27,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
 
-    /// <inheritdoc />
     public string GetConnectionString()
     {
         return _defaultProvider.GetConnectionString();
@@ -269,11 +251,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         await _defaultProvider.ExecuteWithDeadlockRetryAsync(operation, cancellationToken);
     }
 
-    /// <summary>
-    /// Checks if the secure connection is healthy and accessible.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if secure connection is healthy or not configured</returns>
     public async Task<bool> IsSecureConnectionHealthyAsync(CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_namedConnectionToUse))
@@ -295,11 +272,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
     }
 
-    /// <summary>
-    /// Gets the available secure connections for this provider.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of available secure connection names</returns>
     public async Task<string[]> GetAvailableSecureConnectionsAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -316,13 +288,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
     }
 
-    /// <summary>
-    /// Releases any gate slots still held when the scoped provider is disposed
-    /// at the end of the HTTP request. Mirrors the default provider's own
-    /// disposal so that secure-mode opens which never reach the wrapper's
-    /// disposal path (for example because of a mid-request crash) don't leak
-    /// the shared gate.
-    /// </summary>
     public void Dispose()
     {
         var slots = Interlocked.Exchange(ref _acquiredSlots, 0);

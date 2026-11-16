@@ -9,18 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// Provides AES-GCM encryption for database connection strings with envelope encryption and key rotation support.
-/// </summary>
-/// <remarks>
-/// Implementation details:
-/// - Uses AES-256-GCM for authenticated encryption
-/// - Implements envelope encryption pattern with data encryption keys (DEKs)
-/// - Supports key versioning for rotation
-/// - Master key derived from configuration with PBKDF2
-/// - Nonce/IV is randomly generated for each encryption operation
-/// - Includes integrity verification to prevent tampering
-/// </remarks>
 internal sealed class ConnectionEncryptionService : IConnectionEncryptionService, IDisposable
 {
     private readonly IConfiguration _configuration;
@@ -208,12 +196,6 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
     }
 
-    /// <summary>
-    /// Encrypts data using envelope encryption pattern.
-    /// </summary>
-    /// <param name="plaintext">Data to encrypt</param>
-    /// <param name="keyVersion">Key version to use</param>
-    /// <returns>Encrypted data with envelope structure</returns>
     private byte[] EncryptWithEnvelope(byte[] plaintext, int keyVersion)
     {
         // Generate a random data encryption key (DEK)
@@ -256,12 +238,6 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
     }
 
-    /// <summary>
-    /// Decrypts data using envelope encryption pattern.
-    /// </summary>
-    /// <param name="envelopeData">Encrypted envelope data</param>
-    /// <param name="keyVersion">Expected key version</param>
-    /// <returns>Decrypted plaintext data</returns>
     private byte[] DecryptWithEnvelope(byte[] envelopeData, int keyVersion)
     {
         if (envelopeData.Length < 8)
@@ -311,12 +287,6 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
     }
 
-    /// <summary>
-    /// Encrypts data using AES-GCM.
-    /// </summary>
-    /// <param name="plaintext">Data to encrypt</param>
-    /// <param name="key">Encryption key</param>
-    /// <returns>Encrypted data with nonce and tag</returns>
     private static byte[] EncryptWithAesGcm(byte[] plaintext, byte[] key)
     {
         using var aes = new AesGcm(key, TagSize);
@@ -337,12 +307,6 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         return result;
     }
 
-    /// <summary>
-    /// Decrypts data using AES-GCM.
-    /// </summary>
-    /// <param name="encryptedData">Data to decrypt (nonce + tag + ciphertext)</param>
-    /// <param name="key">Decryption key</param>
-    /// <returns>Decrypted plaintext</returns>
     private static byte[] DecryptWithAesGcm(byte[] encryptedData, byte[] key)
     {
         if (encryptedData.Length < NonceSize + TagSize)
@@ -360,10 +324,6 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         return plaintext;
     }
 
-    /// <summary>
-    /// Derives the master encryption key from configuration using PBKDF2.
-    /// </summary>
-    /// <returns>Master key bytes</returns>
     private byte[] DeriveMasterKey()
     {
         // Get master key material from configuration

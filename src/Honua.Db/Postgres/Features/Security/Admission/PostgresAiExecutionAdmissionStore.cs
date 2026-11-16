@@ -14,7 +14,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Security.Admission;
 
-/// <summary>Durable multi-scope AI accounting serialized by one short deployment-row transaction.</summary>
 internal sealed partial class PostgresAiExecutionAdmissionStore(IAdoNetDatabaseConnectionProvider connections, string? schemaName = null)
     : IAiExecutionAdmissionStore
 {

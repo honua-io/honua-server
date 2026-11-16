@@ -6,22 +6,14 @@ using System.Text;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// Opaque keyset cursor codec shared by the Studio content item and package draft list
-/// stores (in-memory and Postgres). Encodes an <c>(updatedAt, id)</c> pair so pagination
-/// stays stable under concurrent inserts/updates, mirroring the
-/// <c>(timestamp, auditId)</c> keyset cursor used by the audit log reader.
-/// </summary>
 internal static class StudioListCursor
 {
-    /// <summary>Encodes a cursor from the last kept row's <c>updatedAt</c> and id.</summary>
     public static string Encode(DateTimeOffset updatedAt, Guid id)
     {
         var raw = string.Concat(updatedAt.UtcTicks.ToString(CultureInfo.InvariantCulture), ":", id.ToString("D"));
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
     }
 
-    /// <summary>Attempts to decode a previously encoded cursor. Returns false for a missing or malformed cursor.</summary>
     public static bool TryDecode(string? cursor, out DateTimeOffset updatedAt, out Guid id)
     {
         updatedAt = default;

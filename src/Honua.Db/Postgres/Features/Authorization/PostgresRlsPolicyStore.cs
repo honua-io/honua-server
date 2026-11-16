@@ -10,12 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Authorization;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IRlsPolicyStore"/> (#502). Persists row-level
-/// security policies to the <c>honua.rbac_rls_policies</c> table created by
-/// migration 065 so per-layer row-visibility rules survive process restart and are
-/// shared across scaled nodes.
-/// </summary>
 internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombinedReadPolicyStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -28,7 +22,6 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         _table = SchemaSearchPath.QualifyTable("rbac_rls_policies", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<RlsPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -42,7 +35,6 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         return await ReadPoliciesAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RlsPolicy?> GetPolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -58,7 +50,6 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         return policies.Count == 0 ? null : policies[0];
     }
 
-    /// <inheritdoc />
     public async Task<RlsPolicy> CreatePolicyAsync(RlsPolicy policy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(policy);
@@ -97,7 +88,6 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         return policy;
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_table} WHERE policy_id = @policy_id";
@@ -109,7 +99,6 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         return affected > 0;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<RlsPolicy>> GetEffectivePoliciesAsync(
         IReadOnlyList<string> roles,
         string service,

@@ -8,27 +8,14 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Queries.Filters.OData;
 
-/// <summary>
-/// Parses OData $filter expressions into a shared filter expression AST.
-/// </summary>
 public sealed class ODataFilterParser
 {
     private IReadOnlyList<ODataFilterToken> _tokens = [];
     private int _position;
     private int _expressionDepth;
 
-    /// <summary>
-    /// Parses an OData $filter expression into a <see cref="FilterExpression"/>.
-    /// </summary>
-    /// <param name="filter">The OData $filter string.</param>
-    /// <returns>Parsed filter expression AST.</returns>
-    /// <exception cref="ArgumentException">Thrown when parsing fails.</exception>
     public FilterExpression Parse(string filter) => ParseCore(filter, requireBooleanPredicate: true);
 
-    /// <summary>
-    /// Parses one <c>$orderby</c> term. A bare property or arithmetic expression is a
-    /// sort key, so this does not apply the <c>$filter</c> boolean-predicate rule.
-    /// </summary>
     public FilterExpression ParseOrderExpression(string expression) =>
         ParseCore(expression, requireBooleanPredicate: false);
 

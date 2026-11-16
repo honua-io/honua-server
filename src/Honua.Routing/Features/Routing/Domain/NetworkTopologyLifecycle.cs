@@ -5,25 +5,8 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>
-/// Validates topology-generation lifecycle changes without depending on a storage provider.
-/// </summary>
 public static partial class NetworkTopologyLifecycle
 {
-    /// <summary>
-    /// Returns whether <paramref name="target"/> is a legal successor to
-    /// <paramref name="current"/>. Active generations can only be retired; content
-    /// writers therefore cannot mutate the live solve target.
-    /// </summary>
-    /// <remarks>
-    /// <c>Retired -&gt; Active</c> is the rollback-only transition (#2719): promotion always
-    /// enters <c>Active</c> from <c>Ready</c> (a freshly built and validated candidate), while
-    /// rollback re-activates a previously active, now-retired generation whose physical
-    /// artifacts are still present. The two paths share this one state machine so both are
-    /// subject to the same compare-and-swap discipline, but callers must apply their own
-    /// additional preconditions (evidence digest for promotion; artifact-existence and
-    /// retention checks for rollback) before invoking <see cref="TryTransition"/>.
-    /// </remarks>
     public static bool CanTransition(
         NetworkTopologyGenerationState current,
         NetworkTopologyGenerationState target) => (current, target) switch
@@ -41,17 +24,6 @@ public static partial class NetworkTopologyLifecycle
             _ => false,
         };
 
-    /// <summary>
-    /// Applies a provider-neutral compare-and-swap lifecycle transition.
-    /// </summary>
-    /// <param name="current">Current generation metadata.</param>
-    /// <param name="expectedRowVersion">Row version observed by the caller.</param>
-    /// <param name="target">Requested successor state.</param>
-    /// <param name="occurredAt">Authoritative transition timestamp.</param>
-    /// <param name="failureCode">Stable failure code when transitioning to <c>Failed</c>.</param>
-    /// <param name="updated">Updated generation on success; otherwise <paramref name="current"/>.</param>
-    /// <param name="failure">Stable rejection reason.</param>
-    /// <returns><see langword="true"/> when the transition was applied.</returns>
     public static bool TryTransition(
         NetworkTopologyGeneration current,
         long expectedRowVersion,
@@ -104,22 +76,6 @@ public static partial class NetworkTopologyLifecycle
         return true;
     }
 
-    /// <summary>
-    /// Applies a provider-neutral compare-and-swap content edit (#2716). Unlike
-    /// <see cref="TryTransition"/>, this does not move between arbitrary lifecycle states —
-    /// it only ever leaves a generation in <see cref="NetworkTopologyGenerationState.Dirty"/>,
-    /// bumping both the row version (optimistic concurrency) and the source revision (content
-    /// clock). A <c>draft</c> generation transitions to <c>dirty</c> on its first edit; a
-    /// generation that is already <c>dirty</c> stays <c>dirty</c>. Any other state (building,
-    /// ready, active, failed, retired) rejects the edit so content writers can never mutate a
-    /// generation that is being built, promotable, live, or terminal.
-    /// </summary>
-    /// <param name="current">Current generation metadata.</param>
-    /// <param name="expectedRowVersion">Row version observed by the caller (e.g. via <c>If-Match</c>).</param>
-    /// <param name="occurredAt">Authoritative mutation timestamp.</param>
-    /// <param name="updated">Updated generation on success; otherwise <paramref name="current"/>.</param>
-    /// <param name="rejection">Stable rejection reason.</param>
-    /// <returns><see langword="true"/> when the content edit was applied.</returns>
     public static bool TryApplyContentEdit(
         NetworkTopologyGeneration current,
         long expectedRowVersion,

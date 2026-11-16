@@ -11,56 +11,27 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the internal
-/// <c>coverage.multidim.metadata</c> job: extracts the structure of a
-/// cloud-hosted NetCDF4/HDF5 multidimensional coverage with
-/// <c>gdalmdiminfo</c> and publishes the raw JSON as the job artifact.
-/// </summary>
-/// <remarks>
-/// This is the Path B reader recorded in ADR-0039. The worker reads the source
-/// in place through GDAL's VSI layer (range reads, no whole-file download) and
-/// returns the verbatim <c>gdalmdiminfo</c> document; the server maps it to the
-/// canonical coverage metadata via
-/// <c>GdalMultidimensionalMetadataMapper</c>, keeping all native format handling
-/// out of the AOT-published server. It is an internal admin job (driven by the
-/// coverage refresh endpoint), not an advertised geoprocessing process, so it
-/// is intentionally absent from the public process catalog.
-/// </remarks>
 internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalMultidimCoverageMetadataJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "coverage.multidim.metadata";
 
     private const string MetadataContentType = "application/json";
 
-    /// <summary>
-    /// Ceiling for the optional <c>gdalinfo -stats</c> pass. Coordinates are read
-    /// first; statistics must not share the conversion timeout, and a stats
-    /// timeout keeps the coordinate document already obtained.
-    /// </summary>
     private static readonly TimeSpan StatisticsBudget = TimeSpan.FromSeconds(30);
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -493,11 +464,6 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         return await runner.RunAsync("gdalinfo", args, workspace, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Picks the Zarr classic-API subdatasets that can carry a geotransform.
-    /// Coordinate arrays (rank 1) are skipped when a multidimensional data array
-    /// is present. At most three candidates are returned, best first.
-    /// </summary>
     private static List<string> SelectZarrSubdatasets(string? infoJson, string zarrPath, string mdimJson)
     {
         var dataArrays = ReadMdimDataArrayNames(mdimJson);
@@ -803,11 +769,6 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Derives the Zarr store key beside the source object: the source key with its
-    /// final extension replaced by <c>.zarr</c> (e.g. <c>maui/sst.nc</c> -&gt;
-    /// <c>maui/sst.zarr</c>).
-    /// </summary>
     internal static string DeriveZarrRootPath(string objectKey)
     {
         var trimmed = objectKey.TrimStart('/');

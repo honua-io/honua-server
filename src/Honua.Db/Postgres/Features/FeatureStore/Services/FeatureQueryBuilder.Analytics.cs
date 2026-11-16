@@ -13,46 +13,8 @@ using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.Parameter
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Spatial analytics SQL builders — clustering, buffer aggregate and density binning.
-/// Spatial-join SQL lives in <see cref="FeatureQueryBuilder"/>.Analytics.Joins.cs.
-/// All builders honour the shared <see cref="FeatureQuery"/> filter via the existing
-/// <c>AppendWhereClause</c> / <c>AppendTemporalFilter</c> / <c>AppendSpatialFilter</c>
-/// helpers, and emit positional parameters consistent with the rest of the file.
-/// </summary>
 internal sealed partial class FeatureQueryBuilder
 {
-    /// <summary>
-    /// Builds a spatial clustering query (DBSCAN or K-Means).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Both algorithms use a window function over the bbox-filtered subset so the
-    /// clustering decision is made in a single SQL pass. DBSCAN uses
-    /// <c>ST_ClusterDBSCAN(geom, eps, minpoints) OVER ()</c>, K-Means uses
-    /// <c>ST_ClusterKMeans(geom, k) OVER ()</c>.
-    /// </para>
-    /// <para>
-    /// When the layer SRID is geographic the geometry is projected to an azimuthal
-    /// equidistant plane (WGS 84, metres). <c>eps</c> is ground metres in that
-    /// plane. A request envelope centres the plane, and a span wider than 180° uses
-    /// the complementary short arc. With no envelope, the largest longitude gap
-    /// picks the same short arc, so rows at 179° and -179° are not centred on the
-    /// long-way box. One plane is used only while the extent corner stays inside
-    /// <see cref="AzimuthalGroundPlane.SinglePlaneMaxCornerMetres"/> (under 1%
-    /// tangential scale). Wider extents are split into
-    /// <see cref="AzimuthalGroundPlane.PlaneTileMetres"/> planes. DBSCAN overlaps
-    /// those planes by <c>eps</c> and merges labels that share a feature, so a
-    /// pair closer than <c>eps</c> is not cut by a tile edge. K-Means keeps one
-    /// global <c>k</c> on the short-arc centre. <c>ST_ClusterDBSCAN</c> cannot take a geography distance.
-    /// Projected layers, including feet and UTM, keep the Web Mercator path
-    /// through <c>ST_Transform</c> to EPSG:3857.
-    /// </para>
-    /// <para>
-    /// The CTE applies <c>LIMIT (maxInputFeatures + 1)</c> so the handler can
-    /// detect overflow without scanning the entire table.
-    /// </para>
-    /// </remarks>
     public CoreParameterizedQuery BuildClusterQuery(
         int layerId,
         FeatureQuery query,
@@ -226,31 +188,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Builds a buffer-aggregate query.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Buffers each input feature by <see cref="BufferAggregateQuery.Distance"/>
-    /// (converted to meters), then either <c>ST_Union</c>s the buffered geometries
-    /// per group (when <see cref="BufferAggregateQuery.Dissolve"/> is true) or
-    /// returns the per-row buffers. A geographic layer buffers in the same
-    /// ground-metre azimuthal plane as clustering, then transforms the result
-    /// back to WGS 84 GeoJSON. Projected layers, including feet and UTM, buffer
-    /// after <c>ST_Transform</c> to EPSG:3857.
-    /// </para>
-    /// <para>
-    /// The input cap is applied inside a <c>src</c> CTE so <c>ST_Buffer</c> /
-    /// <c>ST_Union</c> only see at most <see cref="BufferAggregateQuery.MaxInputFeatures"/>
-    /// rows. A trailing <c>LIMIT</c> on the outer query would not fire until after
-    /// the group aggregation completes, which in the <c>dissolve=true</c> path
-    /// defeats the purpose of the cap — a large layer could still force an
-    /// unbounded expensive union. Pre-decoding the meters geometry inside the CTE
-    /// also means the storage-aware operand (bytea / geography / geometry) is
-    /// evaluated once and the outer query can reuse a single <c>geom_m</c>
-    /// expression.
-    /// </para>
-    /// </remarks>
     public CoreParameterizedQuery BuildBufferAggregateQuery(
         int layerId,
         FeatureQuery query,
@@ -404,19 +341,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Builds a density (heatmap) query that bins the filtered subset into a
-    /// hex or square grid and returns one row per occupied cell. Geographic
-    /// layers bin in ground metres on the same azimuthal planes as clustering.
-    /// Projected layers, including feet and UTM, bin in Web Mercator.
-    /// </summary>
-    /// <remarks>
-    /// Uses PostGIS <c>ST_HexagonGrid</c> / <c>ST_SquareGrid</c> against the
-    /// extent of the filtered features so the grid only spans the data envelope.
-    /// Each feature centroid belongs to one intersecting cell, with grid indices
-    /// breaking ties on shared edges and vertices. Distinct source features keep
-    /// their own contributions even when their centroids coincide.
-    /// </remarks>
     public CoreParameterizedQuery BuildDensityQuery(
         int layerId,
         FeatureQuery query,
@@ -589,13 +513,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Projects a non-geographic geometry to Web Mercator metres for distance
-    /// functions. Geographic cluster, density and buffer SQL do not use this;
-    /// they measure on an azimuthal plane. Feet and UTM layers still convert
-    /// through EPSG:3857. A null SRID is treated as already WGS 84 and transformed.
-    /// When the layer is already EPSG:3857 the call is a no-op.
-    /// </summary>
     private static string EnsureMeters(string geometryOperand, int? sourceSrid)
     {
         if (sourceSrid.HasValue && sourceSrid.Value == 3857)
@@ -643,11 +560,6 @@ internal sealed partial class FeatureQueryBuilder
         sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
     }
 
-    /// <summary>
-    /// SQL expression for an azimuthal-equidistant pipeline. A request envelope
-    /// supplies a constant centre. Otherwise the centre is the centroid of
-    /// <paramref name="extentRelation"/>.<paramref name="geometryColumn"/>.
-    /// </summary>
     private static string BuildAeqdPipelineSql(
         FeatureQuery query,
         int sourceSrid,
@@ -717,12 +629,6 @@ internal sealed partial class FeatureQueryBuilder
         return wrapped;
     }
 
-    /// <summary>
-    /// Appends optional aggregate-statistic columns shared by clustering and
-    /// buffer-aggregate. Validates field names and reuses
-    /// <see cref="BuildAggregateExpression"/> / <see cref="GetFieldExpression"/>
-    /// for parity with <c>queryStatistics</c> / <c>queryH3</c>.
-    /// </summary>
     private static void AppendClusterStatisticsColumns(
         StringBuilder sql, ImmutableArray<StatisticDefinition>? outStatistics)
     {
@@ -750,9 +656,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Emits the SELECT-list portion for group-by columns, validating each name.
-    /// </summary>
     private static void AppendGroupByFieldSelectList(StringBuilder sql, ImmutableArray<string> groupByFields)
     {
         for (var i = 0; i < groupByFields.Length; i++)
@@ -772,9 +675,6 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Emits the GROUP BY clause column list (no aliases) for the same fields.
-    /// </summary>
     private static void AppendGroupByFieldExpressions(StringBuilder sql, ImmutableArray<string> groupByFields)
     {
         for (var i = 0; i < groupByFields.Length; i++)

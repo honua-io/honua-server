@@ -9,17 +9,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Reader for Well-Known Binary (WKB/EWKB) geometry payloads. A <c>.wkb</c> upload is one or more
-/// concatenated WKB geometries; each is read into a geometry-only feature (WKB carries no
-/// attributes). This lets WKB auto-detect and import instead of failing with a generic
-/// "Multipart import request is invalid." message (honua-server#2353).
-/// </summary>
 internal static class WkbFormatReader
 {
-    /// <summary>
-    /// Streams geometry-only features parsed from a stream of concatenated WKB/EWKB geometries.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -79,12 +70,6 @@ internal static class WkbFormatReader
         }
     }
 
-    /// <summary>
-    /// A seekable in-memory buffer whose <see cref="Dispose(bool)"/> / <see cref="Close"/> are
-    /// no-ops. WKBReader.Read wraps the passed stream in a BinaryReader and disposes it after each
-    /// geometry; without this the buffer would close between concatenated geometries and the loop's
-    /// Position read would throw. The managed byte array is reclaimed by the GC once unreferenced.
-    /// </summary>
     private sealed class NonClosingMemoryStream : MemoryStream
     {
         [System.Diagnostics.CodeAnalysis.SuppressMessage(

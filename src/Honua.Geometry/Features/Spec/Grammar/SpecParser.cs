@@ -12,17 +12,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Features.Spec.Grammar;
 
-/// <summary>
-/// Recursive-descent parser for the Honua spec text form. The parser is
-/// diagnostic-collecting — it never throws for user-facing issues; instead,
-/// it appends <see cref="SpecDiagnostic"/> values and synchronizes at
-/// top-level section boundaries to produce a partial AST for IntelliSense.
-/// </summary>
 public sealed class SpecParser : ISpecParser
 {
-    /// <summary>
-    /// Activity source used for lex/parse telemetry.
-    /// </summary>
     public static readonly ActivitySource ActivitySource = new("Honua.Spec.Parse");
 
     private static readonly FrozenSet<string> _sectionKeywords =
@@ -31,11 +22,6 @@ public sealed class SpecParser : ISpecParser
 
     private static readonly WKTReader _wktReader = new();
 
-    /// <summary>
-    /// Parses <paramref name="text"/> and returns an AST + diagnostics.
-    /// </summary>
-    /// <param name="text">Spec source text.</param>
-    /// <returns>Parse result containing the AST (possibly partial) and any diagnostics.</returns>
     public SpecParseResult Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -1121,12 +1107,5 @@ public sealed class SpecParser : ISpecParser
         }
     }
 
-    /// <summary>
-    /// Transient expression for a bare identifier used where a reference-like
-    /// value is expected (for example, an <c>op = spatial_join</c> field). The
-    /// parent rule consumes this and does not emit it to canonical JSON.
-    /// </summary>
-    /// <param name="Span">Source location.</param>
-    /// <param name="Name">Identifier text.</param>
     internal sealed record ReferenceLikeIdentifier(SourceSpan Span, string Name) : SpecExpression(Span);
 }

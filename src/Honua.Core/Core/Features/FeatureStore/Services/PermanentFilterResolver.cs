@@ -8,19 +8,8 @@ using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.Metadata
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves a layer's metadata-v2 permanent (row-visibility) filter to a
-/// parameterized SQL fragment. Shared across all read-capable feature store
-/// providers so every provider enforces the same row-visibility rules.
-/// </summary>
 internal static class PermanentFilterResolver
 {
-    /// <summary>
-    /// Resolves the permanent filter for <paramref name="layerId"/>, or null when
-    /// the layer has no enforceable filter (or the optional metadata/filter
-    /// services are unavailable). Throws when a saved filter exists but cannot be
-    /// parsed or translated — serving unfiltered rows would leak hidden data.
-    /// </summary>
     public static async Task<SqlFragment?> ResolveAsync(
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
@@ -43,9 +32,6 @@ internal static class PermanentFilterResolver
         return Resolve(resource, filterExpressionService);
     }
 
-    /// <summary>
-    /// Resolves the permanent filter directly from a binding-scoped metadata resource.
-    /// </summary>
     public static SqlFragment? Resolve(
         MetadataV2Object resource,
         IFilterExpressionService? filterExpressionService)

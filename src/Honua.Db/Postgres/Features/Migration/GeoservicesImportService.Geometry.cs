@@ -140,11 +140,6 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Converts Esri JSON to WKT for PostGIS insertion. WKT carries an explicit M or
-    /// ZM marker, which avoids GeoJSON's ambiguity where a third ordinate is normally
-    /// interpreted as Z even when ArcGIS declared it to be an M measure.
-    /// </summary>
     internal static string? ConvertEsriGeometryToWkt(JsonElement geometry, bool hasZ, bool hasM)
     {
         var geoJson = ConvertEsriGeometryToGeoJsonWithLayerDimensions(geometry, hasZ, hasM);
@@ -283,12 +278,6 @@ internal sealed partial class GeoservicesImportService
             writer.WriteEndObject();
         });
 
-    /// <summary>
-    /// Projects an Esri coordinate array to <c>[x, y]</c> or <c>[x, y, z]</c>,
-    /// preserving the optional Z ordinate (index 2) when present and finite.
-    /// When <paramref name="carryZ"/> is <c>false</c> the third ordinate is an M
-    /// (measure) value rather than Z and is not promoted to GeoJSON Z (#1981).
-    /// </summary>
     private static double[] ExtractDimensions(JsonElement coord, bool carryZ, bool carryM)
     {
         var x = coord[0].GetDouble();
@@ -309,10 +298,6 @@ internal sealed partial class GeoservicesImportService
     private static double[][] ReadCurvePath(JsonElement path)
         => CurveGeometryConverter.Densify(path.EnumerateArray().ToArray());
 
-    /// <summary>
-    /// Writes a single GeoJSON coordinate, emitting the Z ordinate when the
-    /// source coordinate carries one (length &gt;= 3).
-    /// </summary>
     private static void WriteCoordinate(Utf8JsonWriter writer, double[] coord)
     {
         writer.WriteStartArray();

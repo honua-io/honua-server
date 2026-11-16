@@ -49,7 +49,6 @@ internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStrin
         return builder.ConnectionString;
     }
 
-    /// <inheritdoc />
     public Task<string> BuildConnectionStringAsync(DataConnection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -73,7 +72,6 @@ internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStrin
         return Task.FromResult(connectionString);
     }
 
-    /// <inheritdoc />
     public bool ValidateConnectionString(string connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString))

@@ -10,13 +10,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Metadata;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IMetadataV2LegacyCatalogProjector"/>. Reuses the same
-/// <see cref="MetadataV2CompatSnapshotSql.BuildDocumentFromV1Catalog"/> synthesis the
-/// read-time compat fallback uses (<see cref="PostgresMetadataV2GraphStore"/>), so the
-/// legacy-catalog projection stays byte-identical to the snapshot a deployment serves
-/// before its first real publish. (honua-server#2081.)
-/// </summary>
 internal sealed class PostgresMetadataV2LegacyCatalogProjector : IMetadataV2LegacyCatalogProjector
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -39,7 +32,6 @@ internal sealed class PostgresMetadataV2LegacyCatalogProjector : IMetadataV2Lega
         _schemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName.Trim();
     }
 
-    /// <inheritdoc />
     public async Task<MetadataV2Graph?> BuildFromLegacyCatalogAsync(CancellationToken cancellationToken = default)
     {
         var catalogSchema = SchemaSearchPath.ValidateAndQuote(_schemaName);

@@ -17,15 +17,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Streaming GPX format reader. Parses GPX waypoints, tracks, and routes into features
-/// using XmlReader for memory-efficient processing.
-/// </summary>
 internal static class GpxFormatReader
 {
-    /// <summary>
-    /// Streams features from a GPX file using XmlReader for memory efficiency.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -93,14 +86,6 @@ internal static class GpxFormatReader
         return new Feature(geometry, attributes);
     }
 
-    /// <summary>
-    /// Walks the already-opened element subtree and records leaf (simple-text) descendants as
-    /// attributes keyed by their local name. Container elements such as GPX <c>&lt;extensions&gt;</c>
-    /// (which GDAL uses to carry source fields, e.g. <c>&lt;ogr:zone_code&gt;030&lt;/ogr:zone_code&gt;</c>)
-    /// are descended into rather than read as text. This avoids the
-    /// <see cref="System.Xml.XmlException"/> that <c>ReadElementContentAsString</c> throws on an
-    /// element that has child elements (honua-server#2354).
-    /// </summary>
     private static async Task ReadLeafAttributesAsync(
         XmlReader reader,
         AttributesTable attributes,
@@ -168,11 +153,6 @@ internal static class GpxFormatReader
         CancellationToken cancellationToken) =>
         ParseLineFeatureAsync(reader, factory, "rtept", cancellationToken);
 
-    /// <summary>
-    /// Parses a track or route without connecting disconnected track segments. Singleton
-    /// segments remain points; line segments remain lines. Reading text without advancing
-    /// past its element also preserves the first point following a name (honua-server#2354).
-    /// </summary>
     private static async Task<IFeature?> ParseLineFeatureAsync(
         XmlReader reader,
         GeometryFactory factory,

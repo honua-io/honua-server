@@ -16,43 +16,30 @@ using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHea
 
 namespace Honua.Db.Databricks.Features.Security;
 
-/// <summary>
-/// Databricks <see cref="IConnectionDriver"/>. The admin connection fields map to a SQL
-/// Warehouse as host (workspace), database (warehouse id), and password (access token).
-/// The probe submits <c>SELECT 1</c> through <see cref="DatabricksStatementClient"/>.
-/// </summary>
 internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<DatabricksConnectionDriver> _logger;
     private readonly HttpMessageHandler? _handler;
 
-    /// <summary>Creates a driver that probes with a default HTTP handler.</summary>
-    /// <param name="logger">Logger for probe failures.</param>
     public DatabricksConnectionDriver(ILogger<DatabricksConnectionDriver> logger)
         : this(logger, handler: null)
     {
     }
 
-    /// <summary>Creates a driver that probes through <paramref name="handler"/> when set.</summary>
-    /// <param name="logger">Logger for probe failures.</param>
-    /// <param name="handler">Optional HTTP handler. The caller retains ownership.</param>
     internal DatabricksConnectionDriver(ILogger<DatabricksConnectionDriver> logger, HttpMessageHandler? handler)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _handler = handler;
     }
 
-    /// <inheritdoc />
     public string Provider => DataProviderNames.Databricks;
 
-    /// <inheritdoc />
     public ConnectionStringSecurity InspectConnectionString(string connectionString)
     {
         var (endpoint, _, _) = Parse(connectionString);
         return new ConnectionStringSecurity(ConnectionStringKeywordPolicy.SplitHosts(endpoint.IdnHost), true);
     }
 
-    /// <inheritdoc />
     public string BuildConnectionString(ConnectionTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -72,7 +59,6 @@ internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, IS
         return builder.ConnectionString;
     }
 
-    /// <inheritdoc />
     public async Task<ConnectionHealthStatus> TestConnectionAsync(
         string connectionString,
         CancellationToken cancellationToken = default)
@@ -219,12 +205,8 @@ internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, IS
     };
 }
 
-/// <summary>DI helper that registers the Databricks connection driver.</summary>
 public static class DatabricksConnectionDriverServiceCollectionExtensions
 {
-    /// <summary>Registers the Databricks <see cref="IConnectionDriver"/> for provider-aware connection testing.</summary>
-    /// <param name="services">Service collection.</param>
-    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddDatabricksConnectionDriver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -9,45 +9,16 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>transform.reproject</c>
-/// process when the SRID pair requires a full PROJ datum/grid shift.
-///
-/// This is the heavyweight counterpart to the lean managed
-/// <c>ReprojectTransformExecutor</c>, which deliberately serves ONLY the in-memory
-/// fast paths (identity, Web Mercator aliases, and WGS 84 (4326) ↔ Web Mercator)
-/// and rejects every datum-shift pair (e.g. NAD 27 (4267) → WGS 84 (4326)) because
-/// those need PROJ's transformation pipelines and datum-shift grids. The
-/// geoprocessing submit path escalates such a job to the native runtime profile
-/// (see <c>NativeReprojectEscalation</c>), and the claim fence routes it here.
-///
-/// The durable spec carries the SAME canonical step inputs the managed executor
-/// reads — <c>input</c> (a <c>data:application/geo+json;base64,</c> FeatureCollection
-/// URI), <c>fromSrid</c>, and <c>toSrid</c> — so a job authored for the managed path
-/// is shaped identically for the native path. The executor runs <c>ogr2ogr</c> with
-/// <c>-s_srs</c>/<c>-t_srs</c> in an isolated scratch workspace (PROJ selects the
-/// authoritative pipeline, applying the datum/grid shift) and publishes the
-/// reprojected FeatureCollection as a canonical geo+json data-URI artifact, matching
-/// the managed executor's output envelope so downstream workflow nodes are agnostic
-/// to which profile produced the artifact.
-/// </summary>
 internal sealed partial class GdalVectorReprojectJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalVectorReprojectJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "transform.reproject";
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <summary>
-    /// Content type of the FeatureCollection artifact published on success. Matches
-    /// the managed <c>FeatureCollectionArtifact.DataUriPrefix</c> so the native and
-    /// managed paths emit an identical envelope.
-    /// </summary>
     private const string GeoJsonContentType = "application/geo+json";
 
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
@@ -55,13 +26,10 @@ internal sealed partial class GdalVectorReprojectJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

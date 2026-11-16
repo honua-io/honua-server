@@ -7,9 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads a PostgreSQL JSONB attributes object directly into a pooled dictionary.
-/// </summary>
 internal static class FeatureAttributeJsonReader
 {
     internal static void ReadInto(

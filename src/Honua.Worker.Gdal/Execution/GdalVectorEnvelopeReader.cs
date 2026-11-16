@@ -5,44 +5,15 @@ using System.Text.Json;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Cheap, dependency-free GeoJSON envelope reader used to bound the caller-controlled
-/// output RESOLUTION of <c>conversion.rasterize</c> (#2793). <c>gdal_rasterize -tr</c>
-/// derives the output pixel grid from the INPUT LAYER extent ÷ target cell size, and
-/// the input layer is the untrusted base64 GeoJSON payload — so a tiny cell size over a
-/// wide envelope yields billions of output pixels. This reader scans the payload's
-/// <c>coordinates</c> (and any declared <c>bbox</c>) once with a forward-only
-/// <see cref="Utf8JsonReader"/> — no geometry objects allocated, no GDAL — to recover the
-/// axis-aligned extent that <see cref="GdalOutputGridGuard.TryAdmitResolution"/> then
-/// bounds before the subprocess spawns.
-/// </summary>
 internal static class GdalVectorEnvelopeReader
 {
-    /// <summary>Axis-aligned bounds recovered from a GeoJSON payload.</summary>
-    /// <param name="MinX">Minimum X / longitude.</param>
-    /// <param name="MinY">Minimum Y / latitude.</param>
-    /// <param name="MaxX">Maximum X / longitude.</param>
-    /// <param name="MaxY">Maximum Y / latitude.</param>
     internal readonly record struct Envelope(double MinX, double MinY, double MaxX, double MaxY)
     {
-        /// <summary>Extent along X (<c>MaxX - MinX</c>).</summary>
         public double Width => MaxX - MinX;
 
-        /// <summary>Extent along Y (<c>MaxY - MinY</c>).</summary>
         public double Height => MaxY - MinY;
     }
 
-    /// <summary>
-    /// Reads the axis-aligned envelope spanning every coordinate position (and any
-    /// <c>bbox</c>) in a GeoJSON payload. Returns <c>false</c> — leaving the job to be
-    /// admitted and bounded only by the input/timeout backstop — when the payload holds
-    /// no readable positions or is not parseable as JSON (GDAL then adjudicates the same
-    /// bytes). Only the first two ordinates of each position (X, Y) are considered;
-    /// elevation and any non-finite ordinate are ignored. Feature attribute payloads are
-    /// excluded: a <c>properties</c> member's entire subtree is skipped, so ordinary
-    /// attributes named <c>coordinates</c> or <c>bbox</c> never contribute to the envelope
-    /// (GeoJSON geometry members can never legally live under <c>properties</c>).
-    /// </summary>
     public static bool TryReadEnvelope(ReadOnlySpan<byte> geojson, out Envelope envelope)
     {
         envelope = default;
@@ -92,12 +63,6 @@ internal static class GdalVectorEnvelopeReader
         return true;
     }
 
-    /// <summary>
-    /// Walks the array subtree following a <c>coordinates</c> property, accumulating the
-    /// min/max of the first two ordinates of every innermost position array. Handles any
-    /// GeoJSON geometry (Point through MultiPolygon / GeometryCollection nesting) because
-    /// the ordinate index resets at each array boundary.
-    /// </summary>
     private static bool ScanCoordinates(ref Utf8JsonReader reader, ref double minX, ref double minY, ref double maxX, ref double maxY)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartArray)
@@ -147,11 +112,6 @@ internal static class GdalVectorEnvelopeReader
         return updated;
     }
 
-    /// <summary>
-    /// Reads a GeoJSON <c>bbox</c> array (<c>[minX, minY, maxX, maxY]</c> or the
-    /// 3D <c>[minX, minY, minZ, maxX, maxY, maxZ]</c> form) and folds it into the running
-    /// envelope. Any other arity is ignored.
-    /// </summary>
     private static bool ScanBoundingBox(ref Utf8JsonReader reader, ref double minX, ref double minY, ref double maxX, ref double maxY)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartArray)

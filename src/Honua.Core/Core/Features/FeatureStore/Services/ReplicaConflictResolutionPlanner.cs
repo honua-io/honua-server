@@ -7,48 +7,15 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Turns an operator-selected conflict-resolution action into the concrete feature-store effect that
-/// makes the resolution real (#2430). The planner is pure: it reads only the durable conflict record
-/// (classification, whether the client edit was committed at sync time, and the captured client/server
-/// state envelopes) plus the operator's inputs, and decides whether the resolution needs a write, what
-/// state to write, and whether a new committed server state is produced.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The key input is <see cref="ReplicaConflictRecord.ClientEditApplied"/>. Under the default
-/// last-write-wins conflict-handling mode the conflicting client edit is already committed, so
-/// "accept client" is a no-op and "keep server" is the action that needs a write (restoring the
-/// captured pre-conflict server state). Under manual review the client edit was skipped, so the
-/// polarity flips. Planning both from one record is what keeps the recorded resolution honest against
-/// the committed state under either mode.
-/// </para>
-/// <para>
-/// Structural conflicts are deliberately not force-fitted. A client delete that already committed
-/// cannot be undone by an update, and a client update cannot be re-applied to a feature the server has
-/// deleted; both are rejected as not-applicable with an explicit message rather than recorded as a
-/// resolution that changed nothing. The attachment and relationship classifications are not produced by
-/// the current replica upload model and are likewise rejected rather than silently accepted.
-/// </para>
-/// </remarks>
 public static class ReplicaConflictResolutionPlanner
 {
     private const string AttributesProperty = "attributes";
     private const string GeometryProperty = "geometry";
 
-    /// <summary>Geometry-source token selecting the client's captured geometry.</summary>
     public const string GeometrySourceClient = "client";
 
-    /// <summary>Geometry-source token selecting the server's captured geometry.</summary>
     public const string GeometrySourceServer = "server";
 
-    /// <summary>
-    /// Plans the feature-store effect for an operator-selected resolution.
-    /// </summary>
-    /// <param name="conflict">The durable conflict record being resolved.</param>
-    /// <param name="action">The operator-selected resolution action.</param>
-    /// <param name="inputs">Operator inputs for merge/geometry actions.</param>
-    /// <returns>An accepted plan, or a rejected plan carrying a client-safe reason.</returns>
     public static ReplicaConflictResolutionPlan Plan(
         ReplicaConflictRecord conflict,
         ReplicaConflictResolutionAction action,
@@ -284,12 +251,6 @@ public static class ReplicaConflictResolutionPlanner
         }
     }
 
-    /// <summary>
-    /// Rewrites a state envelope, optionally overriding attribute values and/or the geometry. Attribute
-    /// overrides are matched case-insensitively against the existing attribute names (Esri field-name
-    /// convention) so an operator-supplied <c>status</c> replaces an existing <c>STATUS</c> rather than
-    /// adding a duplicate key the provider would reject.
-    /// </summary>
     private static string WriteEnvelope(
         JsonElement envelope,
         IReadOnlyDictionary<string, JsonElement>? fieldValues,

@@ -5,11 +5,6 @@ using System.Collections.Concurrent;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// Process-local registry mapping apply tokens to their
-/// <see cref="CancellationTokenSource"/>. Allows
-/// <c>POST /v1/spec/cancel</c> to cooperatively trip an in-flight run.
-/// </summary>
 internal sealed class SpecApplyTokenRegistry
 {
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _entries =
@@ -48,10 +43,6 @@ internal sealed class SpecApplyTokenRegistry
         _entries.TryRemove(applyToken, out _);
     }
 
-    /// <summary>
-    /// Returns whether the token is known. Used by endpoints to distinguish
-    /// <c>404 apply-token-unknown</c> from successful cancellation.
-    /// </summary>
     public bool Contains(string applyToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(applyToken);

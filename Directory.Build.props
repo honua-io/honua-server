@@ -102,6 +102,11 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- The documentation file exists only so IDE0005 fires; the code carries no XML doc comments. -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
   <PropertyGroup>
     <PublishDocumentationFiles>false</PublishDocumentationFiles>
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>

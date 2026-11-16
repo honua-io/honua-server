@@ -5,19 +5,10 @@ using System.Text.Json;
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>
-/// Centralised, provider-neutral validation for batched topology content edits (#2716).
-/// Runs entirely in memory (no database access) so it can reject a malformed or unsafe
-/// batch before a transaction is opened. Cross-generation checks that require a database
-/// round trip (does an id already exist, does a referenced edge exist) are deliberately
-/// left to the storage layer, which enforces them transactionally.
-/// </summary>
 public static class NetworkTopologyEditValidation
 {
-    /// <summary>Maximum number of add+update+delete items accepted per edge list family.</summary>
     public const int MaxEdgeItemsPerBatch = 500;
 
-    /// <summary>Maximum number of add+update+delete items accepted per restriction list family.</summary>
     public const int MaxRestrictionItemsPerBatch = 500;
 
     private const int MaxIdLength = 256;
@@ -25,18 +16,6 @@ public static class NetworkTopologyEditValidation
     private const int MaxAttributeValueLength = 256;
     private const int MaxAttributeCount = 64;
 
-    /// <summary>
-    /// Validates a full edit batch: sizes, duplicate ids, edge geometry/SRID, and the
-    /// allowlisted, dataset-backed edge attribute keys (#2655 travel-profile cost columns).
-    /// </summary>
-    /// <param name="batch">The batch to validate.</param>
-    /// <param name="generationSrid">The SRID edge geometry must be expressed in.</param>
-    /// <param name="allowedAttributeKeys">
-    /// The exact set of edge attribute keys the dataset's travel profiles back (forward/reverse
-    /// cost columns). Any attribute key outside this set is rejected.
-    /// </param>
-    /// <param name="error">Set to a sanitized, client-safe validation message on failure.</param>
-    /// <returns><see langword="true"/> when the batch is well-formed.</returns>
     public static bool TryValidateBatch(
         NetworkTopologyEditBatch batch,
         int generationSrid,
@@ -157,11 +136,6 @@ public static class NetworkTopologyEditValidation
         return true;
     }
 
-    /// <summary>
-    /// Validates that a stable id (edge, vertex, or turn-restriction id) is a safe,
-    /// bounded, printable value. Ids are always bound as SQL parameters (never
-    /// interpolated), so this check is deliberately permissive about character set.
-    /// </summary>
     public static bool TryValidateStableId(string? id, string role, out string error)
     {
         if (string.IsNullOrWhiteSpace(id))
@@ -324,14 +298,6 @@ public static class NetworkTopologyEditValidation
         return true;
     }
 
-    /// <summary>
-    /// Structurally validates that a GeoJSON payload is a well-formed <c>LineString</c> or
-    /// <c>MultiLineString</c> with finite coordinates. This is a lightweight, dependency-free
-    /// shape/finiteness check (JSON numbers can never encode NaN/Infinity, so this mainly
-    /// guards structure and coordinate arity); the deeper geometry-validity and SRID checks
-    /// happen in PostGIS via <c>ST_GeomFromGeoJSON</c> plus the table's <c>CHECK</c>
-    /// constraints when the batch is persisted.
-    /// </summary>
     internal static bool TryValidateLinearGeoJson(string? geometryGeoJson, out string error)
     {
         if (string.IsNullOrWhiteSpace(geometryGeoJson))

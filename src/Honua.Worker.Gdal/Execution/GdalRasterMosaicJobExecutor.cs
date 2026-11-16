@@ -10,39 +10,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>raster.mosaic</c>
-/// process: combines multiple input rasters into one, backed by the GDAL
-/// <c>gdalwarp</c> CLI (which merges several sources into a single output grid).
-///
-/// <para>
-/// Inputs are supplied inline on the <c>sources</c> parameter as a
-/// <c>|</c>-separated list of base64-encoded GeoTIFFs (two or more). The
-/// <c>operator</c> parameter selects overlap behavior: <c>last</c> (default,
-/// later-listed source wins) or <c>first</c> (earlier-listed source wins,
-/// implemented by reversing source order). Statistical operators (min/max/mean/
-/// sum/blend) are not yet expressible through stock gdalwarp and are rejected with
-/// a clear message rather than silently approximated.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/>
-/// is <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterMosaicJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterMosaicJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.mosaic";
 
-    /// <summary>Separator between base64 raster entries in the <c>sources</c> input.</summary>
     public const string SourceSeparator = "|";
 
-    /// <summary>
-    /// Upper bound on the number of mosaic sources. gdalwarp can merge many tiles, but
-    /// the worker decodes them all into memory and writes them to the scratch workspace
-    /// first, so the count is bounded to keep a single job from exhausting the host.
-    /// </summary>
     public const int MaxSources = 256;
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -71,17 +47,13 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         "last",
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -235,11 +207,6 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Decodes the <c>|</c>-separated base64 source list, enforcing the per-entry
-    /// MaxArtifactBytes ceiling and requiring at least two inputs (a mosaic of one
-    /// raster is a no-op the caller almost certainly did not intend).
-    /// </summary>
     private static bool TryDecodeSources(
         IReadOnlyDictionary<string, string> parameters,
         long maxBytes,

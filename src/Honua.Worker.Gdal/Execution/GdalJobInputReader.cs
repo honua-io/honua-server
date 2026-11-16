@@ -6,17 +6,8 @@ using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Shared helpers for reading the canonical step inputs the geoprocessing submit
-/// path projects onto an <c>ExecutionJobSpec</c> parameter bag.
-/// </summary>
 internal static class GdalJobInputReader
 {
-    /// <summary>
-    /// Reads either the legacy bounded base64 input or the v2 typed raster descriptor.
-    /// Object-store descriptors become GDAL VSI paths; credentials remain execution-owned
-    /// worker environment state and never travel in the job payload.
-    /// </summary>
     public static bool TryGetRasterInput(
         IReadOnlyDictionary<string, string> parameters,
         string name,
@@ -136,10 +127,6 @@ internal static class GdalJobInputReader
         }
     }
 
-    /// <summary>
-    /// Resolves the first canonical process id from the durable spec, mirroring the
-    /// lean dispatch helper's resolution order.
-    /// </summary>
     public static string? ResolveProcessId(IReadOnlyDictionary<string, string> parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
@@ -167,15 +154,6 @@ internal static class GdalJobInputReader
         return null;
     }
 
-    /// <summary>
-    /// Reads a step-input string value, reporting presence based purely on whether
-    /// the canonical key exists in the durable spec. A present-but-empty value
-    /// (the submit path persists empty inputs as <c>string.Empty</c>) is returned
-    /// as-is and reported as present — a legitimately-empty parameter (empty WHERE/SQL
-    /// filter, empty name prefix, empty output-name override) must not be silently
-    /// dropped. Callers that genuinely require a non-empty value are responsible for
-    /// their own emptiness check on the returned value.
-    /// </summary>
     public static bool TryGetInput(
         IReadOnlyDictionary<string, string> parameters,
         string name,
@@ -191,13 +169,6 @@ internal static class GdalJobInputReader
         return false;
     }
 
-    /// <summary>
-    /// Reads and decodes a required base64-encoded step input. Use the
-    /// <see cref="TryGetBase64Input(IReadOnlyDictionary{string, string}, string, long, out byte[], out string)"/>
-    /// overload to apply the worker's <c>MaxArtifactBytes</c> ceiling in the
-    /// same call — the cross-cutting size guard belongs at the decoder so
-    /// every executor enforces it uniformly.
-    /// </summary>
     public static bool TryGetBase64Input(
         IReadOnlyDictionary<string, string> parameters,
         string name,
@@ -239,14 +210,6 @@ internal static class GdalJobInputReader
         return true;
     }
 
-    /// <summary>
-    /// Reads and decodes a required base64-encoded step input, rejecting any
-    /// payload that exceeds <paramref name="maxBytes"/>. Centralizes the
-    /// <c>MaxArtifactBytes</c> guard so every base64 input — primary source
-    /// AND secondary inputs like clip boundaries or zones GeoJSON — is bounded
-    /// by the same worker-wide ceiling without depending on each executor to
-    /// remember to add an after-the-fact size check.
-    /// </summary>
     public static bool TryGetBase64Input(
         IReadOnlyDictionary<string, string> parameters,
         string name,
@@ -318,7 +281,6 @@ internal static class GdalJobInputReader
     }
 }
 
-/// <summary>A bounded inline payload or a pinned GDAL-readable object-store path.</summary>
 internal readonly record struct GdalRasterInput(
     byte[]? InlineBytes,
     string? ReferencedPath,
@@ -326,13 +288,10 @@ internal readonly record struct GdalRasterInput(
     RasterSourceDimensions? DeclaredDimensions,
     RasterSourcePixelScale? DeclaredPixelScale)
 {
-    /// <summary>Whether the input is an inline payload that must be staged to scratch.</summary>
     public bool IsInline => InlineBytes is not null;
 
-    /// <summary>Creates an inline input.</summary>
     public static GdalRasterInput Inline(byte[] bytes) => new(bytes, null, null, null, null);
 
-    /// <summary>Creates a conditional object-store input.</summary>
     public static GdalRasterInput Referenced(
         string path,
         string expectedETag,
@@ -340,10 +299,6 @@ internal readonly record struct GdalRasterInput(
         RasterSourcePixelScale? declaredPixelScale) =>
         new(null, path, expectedETag, declaredDimensions, declaredPixelScale);
 
-    /// <summary>
-    /// Applies the same pre-GDAL dimension guard to inline headers and catalog-probed
-    /// referenced dimensions. Referenced inputs fail closed when dimensions are absent.
-    /// </summary>
     public bool TryAdmit(GdalWorkerOptions options, out string error)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -378,10 +333,6 @@ internal readonly record struct GdalRasterInput(
             out error);
     }
 
-    /// <summary>
-    /// Returns the GDAL input path, writing only bounded inline content to scratch.
-    /// Referenced objects are opened in place through VSI.
-    /// </summary>
     public async Task<string> PreparePathAsync(
         string workspace,
         string fileName,
@@ -398,14 +349,9 @@ internal readonly record struct GdalRasterInput(
             ?? throw new InvalidOperationException("Raster input has neither inline bytes nor a referenced path.");
     }
 
-    /// <summary>
-    /// Adds a provider conditional-read header so mutation after submission fails closed.
-    /// GDAL applies this header to VSI HEAD/range requests; a changed object returns 412.
-    /// </summary>
     public void AddReadPin(List<string> arguments)
         => AddReadPin(arguments, ExpectedETag);
 
-    /// <summary>Adds a provider conditional-read header for a pinned object ETag.</summary>
     public static void AddReadPin(List<string> arguments, string? expectedETag)
     {
         ArgumentNullException.ThrowIfNull(arguments);

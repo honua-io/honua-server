@@ -3,26 +3,12 @@
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Warps bounded native-grid windows without trusting an automatically rounded source extent.
-/// </summary>
 internal static class RasterNativeWindowSql
 {
-    /// <summary>
-    /// Tries the monotonic north-up identity or geographic-to-WebMercator family. Unsupported
-    /// projections, over-budget windows and warps that do not cover the target return null.
-    /// The native-cell margin is only a candidate: actual output coverage is mandatory.
-    /// Mosaic inputs retain a separate coverage mask; single outputs restore native band types
-    /// and their original NoData metadata, including opaque zero outside undeclared-NoData bands.
-    /// </summary>
     internal static string TryWarp(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
         => RasterSamplingSql.FunctionCall(
             RasterSamplerKind.NativeWindow, rasterExpression, gridExpression, preserveCoverageMask);
 
-    /// <summary>
-    /// Body of <c>honua_raster.native_window_v1</c>. Callers use <see cref="TryWarp"/> so the
-    /// outer query plans a function call instead of this expression.
-    /// </summary>
     internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var padded = RasterGridFrameSql.FrameAlignedRaster("w.rast", "w.grid");

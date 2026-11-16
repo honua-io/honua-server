@@ -7,14 +7,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Ground-distance limits for geographic cluster, density and buffer SQL.
-/// Azimuthal equidistant tangential scale is <c>rho / sin(rho)</c>. At
-/// <see cref="SinglePlaneMaxCornerMetres"/> from the plane centre on the WGS 84
-/// semi-major axis that error is still under 1%. Wider extents are tiled into
-/// <see cref="PlaneTileMetres"/> cells so a corner stays a few hundred kilometres
-/// from its own centre.
-/// </summary>
 internal static class AzimuthalGroundPlane
 {
     internal const double SinglePlaneMaxCornerMetres = 1_500_000d;
@@ -45,11 +37,6 @@ internal static class AzimuthalGroundPlane
         return (metresPerDegreeLat, metresPerDegreeLon);
     }
 
-    /// <summary>
-    /// True when one azimuthal plane keeps the envelope corner inside the 1% scale limit.
-    /// A longitude span wider than 180° is the complementary short arc, matching
-    /// <c>TryResolveAeqdCenter</c>.
-    /// </summary>
     internal static bool EnvelopeFitsOnePlane(double minX, double maxX, double minY, double maxY)
     {
         var span = maxX - minX;
@@ -61,10 +48,6 @@ internal static class AzimuthalGroundPlane
         return CornerRadiusMetres(widthMetres, heightMetres) <= SinglePlaneMaxCornerMetres;
     }
 
-    /// <summary>
-    /// Centre of a tile after its latitude span is clipped to [-90, 90].
-    /// A partial polar tile must not report a centre outside that range.
-    /// </summary>
     internal static double ClippedTileCenterLatitude(double southDegrees, double northDegrees)
     {
         var south = Math.Clamp(southDegrees, -90d, 90d);
@@ -105,17 +88,6 @@ internal sealed partial class FeatureQueryBuilder
             + longitudeSql
             + ", 'FM999990.999999999') || ' +ellps=WGS84 +units=m +step +proj=unitconvert +xy_in=rad +xy_out=deg')";
 
-    /// <summary>
-    /// Assigns each filtered row to a ground-metre azimuthal plane. A longitude
-    /// set whose largest gap is interior straddles the antimeridian: the centre
-    /// and the tiles then lie on the short arc. One plane uses the box centroid
-    /// when the rows do not wrap, which is the same centre as
-    /// <c>ST_Centroid(ST_Extent)</c>.
-    /// <c>plane_decision</c> is one row and stays MATERIALIZED. Inlined, its
-    /// extent, gap and scale expressions are copied into every per-row column
-    /// that reads them and evaluated once per feature, which made 100K-point
-    /// DBSCAN several times slower than the single-plane SQL it replaced.
-    /// </summary>
     private static void AppendGroundPlaneCtes(StringBuilder sql, string geometryColumn)
     {
         if (geometryColumn is not ("geom" or "pt_geo"))
@@ -255,12 +227,6 @@ internal sealed partial class FeatureQueryBuilder
     private static string ClippedTileCenterLatitudeSql(string southSql, string northSql)
         => $"(LEAST(GREATEST(({southSql}), -90.0), 90.0) + LEAST(GREATEST(({northSql}), -90.0), 90.0)) / 2.0";
 
-    /// <summary>
-    /// One row per feature per azimuthal tile the feature can affect.
-    /// Tiles overlap by <paramref name="epsParam"/> so a pair closer than eps
-    /// is not split by a tile edge. The home row keeps the single-plane centre
-    /// when the extent is not split.
-    /// </summary>
     private static void AppendDbscanTileMembership(StringBuilder sql, string epsParam)
     {
         if (epsParam is not ['$', ..] || !epsParam[1..].All(char.IsAsciiDigit))
@@ -315,10 +281,6 @@ internal sealed partial class FeatureQueryBuilder
             """);
     }
 
-    /// <summary>
-    /// Merges per-tile DBSCAN labels that share a feature id, then emits one
-    /// row per feature. An unsplit extent keeps PostGIS's own cluster ids.
-    /// </summary>
     private static void AppendDbscanLabelMerge(StringBuilder sql, string clusterExpression)
     {
         sql.Append(CultureInfo.InvariantCulture, $$"""

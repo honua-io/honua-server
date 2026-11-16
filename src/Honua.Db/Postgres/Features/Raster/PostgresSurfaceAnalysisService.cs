@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// PostGIS-backed implementation of canonical surface-analysis operations.
-/// </summary>
 internal sealed class PostgresSurfaceAnalysisService : ISurfaceAnalysisService
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

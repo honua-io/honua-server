@@ -28,9 +28,6 @@ internal sealed partial class StreamingFileImportService
     private static readonly string[] GeoPackageTimestampFormats =
         ["yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", "yyyy-MM-dd'T'HH:mm:ssK"];
 
-    /// <summary>
-    /// Stream Shapefile features from extracted components on disk.
-    /// </summary>
     private static async IAsyncEnumerable<IFeature> ReadShapefileStreamingAsync(
         string shapefilePath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -61,9 +58,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Stream GeoPackage features from a stream by using a temporary SQLite file.
-    /// </summary>
     private async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
         Stream stream,
         string? sourceLayer,
@@ -297,16 +291,6 @@ internal sealed partial class StreamingFileImportService
         return result is not null;
     }
 
-    /// <summary>
-    /// Resolves a GeoPackage geometry-column <c>srs_id</c> to an EPSG code via its
-    /// <c>gpkg_spatial_ref_sys</c> row (#2743). Honors the spec's reserved ids
-    /// (<c>0</c> undefined-geographic, <c>-1</c> undefined-cartesian → undetected) and only
-    /// trusts <c>organization_coordsys_id</c> for EPSG-authored rows. A non-EPSG organization
-    /// (or a row that resolves to a non-positive code) is treated as undetected so the caller
-    /// must supply an explicit source SRID rather than the import guessing a wrong EPSG code.
-    /// Falls back to the raw <c>srs_id</c> only when no matching <c>gpkg_spatial_ref_sys</c> row
-    /// exists (best effort for a malformed file that still numbers by EPSG).
-    /// </summary>
     private static int? ResolveGeoPackageSrid(int? srsId, string? organization, int? organizationCoordSysId)
     {
         if (!srsId.HasValue)

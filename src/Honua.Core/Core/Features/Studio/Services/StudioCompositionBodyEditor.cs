@@ -9,28 +9,11 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <summary>
-/// Pure, side-effect-free read/write operations over a Studio package
-/// envelope's <see cref="StudioPackageEnvelope.Body"/> composition payload
-/// (honua-server#3002, AD-8). Every operation returns a new envelope; none of
-/// them touch the lifecycle store, generation, or validation — callers
-/// (the composition MCP tools) load a draft, apply one of these mutations to
-/// its envelope, and pass the result through
-/// <see cref="IStudioPackageLifecycleService.UpdateDraftAsync"/> so generation
-/// checking and validation stay owned by the lifecycle service (no lifecycle
-/// logic is duplicated here).
-/// </summary>
 public static class StudioCompositionBodyEditor
 {
-    /// <summary>Package families whose composition body the editor understands.</summary>
     public static readonly IReadOnlyCollection<StudioPackageFamily> CompositionEligibleFamilies =
         new[] { StudioPackageFamily.Map, StudioPackageFamily.App, StudioPackageFamily.Dashboard };
 
-    /// <summary>
-    /// Throws <see cref="StudioCompositionFamilyException"/> when <paramref name="family"/>
-    /// is not a composition-eligible family. Called by every composition tool before
-    /// reading or mutating a draft's body.
-    /// </summary>
     public static void EnsureCompositionEligibleFamily(StudioPackageFamily family)
     {
         if (!CompositionEligibleFamilies.Contains(family))
@@ -39,11 +22,6 @@ public static class StudioCompositionBodyEditor
         }
     }
 
-    /// <summary>
-    /// Reads the composition body from an envelope. A missing/null
-    /// <see cref="StudioPackageEnvelope.Body"/> (a brand-new draft) reads as
-    /// <see cref="StudioCompositionBody.Empty"/> rather than failing.
-    /// </summary>
     public static StudioCompositionBody ReadBody(StudioPackageEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -121,63 +99,8 @@ public static class StudioCompositionBodyEditor
         }
     }
 
-    /// <summary>
-    /// Writes a composition body back onto an envelope's <see cref="StudioPackageEnvelope.Body"/>,
-    /// preserving any members of the stored document this projection does not model.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
-    /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c> and <c>layout</c> and nothing
-    /// else — but a canonical map package
-    /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
-    /// <c>sourceBindings</c> and <c>initialView</c> (all part of the canonical
-    /// <c>MapPackage</c> the draft factory emits).
-    /// Serializing the projection straight over the body therefore DELETED every unmodelled field
-    /// on the first edit, silently, through both round trips that use this editor: the
-    /// collaboration checkpoint applier and the MCP Studio composition tools. Overlaying only the
-    /// projected keys onto the original object keeps the round trip lossless
-    /// (honua-server#2999 review).
-    /// </para>
-    /// <para>
-    /// The merged object is emitted with <see cref="Utf8JsonWriter"/> rather than by serializing a
-    /// <c>Dictionary&lt;string, JsonElement&gt;</c>. The published Honua.Server image builds with
-    /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c> and
-    /// <see cref="StudioJsonContext"/> registers no dictionary metadata, so the reflection-based
-    /// overload threw at runtime for EVERY MCP or checkpoint mutation of an existing object body —
-    /// the exact path this merge exists to serve (honua-server#2999 review). Writing the DOM
-    /// directly needs no serializer metadata at all.
-    /// </para>
-    /// </remarks>
-    /// <summary>
-    /// The stored member names for the OPTIONAL projected members
-    /// (<see cref="StudioCompositionBody.View"/>, <see cref="StudioCompositionBody.Interactions"/>,
-    /// <see cref="StudioCompositionBody.Layout"/>, <see cref="StudioCompositionBody.Controls"/>),
-    /// matching their <c>JsonPropertyName</c>s.
-    /// These are the projected members that can be absent from the serialized projection —
-    /// layers and widgets always serialize (as arrays) — so a wholesale replacement has to
-    /// clear them explicitly.
-    /// </summary>
     private static readonly string[] OptionalProjectedMemberNames = ["view", "interactions", "layout", "controls"];
 
-    /// <summary>
-    /// Replaces the composition projection WHOLESALE, clearing projected members the replacement
-    /// omits, while leaving every unmodelled member of the stored document untouched.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="WriteBody"/> overlays only the keys the serialized projection actually emits,
-    /// and <c>StudioJsonContext</c> writes with <c>WhenWritingNull</c> — so a replacement with no
-    /// <c>view</c> never overwrote the stored one and the "wholesale" replacement silently kept
-    /// the previous viewport. That overlay behaviour is correct for the incremental edits
-    /// (add-layer, set-style, set-viewport) that share the editor, so replacement gets its own
-    /// seam rather than changing theirs (honua-server#2999 review). The same reasoning covers
-    /// every optional projected member (<see cref="OptionalProjectedMemberNames"/>), so
-    /// <c>interactions</c>/<c>layout</c> clear on wholesale replacement exactly as
-    /// <c>view</c> does.
-    /// </remarks>
-    /// <param name="envelope">The stored envelope.</param>
-    /// <param name="body">The replacement composition.</param>
-    /// <returns>The envelope with its composition projection replaced.</returns>
     public static StudioPackageEnvelope ReplaceComposition(
         StudioPackageEnvelope envelope,
         StudioCompositionBody body)
@@ -280,11 +203,6 @@ public static class StudioCompositionBodyEditor
         return WriteBody(envelope, edit(ReadBody(envelope)));
     }
 
-    /// <summary>
-    /// Adds a layer to the composition. <paramref name="beforeId"/> inserts before an
-    /// existing layer id (append when omitted or unmatched — mirrors the SDK agent-tools
-    /// <c>addLayer(layer, beforeId?)</c> shape).
-    /// </summary>
     public static StudioCompositionBody AddLayer(
         StudioCompositionBody body, StudioCompositionLayer layer, string? beforeId = null)
     {
@@ -312,7 +230,6 @@ public static class StudioCompositionBodyEditor
         return body with { Layers = layers };
     }
 
-    /// <summary>Removes a layer by id. Throws when no layer with that id exists.</summary>
     public static StudioCompositionBody RemoveLayer(StudioCompositionBody body, string layerId)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -380,7 +297,6 @@ public static class StudioCompositionBodyEditor
         return remaining;
     }
 
-    /// <summary>Sets (or clears) a layer's bound <see cref="StudioCompositionLayer.StyleRef"/>.</summary>
     public static StudioCompositionBody SetLayerStyleRef(StudioCompositionBody body, string layerId, string? styleRef)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -396,21 +312,6 @@ public static class StudioCompositionBodyEditor
         return body with { Layers = layers };
     }
 
-    /// <summary>
-    /// Sets a layer's <see cref="StudioCompositionLayer.Visible"/> flag (honua-server#3199).
-    /// </summary>
-    /// <remarks>
-    /// <c>visible</c> is part of the stored composition wire shape, but <see cref="AddLayer"/>
-    /// writes it once and rejects duplicate ids — so before this seam existed there was no way to
-    /// change a composed layer's visibility, and a draft sync overwrote any client-side toggle
-    /// with the stored value. Both the <c>honua_studio_set_layer_visibility</c> MCP tool and the
-    /// live-collaboration <c>SetLayerVisibility</c> operation apply the toggle through here, so
-    /// the two surfaces cannot diverge on lookup or not-found behaviour.
-    /// </remarks>
-    /// <param name="body">The composition to mutate.</param>
-    /// <param name="layerId">Id of the layer to toggle.</param>
-    /// <param name="visible">The visibility to store.</param>
-    /// <returns>The composition with that layer's visibility set.</returns>
     public static StudioCompositionBody SetLayerVisibility(StudioCompositionBody body, string layerId, bool visible)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -426,7 +327,6 @@ public static class StudioCompositionBodyEditor
         return body with { Layers = layers };
     }
 
-    /// <summary>Replaces the composition view wholesale (mirrors the SDK agent-tools <c>setViewport</c>).</summary>
     public static StudioCompositionBody SetView(StudioCompositionBody body, StudioCompositionView view)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -434,7 +334,6 @@ public static class StudioCompositionBodyEditor
         return body with { View = view };
     }
 
-    /// <summary>Adds a widget to the composition. Throws when the widget id already exists.</summary>
     public static StudioCompositionBody AddWidget(StudioCompositionBody body, StudioCompositionWidget widget)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -448,7 +347,6 @@ public static class StudioCompositionBodyEditor
         return body with { Widgets = body.Widgets.Append(widget).ToList() };
     }
 
-    /// <summary>Removes a widget by id. Throws when no widget with that id exists.</summary>
     public static StudioCompositionBody RemoveWidget(StudioCompositionBody body, string widgetId)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -466,23 +364,6 @@ public static class StudioCompositionBodyEditor
         };
     }
 
-    /// <summary>
-    /// Adds a declarative interaction to the composition, replacing an existing binding
-    /// with the same <see cref="StudioInteraction.Id"/> in place (geospatial-mcp
-    /// ADR-0030 <c>bind_interaction</c>: "adds or replaces (by id) one interaction").
-    /// </summary>
-    /// <remarks>
-    /// This is an ADMISSION gate as well as a mutation: a bind whose vocabulary is out of
-    /// the closed event/verb sets, whose refs do not resolve within the document, or which
-    /// would push the <c>(on.ref, on.event)</c> fan-out past
-    /// <see cref="StudioInteractionVocabulary.MaxInteractionsPerEventSource"/> is REJECTED
-    /// rather than stored and reported later. The identical rules are re-checked over the
-    /// whole document by <c>StudioPackageValidator</c>, because a document can also be
-    /// authored wholesale through the draft-update surface, which never passes here.
-    /// </remarks>
-    /// <param name="body">The composition to bind into.</param>
-    /// <param name="interaction">The binding to add or replace.</param>
-    /// <returns>The composition with the binding applied.</returns>
     public static StudioCompositionBody BindInteraction(StudioCompositionBody body, StudioInteraction interaction)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -514,14 +395,6 @@ public static class StudioCompositionBodyEditor
         return body with { Interactions = interactions };
     }
 
-    /// <summary>
-    /// Removes a declarative interaction by id. Throws when no interaction with that id
-    /// exists — ADR-0030's <c>remove_interaction</c> makes an unknown id an error, not a
-    /// no-op, so an agent cannot believe it unbound something it never bound.
-    /// </summary>
-    /// <param name="body">The composition to remove from.</param>
-    /// <param name="interactionId">Id of the interaction to remove.</param>
-    /// <returns>The composition without that binding.</returns>
     public static StudioCompositionBody RemoveInteraction(StudioCompositionBody body, string interactionId)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -541,22 +414,6 @@ public static class StudioCompositionBodyEditor
         };
     }
 
-    /// <summary>
-    /// Adds a control to the composition, replacing an existing control with the same
-    /// <see cref="StudioCompositionControl.Id"/> in place (geospatial-mcp ADR-0031
-    /// <c>add_control</c>: "adds or replaces (by id) one control").
-    /// </summary>
-    /// <remarks>
-    /// An ADMISSION gate as well as a mutation, exactly as
-    /// <see cref="BindInteraction"/> is: a control whose kind is outside the closed
-    /// ADR-0031 vocabulary, or whose id is empty/oversized, is REJECTED here rather than
-    /// stored and reported later. <c>StudioPackageValidator</c> re-checks the identical
-    /// rules over the whole document, because a body can also be authored wholesale
-    /// through the draft-update surface, which never passes here.
-    /// </remarks>
-    /// <param name="body">The composition to add the control to.</param>
-    /// <param name="control">The control to add or replace.</param>
-    /// <returns>The composition with the control applied.</returns>
     public static StudioCompositionBody AddControl(StudioCompositionBody body, StudioCompositionControl control)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -615,25 +472,6 @@ public static class StudioCompositionBodyEditor
         return body with { Controls = controls };
     }
 
-    /// <summary>
-    /// Removes a control by id. Throws when no control with that id exists — ADR-0031
-    /// makes an unknown id an error, not a no-op.
-    /// </summary>
-    /// <remarks>
-    /// Removing a control an interaction still references would leave a dangling
-    /// <c>control:{id}</c> binding, which ADR-0031 forbids. The default
-    /// (<paramref name="cascadeInteractions"/> <see langword="false"/>) therefore REJECTS
-    /// the removal; passing <see langword="true"/> removes the referencing interactions
-    /// with the control. Silently retaining an unresolvable binding is not conformant, so
-    /// there is no third option.
-    /// </remarks>
-    /// <param name="body">The composition to remove from.</param>
-    /// <param name="controlId">Id of the control to remove.</param>
-    /// <param name="cascadeInteractions">
-    /// When <see langword="true"/>, interactions whose <c>on.ref</c> or <c>do.ref</c> is
-    /// <c>control:{controlId}</c> are removed with the control.
-    /// </param>
-    /// <returns>The composition without that control (and, when cascading, its bindings).</returns>
     public static StudioCompositionBody RemoveControl(
         StudioCompositionBody body,
         string controlId,
@@ -764,13 +602,8 @@ public static class StudioCompositionBodyEditor
     }
 }
 
-/// <summary>
-/// Raised when a composition operation targets a draft whose package family is
-/// not composition-eligible (<see cref="StudioCompositionBodyEditor.CompositionEligibleFamilies"/>).
-/// </summary>
 public sealed class StudioCompositionFamilyException : Exception
 {
-    /// <summary>The offending package family.</summary>
     public StudioPackageFamily Family { get; }
 
     public StudioCompositionFamilyException(StudioPackageFamily family)
@@ -780,7 +613,6 @@ public sealed class StudioCompositionFamilyException : Exception
     }
 }
 
-/// <summary>Raised when a draft's composition body cannot be parsed.</summary>
 public sealed class StudioCompositionBodyException : Exception
 {
     public StudioCompositionBodyException(string message, Exception innerException)
@@ -789,10 +621,6 @@ public sealed class StudioCompositionBodyException : Exception
     }
 }
 
-/// <summary>
-/// Raised when a composition mutation targets a layer/widget id that does not
-/// exist (remove, set-style).
-/// </summary>
 public sealed class StudioCompositionNotFoundException : Exception
 {
     public StudioCompositionNotFoundException(string message) : base(message)
@@ -800,10 +628,6 @@ public sealed class StudioCompositionNotFoundException : Exception
     }
 }
 
-/// <summary>
-/// Raised when a composition mutation would create a duplicate layer/widget id
-/// (add).
-/// </summary>
 public sealed class StudioCompositionConflictException : InvalidOperationException
 {
     public StudioCompositionConflictException(string message) : base(message)

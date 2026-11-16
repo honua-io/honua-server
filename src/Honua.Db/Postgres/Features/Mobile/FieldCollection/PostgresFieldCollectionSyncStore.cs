@@ -13,11 +13,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// Postgres-backed FieldCollection sync store. Reads from and writes to the
-/// <c>honua.fieldcollection_*</c> tables introduced in migration
-/// <c>024_AddFieldCollectionSync.sql</c>.
-/// </summary>
 internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncStore
 {
     // Committed high-watermark for FieldCollection sync. The shared

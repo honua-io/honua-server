@@ -5,61 +5,17 @@ using System.Text.Json;
 
 namespace Honua.Core.Geometries;
 
-/// <summary>
-/// Densifies Esri "true-curve" path/ring segments into linear vertices so the rest of
-/// the pipeline can store and process curves as ordinary linear geometry (#1877).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Esri true-curve arrays interleave plain vertices (<c>[x, y(, z)(, m)]</c>) with curve-segment
-/// objects keyed by segment type:
-/// </para>
-/// <list type="bullet">
-///   <item><c>{"c": [[endX, endY], [interiorX, interiorY]]}</c> — circular arc. <b>Densified.</b></item>
-///   <item><c>{"b": [[endX, endY], [c1X, c1Y], [c2X, c2Y]]}</c> — cubic Bézier. <b>Densified.</b></item>
-///   <item><c>{"a": [...]}</c> — circular/elliptic arc defined by center, minor/clockwise flags,
-///     rotation, semi-major axis, and axis ratio. <b>Densified.</b></item>
-/// </list>
-/// <para>
-/// <b>Storage-linearization limitation:</b> the densified vertices are what gets stored. NTS/WKB
-/// cannot represent a true curve, so once a curve is densified it cannot be losslessly re-curved on
-/// output. Protocol adapters retain ownership of geometry models and JSON serialization.
-/// </para>
-/// </remarks>
 public static class CurveGeometryConverter
 {
-    /// <summary>
-    /// Maximum number of densified vertices generated for a single curve segment. A defensive bound
-    /// against pathological inputs (e.g. a near-zero-radius arc requesting a huge sweep).
-    /// </summary>
     internal const int MaxVerticesPerSegment = 512;
 
-    /// <summary>
-    /// Target maximum angular step (radians) used when densifying a circular arc. ~3 degrees keeps
-    /// the chord error small for typical map-scale radii while bounding vertex counts.
-    /// </summary>
     private const double ArcAngularStep = Math.PI / 60.0;
 
-    /// <summary>
-    /// Number of straight segments a cubic Bézier is sampled into. Fixed sampling keeps the helper
-    /// allocation-light and deterministic; 32 segments is visually smooth at map scale.
-    /// </summary>
     internal const int BezierSegments = 32;
 
-    /// <summary>
-    /// Densifies a single path/ring (array of vertices and/or curve segments) into a flat list of
-    /// linear vertices. The "current position" walks forward as segments are consumed, so each curve
-    /// segment is densified from the previous vertex to its declared end point.
-    /// Plain vertices retain their Z/M ordinates; generated vertices interpolate them by curve parameter.
-    /// </summary>
-    /// <exception cref="ArgumentException">A segment is malformed or unsupported.</exception>
     public static double[][] Densify(JsonElement[] part)
         => Densify(part, int.MaxValue);
 
-    /// <summary>
-    /// Densifies a part with a hard output-vertex budget, checked while appending
-    /// each generated vertex. Cancellation is checked during expansion.
-    /// </summary>
     public static double[][] Densify(JsonElement[] part, int maxVertices, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(part);
@@ -71,11 +27,6 @@ public static class CurveGeometryConverter
         return output.ToArray();
     }
 
-    /// <summary>
-    /// Validates and counts the vertices produced by densifying a single path/ring without retaining
-    /// the expanded coordinate array. This is used by request admission checks; the canonical
-    /// conversion path still performs the one required allocation when dispatching the query.
-    /// </summary>
     public static int CountDensifiedVertices(
         JsonElement[] part,
         int maxVertices,
@@ -153,12 +104,6 @@ public static class CurveGeometryConverter
             "Unknown true-curve segment object. Supported segment types: circular arc ('c'), elliptic arc ('a'), cubic Bézier ('b').");
     }
 
-    /// <summary>
-    /// Densifies a circular arc segment <c>{"c": [[endX, endY], [interiorX, interiorY]]}</c>.
-    /// Esri's second vertex is a point on the arc, not its center. The circumcircle is reconstructed
-    /// from start/interior/end, and the sweep containing the interior point is sampled in bounded
-    /// angular steps.
-    /// </summary>
     private static void DensifyCircularArc(
         JsonElement c,
         double[] start,
@@ -459,12 +404,6 @@ public static class CurveGeometryConverter
         return normalized < 0 ? normalized + (2.0 * Math.PI) : normalized;
     }
 
-    /// <summary>
-    /// Densifies a cubic Bézier segment <c>{"b": [[endX, endY], [c1X, c1Y], [c2X, c2Y]]}</c> using
-    /// parametric sampling of the De Casteljau cubic from the start vertex (P0) through the two
-    /// control points (P1, P2) to the end vertex (P3). Emits <see cref="BezierSegments"/> straight
-    /// chords (bounded by <see cref="MaxVerticesPerSegment"/>).
-    /// </summary>
     private static void DensifyCubicBezier(
         JsonElement b,
         double[] start,

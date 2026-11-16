@@ -25,7 +25,6 @@ internal sealed partial class GeocoderReferenceDataImportService(
     private const int MaxSkippedRowDetails = 25;
     private const int MaxReferenceRows = 2_000_000;
 
-    /// <summary>PostgreSQL NAMEDATALEN-1: identifiers longer than this are silently truncated.</summary>
     private const int MaxIdentifierBytes = 63;
 
     // Canonical reference roles the loader can populate.
@@ -67,7 +66,6 @@ internal sealed partial class GeocoderReferenceDataImportService(
         [RoleY] = ["y", "lat", "latitude", "point_y", "ycoord", "y_coord"],
     };
 
-    /// <inheritdoc />
     public async Task<GeocoderReferenceDataImportResult> ImportAsync(
         GeocoderReferenceDataImportRequest request,
         CancellationToken cancellationToken = default)
@@ -631,10 +629,6 @@ internal sealed partial class GeocoderReferenceDataImportService(
         return name;
     }
 
-    /// <summary>
-    /// Stable 8-character lowercase-hex digest of the full identifier, used to keep truncated
-    /// index names distinct. Not security-sensitive — collision resistance for naming only.
-    /// </summary>
     private static string StableSuffix(string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..8].ToLowerInvariant();
 

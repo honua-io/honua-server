@@ -19,7 +19,6 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
-    /// <inheritdoc/>
     public async Task<FilePreview> PreviewFileAsync(
         Stream fileStream,
         string fileName,

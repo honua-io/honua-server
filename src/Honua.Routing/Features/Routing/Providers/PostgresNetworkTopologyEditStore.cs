@@ -12,23 +12,6 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Postgres-backed canonical edit store for batched, transactional edge and
-/// turn-restriction content mutations (#2716). Every mutation runs inside one
-/// all-or-nothing transaction over the staging tables provisioned by migration 086:
-/// <c>honua.network_topology_edge_edits</c>, <c>honua.network_topology_restriction_edits</c>,
-/// and the <c>honua.network_topology_edit_idempotency</c> at-most-once ledger.
-/// </summary>
-/// <remarks>
-/// This store deliberately never catches provider-specific SQL exceptions (Honua.Routing
-/// has no direct Npgsql dependency by design; see <c>Honua.Routing.csproj</c>). Conflict
-/// detection instead uses <c>ON CONFLICT ... DO NOTHING</c> plus affected-row-count checks
-/// (mirroring <see cref="PostgresNetworkDatasetStore"/>), and turn-restriction edge
-/// references are validated with an explicit pre-check query rather than relying on the
-/// foreign-key constraints raising a catchable error. The foreign keys and CHECK
-/// constraints in migration 086 remain as a database-enforced safety net in case a future
-/// code path bypasses this store.
-/// </remarks>
 internal sealed class PostgresNetworkTopologyEditStore : INetworkTopologyEditStore
 {
     private const string GenerationColumns =
@@ -37,13 +20,9 @@ internal sealed class PostgresNetworkTopologyEditStore : INetworkTopologyEditSto
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresNetworkTopologyEditStore"/> class.
-    /// </summary>
     public PostgresNetworkTopologyEditStore(IDatabaseSessionFactory sessionFactory)
         => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyEditResult> ApplyEditBatchAsync(
         string datasetId,
         long generation,
@@ -580,12 +559,6 @@ internal sealed class PostgresNetworkTopologyEditStore : INetworkTopologyEditSto
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unrecognised turn restriction kind."),
     };
 
-    /// <summary>
-    /// Serializes an edge/restriction attribute dictionary to a compact JSON object using
-    /// <see cref="Utf8JsonWriter"/> directly (no reflection-based <c>JsonSerializer</c> call),
-    /// keeping this AOT/trim-safe without a source-generated context for a simple
-    /// string-to-string map.
-    /// </summary>
     internal static string SerializeAttributes(IReadOnlyDictionary<string, string?> attributes)
     {
         var buffer = new ArrayBufferWriter<byte>();

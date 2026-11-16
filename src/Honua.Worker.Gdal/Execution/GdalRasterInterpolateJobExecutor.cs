@@ -10,51 +10,19 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the raster interpolation
-/// family: <c>raster.interpolate-idw</c> (inverse-distance-weighted) and
-/// <c>raster.interpolate-kriging</c> (ordinary kriging).
-///
-/// <para>
-/// IDW reads a base64-encoded GeoJSON point FeatureCollection from <c>points</c>,
-/// grids it onto a raster surface using <c>gdal_grid -a invdist</c>, and publishes
-/// the GeoTIFF as a canonical data-URI artifact.
-/// </para>
-/// <para>
-/// Kriging reads the same payload and predicts the surface with the bundled
-/// <see cref="OrdinaryKriging"/> solver, because stock GDAL <c>gdal_grid</c> has no
-/// kriging algorithm (#3932). The prediction is numerical work the worker does itself;
-/// the raster is still materialized by the pinned GDAL toolchain via
-/// <c>gdal_translate</c>, so the published artifact comes off the same production path
-/// as every other native raster op.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/>
-/// is <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterInterpolateJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterInterpolateJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>Process id for inverse-distance-weighted interpolation.</summary>
     public const string IdwProcessId = "raster.interpolate-idw";
 
-    /// <summary>Process id for ordinary-kriging interpolation.</summary>
     public const string KrigingProcessId = "raster.interpolate-kriging";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
 
-    /// <summary>
-    /// Output grid size used when the caller pins neither <c>width</c> nor <c>height</c>,
-    /// matching <c>gdal_grid</c>'s own 256×256 default so IDW and kriging agree.
-    /// </summary>
     private const int DefaultGridSize = 256;
 
-    /// <summary>
-    /// CRS assigned to the kriging output when the caller does not name one. GeoJSON is
-    /// WGS 84 lon/lat by definition (RFC 7946), which is also what OGR reports for the
-    /// point layer <c>gdal_grid</c> reads on the IDW path.
-    /// </summary>
     private const string DefaultSrid = "EPSG:4326";
 
     private static readonly FrozenSet<string> HandledProcessIds = new HashSet<string>(StringComparer.Ordinal)
@@ -66,19 +34,14 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <summary>Process ids this executor routes.</summary>
     public static IReadOnlyCollection<string> SupportedProcessIds => HandledProcessIds;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds => HandledProcessIds;
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -220,18 +183,6 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Executes <c>raster.interpolate-kriging</c>: ordinary kriging over the scattered
-    /// <c>points</c> payload, predicted at the centres of a width×height grid spanning
-    /// the sample extent, then materialized as a GeoTIFF by the pinned GDAL toolchain.
-    ///
-    /// <para>
-    /// The predictor is solved once in the dual formulation (<see cref="OrdinaryKriging"/>),
-    /// so the whole surface costs one O(n³) factorization plus O(n) per cell — bounded by
-    /// <see cref="GdalWorkerOptions.MaxKrigingSamples"/> on the sample side and by the
-    /// shared <see cref="GdalOutputGridGuard"/> caps on the grid side.
-    /// </para>
-    /// </summary>
     private async Task<JobExecutionResult> ExecuteKrigingAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -483,15 +434,6 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Runs one GDAL/OGR CLI <paramref name="tool"/> invocation with the shared
-    /// per-command timeout, logging and error-sanitization the kriging pipeline applies
-    /// to every step (two <c>gdal_translate</c> band conversions and one
-    /// <c>gdal_merge.py</c> combine). The two translates read worker-written AAIGrid,
-    /// which is outside the raster input allowlist, so they are not prefixed with
-    /// <c>-if</c>. Returns <see langword="null"/> on success, or the
-    /// caller-facing <see cref="JobExecutionResult"/> to return on failure.
-    /// </summary>
     private async Task<JobExecutionResult?> RunGdalToolAsync(
         string tool,
         IReadOnlyList<string> args,
@@ -527,10 +469,6 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         return null;
     }
 
-    /// <summary>
-    /// Reads an optional finite tuning parameter, returning <see langword="null"/> when the
-    /// caller omitted it so the variogram fit can supply its data-derived default.
-    /// </summary>
     private static bool TryReadOptionalDouble(
         IReadOnlyDictionary<string, string> parameters,
         string name,
@@ -555,13 +493,6 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         return true;
     }
 
-    /// <summary>
-    /// Builds the <c>gdal_grid -a</c> algorithm spec for IDW. The parameter names
-    /// mirror gdal_grid's <c>invdist</c> options: power (default 2.0), smoothing
-    /// (default 0.0), and an optional search radius (omitted = global). Each value
-    /// is range-checked here so a plan that reaches the worker is also accepted by
-    /// the CLI rather than failing at the argument boundary.
-    /// </summary>
     private static bool TryBuildAlgorithm(
         IReadOnlyDictionary<string, string> parameters,
         out string algorithm,

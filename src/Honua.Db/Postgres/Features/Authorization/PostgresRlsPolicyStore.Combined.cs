@@ -11,7 +11,6 @@ namespace Honua.Db.Postgres.Features.Authorization;
 
 internal sealed partial class PostgresRlsPolicyStore
 {
-    /// <inheritdoc />
     public bool CanResolveWith(IFieldMaskPolicyStore fieldStore)
         => fieldStore is PostgresFieldMaskPolicyStore masks
            && masks.HasSameCatalog(_connectionProvider, _table)
@@ -19,7 +18,6 @@ internal sealed partial class PostgresRlsPolicyStore
            && System.Transactions.Transaction.Current is null
            && !PostgresMutationTransaction.TryBorrow(_connectionProvider, out _);
 
-    /// <inheritdoc />
     public async Task<EffectiveReadPolicies> GetEffectiveReadPoliciesAsync(
         IFieldMaskPolicyStore fieldStore,
         IReadOnlyList<string> roles,

@@ -5,12 +5,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// Keywords a resolved PostgreSQL secure-connection string may carry (SEC-23): the endpoint,
-/// credentials, TLS mode and connection/pool tuning. Keywords that load server-side files, change
-/// certificate validation or pass startup options to the database are refused, so a stored or
-/// secret-referenced string cannot widen what the connection does beyond those settings.
-/// </summary>
 internal static class PostgresConnectionKeywordPolicy
 {
     // Compared after removing spaces and lower-casing, so "SSL Mode", "SslMode" and "sslmode" match.
@@ -34,10 +28,6 @@ internal static class PostgresConnectionKeywordPolicy
         "readbuffersize", "writebuffersize", "socketreceivebuffersize", "socketsendbuffersize",
     };
 
-    /// <summary>
-    /// Returns the first keyword in <paramref name="builder"/> outside the allowlist, or
-    /// <see langword="null"/> when every keyword is allowed.
-    /// </summary>
     public static string? FindDisallowedKeyword(NpgsqlConnectionStringBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -62,9 +52,6 @@ internal static class PostgresConnectionKeywordPolicy
         return null;
     }
 
-    /// <summary>
-    /// Splits the builder's host list (<c>host1,host2:5433</c>) into bare host names.
-    /// </summary>
     public static IReadOnlyList<string> SplitHosts(string? hostList)
     {
         if (string.IsNullOrWhiteSpace(hostList))

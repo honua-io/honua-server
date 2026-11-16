@@ -26,9 +26,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.
-/// </summary>
 internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore, IObjectIdStreamingReader
 {
     private const string UnsupportedWhereClauseMessage =
@@ -1302,14 +1299,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return BuildDistancePredicateSql(geometryColumn, filterGeometry, _storageSrid, distance, beyond, sql.AddParameter);
     }
 
-    /// <summary>
-    /// Builds the ST_Distance distance/beyond predicate for a storage-mapped layer. Both operands
-    /// arrive in the storage SRID (the column natively, the filter after
-    /// <see cref="TransformFilterGeometryIfNeeded"/>). A bare <c>::geography</c> cast requires
-    /// lon/lat input and throws for projected-storage layers (a 500), so both operands are
-    /// reprojected to WGS84 geography via <see cref="ToWgs84Geography"/> (the same path KNN uses)
-    /// so <c>ST_Distance</c> returns metres regardless of the storage CRS. (#2740)
-    /// </summary>
     internal static string BuildDistancePredicateSql(
         string geometryColumn,
         string filterGeometry,
@@ -1547,13 +1536,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return ValidateAndQuoteIdentifier(field.Name);
     }
 
-    /// <summary>
-    /// Resolves a field reference used in an ORDER BY clause. Scalar fields persisted inside
-    /// the attributes JSONB column are read with the text accessor (<c>-&gt;&gt;</c>), which
-    /// would otherwise sort numerically- and temporally-typed values lexicographically
-    /// (e.g. "10" before "9"). Cast those fields to their declared SQL type so sorting matches
-    /// the field's semantics; text/uuid fields keep the plain text accessor.
-    /// </summary>
     private string ResolveSortColumnExpression(string fieldName, SqlBuilder sql)
     {
         var column = ResolveColumnExpression(fieldName, sql);
@@ -1791,21 +1773,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             + "was meant to target a distinct source, give it a non-empty connection ID.")]
     private static partial void LogEmptyIdFallbackPastUnresolvedCredentials(ILogger logger, string table);
 
-    /// <summary>
-    /// Decides whether an unresolved bound connection represents a genuine misconfiguration
-    /// (a layer pinned to a distinct source whose credentials we cannot unlock) that must fail
-    /// loudly, versus an empty/placeholder binding that means "use the default connection".
-    /// </summary>
-    /// <remarks>
-    /// Only reached when no plaintext string was present and no encrypted string could be
-    /// decrypted. An empty/whitespace connection ID is the "use the default connection"
-    /// sentinel: such a binding always falls back to the default database regardless of any
-    /// leftover (and unresolvable) credential material, because it never identified a distinct
-    /// source. A binding with a *non-empty* ID and encrypted bytes (regardless of whether a
-    /// decryption service is available) or an external secret reference is pointing at a
-    /// specific source, so we must not silently read from the default database. A binding with
-    /// none of that material is a placeholder for the default connection.
-    /// </remarks>
     internal static bool ShouldFailInsteadOfDefaultFallback(
         DataConnection connection,
         IConnectionEncryptionService? connectionEncryptionService)
@@ -1903,27 +1870,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"{ValidateAndQuoteIdentifier(mapping.SchemaName!)}.{table}";
     }
 
-    /// <summary>
-    /// Quotes a SELECT alias for a schema field that <see cref="ResolveAttributeFields"/> has
-    /// already admitted, accepting either shape that method admits.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="ValidateAndQuoteIdentifier"/> is the wrong guard for an alias derived from a
-    /// declared field name. It enforces <c>SchemaSearchPath.IsValidIdentifier</c>
-    /// (<c>^[A-Za-z_][A-Za-z0-9_]*$</c>), which rejects the colon in a STAC extension queryable
-    /// such as <c>eo:cloud_cover</c>. Before those names were admitted to the projection the
-    /// field was silently dropped; admitting them turned the same request into an
-    /// <see cref="InvalidOperationException"/> and an HTTP 500 on the FlatGeobuf/Geobuf path,
-    /// because the encoded-binary builder aliases every resolved field unconditionally
-    /// (review finding on honua-server#3489).
-    ///
-    /// The alias is safe to emit with doubling-only quoting, exactly as the native
-    /// <c>FeatureQueryBuilder</c> path does: the JSONB branch admits a name only through
-    /// <c>IsValidEncodedColumnAlias</c>, which contains no quote, whitespace, backslash
-    /// or control character and enforces PostgreSQL's 63-byte identifier boundary.
-    /// The guard is re-asserted here rather than assumed, so this stays correct if the
-    /// caller's field filter ever widens.
-    /// </remarks>
     private static string QuoteAttributeFieldAlias(string fieldName)
     {
         var sanitized = fieldName.Trim();

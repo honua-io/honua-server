@@ -16,24 +16,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Scene.Grpc;
 
-/// <summary>
-/// gRPC <c>ElevationService</c> implementation (honua-server#1194 / #1195).
-/// Mirrors the HTTP elevation API: point sampling and geodesic profile
-/// sampling against a registered raster layer, honoring a mosaic rule and
-/// reporting no-data / out-of-bounds conditions explicitly.
-/// </summary>
-/// <remarks>
-/// Intentional divergence: the canonical elevation service
-/// (<see cref="IElevationService"/>) is keyed exclusively by the integer
-/// publication layer index, so <c>layer_id</c> is the authoritative resolution
-/// key for this adapter. The proto <c>dataset_id</c> field is advisory/echo-only
-/// here — it carries the caller's human-readable dataset reference but does not
-/// participate in resolution and is not used to scope the query. Callers that
-/// only know a dataset string must resolve it to a layer index out-of-band
-/// (the HTTP surface performs that name-to-index resolution itself). This
-/// matches AGENTS.md's requirement to document intentional protocol divergence
-/// in code; the divergence is covered by the elevation gRPC tests.
-/// </remarks>
 internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService.ElevationServiceBase
 {
     private const int Wgs84 = 4326;
@@ -199,12 +181,6 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         }
     }
 
-    /// <summary>
-    /// Resolves the requested input SRID in feature-query order: <c>latest_wkid</c>,
-    /// then <c>wkid</c>, then <c>wkt</c>. A supported value is returned. A reference
-    /// that names a CRS the registry cannot resolve is rejected; it is not sampled
-    /// as WGS-84. A null or empty reference still defers to the canonical default.
-    /// </summary>
     private async Task<int?> ValidateSridAsync(
         Proto.SpatialReference? spatialReference,
         string operation,
@@ -257,18 +233,6 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         return candidate.Value;
     }
 
-    /// <summary>
-    /// Builds the geodesic-profile line from the proto polyline.
-    /// </summary>
-    /// <remarks>
-    /// Single-path contract: a profile is sampled along ONE continuous polyline.
-    /// The proto <c>PolylineGeometry</c> can carry multiple paths (a multi-part
-    /// line), but a multi-part profile has no well-defined cumulative distance,
-    /// so a request with more than one path is rejected with
-    /// <see cref="StatusCode.InvalidArgument"/> rather than silently sampling
-    /// only the first part. Callers that need several profiles must issue one
-    /// request per path.
-    /// </remarks>
     private LineString BuildLineString(Proto.PolylineGeometry? line, int layerId)
     {
         if (line is null || line.Paths.Count == 0)
@@ -309,19 +273,6 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
     private static RpcException ToRpcException(ElevationQueryException exception)
         => new(new Status(MapFailureKind(exception.FailureKind), exception.Message));
 
-    /// <summary>
-    /// Maps an <see cref="ElevationFailureKind"/> to the gRPC status that mirrors
-    /// the canonical HTTP mapping (ElevationEndpoints.MapElevationException), so a
-    /// failure surfaces with consistent semantics across protocols. gRPC has no
-    /// 422 equivalent, so client-input cases (UnsupportedCrs / InvalidGeometry)
-    /// collapse to <see cref="StatusCode.InvalidArgument"/>, which
-    /// carries the same "client supplied an unacceptable request" meaning. A
-    /// source mosaic that cannot be combined maps to
-    /// <see cref="StatusCode.FailedPrecondition"/> because the request is valid but
-    /// the configured dataset is not analysis-ready. A missing source maps to
-    /// <see cref="StatusCode.NotFound"/> (HTTP 404) and any future/unknown kind maps to the safe default
-    /// <see cref="StatusCode.InvalidArgument"/> (HTTP 400 BadRequest).
-    /// </summary>
     private static StatusCode MapFailureKind(ElevationFailureKind failureKind)
         => failureKind switch
         {

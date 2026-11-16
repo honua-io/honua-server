@@ -2,9 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Authorization.Domain;
 
-/// <summary>
-/// Source-generated JSON serialization context for operator authorization domain models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

@@ -10,9 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
-/// <summary>
-/// PostgreSQL completion side of the alert domain audit outbox (#3865).
-/// </summary>
 internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
 {
     private const string Columns =
@@ -155,11 +152,8 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
         string.IsNullOrEmpty(value) || value.Length <= max ? value ?? string.Empty : value[..max];
 }
 
-/// <summary>Shared reader projection for <c>honua.alert_audit_outbox</c> rows.</summary>
 internal static class AlertAuditOutboxMapper
 {
-    /// <summary>Reads one outbox row in the column order declared by the queries above.</summary>
-    /// <param name="reader">Positioned reader.</param>
     public static AlertAuditOutboxEntry Read(NpgsqlDataReader reader) => new()
     {
         OutboxId = reader.GetInt64(0),

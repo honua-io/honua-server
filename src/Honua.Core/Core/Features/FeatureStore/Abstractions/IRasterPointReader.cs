@@ -6,14 +6,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-/// <summary>
-/// Provides an optimized query path for projected point coordinates used by raster rendering.
-/// </summary>
 public interface IRasterPointReader
 {
-    /// <summary>
-    /// Queries projected point coordinates for a layer using the supplied feature query constraints.
-    /// </summary>
     Task<ImmutableArray<ProjectedPoint>> QueryProjectedPointsAsync(
         int layerId,
         FeatureQuery query,

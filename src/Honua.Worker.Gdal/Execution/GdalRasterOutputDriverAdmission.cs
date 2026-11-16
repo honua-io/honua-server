@@ -5,18 +5,8 @@ using System.Collections.Frozen;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Admission for <c>conversion.raster-format</c> output drivers (#3307).
-/// Resolves the catalog <c>targetFormat</c> and rejects a driver that
-/// <see cref="GdalRuntimeHardening"/> will place in <c>GDAL_SKIP</c>, before
-/// <c>gdal_translate</c> can fail with a raw driver error.
-/// </summary>
 internal static class GdalRasterOutputDriverAdmission
 {
-    /// <summary>
-    /// Resolved <c>gdal_translate -of</c> target: driver short name, scratch
-    /// extension, artifact content type, and whether <c>COMPRESS</c> is meaningful.
-    /// </summary>
     internal readonly record struct Target(
         string Driver,
         string Extension,
@@ -61,17 +51,6 @@ internal static class GdalRasterOutputDriverAdmission
     private static readonly string AllowedFormatList =
         string.Join(", ", Formats.Keys.Order(StringComparer.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Admits <paramref name="targetFormat"/> or explains why it cannot be written.
-    /// An unknown value keeps the historical allowed-set error. A resolved driver
-    /// present in <see cref="GdalRuntimeHardening.EffectiveSkipDrivers"/> is rejected
-    /// with the driver short name and <c>GdalWorker:Hardening:SkipDrivers</c>.
-    /// </summary>
-    /// <param name="targetFormat">Raw <c>targetFormat</c> input, including aliases.</param>
-    /// <param name="hardening">The hardening options the GDAL subprocess will inherit.</param>
-    /// <param name="target">The resolved driver when admission succeeds.</param>
-    /// <param name="error">Empty when admitted; otherwise a client-facing reason.</param>
-    /// <returns><see langword="true"/> when the driver may be passed to <c>-of</c>.</returns>
     public static bool TryAdmit(
         string? targetFormat,
         GdalHardeningOptions hardening,

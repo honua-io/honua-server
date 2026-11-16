@@ -8,31 +8,17 @@ using Honua.Core.Features.Spec.Operators;
 
 namespace Honua.Core.Features.Spec.Validation;
 
-/// <summary>
-/// Orchestrates the three validator passes (resolve → type-check →
-/// semantic-check) and returns the accumulated diagnostics. Exceptions are
-/// reserved for internal invariant violations.
-/// </summary>
 public sealed class SpecValidator : ISpecValidator
 {
-    /// <summary>
-    /// Activity source used for spec-validation telemetry. Consumers that
-    /// listen on this source see per-pass durations plus diagnostic counts.
-    /// </summary>
     public static readonly ActivitySource ActivitySource = new("Honua.Spec.Validation");
 
     private readonly IOperatorCatalog _operators;
 
-    /// <summary>
-    /// Creates a validator over the given operator catalog.
-    /// </summary>
-    /// <param name="operators">Operator catalog.</param>
     public SpecValidator(IOperatorCatalog operators)
     {
         _operators = operators;
     }
 
-    /// <inheritdoc />
     public SpecValidationResult Validate(SpecDocument document, ISpecCatalogSnapshot? catalog = null)
     {
         ArgumentNullException.ThrowIfNull(document);

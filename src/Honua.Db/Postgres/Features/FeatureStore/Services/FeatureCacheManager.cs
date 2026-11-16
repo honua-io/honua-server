@@ -13,9 +13,6 @@ using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.Ge
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Manages caching of layer metadata and performance monitoring for feature store operations
-/// </summary>
 internal sealed class FeatureCacheManager : IFeatureCacheManager
 {
     private static readonly TimeSpan _layerSridCacheRetention = TimeSpan.FromHours(24);
@@ -40,9 +37,6 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private readonly string _layerCatalogSchema;
     private readonly string _layerCatalogTable;
 
-    /// <summary>
-    /// Performance metrics tracking
-    /// </summary>
     private static class PerformanceMetrics
     {
         private const int MaxMetricEntries = 500;

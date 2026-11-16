@@ -17,35 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Scene;
 
-/// <summary>
-/// Publishing executor that converts an uploaded LAS point cloud into a
-/// deterministic 3D Tiles point tileset (a quadtree of <c>.pnts</c> tiles plus a
-/// <c>tileset.json</c>) and registers it with the hosted scene registry (#1201).
-/// This is the wired ingest path on top of the
-/// <see cref="LasPointCloudReader"/> + <see cref="PointCloudTilesetBuilder"/>
-/// vertical slice: it stages the generated tileset, registers the dataset (the
-/// canonical collision authority), then atomically promotes the staged bytes to
-/// the final scene asset root so the standard scene serving path can stream them.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The executor reuses <see cref="SceneTilesetStaging"/> for the stage → register
-/// → promote → compensate mechanics so its durability semantics match the
-/// feature-layer and CityGML/BIM ingest paths. The heavy LAS → 3D Tiles
-/// conversion is pure-managed (no native PDAL/py3dtiles dependency), so the
-/// server materialises the tileset inline; the async-job / out-of-tree-worker
-/// surface used by NetCDF coverage refresh is unnecessary here.
-/// </para>
-/// <para>
-/// CRS handling is intentionally conservative for v1, mirroring the CityGML
-/// ingest path: a geographic source CRS (EPSG:4326/4979 or OGC CRS84, in either
-/// axis order) passes through to the ellipsoid; LAZ/COPC compressed inputs are
-/// rejected by <see cref="LasPointCloudReader"/> and projected source CRS are
-/// rejected here with <see cref="SceneGenerationErrorCodes.LayerCrsUnknown"/> —
-/// both documented follow-ups. Classification, intensity, and RGB are preserved
-/// per point by the builder/PNTS writer.
-/// </para>
-/// </remarks>
 internal sealed partial class PointCloudScenePublishExecutor
 {
     private readonly IHostEnvironment _environment;
@@ -68,18 +39,8 @@ internal sealed partial class PointCloudScenePublishExecutor
         _storage = storage;
     }
 
-    /// <summary>Default scene cache <c>max-age</c> when the request omits one.</summary>
     private const int DefaultCacheMaxAgeSeconds = 3600;
 
-    /// <summary>
-    /// Parses, tiles, registers, and promotes a LAS point cloud into a servable
-    /// 3D Tiles point scene.
-    /// </summary>
-    /// <param name="request">The ingest request carrying the LAS bytes and target metadata.</param>
-    /// <param name="cancellationToken">Cancels the ingest before promotion.</param>
-    /// <returns>The ingest outcome with the resolved scene id, asset root, and tileset summary.</returns>
-    /// <exception cref="LasFormatException">The buffer is malformed or uses an unsupported (LAZ/COPC) format.</exception>
-    /// <exception cref="ValidationException">An option is invalid, the source CRS is unsupported, or the scene id/name collides with an existing dataset.</exception>
     public async Task<PointCloudSceneIngestOutcome> IngestAsync(
         PointCloudSceneIngestRequest request,
         CancellationToken cancellationToken)
@@ -241,11 +202,6 @@ internal sealed partial class PointCloudScenePublishExecutor
         }
     }
 
-    /// <summary>
-    /// Maps the configured scene generation LOD knobs onto the point-cloud
-    /// tiling options so the operator-tunable feature-tiling thresholds drive the
-    /// point quadtree as well, keeping a single source of truth for LOD depth.
-    /// </summary>
     private static PointCloudTilingOptions BuildTilingOptions(SceneGenerationServerOptions serverOptions)
         => new()
         {
@@ -254,12 +210,6 @@ internal sealed partial class PointCloudScenePublishExecutor
             InteriorSampleCount = serverOptions.InteriorSampleCount
         };
 
-    /// <summary>
-    /// Builds the geographic projection delegate for the source point cloud. v1
-    /// supports a geographic source CRS only (EPSG:4326/4979 or OGC CRS84); axis
-    /// order is taken from the request hint. A projected/unknown CRS is rejected
-    /// as a documented limitation, mirroring the CityGML ingest path.
-    /// </summary>
     private static PointCloudGeoTransform BuildGeoTransform(PointCloudSourceCrs sourceCrs)
     {
         // Geographic pass-through: keep height (ellipsoidal meters) untouched and
@@ -466,34 +416,13 @@ internal sealed partial class PointCloudScenePublishExecutor
     }
 }
 
-/// <summary>
-/// Horizontal source-CRS interpretation for a point-cloud ingest request
-/// (#1201). v1 supports geographic coordinates only; the value selects axis
-/// order. LAS files do not carry a reliable inline EPSG field (the CRS lives in
-/// VLR/WKT records), so the caller declares the interpretation explicitly.
-/// </summary>
 internal enum PointCloudSourceCrs
 {
-    /// <summary>LAS X is longitude (degrees), Y is latitude (degrees). Default.</summary>
     GeographicLonLat = 0,
 
-    /// <summary>LAS X is latitude (degrees), Y is longitude (degrees).</summary>
     GeographicLatLon = 1,
 }
 
-/// <summary>
-/// Request to ingest a LAS point cloud into a servable 3D Tiles point scene
-/// (#1201).
-/// </summary>
-/// <param name="Source">The uncompressed LAS buffer bytes.</param>
-/// <param name="SourceCrs">Geographic axis-order interpretation of the LAS X/Y ordinates.</param>
-/// <param name="SceneId">Optional explicit scene slug; derived from the intent id when omitted.</param>
-/// <param name="DisplayName">Optional display name; derived from the scene id when omitted.</param>
-/// <param name="Description">Optional human-readable description.</param>
-/// <param name="EditionGate">Optional edition gate slug recorded on the dataset.</param>
-/// <param name="CacheMaxAgeSeconds">Optional cache <c>max-age</c>; defaults to 3600 when omitted.</param>
-/// <param name="RequiresAuth">When true, the registered scene requires authentication instead of being public.</param>
-/// <param name="CreatedBy">Optional audit identity for the registration record.</param>
 internal sealed record PointCloudSceneIngestRequest(
     byte[] Source,
     PointCloudSourceCrs SourceCrs = PointCloudSourceCrs.GeographicLonLat,
@@ -505,16 +434,6 @@ internal sealed record PointCloudSceneIngestRequest(
     bool RequiresAuth = false,
     string? CreatedBy = null);
 
-/// <summary>
-/// Outcome of a point-cloud scene ingest: the resolved scene id, on-disk asset
-/// root, and the point tileset summary surfaced to the admin response (#1201).
-/// </summary>
-/// <param name="SceneId">Resolved scene slug used in the tileset URL.</param>
-/// <param name="AssetRoot">Final on-disk directory holding the promoted tileset.</param>
-/// <param name="BoundsDegrees">Dataset envelope [west, south, east, north] in degrees.</param>
-/// <param name="PointCount">Number of points ingested.</param>
-/// <param name="TileCount">Number of <c>.pnts</c> tile content files written.</param>
-/// <param name="HasColor">True when the source LAS carried per-point RGB preserved in the tiles.</param>
 internal sealed record PointCloudSceneIngestOutcome(
     string SceneId,
     string AssetRoot,

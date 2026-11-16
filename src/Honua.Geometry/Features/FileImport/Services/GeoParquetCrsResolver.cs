@@ -9,10 +9,6 @@ using Honua.Core.Features.Infrastructure.Crs;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Validates source PROJJSON before resolving coordinate-bearing definitions to canonical storage CRS.
-/// An asserted authority identifier is evidence to verify, never a substitute for the definition.
-/// </summary>
 internal static class GeoParquetCrsResolver
 {
     private const int MaximumInputBytes = 262144;

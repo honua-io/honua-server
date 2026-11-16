@@ -21,9 +21,6 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
-    /// <summary>
-    /// Stream features from source and insert into database in batches.
-    /// </summary>
     private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns, int storedSrid)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
@@ -511,13 +508,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Whether the resolved source SRID replaces the geometry's own SRID.
-    /// An explicit request SRID always wins. A CSV geometry that already carries an SRID
-    /// (EWKT/EWKB) keeps it so projected coordinates are not stored as EPSG:4326 (#6171).
-    /// Every other geometry, including CSV values with no embedded SRID and FileGDB
-    /// features left at SRID 0, takes the detected source SRID (#6114).
-    /// </summary>
     internal static bool ShouldApplyDetectedSourceSrid(
         SupportedFileFormat format,
         int? requestedSourceSrid,

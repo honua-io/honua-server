@@ -26,14 +26,8 @@ using MySqlConnector;
 
 namespace Honua.Db.MySql;
 
-/// <summary>
-/// Dependency-injection wiring for the MySQL/MariaDB read-only feature provider.
-/// </summary>
 internal static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the MySQL/MariaDB provider services. Bound from the <c>MySql</c> configuration section.
-    /// </summary>
     public static IServiceCollection AddMySqlServices(
         this IServiceCollection services,
         IConfiguration configuration)

@@ -7,12 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.TileCachePackage;
 
-/// <summary>
-/// Postgres-backed serving binding for tiles imported by the tile-cache package
-/// importer (#1269). Reads tiles out of <c>honua.tile_caches</c> /
-/// <c>honua.tile_cache_entries</c> so imported <c>.tpk</c>/<c>.tpkx</c>/<c>.vtpk</c>
-/// caches serve through Honua tile endpoints without re-rendering.
-/// </summary>
 internal sealed class PostgresImportedTileCacheReader : IImportedTileCacheReader
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -26,7 +20,6 @@ internal sealed class PostgresImportedTileCacheReader : IImportedTileCacheReader
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<ImportedTileCacheInfo?> GetTileCacheAsync(
         string tileCacheId,
         CancellationToken cancellationToken = default)
@@ -61,7 +54,6 @@ internal sealed class PostgresImportedTileCacheReader : IImportedTileCacheReader
         };
     }
 
-    /// <inheritdoc />
     public async Task<ImportedTile?> GetTileAsync(
         string tileCacheId,
         int z,

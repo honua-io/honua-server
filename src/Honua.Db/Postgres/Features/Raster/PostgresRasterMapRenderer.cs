@@ -13,10 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// PostgreSQL-based raster map renderer implementation using PostGIS raster functions.
-/// Renders map images from raster data for OGC API - Maps operations.
-/// </summary>
 internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 {
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
@@ -36,19 +32,16 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> RenderCollectionMapAsync(int layerId, MapRenderRequest request, CancellationToken cancellationToken = default)
     {
         return await RenderMapAsync(new[] { layerId }, request, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> RenderDatasetMapAsync(int[] layerIds, MapRenderRequest request, CancellationToken cancellationToken = default)
     {
         return await RenderMapAsync(layerIds, request, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> RenderStyledMapAsync(int layerId, string styleId, MapRenderRequest request, CancellationToken cancellationToken = default)
     {
         PostgresRasterLog.RasterOperationWarning(_logger, "RenderStyledMapAsync",
@@ -300,10 +293,6 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             (string.Equals(exception.TableName, "raster_data", StringComparison.OrdinalIgnoreCase) ||
              exception.MessageText.Contains("raster_data", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Builds GDAL creation option strings for the given output format and request parameters.
-    /// See https://gdal.org/drivers/raster/ for driver-specific options.
-    /// </summary>
     internal static string[] BuildGdalCreationOptions(string formatName, MapRenderRequest request)
     {
         var options = new List<string>();

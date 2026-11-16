@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Postgres-backed durable storage for disconnected-sync conflict records (#1167).
-/// </summary>
 internal sealed class PostgresReplicaConflictRepository : IReplicaConflictRepository
 {
     private const string SelectColumns = """

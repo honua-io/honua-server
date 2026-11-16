@@ -3,24 +3,8 @@
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Shared CRS-token validation and normalization for the native-profile GDAL
-/// executors that pass a spatial-reference token to the CLI (<c>gdalwarp</c>,
-/// <c>ogr2ogr</c>). Centralized so every executor enforces the same conservative
-/// allow-shape — a bare positive integer (EPSG code) or a short
-/// <c>AUTHORITY:CODE</c> token — before a value reaches an argument list. This
-/// blocks shell-influencing values and arbitrary PROJ strings while covering the
-/// reprojection and datum-shift cases (EPSG codes, ESRI / IGNF datum authorities).
-/// </summary>
 internal static class GdalSrsToken
 {
-    /// <summary>
-    /// Validates a CRS token to the conservative allow-shape. Accepts a bare
-    /// positive integer (EPSG code) or an <c>AUTHORITY:CODE</c> token whose
-    /// authority and code are alphanumeric and bounded in length.
-    /// </summary>
-    /// <param name="value">The raw CRS token from the durable spec.</param>
-    /// <returns><c>true</c> when the token is safe to pass to the CLI.</returns>
     public static bool IsValid(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -50,14 +34,6 @@ internal static class GdalSrsToken
         return code.Length is > 0 and <= 16 && code.All(char.IsLetterOrDigit);
     }
 
-    /// <summary>
-    /// Normalizes a validated CRS token for the CLI: a bare integer is widened to
-    /// the <c>EPSG:&lt;code&gt;</c> form; an <c>AUTHORITY:CODE</c> token is passed
-    /// through trimmed. Callers must validate with <see cref="IsValid(string?)"/>
-    /// first.
-    /// </summary>
-    /// <param name="value">A token already accepted by <see cref="IsValid(string?)"/>.</param>
-    /// <returns>The normalized CLI-ready CRS token.</returns>
     public static string Normalize(string value)
     {
         ArgumentNullException.ThrowIfNull(value);

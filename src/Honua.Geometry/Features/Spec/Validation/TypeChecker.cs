@@ -6,11 +6,6 @@ using Honua.Core.Features.Spec.Operators;
 
 namespace Honua.Core.Features.Spec.Validation;
 
-/// <summary>
-/// Second validator pass — walks every <see cref="ComputeStep"/>, looks up
-/// its operator in the <see cref="IOperatorCatalog"/>, and validates inputs
-/// and parameters against the declared <see cref="OperatorSignature"/>.
-/// </summary>
 internal sealed class TypeChecker
 {
     private readonly SpecDocument _document;
@@ -18,9 +13,6 @@ internal sealed class TypeChecker
     private readonly IReadOnlyDictionary<string, TypeRef> _locals;
     private readonly List<SpecDiagnostic> _diagnostics = [];
 
-    /// <summary>
-    /// Creates a type checker over the given document and catalog.
-    /// </summary>
     public TypeChecker(
         SpecDocument document,
         IOperatorCatalog operators,
@@ -31,10 +23,8 @@ internal sealed class TypeChecker
         _locals = locals;
     }
 
-    /// <summary>Gets the diagnostics emitted during <see cref="Check"/>.</summary>
     public IReadOnlyList<SpecDiagnostic> Diagnostics => _diagnostics;
 
-    /// <summary>Walks the document and validates operator invocations.</summary>
     public void Check()
     {
         _diagnostics.Clear();

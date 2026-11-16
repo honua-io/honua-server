@@ -5,12 +5,6 @@ using System.Data.Common;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-/// <summary>
-/// Read-only definition contract for tables skipped by CREATE TABLE IF NOT EXISTS. Captured
-/// from the owning creation migrations, not from the final upgraded schema: later ALTERs,
-/// storage policy, triggers and absent indexes remain the pending migrations' responsibility.
-/// CoreSchemaDivergenceGuardTests verifies this snapshot against the real creation scripts.
-/// </summary>
 internal static class PostgresSeedSchemaContract
 {
     internal static readonly IReadOnlyDictionary<(string Table, string Property), string> Definitions =

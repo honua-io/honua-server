@@ -103,14 +103,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Detects whether a geometry carries Z and/or M ordinates by inspecting its
-    /// coordinate sequences (not the flattened <see cref="NtsGeometry.Coordinates"/>
-    /// array, which discards measures). The WKB writer dimensionality is then chosen
-    /// from the actual source geometry so XYZ, XYM, and XYZM features round-trip
-    /// instead of being silently flattened (#1981). Mirrors the export side's
-    /// <c>DetectZMFromGeometry</c>.
-    /// </summary>
     private static (bool HasZ, bool HasM) DetectZm(NtsGeometry geometry)
     {
         var filter = new ZmCoordinateFilter();
@@ -118,10 +110,6 @@ internal sealed partial class StreamingFileImportService
         return (filter.HasZ, filter.HasM);
     }
 
-    /// <summary>
-    /// Coordinate-sequence filter that reports whether any coordinate carries a
-    /// finite Z or M ordinate, without materializing the coordinate array.
-    /// </summary>
     private sealed class ZmCoordinateFilter : ICoordinateSequenceFilter
     {
         public bool HasZ { get; private set; }
@@ -146,15 +134,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Validates a geometry against configured limits.
-    /// Returns null if valid, or an error message if invalid.
-    /// </summary>
-    /// <remarks>
-    /// Vertex- and ring-count ceilings are enforced earlier by
-    /// <see cref="ImportGeometrySizeGuard"/> (which runs regardless of <c>ValidateGeometry</c> as a
-    /// hard memory guard, #1626), so this method only performs the coordinate-value validation.
-    /// </remarks>
     private static string? ValidateGeometry(NtsGeometry geometry)
     {
         // Validate coordinate values (NaN/Infinity) without copying the coordinate array.
@@ -166,10 +145,6 @@ internal sealed partial class StreamingFileImportService
         return null;
     }
 
-    /// <summary>
-    /// Validates that all coordinates in the geometry are finite numbers, without materializing the
-    /// full coordinate array (which for an island-scale multipolygon would be a large allocation).
-    /// </summary>
     private static bool ValidateCoordinates(NtsGeometry geometry)
     {
         var filter = new FiniteCoordinateFilter();
@@ -177,9 +152,6 @@ internal sealed partial class StreamingFileImportService
         return filter.AllFinite;
     }
 
-    /// <summary>
-    /// Coordinate-sequence filter that checks every ordinate is finite without copying coordinates.
-    /// </summary>
     private sealed class FiniteCoordinateFilter : ICoordinateSequenceFilter
     {
         public bool AllFinite { get; private set; } = true;

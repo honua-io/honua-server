@@ -5,19 +5,14 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Domain;
 
-/// <summary>Shared proposal read projection over the canonical execution outcome.</summary>
 public sealed record OperationProposalExecutionView
 {
-    /// <summary>Proposal lifecycle status, including a completed asynchronous execution.</summary>
     public required string Status { get; init; }
 
-    /// <summary>Execution failure reason, or the original approval resolution reason.</summary>
     public string? ResolutionReason { get; init; }
 
-    /// <summary>Latest proposal or canonical execution update.</summary>
     public required DateTimeOffset UpdatedAt { get; init; }
 
-    /// <summary>Projects only the exact, same-tenant execution bound to an approved proposal.</summary>
     public static OperationProposalExecutionView From(OperationProposal proposal, OperationHandle? execution)
     {
         ArgumentNullException.ThrowIfNull(proposal);

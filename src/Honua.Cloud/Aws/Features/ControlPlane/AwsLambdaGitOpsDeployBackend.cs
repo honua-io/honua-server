@@ -9,9 +9,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Built-in GitOps deploy backend for AWS Lambda targets managed by Honua.
-/// </summary>
 internal sealed partial class AwsLambdaGitOpsDeployBackend(
     IAwsLambdaAliasClient aliasClient,
     ILogger<AwsLambdaGitOpsDeployBackend> logger,

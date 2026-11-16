@@ -12,42 +12,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>source.ogr</c> process: a
-/// GDAL/OGR-backed import reader that canonicalizes a broad-format source dataset
-/// into the standard GeoJSON FeatureCollection artifact every workflow DAG starts
-/// from.
-///
-/// This is the heavyweight counterpart to the lean managed <c>source.geojson</c> /
-/// <c>source.csv</c> readers, which are hand-rolled NetTopologySuite parsers covering
-/// only GeoJSON and CSV. <c>source.ogr</c> reaches the FULL OGR driver universe the
-/// managed readers cannot — native File Geodatabase (OpenFileGDB), GML / GML
-/// application schemas, KML, MapInfo TAB, ESRI Shapefile, GeoPackage, FlatGeobuf, and
-/// (where the worker image's drivers are compiled in) database-spatial sources — and
-/// converts them to GeoJSON via <c>ogr2ogr -f GeoJSON</c> in an isolated scratch
-/// workspace.
-///
-/// It runs only inside the GDAL worker image (it overrides
-/// <see cref="AcceptedRuntimeProfiles"/> to <c>{ "native" }</c>, so the substrate
-/// claim fence keeps the lean managed worker from ever claiming it). The source
-/// dataset arrives as a base64 step input; some formats (Shapefile, FileGDB) are
-/// multi-file directories shipped as a base64 ZIP, so the executor unzips a
-/// <c>.zip</c> payload into the workspace and points OGR at the extracted dataset via
-/// GDAL's <c>/vsizip/</c>-free directory open. Unpack enforces the configured entry
-/// size, total size, compression ratio, entry count, and cancellation token before
-/// and during extraction. The canonicalized FeatureCollection is
-/// published as a <c>data:application/geo+json;base64,</c> artifact, matching the
-/// managed sources so downstream nodes are agnostic to which reader produced it.
-/// </summary>
 internal sealed partial class GdalVectorSourceReadJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalVectorSourceReadJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "source.ogr";
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
@@ -74,13 +45,10 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             ["OpenFileGDB"] = ".gdb",
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -240,16 +208,6 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
 
     private readonly record struct ZipExtraction(string DatasetPath, string? Failure);
 
-    /// <summary>
-    /// Extracts a ZIP-packaged multi-file dataset into a sandboxed sub-directory of
-    /// the scratch workspace and returns the OGR-openable dataset path (the
-    /// containing directory for a <c>.gdb</c> FileGDB, or the single <c>.shp</c>/
-    /// recognized vector file otherwise). Declared entry metadata and streamed
-    /// byte counts are both held to the archive budgets, and cancellation is
-    /// observed before any payload is written. A failure message is returned for
-    /// an invalid name, a path escape, or a budget overrun. The dataset path is
-    /// empty when extraction succeeded but no recognizable dataset was found.
-    /// </summary>
     private static async Task<ZipExtraction> ExtractZipSourceAsync(
         byte[] zipBytes,
         string workspace,
@@ -382,11 +340,6 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         return new ZipExtraction(DiscoverDataset(extractRoot, sourceFormat), null);
     }
 
-    /// <summary>
-    /// Rejects an entry from its name and central-directory sizes before any
-    /// payload byte is written. <paramref name="declaredTotal"/> advances only
-    /// for an entry that fits.
-    /// </summary>
     private static string? ValidateDeclaredEntry(
         ZipArchiveEntry entry,
         string extractRoot,
@@ -448,12 +401,6 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             || entry.FullName.EndsWith('/')
             || entry.FullName.EndsWith('\\');
 
-    /// <summary>
-    /// Classifies an untrusted ZIP entry name. A <c>..</c> segment, a rooted name,
-    /// a drive prefix, or an empty non-final segment is an invalid entry. A name
-    /// that still resolves outside the extraction root is path traversal. Neither
-    /// message includes the destination path.
-    /// </summary>
     private static bool TryResolveEntryDestination(
         string fullName,
         string extractRoot,

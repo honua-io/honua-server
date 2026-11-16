@@ -19,7 +19,6 @@ namespace Honua.Db.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    /// <inheritdoc />
     public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
         GeoservicesDiscoveryRequest request,
         CancellationToken cancellationToken = default)

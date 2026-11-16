@@ -6,31 +6,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Shared "run a GDAL/OGR CLI tool and publish its single file output" tail used
-/// by the raster-analysis / terrain-derivative / raster&lt;-&gt;vector executors
-/// (#2239, #2240). Centralizes the identical timeout fence, exit-code handling,
-/// output-existence / empty / size guards, and canonical data-URI artifact
-/// publication so every executor enforces the same cross-cutting behavior (error
-/// sanitization, MaxArtifactBytes ceiling, structured run logging) rather than
-/// each copy-pasting the boilerplate.
-///
-/// <para>
-/// Each executor remains responsible for the genuinely per-tool work — parsing /
-/// guarding its inputs and projecting them onto the CLI argument list — and then
-/// hands the assembled command here for execution.
-/// </para>
-/// </summary>
 internal static partial class GdalToolExecution
 {
-    /// <summary>
-    /// Runs <paramref name="tool"/> with the supplied arguments inside the scratch
-    /// <paramref name="workspace"/>, then publishes <paramref name="outputPath"/> as
-    /// a canonical <c>data:&lt;contentType&gt;;base64,...</c> artifact. The command
-    /// is logged (scratch-redacted) before execution and bounded by the worker's
-    /// <see cref="GdalWorkerOptions.ToolTimeout"/> and
-    /// <see cref="GdalWorkerOptions.MaxArtifactBytes"/>.
-    /// </summary>
     public static async Task<JobExecutionResult> RunAndPublishAsync(
         IGdalCommandRunner runner,
         IJobExecutionContext context,

@@ -7,7 +7,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-/// <summary>Transaction-bound storage facts for importer-owned datasets, scoped to the actual source database.</summary>
 internal static class ImportedDatasetSpatialMetadata
 {
     internal readonly record struct Identity(uint RelationOid, short GeometryAttnum);

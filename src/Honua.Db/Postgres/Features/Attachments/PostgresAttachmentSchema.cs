@@ -7,12 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Attachments;
 
-/// <summary>
-/// Resolves the existing attachment authority without moving or creating objects.
-/// Migration 002 historically created the table in honua; migration 125 added
-/// its import columns and cleanup table. Missing cleanup is legitimate only
-/// before 125, never a reason to create a second authority on a request path.
-/// </summary>
 internal static class PostgresAttachmentSchema
 {
     private static readonly string[] _cleanupColumns = ["storage_path", "layer_id", "feature_id"];

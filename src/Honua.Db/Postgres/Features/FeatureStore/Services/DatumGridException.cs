@@ -6,10 +6,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Turns a PostGIS failure to load a catalog grid into a client-safe error.
-/// The pipeline is not retried as a two-argument transform.
-/// </summary>
 internal static class DatumGridException
 {
     internal const string MissingGridMessage =

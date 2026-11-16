@@ -7,29 +7,8 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Shared parser for text geometry values that appear in CSV geometry columns and
-/// <c>.wkt</c> files. Understands three encodings that geospatial exports (notably
-/// standard PostGIS <c>COPY</c> / <c>ST_AsEWKB</c> output) emit, which the bare
-/// <see cref="WKTReader"/> cannot read on its own:
-/// <list type="bullet">
-///   <item>plain OGC WKT — <c>POINT(1 2)</c>;</item>
-///   <item>EWKT with a leading <c>SRID=&lt;n&gt;;</c> prefix — <c>SRID=4326;POINT(1 2)</c>
-///     (the SRID is honoured on the returned geometry);</item>
-///   <item>WKB / EWKB hex — <c>0101000020E6100000...</c>.</item>
-/// </list>
-/// Centralising this keeps the CSV and WKT readers from diverging on which encodings
-/// they accept.
-/// </summary>
 internal static class GeometryValueParser
 {
-    /// <summary>
-    /// Attempts to parse <paramref name="value"/> as plain WKT, EWKT (<c>SRID=n;</c> prefix),
-    /// or WKB/EWKB hex. Returns <see langword="null"/> when the value is blank or cannot be
-    /// parsed by any of the supported encodings. The supplied readers are reused across calls
-    /// because <see cref="WKTReader"/>/<see cref="WKBReader"/> are not cheap to allocate and
-    /// are not thread-safe; callers must not share them across threads.
-    /// </summary>
     internal static NtsGeometry? TryParse(string? value, WKTReader wktReader, WKBReader wkbReader)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -68,10 +47,6 @@ internal static class GeometryValueParser
         return TryReadWkt(trimmed, wktReader);
     }
 
-    /// <summary>
-    /// Creates a <see cref="WKBReader"/> configured to honour the SRID/Z/M flags that PostGIS
-    /// EWKB carries. Callers should cache one per reader instance.
-    /// </summary>
     internal static WKBReader CreateWkbReader() => new() { HandleSRID = true };
 
     private static bool TryStripSridPrefix(string value, out int? srid, out string wktBody)

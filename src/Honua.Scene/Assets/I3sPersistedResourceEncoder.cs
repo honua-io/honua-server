@@ -10,7 +10,6 @@ using Honua.Core.Features.Scene.Generation;
 
 namespace Honua.Scene.Assets;
 
-/// <summary>Encodes resource bytes and their corresponding declared layouts together.</summary>
 internal static class I3sPersistedResourceEncoder
 {
     public static I3sGeometryDefinition GeometryDefinition => new()

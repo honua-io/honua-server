@@ -5,23 +5,12 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Abstractions;
 
-/// <summary>
-/// Orchestrates workspace and artifact lifecycle operations including creation,
-/// expiration, cleanup, and promotion.
-/// </summary>
 public interface IWorkspaceLifecycleService
 {
-    /// <summary>
-    /// Retrieves a workspace by identifier, or <c>null</c> when the workspace
-    /// does not exist in the lifecycle store.
-    /// </summary>
     Task<Workspace?> GetWorkspaceAsync(
         string workspaceId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Creates a workspace with retention policy applied.
-    /// </summary>
     Task<Workspace> CreateWorkspaceAsync(
         WorkspaceKind kind,
         string label,
@@ -30,12 +19,6 @@ public interface IWorkspaceLifecycleService
         TimeSpan? customTtl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Adds an artifact to an existing, active workspace.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// The workspace does not exist or is not in the <see cref="WorkspaceLifecycleState.Active"/> state.
-    /// </exception>
     Task<Artifact> AddArtifactAsync(
         string workspaceId,
         ArtifactKind kind,
@@ -46,19 +29,6 @@ public interface IWorkspaceLifecycleService
         IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Adds an artifact to an existing, active workspace, honoring overwrite
-    /// semantics for a caller-supplied stable output label (the same label a
-    /// re-run of the same tool would reuse). Mirrors arcpy's
-    /// <c>arcpy.env.overwriteOutput</c> behavior for a workspace-scoped output:
-    /// when an <see cref="ArtifactLifecycleState.Available"/> artifact with the
-    /// same label already exists in the workspace, <c>overwrite = false</c>
-    /// rejects the write instead of silently clobbering the existing output,
-    /// while <c>overwrite = true</c> replaces it.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// The workspace does not exist or is not in the <see cref="WorkspaceLifecycleState.Active"/> state.
-    /// </exception>
     Task<Artifact> AddOrReplaceArtifactAsync(
         string workspaceId,
         ArtifactKind kind,
@@ -70,34 +40,15 @@ public interface IWorkspaceLifecycleService
         IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Publishes a stable operation/output identity under the storage write gate and
-    /// durable execution fence. Returns null if the fence rejects the publication.
-    /// Providers without atomic publication must report that limitation explicitly.
-    /// </summary>
     Task<Artifact?> PublishArtifactAsync(WorkspaceArtifactPublication publication,
         Func<CancellationToken, Task<bool>> publishReference, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Atomic workspace publication is unavailable.");
 
-    /// <summary>
-    /// Resolves the caller's workspace for a stable label, creating one when
-    /// none exists yet. Used to map a caller-supplied identifier (e.g. GPServer's
-    /// <c>env:workspace</c>) onto a durable <see cref="Workspace"/> without
-    /// requiring a separate workspace-provisioning call. Matches on the most
-    /// recently created <see cref="WorkspaceLifecycleState.Active"/> workspace
-    /// owned by <paramref name="ownerId"/> with the given <paramref name="label"/>;
-    /// creates a new <see cref="WorkspaceKind.Scratch"/> workspace when no match
-    /// is found.
-    /// </summary>
     Task<Workspace> GetOrCreateNamedWorkspaceAsync(
         string ownerId,
         string label,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Resolves a named workspace in the existing optional scope. Implementations
-    /// without scoped storage must fail closed rather than reuse an unscoped workspace.
-    /// </summary>
     Task<Workspace> GetOrCreateScopedWorkspaceAsync(
         string ownerId,
         string label,
@@ -107,24 +58,14 @@ public interface IWorkspaceLifecycleService
             ? GetOrCreateNamedWorkspaceAsync(ownerId, label, cancellationToken)
             : throw new NotSupportedException("Scoped workspace storage is unavailable.");
 
-    /// <summary>
-    /// Promotes an artifact from a temporary workspace to a durable destination.
-    /// </summary>
     Task<ArtifactPromotionResult> PromoteArtifactAsync(
         ArtifactPromotionRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Extends the expiration of a workspace, subject to policy limits.
-    /// </summary>
     Task<bool> ExtendWorkspaceExpirationAsync(
         string workspaceId,
         TimeSpan extension,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Runs a cleanup sweep: expires overdue workspaces and deletes those
-    /// already in expired state beyond the grace period.
-    /// </summary>
     Task<CleanupResult> RunCleanupAsync(CancellationToken cancellationToken = default);
 }

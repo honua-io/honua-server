@@ -8,13 +8,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Db.Postgres.Features.EnrichmentCatalog;
 
-/// <summary>
-/// Postgres-backed implementation of <see cref="IEnrichmentDatasetCatalogStore"/>
-/// (#2280) over the <c>honua.enrichment_datasets</c> registry table provisioned by
-/// migration 072. Mirrors the network-dataset registry store: all values are bound
-/// as parameters (never interpolated), and schema isolation for test schemas is
-/// handled upstream by the connection's <c>search_path</c>.
-/// </summary>
 internal sealed class PostgresEnrichmentDatasetCatalogStore : IEnrichmentDatasetCatalogStore
 {
     private const string SelectColumns =
@@ -24,14 +17,9 @@ internal sealed class PostgresEnrichmentDatasetCatalogStore : IEnrichmentDataset
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresEnrichmentDatasetCatalogStore"/> class.
-    /// </summary>
-    /// <param name="sessionFactory">Database session factory.</param>
     public PostgresEnrichmentDatasetCatalogStore(IDatabaseSessionFactory sessionFactory)
         => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<EnrichmentDatasetRecord>> ListAsync(CancellationToken cancellationToken = default)
     {
         const string sql = $"""
@@ -52,7 +40,6 @@ internal sealed class PostgresEnrichmentDatasetCatalogStore : IEnrichmentDataset
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<EnrichmentDatasetRecord?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -73,7 +60,6 @@ internal sealed class PostgresEnrichmentDatasetCatalogStore : IEnrichmentDataset
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<EnrichmentDatasetRecord> RegisterAsync(
         EnrichmentDatasetRecord dataset,
         CancellationToken cancellationToken = default)
@@ -103,7 +89,6 @@ internal sealed class PostgresEnrichmentDatasetCatalogStore : IEnrichmentDataset
             $"Enrichment dataset '{dataset.Id}' was registered but could not be read back.");
     }
 
-    /// <inheritdoc />
     public async Task<EnrichmentDatasetRecord?> UpdateAsync(
         EnrichmentDatasetRecord dataset,
         CancellationToken cancellationToken = default)
@@ -139,7 +124,6 @@ internal sealed class PostgresEnrichmentDatasetCatalogStore : IEnrichmentDataset
         return await GetAsync(dataset.Id, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);

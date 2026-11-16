@@ -15,9 +15,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services.FileGdb;
 
-/// <summary>
-/// Reads a FileGDB .gdbtable file, parsing the header, field definitions, and row data.
-/// </summary>
 internal sealed class GdbTableReader : IDisposable
 {
     private const uint DeadBeefSentinel = 0xEFBEADDE; // little-endian 0xDEADBEEF
@@ -29,30 +26,14 @@ internal sealed class GdbTableReader : IDisposable
     private readonly List<int> _nullableFieldIndices;
     private bool _disposed;
 
-    /// <summary>
-    /// Gets the file format version (3 or 4) from the file header.
-    /// </summary>
     public int Version { get; }
 
-    /// <summary>
-    /// Gets the number of valid (non-deleted) rows.
-    /// </summary>
     public int RowCount { get; }
 
-    /// <summary>
-    /// Gets the field definitions parsed from the table header.
-    /// </summary>
     public IReadOnlyList<GdbField> Fields => _fields;
 
-    /// <summary>
-    /// Gets whether string values are stored as UTF-8 (vs UTF-16).
-    /// Determined by bit 8 of the layer flags in the field description section.
-    /// </summary>
     public bool UseUtf8Strings { get; private set; }
 
-    /// <summary>
-    /// Gets the field description version from the field description section.
-    /// </summary>
     public int FieldDescVersion { get; private set; }
 
     private GdbTableReader(string tablePath)
@@ -130,17 +111,11 @@ internal sealed class GdbTableReader : IDisposable
         }
     }
 
-    /// <summary>
-    /// Opens and parses a FileGDB table from the given .gdbtable file path.
-    /// </summary>
     public static GdbTableReader Open(string tablePath)
     {
         return new GdbTableReader(tablePath);
     }
 
-    /// <summary>
-    /// Gets the geometry field definition, if any geometry field exists.
-    /// </summary>
     public GdbGeometryDef? GetGeometryDef()
     {
         for (var i = 0; i < _fields.Count; i++)
@@ -154,10 +129,6 @@ internal sealed class GdbTableReader : IDisposable
         return null;
     }
 
-    /// <summary>
-    /// Reads all rows from the table, returning field values as dictionaries.
-    /// Uses the .gdbtablx index file to locate row offsets.
-    /// </summary>
     public IEnumerable<Dictionary<string, object?>> ReadRows()
     {
         var indexPath = Path.ChangeExtension(_tablePath, ".gdbtablx");
@@ -786,7 +757,6 @@ internal sealed class GdbTableReader : IDisposable
         return 0;
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         if (!_disposed)

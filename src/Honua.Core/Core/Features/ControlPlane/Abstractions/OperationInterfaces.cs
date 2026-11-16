@@ -5,134 +5,55 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
-/// <summary>
-/// Base contract for durable control-plane operation stores backed by shared infrastructure such as Redis.
-/// </summary>
 public interface IOperationStore
 {
-    /// <summary>
-    /// Attempts to acquire a short-lived lease for reconciling an operation.
-    /// </summary>
-    /// <param name="operationId">Operation identifier.</param>
-    /// <param name="ownerId">Stable reconciler owner identifier.</param>
-    /// <param name="leaseDuration">Requested lease duration.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when the lease was acquired; otherwise false.</returns>
     Task<bool> TryAcquireLeaseAsync(
         string operationId,
         string ownerId,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Renews an existing reconciliation lease.
-    /// </summary>
-    /// <param name="operationId">Operation identifier.</param>
-    /// <param name="ownerId">Stable reconciler owner identifier.</param>
-    /// <param name="leaseDuration">Requested lease duration.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when the lease was renewed; otherwise false.</returns>
     Task<bool> RenewLeaseAsync(
         string operationId,
         string ownerId,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Releases an operation lease held by the caller.
-    /// </summary>
-    /// <param name="operationId">Operation identifier.</param>
-    /// <param name="ownerId">Stable reconciler owner identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReleaseLeaseAsync(
         string operationId,
         string ownerId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Durable store for reconcile-style workflow operations such as deploy and rollback.
-/// </summary>
 public interface IWorkflowOperationStore : IOperationStore
 {
-    /// <summary>
-    /// Attempts to create a new workflow operation record.
-    /// </summary>
-    /// <param name="operation">Workflow operation record.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when created; otherwise false if it already exists.</returns>
     Task<bool> TryCreateAsync(
         WorkflowOperationRecord operation,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves a workflow operation by identifier.
-    /// </summary>
-    /// <param name="operationId">Operation identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Workflow operation or null when not found.</returns>
     Task<WorkflowOperationRecord?> GetAsync(
         string operationId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves the most recent metadata release workflow operation for a release package identifier.
-    /// Historical retry attempts remain addressable by operation identifier.
-    /// </summary>
-    /// <param name="packageId">Metadata release package identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Workflow operation or null when not found.</returns>
     Task<WorkflowOperationRecord?> GetByMetadataPackageIdAsync(
         string packageId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Persists the latest workflow operation state.
-    /// </summary>
-    /// <param name="operation">Workflow operation record.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task SetAsync(
         WorkflowOperationRecord operation,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Atomically persists the workflow operation record only when the stored version
-    /// matches the record's <see cref="WorkflowOperationRecord.Version"/>. The stored
-    /// version is incremented on success. Returns <c>false</c> on version conflict,
-    /// indicating a concurrent write was detected and the caller should re-read.
-    /// </summary>
-    /// <param name="operation">Workflow operation record with the expected version.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when updated; false when a concurrent write was detected.</returns>
     Task<bool> TrySetAsync(
         WorkflowOperationRecord operation,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists active workflow operations, optionally filtered by kind.
-    /// </summary>
-    /// <param name="kind">Optional workflow kind filter.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Active workflow operations.</returns>
     Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(
         WorkflowOperationKind? kind = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Queries durable workflow operations newest-first with optional kind and status filters, drawing
-    /// from both the active-set index and the terminal-operations index. The default implementation
-    /// returns an empty page so lightweight test doubles need not implement paging; the durable
-    /// Redis-backed store overrides it.
-    /// </summary>
-    /// <param name="query">Filter and paging criteria.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A page of workflow operations ordered newest-first by creation time.</returns>
     Task<WorkflowOperationPage> QueryAsync(
         WorkflowOperationQuery query,
         CancellationToken cancellationToken = default)
@@ -145,27 +66,11 @@ public interface IWorkflowOperationStore : IOperationStore
             HasMore = false
         });
 
-    /// <summary>
-    /// Returns the most recent terminal-<see cref="WorkflowOperationStatus.Succeeded"/> deploy operation
-    /// for a target, or null when none exists. Backs the platform-release converge API's "what revision
-    /// last landed on this target" lookup. The default implementation returns null; the durable
-    /// Redis-backed store overrides it using a per-target succeeded index.
-    /// </summary>
-    /// <param name="targetId">Deploy target identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The most recent succeeded deploy operation for the target, or null.</returns>
     Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployByTargetAsync(
         string targetId,
         CancellationToken cancellationToken = default)
         => Task.FromResult<WorkflowOperationRecord?>(null);
 
-    /// <summary>
-    /// Whether a later deploy was created for the same target. Null means the store cannot prove
-    /// complete history since this operation was created, so callers must withhold stale actions.
-    /// </summary>
-    /// <param name="operation">The deploy being checked.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True for a later deploy, false for proven absence, or null when history is incomplete.</returns>
     Task<bool?> HasLaterDeployOfTargetAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
@@ -174,54 +79,22 @@ public interface IWorkflowOperationStore : IOperationStore
 
 public readonly record struct OwnedJobLease(string LeaseOperationId, string OwnerId);
 
-/// <summary>
-/// Durable store for run-to-completion execution jobs such as geoprocessing and ETL.
-/// </summary>
 public interface IExecutionJobStore : IOperationStore
 {
-    /// <summary>
-    /// Attempts to create a new execution job record.
-    /// </summary>
-    /// <param name="job">Execution job record.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when created; otherwise false if it already exists.</returns>
     Task<bool> TryCreateAsync(
         ExecutionJobRecord job,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves an execution job by identifier.
-    /// </summary>
-    /// <param name="operationId">Operation identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Execution job or null when not found.</returns>
     Task<ExecutionJobRecord?> GetAsync(
         string operationId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Persists the latest execution job state.
-    /// </summary>
-    /// <param name="job">Execution job record.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task SetAsync(
         ExecutionJobRecord job,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Atomically persists the execution job record only when the stored version
-    /// matches the record's <see cref="ExecutionJobRecord.Version"/>. The stored
-    /// version is incremented on success. Returns <c>false</c> on version conflict,
-    /// indicating a concurrent write was detected and the caller should re-read.
-    /// </summary>
-    /// <param name="job">Execution job record with the expected version.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when updated; false when a concurrent write was detected.</returns>
     Task<bool> TrySetAsync(
         ExecutionJobRecord job,
         TimeSpan? ttl = null,
@@ -236,118 +109,43 @@ public interface IExecutionJobStore : IOperationStore
         CancellationToken cancellationToken = default)
         => Task.FromResult(false);
 
-    /// <summary>
-    /// Queries durable execution jobs with cursor pagination.
-    /// </summary>
-    /// <param name="query">Filter and cursor criteria.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A page of execution jobs ordered newest first.</returns>
     Task<ExecutionJobPage> QueryAsync(
         ExecutionJobQuery query,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists active execution jobs, optionally filtered by job kind.
-    /// </summary>
-    /// <param name="kind">Optional execution job kind filter.</param>
-    /// <param name="limit">
-    /// Optional upper bound on the number of records materialised before authorization
-    /// filtering. When null the store returns all active jobs. Callers that display a
-    /// bounded page should supply <c>effectiveLimit</c> plus a small overfetch budget
-    /// so per-job authorization filters can discard some records without starving the
-    /// page (BH7-009).
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Active execution jobs.</returns>
     Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
         ExecutionJobKind? kind = null,
         int? limit = null,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Provider adapter for deploy and rollback workflows.
-/// </summary>
 public interface IDeployBackend
 {
-    /// <summary>
-    /// Provider adapter identifier used in control-plane records.
-    /// </summary>
     string BackendName { get; }
 
-    /// <summary>
-    /// Deploy target family implemented by this backend.
-    /// </summary>
     DeployTargetKind TargetKind { get; }
 
-    /// <summary>
-    /// Returns static and dynamic backend capabilities.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Backend capabilities.</returns>
     Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Plans a deploy before any provider mutation occurs.
-    /// </summary>
-    /// <param name="spec">Deploy specification.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Provider-aware deploy plan.</returns>
     Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Submits a workflow operation to the provider backend.
-    /// </summary>
-    /// <param name="operation">Workflow operation record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Submission result.</returns>
     Task<DeploySubmissionResult> StartAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Observes the current provider state for a previously submitted workflow operation.
-    /// </summary>
-    /// <param name="operation">Workflow operation record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Latest observation from the provider.</returns>
     Task<DeployObservation> ObserveAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Advances a staged rollout after external gates such as telemetry have passed.
-    /// Backends without staged traffic shifting can return their normal observation.
-    /// </summary>
-    /// <param name="operation">Workflow operation record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Latest observation from the provider.</returns>
     Task<DeployObservation> PromoteAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
         => ObserveAsync(operation, cancellationToken);
 
-    /// <summary>
-    /// Requests rollback for a workflow operation when supported by the backend.
-    /// </summary>
-    /// <param name="operation">Workflow operation record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Latest observation from the provider.</returns>
     Task<DeployObservation> RollbackAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Finalizes a completed post-activation observation window (honua-server#4618): retires any
-    /// retained previous-revision capacity a backend held open purely to serve deterministic recovery
-    /// (for example a co-located standby process) now that the window elapsed without a rollback
-    /// trigger. Backends that do not retain anything beyond their own <see cref="PromoteAsync"/> cutover
-    /// (their provider already owns retention/termination of the prior revision) can accept the default,
-    /// which is a no-op success.
-    /// </summary>
-    /// <param name="operation">Workflow operation record whose protection window just elapsed.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Latest observation from the provider; a <see cref="WorkflowOperationStatus.Failed"/> status leaves the operation in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> rather than silently dropping retained capacity.</returns>
     Task<DeployObservation> CompleteProtectionAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
@@ -360,155 +158,74 @@ public interface IDeployBackend
         });
 }
 
-/// <summary>A deploy backend that checkpoints preparation before activating a workload.</summary>
 public interface ICheckpointedDeployBackend
 {
-    /// <summary>The durable phase before preparation starts.</summary>
     public const string PendingPhase = "Deploy preparation pending.";
-    /// <summary>The durable phase while migration and preparation may have side effects.</summary>
     public const string PreparingPhase = "Deploy preparation in progress; outcome must be verified if interrupted.";
-    /// <summary>The durable phase after migration and revision identities have been recorded.</summary>
     public const string PreparedPhase = "Deploy preparation completed and migration outcome recorded.";
-    /// <summary>The durable phase after pre-cutover checks authorize the traffic shift.</summary>
     public const string CutoverPhase = "Deploy cutover authorized; submitting traffic shift.";
-    /// <summary>The durable phase after a canary ramp step is authorized.</summary>
     public const string RampPhase = "Deploy canary step authorized; submitting traffic shift.";
-    /// <summary>The durable phase after activation has been submitted.</summary>
     public const string ActivatedPhase = "Deploy activation submitted; awaiting convergence.";
 
-    /// <summary>True when this particular operation requires checkpointed preparation.</summary>
     bool RequiresCheckpoint(WorkflowOperationRecord operation);
     Task EnsurePreparationAdmittedAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
         => Task.CompletedTask;
-    /// <summary>Prepares the candidate and migration; callers must first persist PreparingPhase.</summary>
     Task<DeployCheckpoint> PrepareCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken);
-    /// <summary>Idempotently submits activation after the checkpoint has been persisted.</summary>
     Task<DeployObservation> ActivateCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken);
 }
 
-/// <summary>Provider identities recorded before workload activation.</summary>
 public sealed record DeployCheckpoint
 {
-    /// <summary>The registered candidate provider revision.</summary>
     public required string CandidateRevision { get; init; }
-    /// <summary>The verified stable revision used for rollback.</summary>
     public required string StableRevision { get; init; }
-    /// <summary>The pre-activation candidate service revision.</summary>
     public required string OriginalServiceRevision { get; init; }
 }
 
-/// <summary>Prepares durable per-attempt submission parameters before any provider side effect.</summary>
 public interface IBatchComputeSubmissionPreparer
 {
-    /// <summary>Creates server-owned parameters to persist in the dispatch CAS before StartAsync.</summary>
-    /// <param name="job">The next-attempt dispatch intent.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Parameters that must be durably merged into the job spec before submission.</returns>
     Task<IReadOnlyDictionary<string, string>?> PrepareSubmissionAsync(ExecutionJobRecord job, CancellationToken cancellationToken);
 
-    /// <summary>Finalizes preparation after its parameters are durably committed and before provider submission.</summary>
-    /// <param name="previous">Prior attempt snapshot.</param>
-    /// <param name="prepared">Durably prepared next-attempt snapshot.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
         => Task.CompletedTask;
 }
 
-/// <summary>
-/// Provider adapter for run-to-completion batch compute workloads.
-/// </summary>
 public interface IBatchComputeBackend
 {
-    /// <summary>
-    /// Provider adapter identifier used in control-plane records.
-    /// </summary>
     string BackendName { get; }
 
-    /// <summary>
-    /// Batch backend family implemented by this adapter.
-    /// </summary>
     BatchComputeTargetKind TargetKind { get; }
 
-    /// <summary>
-    /// Returns static and dynamic backend capabilities.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Backend capabilities.</returns>
     Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Submits an execution job to the provider backend.
-    /// </summary>
-    /// <param name="job">Execution job record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Submission result.</returns>
     Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Observes the current provider state for a submitted execution job.
-    /// </summary>
-    /// <param name="job">Execution job record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Latest observation from the provider.</returns>
     Task<BatchComputeObservation> ObserveAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Requests cancellation for a submitted execution job when supported by the backend.
-    /// </summary>
-    /// <param name="job">Execution job record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Latest observation from the provider.</returns>
     Task<BatchComputeObservation> CancelAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Reconciles durable workflow operations such as deploy and rollback against external provider state.
-/// </summary>
 public interface IWorkflowOperationReconciler
 {
-    /// <summary>
-    /// Reconciles a workflow operation by identifier.
-    /// </summary>
-    /// <param name="operationId">Workflow operation identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReconcileWorkflowOperationAsync(
         string operationId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Reconciles durable metadata-release workflow operations through the additive layer-evolution
-/// lifecycle. Distinct from <see cref="IWorkflowOperationReconciler"/> so the deploy and
-/// metadata-release reconcilers can be registered and resolved independently.
-/// </summary>
 public interface IMetadataReleaseOperationReconciler
 {
-    /// <summary>
-    /// Reconciles a metadata-release workflow operation by identifier.
-    /// </summary>
-    /// <param name="operationId">Metadata-release workflow operation identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReconcileMetadataReleaseAsync(
         string operationId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Reconciles durable execution jobs such as geoprocessing and ETL against external provider state.
-/// </summary>
 public interface IExecutionJobReconciler
 {
-    /// <summary>
-    /// Reconciles an execution job by identifier.
-    /// </summary>
-    /// <param name="operationId">Execution job identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReconcileExecutionJobAsync(
         string operationId,
         CancellationToken cancellationToken = default);

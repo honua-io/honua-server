@@ -91,10 +91,6 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
-    /// <summary>
-    /// Opens a read transaction with <c>jit = off</c>. LOCAL keeps the setting inside
-    /// this statement's transaction and out of the pooled session.
-    /// </summary>
     private static async Task<NpgsqlTransaction> BeginJitFreeTransactionAsync(
         NpgsqlConnection connection, CancellationToken cancellationToken)
     {

@@ -275,14 +275,6 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Outcome of a single InsertFeaturesAsync batch: insert/fail counters plus a
-    /// mapping from source ObjectId to the BIGSERIAL identifier assigned by the
-    /// imported table. Used to link attachments back to the persisted features.
-    /// <see cref="FirstFailureReason"/> is the redacted reason the batch's first failed row was
-    /// rejected (see <see cref="DescribeFeatureInsertFailure"/>), or <see langword="null"/> when no
-    /// row failed.
-    /// </summary>
     internal readonly record struct InsertFeaturesResult(
         int Inserted,
         int Failed,

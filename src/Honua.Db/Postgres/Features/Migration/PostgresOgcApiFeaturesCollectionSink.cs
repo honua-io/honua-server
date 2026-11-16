@@ -20,32 +20,12 @@ using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// PostgreSQL/PostGIS sink for OGC API Features collection imports.
-/// </summary>
-/// <remarks>
-/// The sink lazily provisions the target table with a stable schema:
-/// <list type="bullet">
-///   <item><c>source_feature_id text primary key</c> â€” natural key derived from the source feature id.</item>
-///   <item><c>properties jsonb</c> â€” verbatim GeoJSON properties payload.</item>
-///   <item><c>geometry geometry</c> â€” projected geometry parsed from the GeoJSON feature.</item>
-///   <item><c>imported_at timestamptz</c> â€” write timestamp used for telemetry.</item>
-/// </list>
-/// Inserts use <c>ON CONFLICT (source_feature_id) DO UPDATE</c> so re-running the importer against
-/// the same source/target combination converges to the same row set.
-/// </remarks>
 internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeaturesCollectionSink
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresOgcApiFeaturesCollectionSink> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresOgcApiFeaturesCollectionSink"/> class.
-    /// </summary>
-    /// <param name="dataSource">Configured Npgsql data source.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="schemaConfiguration">Schema layout; only its operational schemas are import targets.</param>
     public PostgresOgcApiFeaturesCollectionSink(
         NpgsqlDataSource dataSource,
         ILogger<PostgresOgcApiFeaturesCollectionSink> logger,
@@ -59,7 +39,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
-    /// <inheritdoc />
     public async Task EnsureTargetAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -124,7 +103,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         Log.TargetEnsured(_logger, target.CollectionId, targetLabel, sridLiteral);
     }
 
-    /// <inheritdoc />
     public async Task<int> WriteFeaturesAsync(
         OgcApiFeaturesSinkTarget target,
         IReadOnlyList<OgcApiFeaturesSinkFeature> features,
@@ -200,7 +178,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         return written;
     }
 
-    /// <inheritdoc />
     public async Task<string?> GetLastScopeSignatureAsync(
         OgcApiFeaturesSinkTarget target,
         CancellationToken cancellationToken)
@@ -234,7 +211,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         }
     }
 
-    /// <inheritdoc />
     public async Task RecordScopeSignatureAsync(
         OgcApiFeaturesSinkTarget target,
         string scopeSignature,
@@ -265,7 +241,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<OgcApiFeaturesSinkColumn>> GetTargetColumnsAsync(
         OgcApiFeaturesSinkTarget target,
         CancellationToken cancellationToken)
@@ -339,11 +314,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         };
     }
 
-    /// <summary>
-    /// Configured spelling of <paramref name="schema"/>. Quoted PostgreSQL identifiers keep case,
-    /// so a case variant of an operational schema must not be interpolated into SQL or it creates
-    /// a different schema from the one the allowlist accepted.
-    /// </summary>
     private string CanonicalTargetSchema(string schema)
     {
         AssertSafeIdentifier(schema, nameof(schema));

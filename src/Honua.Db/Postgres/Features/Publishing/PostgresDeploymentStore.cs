@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Publishing;
 
-/// <summary>
-/// Durable Postgres store for canonical deployment lifecycle records.
-/// </summary>
 internal sealed class PostgresDeploymentStore : IDeploymentStore
 {
     private const string Columns =

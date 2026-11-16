@@ -7,31 +7,19 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 
 namespace Honua.Geocoding.Features.Geocoding.Providers;
 
-/// <summary>
-/// Mock geocoding provider for testing and demonstration purposes
-/// </summary>
 internal sealed class MockGeocodeProvider : BaseGeocodeProvider
 {
-    /// <summary>
-    /// Mock provider name constant
-    /// </summary>
     public const string ProviderName = "mock";
 
     private readonly MockGeocodeProviderConfiguration _configuration;
 
-    /// <summary>
-    /// Initialize a new mock geocode provider
-    /// </summary>
-    /// <param name="configuration">Provider configuration</param>
     public MockGeocodeProvider(MockGeocodeProviderConfiguration? configuration = null)
     {
         _configuration = configuration ?? new MockGeocodeProviderConfiguration();
     }
 
-    /// <inheritdoc />
     public override string Name => ProviderName;
 
-    /// <inheritdoc />
     public override GeocodeProviderCapabilities Capabilities => new(
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
@@ -47,7 +35,6 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
         DefaultTimeoutSeconds = _configuration.TimeoutSeconds
     };
 
-    /// <inheritdoc />
     public override Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -73,7 +60,6 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
         return Task.FromResult<IReadOnlyList<GeocodeCandidate>>(CreateMockForwardResults(request));
     }
 
-    /// <inheritdoc />
     public override Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -99,7 +85,6 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
         return Task.FromResult(CreateMockReverseResult(request));
     }
 
-    /// <inheritdoc />
     protected override Task<IReadOnlyList<GeocodeSuggestion>> SuggestCoreAsync(
         SuggestGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -125,7 +110,6 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
         return Task.FromResult<IReadOnlyList<GeocodeSuggestion>>(CreateMockSuggestions(request));
     }
 
-    /// <inheritdoc />
     protected override Task<IReadOnlyList<GeocodeCandidate>> BatchGeocodeCoreAsync(
         BatchGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -151,7 +135,6 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
         return Task.FromResult<IReadOnlyList<GeocodeCandidate>>(CreateMockBatchResults(request));
     }
 
-    /// <inheritdoc />
     protected override Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
         if (_configuration.SimulateFailure)
@@ -296,43 +279,19 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
     }
 }
 
-/// <summary>
-/// Configuration for the mock geocoding provider
-/// </summary>
 public sealed record MockGeocodeProviderConfiguration : GeocodeProviderConfiguration
 {
-    /// <summary>
-    /// Whether to enable suggest functionality
-    /// </summary>
     public bool EnableSuggest { get; init; } = true;
 
-    /// <summary>
-    /// Whether to enable batch functionality
-    /// </summary>
     public bool EnableBatch { get; init; } = true;
 
-    /// <summary>
-    /// Maximum batch size
-    /// </summary>
     public int MaxBatchSize { get; init; } = 100;
 
-    /// <summary>
-    /// Whether to simulate provider failures
-    /// </summary>
     public bool SimulateFailure { get; init; }
 
-    /// <summary>
-    /// Whether to return no results
-    /// </summary>
     public bool ReturnNoResults { get; init; }
 
-    /// <summary>
-    /// Delay in milliseconds to simulate processing time
-    /// </summary>
     public int DelayMs { get; init; }
 
-    /// <summary>
-    /// Number of results to return
-    /// </summary>
     public int ResultCount { get; init; } = 3;
 }

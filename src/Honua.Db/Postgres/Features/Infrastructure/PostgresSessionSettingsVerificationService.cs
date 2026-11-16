@@ -11,13 +11,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// In <c>Database:SessionSettings:Mode=role-defaults</c>, reads the effective session settings
-/// once on a fresh connection at startup and warns (never fails) when the database role's
-/// defaults are unset or differ from <c>Limits:Connections</c>, naming the exact
-/// <c>ALTER ROLE</c> statements to run. The server never runs <c>ALTER ROLE</c> itself
-/// (honua-server#5870).
-/// </summary>
 internal sealed class PostgresSessionSettingsVerificationService(
     Func<NpgsqlDataSource> dataSourceFactory,
     ConnectionLimits limits,
@@ -61,9 +54,6 @@ internal sealed class PostgresSessionSettingsVerificationService(
     }
 }
 
-/// <summary>
-/// Reads and compares the effective session settings against the configured limits.
-/// </summary>
 internal static class PostgresSessionSettingsVerifier
 {
     internal const string LockTimeout = "lock_timeout";
@@ -74,11 +64,6 @@ internal static class PostgresSessionSettingsVerifier
     private static readonly string[] SettingNames =
         [LockTimeout, StatementTimeout, IdleInTransactionSessionTimeout, SearchPath];
 
-    /// <summary>
-    /// Opens one connection, reads <c>current_user</c> and the settings from
-    /// <c>pg_settings</c> (timeouts in milliseconds), and evaluates them. The query issues no
-    /// <c>SET</c>, so it does not pin a proxied connection.
-    /// </summary>
     public static async Task<DatabaseSessionSettingsSnapshot> VerifyAsync(
         NpgsqlDataSource dataSource,
         ConnectionLimits limits,
@@ -107,16 +92,6 @@ internal static class PostgresSessionSettingsVerifier
         return Evaluate(role, settings, limits, defaultSchema);
     }
 
-    /// <summary>
-    /// Compares observed settings with the values <c>connection</c> mode would set. Timeouts
-    /// are compared in whole seconds (the same truncation <c>connection</c> mode applies);
-    /// <c>search_path</c> is checked only when <c>Database:Schema</c> is configured.
-    /// </summary>
-    /// <param name="role">The database role (<c>current_user</c>).</param>
-    /// <param name="observed">Setting name to raw <c>pg_settings.setting</c> value.</param>
-    /// <param name="limits">The configured connection limits.</param>
-    /// <param name="defaultSchema">The configured <c>Database:Schema</c>, if any.</param>
-    /// <returns>The verification snapshot.</returns>
     public static DatabaseSessionSettingsSnapshot Evaluate(
         string role,
         IReadOnlyDictionary<string, string?> observed,
@@ -157,11 +132,6 @@ internal static class PostgresSessionSettingsVerifier
         };
     }
 
-    /// <summary>
-    /// Logs a verification snapshot: one warning per drifted setting, or one information line.
-    /// </summary>
-    /// <param name="logger">The logger.</param>
-    /// <param name="snapshot">The snapshot.</param>
     public static void Log(ILogger logger, DatabaseSessionSettingsSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(logger);
@@ -246,9 +216,6 @@ internal static class PostgresSessionSettingsVerifier
             : part.ToLowerInvariant();
 }
 
-/// <summary>
-/// Source-generated logging for <see cref="PostgresSessionSettingsVerificationService"/>.
-/// </summary>
 internal static partial class PostgresSessionSettingsVerificationLog
 {
     [LoggerMessage(

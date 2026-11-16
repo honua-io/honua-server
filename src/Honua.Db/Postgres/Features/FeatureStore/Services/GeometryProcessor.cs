@@ -9,9 +9,6 @@ using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.Ge
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Processes geometry operations and SQL expression generation for PostgreSQL PostGIS
-/// </summary>
 internal sealed class GeometryProcessor : IGeometryProcessor
 {
     private readonly int _geoJsonTextPrecision;
@@ -162,9 +159,6 @@ internal sealed class GeometryProcessor : IGeometryProcessor
     public double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
         DistanceConversions.ToMeters(distance, unit);
 
-    /// <summary>
-    /// Gets the geometry operand for geography operations (WGS84)
-    /// </summary>
     public string GetGeographyOperand(CoreGeometryStorageType storageType, int? layerSrid)
     {
         var geometryOperand = storageType switch

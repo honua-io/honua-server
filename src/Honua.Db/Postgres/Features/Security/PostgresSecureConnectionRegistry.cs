@@ -11,12 +11,6 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Db.Postgres.Features.Security;
 
-/// <summary>
-/// PostgreSQL implementation of the secure connection registry.
-/// </summary>
-/// <remarks>
-/// Stores encrypted database connection configurations in PostgreSQL with validation.
-/// </remarks>
 internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegistry
 {
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
@@ -353,17 +347,6 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         }
     }
 
-    /// <summary>
-    /// Checks that the connection configuration exists and is marked active.
-    /// </summary>
-    /// <remarks>
-    /// This is a metadata/activity check only — it does NOT open the target
-    /// database. Resolving a usable connection string requires decryption and
-    /// secret resolution, which live in <c>ISecureConnectionResolver</c> (a
-    /// consumer of this registry); real connectivity probes go through
-    /// <c>ISecureConnectionResolver.TestConnectionHealthAsync</c> or the
-    /// per-provider <c>IConnectionHealthTester</c>/<c>IConnectionDriver</c>.
-    /// </remarks>
     public async Task<bool> TestConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
         var connection = await GetConnectionAsync(connectionId, cancellationToken);
@@ -474,13 +457,11 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
     // Interface implementations that delegate to existing methods
 
-    /// <inheritdoc />
     public async Task RegisterConnectionAsync(DataConnection connection)
     {
         await CreateConnectionAsync(connection);
     }
 
-    /// <inheritdoc />
     public async Task<DataConnection?> GetConnectionAsync(string connectionId)
     {
         if (Guid.TryParse(connectionId, out var guid))
@@ -490,13 +471,11 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         return null;
     }
 
-    /// <inheritdoc />
     public async Task<IEnumerable<DataConnection>> GetAllConnectionsAsync()
     {
         return await GetActiveConnectionsAsync();
     }
 
-    /// <inheritdoc />
     public async Task<bool> RemoveConnectionAsync(string connectionId)
     {
         if (Guid.TryParse(connectionId, out var guid))
@@ -506,15 +485,6 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         return false;
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// The registry cannot probe the target databases itself (see
-    /// <see cref="TestConnectionAsync(Guid, CancellationToken)"/>), so instead of
-    /// fabricating <see cref="ConnectionHealthStatus.Healthy"/> from the IsActive
-    /// flag it reports the stored <c>health_status</c> — the outcome of the most
-    /// recent real probe recorded via
-    /// <see cref="UpdateHealthStatusAsync(Guid, ConnectionHealthStatus, CancellationToken)"/>.
-    /// </remarks>
     public async Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync()
     {
         var connections = await GetActiveConnectionsAsync();
@@ -530,9 +500,6 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
     // Additional interface methods required by ISecureConnectionRegistry
 
-    /// <summary>
-    /// Gets a connection by ID with cancellation support (overload).
-    /// </summary>
     public async Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(connectionId))
@@ -545,9 +512,6 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         return await GetConnectionByNameAsync(connectionId, cancellationToken);
     }
 
-    /// <summary>
-    /// Updates the health status of a connection using string ID and bool status.
-    /// </summary>
     public async Task UpdateHealthStatusAsync(string connectionId, bool isHealthy, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionId))
@@ -560,17 +524,6 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         }
     }
 
-    /// <summary>
-    /// Gets all active connections (interface compatibility wrapper).
-    /// </summary>
-    /// <remarks>
-    /// The public <see cref="GetActiveConnectionsAsync(CancellationToken)"/> returns
-    /// <see cref="IReadOnlyList{T}"/> while the interface contract is
-    /// <see cref="IEnumerable{T}"/>. We use an async/await chain (instead of the previous
-    /// <c>ContinueWith(...).Result</c> pattern) so cancellation and synchronization
-    /// context are preserved, and so failures surface as the underlying exception
-    /// rather than an <see cref="AggregateException"/>.
-    /// </remarks>
     async Task<IEnumerable<DataConnection>> ISecureConnectionRegistry.GetActiveConnectionsAsync(CancellationToken cancellationToken)
     {
         return await GetActiveConnectionsAsync(cancellationToken).ConfigureAwait(false);

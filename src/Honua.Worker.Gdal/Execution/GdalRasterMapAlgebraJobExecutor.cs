@@ -10,33 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>raster.map-algebra</c>
-/// process: evaluates an ALLOW-LISTED arithmetic/logical expression across one or
-/// more input rasters, backed by the GDAL <c>gdal_calc.py</c> CLI (#2239).
-///
-/// <para>
-/// Inputs are supplied inline on the <c>sources</c> parameter as a <c>|</c>-separated
-/// list of base64-encoded GeoTIFFs (1–26). Each source is bound to a single-letter
-/// band variable A, B, C, … in list order. The <c>expression</c> is validated against
-/// a strict allow-list (single-uppercase band variables, numeric literals, a fixed set
-/// of arithmetic/logical operators, and a small allow-list of safe NumPy functions)
-/// BEFORE it ever reaches the CLI — <c>gdal_calc.py</c> evaluates the calc string with
-/// <c>eval()</c>, so an un-vetted expression would be remote code execution. The
-/// allow-list never shell-evaluates arbitrary input.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterMapAlgebraJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterMapAlgebraJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.map-algebra";
 
-    /// <summary>Separator between base64 raster entries in the <c>sources</c> input.</summary>
     public const string SourceSeparator = "|";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -44,17 +24,13 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

@@ -10,29 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the catalog <c>raster.reproject</c>
-/// process. Distinct from <see cref="GdalRasterReprojectJobExecutor"/>
-/// (which handles the direct <c>gdal.gdalwarp</c> id with <c>targetSrs</c> text
-/// CRS tokens): this executor consumes the catalog's <c>targetSrid</c> (positive
-/// 32-bit SRID) + <c>resampling</c> enum and shells to the same <c>gdalwarp</c>
-/// CLI. Kept separate so the two surface contracts (direct gdal.* vs the
-/// catalog's raster.* idioms) cannot drift from each other's argument parsing.
-/// </summary>
 internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterReprojectCatalogJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.reproject";
 
-    /// <summary>
-    /// The conversion-idiom alias this executor also handles (#2138). Shares the
-    /// identical <c>targetSrid</c> + <c>resampling</c> gdalwarp contract with
-    /// <see cref="HandledProcessId"/>; the conversion catalog entry exists so
-    /// adapters can expose an explicit "reproject to another CRS" conversion.
-    /// </summary>
     public const string ConversionProcessId = "conversion.raster-reproject";
 
     private static readonly FrozenSet<string> HandledIds =
@@ -59,20 +43,13 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             ["lanczos"] = "lanczos",
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId, ConversionProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

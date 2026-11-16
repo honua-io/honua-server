@@ -85,18 +85,8 @@ using StackExchange.Redis;
 
 namespace Honua.Db.Postgres;
 
-/// <summary>
-/// Dependency injection extensions for PostgreSQL services
-/// </summary>
 internal static partial class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Add PostgreSQL services including feature store and health checking
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Configuration to get connection string from</param>
-    /// <param name="coreSchemaMigrations">Application-owned migration identities to verify</param>
-    /// <returns>Updated service collection</returns>
     internal static IServiceCollection AddPostgreSqlServices(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -1053,17 +1043,6 @@ internal static partial class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers only what applying migrations needs: the read-only journal/physical-schema guard,
-    /// the migration runner, the migration-safety options and the PostGIS preflight checker. The
-    /// serving composition calls it from <see cref="AddPostgreSqlServices"/>; the migrate-only host
-    /// (<c>HONUA_MIGRATE_ONLY=true</c>, honua-server#6470) calls it on its own, so it composes no data
-    /// providers, caches or background services.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Configuration carrying <c>Database:*</c> settings.</param>
-    /// <param name="coreSchemaMigrations">Application-owned migration identities to verify.</param>
-    /// <returns>Updated service collection.</returns>
     internal static IServiceCollection AddPostgresMigrationServices(
         this IServiceCollection services,
         IConfiguration configuration,

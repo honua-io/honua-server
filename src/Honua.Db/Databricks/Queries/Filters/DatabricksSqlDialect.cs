@@ -6,26 +6,14 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Queries.Filters;
 
-/// <summary>
-/// Databricks SQL (Spark SQL) implementation of <see cref="ISqlDialect"/>.
-/// </summary>
-/// <remarks>
-/// Identifiers are backtick-quoted with embedded backticks doubled. The Databricks
-/// SQL Statement Execution API binds named markers using a leading colon
-/// (<c>:name</c>), so <see cref="ParameterPrefix"/> is <c>:</c>.
-/// </remarks>
 internal sealed class DatabricksSqlDialect : ISqlDialect
 {
-    /// <summary>Singleton instance — the dialect carries no per-call state.</summary>
     public static readonly DatabricksSqlDialect Instance = new();
 
-    /// <inheritdoc />
     public string Name => "databricks";
 
-    /// <inheritdoc />
     public string ParameterPrefix => ":";
 
-    /// <inheritdoc />
     public string QuoteIdentifier(string identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -36,7 +24,6 @@ internal sealed class DatabricksSqlDialect : ISqlDialect
         return DatabricksIdentifier.Quote(identifier);
     }
 
-    /// <inheritdoc />
     public string QuoteLiteral(string literal)
     {
         ArgumentNullException.ThrowIfNull(literal);

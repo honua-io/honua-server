@@ -10,17 +10,8 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Shared constraint recovery for providers that cannot execute a Postgres-translated
-/// <see cref="FeatureQuery.SqlFilter"/>. SQL Server and Oracle both call this so an object-id
-/// lift cannot accept a different attribute's <c>IN</c> list on only one of them.
-/// </summary>
 internal static partial class NonPostgresObjectIdConstraintNormalizer
 {
-    /// <summary>
-    /// Proves <see cref="FeatureQuery.Where"/> against the shared translator when that service
-    /// is available, then recovers object ids or fails closed.
-    /// </summary>
     public static FeatureQuery Prepare(
         FeatureQuery query,
         string providerLabel,
@@ -54,12 +45,6 @@ internal static partial class NonPostgresObjectIdConstraintNormalizer
         return Normalize(query, translation, proved, providerLabel, primaryKeyColumn);
     }
 
-    /// <summary>
-    /// Drops a filter that is exactly the proved WHERE translation. Lifts a pure integral
-    /// <c>IN</c> list only when its target is <c>objectid</c> or <paramref name="primaryKeyColumn"/>.
-    /// <c>NOT IN</c> and any other attribute stay in <see cref="FeatureQuery.SqlFilter"/> so the
-    /// provider can reject them instead of querying the wrong rows.
-    /// </summary>
     public static FeatureQuery Normalize(
         FeatureQuery query,
         SqlFragment? translationOfWhere,

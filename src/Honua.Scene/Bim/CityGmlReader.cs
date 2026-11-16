@@ -7,63 +7,12 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.Bim;
 
-/// <summary>
-/// Pure-managed reader for the CityGML building subset (#1207). Parses
-/// <c>bldg:Building</c> features, their boundary surfaces (<c>WallSurface</c> /
-/// <c>RoofSurface</c> / <c>GroundSurface</c> / ...) and the generic/CityGML
-/// attributes attached at the building and surface levels into a
-/// <see cref="CityGmlModel"/> carrying Building Scene Layer semantics.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The reader is namespace-tolerant: it matches on XML local names so a
-/// document may use either CityGML 1.0 (<c>http://www.opengis.net/citygml/1.0</c>)
-/// or 2.0 (<c>http://www.opengis.net/citygml/2.0</c>) namespace prefixes, and it
-/// reads <c>gml:posList</c> as well as the older <c>gml:pos</c> coordinate
-/// encoding. Geometry is taken from the boundary surfaces' exterior
-/// <c>gml:LinearRing</c>s at any LOD; inner rings are skipped (a documented v1
-/// limitation).
-/// </para>
-/// <para>
-/// The reader does not transform CRS; the BSL builder takes a caller-supplied
-/// projection delegate so a projected-CRS document can be placed on the
-/// ellipsoid by the tiling stage, mirroring the point-cloud pipeline. Output is
-/// deterministic: features keep document order. Parsing is hardened against XXE
-/// (no DTD processing, no external entity resolution).
-/// </para>
-/// </remarks>
 public static class CityGmlReader
 {
-    /// <summary>
-    /// Upper bound on the total number of characters the XML reader will accept
-    /// from a single CityGML document. Caps memory amplification from an
-    /// oversized-but-well-formed document (the whole tree is materialized by
-    /// <see cref="XDocument"/>). 256 MiB of characters comfortably exceeds any
-    /// realistic single-building-tile CityGML payload while bounding the parse.
-    /// </summary>
     private const long MaxDocumentCharacters = 256L * 1024 * 1024;
 
-    /// <summary>
-    /// Upper bound on the number of bytes buffered from a CityGML
-    /// <see cref="Stream"/> before parsing. The stream overload must materialize
-    /// the bytes once (the depth pre-scan and the load both re-read them), but the
-    /// copy is bounded so an oversized stream is rejected as a
-    /// <see cref="CityGmlFormatException"/> DURING buffering rather than
-    /// exhausting process memory before the parser-level
-    /// <see cref="MaxDocumentCharacters"/> cap can ever apply. Matches the char
-    /// cap (256 MiB) so a document that would survive the char cap is not rejected
-    /// by the byte cap.
-    /// </summary>
     private const long MaxDocumentBytes = 256L * 1024 * 1024;
 
-    /// <summary>
-    /// Upper bound on XML element nesting depth. A deeply-nested but otherwise
-    /// well-formed document would make <see cref="XDocument.Load(System.Xml.XmlReader)"/>
-    /// recurse until it StackOverflows — an uncatchable failure that kills the
-    /// process. The depth is bounded BEFORE materialization by a streaming
-    /// pre-scan so <c>XDocument.Load</c> never builds a pathological tree. 256
-    /// levels comfortably exceeds any realistic CityGML feature nesting.
-    /// </summary>
     private const int MaxElementDepth = 256;
 
     private static System.Xml.XmlReaderSettings CreateReaderSettings() => new()
@@ -84,25 +33,12 @@ public static class CityGmlReader
         IgnoreProcessingInstructions = true
     };
 
-    /// <summary>
-    /// Parses a CityGML document from a UTF-8 byte buffer into a
-    /// <see cref="CityGmlModel"/>.
-    /// </summary>
-    /// <param name="source">The CityGML document bytes (UTF-8 or BOM-prefixed).</param>
-    /// <returns>The parsed building model with BSL hierarchy and attributes.</returns>
-    /// <exception cref="CityGmlFormatException">The document is malformed, exceeds the nesting-depth cap, or contains no parseable building geometry.</exception>
     public static CityGmlModel Read(byte[] source)
     {
         ArgumentNullException.ThrowIfNull(source);
         return ReadFromBuffer(source, source.Length);
     }
 
-    /// <summary>
-    /// Parses a CityGML document from a stream into a <see cref="CityGmlModel"/>.
-    /// </summary>
-    /// <param name="source">The CityGML document stream.</param>
-    /// <returns>The parsed building model with BSL hierarchy and attributes.</returns>
-    /// <exception cref="CityGmlFormatException">The document is malformed, exceeds the nesting-depth cap, or contains no parseable building geometry.</exception>
     public static CityGmlModel Read(Stream source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -116,13 +52,6 @@ public static class CityGmlReader
         return ReadFromBuffer(buffer.GetBuffer(), (int)buffer.Length);
     }
 
-    /// <summary>
-    /// Copies <paramref name="source"/> into a growable buffer, throwing a
-    /// <see cref="CityGmlFormatException"/> the moment the running byte total
-    /// exceeds <paramref name="maxBytes"/>. This bounds memory amplification on
-    /// the public stream entry point BEFORE the document is fully materialized,
-    /// mirroring the bounded-copy guard used by the I3S reader.
-    /// </summary>
     private static MemoryStream CopyWithLimit(Stream source, long maxBytes)
     {
         var buffer = new MemoryStream();
@@ -222,14 +151,6 @@ public static class CityGmlReader
         };
     }
 
-    /// <summary>
-    /// Streams the document with a depth-tracking <see cref="System.Xml.XmlReader"/>
-    /// (no tree materialization) and throws <see cref="CityGmlFormatException"/>
-    /// if element nesting exceeds <see cref="MaxElementDepth"/>. This guard runs
-    /// BEFORE <see cref="XDocument.Load(System.Xml.XmlReader)"/> so a deeply
-    /// nested payload cannot StackOverflow the recursive tree build (an
-    /// uncatchable, process-killing failure).
-    /// </summary>
     private static void EnsureDepthWithinLimit(byte[] source, int length)
     {
         try
@@ -325,12 +246,6 @@ public static class CityGmlReader
         };
     }
 
-    /// <summary>
-    /// Yields descendants of <paramref name="building"/> without crossing into a
-    /// nested <c>Building</c>/<c>BuildingPart</c> subtree (those are processed by
-    /// the top-level descendant walk so their surfaces are attributed to the
-    /// correct owner).
-    /// </summary>
     private static IEnumerable<XElement> DescendantsUntilNestedBuilding(XElement building)
     {
         foreach (var child in building.Elements())
@@ -495,11 +410,6 @@ public static class CityGmlReader
         }
     }
 
-    /// <summary>
-    /// Maps a CityGML surface type to a BIM discipline / Building Scene Layer
-    /// sub-layer. Architectural envelope surfaces map to <c>Architectural</c>;
-    /// load-bearing slabs (ground/floor/ceiling) map to <c>Structural</c>.
-    /// </summary>
     private static string MapDiscipline(string surfaceType) => surfaceType switch
     {
         "GroundSurface" => "Structural",
@@ -554,32 +464,19 @@ public static class CityGmlReader
         => double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 }
 
-/// <summary>
-/// Raised when a CityGML buffer is malformed or carries no parseable building
-/// geometry. Carries a stable <see cref="SceneGenerationErrorCodes"/> code so an
-/// ingest executor can surface a problem-detail without leaking parser internals.
-/// </summary>
 public sealed class CityGmlFormatException : Exception
 {
-    /// <summary>Creates a <see cref="CityGmlFormatException"/>.</summary>
-    /// <param name="code">Stable scene error code (see <see cref="SceneGenerationErrorCodes"/>).</param>
-    /// <param name="message">Human-readable, non-sensitive description.</param>
     public CityGmlFormatException(string code, string message)
         : base(message)
     {
         Code = code;
     }
 
-    /// <summary>Creates a <see cref="CityGmlFormatException"/> wrapping an inner cause.</summary>
-    /// <param name="code">Stable scene error code (see <see cref="SceneGenerationErrorCodes"/>).</param>
-    /// <param name="message">Human-readable, non-sensitive description.</param>
-    /// <param name="innerException">The underlying parse failure.</param>
     public CityGmlFormatException(string code, string message, Exception innerException)
         : base(message, innerException)
     {
         Code = code;
     }
 
-    /// <summary>Stable error code forwarded through problem-detail helpers.</summary>
     public string Code { get; }
 }

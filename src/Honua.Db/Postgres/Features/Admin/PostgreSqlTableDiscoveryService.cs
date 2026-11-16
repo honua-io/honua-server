@@ -13,12 +13,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Admin;
 
-/// <summary>
-/// PostgreSQL implementation of table discovery service.
-/// </summary>
-/// <remarks>
-/// Initialize the PostgreSQL table discovery service.
-/// </remarks>
 internal sealed class PostgreSqlTableDiscoveryService(
     ILogger<PostgreSqlTableDiscoveryService> logger,
     ISchemaContext? schemaContext = null,
@@ -31,7 +25,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         PostgresSchemaConfiguration.DefaultDataSchema,
         [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
 
-    /// <inheritdoc />
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
         string connectionString,
         CancellationToken cancellationToken = default)
@@ -56,7 +49,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
     }
 
-    /// <inheritdoc />
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
         DbConnection connection,
         CancellationToken cancellationToken = default)
@@ -83,7 +75,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
     }
 
-    /// <inheritdoc />
     public async Task<TableInfo?> DiscoverNonSpatialTableAsync(
         DbConnection connection,
         string schema,
@@ -226,13 +217,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         return tables;
     }
 
-    /// <summary>
-    /// Targeted single-table variant of <see cref="DiscoverPostGisTablesAsync(string, CancellationToken)"/>
-    /// using the same schema-exclusion rules. Resolving one table through the
-    /// full-catalog discovery issues row-count and column-introspection queries
-    /// for EVERY spatial table in the database; this looks up just the requested
-    /// schema.table with a constant number of queries.
-    /// </summary>
     internal async Task<TableInfo?> DiscoverPostGisTableAsync(
         string connectionString,
         string schema,
@@ -346,9 +330,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         };
     }
 
-    /// <summary>
-    /// Get estimated row count for a table using PostgreSQL statistics.
-    /// </summary>
     private async Task<long?> GetEstimatedRowCountAsync(
         NpgsqlConnection connection,
         string schema,
@@ -385,9 +366,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
     }
 
-    /// <summary>
-    /// Get all non-geometry columns for a table.
-    /// </summary>
     private async Task<List<ColumnInfo>> GetTableColumnsAsync(
         NpgsqlConnection connection,
         string schema,

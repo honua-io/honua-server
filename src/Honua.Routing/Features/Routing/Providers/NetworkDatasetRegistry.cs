@@ -9,23 +9,6 @@ using System.Text.Json;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Postgres-backed network-dataset registry (Phase 0 of #1882). Resolves a dataset
-/// id to its edge/vertex table names from the <c>honua.network_datasets</c> registry
-/// table (provisioned by migration 062) when present, falling back to the built-in
-/// <see cref="NetworkDataset.Default"/> so the default deployment behaves exactly as
-/// before (zero behaviour change). There is no editing surface in Phase 0 — the
-/// registry is read-only here; later phases add edge/vertex CRUD through the admin
-/// API.
-/// </summary>
-/// <remarks>
-/// The resolved table names are interpolated into the pgRouting edges-SQL string
-/// (which cannot reference bound parameters), so every name returned to the provider
-/// is validated against a strict schema-qualified-identifier pattern by
-/// <see cref="ValidateIdentifier"/>; a registry row with a non-conforming table name
-/// is rejected rather than embedded. The built-in default's names are trusted
-/// constants.
-/// </remarks>
 internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
 {
     private static readonly string[] PgRoutingNumericDataTypes =
@@ -41,18 +24,12 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
     private readonly IDatabaseSessionFactory _sessionFactory;
     private readonly ILogger<NetworkDatasetRegistry> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NetworkDatasetRegistry"/> class.
-    /// </summary>
-    /// <param name="sessionFactory">Shared database session factory.</param>
-    /// <param name="logger">Logger for structured diagnostics.</param>
     public NetworkDatasetRegistry(IDatabaseSessionFactory sessionFactory, ILogger<NetworkDatasetRegistry> logger)
     {
         _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<NetworkDataset?> ResolveAsync(
         string datasetId,
         CancellationToken cancellationToken = default)
@@ -260,12 +237,6 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
         }
     }
 
-    /// <summary>
-    /// Validates that a registered table name is a safe schema-qualified identifier
-    /// before it is interpolated into the pgRouting edges-SQL string. Throws
-    /// <see cref="InvalidOperationException"/> on a non-conforming name. Shares the rule
-    /// with the admin editing surface via <see cref="NetworkDatasetValidation"/>.
-    /// </summary>
     private static void ValidateIdentifier(string identifier, string role)
     {
         if (!NetworkDatasetValidation.IsValidTableIdentifier(identifier))

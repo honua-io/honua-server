@@ -20,9 +20,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Service for importing GeoServer configuration into Honua.
-/// </summary>
 internal sealed partial class GeoServerImportService : IGeoServerImportService
 {
     private const int PostgresIdentifierMaxLength = 63;
@@ -57,7 +54,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         _styleApplicator = styleApplicator;
     }
 
-    /// <inheritdoc />
     public Task<GeoServerServiceInfo> DiscoverServiceAsync(
         GeoServerDiscoveryRequest request,
         CancellationToken cancellationToken = default)
@@ -76,7 +72,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
         GeoServerDiscoveryRequest request,
         CancellationToken cancellationToken = default)
@@ -147,7 +142,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
     }
 
-    /// <inheritdoc />
     public Task<GeoServerImportResult> ImportConfigurationAsync(
         GeoServerImportRequest request,
         CancellationToken cancellationToken = default)
@@ -155,7 +149,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         return ImportConfigurationAsync(request, null, cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<GeoServerImportResult> ImportConfigurationAsync(
         GeoServerImportRequest request,
         IProgress<GeoServerImportProgress>? progress,
@@ -663,13 +656,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         public int LayerCount { get; init; }
         public int StyleCount { get; init; }
 
-        /// <summary>
-        /// Defensive scoping set used by catalog-apply write sites to reject any
-        /// resource whose source workspace falls outside the operator's requested
-        /// scope (issue #1098). The set is derived from the filtered workspace
-        /// list so the apply path stays self-consistent even if a future plan
-        /// builder forwards a step whose workspace was excluded by the filter.
-        /// </summary>
         public HashSet<string> ScopedWorkspaceNames { get; init; } =
             new(StringComparer.OrdinalIgnoreCase);
     }

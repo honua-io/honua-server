@@ -8,58 +8,14 @@ using Domain = Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Scene;
 
-/// <summary>
-/// Projects a 3D Tiles <see cref="Domain.TilesetDocument"/> tree into fixed-size
-/// Esri I3S 1.7 node pages (#1809). The flexible 3D Tiles tree is normalized into
-/// the I3S HLOD node-page model: a flattened, root-first node array partitioned
-/// into pages of <see cref="NodesPerPage"/> entries, each node carrying an
-/// oriented bounding box in the index CRS, an LOD threshold derived from the
-/// source geometric error, parent/child references by global node index, and
-/// per-node geometry/attribute references by resource index.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Node identity and ordering are inherited from <see cref="SceneTileCatalog"/>
-/// (deterministic depth-first, root-first traversal), so the same tileset always
-/// yields the same node-page layout and the global node index is stable across
-/// requests. The global index doubles as the I3S resource id a client substitutes
-/// into geometry/attribute/texture node-resource URLs.
-/// </para>
-/// <para>
-/// Only nodes that reference renderable content (a 3D Tiles
-/// <c>content.uri</c>) advertise a <c>mesh</c> block; pure grouping nodes carry
-/// bounds and child references but no fetchable geometry, matching the source
-/// tree's structure honestly.
-/// </para>
-/// </remarks>
 public static class I3sNodePageProjector
 {
-    /// <summary>
-    /// Fixed node-page size advertised on <c>nodePages.nodesPerPage</c> and
-    /// used to partition the flattened node array. A small page keeps the
-    /// synthetic-fixture and small-scene responses single-page while still
-    /// exercising multi-page pagination on larger trees.
-    /// </summary>
     public const int NodesPerPage = 64;
 
-    /// <summary>
-    /// LOD selection metric type advertised on
-    /// <c>nodePages.lodSelectionMetricType</c>. Honua expresses
-    /// <c>lodThreshold</c> as a max-screen-threshold metric derived from the
-    /// source geometric error.
-    /// </summary>
     public const string LodSelectionMetricType = "maxScreenThresholdSQ";
 
     private const double DegreesToRadians = Math.PI / 180d;
 
-    /// <summary>
-    /// Builds the complete ordered set of node-page documents for a tileset. Page
-    /// <c>n</c> in the returned list is served at <c>nodepages/{n}</c>.
-    /// </summary>
-    /// <param name="document">The source 3D Tiles tileset document.</param>
-    /// <returns>
-    /// The node pages in order; an empty list when the tileset has no nodes.
-    /// </returns>
     public static IReadOnlyList<I3sNodePageDocument> BuildPages(Domain.TilesetDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -99,12 +55,6 @@ public static class I3sNodePageProjector
         return pages;
     }
 
-    /// <summary>
-    /// Total number of node pages a tileset projects to (used by the descriptor
-    /// and to bound node-page requests without materializing every page).
-    /// </summary>
-    /// <param name="document">The source 3D Tiles tileset document.</param>
-    /// <returns>The page count; 0 when the tileset has no nodes.</returns>
     public static int PageCount(Domain.TilesetDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -157,12 +107,6 @@ public static class I3sNodePageProjector
         return node;
     }
 
-    /// <summary>
-    /// Resolves the parent global index of a node from its hierarchical id
-    /// (<c>"0-1-2"</c> -> parent <c>"0-1"</c>). Node ids are assigned by
-    /// <see cref="SceneTileCatalog"/> from tree position, so the parent id is the
-    /// id with the last <c>-segment</c> removed.
-    /// </summary>
     private static int? FindParentIndex(string nodeId, Dictionary<string, int> indexById)
     {
         var lastDash = nodeId.LastIndexOf('-');
@@ -175,14 +119,6 @@ public static class I3sNodePageProjector
         return indexById.TryGetValue(parentId, out var parentIndex) ? parentIndex : null;
     }
 
-    /// <summary>
-    /// Projects a 3D Tiles region bounding volume (radians + min/max height) into
-    /// an I3S oriented bounding box centred in the index CRS (WGS-84
-    /// lon/lat/elevation) with metric half-sizes and an identity orientation.
-    /// Returns <see langword="null"/> for a missing or short (&lt; 6 element)
-    /// region so a node without a real bound advertises no box rather than a
-    /// degenerate one.
-    /// </summary>
     private static I3sOrientedBoundingBox? ProjectObb(Domain.BoundingVolume? volume)
     {
         var region = volume?.Region;

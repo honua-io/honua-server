@@ -4,22 +4,8 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Core.Features.Authorization;
 
-/// <summary>
-/// Default <see cref="IOperatorScopeAuthorizer"/>. Reads the OAuth scope claims a bearer
-/// token carries and intersects them, through <see cref="OperatorScopeCatalog"/>, with the
-/// requested operator operation (honua-server#2851).
-/// </summary>
-/// <remarks>
-/// The intersection can only ever narrow the grant model. A principal that is not
-/// scope-governed — an X-API-Key caller, an interactive session, the dev-auth bypass — is
-/// returned <see cref="OperatorScopeDecision.NotGoverned"/> so its grant decision stands
-/// unchanged. A scope-governed principal (a validated bearer token) whose scopes do not cover
-/// the operation is denied, and a bearer token that carries no recognized scope at all is
-/// fail-closed: it can perform nothing until its issuer stamps an explicit Honua MCP scope.
-/// </remarks>
 public sealed class OperatorScopeAuthorizer : IOperatorScopeAuthorizer
 {
-    /// <inheritdoc />
     public OperatorScopeDecision Evaluate(
         ClaimsPrincipal principal,
         OperatorResourceType resourceType,
@@ -55,21 +41,14 @@ public sealed class OperatorScopeAuthorizer : IOperatorScopeAuthorizer
     }
 }
 
-/// <summary>
-/// No-op <see cref="IOperatorScopeAuthorizer"/> that never narrows a grant. Used where an
-/// operator authorizer is constructed without OAuth scope governance (direct unit-test
-/// construction and legacy collaborator wiring), preserving the pre-scope behaviour exactly.
-/// </summary>
 public sealed class NullOperatorScopeAuthorizer : IOperatorScopeAuthorizer
 {
-    /// <summary>Shared singleton instance.</summary>
     public static NullOperatorScopeAuthorizer Instance { get; } = new();
 
     private NullOperatorScopeAuthorizer()
     {
     }
 
-    /// <inheritdoc />
     public OperatorScopeDecision Evaluate(
         ClaimsPrincipal principal,
         OperatorResourceType resourceType,

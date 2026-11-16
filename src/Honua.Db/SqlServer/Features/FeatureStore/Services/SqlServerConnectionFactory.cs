@@ -9,22 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
-/// <summary>
-/// Resolves and opens a <see cref="SqlConnection"/> for a SQL Server feature operation.
-/// </summary>
 internal interface ISqlServerConnectionFactory
 {
-    /// <summary>
-    /// Opens a SQL Server connection using the supplied <see cref="DataConnection"/> when
-    /// available, otherwise falling back to the configured default.
-    /// </summary>
     Task<SqlConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Default <see cref="ISqlServerConnectionFactory"/> implementation. Pooling is handled by
-/// <see cref="SqlConnection"/> internally; the factory just hands out new connections.
-/// </summary>
 internal sealed class SqlServerConnectionFactory : ISqlServerConnectionFactory
 {
     private readonly IOptions<SqlServerOptions> _options;

@@ -15,21 +15,13 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
-/// <summary>
-/// Row-visibility filter and field masks applied to a committed alert snapshot.
-/// </summary>
 internal interface ICommittedSnapshotPolicy
 {
-    /// <summary>Resolves the layer policy. A null filter and an empty mask mean the image is unchanged.</summary>
     Task<CommittedSnapshotPolicy> ResolveAsync(int layerId, CancellationToken cancellationToken);
 }
 
-/// <summary>Resolved read policy for one committed snapshot.</summary>
-/// <param name="RowFilter">Permanent filter and row-level security predicate, or null.</param>
-/// <param name="MaskedFields">Attribute names removed before evaluation and delivery.</param>
 internal readonly record struct CommittedSnapshotPolicy(SqlFragment? RowFilter, ImmutableArray<string> MaskedFields);
 
-/// <summary>Adapts <see cref="LayerReadSecurityResolver"/> to committed-snapshot projection.</summary>
 internal sealed class LayerReadCommittedSnapshotPolicy : ICommittedSnapshotPolicy
 {
     private readonly LayerReadSecurityResolver _security;

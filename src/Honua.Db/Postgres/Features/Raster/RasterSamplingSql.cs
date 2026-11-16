@@ -15,10 +15,6 @@ internal enum RasterSamplerKind
     GeneralNearest,
 }
 
-/// <summary>
-/// Installs one SQL function per sampler so COALESCE plans a call, not every fallback body.
-/// <c>SET search_path</c> keeps the function from being inlined; it does not change JIT policy.
-/// </summary>
 internal static class RasterSamplingSql
 {
     internal const string MigrationResourceName = "Honua.Postgres.Migrations.008_AddRasterSamplingFunctions.sql";

@@ -7,11 +7,6 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// Best-effort, catalog-only cost estimator. The S1 implementation derives a
-/// rough shape from upstream plan nodes plus operator heuristics; it never
-/// invokes the compute backend.
-/// </summary>
 internal sealed class SpecCostEstimator
 {
     private const long DefaultBytesPerRow = 512;
@@ -141,20 +136,9 @@ internal sealed class SpecCostEstimator
     }
 }
 
-/// <summary>
-/// Options controlling the S1 heuristic estimator.
-/// </summary>
 public sealed record SpecCostEstimatorOptions
 {
-    /// <summary>
-    /// Row count assumed when no upstream provides one. Keeps downstream
-    /// cost heuristics bounded rather than propagating nulls indefinitely.
-    /// </summary>
     public long DefaultRowsWhenUnknown { get; set; } = 1_000;
 
-    /// <summary>
-    /// Output byte threshold above which the estimator emits an
-    /// <c>estimated-oversize</c> warning. Defaults to 1 GiB.
-    /// </summary>
     public long OversizeThresholdBytes { get; set; } = 1L * 1024 * 1024 * 1024;
 }

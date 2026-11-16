@@ -21,7 +21,6 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    /// <inheritdoc/>
     public Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
         string connectionString,
         int layerId,
@@ -64,7 +63,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
     public Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
         string connectionString,
         string? schema,

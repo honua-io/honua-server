@@ -6,10 +6,6 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// Default <see cref="ISpecPlanner"/> implementation. Validates DAG structure,
-/// computes content hashes, and collects per-node cost estimates.
-/// </summary>
 internal sealed class SpecPlanner : ISpecPlanner
 {
     private readonly SpecCostEstimator _costEstimator;

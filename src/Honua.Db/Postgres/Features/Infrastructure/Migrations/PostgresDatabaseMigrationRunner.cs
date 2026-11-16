@@ -29,13 +29,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private const string BackupHookFailedOutcome = "failed";
     private const int BackupHookStderrMaxLength = 500;
 
-    /// <summary>
-    /// Opt-in for databases whose migration-owned tables are created by a seed before the first
-    /// migration run (test and certification fixtures, #4900). When set and the journal is empty,
-    /// the pending migrations adopt complete seed-created tables instead of failing preflight.
-    /// It never applies once any migration is journaled, and it is off by default so a production
-    /// database that has lost its journal still fails closed rather than replaying every script.
-    /// </summary>
     internal const string AdoptSeededSchemaOnFirstMigrationKey = "Database:AdoptSeededSchemaOnFirstMigration";
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
@@ -43,7 +36,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static readonly IComparer<string> _migrationScriptNameComparer = new MigrationScriptNameComparer();
     private static readonly IReadOnlySet<string> _noReaderVerifiedMigrations = new HashSet<string>(StringComparer.Ordinal);
 
-    /// <summary>Forward-compatibility declarations beside the DbUp journal (#6477).</summary>
     internal const string ReaderCompatibilityTable = PostgresReaderCompatibilityJournal.Table;
 
     private readonly MigrationSafetyOptions _safetyOptions;
@@ -167,11 +159,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             .Select(script => MigrationSafetyClassifier.Classify(script.Name, script.Contents))
             .ToArray();
 
-    /// <summary>
-    /// Fails closed on any pending contract-phase migration that lacks the compatibility-review
-    /// marker (ADR-0060 expand/contract gate). Returns <see langword="null"/> when enforcement is
-    /// disabled or every pending contract script is annotated.
-    /// </summary>
     private InvalidOperationException? TryBuildSafetyRejection(
         IReadOnlyList<MigrationScriptClassification> classifications)
     {
@@ -200,19 +187,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             "safety is reviewed, or set 'Database:MigrationSafety:Enforce=false' to override.");
     }
 
-    /// <summary>
-    /// Journal-scoped contract-apply gate (#2565, hardened for #2812). When
-    /// <see cref="MigrationSafetyOptions.ContractApplyPolicy"/> is
-    /// <see cref="ContractApplyPolicy.Gate"/> (the default) and the migration journal is <em>non-empty</em>
-    /// (an existing database, not a fresh install), pending annotated contract-phase scripts require the
-    /// operator's explicit <c>HONUA_APPROVE_CONTRACT_MIGRATIONS=&lt;nonce&gt;</c> approval, where the nonce is
-    /// bound to the exact pending scripts. Returns <see langword="null"/> under Auto policy, on a fresh
-    /// install, when the supplied token matches the pending-script nonce, or when nothing pending is an
-    /// annotated contract change. The token is one-shot by construction: once the approved scripts are
-    /// applied they leave the pending set, so a stale value cannot approve a later contract migration. The
-    /// resulting rejection is an <see cref="InvalidOperationException"/> — a non-transient, terminal
-    /// failure — so degraded-start recovery (#1632) gives up rather than retrying a policy block with backoff.
-    /// </summary>
     private InvalidOperationException? TryBuildContractGateRejection(
         IReadOnlyList<MigrationScriptClassification> classifications,
         bool journalIsNonEmpty,
@@ -292,22 +266,9 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 ["attachment-binding:" + AttachmentSchemaScriptProvider.SqlDigest(bindingContext)]));
     }
 
-    /// <summary>
-    /// DbUp reports the migration journal via the same <see cref="UpgradeEngine"/> the runner already
-    /// uses: a non-empty executed-scripts list means the database has been migrated before (an upgrade),
-    /// while an empty list is a fresh install. On a fresh database the journal table does not yet exist
-    /// and DbUp returns an empty list rather than throwing.
-    /// </summary>
     private static bool JournalIsNonEmpty(UpgradeEngine upgrader)
         => upgrader.GetExecutedScripts().Count > 0;
 
-    /// <summary>
-    /// Preflight journal/physical-schema reconciliation. On a database that has never been migrated,
-    /// with <see cref="AdoptSeededSchemaOnFirstMigrationKey"/> set, seed-created migration-owned tables
-    /// are accepted as adoption candidates for the pending migrations (#4900); the post-upgrade
-    /// <see cref="IDatabaseSchemaGuard.VerifyAsync(System.Data.Common.DbConnection, CancellationToken)"/>
-    /// still enforces the complete floor. Every other case keeps the fail-closed consistency check.
-    /// </summary>
     private Task VerifyPreMigrationConsistencyAsync(
         NpgsqlConnection connection,
         bool journalIsNonEmpty,
@@ -473,12 +434,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             Pooling = false,
         }.ConnectionString;
 
-    /// <summary>
-    /// Refuses a journal this reader cannot qualify. A journal entry this image does not ship is
-    /// accepted only through a forward-compatibility declaration the applying server recorded and this
-    /// reader re-verifies from the recorded, hash-bound script text with its own classifier (#6477).
-    /// Entries with no declaration keep the original refusal. Returns the accepted unknown entries.
-    /// </summary>
     private static async Task<IReadOnlySet<string>> VerifyReaderCompatibilityAsync(
         UpgradeEngine upgrader,
         Assembly migrationsAssembly,
@@ -519,12 +474,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
     private static bool IsSqlScript(string name) => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Records a forward-compatibility declaration for every journaled script this image ships and
-    /// that has none yet (#6477). Runs under the migration lock after a successful upgrade; it is a
-    /// no-op until the declaration table exists (the expand migration that creates it). Existing
-    /// declarations are never rewritten: a reader re-verifies each one from its recorded text anyway.
-    /// </summary>
     internal static async Task RecordReaderCompatibilityDeclarationsAsync(
         NpgsqlConnection connection,
         UpgradeEngine upgrader,
@@ -553,7 +502,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         await RecordReaderCompatibilityDeclarationsAsync(connection, pending, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Inserts declarations, leaving any existing declaration for the same script untouched.</summary>
     internal static async Task RecordReaderCompatibilityDeclarationsAsync(
         NpgsqlConnection connection,
         IReadOnlyList<MigrationReaderCompatibilityDeclaration> declarations,
@@ -747,18 +695,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         }
     }
 
-    /// <summary>
-    /// Runs the optional pre-migration backup hook (<see cref="MigrationSafetyOptions.BackupCommand"/>)
-    /// via the platform shell, but only when contract-class scripts are pending on an existing database
-    /// (non-empty journal). A non-zero exit — or a failure launching the process — is returned as an
-    /// exception so the caller fails the migration run closed before any script is applied. Returns
-    /// <see langword="null"/> when no hook is configured or the run conditions are not met.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="MigrationSafetyOptions.BackupCommand"/> is bound once from configuration sources and is
-    /// never writable through an admin API or the database, so shelling out to it is not an
-    /// injection/RCE surface (see the options remarks).
-    /// </remarks>
     private async Task<Exception?> TryRunBackupHookAsync(
         IReadOnlyList<MigrationScriptClassification> classifications,
         bool journalIsNonEmpty,

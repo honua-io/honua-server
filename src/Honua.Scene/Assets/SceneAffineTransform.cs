@@ -5,7 +5,6 @@ using System.Text.Json;
 
 namespace Honua.Scene.Assets;
 
-/// <summary>Double-precision transforms preserve placement of geocentric scene assets.</summary>
 internal static class SceneAffineTransform
 {
     public static readonly double[] Identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -114,7 +113,6 @@ internal static class SceneAffineTransform
     }
 }
 
-/// <summary>A point or direction in the common ECEF Cartesian reference frame.</summary>
 internal readonly record struct SceneCartesian(double X, double Y, double Z)
 {
     public static SceneCartesian operator +(SceneCartesian a, SceneCartesian b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
