@@ -30,7 +30,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Collection("Database")]
-public sealed class ProviderRoutedTileAndH3EndpointTests :
+public sealed partial class ProviderRoutedTileAndH3EndpointTests :
     IClassFixture<ProviderRoutedTileAndH3EndpointTests.Fixture>
 {
     private static readonly byte[] SecondaryMvt = [0x11, 0x12];
@@ -346,7 +346,8 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                     Type = MetadataV2FieldType.BigInteger,
                     Nullable = false,
                     SemanticRoles = ["id.primary"]
-                }
+                },
+                new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime }
             };
 
             return new TestMetadataV2GraphBuilder()

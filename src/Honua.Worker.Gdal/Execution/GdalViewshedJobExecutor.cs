@@ -9,27 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>surface.viewshed</c>
-/// process: computes a binary visibility raster from a DEM and an observer location,
-/// backed by the GDAL <c>gdal_viewshed</c> CLI (#2240).
-///
-/// <para>
-/// Reads a base64-encoded GeoTIFF DEM from <c>source</c>, places the observer at
-/// (<c>observerX</c>, <c>observerY</c>) in the DEM's georeferenced units at
-/// <c>observerHeight</c> above the surface, and publishes the visibility GeoTIFF,
-/// optionally bounded by <c>maxDistance</c> and using a <c>targetHeight</c> offset.
-/// Visible cells are 255, hidden cells 0, and out-of-range nodata cells 127.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalViewshedJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalViewshedJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "surface.viewshed";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -37,17 +21,13 @@ internal sealed partial class GdalViewshedJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

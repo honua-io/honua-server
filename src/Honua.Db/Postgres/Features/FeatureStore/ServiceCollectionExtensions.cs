@@ -23,20 +23,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
-/// <summary>
-/// Dependency injection extensions for the refactored feature store services
-/// </summary>
 internal static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the refactored feature store services with dependency injection
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="schemaName">Optional database schema name</param>
-    /// <param name="preferSerialBoundedSpatialReads">Null enables automatic serial plans for small first-page source-backed point bbox reads; false opts out.</param>
-    /// <param name="disableJitForSourceSpatialCounts">Opt in to disabling JIT within source-backed point bbox count queries.</param>
-    /// <param name="preferSerialSourceSpatialCounts">Null scopes serial plans to counts associated with eligible bounded reads; true also enables standalone spatial counts.</param>
-    /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null,
         bool? preferSerialBoundedSpatialReads = null, bool disableJitForSourceSpatialCounts = false,
         bool? preferSerialSourceSpatialCounts = null)

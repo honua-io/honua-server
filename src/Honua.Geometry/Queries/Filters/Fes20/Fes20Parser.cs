@@ -14,41 +14,21 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Queries.Filters.Fes20;
 
-/// <summary>
-/// Parser for OGC Filter Encoding 2.0 XML filters that produces the shared Filter AST
-/// </summary>
 public static class Fes20Parser
 {
     private const string FesNamespace = "http://www.opengis.net/fes/2.0";
     private const string GmlNamespace = "http://www.opengis.net/gml/3.2";
 
-    /// <summary>
-    /// Default SRID assumed for geometry literals whose element carries no <c>srsName</c> and
-    /// when the caller supplies no feature-type CRS context. WFS callers pass the queried
-    /// layer's storage SRID instead so filter geometry defaults to the feature type's CRS.
-    /// </summary>
     private const int DefaultFallbackSrid = 4326;
 
-    /// <summary>
-    /// Longest element or operator name quoted back in a client-facing reason. XML names are
-    /// unbounded, so a longer name is cut rather than echoed whole.
-    /// </summary>
     internal const int MaxReportedNameLength = 64;
 
     private const string RootElementReason =
         "Filter root element must be Filter in the FES 2.0 namespace (" + FesNamespace + ").";
 
-    /// <summary>
-    /// Parses a FES 2.0 filter XML element into the shared Filter AST
-    /// </summary>
     public static FilterExpression ParseFilter(XElement filterElement)
         => ParseFilter(filterElement, DefaultFallbackSrid);
 
-    /// <summary>
-    /// Parses a FES 2.0 filter XML element into the shared Filter AST, defaulting geometry
-    /// literals without an <c>srsName</c> to <paramref name="defaultSrid"/> (the queried feature
-    /// type's CRS).
-    /// </summary>
     public static FilterExpression ParseFilter(XElement filterElement, int defaultSrid)
     {
         if (filterElement.Name.NamespaceName != FesNamespace || filterElement.Name.LocalName != "Filter")
@@ -85,21 +65,9 @@ public static class Fes20Parser
         }
     }
 
-    /// <summary>
-    /// Applies the shared filter-geometry size limit to coordinate text that a protocol adapter
-    /// is about to rewrite into a FES 2.0 geometry literal, before the text is split.
-    /// </summary>
-    /// <param name="coordinateText">The raw coordinate list.</param>
-    /// <exception cref="Fes20ParseException">The text exceeds the limit.</exception>
     public static void EnsureGeometryTextWithinLimits(string coordinateText)
         => EnsureWithinGuard(() => FilterParserGeometryGuard.EnsureGeometryTextSize(coordinateText, "Filter geometry"));
 
-    /// <summary>
-    /// Applies the shared filter-geometry vertex limit to a coordinate list that a protocol
-    /// adapter is about to rewrite into a FES 2.0 geometry literal, before it is materialised.
-    /// </summary>
-    /// <param name="coordinateCount">The number of coordinate tuples.</param>
-    /// <exception cref="Fes20ParseException">The count exceeds the limit.</exception>
     public static void EnsureCoordinateCountWithinLimits(int coordinateCount)
         => EnsureWithinGuard(() => FilterParserGeometryGuard.EnsureCoordinateCount(coordinateCount, "Filter geometry"));
 
@@ -121,17 +89,9 @@ public static class Fes20Parser
         return string.Concat(name.AsSpan(0, length), "...");
     }
 
-    /// <summary>
-    /// Parses a FES 2.0 filter XML string into the shared Filter AST
-    /// </summary>
     public static FilterExpression ParseFilter(string filterXml)
         => ParseFilter(filterXml, DefaultFallbackSrid);
 
-    /// <summary>
-    /// Parses a FES 2.0 filter XML string into the shared Filter AST, defaulting geometry
-    /// literals without an <c>srsName</c> to <paramref name="defaultSrid"/> (the queried feature
-    /// type's CRS).
-    /// </summary>
     public static FilterExpression ParseFilter(string filterXml, int defaultSrid)
     {
         try
@@ -172,9 +132,6 @@ public static class Fes20Parser
         }
     }
 
-    /// <summary>
-    /// Parses any FES 2.0 expression element
-    /// </summary>
     private static FilterExpression ParseExpression(XElement element, int defaultSrid)
     {
         if (element.Name.NamespaceName != FesNamespace)
@@ -234,9 +191,6 @@ public static class Fes20Parser
         };
     }
 
-    /// <summary>
-    /// Parses logical AND operation
-    /// </summary>
     private static FilterExpression ParseAnd(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -256,9 +210,6 @@ public static class Fes20Parser
         return result;
     }
 
-    /// <summary>
-    /// Parses logical OR operation
-    /// </summary>
     private static FilterExpression ParseOr(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -278,9 +229,6 @@ public static class Fes20Parser
         return result;
     }
 
-    /// <summary>
-    /// Parses logical NOT operation
-    /// </summary>
     private static UnaryExpression ParseNot(XElement element, int defaultSrid)
     {
         var child = element.Elements().FirstOrDefault();
@@ -292,9 +240,6 @@ public static class Fes20Parser
         return new UnaryExpression(UnaryOperator.Not, ParseExpression(child, defaultSrid));
     }
 
-    /// <summary>
-    /// Parses comparison operations
-    /// </summary>
     private static BinaryExpression ParseComparison(XElement element, BinaryOperator op, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -309,9 +254,6 @@ public static class Fes20Parser
         return new BinaryExpression(left, op, right);
     }
 
-    /// <summary>
-    /// Parses PropertyIsLike operation
-    /// </summary>
     private static BinaryExpression ParseLike(XElement element, int defaultSrid)
     {
         var wildCard = element.Attribute("wildCard")?.Value ?? "%";
@@ -352,9 +294,6 @@ public static class Fes20Parser
         return new BinaryExpression(propertyRef, BinaryOperator.Like, pattern);
     }
 
-    /// <summary>
-    /// Parses PropertyIsNull operation
-    /// </summary>
     private static UnaryExpression ParseIsNull(XElement element, int defaultSrid)
     {
         var child = element.Elements().FirstOrDefault();
@@ -367,9 +306,6 @@ public static class Fes20Parser
         return new UnaryExpression(UnaryOperator.IsNull, property);
     }
 
-    /// <summary>
-    /// Parses PropertyIsBetween operation
-    /// </summary>
     private static BinaryExpression ParseBetween(XElement element, int defaultSrid)
     {
         var valueRef = element.Elements().FirstOrDefault(e => e.Name.LocalName == "ValueReference");
@@ -396,9 +332,6 @@ public static class Fes20Parser
         return new BinaryExpression(greaterEqual, BinaryOperator.And, lessEqual);
     }
 
-    /// <summary>
-    /// Parses BBOX spatial operation
-    /// </summary>
     private static SpatialPredicate ParseBBox(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -432,9 +365,6 @@ public static class Fes20Parser
         return new SpatialPredicate(SpatialOperator.Intersects, property, geometry);
     }
 
-    /// <summary>
-    /// Parses binary spatial operations
-    /// </summary>
     private static SpatialPredicate ParseSpatialBinary(XElement element, SpatialOperator op, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -457,9 +387,6 @@ public static class Fes20Parser
         return new SpatialPredicate(op, property, geometry);
     }
 
-    /// <summary>
-    /// Parses DWithin spatial operation
-    /// </summary>
     private static SpatialDistancePredicate ParseDWithin(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -488,9 +415,6 @@ public static class Fes20Parser
         return CreateDistancePredicate(SpatialOperator.DWithin, property, geometry, distance);
     }
 
-    /// <summary>
-    /// Parses Beyond spatial operation
-    /// </summary>
     private static SpatialDistancePredicate ParseBeyond(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
@@ -519,9 +443,6 @@ public static class Fes20Parser
         return CreateDistancePredicate(SpatialOperator.Beyond, property, geometry, distance);
     }
 
-    /// <summary>
-    /// Parses temporal operations.
-    /// </summary>
     private static TemporalPredicate ParseTemporal(XElement element)
     {
         var children = element.Elements().ToArray();
@@ -572,9 +493,6 @@ public static class Fes20Parser
             _ => throw Fes20ParseException.Reportable($"Unsupported temporal operator '{DescribeName(operatorName)}'.")
         };
 
-    /// <summary>
-    /// Parses ResourceId element
-    /// </summary>
     private static BinaryExpression ParseResourceId(XElement element)
     {
         var rid = element.Attribute("rid")?.Value;
@@ -600,9 +518,6 @@ public static class Fes20Parser
         return new PropertyReference(name);
     }
 
-    /// <summary>
-    /// Parses literal values
-    /// </summary>
     private static Literal ParseLiteral(XElement element)
     {
         var value = element.Value;
@@ -612,9 +527,6 @@ public static class Fes20Parser
         return InferLiteralType(value, type);
     }
 
-    /// <summary>
-    /// Parses geometry elements
-    /// </summary>
     private static GeometryLiteral ParseGeometry(XElement element, int defaultSrid)
     {
         if (element.Name.LocalName == "Envelope" &&
@@ -633,9 +545,6 @@ public static class Fes20Parser
             $"Unsupported geometry element '{DescribeElementName(element.Name)}'.");
     }
 
-    /// <summary>
-    /// Parses FES Envelope element
-    /// </summary>
     private static GeometryLiteral ParseEnvelope(XElement element, int defaultSrid)
     {
         var (srid, axisOrder) = ResolveGeometryCrs(element, defaultSrid);
@@ -673,9 +582,6 @@ public static class Fes20Parser
             element.ToString(SaveOptions.DisableFormatting));
     }
 
-    /// <summary>
-    /// Parses GML geometry elements
-    /// </summary>
     private static GeometryLiteral ParseGmlGeometry(XElement element, int defaultSrid)
     {
         var (srid, axisOrder) = ResolveGeometryCrs(element, defaultSrid);
@@ -980,11 +886,6 @@ public static class Fes20Parser
         return CreateCoordinate(first, second, axisOrder);
     }
 
-    /// <summary>
-    /// Resolves the GML <c>srsDimension</c> in effect for a <c>gml:pos</c>/<c>gml:posList</c>: the
-    /// nearest declaration on the element or an enclosing geometry, or null when none is given (2D).
-    /// Only 2D and 3D positions are supported; their first two ordinates are the horizontal axes.
-    /// </summary>
     private static int? ResolveSrsDimension(XElement coordinateElement)
     {
         var attribute = coordinateElement.AncestorsAndSelf()
@@ -1009,12 +910,6 @@ public static class Fes20Parser
             ? new Coordinate(second, first)
             : new Coordinate(first, second);
 
-    /// <summary>
-    /// Resolves the SRID and axis order for a geometry/envelope element. When the element
-    /// carries no <c>srsName</c>, the CRS defaults to <paramref name="defaultSrid"/> (the queried
-    /// feature type's CRS) instead of an unconditional EPSG:4326 assumption (#2737). A present
-    /// but unparseable <c>srsName</c> throws via <see cref="ParseSrid"/>.
-    /// </summary>
     private static (int Srid, AxisOrder AxisOrder) ResolveGeometryCrs(XElement element, int defaultSrid)
     {
         var srsName = element.Attribute("srsName")?.Value;
@@ -1042,9 +937,6 @@ public static class Fes20Parser
             : AxisOrder.EastNorth;
     }
 
-    /// <summary>
-    /// Infers literal type from value and optional type attribute
-    /// </summary>
     private static Literal InferLiteralType(string value, string? typeHint)
     {
         if (string.IsNullOrEmpty(value))
@@ -1083,9 +975,6 @@ public static class Fes20Parser
         return new Literal(value, LiteralType.Text);
     }
 
-    /// <summary>
-    /// Converts FES wildcard pattern to SQL LIKE pattern
-    /// </summary>
     private static string ConvertFesPatternToSql(string pattern, string wildCard, string singleChar, string escapeChar)
     {
         if (string.IsNullOrEmpty(wildCard) || string.IsNullOrEmpty(singleChar) || string.IsNullOrEmpty(escapeChar))
@@ -1182,12 +1071,6 @@ public static class Fes20Parser
         return new Literal(distance, LiteralType.Number);
     }
 
-    /// <summary>
-    /// Converts a distance value from the given unit-of-measure to metres.
-    /// Accepts the common OGC/UCUM linear unit designators; rejects unknown
-    /// designators with <see cref="Fes20ParseException"/> so callers cannot
-    /// silently send the wrong unit.
-    /// </summary>
     private static double ConvertDistanceToMetres(double value, string? uom)
     {
         if (string.IsNullOrEmpty(uom))
@@ -1265,14 +1148,6 @@ public static class Fes20Parser
         builder.Append(character);
     }
 
-    /// <summary>
-    /// Parses SRID from a CRS identifier. Accepts <c>EPSG:4326</c>, the OGC URN forms
-    /// <c>urn:ogc:def:crs:EPSG::4326</c> (empty version), <c>urn:ogc:def:crs:EPSG:6.9:25831</c>
-    /// (explicit version), and the historical <c>urn:x-ogc:def:crs:EPSG:...</c> variant, plus
-    /// the OGC URL form <c>http://www.opengis.net/def/crs/EPSG/0/4326</c>. A genuinely
-    /// unparseable identifier throws <see cref="Fes20ParseException"/> (surfacing as an OGC
-    /// <c>InvalidParameterValue</c>) instead of silently assuming WGS84 (#2737).
-    /// </summary>
     private static int ParseSrid(string srsName)
         => TryParseSrid(srsName, out var srid)
             ? srid
@@ -1336,9 +1211,6 @@ public static class Fes20Parser
         return false;
     }
 
-    /// <summary>
-    /// Creates WKB representation for an envelope/bbox
-    /// </summary>
     private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY, int srid)
     {
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
@@ -1416,55 +1288,20 @@ public static class Fes20Parser
             ]);
 }
 
-/// <summary>
-/// Exception thrown when FES 2.0 parsing fails
-/// </summary>
 public sealed class Fes20ParseException : Exception
 {
-    /// <summary>
-    /// Initializes a new exception with the supplied parse error message. The message is kept
-    /// for server-side diagnostics only; <see cref="ClientReason"/> is <see langword="null"/>.
-    /// </summary>
-    /// <param name="message">The parse failure message.</param>
     public Fes20ParseException(string message) : base(message) { }
 
-    /// <summary>
-    /// Initializes a new exception with the supplied parse error message and inner exception.
-    /// The message is kept for server-side diagnostics only; <see cref="ClientReason"/> is
-    /// <see langword="null"/>.
-    /// </summary>
-    /// <param name="message">The parse failure message.</param>
-    /// <param name="innerException">The underlying parse failure.</param>
     public Fes20ParseException(string message, Exception innerException) : base(message, innerException) { }
 
-    /// <summary>
-    /// Initializes a new exception with a diagnostic message and a separate reason that is safe
-    /// to return to the client.
-    /// </summary>
-    /// <param name="message">The parse failure message, for server-side diagnostics.</param>
-    /// <param name="clientReason">Authored text that echoes no request content beyond a bounded element name.</param>
-    /// <param name="innerException">The underlying parse failure, if any.</param>
     public Fes20ParseException(string message, string clientReason, Exception? innerException = null)
         : base(message, innerException)
     {
         ClientReason = clientReason;
     }
 
-    /// <summary>
-    /// A reason that protocol adapters may return to the client verbatim, or
-    /// <see langword="null"/> when the failure detail must stay in server-side diagnostics
-    /// (for example because it quotes literal values, CRS strings or a lower-level exception).
-    /// </summary>
     public string? ClientReason { get; }
 
-    /// <summary>
-    /// Creates an exception whose message is authored text that is also safe to return to the
-    /// client. Callers must not interpolate request content other than an element or operator
-    /// name, bounded to a short length.
-    /// </summary>
-    /// <param name="reason">The client-safe parse failure reason.</param>
-    /// <param name="innerException">The underlying failure, if any.</param>
-    /// <returns>The exception to throw.</returns>
     public static Fes20ParseException Reportable(string reason, Exception? innerException = null)
         => new(reason, reason, innerException);
 }

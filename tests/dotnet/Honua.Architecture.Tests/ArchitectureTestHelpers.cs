@@ -8,6 +8,16 @@ namespace Honua.Architecture.Tests;
 
 internal static partial class ArchitectureTestHelpers
 {
+    internal static Assembly ServerAssembly { get; } = ResolveServerAssembly();
+
+    private static Assembly ResolveServerAssembly()
+    {
+        var assembly = typeof(Honua.Server.Startup.LicensingRegistration).Assembly;
+        return assembly.GetName().Name == "Honua.Server"
+            ? assembly
+            : throw new InvalidOperationException($"The server assembly anchor resolved to {assembly.GetName().Name}.");
+    }
+
     private const BindingFlags TestMemberFlags =
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 

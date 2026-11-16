@@ -10,14 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Scene.Assets;
 
-/// <summary>
-/// Read-through local materialization cache for hosted 3D Tiles scene assets
-/// (#2459, ADR-0060). When a scene registration carries an object-store prefix and
-/// the node's local asset root is missing or stale, the tree is downloaded from the
-/// shared object store and atomically installed so the standard filesystem serving
-/// path (<see cref="SceneAssetResolver"/>) can stream it. Legacy datasets (no
-/// storage prefix) are skipped entirely and keep serving straight off local disk.
-/// </summary>
 internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
 {
     private readonly ICloudFileStorage _storage;
@@ -33,7 +25,6 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task EnsureLocalAsync(
         SceneDatasetRecord record,
         string localAssetRoot,
@@ -147,16 +138,6 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         }
     }
 
-    /// <summary>
-    /// Replaces the local asset root with the freshly downloaded temp directory using a move-aside
-    /// swap rather than delete-then-move. The old delete-then-move left a window with no tree at all —
-    /// a recursive delete of a multi-file tree can take a long time, during which readers 404 mid-
-    /// republish, and on Windows an open handle makes the delete throw and destroy the previous tree.
-    /// Here the current tree is renamed aside first, the new tree is renamed into place (a same-
-    /// filesystem rename is atomic on POSIX, so a reader sees either the old or the complete new tree
-    /// across the brief two-rename swap), then the aside tree is deleted best-effort. If putting the
-    /// new tree in place fails, the aside tree is rolled back so serving is never left empty.
-    /// </summary>
     private static void InstallAtomically(string tempDirectory, string localAssetRoot)
     {
         var parent = Path.GetDirectoryName(localAssetRoot);
@@ -191,13 +172,6 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         TryDeleteDirectory(asidePath);
     }
 
-    /// <summary>
-    /// Resolves a manifest relative path to an absolute destination under <paramref name="tempDirectory"/>
-    /// and verifies containment. Mirrors the defence-in-depth guard style of
-    /// <c>LocalFileStorage.ValidateObjectKeyOverride</c>/<c>GetSafeFullPath</c>: reject rooted paths and
-    /// explicit <c>..</c> traversal segments, then confirm via <see cref="Path.GetFullPath(string)"/> that
-    /// the resolved path stays inside the temp tree (catching symlinks and platform path-encoding tricks).
-    /// </summary>
     private static bool TryResolveSafeDestination(string tempDirectory, string relativePath, out string destination)
     {
         destination = string.Empty;

@@ -7,7 +7,6 @@ using System.Text.Json;
 
 namespace Honua.Scene.Assets;
 
-/// <summary>Reads persisted uncompressed GLB/B3DM mesh data without accessing a source database.</summary>
 internal sealed class SceneGlbAssetReader
 {
     private const int MaxVertices = 250_000;

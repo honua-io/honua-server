@@ -197,7 +197,7 @@ public sealed class VerticalSliceIsolationTests
     [ArchitectureTest]
     public void Features_ShouldNotDirectlyReference_OtherFeatures()
     {
-        var serverAssembly = typeof(EndpointRegistry).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
         var violations = new List<string>();
 
         foreach (var featureName in _featureNames.Where(f => f is not ("Infrastructure" or "Protocols")))
@@ -307,7 +307,7 @@ public sealed class VerticalSliceIsolationTests
     [ArchitectureTest]
     public void Mcp_ShouldNotReference_OtherProtocolAdapters()
     {
-        var serverAssembly = typeof(EndpointRegistry).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
         var mcpTypes = GetTypesInProtocol(serverAssembly, "Mcp");
 
         var forbiddenNamespaces = new[]
@@ -364,7 +364,7 @@ public sealed class VerticalSliceIsolationTests
     [ArchitectureTest]
     public void FeatureNamespaces_ShouldMatchDirectoryStructure()
     {
-        var serverAssembly = typeof(EndpointRegistry).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
         var violations = new List<string>();
 
         var typesInFeatures = serverAssembly.GetTypes()

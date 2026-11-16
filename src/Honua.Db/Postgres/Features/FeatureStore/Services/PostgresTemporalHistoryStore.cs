@@ -10,11 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads the uncollapsed change log with attribution from Postgres for the temporal diff, timeline, and
-/// rollback surfaces (slices 2-5 of honua-server#1166). Reads <c>honua.feature_changes</c> directly,
-/// including the slice-4 attribution columns and the named-checkpoint registry.
-/// </summary>
 internal sealed class PostgresTemporalHistoryStore : ITemporalHistoryStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -25,26 +20,24 @@ internal sealed class PostgresTemporalHistoryStore : ITemporalHistoryStore
     }
 
     public async Task<IReadOnlyList<TemporalChangeRecord>> GetFeatureRevisionsAsync(
-        int storageLayerId,
-        long objectId,
-        long afterGeneration,
-        int limit,
+        TemporalFeatureRevisionQuery query,
         CancellationToken cancellationToken = default)
     {
         const string sql = """
             SELECT generation, objectid, operation, changed_at, actor, source, operation_name, source_id
             FROM honua.feature_changes
-            WHERE layer_id = $1 AND objectid = $2 AND generation > $3
+            WHERE layer_id = $1 AND objectid = $2 AND generation > $3 AND generation <= $4
             ORDER BY generation ASC
-            LIMIT $4
+            LIMIT $5
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(NpgsqlDbType.Integer, storageLayerId);
-        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, objectId);
-        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, afterGeneration);
-        command.Parameters.AddWithValue(NpgsqlDbType.Integer, limit);
+        command.Parameters.AddWithValue(NpgsqlDbType.Integer, query.StorageLayerId);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, query.ObjectId);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, query.AfterGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, query.ThroughGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Integer, query.Limit);
 
         return await ReadRecordsAsync(command, cancellationToken).ConfigureAwait(false);
     }

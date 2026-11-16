@@ -5,16 +5,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>
-/// Validator for <see cref="RoutingConfiguration"/>. Mirrors the shape of the
-/// geocoding configuration validator but is self-contained (implements
-/// <see cref="IValidateOptions{TOptions}"/> directly) so the routing satellite
-/// keeps its minimal dependency surface (Abstractions only — no back-reference to
-/// <c>Honua.Core</c>).
-/// </summary>
 public sealed class RoutingConfigurationValidator : IValidateOptions<RoutingConfiguration>
 {
-    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, RoutingConfiguration options)
     {
         ArgumentNullException.ThrowIfNull(options);

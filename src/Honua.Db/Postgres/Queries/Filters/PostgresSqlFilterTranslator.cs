@@ -14,13 +14,6 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Queries.Filters;
 
-/// <summary>
-/// Translates filter expressions to parameterized PostgreSQL WHERE clauses.
-/// Recursion, depth-cap enforcement, parameter accumulation, literal and value-list
-/// translation are inherited from <see cref="SqlFilterExpressionVisitorBase"/>;
-/// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
-/// PostGIS function names, geography casts, range types).
-/// </summary>
 internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
@@ -43,13 +36,6 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         _primaryKeyColumn = primaryKeyColumn;
     }
 
-    /// <summary>
-    /// Translates a filter expression to SQL using a Metadata v2 resource for
-    /// field validation and spatial-reference resolution.
-    /// </summary>
-    /// <param name="filter">Filter expression to translate.</param>
-    /// <param name="resource">Metadata v2 resource.</param>
-    /// <returns>SQL fragment with parameters.</returns>
     public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
         => Translate(filter, FilterTranslationContext.FromResource(resource));
 
@@ -348,7 +334,6 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
-    /// <summary>Resolves a spatial operand, allowing entity adapters to supply canonical geometry properties.</summary>
     protected virtual string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
@@ -940,7 +925,6 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     private static bool CanTranslateAsGeography(FilterExpression expression)
         => expression is GeometryLiteral or PropertyReference;
 
-    /// <summary>Resolves an operand for shared WGS84 geodesic operations.</summary>
     protected virtual string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)

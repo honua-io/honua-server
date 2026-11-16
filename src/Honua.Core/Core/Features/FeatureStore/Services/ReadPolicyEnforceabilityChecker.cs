@@ -7,25 +7,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// A layer targeted by a read policy whose serving provider does not advertise
-/// <see cref="Domain.FeatureProviderCapabilities.SupportsReadPolicyEnforcement"/>.
-/// </summary>
-/// <param name="LayerName">Name of the targeted layer (metadata resource).</param>
-/// <param name="ProviderName">Name of the provider that serves the layer.</param>
 public sealed record UnenforceableReadPolicyTarget(string LayerName, string ProviderName);
 
-/// <summary>
-/// Decides whether a row-level security or field-mask policy scoped to a service / layer pair
-/// can be enforced by every feature provider that serves the layers it targets. Policy
-/// administration uses it to refuse a policy that would otherwise only surface as refused
-/// reads on providers that cannot apply it.
-/// </summary>
-/// <remarks>
-/// Targeting mirrors how the request-scoped policy sources match a policy to a resource: the
-/// layer scope is compared (case-insensitively) with the resource name and the service scope
-/// with the name of any service that publishes the resource; <c>*</c> matches everything.
-/// </remarks>
 public sealed class ReadPolicyEnforceabilityChecker
 {
     private const string Wildcard = "*";
@@ -34,13 +17,6 @@ public sealed class ReadPolicyEnforceabilityChecker
     private readonly FeatureProviderQueryRouter? _router;
     private readonly IFeatureDataProviderRegistry? _providerRegistry;
 
-    /// <summary>
-    /// Creates a checker over the optional metadata graph, provider router and provider registry.
-    /// </summary>
-    /// <param name="graphProvider">Metadata v2 graph provider used to find the targeted layers.</param>
-    /// <param name="router">Provider router used to resolve the provider that serves a storage binding.</param>
-    /// <param name="providerRegistry">Registered feature providers, used when the targeted layers
-    /// cannot be resolved from metadata.</param>
     public ReadPolicyEnforceabilityChecker(
         IMetadataV2GraphProvider? graphProvider,
         FeatureProviderQueryRouter? router,
@@ -51,16 +27,6 @@ public sealed class ReadPolicyEnforceabilityChecker
         _providerRegistry = providerRegistry;
     }
 
-    /// <summary>
-    /// Returns the first layer targeted by a policy scoped to <paramref name="service"/> /
-    /// <paramref name="layer"/> that is served by a provider which cannot enforce read policies,
-    /// or <see langword="null"/> when every targeted layer is enforceable (including when the
-    /// scope currently targets no layer).
-    /// </summary>
-    /// <param name="service">Policy service scope (a service name, or <c>*</c>).</param>
-    /// <param name="layer">Policy layer scope (a layer name, or <c>*</c>).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The first unenforceable target, or <see langword="null"/>.</returns>
     public async Task<UnenforceableReadPolicyTarget?> FindUnenforceableTargetAsync(
         string service,
         string layer,

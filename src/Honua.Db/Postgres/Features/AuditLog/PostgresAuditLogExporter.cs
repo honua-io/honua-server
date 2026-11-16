@@ -11,14 +11,8 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IAuditLogExporter"/> backing the SIEM
-/// export surface (#509). Streams rows oldest-first so the consumer can ingest
-/// without buffering and checkpoint on the last <c>audit_id</c>.
-/// </summary>
 internal sealed class PostgresAuditLogExporter : IAuditLogExporter
 {
-    /// <summary>Server-side cap so an unbounded export cannot scan the whole table.</summary>
     internal const int MaxExportRows = 1_000_000;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

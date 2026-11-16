@@ -19,13 +19,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Scene;
 
-/// <summary>
-/// Postgres/PostGIS implementation of <see cref="ISceneFeatureSource"/>. Streams
-/// the canonical 3D Tiles input shape (WGS-84 lon/lat plus optional Z) for a
-/// metadata v2 feature resource. The geometry is reprojected to EPSG:4326 with the
-/// layer's datum-catalog selection, or two-argument <c>ST_Transform</c> when the
-/// catalog has no entry.
-/// </summary>
 internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 {
     private const int PageSize = 1_000;
@@ -267,10 +260,6 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         }
     }
 
-    /// <summary>
-    /// WGS 84 geometry expression for scene publishing. A catalog entry uses that
-    /// pipeline; otherwise the expression stays two-argument <c>ST_Transform</c>.
-    /// </summary>
     internal static string BuildPublishedGeometrySql(int? layerSrid)
     {
         var column = DatabaseSchema.GeometryColumn;
@@ -304,25 +293,12 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         return candidates.Where(f => allow.Contains(f.Name)).ToList();
     }
 
-    /// <summary>
-    /// Returns true when the supplied field name is one of the canonical
-    /// row-identifier aliases. Honua's shared <c>features</c> table stores
-    /// the identifier in the <c>objectid</c> column rather than in the
-    /// JSONB attributes bag, so the source must populate these slots from
-    /// the primary key value.
-    /// </summary>
     private static bool IsObjectIdAlias(string name)
         => string.Equals(name, "objectid", StringComparison.OrdinalIgnoreCase)
             || string.Equals(name, "object_id", StringComparison.OrdinalIgnoreCase)
             || string.Equals(name, "id", StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>
-/// Minimal WKB reader for the geometry kinds the v1 3D Tiles pipeline
-/// accepts: Point, LineString, Polygon, and their Multi variants. Returns
-/// the first ring/part for multi-geometries — v1 collapses multi inputs into
-/// a single deterministic representation.
-/// </summary>
 internal static class WkbGeometryReader
 {
     public static SceneFeatureGeometry? Parse(byte[] wkb)
