@@ -71,9 +71,6 @@ public readonly record struct EditTransaction
     public bool IsEmpty => EditRequests.IsDefaultOrEmpty || EditRequests.All(r => r.IsEmpty);
 
     public bool RequiresAtomicSemantics => Configuration.RollbackOnFailure || TotalOperations > 1;
-
-    public EditTransaction WithState(TransactionState newState)
-        => this with { State = newState };
 }
 
 public readonly record struct TransactionConfiguration

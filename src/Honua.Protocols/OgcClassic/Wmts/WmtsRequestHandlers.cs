@@ -1537,7 +1537,7 @@ internal static class WmtsRequestHandlers
         // Time-aware feature layers advertise a continuous "time" dimension so
         // tile/GetFeatureInfo validation accepts a TIME parameter. The default
         // and extent values are computed asynchronously from the layer's
-        // temporal range in GetWmtsDimensionDefinitionsAsync. Only emit the
+        // temporal range in GetWmtsDimensionDefinitionsFromRange. Only emit the
         // dimension when the resource's temporal extension actually resolves to
         // a Date/DateTime schema field — otherwise capabilities would advertise
         // a dimension that the request path cannot fulfill.
@@ -1564,44 +1564,6 @@ internal static class WmtsRequestHandlers
 
     // Continuous resolution is "0". "PT0S" is a zero-length duration, and ArcGIS Pro rejects a dimension declared that way.
     private const string ContinuousTemporalResolution = "0";
-
-    private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
-        WmtsLayer layer,
-        IFeatureReader? featureReader,
-        CancellationToken cancellationToken)
-    {
-        var staticDimensions = GetWmtsDimensionDefinitions(layer);
-        if (!IsDataDerivedTimeStub(staticDimensions) || featureReader is null)
-        {
-            return staticDimensions;
-        }
-
-        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
-        {
-            return staticDimensions;
-        }
-
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-            layer.Resource,
-            layer.StorageLayerId,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
-        if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
-        {
-            return staticDimensions;
-        }
-
-        var min = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Min.Value);
-        var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
-        var populated = new WmtsDimensionDefinition(
-            Identifier: "time",
-            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
-            DefaultValue: max,
-            SupportsCurrent: true,
-            CurrentValue: max);
-
-        return [populated];
-    }
 
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitionsFromRange(
         WmtsLayer layer,

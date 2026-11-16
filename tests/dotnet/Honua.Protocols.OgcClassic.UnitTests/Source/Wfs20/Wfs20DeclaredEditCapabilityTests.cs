@@ -32,6 +32,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
 namespace Honua.Protocols.OgcClassic.UnitTests.Wfs20;
 
