@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 
