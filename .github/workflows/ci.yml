@@ -1049,7 +1049,7 @@ jobs:
           FOUNDATION_FAMILY: ${{ matrix.family }}
         run: |
           case "${FOUNDATION_FAMILY}" in
-            server|protocols) scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis ;;
+            server|protocols) scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 ;;
             providers) scripts/ci/prepare-testcontainer-images.sh ryuk mysql ;;
             *) echo "::error::Unknown container-consuming foundation family"; exit 2 ;;
           esac
@@ -1548,30 +1548,7 @@ jobs:
         env:
           SERVER_SHARD: ${{ matrix.shard_name }}
         run: |
-          # Only these current shard filters select explicit Redis fixtures.
           images=()
-          case "${SERVER_SHARD}" in
-            'Admin & Infrastructure '[0-9]*| \
-            'Migration '[0-9]*| \
-            'FeatureServer Editing and Relationships'| \
-            'FeatureServer Query Services and Replication '[0-9]*| \
-            'OGC API Tiles Coverages and Processes '[0-9]*| \
-            'GeoServices GPServer and NAServer '[0-9]*| \
-            'Caching File Storage Styling and Infrastructure'| \
-            'Operator Eval Harness '[0-9]*| \
-            'gRPC Protocol and Scene '[0-9]*| \
-            'MCP and Sessions '[0-9]*| \
-            'Server Features Admin Runtime Operations'| \
-            'Server Features Admin Authorization '[0-9]*| \
-            'Server Features Admin Authorization Matrix'| \
-            'Server Features Admin Network and Jobs '[0-9]*| \
-            'Server Features Admin Integrations and Automation '[0-9]*| \
-            'Server Features Admin Alert Endpoints'| \
-            'Server Features Streaming Snapshot and Conformance'| \
-            'Server Features Data Enrichment and Capabilities'| \
-            'Server Features Miscellaneous '[0-9]*| \
-            'Server Features Studio Packaging '[0-9]*) images+=(redis) ;;
-          esac
           if [[ "${SERVER_SHARD}" == 'Operator Eval Harness '[0-9]* ]]; then
             images+=(postgis17)
           fi
@@ -1773,7 +1750,7 @@ jobs:
 
       - name: Prepare GDAL Testcontainers images
         timeout-minutes: 12
-        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18
 
       - name: Load validated flaky-test quarantine
         env:
