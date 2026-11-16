@@ -65,10 +65,13 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
             var declared = GlobalIdGraph(schema);
-            declared = declared with { StorageBindings = [declared.StorageBindings[0] with
+            declared = declared with
+            {
+                StorageBindings = [declared.StorageBindings[0] with
             {
                 Locator = $"{schema}.features{locatorSuffix}"
-            }] };
+            }]
+            };
             var mapping = FeatureStorageMapping.FromMetadata(declared.Resources[0], declared.StorageBindings[0]);
             mapping.SchemaName.Should().Be(schema);
             mapping.TableName.Should().Be("features");

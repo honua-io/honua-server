@@ -19,7 +19,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
     {
         var connection = connectionKind == "explicit" ? new DataConnection
         {
-            Id = "managed-explicit", ConnectionString = fixture.ConnectionString, IsEncrypted = false
+            Id = "managed-explicit",
+            ConnectionString = fixture.ConnectionString,
+            IsEncrypted = false
         } : null;
         var reader = CreateGlobalIdReader(connection);
         (await reader.SupportsManagedWritesAsync(1)).Should().BeFalse();
@@ -51,7 +53,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
             """);
         var reader = CreateGlobalIdReader(new DataConnection
         {
-            Id = "managed-explicit", ConnectionString = fixture.ConnectionString, IsEncrypted = false
+            Id = "managed-explicit",
+            ConnectionString = fixture.ConnectionString,
+            IsEncrypted = false
         });
         (await reader.SupportsManagedWritesAsync(1)).Should().Be(indexCase == "valid");
     }

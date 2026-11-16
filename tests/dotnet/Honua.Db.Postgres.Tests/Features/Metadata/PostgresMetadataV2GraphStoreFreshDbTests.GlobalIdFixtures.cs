@@ -33,11 +33,14 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         }
         if (ignoredOption is not null)
         {
-            graph = graph with { StorageBindings = [graph.StorageBindings[0] with
+            graph = graph with
+            {
+                StorageBindings = [graph.StorageBindings[0] with
             {
                 Options = new Dictionary<string, JsonElement>(graph.StorageBindings[0].Options)
                 { [ignoredOption] = JsonSerializer.SerializeToElement("other_column") }
-            }] };
+            }]
+            };
         }
         return graph;
     }
