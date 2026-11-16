@@ -12,7 +12,6 @@ public sealed class InMemoryVersionJobStore : IVersionJobStore
 {
     private readonly ConcurrentDictionary<Guid, VersionJob> _jobs = new();
 
-    /// <inheritdoc />
     public Task SaveAsync(VersionJob job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -20,7 +19,6 @@ public sealed class InMemoryVersionJobStore : IVersionJobStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<VersionJob?> GetAsync(Guid jobId, CancellationToken cancellationToken = default)
         => Task.FromResult(_jobs.TryGetValue(jobId, out var job) ? job : null);
 }

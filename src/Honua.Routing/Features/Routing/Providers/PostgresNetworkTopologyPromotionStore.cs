@@ -8,26 +8,6 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Postgres-backed atomic promotion/rollback store (#2719). Both operations share one
-/// transactional helper: lock the active and target generation rows, verify
-/// state/evidence/artifact preconditions, retire the old active generation, activate the
-/// target, repoint <c>honua.network_datasets</c> to the target's own edge/vertex/srid
-/// columns (which migration 087's rebuild-completion path already stamps onto every
-/// <c>ready</c> generation), and record immutable history.
-/// </summary>
-/// <remarks>
-/// Repointing <c>honua.network_datasets</c> deliberately runs with the legacy
-/// <c>network_datasets_track_legacy_mapping_update</c> trigger from migration 084 disabled
-/// for the duration of the transaction: that trigger exists to keep the old admin
-/// registry-PUT path safe by auto-retiring the active generation and forking a brand new
-/// one whenever <c>edge_table</c>/<c>vertex_table</c>/<c>srid</c> changes. This transaction
-/// already performs that retire-and-activate sequence explicitly against an *existing*
-/// candidate/target generation (not a freshly forked one), so the trigger's own retire step
-/// would find zero active rows and raise its invariant-violation exception. Disabling it
-/// only within this transaction (transactional DDL; automatically rolled back with the rest
-/// of the transaction on any failure) leaves it fully intact for the legacy path.
-/// </remarks>
 internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPromotionStore
 {
     private const string GenerationColumns =
@@ -39,13 +19,9 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresNetworkTopologyPromotionStore"/> class.
-    /// </summary>
     public PostgresNetworkTopologyPromotionStore(IDatabaseSessionFactory sessionFactory)
         => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyPromotionRecord> PromoteAsync(
         string datasetId,
         long candidateGeneration,
@@ -116,7 +92,6 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         return record;
     }
 
-    /// <inheritdoc />
     public async Task<NetworkTopologyPromotionRecord> RollbackAsync(
         string datasetId,
         long targetGeneration,
@@ -180,7 +155,6 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         return record;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<NetworkTopologyPromotionRecord>> ListHistoryAsync(
         string datasetId,
         CancellationToken cancellationToken = default)
@@ -349,12 +323,6 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         }
     }
 
-    /// <summary>
-    /// Validates the caller-supplied optimistic-concurrency precondition against the locked
-    /// active-generation row, distinguishing a truly missing row (404) from a row that exists
-    /// but is no longer <c>active</c> or whose row version has moved on (409) — the latter is
-    /// the expected shape of a lost promotion/rollback race, not a not-found error.
-    /// </summary>
     private static NetworkTopologyGeneration EnsureExpectedActiveIsCurrent(
         NetworkTopologyGeneration? active, string datasetId, long expectedActiveGeneration, long expectedActiveRowVersion)
     {

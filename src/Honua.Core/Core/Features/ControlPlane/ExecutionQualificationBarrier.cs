@@ -6,51 +6,28 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Core.Features.ControlPlane;
 
-/// <summary>
-/// Opt-in, filesystem-backed barriers used by the production-worker qualification lane.
-/// The feature is inert unless <c>HONUA_GP_QUALIFICATION_BARRIER_ROOT</c> is set, so it
-/// cannot change normal worker behavior. A barrier writes a readiness record and waits for
-/// the qualification runner to release it or for the execution token to be cancelled.
-/// </summary>
 public static class ExecutionQualificationBarrier
 {
-    /// <summary>Environment variable naming the shared barrier directory.</summary>
     public const string RootEnvironmentVariable = "HONUA_GP_QUALIFICATION_BARRIER_ROOT";
 
-    /// <summary>
-    /// Optional exact barrier name to pause at; when unset, all barriers retain
-    /// their existing behavior. This selects qualification staging only.
-    /// </summary>
     public const string PauseAtEnvironmentVariable = "HONUA_GP_QUALIFICATION_PAUSE_AT";
 
-    /// <summary>Environment variable enabling the deliberate cancellation-ignoring mode.</summary>
     public const string ExecutorModeEnvironmentVariable = "HONUA_GP_QUALIFICATION_EXECUTOR_MODE";
 
     private static readonly AsyncLocal<Scope?> Current = new();
 
-    /// <summary>Whether qualification barriers are enabled for this process.</summary>
     public static bool Enabled => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(RootEnvironmentVariable));
 
-    /// <summary>
-    /// Whether the qualification executor should ignore operator cancellation while retaining
-    /// the independent timeout token. This is deliberately available only through an explicit
-    /// opt-in environment value used by the live timeout lane.
-    /// </summary>
     public static bool IgnoresOperatorCancellation
         => string.Equals(
             Environment.GetEnvironmentVariable(ExecutorModeEnvironmentVariable),
             "ignore-cancellation",
             StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Current qualification operation identifier, if a worker execution is active.</summary>
     public static string? CurrentOperationId => Current.Value?.OperationId;
 
-    /// <summary>Current qualification worker identifier, if a worker execution is active.</summary>
     public static string? CurrentWorkerId => Current.Value?.WorkerId;
 
-    /// <summary>
-    /// Enters the operation scope inherited by asynchronous native-worker calls.
-    /// </summary>
     public static IDisposable Begin(string operationId, string workerId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
@@ -61,9 +38,6 @@ public static class ExecutionQualificationBarrier
         return new ScopeLease(previous);
     }
 
-    /// <summary>
-    /// Publishes one barrier's readiness record and waits for release or cancellation.
-    /// </summary>
     public static async Task WaitAsync(
         string barrier,
         CancellationToken cancellationToken,

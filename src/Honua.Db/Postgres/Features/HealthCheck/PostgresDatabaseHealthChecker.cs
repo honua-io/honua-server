@@ -7,13 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.HealthCheck;
 
-/// <summary>
-/// PostgreSQL implementation of database health checking
-/// </summary>
-/// <remarks>
-/// Marked as internal to prevent exposure of database-specific implementations
-/// outside the Infrastructure layer (Clean Architecture principle).
-/// </remarks>
 internal sealed partial class PostgresDatabaseHealthChecker(
     IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<PostgresDatabaseHealthChecker> logger)
@@ -25,9 +18,6 @@ internal sealed partial class PostgresDatabaseHealthChecker(
     private readonly ILogger<PostgresDatabaseHealthChecker> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
-    /// <summary>
-    /// Checks PostgreSQL database connectivity and responsiveness
-    /// </summary>
     public async Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
     {
         try

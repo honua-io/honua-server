@@ -6,23 +6,10 @@ using System.Globalization;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Shared input helpers for the <c>gdal_calc.py</c>-backed executors
-/// (<c>raster.map-algebra</c>, <c>raster.spectral-index</c>, <c>raster.reclassify</c>;
-/// #2239): decoding the <c>|</c>-separated base64 source list and normalizing the
-/// optional output data-type token against a fixed allow-list. Centralized so the
-/// per-source <c>MaxArtifactBytes</c> ceiling and the accepted GDAL type set are
-/// enforced identically across the calc family.
-/// </summary>
 internal static class GdalCalcInputs
 {
-    /// <summary>Separator between base64 raster entries in a <c>sources</c> input.</summary>
     public const string SourceSeparator = "|";
 
-    /// <summary>
-    /// GDAL output data types accepted by <c>gdal_calc.py --type</c>. Kept in sync
-    /// with <c>ProcessPlanValidator.RasterCalcDataTypeValues</c>.
-    /// </summary>
     private static readonly FrozenDictionary<string, string> DataTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -35,10 +22,6 @@ internal static class GdalCalcInputs
             ["float64"] = "Float64",
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Decodes the <c>|</c>-separated base64 <c>sources</c> list, enforcing the
-    /// per-entry <c>MaxArtifactBytes</c> ceiling and requiring at least one input.
-    /// </summary>
     public static bool TryDecodeSources(
         IReadOnlyDictionary<string, string> parameters,
         long maxBytes,
@@ -126,10 +109,6 @@ internal static class GdalCalcInputs
         return true;
     }
 
-    /// <summary>
-    /// Normalizes a requested GDAL output data type onto its canonical
-    /// <c>gdal_calc.py --type</c> token, rejecting any value outside the allow-list.
-    /// </summary>
     public static bool TryNormalizeDataType(string raw, out string? normalized, out string failure)
     {
         normalized = null;
