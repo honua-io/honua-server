@@ -36,11 +36,14 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Collection("Database")]
 public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
 {
-    private const int TestLayerId = 0;
-    private const string ServiceName = "test";
-    private const string Holder = "alice";
+    internal const int TestLayerId = 0;
+    internal const string ServiceName = "test";
+    internal const string Holder = "alice";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // Test hosts share one system schema, so leases in the shared store would block other classes' edits of the
+    // same object ids. These cases are about one host; the two-host case below has a lease schema of its own.
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        .ReplaceService<IFeatureLockService>(new InMemoryFeatureLockService());
 
     public async Task InitializeAsync()
     {
@@ -178,7 +181,7 @@ public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
     private Task<string?> ReadStoredNameAsync(long objectId)
         => _fixture.ReadStoredFeatureNameAsync(TestLayerId, objectId);
 
-    private static StringContent ReplacementBody(long objectId, string name)
+    internal static StringContent ReplacementBody(long objectId, string name)
     {
         var feature = new GeoJsonFeature
         {

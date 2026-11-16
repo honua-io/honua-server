@@ -12,14 +12,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Import.FileImport.Durable;
 
-/// <summary>
-/// Worker-side <see cref="IJobExecutor"/> for <see cref="ExecutionJobKind.FileImport"/> jobs
-/// (honua-server#5916). Runs on the shared <c>JobExecutionService</c> loop: on a long-lived
-/// server for the local backend, or in the batch-launched execution worker (AWS Batch on the
-/// serverless cell). It reads the staged object from file storage through the existing
-/// <see cref="IFileImportService"/> pipeline and keeps the import job document
-/// (<c>GET /api/v1/admin/import/jobs/{id}</c>, keyed by the operation id) current.
-/// </summary>
 internal sealed partial class FileImportJobExecutor(
     IServiceScopeFactory scopeFactory,
     IUniversalProgressStore progressStore,
@@ -27,7 +19,6 @@ internal sealed partial class FileImportJobExecutor(
     IInstanceIdentity? instanceIdentity = null,
     Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy? licensePolicy = null) : IJobExecutor
 {
-    /// <summary>Set by AWS Batch in every job container; identifies the executing Batch job.</summary>
     internal const string AwsBatchJobIdVariable = "AWS_BATCH_JOB_ID";
 
     internal const string SafeImportFailureMessage = "Import failed.";
@@ -247,11 +238,6 @@ internal sealed partial class FileImportJobExecutor(
         return JobExecutionResult.Succeeded(result.Warnings);
     }
 
-    /// <summary>
-    /// An importer failure is deterministic for the staged input (format, schema, constraint):
-    /// the job document is already terminal, so the durable runner must not retry it. Infrastructure
-    /// loss (worker crash, Spot interruption) still goes through the retry policy.
-    /// </summary>
     private static JobExecutionResult NonRetryableFailure(string message, IReadOnlyList<string>? warnings = null)
         => JobExecutionResult.Failed(message, warnings) with { IsRetryable = false };
 
@@ -313,7 +299,6 @@ internal sealed partial class FileImportJobExecutor(
             auditId: request.AuditId,
             proposalId: request.ProposalId);
 
-    /// <summary>Writes progress ticks in order without blocking the importer.</summary>
     private sealed class SerializedProgressWriter(IUniversalProgressStore store, ILogger logger, string jobId)
     {
         private readonly Lock _gate = new();
