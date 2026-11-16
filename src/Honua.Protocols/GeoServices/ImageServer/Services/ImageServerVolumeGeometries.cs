@@ -90,7 +90,7 @@ internal static class ImageServerVolumeGeometries
                     return false;
                 }
 
-                var srid = ReadWkid(element) ?? defaultSrid;
+                var srid = ImageServerGeometryHelpers.ReadWkid(element) ?? defaultSrid;
                 parsed.Add(new ParsedAoi(WkbWriter.Write(geometry), srid));
             }
 
@@ -106,10 +106,10 @@ internal static class ImageServerVolumeGeometries
         var factory = new GeometryFactory();
 
         // Envelope form.
-        if (TryReadNumber(geometry, "xmin", out var xmin) &&
-            TryReadNumber(geometry, "ymin", out var ymin) &&
-            TryReadNumber(geometry, "xmax", out var xmax) &&
-            TryReadNumber(geometry, "ymax", out var ymax))
+        if (ImageServerGeometryHelpers.TryReadNumber(geometry, "xmin", out var xmin) &&
+            ImageServerGeometryHelpers.TryReadNumber(geometry, "ymin", out var ymin) &&
+            ImageServerGeometryHelpers.TryReadNumber(geometry, "xmax", out var xmax) &&
+            ImageServerGeometryHelpers.TryReadNumber(geometry, "ymax", out var ymax))
         {
             var envelope = new Envelope(Math.Min(xmin, xmax), Math.Max(xmin, xmax), Math.Min(ymin, ymax), Math.Max(ymin, ymax));
             result = factory.ToGeometry(envelope);
@@ -192,38 +192,5 @@ internal static class ImageServerVolumeGeometries
             error = "polygon ring is not a valid closed ring.";
             return false;
         }
-    }
-
-    private static bool TryReadNumber(JsonElement element, string property, out double value)
-    {
-        value = 0;
-        if (element.TryGetProperty(property, out var prop) && prop.ValueKind == JsonValueKind.Number)
-        {
-            return prop.TryGetDouble(out value);
-        }
-
-        return false;
-    }
-
-    private static int? ReadWkid(JsonElement geometry)
-    {
-        if (!geometry.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (sr.TryGetProperty("latestWkid", out var latest) &&
-            latest.ValueKind == JsonValueKind.Number && latest.TryGetInt32(out var latestWkid))
-        {
-            return latestWkid;
-        }
-
-        if (sr.TryGetProperty("wkid", out var wkid) &&
-            wkid.ValueKind == JsonValueKind.Number && wkid.TryGetInt32(out var wkidValue))
-        {
-            return wkidValue;
-        }
-
-        return null;
     }
 }
