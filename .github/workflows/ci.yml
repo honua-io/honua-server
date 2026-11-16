@@ -2904,7 +2904,7 @@ jobs:
       - name: Test package integration
         run: |
           package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          for framework in net10.0 net11.0; do
+          framework="$(scripts/ci/honua-target-framework.sh)"
           consumer_dir="$(mktemp -d)"
           dotnet new console --framework "${framework}" --output "${consumer_dir}" --no-restore
           PACKAGE_SOURCE="$(realpath packages)"
@@ -2963,7 +2963,6 @@ jobs:
           dotnet build --configuration Release
           popd >/dev/null
           rm -rf "${consumer_dir}"
-          done
 
       - name: Validate server compatibility
         run: |

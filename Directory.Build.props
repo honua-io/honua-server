@@ -36,14 +36,8 @@
     <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net11.0</HonuaTargetFramework>
   </PropertyGroup>
 
-  <!--
-    Libraries that plug-in and custom-code authors compile against also build for
-    .NET 10 LTS, so an author on .NET 10 is not cut off. The server itself
-    runs only on HonuaTargetFramework. Projects say
-    <TargetFrameworks>$(HonuaPluginTargetFrameworks)</TargetFrameworks>.
-  -->
+  <!-- Public plug-in contracts use the same framework as the server. -->
   <PropertyGroup>
-    <HonuaPluginTargetFrameworks Condition="'$(HonuaPluginTargetFrameworks)' == '' and '$(HonuaTargetFramework)' != 'net10.0'">net10.0;$(HonuaTargetFramework)</HonuaPluginTargetFrameworks>
     <HonuaPluginTargetFrameworks Condition="'$(HonuaPluginTargetFrameworks)' == ''">$(HonuaTargetFramework)</HonuaPluginTargetFrameworks>
   </PropertyGroup>
 
