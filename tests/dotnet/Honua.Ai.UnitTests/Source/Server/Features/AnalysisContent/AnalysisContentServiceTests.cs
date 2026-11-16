@@ -294,7 +294,7 @@ public sealed class AnalysisContentServiceTests
             .Returns(CreateFailedJob("job-logs", "validation failed"));
         var logStore = Substitute.For<IExecutionLogStore>();
         logStore.TailAsync("job-logs", Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Throws(new FakeDbException(isTransient: true));
+            .Throws(new TransientDbException());
         var sut = CreateService(jobService: jobService, logStores: [logStore]);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -325,7 +325,7 @@ public sealed class AnalysisContentServiceTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new FakeDbException(isTransient: true));
+            .Throws(new TransientDbException());
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -340,7 +340,7 @@ public sealed class AnalysisContentServiceTests
         // reports as 503; the job path must classify it the same way.
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new FakeDbException(isTransient: false, sqlState: "28P01"));
+            .Throws(new FakeDbException(sqlState: "28P01"));
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -355,7 +355,7 @@ public sealed class AnalysisContentServiceTests
         // reported to the caller as a retryable 503.
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new FakeDbException(isTransient: false, sqlState: "42P01"));
+            .Throws(new FakeDbException(sqlState: "42P01"));
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<FakeDbException>(
@@ -989,10 +989,13 @@ public sealed class AnalysisContentServiceTests
             };
     }
 
-    private sealed class FakeDbException(bool isTransient, string? sqlState = null) : DbException("database unavailable")
+    private class FakeDbException(string? sqlState = null) : DbException("database unavailable")
     {
-        public override bool IsTransient { get; } = isTransient;
-
         public override string? SqlState { get; } = sqlState;
+    }
+
+    private sealed class TransientDbException : FakeDbException
+    {
+        public override bool IsTransient => true;
     }
 }
