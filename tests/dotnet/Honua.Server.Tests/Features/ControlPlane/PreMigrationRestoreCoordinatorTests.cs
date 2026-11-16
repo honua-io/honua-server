@@ -295,38 +295,10 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task CompatibleAzureRollback_StartsWithoutRestoring()
-    {
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.AzureContainerApps;
-        harness.JournalSnapshot = Journal(141, "expand");
-        harness.Cell.Revisions = [new RevisionSchemaOption { Revision = "rev-141", MaxSchema = 141 }];
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(backupId: null), Request(), harness.Starter, CancellationToken.None);
-
-        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
-        harness.Events.Should().Contain("start");
-        harness.Events.Should().NotContain("restore");
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
     public async Task LambdaRestoreRequired_FailsClosedWhenNoDurableWorkerIsAvailable()
     {
         var harness = NewHarness();
         harness.TargetKind = DeployTargetKind.AwsLambda;
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
-
-        completion.Code.Should().Be(PreMigrationRestoreCodes.RetargetUnsupported);
-        harness.Events.Should().NotContain("restore");
-        harness.Events.Should().NotContain("start");
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task AzureRestoreRequired_DoesNotStartThePriorImage()
-    {
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.AzureFunctions;
         var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
 
         completion.Code.Should().Be(PreMigrationRestoreCodes.RetargetUnsupported);

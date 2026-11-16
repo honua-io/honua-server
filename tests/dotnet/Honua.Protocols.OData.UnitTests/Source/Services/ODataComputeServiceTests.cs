@@ -7,13 +7,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.Tests.Services;
 
-/// <summary>
-/// Unit tests for the shared OData <c>$compute</c> grammar (#1620). The compute service is the
-/// single source of truth for both the <c>$compute</c> query option and the
-/// <c>$apply=compute(...)</c> transform, and must support the canonical <c>floor()</c> function
-/// (plus <c>ceiling()</c>, <c>round()</c>, and the <c>mod</c> operator) so histogram binning is
-/// first-class instead of requiring the <c>x sub (x mod w)</c> workaround.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "Compute")]

@@ -19,12 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// Covers the WCS 2.0 GetCoverage Zarr slice spatial-trim semantics (#2796): an
-/// over-extent trim clamps to the intersection with the coverage extent instead of
-/// 404ing, matching the plain IRasterStore path. Uses a sub-global coverage extent so
-/// the over-extent trim stays within valid geographic coordinates.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
 public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime

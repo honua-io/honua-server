@@ -8,12 +8,6 @@ using Npgsql;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
-/// <summary>
-/// Enforces the GeocodeServer provider parity matrix (docs/reference/geocoding/geocode-server-parity.md).
-/// Asserting each provider's advertised <see cref="GeocodeProviderCapabilities"/> means a regression
-/// that turns a previously-supported capability off fails the build, satisfying the #2153 requirement
-/// that the matrix runs in CI and fails on regression.
-/// </summary>
 public sealed class GeocodeServerParityMatrixTests
 {
     public static TheoryData<string, bool, bool, bool, bool, bool> ExpectedMatrix() => new()

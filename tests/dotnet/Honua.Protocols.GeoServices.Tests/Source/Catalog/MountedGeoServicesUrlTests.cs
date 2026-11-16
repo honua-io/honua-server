@@ -19,10 +19,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// An external host can supply PathBase independently of the optional ArcGIS alias.
-/// Reject unmounted paths so dereferencing a broken advertised URL cannot pass by accident.
-/// </summary>
 [Collection("Database.CoreFeatureStore")]
 public sealed class MountedGeoServicesUrlTests : IAsyncLifetime
 {

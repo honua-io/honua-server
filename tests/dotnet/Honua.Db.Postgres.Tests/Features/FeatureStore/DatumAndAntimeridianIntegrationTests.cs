@@ -21,11 +21,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Date-line polygons are stored on the short side and therefore only tile the Pacific.
-/// A NAD27 draw matches the catalog pipeline within a metre when the NADCON grid is installed,
-/// and fails clearly when it is not.
-/// </summary>
 [Collection("Database")]
 public sealed class DatumAndAntimeridianIntegrationTests(PostgresFixture fixture)
 {

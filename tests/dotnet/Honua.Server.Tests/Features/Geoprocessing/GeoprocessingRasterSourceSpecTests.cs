@@ -10,7 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>Tests typed raster references projected onto durable GP specifications.</summary>
 public sealed class GeoprocessingRasterSourceSpecTests
 {
     [UnitTest]

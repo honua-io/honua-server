@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Asp.Versioning.Builder;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -11,6 +12,7 @@ using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Infrastructure.Configuration;
 
 namespace Honua.Server.Features.Admin;
 
@@ -70,7 +72,32 @@ internal static partial class RateLimitEndpoints
         group.MapGet("/status", HandleGetStatus)
             .WithDisplayName("Get Rate Limit Status")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        MapPolicyHistory(group);
     }
+
+    private static void MapPolicyHistory(IVersionedEndpointRouteBuilder group)
+    {
+        group.MapGet("/{id:guid}/revisions", HandleListPolicyRevisions)
+            .WithDisplayName("List Rate Limit Policy Revisions")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapPost("/{id:guid}/undo", HandleUndoPolicyChange)
+            .WithDisplayName("Undo Rate Limit Policy Change")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+    }
+
+    private static Task<Results<Ok<ApiResponse<IReadOnlyList<SettingsRevisionResponse>>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
+        HandleListPolicyRevisions(Guid id, HttpContext context)
+        => SettingsRevisionHandlers.ListAsync(PolicyDocument(id), context);
+
+    // A deleted policy can be restored by undo: policies carry no entitlement or capacity limit.
+    private static Task<Results<Ok<ApiResponse<SettingsRevisionResponse>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
+        HandleUndoPolicyChange(Guid id, UndoSettingsChangeRequest request, HttpContext context)
+        => SettingsRevisionHandlers.UndoAsync(new(PolicyDocument(id), DeletedDocumentUndo.Recreate), request, context);
+
+    private static ConfigurationDocumentKey PolicyDocument(Guid id) => new(PostgresRateLimitPolicyStore.DocumentKind, id.ToString("D"));
 
     private static RateLimitPolicyResponse ToResponse(RateLimitPolicy p) => new()
     {

@@ -14,35 +14,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Focused tests for the shared HEAD middleware (#3389) on a minimal <see cref="WebApplication"/>.
-/// They pin the two behaviours the server-wide integration tests cannot isolate: that a route
-/// which maps HEAD itself still sees <c>HEAD</c> in the handler (the PMTiles range proxy and the
-/// scene endpoints branch on it to avoid streaming a payload) and that a handler-provided
-/// <c>Content-Length</c> is never overwritten. They also prove the placement assumption the
-/// design rests on — that <see cref="WebApplication"/> runs its implicit <c>UseRouting</c> before
-/// any middleware registered on the app, so the startup filter is what gets in front of matching.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
 {
     private const long DualEndpointContentLength = 4096;
     private const int FixedLengthPayloadSize = 64;
 
-    /// <summary>
-    /// Long enough that a genuinely unbounded handler cannot pass by luck, short enough that a
-    /// regression fails the test instead of hanging the suite.
-    /// </summary>
     private static readonly TimeSpan StreamProbeTimeout = TimeSpan.FromSeconds(20);
 
     private WebApplication _app = null!;
     private HttpClient _client = null!;
 
-    /// <summary>
-    /// The request method observed by the stand-in cross-cutting middleware as the pipeline
-    /// unwinds. xUnit constructs a fresh instance per test method, so this needs no
-    /// cross-test synchronisation.
-    /// </summary>
     private string? _upstreamMethodOnUnwind;
     private bool _upstreamRouteValuesAccessibleOnUnwind;
     private bool? _midstreamHandlerObservedResponseStarted;
@@ -50,10 +32,6 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     private bool _sideEffectingGetHandlerInvoked;
     private bool _conditionalGetHandlerInvoked;
 
-    /// <summary>
-    /// Completed by the streaming route when its loop unwinds, so a test can prove the handler
-    /// was actually released rather than merely that the response came back.
-    /// </summary>
     private readonly TaskCompletionSource<bool> _streamHandlerExited =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 

@@ -6,21 +6,12 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Read-only projection of <c>docs/gis/data/public-interface-proof.json</c> used
-/// by the feature-catalog generator. It mirrors the endpoint→surface matching
-/// semantics enforced by
-/// <c>PublicInterfaceProofLedgerTests.EveryEndpointRegistryRoute_ShouldBeCoveredByProofLedgerSurface</c>
-/// so the catalog's <c>proof_ledger_surface</c> and <c>code_location</c> columns
-/// stay consistent with the proof ledger that CI already gates.
-/// </summary>
 internal sealed class ProofLedgerProjection
 {
     private readonly IReadOnlyList<ProofLedgerSurface> _surfaces;
 
     private ProofLedgerProjection(IReadOnlyList<ProofLedgerSurface> surfaces) => _surfaces = surfaces;
 
-    /// <summary>Loads and projects the committed proof ledger.</summary>
     public static ProofLedgerProjection Load()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
@@ -33,12 +24,6 @@ internal sealed class ProofLedgerProjection
         return new ProofLedgerProjection(document.Surfaces);
     }
 
-    /// <summary>
-    /// Resolves the first proof-ledger surface that claims the supplied route,
-    /// matching by exact path, prefix, or contains — the same selectors the proof
-    /// ledger declares. Returns <c>null</c> when no surface matches (which the
-    /// existing ledger governance test already forbids for shipped routes).
-    /// </summary>
     public ResolvedSurface? ResolveSurface(string path)
     {
         var surface = _surfaces.FirstOrDefault(candidate => Matches(candidate, path));
@@ -70,45 +55,32 @@ internal sealed class ProofLedgerProjection
     internal sealed record ResolvedSurface(string SurfaceId, string Protocol, string SurfaceKind, string CodeLocation);
 }
 
-/// <summary>Top-level proof-ledger document for source-generated deserialization.</summary>
 internal sealed class ProofLedgerDocument
 {
-    /// <summary>The proof-ledger surfaces.</summary>
     public ProofLedgerSurface[] Surfaces { get; init; } = [];
 }
 
-/// <summary>A single proof-ledger surface (subset of fields the catalog needs).</summary>
 internal sealed class ProofLedgerSurface
 {
-    /// <summary>Canonical surface id.</summary>
     public string SurfaceId { get; init; } = string.Empty;
 
-    /// <summary>Surface kind (http-route-family, operation-surface, …).</summary>
     public string SurfaceKind { get; init; } = string.Empty;
 
-    /// <summary>Human-readable protocol label.</summary>
     public string Protocol { get; init; } = string.Empty;
 
-    /// <summary>Route prefixes claimed by this surface.</summary>
     public string[] EndpointPrefixes { get; init; } = [];
 
-    /// <summary>Exact route matches claimed by this surface.</summary>
     public string[] EndpointExactMatches { get; init; } = [];
 
-    /// <summary>Substring route matches claimed by this surface.</summary>
     public string[] EndpointContains { get; init; } = [];
 
-    /// <summary>Proofs backing this surface.</summary>
     public ProofLedgerProof[] Proofs { get; init; } = [];
 }
 
-/// <summary>A single proof backing a surface (subset of fields the catalog needs).</summary>
 internal sealed class ProofLedgerProof
 {
-    /// <summary>Proof class (route-coverage, operation-coverage, …).</summary>
     public string ProofClass { get; init; } = string.Empty;
 
-    /// <summary>Evidence locations (repo-relative paths or external URLs).</summary>
     public string[] EvidenceLocations { get; init; } = [];
 }
 

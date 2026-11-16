@@ -9,7 +9,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.ComponentTests;
 
-/// <summary>The same HTTP contracts execute against the minimal host or a separately started full host.</summary>
 [Trait("Category", "Integration")]
 [Trait("Tier", "Integration")]
 public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFixture<ODataComponentFixture>

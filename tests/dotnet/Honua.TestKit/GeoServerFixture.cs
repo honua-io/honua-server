@@ -10,10 +10,6 @@ using Xunit;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Shared GeoServer fixture for integration tests that require a live GeoServer instance.
-/// Uses Testcontainers to manage the GeoServer container lifecycle.
-/// </summary>
 public sealed class GeoServerFixture : IAsyncLifetime
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.

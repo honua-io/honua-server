@@ -33,12 +33,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// A gRPC <c>where</c> clause that consumes a field masked from the caller is refused before
-/// any count, object id or feature is read, for every operator family of the filter grammar
-/// and on every query shape (count-only, ids-only, features, streamed pages). Unmasked
-/// predicates are bound to the shared filter parser and translator (SEC-11).
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
 public sealed partial class GrpcMaskedFieldPredicateTests

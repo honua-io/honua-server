@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// Unit tests for the graph compiler that translates workflow data edges into the
-/// canonical execution-plan wiring (#1185).
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
 public sealed class WorkflowPackageGraphCompilerTests

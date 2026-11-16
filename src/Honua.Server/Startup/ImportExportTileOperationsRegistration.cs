@@ -21,10 +21,8 @@ using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Caching;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Server.Startup;
@@ -41,7 +39,7 @@ internal static class ImportExportTileOperationsRegistration
         services.AddSingleton<IUniversalProgressStore>(sp =>
             sp.GetService<Npgsql.NpgsqlDataSource>() is not null
                 ? sp.GetRequiredService<Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore>()
-                : new UniversalProgressStore(null, sp.GetRequiredService<ILogger<UniversalProgressStore>>()));
+                : new UniversalProgressStore());
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));

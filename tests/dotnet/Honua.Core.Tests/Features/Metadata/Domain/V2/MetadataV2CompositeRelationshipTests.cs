@@ -8,7 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>Checks ownership metadata retention and safe graph transitions.</summary>
 public sealed class MetadataV2CompositeRelationshipTests
 {
     [UnitTest]

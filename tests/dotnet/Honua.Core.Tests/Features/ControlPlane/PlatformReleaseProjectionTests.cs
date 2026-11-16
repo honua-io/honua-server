@@ -5,11 +5,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
 
-/// <summary>
-/// Tests for the platform-release desired-state model that co-versions the serving and
-/// geoprocessing planes (ADR-0060 WS2): projection precedence, worker matching, co-versioning
-/// validation, and the cross-plane skew snapshot.
-/// </summary>
 public sealed class PlatformReleaseProjectionTests
 {
     private static PlatformReleaseDefinition CoVersionedRelease(string version = "2026.07.0") => new()

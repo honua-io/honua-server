@@ -12,9 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Zarr;
 
-/// <summary>
-/// Integration tests for Zarr admin endpoints (#1009).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Zarr)]
 [Operation(Operations.ZarrAdmin)]

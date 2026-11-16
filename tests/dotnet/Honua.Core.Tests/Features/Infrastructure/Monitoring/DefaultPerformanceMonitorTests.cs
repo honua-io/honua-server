@@ -5,9 +5,6 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for DefaultPerformanceMonitor functionality.
-/// </summary>
 [Collection("Metrics")]
 public class DefaultPerformanceMonitorTests
 {

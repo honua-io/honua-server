@@ -124,8 +124,6 @@ public static class FeatureCatalog
 
     public const string OutputCacheKey = "caching.output-cache";
 
-    public const string RedisCacheKey = "caching.redis";
-
     public const string SamlAuthenticationKey = "identity.saml";
 
     public const string ScimProvisioningKey = "identity.scim";
@@ -179,7 +177,7 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Automatic failover between geocoding providers on error."),
 
         // Geocoding — Enterprise. geocoding.forward and geocoding.reverse moved to
-        // CapabilityKeyCatalog.CommunityKeys (#2981) — the demo/adoption showcase path is
+        // CapabilityKeyCatalog.CommunityKeys — the demo/adoption showcase path is
         // Community; batch geocoding is the volume/enterprise workload that stays gated. Both
         // shipped Pro in the catalog but unenforced over HTTP before this change (only the MCP
         // honua_geocode_address tool checked geocoding.forward); see ADR-0024.
@@ -221,10 +219,6 @@ public static class FeatureCatalog
         // Caching — Pro
         new(OutputCacheKey, "Output Caching", Categories.Caching,
             HonuaEdition.Pro, "HTTP response caching with tag-based invalidation."),
-
-        // Caching — Pro
-        new(RedisCacheKey, "Redis Distributed Cache", Categories.Caching,
-            HonuaEdition.Pro, "Redis-backed distributed cache for multi-node deployments."),
 
         // Import — Community (one-shot file import ships in Community; see docs/features/README.md)
         new("import.file", "File Import", Categories.Import,

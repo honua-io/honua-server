@@ -12,9 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for FileGDB preview and format discovery endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

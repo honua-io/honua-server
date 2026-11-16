@@ -13,15 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit tests for the queryDateBins Pro-tier edition gate added for ticket #379.
-/// Mirrors <c>SpatialAnalyticsEditionGateTests</c>: instead of going through the
-/// full HTTP pipeline (which would require booting Postgres), the helper is
-/// exercised directly with a stub <see cref="ILicenseStatusProvider"/> so we
-/// can verify the gate decision in isolation. Confirms the contract documented
-/// at docs/gis/temporal-animation-api.md (`temporal.histogram` is Pro and
-/// Community requests are answered with HTTP 402).
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerQueryDateBinsEditionGateTests
 {

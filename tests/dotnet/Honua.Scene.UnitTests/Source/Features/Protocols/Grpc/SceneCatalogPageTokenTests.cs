@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Unit tests for the opaque <c>ListScenes</c> continuation token introduced when
-/// Geospatial.Grpc 0.2.0-alpha.1 retired <c>result_offset</c> / <c>result_record_count</c>
-/// on <c>ListScenesRequest</c> in favour of <c>page_size</c> + <c>page_token</c>.
-/// </summary>
 public sealed class SceneCatalogPageTokenTests
 {
     [UnitTest]

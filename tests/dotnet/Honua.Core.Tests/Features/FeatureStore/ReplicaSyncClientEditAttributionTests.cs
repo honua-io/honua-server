@@ -11,13 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Regression coverage for how a durable conflict records whether the client edit actually landed
-/// (#2430). Getting this wrong is not cosmetic: the flag is the input the resolution planner uses to
-/// decide whether keeping the server needs a write, so a conflict wrongly marked "not applied" lets a
-/// keep-server resolution plan a no-op and mark itself resolved while the client's overwrite is still
-/// committed.
-/// </summary>
 public sealed partial class ReplicaSyncClientEditAttributionTests
 {
     [UnitTest]
@@ -525,7 +518,6 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
                 "the overwrite must bind to state B captured in the durable envelope, not an earlier read");
     }
 
-    /// <summary>Capturer that models A -&gt; B -&gt; A around the envelope read.</summary>
     private sealed class AbaTokenCapturer : IReplicaServerStateCapturer
     {
         public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
@@ -547,7 +539,6 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
                     t => new ReplicaConflictStateTokenCapture($"token-A-{t.ObjectId}", t.ObjectId)));
     }
 
-    /// <summary>Capturer that reports a token per requested feature, minus any it treats as absent.</summary>
     private sealed class TokenCapturer(params long[] absentObjectIds) : IReplicaServerStateCapturer
     {
         public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
@@ -690,7 +681,6 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
             "the missing upload outcome must keep operator resolution blocked");
     }
 
-    /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>
     private sealed class EchoClientStateSerializer : IReplicaClientStateSerializer
     {
         public string? Serialize(ReplicaUploadEdit edit) => edit.Payload as string;
@@ -835,10 +825,8 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
 
     private sealed class RecordingChangeTracker(params FeatureChange[] changes) : IChangeTracker
     {
-        /// <summary>Successive watermark readings; the last value repeats once the queue drains.</summary>
         public Queue<long>? Generations { get; init; }
 
-        /// <summary>One-based watermark read on which the test tracker throws; zero never throws.</summary>
         public int ThrowOnGenerationRead { get; init; }
 
         private long _lastGeneration = 99L;
@@ -882,19 +870,13 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
         }
     }
 
-    /// <summary>
-    /// Edit applier that reports a layer-wide failure while still attributing the rows that
-    /// committed, mirroring the shared pipeline's best-effort per-row behavior.
-    /// </summary>
     private sealed class PartialFailureEditApplier(
         int[]? committedEditIndexes,
         bool failed,
         int[]? indeterminateEditIndexes = null) : IReplicaEditApplier
     {
-        /// <summary>Preconditions the sync service bound the batch to.</summary>
         public ImmutableArray<FeatureEditPrecondition> Preconditions { get; private set; }
 
-        /// <summary>Edits the sync service actually dispatched.</summary>
         public ImmutableArray<ReplicaUploadEdit> DispatchedEdits { get; private set; }
 
         public ImmutableArray<ImmutableArray<FeatureOperationEvidence>> OperationEvidence { get; init; }

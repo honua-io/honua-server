@@ -20,11 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// A host that cannot finish a background import (a Lambda host without a durable runner)
-/// refuses it with the typed 503 before staging anything (honua-server#5916), while synchronous
-/// imports under the threshold are unchanged.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

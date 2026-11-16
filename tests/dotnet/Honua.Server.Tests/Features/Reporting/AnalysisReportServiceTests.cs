@@ -20,10 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Exercises the server-side report orchestrator: authorization delegation,
-/// render caching, and not-found / failed-precondition propagation.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class AnalysisReportServiceTests
 {

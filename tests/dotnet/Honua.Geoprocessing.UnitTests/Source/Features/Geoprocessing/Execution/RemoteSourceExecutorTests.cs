@@ -25,13 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage for the <see cref="RemoteSourceExecutor"/> wiring: it resolves the
-/// matching <see cref="IDagFeatureSource"/> from a scope, builds the upstream
-/// <see cref="DagSourceRequest"/> from the durable step inputs (including the
-/// since/watermark pass-through), streams the source features, and publishes the
-/// canonical FeatureCollection artifact. The source reader is faked so no transport runs.
-/// </summary>
 public sealed class RemoteSourceExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

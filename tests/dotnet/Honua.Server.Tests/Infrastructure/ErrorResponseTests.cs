@@ -8,10 +8,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for GeoServices-compatible error response format
-/// Ensures compliance with GeoServices REST error response specification
-/// </summary>
 public class ErrorResponseTests
 {
     [Fact]

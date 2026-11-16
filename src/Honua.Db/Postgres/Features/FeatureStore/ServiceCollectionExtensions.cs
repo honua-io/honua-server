@@ -139,7 +139,7 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
 
-        // Feature-change transactional outbox (#692). PostgreSQL is the canonical
+        // Feature-change transactional outbox. PostgreSQL is the canonical
         // mutation-capable provider so it owns the outbox repository implementation and
         // reports SupportsTransactionalOutbox = true. Both registrations are scoped to
         // match the connection-provider lifetime used by the data access layer.

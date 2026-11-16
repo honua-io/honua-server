@@ -19,23 +19,16 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>Concurrent delivery proofs using distinct, genuinely authenticated subscribers.</summary>
 public sealed partial class FeatureStreamEndpointsTests
 {
     private const string SplitReferer = "https://subscriber-split-proof.example/";
 
-    /// <summary>Role held by the first subscriber, and the row value it entitles.</summary>
     private const string AlphaRole = "alpha-reader";
 
-    /// <summary>Role held by the second subscriber, and the row value it entitles.</summary>
     private const string BetaRole = "beta-reader";
 
     private const string ControlRole = "split-control";
 
-    /// <summary>
-    /// Two concurrent subscribers, one layer, one scope, two identities: each receives only the
-    /// rows its own credential entitles it to, and the other subscriber's rows never appear.
-    /// </summary>
     [IntegrationTheory]
     [Operation(Operations.Streaming)]
     [InlineData(false)]
@@ -149,7 +142,6 @@ public sealed partial class FeatureStreamEndpointsTests
         bobSeen.Should().Contain(frame => frame.Raw.Contains("beta-only-secret-2"));
     }
 
-    /// <summary>Tenant policy must filter even an administrator's unfiltered live stream.</summary>
     [IntegrationTheory]
     [Operation(Operations.Streaming)]
     [InlineData(false)]
@@ -217,7 +209,6 @@ public sealed partial class FeatureStreamEndpointsTests
         bobSeen[1].Raw.Should().Contain("tenant-b-after");
     }
 
-    /// <summary>The WebSocket counterpart of the SSE unauthenticated-connect rejection.</summary>
     [IntegrationTest]
     [Operation(Operations.Streaming)]
     [Endpoint("GET /api/v1/streaming/features")]
@@ -262,13 +253,8 @@ public sealed partial class FeatureStreamEndpointsTests
                 DateTimeOffset.UtcNow.AddMinutes(10)),
             cancellationToken)).Token;
 
-    /// <summary>A frame delivered to one subscriber, with the object id it carried.</summary>
     private readonly record struct SplitFrame(long ObjectId, string Raw);
 
-    /// <summary>
-    /// One subscriber's live connection, abstracted over the two advertised transports so the
-    /// split assertions read identically for SSE and WebSocket.
-    /// </summary>
     private sealed class SplitStream : IAsyncDisposable
     {
         private readonly WebSocket? _socket;
@@ -292,7 +278,6 @@ public sealed partial class FeatureStreamEndpointsTests
         public static SplitStream ForSse(HttpClient client, HttpResponseMessage response, Stream stream, StreamReader reader)
             => new(client, response, stream, reader);
 
-        /// <summary>Reads the next frame of any type from the underlying transport.</summary>
         public async Task<(string? EventName, JsonElement Data)> NextAsync(CancellationToken cancellationToken)
         {
             if (_socket is not null)
@@ -367,10 +352,6 @@ public sealed partial class FeatureStreamEndpointsTests
         return sse;
     }
 
-    /// <summary>
-    /// Reads <c>feature-change</c> frames until the one carrying <paramref name="untilObjectId"/>
-    /// arrives, returning every feature-change frame seen on the way.
-    /// </summary>
     private static async Task<List<SplitFrame>> ReadFeatureChangesUntilAsync(
         SplitStream stream,
         long untilObjectId,

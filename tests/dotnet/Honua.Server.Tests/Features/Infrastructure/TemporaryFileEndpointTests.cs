@@ -14,9 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Integration tests for temporary file endpoint authorization behavior.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class TemporaryFileEndpointTests : IDisposable
