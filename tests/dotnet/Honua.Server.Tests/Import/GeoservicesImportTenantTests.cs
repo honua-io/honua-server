@@ -3,15 +3,13 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -59,11 +57,11 @@ public sealed class GeoservicesImportTenantTests
         });
         using var provider = services.BuildServiceProvider();
         var progressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var cache = provider.GetRequiredService<IDistributedCache>();
-        var jobs = new RedisImportJobManager(progressStore, cache,
-            NullLogger<RedisImportJobManager>.Instance, new ImportTestEnvironment());
-        var worker = new GeoservicesImportBackgroundService(provider.GetRequiredService<IServiceScopeFactory>(), jobs,
-            NullLogger<GeoservicesImportBackgroundService>.Instance);
+        var records = ImportExecutionTestJobs.Create();
+        var jobs = new GeoservicesImportJobManager(progressStore,
+            NullLogger<GeoservicesImportJobManager>.Instance, records, Substitute.For<IJobQueue>());
+        var worker = new GeoservicesImportJobExecutor(provider.GetRequiredService<IServiceScopeFactory>(), jobs,
+            NullLogger<GeoservicesImportJobExecutor>.Instance);
         const string jobId = "planned-folder-import";
         var queued = new GeoservicesImportRequest
         {
@@ -74,13 +72,12 @@ public sealed class GeoservicesImportTenantTests
             ServiceName = target.ServiceName,
             Target = target
         };
-        await jobs.RequestStore.SetProgressAsync(jobId, queued, TimeSpan.FromMinutes(10));
-        var roundTrip = await jobs.RequestStore.GetProgressAsync(jobId);
-        roundTrip!.Target.Should().BeEquivalentTo(target);
-        await jobs.ProgressStore.SetProgressAsync(jobId,
-            GeoservicesImportProgress.CreateInitial(jobId, queued.ServiceUrl, 0, queued.TableName), TimeSpan.FromMinutes(10));
-        await jobs.JobQueue.EnqueueAsync(jobId);
-        await worker.StartAsync(CancellationToken.None);
+        await jobs.SubmitAsync(queued,
+            GeoservicesImportProgress.CreateInitial(jobId, queued.ServiceUrl, 0, queued.TableName));
+        var record = (await records.GetAsync(jobId))!;
+        jobs.ReadRequest(record)!.Target.Should().BeEquivalentTo(target);
+        using var cancellation = new CancellationTokenSource();
+        var execution = worker.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), cancellation.Token);
         try
         {
             var actual = await observed.Task.WaitAsync(TimeSpan.FromSeconds(15));
@@ -90,16 +87,9 @@ public sealed class GeoservicesImportTenantTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None);
-            worker.Dispose();
+            cancellation.Cancel();
+            await ImportExecutionTestJobs.ObserveAsync(execution);
         }
     }
 
-    private sealed class ImportTestEnvironment : IHostEnvironment
-    {
-        public string EnvironmentName { get; set; } = "Test";
-        public string ApplicationName { get; set; } = "ImportTests";
-        public string ContentRootPath { get; set; } = string.Empty;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
 }

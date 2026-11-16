@@ -268,7 +268,7 @@ internal static class ProposalEndpoints
     }
 
     internal const string HumanRejectionRequiredMessage =
-        "Rejecting a proposal requires a live interactive OIDC session. Open the proposal in Console; MCP tokens and API keys cannot reject it.";
+        "Rejecting a proposal requires a live interactive browser session. Open the proposal in Console; MCP tokens and API keys cannot reject it.";
 
     private static async Task<IResult?> DenyNonHumanRejectionAsync(
         OperationProposal proposal, string actor, HttpContext context)

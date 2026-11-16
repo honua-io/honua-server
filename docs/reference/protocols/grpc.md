@@ -63,7 +63,7 @@ for session lifecycle and CSRF requirements.
 
 | Service | RPCs | Purpose |
 | --- | --- | --- |
-| `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits` | Feature query and edits; respects per-service protocol enablement and access policy. |
+| `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits`, `ListAttachments`, `GetAttachmentUrl`, `UploadAttachment`, `BeginAttachmentUpload`, `UploadAttachmentChunk`, `CommitAttachmentUpload`, `AbortAttachmentUpload`, `DeleteAttachment` | Feature query and edits; respects per-service protocol enablement and access policy. |
 | `ProcessService` | `ValidatePlan`, `DryRunPlan`, `ExecutePlan`, `ExecutePlanStream` (server streaming), `SubmitJob`, `GetJob`, `GetJobResult`, `CancelJob` | Canonical geoprocessing runtime (same backend as GPServer and OGC API Processes). |
 | `SpecService` | `PlanSpec`, `ApplySpec` (server streaming), `CancelApply` | Spec plan/apply engine. |
 | `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. |
@@ -91,17 +91,52 @@ revision. Invalid or stale tokens return `INVALID_ARGUMENT`; each page evaluates
 access again. Service capabilities are the union of its visible layers; check the
 individual layer before enabling an operation.
 
-`DescribeLayer` returns field definitions, scalar defaults, coded/range domains,
+`DescribeLayer` returns field definitions, defaults, coded/range domains,
 subtypes and creation templates, relationships to accessible layers, spatial and
 time metadata, editing tracking fields, and effective capabilities. Field masks
 also apply to defaults, templates, key-field references and relationship keys.
 The server omits facts absent from canonical metadata, including unknown time
-zones and tracking timestamps. An absent default differs from an explicit null.
+zones and tracking timestamps. An absent default differs from an explicit null. Structured defaults are encoded
+as JSON in the default value's string branch.
 
 Managed edit capabilities require a writable storage binding, declared publication
 capability and caller authorization. Unsupported operations remain false;
-attachment and related-query flags do not imply implementations. Clients must
+attachment editing additionally requires explicit attachment enablement. Clients must
 respect these flags and surface unsupported operations explicitly.
+
+## Attachments over gRPC-Web
+
+All attachment RPCs are unary, so browsers can use gRPC-Web without client
+streaming. Resolve the service and layer with native metadata, then supply an
+`AttachmentParent` with the public layer identifier and either the feature's
+object ID or global ID. Every call checks current layer access and feature
+visibility. Editing also checks the declared edit capability, attachment
+configuration, caller authorization and ownership policy.
+
+For content up to 1 MiB, call `UploadAttachment` with the bytes, total size,
+SHA-256 digest, name, content type and an idempotency key. Larger files use
+`BeginAttachmentUpload`, repeated `UploadAttachmentChunk` calls, and
+`CommitAttachmentUpload`. Each chunk carries its offset and SHA-256 digest;
+use the returned `next_offset_bytes` and `max_chunk_bytes` to resume. Chunks
+are at most 1 MiB. Upload sessions and idempotency receipts last 24 hours.
+An identical retry returns the accepted result; a conflicting chunk returns
+`FAILED_PRECONDITION`. Commit verifies the complete size, digest and configured
+content policy before publication. `AbortAttachmentUpload` releases an
+unfinished upload. Configured total-size and allowed-content-type limits apply
+to both upload paths.
+
+`ListAttachments` returns native descriptors, including keywords, stable global
+IDs and SHA-256 digests when available. Legacy attachments can lack these native
+identity and digest fields. Page size defaults to 100, with a maximum of 500;
+follow `next_page_token` with the same parent and filters. `GetAttachmentUrl`
+returns an HTTPS signed download URL valid for five minutes. Download the content
+from that URL; descriptors never expose storage paths. `DeleteAttachment` uses an
+idempotency key and rechecks edit access before applying or replaying a deletion.
+
+Session calls remain bound to the initiating caller and published layer. They
+recheck authorization and feature visibility rather than treating possession of
+a session ID as permission. Idempotency keys are required for upload and delete,
+with a maximum of 256 UTF-8 bytes. Keep the same key and metadata when retrying.
 
 ## Feature query result contract (REST parity)
 
@@ -177,7 +212,7 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
-The server pins `Geospatial.Grpc` **1.1.0**, which is on
+The server pins `Geospatial.Grpc` **1.3.0**, which is on
 [nuget.org](https://www.nuget.org/packages/Geospatial.Grpc/) and restores
 anonymously.
 
