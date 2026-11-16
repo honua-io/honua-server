@@ -149,7 +149,6 @@ function observerCollectScript(workflow, stepName) {
 }
 
 for (const [workflow, stepName] of [
-  ['pr-gate-impact-observe.yml', 'Collect exact change metadata from trusted policy'],
   ['native-image-impact-observe.yml', 'Resolve canonical exact-head PR Gate subject'],
 ]) {
   for (const draft of [true, false]) {

@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -189,19 +188,13 @@ internal sealed class ApiKeyAuthenticationHandler(
 
         try
         {
-            // One completed-reader fault is a torn Redis pipe (Lambda freeze/thaw or a
-            // timeout). Retry once so the multiplexer can reconnect and a managed key
-            // still authenticates.
-            var storedKey = await RedisClientFault.RetryCompletedReaderAsync(
-                () => store.ValidateAsync(presentation.ApiKey, cancellationToken),
-                cancellationToken);
+            var storedKey = await store.ValidateAsync(presentation.ApiKey, cancellationToken);
             return new StoredKeyLookup(storedKey is null ? null : ResolveStoredKey(storedKey.Record, presentation, logger), StoreUnavailable: false);
         }
-        catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
+        catch (Exception ex) when (CredentialStoreFault.IsUnavailable(ex))
         {
-            // RedisTimeoutException derives from TimeoutException, not RedisException.
-            // A second completed-reader fault is the same outage: fall through to the
-            // HONUA_ADMIN_PASSWORD break-glass comparison instead of an unhandled 500.
+            // Fall through to the HONUA_ADMIN_PASSWORD break-glass comparison instead of an
+            // unhandled 500.
             AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
             return new StoredKeyLookup(null, StoreUnavailable: true);
         }

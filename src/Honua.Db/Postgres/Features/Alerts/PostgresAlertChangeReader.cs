@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Data;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -51,6 +52,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICommittedSnapshotPolicy? _policy;
+    private readonly IChangeTracker _changeTracker;
 
     public PostgresAlertChangeReader(IAdoNetDatabaseConnectionProvider connectionProvider)
         : this(connectionProvider, policy: null)
@@ -59,10 +61,12 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
 
     internal PostgresAlertChangeReader(
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        ICommittedSnapshotPolicy? policy)
+        ICommittedSnapshotPolicy? policy,
+        IChangeTracker? changeTracker = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _policy = policy;
+        _changeTracker = changeTracker ?? new PostgresChangeTracker(connectionProvider);
     }
 
     public async Task<IReadOnlyList<AlertChange>> GetChangesAfterAsync(
@@ -70,6 +74,12 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
         int maxCount,
         CancellationToken cancellationToken = default)
     {
+        var throughGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
+        if (lastGeneration >= throughGeneration)
+        {
+            return [];
+        }
+
         // Metadata only. Geometry and attribute blobs are loaded later, one relevant
         // generation at a time. Versioned rows stay out of unversioned alert state.
         const string sql = """
@@ -78,6 +88,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
                    committed_attributes IS NOT NULL
             FROM honua.feature_changes
             WHERE generation > @last_generation
+              AND generation <= @through_generation
               AND version_id IS NULL
             ORDER BY generation
             LIMIT @max_count
@@ -86,6 +97,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader, IAlertComm
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("last_generation", NpgsqlDbType.Bigint, lastGeneration);
+        command.Parameters.AddWithValue("through_generation", NpgsqlDbType.Bigint, throughGeneration);
         command.Parameters.AddWithValue("max_count", NpgsqlDbType.Integer, maxCount);
 
         var changes = new List<AlertChange>(Math.Max(1, maxCount));
