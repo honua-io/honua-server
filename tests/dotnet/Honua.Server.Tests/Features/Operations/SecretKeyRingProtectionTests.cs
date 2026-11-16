@@ -86,30 +86,36 @@ public sealed class SecretKeyRingProtectionTests
         SecretKeyRingCipher.EnsureReadable(certificateRing.Elements, new(certificate, null));
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void EnsureReadable_WhenTheCertificateWasRemoved_RefusesWithoutChangingTheRing(bool legacy)
+    [UnitTest]
+    public void EnsureReadable_WhenTheCurrentCertificateWasRemoved_RefusesWithoutChangingTheRing()
     {
         using var certificate = CreateCertificate();
-        var secret = SecretKeyRingMaterial.Parse(NewSecret());
         var repository = new MemoryKeyRepository();
-        string payload;
-        if (legacy)
-        {
-            var services = new ServiceCollection();
-            services.AddDataProtection()
-                .SetApplicationName("Honua.Server")
-                .AddKeyManagementOptions(options => options.XmlRepository = repository)
-                .ProtectKeysWithCertificate(certificate);
-            using var provider = services.BuildServiceProvider();
-            payload = provider.GetDataProtector(Purpose).Protect("wrapped-by-certificate");
-        }
-        else
-        {
-            payload = Protect(repository, new(certificate, null), "wrapped-by-certificate");
-        }
+        var payload = Protect(repository, new(certificate, null), "wrapped-by-certificate");
 
+        AssertCertificateRetentionRequired(repository, certificate, payload);
+    }
+
+    [UnitTest]
+    public void EnsureReadable_WhenTheLegacyCertificateWasRemoved_RefusesWithoutChangingTheRing()
+    {
+        using var certificate = CreateCertificate();
+        var repository = new MemoryKeyRepository();
+        var services = new ServiceCollection();
+        services.AddDataProtection()
+            .SetApplicationName("Honua.Server")
+            .AddKeyManagementOptions(options => options.XmlRepository = repository)
+            .ProtectKeysWithCertificate(certificate);
+        using var provider = services.BuildServiceProvider();
+        var payload = provider.GetDataProtector(Purpose).Protect("wrapped-by-certificate");
+
+        AssertCertificateRetentionRequired(repository, certificate, payload);
+    }
+
+    private static void AssertCertificateRetentionRequired(
+        MemoryKeyRepository repository, X509Certificate2 certificate, string payload)
+    {
+        var secret = SecretKeyRingMaterial.Parse(NewSecret());
         var before = repository.Elements.Select(element => element.ToString()).ToArray();
         var action = () => SecretKeyRingCipher.EnsureReadable(repository.Elements, new(null, secret));
 
