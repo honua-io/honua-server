@@ -76,7 +76,7 @@ public sealed class SharedCacheLifetimeMiddlewareTests
             builder.Services.AddSingleton<IOutputCacheStore>(_store);
             _application = builder.Build();
             _application.UseOutputCache();
-            _application.MapGet("/tiles/{serviceId}/{layerId}", HandleRequestAsync)
+            _application.MapGet("/tiles/{serviceId}/{layerId}", (Func<HttpContext, Task<IResult>>)HandleRequestAsync)
                 .WithSharedCacheClass(ResponseCacheClass.Tile).CacheOutput("Tile");
         }
 
