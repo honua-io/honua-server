@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only heavy runner selection and hosted fallback contracts."""
 import json
+from itertools import product
 import os
 import runpy
 import socket
@@ -14,6 +15,17 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / 'scripts/ci/select-advisory-runner.sh'
+
+
+def admission_event(scenario):
+    event_name, ref, head_repository, _ = scenario
+    event = {'event_name': event_name, 'repository': 'honua-io/honua-server',
+             'ref': ref, 'sha': 'dispatch-sha',
+             'event': {'repository': {'default_branch': 'trunk'}}}
+    if head_repository:
+        event['event']['pull_request'] = {'head': {'repo': {'full_name': head_repository}},
+                                          'base': {'sha': 'base-sha'}}
+    return event
 
 
 class AdvisoryRunnerTests(unittest.TestCase):
@@ -135,24 +147,18 @@ esac
             ('push', 'refs/heads/trunk', None, False),
             ('pull_request_target', 'refs/heads/trunk', 'fork/honua-server', False),
         )
-        for event_name, ref, head_repository, allowed in scenarios:
-            event = {'event_name': event_name, 'repository': repository, 'ref': ref, 'sha': 'dispatch-sha',
-                     'event': {'repository': {'default_branch': 'trunk'}}}
-            if head_repository:
-                event['event']['pull_request'] = {'head': {'repo': {'full_name': head_repository}},
-                                                  'base': {'sha': 'base-sha'}}
-            for configured in (False, True):
-                for checkout_outcome in ('success', 'failure'):
-                    for index, step in enumerate(steps):
-                        condition = step['if'].replace('vars.HONUA_HEAVY_RUNNER', "'configured'" if configured else "''")
-                        condition = condition.replace('steps.trusted-base', "steps['trusted-base']")
-                        with self.subTest(event=event_name, ref=ref, head=head_repository,
-                                          configured=configured, outcome=checkout_outcome, step=index):
-                            actual = evaluate(condition, event, {'steps': {'trusted-base': {'outcome': checkout_outcome}}})
-                            self.assertEqual(actual, allowed and configured and (index == 0 or checkout_outcome == 'success'))
-            if allowed:
-                self.assertEqual(evaluate(steps[0]['with']['ref'], event),
-                                 'base-sha' if event_name == 'pull_request' else 'dispatch-sha')
+        cases = product(scenarios, (False, True), ('success', 'failure'), enumerate(steps))
+        for scenario, configured, checkout_outcome, (index, step) in cases:
+            condition = step['if'].replace('vars.HONUA_HEAVY_RUNNER', "'configured'" if configured else "''")
+            condition = condition.replace('steps.trusted-base', "steps['trusted-base']")
+            with self.subTest(scenario=scenario, configured=configured, outcome=checkout_outcome, step=index):
+                actual = evaluate(condition, admission_event(scenario),
+                                  {'steps': {'trusted-base': {'outcome': checkout_outcome}}})
+                self.assertEqual(actual, scenario[3] and configured and (index == 0 or checkout_outcome == 'success'))
+        for scenario in filter(lambda case: case[3], scenarios):
+            with self.subTest(checkout_scenario=scenario):
+                self.assertEqual(evaluate(steps[0]['with']['ref'], admission_event(scenario)),
+                                 'base-sha' if scenario[0] == 'pull_request' else 'dispatch-sha')
 
     def test_codeql_extraction_obeys_the_runner_slice_budget(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/codeql.yml').read_text())
