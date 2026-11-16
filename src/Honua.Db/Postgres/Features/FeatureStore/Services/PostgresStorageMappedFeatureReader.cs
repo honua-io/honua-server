@@ -842,8 +842,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     }
 
     // OGC API Features `datetime` (and any temporal query) lands here as a
-    // TemporalFilter. The storage-mapped reader previously dropped it, so the
-    // filter was silently ignored. Row interval is [start, COALESCE(end, start)];
+    // TemporalFilter. Row interval is [start, COALESCE(end, start)];
     // it must intersect the query interval [Start, End].
     private string BuildTemporalFilter(TemporalFilter filter, SqlBuilder sql)
     {

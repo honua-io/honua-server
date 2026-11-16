@@ -1077,7 +1077,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private static (bool IsPublic, bool RequiresAuth, string[]? AllowedRoles) ResolveSceneAccess(
         AccessPolicy? layerAccessPolicy)
     {
-        // No layer-level access policy ⇒ historic default (public scene).
+        // No layer-level access policy ⇒ default (public scene).
         // Existing public layers continue to materialise public tilesets.
         if (layerAccessPolicy is null)
         {

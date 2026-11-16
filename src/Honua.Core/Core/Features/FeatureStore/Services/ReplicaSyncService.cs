@@ -11,8 +11,6 @@ namespace Honua.Core.Features.FeatureStore.Services;
 
 public sealed partial class ReplicaSyncService
 {
-    // PA-020: replica conflict detection / edit application is a hot path (every replica
-    // upload) and previously had no telemetry span.
     private static readonly ActivitySource _activitySource = new("Honua.Core.FeatureStore");
 
     private readonly IChangeTracker _changeTracker;

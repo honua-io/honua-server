@@ -121,14 +121,9 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<IVersionManager>(_ => new NoOpVersionManager());
-        // Honua.Infrastructure.Services.SpatialReferenceResolver (a mandatory scoped
-        // dependency of FeatureServer/ImageServer/GeometryService/gRPC) requires
-        // ICrsDetectionService regardless of provider. Only Postgres ever registered one
-        // (CRS detection from WKT/.prj/GeoJSON needs its spatial_ref_sys catalog), so every
-        // FeatureServer query under DataSource:Provider=mysql failed DI activation outright
-        // before this fix.
+        // SpatialReferenceResolver requires ICrsDetectionService regardless of provider.
         services.AddScoped<ICrsDetectionService>(_ => new NoOpCrsDetectionService());
-        // Same gap, same fix shape: SpatialReferenceResolver also requires ICrsRegistry.
+        // SpatialReferenceResolver also requires ICrsRegistry.
         // WellKnownCrsRegistry covers CRS84/EPSG:4326/EPSG:3857 (the practical case for a
         // provider with no spatial_ref_sys-equivalent catalog) and honestly reports
         // "unsupported" for anything else.

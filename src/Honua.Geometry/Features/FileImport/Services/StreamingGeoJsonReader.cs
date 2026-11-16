@@ -232,8 +232,7 @@ internal sealed partial class StreamingGeoJsonReader
                 }
             }
 
-            // Retain only an incomplete token or feature. Parsing the whole document here
-            // previously left source-sized arrays in the shared pool during the import.
+            // Retain only an incomplete token or feature to avoid source-sized arrays in the shared pool.
             var maxCapacity = _limits.MaxSingleFeatureBytes > 0
                 ? (int)Math.Min(_limits.MaxSingleFeatureBytes, Array.MaxLength)
                 : Array.MaxLength;

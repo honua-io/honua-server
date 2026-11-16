@@ -485,10 +485,6 @@ internal sealed partial class JobExecutionService(
                 jobCts,
                 partitionLeaseRenewalCts.Token);
 
-        // PA-159: the worker-side execution loop (claim -> executor dispatch -> terminal
-        // finalize) had metrics and logging but no trace span, leaving the actual job
-        // execution invisible in traces even though ControlPlaneTelemetry already provides
-        // a StartExecutionActivity helper used by the submission-side backend calls.
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
             ControlPlaneTelemetry.Activities.ExecutionRun, "run", running);
 

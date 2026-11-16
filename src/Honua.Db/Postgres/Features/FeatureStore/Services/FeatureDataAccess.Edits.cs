@@ -347,7 +347,7 @@ internal sealed partial class FeatureDataAccess
 
         var preconditions = BuildPreconditionMap(editBatch);
 
-        // BH7-021: hoist partial-result accumulators outside the try so the outer catch for
+        // Hoist partial-result accumulators outside the try so the outer catch for
         // the non-transactional path can report already-committed rows as successes rather than
         // re-marking them as failures (which drives clients to re-submit, creating duplicates).
         var partialCreatedIds = ImmutableArray<long>.Empty;
@@ -482,11 +482,11 @@ internal sealed partial class FeatureDataAccess
                     : FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
 
-            // BH7-021: for the non-transactional path the partial accumulators above capture
+            // For the non-transactional path the partial accumulators above capture
             // every result that was recorded before the exception. Only operations that did
             // not yet produce a result (the unprocessed tail) should be reported as failed.
-            // Reporting all as failed previously drove clients to re-submit already-committed
-            // rows, creating duplicates. Cancellation uses the same shape so an autocommit
+            // Reporting committed rows as failed drives clients to re-submit, creating
+            // duplicates. Cancellation uses the same shape so an autocommit
             // that already landed is not reported as a clean rollback.
             var unrecordedMessage = ex is OperationCanceledException
                 ? "Edit cancelled."
@@ -1967,7 +1967,7 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // Stop the rest of the batch. An open transaction still rolls
                 // back, so that cancellation propagates. Autocommit returns the rows
                 // already recorded; the in-flight row stays in the unknown tail.
                 if (transaction != null)
@@ -2202,7 +2202,7 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // Stop the rest of the batch. An open transaction still rolls
                 // back. Autocommit returns the rows already recorded.
                 if (transaction != null)
                 {
@@ -2309,7 +2309,7 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // Stop the rest of the batch. An open transaction still rolls
                 // back. Autocommit returns the rows already recorded.
                 if (transaction != null)
                 {

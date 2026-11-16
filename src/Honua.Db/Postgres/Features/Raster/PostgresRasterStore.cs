@@ -1964,8 +1964,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // Apply band arithmetic (renderingRule BandArithmetic) on the merged mosaic, collapsing
-        // two bands into a single analytic band (e.g. NDVI) before the stretch â€” previously the
-        // mosaic path silently ignored band-math renderingRules.
+        // two bands into a single analytic band (e.g. NDVI) before the stretch.
         if (query.BandArithmetic is { } mosaicBandArithmetic)
         {
             postMergeRasterExpr = BuildBandArithmeticExpression(postMergeRasterExpr, mosaicBandArithmetic);

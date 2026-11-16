@@ -41,7 +41,7 @@ public static class ServiceCollectionExtensions
         // singleton license service, so it can be a singleton.
         services.TryAddSingleton<IComputedFieldPipeline, ComputedFieldPipeline>();
 
-        // Output-format registry (issue #2856, ADR-0067). Registered as the real, license-gated
+        // Output-format registry (ADR-0067). Registered as the real, license-gated
         // registry only when at least one output-format plugin is present; otherwise the export /
         // format-negotiation seam gets the zero-overhead no-op so it can depend on
         // IFeatureOutputFormatRegistry unconditionally. It aggregates singleton IFeatureOutputFormat

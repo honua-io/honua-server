@@ -13,8 +13,7 @@ namespace Honua.Core.Features.Edit;
 
 public sealed class EditProcessor : IEditProcessor
 {
-    // PA-018: the feature-write pipeline (validate/optimize/convert) is called separately by
-    // every protocol adapter and previously emitted no telemetry at all. Honua.Core cannot
+    // Honua.Core cannot
     // depend on Honua.ServiceDefaults (see the dependency-direction rule), so this mirrors the
     // local-ActivitySource convention already used elsewhere in this project (e.g.
     // VersionJobRunner) rather than referencing HonuaTelemetry.ActivitySource.
