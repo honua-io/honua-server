@@ -37,7 +37,7 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
     public Task<LocalProcessProjectIdentity> GetIdentityAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken)
         => Get(access, "project/identity", LocalProcessJsonContext.Default.LocalProcessProjectIdentity, cancellationToken);
 
-    public Task<LocalProcessProjectIdentity> BindAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken)
+    public Task<LocalProcessProjectIdentity> BindProjectAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken)
     {
         RequireHuman(access);
         return Send(access, HttpMethod.Post, "project/bind", new LocalProcessBindRequest(projectId),

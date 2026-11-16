@@ -21,7 +21,7 @@ class AdvisoryRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             heartbeat = {'version': 1, 'instance': options.get('instance', 'i-123abc'), 'at': int(time.time()) - options.get('age', 0),
-                         'heavy': {'version': 1, 'idle': options.get('idle', 1)}}
+                         'heavy': {'version': 1, 'idle': options.get('idle', 3)}}
             (path / 'heartbeat').write_text(json.dumps(heartbeat))
             (path / 'aws').write_text('''#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$MOCK_DIR/calls"
@@ -59,6 +59,14 @@ esac
                 selected, calls = self.select({'label': json.dumps(selector)})
                 self.assertEqual(selected, selector)
                 self.assertEqual(len(calls.splitlines()), 2)
+
+    def test_advisory_work_leaves_two_idle_heavy_runners_for_required_jobs(self):
+        for idle in (1, 2):
+            with self.subTest(idle=idle):
+                self.assertEqual(self.select({'idle': idle})[0], 'ubuntu-24.04')
+        for idle in (3, 8):
+            with self.subTest(idle=idle):
+                self.assertEqual(self.select({'idle': idle})[0], ['self-hosted', 'honua-heavy'])
 
     def test_busy_stale_mismatched_or_future_heartbeat_falls_back(self):
         for options in ({'idle': 0}, {'age': 100}, {'age': -100}, {'instance': 'i-old'}, {'idle': 9}):
