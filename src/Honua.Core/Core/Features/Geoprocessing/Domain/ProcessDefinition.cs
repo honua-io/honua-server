@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 
-
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
 public sealed record ProcessDefinition

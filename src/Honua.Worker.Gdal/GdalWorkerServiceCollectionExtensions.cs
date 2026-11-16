@@ -132,8 +132,8 @@ internal static class GdalWorkerServiceCollectionExtensions
         // ConfigurationBinder APPENDS array/list items onto a pre-populated list rather
         // than replacing it, so a bound AllowedRasterInputFormats would only ever GROW
         // the default TIFF/PNG/JPEG allowlist — an operator could never TIGHTEN it to a
-        // narrower set (e.g. TIFF-only). When the config actually supplies the list, REPLACE the bound defaults
-        // with precisely the configured values (#2784 follow-up).
+        // narrower set (e.g. TIFF-only). When the config actually supplies the list, REPLACE
+        // the bound defaults with precisely the configured values (#2784 follow-up).
         services.PostConfigure<GdalWorkerOptions>(options =>
             ReplaceListWhenConfigured(
                 configuration
