@@ -54,10 +54,10 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // ServiceCollectionExtensions.AddPostgreSqlServices — both call
         // PostgresDataSourceFactory.Create with this value, so the schema is applied via
         // the same RDS-Proxy-safe mechanism (physical-connection initializer SET, or the
-        // libpq `options` startup parameter under multiplexing/schema-header modes —
-        // honua-server#1638). Without this, background/service callers (where
-        // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
-        // search_path and miss schema-qualified tables.
+        // libpq `options` startup parameter under multiplexing/schema-header modes).
+        // Without this, background/service callers (where ISchemaContext.CurrentSchema
+        // is null) fall back to the PostgreSQL default search_path and miss
+        // schema-qualified tables.
         _defaultSchema = configuration["Database:Schema"];
         // Named and bound pools always SET their session settings per connection (see below).
         // Behind RDS Proxy that pins the proxy session, and a frozen Lambda never prunes its

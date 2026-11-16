@@ -3135,7 +3135,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // container where no snapshot has been activated yet (e.g. migration 031 ran
     // but the compat/bootstrap compile has not). In that case we start from an
     // empty graph and force the first write (null expectedEtag) instead of 500ing
-    // the admin layer-publish path. (honua-server#1341.)
+    // the admin layer-publish path.
     //
     // This deliberately reads only the persisted snapshot via the write-base reader,
     // NOT GetCurrentAsync. GetCurrentAsync synthesizes a graph from the V1 catalog when
@@ -3189,7 +3189,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // persisted snapshot only (same rationale as LoadCurrentOrEmptyGraphAsync): a
         // synthesized V1-compat graph is never persisted and would fail SaveAsync.
         // When no snapshot is activated there is nothing to update — extents are served
-        // straight from the V1 catalog — so skip. (honua-server#1412.)
+        // straight from the V1 catalog — so skip.
         MetadataV2GraphSnapshot? snapshot;
         if (_metadataWriteBaseReader is not null)
         {
@@ -3600,7 +3600,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // metadata schema. A user source table that merely happens to be named
         // 'features' in another schema (e.g. public.features) has neither the JSONB
         // 'attributes' column nor 'layer_id', so applying these options there would make
-        // the reader emit columns the table lacks and fail with 42703. (honua-server#1238.)
+        // the reader emit columns the table lacks and fail with 42703.
         //
         // A managed-store layer is bound to the managed features table by construction (its
         // schema is resolved from the connection, e.g. public.features), so it always gets

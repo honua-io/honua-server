@@ -326,11 +326,9 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     // the canonical NARROW geodesic-safe bucket rather than the broad geographic
     // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
     // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
-    // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
-    // it drops 4619 (SWEREF99) and 4267 (NAD27) and adds 4617 (NAD83(CSRS)) / 4759
-    // (NAD83(NSRS2007)); the primary
-    // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
-    // fallback is affected.
+    // narrow bucket excludes 4619 (SWEREF99) and 4267 (NAD27) and includes 4617 (NAD83(CSRS)) /
+    // 4759 (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still classifies 4619
+    // correctly, so only the registry-miss fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
@@ -1123,7 +1121,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         // Only map the alias when the resource does not expose it as a queryable
         // attribute (TryGetField == null); otherwise fall through to normal schema
         // resolution. This intentionally does NOT recognize the literal physical
-        // names "created_at"/"updated_at" here: per #1415 those names are resolved
+        // names "created_at"/"updated_at" here: those names are resolved
         // through the schema so a user CQL2/OData filter on a layer-defined
         // attribute field (JSONB) maps to the typed attributes path (200), and a
         // filter on an undefined field raises ArgumentException (400) instead of

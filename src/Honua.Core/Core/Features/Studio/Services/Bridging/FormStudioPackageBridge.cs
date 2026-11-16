@@ -90,7 +90,7 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
             ItemId = itemId,
             CurrentVersionId = VersionGuid(formId, current.Version),
             PublishedVersionId = published is null ? null : VersionGuid(formId, published.Version),
-            // Forms has no ownership model; a null owner fails closed under the #3018
+            // Forms has no ownership model; a null owner fails closed under the Studio
             // authorization model (admin-only), matching the native surface's posture.
             OwnerId = null,
         };

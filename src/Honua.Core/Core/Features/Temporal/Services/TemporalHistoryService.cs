@@ -100,7 +100,7 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
         // timestamp -> generation index). Rather than silently treating a timestamp as generation 0
         // (which would return the full change feed for any timestamp, including future ones), reject
         // timestamp cursors with a clear 400. Resolving a timestamp to the generation in effect at
-        // that point is tracked as a #1166 follow-up.
+        // that point is not implemented.
         if (request.Timestamp is not null)
         {
             throw new TemporalValidationException(

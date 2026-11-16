@@ -825,7 +825,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var startColumn = DuckDBExternalSourceSql.QuoteIdentifier(filter.PropertyName);
 
         // Interval-intersection semantics mirror the Postgres path
-        // (#379 docs/temporal-animation-api.md): the row's interval is
+        // (docs/gis/temporal-animation-api.md): the row's interval is
         // [start, COALESCE(end, start)] and matches when it overlaps the
         // requested [filter.Start, filter.End] window. EndPropertyName is
         // populated by WMS/WMTS/MVT/OGC API Features when the layer
@@ -1236,7 +1236,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             return $"ST_Distance_Spheroid(ST_FlipCoordinates({geomCol}), ST_FlipCoordinates({filterGeomParam})) <= ${paramIndex++}";
         }
 
-        // Safety net (#2731; classifier unified in #2732): the geodesic-safe allowlist
+        // Safety net: the geodesic-safe allowlist
         // (GeographicSridClassifier.GeodesicDistanceSafeSrids, surfaced via
         // DistanceConversions.IsGeographicSrid) only covers the well-known WGS 84-spheroid-safe
         // codes. Any other SRID in

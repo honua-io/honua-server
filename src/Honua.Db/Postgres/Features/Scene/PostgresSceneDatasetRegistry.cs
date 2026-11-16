@@ -134,7 +134,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
 
             var localAssetRoot = CanonicalizeAssetRoot(record.AssetRoot);
 
-            // Read-through hydration seam (#2459, ADR-0060): every serving path (HTTP, gRPC, I3S,
+            // Read-through hydration seam (ADR-0060): every serving path (HTTP, gRPC, I3S,
             // OpenUSD) resolves through FindAsync, so materializing the local asset cache here — after
             // the connection is released and before projection — makes a scene published on one node
             // servable from any node without touching a single endpoint. A no-op for legacy rows with

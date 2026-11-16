@@ -89,7 +89,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     // THIS schema is the shared multi-layer table whose rows carry the JSONB
     // `attributes` column and the `layer_id` discriminator; a user source table that
     // merely happens to be named `features` in another schema (e.g. public.features)
-    // must NOT be treated as the shared table. (honua-server#1238 follow-up.)
+    // must NOT be treated as the shared table.
     private readonly string _metadataSchema = string.IsNullOrWhiteSpace(metadataSchema)
         ? "honua"
         : metadataSchema.Trim();

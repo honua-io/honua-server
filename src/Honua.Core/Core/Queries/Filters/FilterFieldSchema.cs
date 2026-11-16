@@ -44,7 +44,7 @@ public readonly struct FilterFieldSchema
         // Physical audit-timestamp columns plus the reserved canonical aliases
         // ("created"/"updated") that resolve to them. The aliases are how server-side
         // callers (e.g. the OData $deltatoken delta predicate) reference the system
-        // updated/created columns without colliding with the #1415 contract that a
+        // updated/created columns without colliding with the contract that a
         // user-supplied filter on the literal "created_at"/"updated_at" name resolves
         // through the layer schema.
         if (fieldName.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||

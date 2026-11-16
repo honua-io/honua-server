@@ -36,7 +36,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IOgcApiFeaturesMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcApiFeaturesMigrationScanner>());
 
-        // GeoTIFF / Cloud Optimized GeoTIFF coverage import service (issue #1030 slice 2).
+        // GeoTIFF / Cloud Optimized GeoTIFF coverage import service.
         // GetCoverage downloads can be large, so the HTTP client uses a long base timeout
         // while the import service applies its own per-request budget from the payload.
         // The pinned-DNS handler enforces the private/loopback address policy at connect
@@ -57,15 +57,15 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<IRasterImportService>(),
             serviceProvider.GetRequiredService<ILogger<OgcCoverageImportService>>()));
 
-        // Legacy WCS coverage import service (issue #1030 slice 3). The WCS
-        // service wraps the slice-2 coverage import pipeline — no separate
-        // HttpClient is needed because the underlying service handles all
-        // wire IO. Format negotiation and inventory downgrades happen in-process.
+        // Legacy WCS coverage import service. The WCS service wraps the
+        // OgcCoverageImportService pipeline — no separate HttpClient is
+        // needed because the underlying service handles all wire IO.
+        // Format negotiation and inventory downgrades happen in-process.
         services.TryAddScoped<OgcWcsImportService>();
 
         // Default in-memory evidence store for ArcGIS migration runs. Postgres composition
         // root replaces this with a durable implementation; tests rely on this default to
-        // exercise the admin endpoints without a database (#1025 slice 6).
+        // exercise the admin endpoints without a database.
         services.TryAddSingleton<IGeoServicesMigrationEvidenceStore, InMemoryGeoServicesMigrationEvidenceStore>();
 
         return services;

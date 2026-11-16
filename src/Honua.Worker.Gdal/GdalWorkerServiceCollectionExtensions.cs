@@ -81,14 +81,14 @@ internal static class GdalWorkerServiceCollectionExtensions
         // ships; the worker does not introduce its own BackgroundService.
         services.AddGdalWorkerExecutionLoop();
 
-        // Opt-in staged output publication (#3089): when Geoprocessing:OutputStaging
+        // Opt-in staged output publication: when Geoprocessing:OutputStaging
         // is enabled, large outputs stream to the shared object store and only typed
         // references enter the durable job record.
         services.AddGeoprocessingOutputStaging(configuration);
 
         // GDAL executor options, CLI runner, and the native-profile executor set.
         // The per-process executors implement IProcessExecutor and self-declare their
-        // process id(s) (GP Devkit authoring contract #2122), so GdalDispatchJobExecutor
+        // process id(s) (GP Devkit authoring contract), so GdalDispatchJobExecutor
         // builds its routing table by enumerating IProcessExecutor instead of a
         // hand-maintained ctor. Shared with the store-free AddGdalProcessExecutors seam.
         services.AddGdalProcessExecutors(configuration);
@@ -141,7 +141,7 @@ internal static class GdalWorkerServiceCollectionExtensions
                     .GetSection(nameof(GdalWorkerOptions.AllowedRasterInputFormats)),
                 options.AllowedRasterInputFormats));
 
-        // Restrictive-by-default GDAL runtime hardening (#2765): the driver-skip and
+        // Restrictive-by-default GDAL runtime hardening: the driver-skip and
         // remote-VSI-disable policy every GDAL/OGR subprocess inherits. Bound here so
         // both the in-process and container-exec runner seams resolve it.
         services

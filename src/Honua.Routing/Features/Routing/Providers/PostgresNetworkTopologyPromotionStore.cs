@@ -221,7 +221,7 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
             .ConfigureAwait(false);
 
         // The target generation row (already stamped with its own solve tables by rebuild
-        // completion, #2718) is the single source of truth here — copy its edge/vertex/srid
+        // completion) is the single source of truth here — copy its edge/vertex/srid
         // directly rather than threading them through as separate parameters.
         await transaction.ExecuteAsync(
                 """

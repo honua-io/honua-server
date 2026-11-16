@@ -62,8 +62,8 @@ public sealed partial class ReplicaSyncService
         }
 
         // Conflict review is supported only when the provider can durably persist conflicts. When it
-        // cannot (read-only providers, or before #1287 lands), fall back to last-write-wins so the
-        // existing non-manual strategy behavior is preserved.
+        // cannot (for example read-only providers), fall back to last-write-wins so the non-manual
+        // strategy behavior is preserved.
         var canRecordConflicts = _conflictRepository.SupportsConflictReview;
         var applyConflicting = request.LastWriteWins || !canRecordConflicts;
 
@@ -87,7 +87,7 @@ public sealed partial class ReplicaSyncService
             // Map server-side mutations since the base generation for conflict detection. Only
             // update/delete uploads can conflict; inserts use server-assigned ids and cannot collide
             // on an existing (layerId, objectId) key here (duplicate-insert detection is owned by the
-            // edit pipeline's uniqueness handling and #1287).
+            // edit pipeline's uniqueness handling).
             var uploadedObjectIds = new HashSet<long>(edits
                 .Where(edit => edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId.HasValue)
                 .Select(edit => edit.ObjectId!.Value));
@@ -506,7 +506,7 @@ public sealed partial class ReplicaSyncService
             // Update vs concurrent server insert/update: the coarse attribute classification. The sync
             // service sees only operation kinds, not values, so it cannot distinguish a geometry-only
             // conflict here. The protocol adapter refines this to ReplicaConflictType.Geometry once it
-            // has captured the client/server states (ReplicaConflictClassifier, #1287). DuplicateInsert,
+            // has captured the client/server states (ReplicaConflictClassifier). DuplicateInsert,
             // Attachment, and Relationship remain undetected: inserts use server-assigned ids, and the
             // replica upload model carries no attachment/related-record inputs to detect them.
             _ => ReplicaConflictType.Attribute,

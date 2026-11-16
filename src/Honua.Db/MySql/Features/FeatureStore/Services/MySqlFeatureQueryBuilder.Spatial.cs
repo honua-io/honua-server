@@ -111,7 +111,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // documents canonical X/Y WKB. WkbSridNormalizer preserves whatever dimension flags the
         // input carries byte-for-byte (it only strips the SRID word), so a Z/M-dimensioned filter
         // would otherwise bind a type word MySQL cannot parse. Reject explicitly instead of
-        // silently dropping the extra ordinates (the pre-#2965 behavior) or binding malformed WKB.
+        // silently dropping the extra ordinates or binding malformed WKB.
         if (WkbSridNormalizer.HasZOrMOrdinates(filter.Geometry))
         {
             throw MySqlUnsupportedFeature.Create(

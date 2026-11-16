@@ -437,11 +437,11 @@ public sealed class EditProcessor : IEditProcessor
             // A spatial layer does not universally require geometry: a nullable geometry
             // column legitimately accepts attribute-only ("null geometry") creates, which
             // ArcGIS FeatureServer and the OGC/OData edit paths all support (see
-            // GeometryValidationTests.ApplyEdits_WithNullGeometry_SucceedsWhenAllowed and
-            // Issue #45). The prior blanket "geometry required on a spatial layer" gate
-            // (BH-014, #2423) rejected those valid attribute-only creates; NOT NULL geometry
-            // columns are enforced by the database constraint, mapped through the shared
-            // error helpers rather than a client-side pre-check.
+            // GeometryValidationTests.ApplyEdits_WithNullGeometry_SucceedsWhenAllowed).
+            // A blanket "geometry required on a spatial layer" gate would reject those
+            // valid attribute-only creates; NOT NULL geometry columns are enforced by the
+            // database constraint, mapped through the shared error helpers rather than a
+            // client-side pre-check.
             //
             // Required attributes are the same per-slot check FeatureServer runs before the
             // batch is assembled. Geometry presence is intentionally not pre-checked.

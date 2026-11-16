@@ -811,11 +811,11 @@ internal sealed partial class StreamingGeoJsonReader
         }
 
         // Topology validity (self-intersection, ring orientation, hole placement) is intentionally
-        // NOT rejected here. Previously an invalid ring failed the whole-file preflight, which is
+        // NOT rejected here: failing the whole-file preflight on an invalid ring would be
         // inconsistent with every other import reader and with the edit paths' shared repair
         // pipeline. The shared per-row validity gate at insertion time (CreateWkb /
-        // ImportLimits.GeometryValidityMode, #2743) now repairs (default), rejects, or accepts
-        // invalid geometry per config — so a single bad ring no longer discards the entire file.
+        // ImportLimits.GeometryValidityMode) repairs (default), rejects, or accepts invalid
+        // geometry per config — so a single bad ring does not discard the entire file.
         return null;
     }
 

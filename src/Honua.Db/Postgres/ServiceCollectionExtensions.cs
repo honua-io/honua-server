@@ -509,7 +509,7 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
 
-        // Register Postgres-backed row-level security policy store (#502, epic #1275).
+        // Register Postgres-backed row-level security policy store.
         // Backs IRlsPolicyStore so per-layer row-visibility policies are durable and
         // shared across scaled nodes; resolved per-request and AND-ed into queries.
         services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRlsPolicyStore>(serviceProvider =>
@@ -532,7 +532,7 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
-        // Register the independent, styleId-keyed style catalog (ADR-0048 Phase 2, #1389)
+        // Register the independent, styleId-keyed style catalog (ADR-0048 Phase 2)
         services.AddScoped<IStyleCatalog>(serviceProvider =>
             new PostgresStyleCatalog(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
@@ -876,7 +876,7 @@ internal static partial class ServiceCollectionExtensions
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
         services.AddScoped<IMigrationStyleApplicator, PostgresMigrationStyleApplicator>();
 
-        // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
+        // Register ArcGIS migration evidence store. Replaces the Core
         // in-memory default so admin endpoints can serve persisted manifest + parity
         // artifacts across server restarts and across instances.
         services.RemoveAll<IGeoServicesMigrationEvidenceStore>();
@@ -885,13 +885,13 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
-        // Register migration performance evidence store (#1033 slice 5). Resolved alongside
+        // Register migration performance evidence store. Resolved alongside
         // the JsonTypeInfo<MigrationPerformanceEvidenceArtifact> the Server registers from
         // its source-generated context so persistence stays AOT-safe. TryAdd so a host that
         // bypasses Postgres registration retains the in-memory fallback default.
         services.TryAddScoped<IMigrationPerformanceEvidenceStore, PostgresMigrationPerformanceEvidenceStore>();
 
-        // Register migration-run checkpoint store (#2459, ADR-0060). Overrides the Core
+        // Register migration-run checkpoint store (ADR-0060). Overrides the Core
         // in-memory / filesystem default with the durable honua.migration_run_checkpoints
         // table so resumable migration-run state lives in the shared data plane and can
         // resume on any node. TryAdd so hosts that bypass Postgres keep the in-memory fallback.
@@ -900,7 +900,7 @@ internal static partial class ServiceCollectionExtensions
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 
-        // Register OGC API Features collection import (#1029 slice 2) with its Postgres sink.
+        // Register OGC API Features collection import with its Postgres sink.
         services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>
             new PostgresOgcApiFeaturesCollectionSink(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
@@ -932,7 +932,7 @@ internal static partial class ServiceCollectionExtensions
         services.AddScoped<IOgcServiceMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcServiceMigrationScanner>());
 
-        // Register OGC WFS data import service (#1016 slice 2). Reuses the OGC service migration
+        // Register OGC WFS data import service. Reuses the OGC service migration
         // scanner above for inventory + manifest planning; here we add a named HttpClient used
         // for paged GetFeature requests and the import service itself.
         services.AddResilientHttpClient(
@@ -1002,7 +1002,7 @@ internal static partial class ServiceCollectionExtensions
         services.AddScoped<IDagFeatureSource>(serviceProvider =>
             serviceProvider.GetRequiredService<WfsDagSource>());
 
-        // Register OGC WMTS tile-cache export service (#1016 slice 4). Reuses the OGC service
+        // Register OGC WMTS tile-cache export service. Reuses the OGC service
         // migration scanner for inventory/manifest resolution; the dedicated HTTP client is
         // tuned for short-lived tile fetches; the sink is the Postgres-backed tile catalog.
         services.AddResilientHttpClient(
@@ -1064,11 +1064,11 @@ internal static partial class ServiceCollectionExtensions
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
 
-        // Expand/contract migration-safety gate (#2462, ADR-0060 principle #3a): the runner rejects
+        // Expand/contract migration-safety gate (ADR-0060 principle #3a): the runner rejects
         // pending contract-phase migrations that lack the compatibility-review marker. Enforce
         // defaults TRUE; set Database:MigrationSafety:Enforce=false to override. The same options carry
         // the journal-scoped contract-apply policy and the optional pre-migration backup hook for safe
-        // single-node upgrades: ContractApplyPolicy defaults to Gate (#2812 — annotated contract
+        // single-node upgrades: ContractApplyPolicy defaults to Gate (annotated contract
         // scripts on an existing database require a one-shot HONUA_APPROVE_CONTRACT_MIGRATIONS nonce so
         // they are never applied unattended while older nodes serve), and BackupCommand is
         // configuration-source only (never writable via API/DB — RCE guard).

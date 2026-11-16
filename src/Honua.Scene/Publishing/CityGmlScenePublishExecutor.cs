@@ -112,7 +112,7 @@ internal sealed partial class CityGmlScenePublishExecutor
 
             // Replicate the staged tileset tree to the shared object store before
             // registering so the recorded storage prefix always implies the bytes
-            // exist and any node can hydrate it (#2459, ADR-0060).
+            // exist and any node can hydrate it (ADR-0060).
             var newDatasetId = Guid.NewGuid();
             var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
                 _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);

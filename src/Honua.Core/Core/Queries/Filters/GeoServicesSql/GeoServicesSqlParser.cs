@@ -32,9 +32,9 @@ public sealed class GeoServicesSqlParser
         "SECOND"
     };
 
-    // Additional EXTRACT fields (beyond YEAR..SECOND) that Postgres supports and that we accept
-    // as of #1865. Each is emitted as FunctionCall("EXTRACT_<FIELD>", [source]); the translator
-    // owns the (allowlisted) field -> SQL mapping.
+    // Additional EXTRACT fields (beyond YEAR..SECOND) that Postgres supports and that we accept.
+    // Each is emitted as FunctionCall("EXTRACT_<FIELD>", [source]); the translator owns the
+    // (allowlisted) field -> SQL mapping.
     private static readonly HashSet<string> _extendedExtractFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "DOW",

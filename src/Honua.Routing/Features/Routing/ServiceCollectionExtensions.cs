@@ -28,14 +28,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<RoutingConfiguration>, RoutingConfigurationValidator>();
         services.AddSingleton<RoutingSolveCapacityLimiter>();
 
-        // Network-dataset registry (Phase 0 of #1882): resolves the active dataset's
+        // Network-dataset registry: resolves the active dataset's
         // edge/vertex table names. Backed by the honua.network_datasets registry table
         // when present, falling back to the built-in default (public.ways topology) so
         // the default deployment is unchanged. Registered unconditionally; only the
         // pgRouting provider consumes it.
         services.AddScoped<INetworkDatasetResolver, NetworkDatasetRegistry>();
 
-        // Network-dataset editing store (#1882 editing surface): admin CRUD over the
+        // Network-dataset editing store: admin CRUD over the
         // honua.network_datasets registry. The registry table is Postgres-only, so the
         // store is registered only when the active data provider is Postgres (the admin
         // endpoints no-op when it is absent, mirroring the scene-dataset registry).

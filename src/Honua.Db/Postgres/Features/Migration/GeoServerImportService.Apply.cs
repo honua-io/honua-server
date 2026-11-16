@@ -549,10 +549,10 @@ internal sealed partial class GeoServerImportService
             return [];
         }
 
-        // Workspace scope (#1098 / PR #1100): respect the operator's requested
+        // Workspace scope: respect the operator's requested
         // workspace scope so unrelated workspaces' data stores are not applied.
         // When WorkspaceNames is set, only data stores in those workspaces are
-        // eligible. The pre-existing FilterRequestedResources path keeps the
+        // eligible. The FilterRequestedResources path keeps the
         // datastore array workspace-agnostic, so the filter is re-applied here.
         var scopedWorkspaceNames = request.WorkspaceNames is { Length: > 0 } names
             ? new HashSet<string>(names, StringComparer.OrdinalIgnoreCase)
@@ -727,7 +727,7 @@ internal sealed partial class GeoServerImportService
                 "The source style was not present in the filtered GeoServer discovery result.");
         }
 
-        // Workspace scope (#1098 / PR #1100): respect the operator's requested
+        // Workspace scope: respect the operator's requested
         // workspace scope so unrelated workspaces' styles are not applied.
         if (request.WorkspaceNames is { Length: > 0 } scopedNames &&
             !string.IsNullOrWhiteSpace(style.WorkspaceName) &&
@@ -751,11 +751,10 @@ internal sealed partial class GeoServerImportService
         string? convertedBody = null;
         string? convertedFormat = null;
         var diagnostics = new List<StyleDiagnostic>();
-        // Slice 3: the manifest translator marks every SLD style as
+        // The manifest translator marks every SLD style as
         // "unsupported" because at inventory time we cannot know whether an
-        // ISldStyleConverter is registered (issue #375 was the original gap).
-        // The apply path now closes that gap by running the registered
-        // converter and recording diagnostics, so the apply disposition must
+        // ISldStyleConverter is registered. The apply path runs the registered
+        // converter and records diagnostics, so the apply disposition must
         // reflect the converter's actual outcome rather than mirroring the
         // conservative manifest-level tag. We start optimistic ("applied")
         // and degrade to "manual-review" below when the converter is absent,
@@ -807,7 +806,7 @@ internal sealed partial class GeoServerImportService
 
                 // Conversion produced no layers (HasErrors), or converter
                 // emitted at least one error diagnostic: do not claim visual
-                // parity. Per #1015 AC, mark the row manual-review.
+                // parity; mark the row manual-review.
                 if (conversion.HasErrors)
                 {
                     disposition = "manual-review";

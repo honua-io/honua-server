@@ -37,7 +37,7 @@ public static class LasPointCloudReader
         // compression flag set by laszip. The pure-managed reader does not decode
         // the arithmetic-coded chunk table; LAZ/COPC decompression is handled
         // out-of-process by the heavyweight worker's `pcloud.translate` job
-        // (PDAL, #1854), which emits uncompressed LAS that flows back through this
+        // (PDAL), which emits uncompressed LAS that flows back through this
         // same reader. So a compressed buffer reaching the managed reader directly
         // is rejected with a stable code the caller maps to the worker route.
         var isCompressed = publicHeader.IsCompressed;

@@ -25,14 +25,14 @@ internal sealed partial class PostgresVersionManager
         => _versionLock.RunExclusiveAsync(
             new VersionLockRequest(_lockScope, versionId, MaintenanceLockLease), work, cancellationToken);
 
-    // Reconcile/post core (#1272 Track B Slice 2, ADR-0051; conflict-resolution layer #371). Reconcile
+    // Reconcile/post core with its conflict-resolution layer (ADR-0051). Reconcile
     // diffs DEFAULT feature_changes since the version's merge base against the version's tagged overlay
     // edits. For overlapping (layer_id, objectid) pairs it loads the three-way base/DEFAULT/version
     // images and:
     //   * auto-merges disjoint field-level edits (a feature edited in both the branch and DEFAULT but on
     //     DISJOINT attribute sets is merged into the overlay, not flagged);
     //   * classifies the rest as genuine conflicts (overlapping fields, geometry-vs-geometry,
-    //     update-vs-delete) and, per #371, either auto-resolves them per the supplied policy
+    //     update-vs-delete) and either auto-resolves them per the supplied policy
     //     (last-write-wins / version-wins / default-wins) or persists them as pending conflicts for
     //     manual review and blocks post.
     // A clean reconcile (no remaining conflicts) advances common_ancestor_gen. Post (only when
@@ -458,7 +458,7 @@ internal sealed partial class PostgresVersionManager
 
         // Committed watermark. Rolled-back nextval leaves holes in last_value, so a gap below last_value
         // is not proof of an in-flight write. Migration 067 holds pg_advisory_xact_lock across commit,
-        // which makes this MAX gap-free for feature_changes (#6139, same rule as PostgresChangeTracker).
+        // which makes this MAX gap-free for feature_changes (same rule as PostgresChangeTracker).
         long visibleGeneration;
         await using (var generationCommand = new NpgsqlCommand(
             "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection)
@@ -653,7 +653,7 @@ internal sealed partial class PostgresVersionManager
         // Rebase the overlay's captured base image onto the live DEFAULT row in the SAME statement. An
         // auto-merge accepts DEFAULT's current state (its disjoint field/geometry edits are layered in),
         // so the merged overlay row's new base MUST be the live DEFAULT — otherwise the post-time drift
-        // guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) still sees the stale common-ancestor base,
+        // guard (f.* IS NOT DISTINCT FROM ve.base_*) still sees the stale common-ancestor base,
         // treats DEFAULT's now-merged divergence as drift, and blocks the post even though reconcile
         // reported CanPost. This mirrors the "take version" rebase in ApplyResolutionToOverlayAsync and
         // keeps reconcile's CanPost consistent with post's drift check.
@@ -796,7 +796,7 @@ internal sealed partial class PostgresVersionManager
             // image (a no-op post against DEFAULT); if DEFAULT deleted it, drop the overlay row so the
             // branch no longer shadows/posts the feature. Rebase the overlay's base image onto DEFAULT too
             // (base_geometry/base_attributes = DEFAULT's): the resolution accepts the live DEFAULT as the
-            // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) sees no
+            // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*) sees no
             // drift and the post proceeds — without this the stale common-ancestor base still differs from
             // the diverged DEFAULT and the post is wrongly blocked even though reconcile reported CanPost.
             await using var command = new NpgsqlCommand($"""

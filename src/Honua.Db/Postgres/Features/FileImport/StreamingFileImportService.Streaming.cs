@@ -48,9 +48,9 @@ internal sealed partial class StreamingFileImportService
             connection, targetSchema, request.TableName, cancellationToken);
         var loadMode = request.EffectiveLoadMode;
 
-        // Every load mode shares one staging name per logical target. Hold the historical
-        // replace advisory lock for append and upsert too, so a concurrent replace cannot drop
-        // an in-flight append's staging table or its live rows (#4003, SRV-IMP-008).
+        // Every load mode shares one staging name per logical target. Hold the replace
+        // advisory lock for append and upsert too, so a concurrent replace cannot drop
+        // an in-flight append's staging table or its live rows.
         ImportedDatasetSpatialMetadata.SessionLock? replaceLock = null;
         var dataCommitted = false;
         var appendUsesStaging = false;
@@ -369,8 +369,8 @@ internal sealed partial class StreamingFileImportService
                 }
 
                 // Surface per-row geometry repair accounting so the shared validity gate never silently
-                // rewrites input geometry. Default gate mode is Repair, so previously-invalid
-                // geometry is fixed (ST_MakeValid-equivalent) instead of stored as-is.
+                // rewrites input geometry. Default gate mode is Repair, so invalid geometry
+                // is fixed (ST_MakeValid-equivalent) instead of stored as-is.
                 if (repairTally.Repaired > 0)
                 {
                     completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));

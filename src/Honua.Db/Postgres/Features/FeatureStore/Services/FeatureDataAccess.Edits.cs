@@ -302,7 +302,7 @@ internal sealed partial class FeatureDataAccess
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        // Branch-versioned edits route to the overlay write path (#1272 Track B, ADR-0051). DEFAULT
+        // Branch-versioned edits route to the overlay write path (ADR-0051). DEFAULT
         // (null/IsDefault) falls through to the byte-identical base write path below, untouched.
         if (editBatch.VersionContext is { IsDefault: false } version)
         {
@@ -1569,11 +1569,11 @@ internal sealed partial class FeatureDataAccess
         }
         catch (PostgresException ex) when (IsGeometryNotNullViolation(ex))
         {
-            // BH-014 fix-forward: a null-geometry create against a non-nullable geometry
-            // column surfaces as a clean validation error rather than a raw provider
-            // constraint violation. This maps only the database's own decision (the
-            // NOT NULL constraint actually fired), so nullable geometry columns still
-            // accept valid attribute-only creates (Issue #45) with no client-side gate.
+            // A null-geometry create against a non-nullable geometry column surfaces as
+            // a clean validation error rather than a raw provider constraint violation.
+            // This maps only the database's own decision (the NOT NULL constraint
+            // actually fired), so nullable geometry columns still accept valid
+            // attribute-only creates with no client-side gate.
             throw new GeometryRequiredForCreateException(ex);
         }
     }

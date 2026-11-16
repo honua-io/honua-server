@@ -61,9 +61,9 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             });
         }
 
-        // #4600 (AC1): account for every construct discovered on the source against the selection before
-        // any child is queued. A caller that requires full fidelity gets a refusal instead of a batch that
-        // is already known not to be one.
+        // Account for every construct discovered on the source against the selection before any child
+        // is queued. A caller that requires full fidelity gets a refusal instead of a batch that is
+        // already known not to be one.
         var accounting = MigrationServiceConstructAccountant.Account(
             request.SourceKind,
             request.ManifestBody,
@@ -293,8 +293,8 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                 RelationshipApplyExecuted = relationshipApply.Executed,
                 RelationshipApplyNotExecutedReason = relationshipApply.NotExecutedReason,
                 Relationships = relationshipApply.Outcomes,
-                // #4600 (AC1): replayed from the persisted manifest and child rows, so the verdict holds the
-                // same accounting the batch was started with.
+                // Replayed from the persisted manifest and child rows, so the verdict holds the same
+                // accounting the batch was started with.
                 ConstructAccounting = MigrationServiceConstructAccountant.Account(
                     batch.SourceKind,
                     manifestBody,

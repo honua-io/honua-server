@@ -26,12 +26,11 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ISqlDialect>(OracleSqlDialect.Instance);
 
-        // Scoped registration (matches trunk): these services consume ISecureConnectionResolver,
-        // which is registered Scoped, so a Singleton lifetime here is a captive dependency that
-        // fails ServiceProvider ValidateOnBuild/ValidateScopes. The #1567 singleton optimisation
-        // (avoid per-request OracleSpatialGuard cache resets / extra catalog connections) is
-        // deferred to #1593 — it must resolve ISecureConnectionResolver via IServiceScopeFactory
-        // before these can become singletons.
+        // Scoped registration: these services consume ISecureConnectionResolver, which is
+        // registered Scoped, so a Singleton lifetime here is a captive dependency that fails
+        // ServiceProvider ValidateOnBuild/ValidateScopes. Singletons would avoid per-request
+        // OracleSpatialGuard cache resets / extra catalog connections, but these must resolve
+        // ISecureConnectionResolver via IServiceScopeFactory before they can become singletons.
         services.AddScoped<IOracleConnectionFactory, OracleConnectionFactory>();
         services.AddScoped<IOracleSpatialMetadataProbe, OracleSpatialMetadataProbe>();
         services.AddScoped<OracleSpatialGuard>();

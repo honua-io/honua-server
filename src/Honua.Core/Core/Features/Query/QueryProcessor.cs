@@ -161,7 +161,7 @@ public sealed class QueryProcessor : IQueryProcessor
         // PropertyName alone to interval intersection over [PropertyName,
         // COALESCE(EndPropertyName, PropertyName)]. Two filters that differ
         // only by EndPropertyName produce different result sets, so it must
-        // participate in the cache key (#379 docs/temporal-animation-api.md).
+        // participate in the cache key (docs/gis/temporal-animation-api.md).
         builder.Append(value.EndPropertyName ?? "<null>");
         builder.Append('|');
         builder.Append(value.Start?.ToString("O", CultureInfo.InvariantCulture) ?? "<null>");

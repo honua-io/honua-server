@@ -153,7 +153,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
         {
             // Fresh/legacy DB where migration 106 has not created the managed-user tables:
-            // no managed users exist (honua-server#1341 resilience pattern).
+            // no managed users exist.
             return new UserListResult { Users = [], TotalCount = 0 };
         }
     }

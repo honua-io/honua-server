@@ -743,7 +743,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var extraParams = new List<(string Name, object Value)>();
         var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
 
-        // When the output must cover the clip envelope (Esri exportImage bbox, #4060), steps 3 and 4
+        // When the output must cover the clip envelope (Esri exportImage bbox), steps 3 and 4
         // are replaced by the frame CTEs below, which warp the pipeline output onto a grid spanning
         // the envelope in the output SRID at the exact requested size.
         var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
@@ -1274,16 +1274,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         return algorithm;
     }
 
-    // ----- Clip-extent framing (Esri exportImage bbox contract, #4060) --------
+    // ----- Clip-extent framing (Esri exportImage bbox contract) --------
     // ST_Clip+ST_Resize, and ST_Transform/ST_Resample onto a reference grid, all keep the SOURCE
-    // extent, so a bbox reaching past the raster came back as the bbox-raster intersection
+    // extent, so a bbox reaching past the raster would come back as the bbox-raster intersection
     // stretched to the requested size while every Esri client paints it across the whole bbox.
     // The frame CTEs build an OutputWidth x OutputHeight grid spanning the clip envelope in the
     // output SRID, warp the pipeline output onto it with one grid-aligned ST_Transform, and union
     // that over an all-NoData canvas carrying the same bands, so the image covers exactly the
     // requested envelope with NoData wherever the raster has no pixels.
     // The grid-aligned ST_Transform keeps the extent of its whole-pixel source, which reaches past
-    // the envelope wherever the clip edge cuts a source pixel (a bbox inside the raster, #4890), and
+    // the envelope wherever the clip edge cuts a source pixel (a bbox inside the raster), and
     // the union would widen to it. The union is therefore cropped back to the frame grid; both share
     // its alignment, so the crop removes whole pixels and the output is exactly the frame.
 
@@ -1411,7 +1411,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // Band arithmetic / terrain reshape the band(s) before the stretch so the sampled value
-        // matches the rendered output (identify parity, #1803).
+        // matches the rendered output (identify parity).
         if (rendering.BandArithmetic is { } bandArithmetic)
         {
             rasterExpr = BuildBandArithmeticExpression(rasterExpr, bandArithmetic);
@@ -1946,7 +1946,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@bands", bands));
         }
 
-        // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
+        // Covering the clip envelope (Esri exportImage bbox) replaces the in-place
         // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
         var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
         var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
@@ -2866,7 +2866,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     // =============================================================================
-    // Statistics persistence (compute-once-then-persist backfill, #1639)
+    // Statistics persistence (compute-once-then-persist backfill)
     // =============================================================================
 
     private async Task<List<RasterStatistics>> BackfillRasterStatisticsAsync(

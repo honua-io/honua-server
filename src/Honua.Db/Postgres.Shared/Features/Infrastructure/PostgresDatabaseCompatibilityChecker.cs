@@ -27,7 +27,7 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     {
         // A connection string the driver cannot parse is a configuration fault, not a database fault.
         // The driver's message repeats the offending text, which includes the password, so only the
-        // exception type is reported (honua-server#6495: a generated password that begins with '='
+        // exception type is reported (for example, a generated password that begins with '='
         // reads as "Password==..." and fails here).
         try
         {

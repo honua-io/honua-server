@@ -61,9 +61,8 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<ISqlDialect>(DuckDbSqlDialect.Instance);
         // Honua.Hosting's shared FilterExpressionTranslator (wired unconditionally in
         // AddValidationServices) requires ISqlFilterTranslator regardless of provider;
-        // without this every FeatureServer/OGC API Features request failed DI activation
-        // outright, not just ones using a CQL2 filter (honua-server#2947; translator
-        // implemented with CQL2 spatial support in #2963).
+        // without this every FeatureServer/OGC API Features request fails DI activation
+        // outright, not just ones using a CQL2 filter.
         services.AddScoped<ISqlFilterTranslator, DuckDbSqlFilterTranslator>();
 
         // Register infrastructure singletons

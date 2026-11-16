@@ -1713,8 +1713,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         // loudly. The single-DB / default-connection deployment is the common case: a layer
         // is bound to a placeholder connection that carries no distinct connection-string
         // material at all, which means "read from the default database". Falling back there
-        // is correct and restores the pre-#1662 behavior (the resolver returned null, and
-        // OpenConnectionAsync opened the default connection).
+        // is correct.
         //
         // When the binding *does* carry connection-string material that we simply cannot
         // unlock (encrypted bytes with no/failed decryption service, or an external secret
@@ -1731,12 +1730,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                     : "The connection has encrypted or externally referenced credentials that could not be decrypted."));
         }
 
-        // An empty/whitespace connection ID is the "use the default connection" sentinel
-        // (the pre-#1662 behavior). When such a binding also carries leftover credential
-        // material we could not unlock — e.g. stale encrypted bytes that won't decrypt with
-        // the current master key — we still fall back to the default connection, but log a
-        // Warning so a genuine misconfiguration (an empty ID that was meant to be a real,
-        // distinct source) remains visible in operations.
+        // An empty/whitespace connection ID is the "use the default connection" sentinel.
+        // When such a binding also carries leftover credential material we could not
+        // unlock — e.g. stale encrypted bytes that won't decrypt with the current master
+        // key — we still fall back to the default connection, but log a Warning so a
+        // genuine misconfiguration (an empty ID that was meant to be a real, distinct
+        // source) remains visible in operations.
         if (string.IsNullOrWhiteSpace(_connection.Id)
             && (_connection.EncryptedConnectionString.Length > 0 || !string.IsNullOrWhiteSpace(_connection.SecretRef)))
         {

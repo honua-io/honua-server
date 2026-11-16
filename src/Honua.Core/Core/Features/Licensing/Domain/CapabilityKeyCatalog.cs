@@ -36,8 +36,7 @@ public static class CapabilityKeyCatalog
         new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.Internal,
             HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Fair Core License prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.", Status: InternalStatus),
 
-        // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
-        // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
+        // Offline sync is Preview in release 2026.1 by operator ruling.
         new(FeatureCatalog.FieldOpsOfflineSyncKey, "Offline/Field Sync", FeatureCatalog.Categories.FieldOps,
             HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
     ];
@@ -182,11 +181,10 @@ public static class CapabilityKeyCatalog
         new("geocoding.reverse", "Reverse Geocoding", FeatureCatalog.Categories.Geocoding,
             HonuaEdition.Community, "Convert coordinates to a nearest-address match using configured providers."),
 
-        // Identity: identity.saml and identity.scim moved to FeatureCatalog entitlements
-        // (both Enterprise, per ADR-0024's Identity Governance tier) in #2978 — they
-        // previously shipped here ungated, catalog drift from the ADR that let any
-        // SAML-speaking IdP bypass SSO tiering. They flow back into All via the
-        // FeatureCatalog union below.
+        // Identity: identity.saml and identity.scim are FeatureCatalog entitlements
+        // (both Enterprise, per ADR-0024's Identity Governance tier), not entries
+        // here: listing them here ungated would let any SAML-speaking IdP bypass SSO
+        // tiering. They flow back into All via the FeatureCatalog union below.
 
         // Styling
         new("styling.ogc-api-styles", "OGC API Styles", FeatureCatalog.Categories.Styling,

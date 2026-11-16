@@ -197,8 +197,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
                 "The Studio resource belongs to another tenant.");
         }
 
-        // Admins always have full, unscoped access -- unchanged before and after #3001, and
-        // independent of the feature flag.
+        // Admins always have full, unscoped access, independent of the feature flag.
         if (IsAdmin(principal))
         {
             return StudioAuthorizationDecision.Allow();
@@ -225,7 +224,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             or StudioAuthorizationOperation.ReadContentItem
             or StudioAuthorizationOperation.ListOwn;
         // Fail closed on an ownerless *existing* resource: owner_id is a nullable column
-        // (legacy rows created before honua-server#3001's ownership migration may still be
+        // (legacy rows created before the ownership migration may still be
         // unbackfilled), so treating a null owner as "owned by whoever asks" would let any
         // authenticated caller claim it. A null owner here means "no owner assigned yet" --
         // only an admin may act on it until an owner is assigned. Endpoints that create a

@@ -73,17 +73,15 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         var current = await TryLoadCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (current is null)
         {
-            // No Metadata v2 snapshot has been activated for this environment. Before the
-            // v2 cutover every protocol read the legacy V1 catalog (honua.services /
-            // honua.layers / the shared JSONB-attributes `features` table) directly, and
-            // the SQL test seeds still synthesize a compat snapshot from it
-            // (honua.seed_metadata_v2_compat_snapshot, tests/seed/base-schema.sql). A
-            // production or CITE deployment that only ever populated the V1 catalog has no
-            // activated snapshot, so throwing here regressed OGC API Features /collections
-            // (and the collection-detail/items paths) to HTTP 500 alongside every other
-            // protocol that resolves through this same shared metadata seam. Restore parity
-            // by synthesizing the equivalent snapshot from the V1 catalog at read time.
-            // (honua-server#1412.)
+            // No Metadata v2 snapshot has been activated for this environment. A
+            // production or CITE deployment that only ever populated the legacy V1 catalog
+            // (honua.services / honua.layers / the shared JSONB-attributes `features`
+            // table) has no activated snapshot; the SQL test seeds synthesize a compat
+            // snapshot from that catalog (honua.seed_metadata_v2_compat_snapshot,
+            // tests/seed/base-schema.sql). Throwing here would turn OGC API Features
+            // /collections (and the collection-detail/items paths) into HTTP 500 alongside
+            // every other protocol that resolves through this same shared metadata seam,
+            // so synthesize the equivalent snapshot from the V1 catalog at read time.
             current = await TryBuildCompatSnapshotFromV1CatalogAsync(cancellationToken).ConfigureAwait(false);
 
             // When both the V2 snapshot table and the V1 catalog are absent or empty the
@@ -95,7 +93,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
             // items â€” the correct behaviour for a healthy but unpopulated server â€” instead
             // of surfacing a 500. A snapshot that EXISTS in the database but fails to load
             // (network/parse error) still 500s correctly because TryLoadCurrentAsync
-            // propagates that exception rather than returning null. (honua-server#1619.)
+            // propagates that exception rather than returning null.
             current ??= BuildEmptySnapshot();
         }
 
@@ -110,7 +108,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
 
     public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
         // Write/publish base load: only the genuinely-activated snapshot, never the V1
-        // compat synthesis. See IMetadataV2GraphWriteBaseReader for why. (honua-server#1412.)
+        // compat synthesis. See IMetadataV2GraphWriteBaseReader for why.
         => TryLoadCurrentAsync(cancellationToken);
 
     private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
@@ -609,7 +607,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         // Wipe sidecars for this (environment, revision) and rewrite. Cheap and simple.
         // On a bootstrap write (no activated current snapshot) also clear any orphaned
         // rows for the whole environment so a stale partial write does not collide with
-        // the unique service-name index. (honua-server#1395.)
+        // the unique service-name index.
         var revisionScope = clearStaleEnvironmentRows
             ? string.Empty
             : " AND revision = @revision";

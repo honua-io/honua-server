@@ -39,7 +39,7 @@ public static class MigrationSafetyClassifier
     // is only whitespace to end-of-line) is self-service theater that lets a schema-narrowing migration
     // ride along without an actual justification, so it is NOT treated as an annotated marker. Requiring
     // a non-whitespace token after `reason=` forces the author to record why the contract change is
-    // rollout-safe (ADR-0060; honua-server#2812).
+    // rollout-safe (ADR-0060).
     // The non-whitespace reason token must sit on the SAME line as `reason=`: only horizontal whitespace
     // ([ \t]) is allowed around the `=` and before the token, so an empty `reason=` at end-of-line does
     // not spuriously "reach" the next line's DDL (e.g. ALTER) and count as a filled-in reason.

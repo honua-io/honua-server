@@ -39,8 +39,8 @@ internal static partial class GdalArtifactPublisher
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Fail closed on a single-object Zarr fiction before any bytes move (#3103
-        // owns the multi-object protocol).
+        // Fail closed on a single-object Zarr fiction before any bytes move: this
+        // publisher handles single objects only, and native Zarr is a multi-object hierarchy.
         if (RasterOutputDescriptorValidator.LooksLikeZarr(contentType, info.Name))
         {
             Log.ZarrOutputRefused(logger, operationId);

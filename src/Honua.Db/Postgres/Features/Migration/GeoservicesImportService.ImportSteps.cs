@@ -449,8 +449,8 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.StorageLayerId,
                     attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
 
-                // #4600 AC6: a filtered import is reconciled against the filtered source. The discovery
-                // count is always unfiltered, so the transfer's filtered baseline stands in for it.
+                // A filtered import is reconciled against the filtered source. The discovery count
+                // is always unfiltered, so the transfer's filtered baseline stands in for it.
                 var reconciliationSource = string.IsNullOrWhiteSpace(request.WhereClause)
                     ? layerInfo
                     : layerInfo with
@@ -627,7 +627,7 @@ internal sealed partial class GeoservicesImportService
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Top-level import failure: roll back, log, and map to a sanitized failure result via
-            // BuildImportFailureMessage rather than leaking the raw exception to the caller. #4827: the
+            // BuildImportFailureMessage rather than leaking the raw exception to the caller. The
             // rollback is guarded, so a failed cleanup can never replace the error being reported.
             await RollbackAfterFailureAsync(transaction, stage, request.TableName);
             stopwatch.Stop();

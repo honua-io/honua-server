@@ -100,7 +100,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     // PK â€” two devices sharing one API key but minting the same change_id are distinct
     // idempotency keys and must not serialize against (or dedup as) each other. The namespace
     // constant keeps this lock space distinct from other features (e.g. raster import) that
-    // also use advisory locks. The literal mirrors ticket #894 to make grep-by-ticket easy.
+    // also use advisory locks.
     private const int FieldCollectionPushLockNamespace = 0x0894_FC5C;
 
     // Feature-identity advisory lock keyed by (namespace, hashtext("<layer_id>:<feature_id>")).
@@ -110,7 +110,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     // current=null, both resolve as Applied, and the unconditional ON CONFLICT DO UPDATE
     // upsert would let the second silently overwrite the first. The namespace constant is
     // distinct from FieldCollectionPushLockNamespace so changeId and feature locks never
-    // alias inside the FieldCollection lock space. The literal mirrors ticket #894.
+    // alias inside the FieldCollection lock space.
     private const int FieldCollectionFeatureLockNamespace = 0x0894_FC5F;
 
     private const string AcquireChangeIdLockSql =
@@ -569,8 +569,8 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         if (current.IsDeleted)
         {
             // Someone else already deleted the feature. This is the delete-vs-delete conflict the wire
-            // contract has always declared and never produced: it was previously reported as an
-            // idempotently-applied delete, hiding the divergence from the field client.
+            // contract declares: reporting it as an idempotently-applied delete would hide the
+            // divergence from the field client.
             //
             // A genuine retry of the client's OWN delete never reaches here — replays are served from
             // the (client_id, change_id) idempotency record before conflict resolution runs — so there
