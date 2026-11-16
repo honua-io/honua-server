@@ -15692,7 +15692,7 @@
         ],
         "summary": "Publish Form Draft",
         "description": "Validates a Form Draft and makes it the immutable Released version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
-        "operationId": "publishFormDraft",
+        "operationId": "goLiveFormDraft",
         "parameters": [
           {
             "name": "formId",

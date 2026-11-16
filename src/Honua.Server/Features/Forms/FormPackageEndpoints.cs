@@ -75,7 +75,7 @@ internal static class FormPackageEndpoints
 
         admin.MapPost("/{formId}/versions/{formVersion:int}/publish", HandlePublish)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithName("PublishFormDraft")
+            .WithName("GoLiveFormDraft")
             .WithSummary("Validate a Form Draft and go live with an immutable Released Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageVersion>();
@@ -93,13 +93,13 @@ internal static class FormPackageEndpoints
             .RequireAdminAuthorization();
 
         runtime.MapGet("/{formId}", HandleGetRuntimeCurrent)
-            .WithName("GetPublishedForm")
+            .WithName("GetReleasedForm")
             .WithSummary("Get the current Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion>();
 
         runtime.MapGet("/{formId}/versions/{formVersion:int}", HandleGetRuntimeVersion)
-            .WithName("GetPublishedFormVersion")
+            .WithName("GetReleasedFormVersion")
             .WithSummary("Get a Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion>();

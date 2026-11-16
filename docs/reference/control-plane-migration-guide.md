@@ -32,15 +32,15 @@ stored documents.
 | `GetFormPackageVersion` | `GetFormVersion` |
 | `UpdateFormPackageDraft` | `UpdateFormDraft` |
 | `ValidateFormPackageDraft` | `ValidateFormDraft` |
-| `PublishFormPackageDraft` | `PublishFormDraft` |
+| `PublishFormPackageDraft` | `GoLiveFormDraft` |
 | `ReopenFormPackageVersion` | `ReopenFormVersion` |
-| `GetPublishedFormPackage` | `GetPublishedForm` |
-| `GetPublishedFormPackageVersion` | `GetPublishedFormVersion` |
+| `GetPublishedFormPackage` | `GetReleasedForm` |
+| `GetPublishedFormPackageVersion` | `GetReleasedFormVersion` |
 | `GetFormPackageCompatibility` | `GetFormCompatibility` |
 | `SubmitFormPackage` | `SubmitForm` |
 
 The curated admin snapshot uses lower-camel-case operation IDs. Its validation
-and publish operations become `validateFormDraft` and `publishFormDraft`.
+and publish operations become `validateFormDraft` and `goLiveFormDraft`.
 `GetFormOfflinePolicy` keeps its name.
 
 ## rc.2 Layer selectors
