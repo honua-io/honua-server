@@ -105,6 +105,8 @@ select all siblings. Dispatch ranks remain inherited pending measured child runs
 `test-live-output-capacity-partitions.py` conserves the original methods exactly
 once, keeps each class intact for future methods, and rejects lost, duplicated,
 foreign, budget-expanded or path-narrowed selections.
+GeoJSON preview validation belongs to File and Raster Import 3; the router pins
+its executable owner and selects every import sibling when its test file changes.
 
 
 OData Core is partitioned into `OData Core Endpoints` (the whole
