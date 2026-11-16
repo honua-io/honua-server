@@ -185,10 +185,19 @@ public sealed class CustomBuildProfileTests
         var inheritedScopes = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         string? stage = null;
         var profileInScope = false;
+        var seenFrom = false;
+        var globalProfile = false;
         foreach (var line in File.ReadLines(path).Select(sourceLine => sourceLine.Trim()))
         {
             if (line.StartsWith("FROM ", StringComparison.OrdinalIgnoreCase))
             {
+                // FROM lines see only the arguments declared before the first FROM.
+                if (!seenFrom)
+                    globalProfile = profileInScope;
+                seenFrom = true;
+                if (line.Contains("${HONUA_STORE_PROFILE", StringComparison.Ordinal)
+                    || line.Contains("$HONUA_STORE_PROFILE", StringComparison.Ordinal))
+                    globalProfile.Should().BeTrue($"{path}: {line} needs a global ARG HONUA_STORE_PROFILE before the first FROM");
                 if (stage is not null)
                     inheritedScopes[stage] = profileInScope;
                 var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -196,6 +205,7 @@ public sealed class CustomBuildProfileTests
                 profileInScope = inheritedScopes.GetValueOrDefault(parent);
                 stage = parts.Length >= 4 && parts[^2].Equals("AS", StringComparison.OrdinalIgnoreCase)
                     ? parts[^1] : null;
+                continue;
             }
             if (line.Equals("ARG HONUA_STORE_PROFILE", StringComparison.Ordinal)
                 || line.StartsWith("ARG HONUA_STORE_PROFILE=", StringComparison.Ordinal))
