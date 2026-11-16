@@ -62,7 +62,8 @@ public sealed partial class GrpcFeatureServiceTests
 
         var action = () => _sut.UploadAttachment(new()
         {
-            Upload = ValidAttachmentUpload(), Content = ByteString.CopyFromUtf8("test")
+            Upload = ValidAttachmentUpload(),
+            Content = ByteString.CopyFromUtf8("test")
         }, context);
 
         (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);

@@ -80,8 +80,10 @@ public sealed partial class GrpcMaskedFieldPredicateTests
             MaxUploadSizeBytes = uploadBytes,
             Attachments = new()
             {
-                MaxAttachmentSize = 2097152, MaxAttachmentsPerFeature = 3,
-                MaxTotalAttachmentSize = 9000000, AllowedMimeTypes = " image/*, ,application/pdf,text/plain "
+                MaxAttachmentSize = 2097152,
+                MaxAttachmentsPerFeature = 3,
+                MaxTotalAttachmentSize = 9000000,
+                AllowedMimeTypes = " image/*, ,application/pdf,text/plain "
             }
         };
         using var context = CreateCallContext(services => services.AddSingleton(Options.Create(limits)));
