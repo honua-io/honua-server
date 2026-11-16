@@ -21,4 +21,8 @@ public sealed class ApiKeyAuthenticationOptions
     public bool EnableBasicAuthCompatibility { get; set; }
 
     public bool RequireHttpsForBasicAuth { get; set; } = true;
+
+    // When true the administrator password is accepted only from a direct loopback connection, so it
+    // stays a break-glass credential on the host.
+    public bool AdminPasswordLoopbackOnly { get; set; }
 }

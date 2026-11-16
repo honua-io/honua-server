@@ -10,48 +10,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the Euclidean-proximity family
-/// (#2240, #2255): <c>proximity.euclidean-distance</c>, a distance-to-nearest-source
-/// raster backed by the GDAL <c>gdal_proximity.py</c> CLI, and
-/// <c>proximity.euclidean-allocation</c>, the nearest-source allocation companion.
-///
-/// <para>
-/// Distance reads a base64-encoded source GeoTIFF whose non-zero (or
-/// <c>values</c>-listed) pixels are the proximity targets, and publishes a Float32
-/// distance raster honoring the requested distance units and optional maximum
-/// distance. A bundled step runs the real CLI and declares its negative nodata
-/// sentinel on the output band before publication.
-/// </para>
-/// <para>
-/// Allocation (assigning each cell the VALUE/id of its nearest source — a discrete
-/// Voronoi tessellation) has NO equivalent in stock <c>gdal_proximity.py</c>, which
-/// computes distance only. It is implemented as a small custom worker step
-/// (<c>Scripts/gdal_euclidean_allocation.py</c>, #2255) layered on the GDAL Python
-/// bindings plus SciPy's exact Euclidean distance transform with nearest-feature
-/// index return. The output GeoTIFF preserves the source extent, cell size, CRS and
-/// band data type.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalProximityJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalProximityJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>Process id for the Euclidean distance raster.</summary>
     public const string DistanceProcessId = "proximity.euclidean-distance";
 
-    /// <summary>Process id for the Euclidean allocation (nearest-source) raster.</summary>
     public const string AllocationProcessId = "proximity.euclidean-allocation";
 
-    /// <summary>
-    /// Name of the bundled custom worker step implementing Euclidean allocation. The
-    /// script ships in the published worker's <c>Scripts</c> folder and is invoked via
-    /// <c>python3</c>; it requires the GDAL Python bindings + SciPy from the worker
-    /// image.
-    /// </summary>
     public const string AllocationScriptName = "gdal_euclidean_allocation.py";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -71,19 +38,14 @@ internal sealed partial class GdalProximityJobExecutor(
         "PIXEL",
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Process ids this executor routes.</summary>
     public static IReadOnlyCollection<string> SupportedProcessIds => HandledProcessIds;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds => HandledProcessIds;
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -252,10 +214,6 @@ internal sealed partial class GdalProximityJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Validates and re-serializes the comma-separated target pixel value list so
-    /// only finite integers reach the <c>-values</c> flag.
-    /// </summary>
     private static bool TryNormalizeValues(string raw, out string? values, out string failure)
     {
         values = null;

@@ -1,0 +1,75 @@
+# Governed routes that change state and apply their own agent rule: an agent approval rule on
+# the route (AgentApprovalFilter, with its own guidance) or a route that changes nothing. A route
+# is governed when it is under /api/{version}/admin or /api/{version}/console, or requires
+# administrator authority. Every other governed change route refuses an agent, who makes such
+# changes through the operations API or MCP instead (AgentRouteAdmissionMiddleware).
+# One line per method and route: "<METHOD> <route template> | <reason>", sorted.
+DELETE /api/v{version:apiVersion}/admin/field-mask-policies/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+DELETE /api/v{version:apiVersion}/admin/oauth-scopes/{scope} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+DELETE /api/v{version:apiVersion}/admin/rls-policies/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+DELETE /api/v{version:apiVersion}/admin/roles/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+DELETE /api/v{version:apiVersion}/console/access/{workspaceId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PATCH /api/v{version:apiVersion}/console/content/{id} | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).
+PATCH /api/v{version:apiVersion}/console/publications/{publicationId}/policy | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/connections/encryption/validate | Changes nothing.
+POST /api/v{version:apiVersion}/admin/connections/test | Tests a connection and changes nothing; the attempt is audited.
+POST /api/v{version:apiVersion}/admin/connections/{id:guid}/test | Tests a connection and changes nothing; the attempt is audited.
+POST /api/v{version:apiVersion}/admin/connections/{id}/layers/ | Its own agent rule decides (AgentApprovalFilter.Publish).
+POST /api/v{version:apiVersion}/admin/connections/{id}/layers/extents/refresh | Its own agent rule decides (AgentApprovalFilter.LayerState).
+POST /api/v{version:apiVersion}/admin/connections/{id}/layers/{storageLayerId:int}/features/refresh | Its own agent rule decides (AgentApprovalFilter.LayerState).
+POST /api/v{version:apiVersion}/admin/connections/{id}/tables/validate | Changes nothing.
+POST /api/v{version:apiVersion}/admin/embed/keys/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/rotate | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/field-mask-policies/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/forms/packages/{formId}/versions/{packageVersion:int}/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/gp/process-releases/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/gp/process-releases/bindings/{process}/activate | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/import/geoserver/discover | Reads a source service and changes nothing.
+POST /api/v{version:apiVersion}/admin/import/geoservices/discover | Reads a source service and changes nothing.
+POST /api/v{version:apiVersion}/admin/import/scan | Reads a source service and changes nothing.
+POST /api/v{version:apiVersion}/admin/metadata/environment-bindings/query | Changes nothing.
+POST /api/v{version:apiVersion}/admin/metadata/prevalidate | Changes nothing.
+POST /api/v{version:apiVersion}/admin/packages/preview | Changes nothing.
+POST /api/v{version:apiVersion}/admin/packages/validate | Changes nothing.
+POST /api/v{version:apiVersion}/admin/rls-policies/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/roles/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/scenes/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/scenes/generate/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/scenes/ingest/citygml | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/scenes/ingest/pointcloud | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/security/client-certificates/validate | Changes nothing.
+POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/estimate | Changes nothing.
+POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/preview | Changes nothing.
+POST /api/v{version:apiVersion}/console/access/{workspaceId}/roles | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/actions/check | Evaluates permissions and changes nothing.
+POST /api/v{version:apiVersion}/console/content/ | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).
+POST /api/v{version:apiVersion}/console/content/{id}/open-data/stac/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/content/{id}/share/embed | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/content/{id}/share/link | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/publications/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/publications/{publicationId}/republish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/publications/{publicationId}/rollback | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/workflow-packages/{packageId}/versions/{packageVersion:int}/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/workflow-publications/{publicationId}/status | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/temporal/services/{serviceId}/layers/{layerId:int}/rollback/plan | Changes nothing.
+POST /geospatial.v1.SpecService/PlanSpec | Changes nothing.
+POST /sharing/rest/oauth2/introspect | Changes nothing.
+POST /v1/grounding/spec/mutate | Returns a changed spec and saves nothing.
+POST /v1/grounding/spec/summarize | Changes nothing.
+POST /v1/spec/plan | Changes nothing.
+POST /v1/spec/validate | Changes nothing.
+PUT /api/v{version:apiVersion}/admin/connections/{id}/layers/enabled | Its own agent rule decides (AgentApprovalFilter.LayerState).
+PUT /api/v{version:apiVersion}/admin/connections/{id}/layers/{storageLayerId:int}/enabled | Its own agent rule decides (AgentApprovalFilter.LayerState).
+PUT /api/v{version:apiVersion}/admin/metadata/layers/{storageLayerId:int}/fields | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/admin/metadata/layers/{storageLayerId:int}/filter | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/admin/oauth-scopes/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/admin/roles/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/admin/roles/{id:guid}/permissions | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/admin/scenes/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/admin/services/{serviceName}/access-policy | Its own agent rule decides (AgentApprovalFilter.AccessPolicy).
+PUT /api/v{version:apiVersion}/admin/services/{serviceName}/layers/{serviceLayerIndex:int}/metadata | Its own agent rule decides (AgentApprovalFilter.LayerMetadataAccessPolicy).
+PUT /api/v{version:apiVersion}/admin/services/{serviceName}/protocols | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/console/access/{workspaceId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/console/content/{id} | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).
+PUT /api/v{version:apiVersion}/console/content/{id}/share/access | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/console/content/{id}/share/embed | Its own agent rule decides (AgentApprovalFilter.AccessGrants).

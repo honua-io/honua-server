@@ -10,28 +10,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>raster.spectral-index</c>
-/// process: computes a named spectral index (NDVI, NDWI, NDBI, SAVI, EVI) from
-/// band-role rasters, compiling down to the <c>gdal_calc.py</c> map-algebra core
-/// (#2239).
-///
-/// <para>
-/// Each required band role (<c>red</c>, <c>nir</c>, <c>green</c>, <c>swir</c>,
-/// <c>blue</c>) is supplied as its own base64-encoded single-band GeoTIFF. The
-/// executor binds the roles needed by the requested index to band variables and
-/// builds a TRUSTED calc expression (constructed here, never user-supplied), forcing
-/// a <c>Float32</c> output so the normalized-difference ratios are not truncated.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterSpectralIndexJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterSpectralIndexJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.spectral-index";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -39,23 +22,18 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <summary>Spectral index presets keyed by canonical name.</summary>
     public static readonly FrozenSet<string> SupportedIndices = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "ndvi", "ndwi", "ndbi", "savi", "evi",
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -212,13 +190,6 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Maps the requested index onto its ordered band roles (bound to A, B, C…) and
-    /// the TRUSTED calc expression. A <c>1.0*</c> coefficient forces float division
-    /// so integer surface-reflectance inputs do not truncate the ratio. SAVI reads an
-    /// optional soil-adjustment factor <c>L</c> (default 0.5), substituted as a
-    /// validated numeric literal.
-    /// </summary>
     private static bool TryBuildIndex(
         string index,
         IReadOnlyDictionary<string, string> parameters,

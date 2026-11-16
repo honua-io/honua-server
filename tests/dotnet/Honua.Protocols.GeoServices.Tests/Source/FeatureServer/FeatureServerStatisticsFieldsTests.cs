@@ -180,6 +180,55 @@ public sealed class FeatureServerStatisticsFieldsTests(FeatureServerStatisticsFi
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false, 0, true)]
+    [InlineData(false, 1, true)]
+    [InlineData(false, 2, false)]
+    [InlineData(false, 3, false)]
+    [InlineData(true, 0, true)]
+    [InlineData(true, 1, true)]
+    [InlineData(true, 2, false)]
+    [InlineData(true, 3, false)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task Statistics_RequestedPage_ReturnsOnlySelectedGroupAndAccurateTransferLimit(
+        bool serviceQuery, int offset, bool hasMore)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["where"] = "objectid IN (1,2,3)",
+            ["outStatistics"] = """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"n"}]""",
+            ["groupByFieldsForStatistics"] = "objectid",
+            ["orderByFields"] = "objectid ASC",
+            ["resultOffset"] = offset.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["resultRecordCount"] = "1",
+            ["returnGeometry"] = "false"
+        };
+        if (serviceQuery)
+        {
+            parameters["layers"] = "0";
+        }
+
+        using var form = new FormUrlEncodedContent(parameters);
+        using var response = await _fixture.Client.PostAsync(Path(serviceQuery), form);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var payload = Payload(document, serviceQuery);
+        var features = payload.GetProperty("features");
+        features.GetArrayLength().Should().Be(offset < 3 ? 1 : 0);
+        var exceededTransferLimit = payload.TryGetProperty("exceededTransferLimit", out var transferLimit) && transferLimit.GetBoolean();
+        exceededTransferLimit.Should().Be(hasMore);
+        if (offset < 3)
+        {
+            var attributes = features[0].GetProperty("attributes");
+            attributes.GetProperty("objectid").GetInt64().Should().Be(offset + 1);
+            attributes.GetProperty("n").GetInt64().Should().Be(1);
+        }
+    }
+
     private async Task<JsonDocument> QueryAsync(bool serviceQuery, string statistics, string where, string? group = null)
     {
         using var form = Form(statistics, where, group, serviceQuery);

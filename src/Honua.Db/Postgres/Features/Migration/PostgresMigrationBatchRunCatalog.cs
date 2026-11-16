@@ -12,13 +12,6 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IMigrationBatchRunCatalog"/> (issue
-/// #1253). Persists batch composition, ordering, and per-child status into
-/// <c>honua.migration_batch_runs</c> and <c>honua.migration_batch_children</c>.
-/// Uses ON CONFLICT guards and sticky-terminal WHERE clauses so the orchestrator
-/// can advance/retry safely.
-/// </summary>
 internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatchRunCatalog
 {
     private readonly NpgsqlDataSource _dataSource;

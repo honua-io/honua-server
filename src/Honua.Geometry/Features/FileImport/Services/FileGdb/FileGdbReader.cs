@@ -16,20 +16,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services.FileGdb;
 
-/// <summary>
-/// Streaming reader for Esri File Geodatabase (.gdb) format.
-/// Discovers feature class layers from the system catalog and streams features
-/// using <see cref="GdbTableReader"/> and <see cref="GdbGeometryReader"/>.
-/// </summary>
 internal static class FileGdbReader
 {
-    /// <summary>
-    /// Detect the SRID from the File Geodatabase spatial reference information.
-    /// Reads the system catalog to find feature class tables, then extracts
-    /// the SRID from the first geometry field's WKT spatial reference.
-    /// </summary>
-    /// <param name="gdbPath">Path to the .gdb directory.</param>
-    /// <returns>Detected SRID, or null if not detectable.</returns>
     internal static int? DetectSrid(string gdbPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gdbPath);
@@ -51,13 +39,6 @@ internal static class FileGdbReader
         return null;
     }
 
-    /// <summary>
-    /// Stream features from a single-layer File Geodatabase directory.
-    /// Multi-layer geodatabases are rejected so feature classes are not silently merged.
-    /// </summary>
-    /// <param name="gdbPath">Path to the .gdb directory.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Async enumerable of features from the only feature class.</returns>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         string gdbPath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -86,9 +67,6 @@ internal static class FileGdbReader
         }
     }
 
-    /// <summary>
-    /// Streams features from one discovered FileGDB feature class.
-    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadLayerStreamingAsync(
         string gdbPath,
         FileGdbLayerInfo layer,
@@ -178,21 +156,12 @@ internal static class FileGdbReader
         }
     }
 
-    /// <summary>
-    /// Builds the clear import rejection message used when a FileGDB contains more
-    /// than one feature class and no source-layer selection is available.
-    /// </summary>
     internal static string BuildMultiLayerImportMessage(IReadOnlyList<FileGdbLayerInfo> layers)
     {
         var layerNames = string.Join(", ", layers.Select(layer => layer.Name));
         return $"File Geodatabase contains multiple feature classes ({layerNames}). Import requires a single feature class; preview AvailableLayers lists the source layers to export or split before import.";
     }
 
-    /// <summary>
-    /// Discovers feature class layers by reading the system catalog (a00000001.gdbtable).
-    /// Falls back to scanning .gdbtable files when the catalog is unavailable.
-    /// Returns layer info for tables that have a geometry field.
-    /// </summary>
     internal static FileGdbLayerInfo[] DiscoverLayers(string gdbPath)
     {
         // "a00000001.gdbtable" is a hardcoded literal, so this segment can never be
@@ -211,9 +180,6 @@ internal static class FileGdbReader
         return DiscoverLayersByScan(gdbPath);
     }
 
-    /// <summary>
-    /// Discovers layers using the system catalog table (a00000001.gdbtable).
-    /// </summary>
     private static FileGdbLayerInfo[] DiscoverLayersFromCatalog(string gdbPath, string catalogPath)
     {
         GdbTableReader catalogReader;
@@ -285,11 +251,6 @@ internal static class FileGdbReader
         return layers.ToArray();
     }
 
-    /// <summary>
-    /// Discovers layers by scanning all .gdbtable files in the GDB directory.
-    /// Used as fallback when the system catalog is unavailable.
-    /// Skips known system table file IDs (1-8).
-    /// </summary>
     private static FileGdbLayerInfo[] DiscoverLayersByScan(string gdbPath)
     {
         var layers = new List<FileGdbLayerInfo>();
@@ -319,9 +280,6 @@ internal static class FileGdbReader
         return layers.ToArray();
     }
 
-    /// <summary>
-    /// Probes a table file to check if it has a geometry field and extracts layer info.
-    /// </summary>
     private static FileGdbLayerInfo? ProbeTable(string tablePath, string tableName, int fileNumber)
     {
         GdbTableReader tableReader;
@@ -354,9 +312,6 @@ internal static class FileGdbReader
         }
     }
 
-    /// <summary>
-    /// Converts a row dictionary from GdbTableReader to an NTS Feature.
-    /// </summary>
     private static Feature? ConvertRowToFeature(
         Dictionary<string, object?> row,
         IReadOnlyList<GdbField> fields,
@@ -397,11 +352,6 @@ internal static class FileGdbReader
         return new Feature(geometry, attributes);
     }
 
-    /// <summary>
-    /// Represents a discovered feature class layer in the geodatabase.
-    /// <c>Srid</c> is 0 when the WKT carries no recognizable authority; callers resolve
-    /// <c>SpatialReferenceWkt</c> through the CRS detection service in that case (#6114).
-    /// </summary>
     internal readonly record struct FileGdbLayerInfo(
         string Name,
         int RowCount,

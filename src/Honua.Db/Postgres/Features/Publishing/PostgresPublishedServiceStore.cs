@@ -9,9 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Publishing;
 
-/// <summary>
-/// Durable Postgres store for canonical published-service records.
-/// </summary>
 internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
 {
     private const string Columns =

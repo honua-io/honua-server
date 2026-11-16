@@ -13,13 +13,11 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 // honua_studio_create_draft
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_create_draft</c>.</summary>
 internal sealed class McpStudioCreateDraftArgument
 {
     [JsonPropertyName("packageKey")]
     public string? PackageKey { get; set; }
 
-    /// <summary>Package family (query, analysis, map, dashboard, report, form, app, workflow, gp, etl).</summary>
     [JsonPropertyName("family")]
     public string? Family { get; set; }
 
@@ -32,27 +30,16 @@ internal sealed class McpStudioCreateDraftArgument
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; set; }
 
-    /// <summary>
-    /// Optional initial composition body (for <c>map</c>/<c>app</c> families, a
-    /// <see cref="StudioCompositionBody"/>-shaped payload; other families carry
-    /// their own family-specific JSON). Omit to start with an empty body.
-    /// </summary>
     [JsonPropertyName("body")]
     public JsonElement? Body { get; set; }
 
-    /// <summary>Existing content item id, to add a new draft under an existing item.</summary>
     [JsonPropertyName("itemId")]
     public Guid? ItemId { get; set; }
 
-    /// <summary>Immutable version this draft was reopened from, when applicable.</summary>
     [JsonPropertyName("baseVersionId")]
     public Guid? BaseVersionId { get; set; }
 }
 
-/// <summary>
-/// Backward-compatible completed draft projection with its canonical durable operation envelope.
-/// Approval/non-terminal outcomes carry the operation while draft fields remain absent.
-/// </summary>
 internal sealed record McpStudioDraftMutationOutput
 {
     [JsonPropertyName("operation")]
@@ -125,7 +112,6 @@ internal sealed record McpStudioDraftMutationOutput
 // honua_studio_get_draft
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_get_draft</c>.</summary>
 internal sealed class McpStudioDraftIdArgument
 {
     [JsonPropertyName("draftId")]
@@ -136,22 +122,11 @@ internal sealed class McpStudioDraftIdArgument
 // honua_studio_update_draft
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Arguments for <c>honua_studio_update_draft</c>. A bounded, whole-envelope
-/// replace scoped deliberately narrower than the REST admin surface: it
-/// carries the fields an agent legitimately edits (key, workspace/owner,
-/// schema version, format, body) and does NOT accept <c>bindings</c>,
-/// <c>dependencies</c>, <c>provenance</c>, or <c>publicationIntent</c> — those
-/// stay lifecycle-service-owned or, for publication intent, are recorded only
-/// through <c>honua_studio_propose_publication</c> so this general-purpose
-/// updater can never smuggle a publish signal.
-/// </summary>
 internal sealed class McpStudioUpdateDraftArgument
 {
     [JsonPropertyName("draftId")]
     public Guid? DraftId { get; set; }
 
-    /// <summary>Expected current draft generation (optimistic concurrency).</summary>
     [JsonPropertyName("generation")]
     public long? Generation { get; set; }
 
@@ -170,7 +145,6 @@ internal sealed class McpStudioUpdateDraftArgument
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; set; }
 
-    /// <summary>Replacement composition/family body. Omit to leave the existing body unchanged.</summary>
     [JsonPropertyName("body")]
     public JsonElement? Body { get; set; }
 }
@@ -179,10 +153,6 @@ internal sealed class McpStudioUpdateDraftArgument
 // Composition tools — shared nested shapes
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Layer input shape shared by <c>honua_studio_add_layer</c>. Mirrors the
-/// honua-sdk-js agent-tools <c>addLayer</c> layer specification.
-/// </summary>
 internal sealed class McpStudioLayerInput
 {
     [JsonPropertyName("id")]
@@ -207,7 +177,6 @@ internal sealed class McpStudioLayerInput
     public JsonElement? Metadata { get; set; }
 }
 
-/// <summary>View input shape shared by <c>honua_studio_set_view</c>. Mirrors the SDK agent-tools viewport shape.</summary>
 internal sealed class McpStudioViewInput
 {
     [JsonPropertyName("bbox")]
@@ -229,7 +198,6 @@ internal sealed class McpStudioViewInput
     public string? Crs { get; set; }
 }
 
-/// <summary>Widget input shape shared by <c>honua_studio_add_widget</c>.</summary>
 internal sealed class McpStudioWidgetInput
 {
     [JsonPropertyName("id")]
@@ -252,7 +220,6 @@ internal sealed class McpStudioWidgetInput
 // honua_studio_add_layer
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_add_layer</c>.</summary>
 internal sealed class McpStudioAddLayerArgument
 {
     [JsonPropertyName("draftId")]
@@ -272,7 +239,6 @@ internal sealed class McpStudioAddLayerArgument
 // honua_studio_remove_layer
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_remove_layer</c>.</summary>
 internal sealed class McpStudioRemoveLayerArgument
 {
     [JsonPropertyName("draftId")]
@@ -289,7 +255,6 @@ internal sealed class McpStudioRemoveLayerArgument
 // honua_studio_set_layer_style
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_set_layer_style</c>.</summary>
 internal sealed class McpStudioSetLayerStyleArgument
 {
     [JsonPropertyName("draftId")]
@@ -301,7 +266,6 @@ internal sealed class McpStudioSetLayerStyleArgument
     [JsonPropertyName("layerId")]
     public string? LayerId { get; set; }
 
-    /// <summary>Style reference (catalog styleId or inline style key). Omit/null clears the binding.</summary>
     [JsonPropertyName("styleRef")]
     public string? StyleRef { get; set; }
 
@@ -325,7 +289,6 @@ internal sealed class McpStudioSetMapStyleArgument
 // honua_studio_set_layer_visibility
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_set_layer_visibility</c>.</summary>
 internal sealed class McpStudioSetLayerVisibilityArgument
 {
     [JsonPropertyName("draftId")]
@@ -337,10 +300,6 @@ internal sealed class McpStudioSetLayerVisibilityArgument
     [JsonPropertyName("layerId")]
     public string? LayerId { get; set; }
 
-    /// <summary>
-    /// The visibility to store. Required: an omitted/null <c>visible</c> is rejected rather than
-    /// defaulted, so an agent can never "toggle" a layer into a state it did not ask for.
-    /// </summary>
     [JsonPropertyName("visible")]
     public bool? Visible { get; set; }
 }
@@ -349,7 +308,6 @@ internal sealed class McpStudioSetLayerVisibilityArgument
 // honua_studio_set_view
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_set_view</c>.</summary>
 internal sealed class McpStudioSetViewArgument
 {
     [JsonPropertyName("draftId")]
@@ -366,7 +324,6 @@ internal sealed class McpStudioSetViewArgument
 // honua_studio_add_widget
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_add_widget</c>.</summary>
 internal sealed class McpStudioAddWidgetArgument
 {
     [JsonPropertyName("draftId")]
@@ -383,7 +340,6 @@ internal sealed class McpStudioAddWidgetArgument
 // honua_studio_remove_widget
 // -----------------------------------------------------------------------
 
-/// <summary>Arguments for <c>honua_studio_remove_widget</c>.</summary>
 internal sealed class McpStudioRemoveWidgetArgument
 {
     [JsonPropertyName("draftId")]
@@ -401,10 +357,6 @@ internal sealed class McpStudioRemoveWidgetArgument
 // (geospatial-mcp ADR-0030 bind_interaction / remove_interaction)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// The event-source half of an interaction input: a component reference plus one
-/// member of the closed event set (<see cref="StudioInteractionVocabulary.EventNames"/>).
-/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioInteractionEventInput
 {
@@ -415,11 +367,6 @@ internal sealed class McpStudioInteractionEventInput
     public string? Event { get; set; }
 }
 
-/// <summary>
-/// The action half of an interaction input: a component reference, one member of the
-/// closed verb set (<see cref="StudioInteractionVocabulary.ActionVerbs"/>), and static
-/// JSON arguments (<c>$event.*</c> string substitution only — no expression language).
-/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioInteractionActionInput
 {
@@ -433,10 +380,6 @@ internal sealed class McpStudioInteractionActionInput
     public JsonElement Args { get; set; }
 }
 
-/// <summary>
-/// Interaction input shape for <c>honua_studio_bind_interaction</c>. Mirrors the
-/// standard's <c>common/interactions.schema.json#/$defs/interaction</c>.
-/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioInteractionInput
 {
@@ -453,7 +396,6 @@ internal sealed class McpStudioInteractionInput
     public JsonElement Disabled { get; set; }
 }
 
-/// <summary>Arguments for <c>honua_studio_bind_interaction</c>.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioBindInteractionArgument
 {
@@ -467,7 +409,6 @@ internal sealed class McpStudioBindInteractionArgument
     public McpStudioInteractionInput? Interaction { get; set; }
 }
 
-/// <summary>Arguments for <c>honua_studio_remove_interaction</c>.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioRemoveInteractionArgument
 {
@@ -486,12 +427,6 @@ internal sealed class McpStudioRemoveInteractionArgument
 // (geospatial-mcp ADR-0031 add_control / remove_control)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Control input shape for <c>honua_studio_add_control</c>. Mirrors the standard's
-/// <c>common/controls.schema.json#/$defs/control</c> — deliberately the same
-/// <c>{ id, kind, title?, sourceId?, config? }</c> shape as a widget entry, so agents
-/// author both collections the same way.
-/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioControlInput
 {
@@ -511,7 +446,6 @@ internal sealed class McpStudioControlInput
     public JsonElement Config { get; set; }
 }
 
-/// <summary>Arguments for <c>honua_studio_add_control</c>.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioAddControlArgument
 {
@@ -525,7 +459,6 @@ internal sealed class McpStudioAddControlArgument
     public McpStudioControlInput? Control { get; set; }
 }
 
-/// <summary>Arguments for <c>honua_studio_remove_control</c>.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioRemoveControlArgument
 {
@@ -538,12 +471,6 @@ internal sealed class McpStudioRemoveControlArgument
     [JsonPropertyName("controlId")]
     public string? ControlId { get; set; }
 
-    /// <summary>
-    /// When <see langword="true"/>, interactions bound to <c>control:{controlId}</c> are
-    /// removed with the control. When omitted/false the call FAILS while any interaction
-    /// still references it, so a document never silently retains a dangling binding
-    /// (ADR-0031).
-    /// </summary>
     [JsonPropertyName("cascadeInteractions")]
     public bool? CascadeInteractions { get; set; }
 }
@@ -552,10 +479,6 @@ internal sealed class McpStudioRemoveControlArgument
 // honua_studio_propose_publication
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Arguments for <c>honua_studio_propose_publication</c>. Binds publication
-/// intent to an exact immutable saved version for canonical human approval.
-/// </summary>
 internal sealed class McpStudioProposePublicationArgument
 {
     [JsonPropertyName("itemId")]
@@ -573,15 +496,10 @@ internal sealed class McpStudioProposePublicationArgument
     [JsonPropertyName("visibility")]
     public string? Visibility { get; set; }
 
-    /// <summary>Human-readable rationale recorded alongside the intent for reviewer context.</summary>
     [JsonPropertyName("note")]
     public string? Note { get; set; }
 }
 
-/// <summary>
-/// Output for <c>honua_studio_propose_publication</c>. Carries canonical
-/// proposal and operation identities for polling and approval.
-/// </summary>
 internal sealed class McpStudioProposePublicationOutput
 {
     [JsonPropertyName("operation")]

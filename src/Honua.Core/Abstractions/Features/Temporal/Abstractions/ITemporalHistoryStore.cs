@@ -8,10 +8,7 @@ namespace Honua.Core.Features.Temporal.Abstractions;
 public interface ITemporalHistoryStore
 {
     Task<IReadOnlyList<TemporalChangeRecord>> GetFeatureRevisionsAsync(
-        int storageLayerId,
-        long objectId,
-        long afterGeneration,
-        int limit,
+        TemporalFeatureRevisionQuery query,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<TemporalChangeRecord>> GetChangesInWindowAsync(

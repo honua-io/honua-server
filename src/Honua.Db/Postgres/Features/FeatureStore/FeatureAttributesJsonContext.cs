@@ -7,10 +7,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
-/// <summary>
-/// AOT-compatible JSON serializer context for feature attributes.
-/// Uses source generators to avoid reflection for native AOT compilation.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
