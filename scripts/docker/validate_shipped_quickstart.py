@@ -109,6 +109,8 @@ FAILURE_SIGNALS = {
     "image-registration-failed": "failed to register layer",
     "docker-api-version": "client version",
     "docker-daemon-error": "error response from daemon",
+    # The container runtime refused to create or start a container (e.g. an entrypoint the image lacks).
+    "container-start-failed": "oci runtime",
     "buildkit-unavailable": "buildkit is enabled but the buildx component is missing",
     "build-context-failed": "unable to prepare context",
     "dockerfile-missing": "failed to read dockerfile",
@@ -131,6 +133,54 @@ FAILURE_SIGNALS = {
 }
 
 
+# Images the package builds locally (services with build:). Compose tries to pull
+# them first, prints "pull access denied", then builds; test_shipped_quickstart
+# keeps this list equal to the packaged compose files.
+LOCALLY_BUILT_IMAGES = ("honua-postgis-proj-grids",)
+LOCAL_BUILD_PULL_FALLBACK = re.compile(
+    r"pull access denied for (?:" + "|".join(map(re.escape, LOCALLY_BUILT_IMAGES)) + r"),")
+STATE_READ_TIMEOUT = 60
+STATE_FIELDS = {"Service": "service", "State": "state", "Health": "health", "ExitCode": "exitCode"}
+SAFE_STATE = re.compile(r"[A-Za-z0-9_.-]{0,64}")
+MAX_SERVICE_STATES = 32
+STATE_OPERATIONS = ("initialize", "service-health")
+
+
+COMPOSE_VERSION = re.compile(r"v?[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+-]{0,32}")
+
+
+def local_build_started(output: str) -> bool:
+    return any(re.search(r"\bbuilding\b", line) for line in output.lower().splitlines())
+
+
+def failure_signals(output: str) -> list[str]:
+    lines = output.lower().splitlines()
+    # A locally built image's denial is the expected fallback only when a build follows it.
+    kept = [line for index, line in enumerate(lines)
+            if not (LOCAL_BUILD_PULL_FALLBACK.search(line) and local_build_started("\n".join(lines[index + 1:])))]
+    text = "\n".join(kept)
+    return [label for label, marker in FAILURE_SIGNALS.items() if marker in text]
+
+
+def safe_state(row: dict) -> dict:
+    """Keep integer exit codes and short identifier-like strings; withhold anything else."""
+    if not isinstance(row, dict):
+        return dict.fromkeys(STATE_FIELDS.values(), "withheld")
+    state = {}
+    for source, target in STATE_FIELDS.items():
+        value = row.get(source)
+        if isinstance(value, int) or (isinstance(value, str) and SAFE_STATE.fullmatch(value)):
+            state[target] = value
+        else:
+            state[target] = "withheld"
+    return state
+
+
+def compose_rows(output: str) -> list[dict]:
+    text = output.strip()
+    return json.loads(text) if text.startswith("[") else [json.loads(line) for line in text.splitlines()]
+
+
 class CommandFailure(RuntimeError):
     def __init__(self, command: list[str], result: subprocess.CompletedProcess):
         super().__init__("Archived installation command failed; output withheld")
@@ -142,9 +192,9 @@ class CommandFailure(RuntimeError):
         }
         operation = next((label for prefix, label in known.items()
                           if tuple(command[:len(prefix)]) == prefix), "other")
-        output = (result.stdout + result.stderr).lower()
+        output = result.stdout + result.stderr
         self.diagnostic = {"operation": operation, "exitCode": result.returncode,
-                           "signals": [label for label, marker in FAILURE_SIGNALS.items() if marker in output]}
+                           "signals": failure_signals(output), "localBuildStarted": local_build_started(output)}
 
 
 class Installation:
@@ -162,8 +212,8 @@ class Installation:
             raise CommandFailure(command, result)
         return result.stdout
 
-    def compose(self, *arguments: str) -> str:
-        return self.run(["docker", "compose", *arguments])
+    def compose(self, *arguments: str, timeout: int = 600) -> str:
+        return self.run(["docker", "compose", *arguments], timeout)
 
     def credentials(self) -> dict[str, str]:
         credentials = {path.name: path.read_text().strip() for path in (self.directory / "secrets").iterdir()
@@ -179,10 +229,18 @@ class Installation:
         check_no_secrets(rendered + self.compose("config", "--environment") +
                          (self.directory / ".env").read_text(), credentials)
         configuration = json.loads(rendered)
-        states = self.compose("ps", "--all", "--format", "json").strip()
-        observed = json.loads(states) if states.startswith("[") else [json.loads(line) for line in states.splitlines()]
+        observed = compose_rows(self.compose("ps", "--all", "--format", "json"))
         check_services(configuration, observed)
         return len(observed)
+
+    def compose_version(self) -> str:
+        version = self.compose("version", "--short", timeout=STATE_READ_TIMEOUT).strip()
+        return version if COMPOSE_VERSION.fullmatch(version) else "withheld"
+
+    def service_states(self) -> list[dict]:
+        """Per-service state after a failed start: no logs, environment or configuration."""
+        rows = compose_rows(self.compose("ps", "--all", "--format", "json", timeout=STATE_READ_TIMEOUT))
+        return [safe_state(row) for row in rows[:MAX_SERVICE_STATES]]
 
     def publish(self, blocks: dict[str, str]) -> None:
         publish_sample(self.directory, blocks, self.run)
@@ -280,16 +338,28 @@ class CustomerJourney:
                 if revision != self.server_source:
                     raise ValueError("Installed serving image does not match the selected candidate source")
                 installed = {"credentials": installation.credentials(), "result": result, "version": lock["version"]}
-            except BaseException:
-                # Preserve the original cause if teardown fails as well.
+            except BaseException as error:
                 try:
-                    installation.down()
-                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-                    self.receipt["cleanupFailed"] = True
+                    if isinstance(error, CommandFailure) and error.diagnostic["operation"] in STATE_OPERATIONS:
+                        self.record_states(installation)
+                finally:
+                    # Preserve the original cause if teardown fails as well.
+                    try:
+                        installation.down()
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                        self.receipt["cleanupFailed"] = True
                 raise
             else:
                 installation.down()
             return installed
+
+    def record_states(self, installation: Installation) -> None:
+        for key, read in (("composeVersion", installation.compose_version),
+                          ("serviceStates", installation.service_states)):
+            try:
+                self.receipt[key] = read()
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                self.receipt[key] = "unavailable"
 
     def run(self) -> None:
         previous = None

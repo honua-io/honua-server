@@ -1,0 +1,44 @@
+name: Publish authorization
+
+# Called first by every workflow that publishes an image, a package or a release.
+# It fails unless the run is on trunk or on a tag the caller names, so a run on any
+# other ref stops before a registry login. The publish environments and the tag
+# rulesets in the repository settings are what bind a workflow edited on a branch.
+# Registry credentials used by jobs with an environment exception in
+# scripts/ci/publish-authorization-exceptions.json stay repository secrets until
+# those exceptions close; moving them into an environment first breaks those jobs.
+on:
+  workflow_call:
+    inputs:
+      tag-patterns:
+        description: Space-separated tag globs that may publish besides trunk. Empty means trunk only.
+        type: string
+        default: ''
+
+permissions: {}
+
+jobs:
+  authorize:
+    name: Require trunk or a release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Refuse any other ref
+        env:
+          TAG_PATTERNS: ${{ inputs.tag-patterns }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = refs/heads/trunk ]; then
+            exit 0
+          fi
+          # A shell glob's * also matches /, which a tag ruleset's * does not, so tags with / are refused.
+          if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF#refs/tags/}" != */* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            set -f
+            for pattern in ${TAG_PATTERNS}; do
+              # shellcheck disable=SC2254
+              case "${tag}" in ${pattern}) exit 0 ;; esac
+            done
+          fi
+          echo "::error::${GITHUB_WORKFLOW} publishes only from trunk${TAG_PATTERNS:+ or a tag matching ${TAG_PATTERNS}}; ${GITHUB_REF} is neither."
+          exit 1

@@ -82,7 +82,7 @@ internal static class ImageServerServiceCollectionExtensions
         // Protocol-neutral class-statistics analyzer (#2662): reads training-AOI pixel vectors
         // through the shared raster store and folds them into per-class signatures. TryAdd keeps a
         // single registration if another protocol registers the same analyzer.
-        services.TryAddScoped<IRasterClassStatisticsAnalyzer, RasterClassStatisticsAnalyzer>();
+        services.TryAddScoped<RasterClassStatisticsAnalyzer>();
 
         // CRS/datum/transform seam for the project operation: folds the spatial-reference
         // resolver, datum-transformation catalog, and optional coordinate transform service

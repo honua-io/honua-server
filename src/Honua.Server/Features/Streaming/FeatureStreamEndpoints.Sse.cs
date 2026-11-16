@@ -38,7 +38,7 @@ internal static partial class FeatureStreamEndpoints
     private readonly record struct SseHandshake(
         HttpContext Context,
         FeatureStreamSession Session,
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         FeatureStreamCursor Requested,
         long InitialLiveCursor);
 
@@ -134,7 +134,7 @@ internal static partial class FeatureStreamEndpoints
         ILogger logger,
         HttpContext context,
         FeatureStreamSession session,
-        IStreamSubscriptionFilter? subscriptionFilter,
+        StreamSubscriptionFilter? subscriptionFilter,
         FeatureStreamSubscriptionMode mode)
     {
         var sessionManager = deps.SessionManager;
@@ -370,7 +370,10 @@ internal static partial class FeatureStreamEndpoints
                 {
                     // Drain channel for headroom only — the store sweep below
                     // delivers everything in cursor order including grace-drops.
-                    while (session.Reader.TryRead(out _)) { }
+                    while (session.Reader.TryRead(out _))
+                    {
+                        // Discard: the store sweep delivers these in cursor order.
+                    }
 
                     previousCursor = replayCursor;
                     replayCursor = await ReplayToSseAsync(
@@ -475,7 +478,10 @@ internal static partial class FeatureStreamEndpoints
                         do
                         {
                             progress = false;
-                            while (session.Reader.TryRead(out _)) { }
+                            while (session.Reader.TryRead(out _))
+                            {
+                                // Discard: the store sweep delivers these in cursor order.
+                            }
 
                             long prev = replayCursor;
                             replayCursor = await ReplayToSseAsync(
@@ -601,7 +607,7 @@ internal static partial class FeatureStreamEndpoints
     private static async Task AnnounceSseSubscriptionAsync(
         HttpContext context,
         FeatureStreamSession session,
-        IStreamSubscriptionFilter? subscriptionFilter)
+        StreamSubscriptionFilter? subscriptionFilter)
     {
         if (subscriptionFilter is not null)
         {
@@ -627,7 +633,7 @@ internal static partial class FeatureStreamEndpoints
         HttpContext Context)
     {
         public required FeatureStreamSession Session { get; init; }
-        public IStreamSubscriptionFilter? Filter { get; init; }
+        public StreamSubscriptionFilter? Filter { get; init; }
         public FeatureStreamSubscriptionMode Mode { get; init; }
     }
 

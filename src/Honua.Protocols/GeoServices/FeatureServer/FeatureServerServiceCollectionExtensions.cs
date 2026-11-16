@@ -59,7 +59,7 @@ internal static class FeatureServerServiceCollectionExtensions
         // At-most-once synchronizeReplica uploads: same store and reservation semantics as applyEdits.
         // The reservation outlasts the configured request timeout so a slow upload is never overtaken
         // by its own retry.
-        services.TryAddSingleton<IReplicaUploadIdempotencyStore>(static serviceProvider =>
+        services.TryAddSingleton<DistributedReplicaUploadIdempotencyStore>(static serviceProvider =>
             new DistributedReplicaUploadIdempotencyStore(
                 serviceProvider.GetRequiredService<IIdempotencyReservationStore>(),
                 serviceProvider.GetRequiredService<ILogger<DistributedReplicaUploadIdempotencyStore>>(),

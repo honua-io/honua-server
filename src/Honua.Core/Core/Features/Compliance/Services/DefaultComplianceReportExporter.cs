@@ -6,7 +6,7 @@ using Honua.Core.Features.Compliance.Domain;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-internal sealed class DefaultComplianceReportExporter : IComplianceReportExporter
+public sealed class DefaultComplianceReportExporter
 {
     private readonly IComplianceEvidenceCollector _collector;
     private readonly Dictionary<ComplianceReportFormat, IComplianceReportRenderer> _renderers;
