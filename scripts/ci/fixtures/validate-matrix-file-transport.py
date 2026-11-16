@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +20,51 @@ def step(job, name):
 
 
 class MatrixTransportTests(unittest.TestCase):
+    def test_full_selection_fits_job_outputs_without_losing_filters(self):
+        compute = step('targeted-shards', 'Compute shard descriptor and matrix include')['run']
+        # Empty expressions select the ordinary manual-full path.
+        compute = re.sub(r'\$\{\{.*?\}\}', '', compute)
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            output = folder / 'output'
+            subprocess.run(['bash', '-e', '-c', compute], cwd=ROOT,
+                           env=dict(os.environ, RUNNER_TEMP=directory,
+                                    GITHUB_OUTPUT=str(output), GITHUB_RUN_ID='1',
+                                    GITHUB_RUN_ATTEMPT='1'), check=True, capture_output=True)
+            self.assertLess(len(output.read_text().encode('utf-16-le')), 1024 * 1024)
+            values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+            scheduled = json.loads(values['matrix_include'])
+            artifact = json.loads((folder / 'managed-matrix.json').read_text())
+            source = json.loads((ROOT / '.github/ci-shards.json').read_text())['shards']
+            self.assertEqual({s['shard_name']: s['filter'] for s in source},
+                             {s['shard_name']: s['filter'] for s in artifact})
+            self.assertEqual([{k: v for k, v in s.items() if k != 'filter'}
+                              for s in artifact], scheduled)
+
+    def test_shard_loads_exact_filter_and_rejects_missing_or_ambiguous_selection(self):
+        run = step('server-tests', 'Run server test shard')['run']
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            scripts = folder / 'scripts/ci'
+            scripts.mkdir(parents=True)
+            stub = scripts / 'run-server-test-shard.sh'
+            stub.write_text('#!/bin/sh\nprintf "%s" "$HONUA_SERVER_TEST_FILTER"\n')
+            stub.chmod(0o755)
+            selected = {'shard_name': 'fixture', 'filter': '(Name~one|Name~two)&Tier!=Slow'}
+            for matrix, valid in [([selected], True), ([], False),
+                                  ([selected, selected], False),
+                                  ([dict(selected, filter='')], False)]:
+                (folder / 'managed-matrix.json').write_text(json.dumps(matrix))
+                result = subprocess.run(['bash', '-e', '-c', run], cwd=folder,
+                                        env=dict(os.environ, RUNNER_TEMP=directory,
+                                                 HONUA_SERVER_TEST_SHARD_NAME='fixture'),
+                                        capture_output=True, text=True)
+                self.assertEqual(valid, result.returncode == 0, result.stderr)
+                if valid:
+                    self.assertEqual(selected['filter'], result.stdout)
+                else:
+                    self.assertEqual('', result.stdout)
+
     def test_large_matrix_reaches_producer_cache_and_enforced_verdict(self):
         project = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
         matrix = [{'shard_name': 'fixture', 'csproj': project,

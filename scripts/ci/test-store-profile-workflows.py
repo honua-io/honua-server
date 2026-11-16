@@ -151,7 +151,16 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         admission = workflow('advisory-runner-select.yml')['jobs']['select']
         self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
         self.assertIn('fromJSON(vars.HONUA_LIGHT_RUNNER)', admission['runs-on'])
-        self.assertLessEqual(int(job['timeout-minutes']), 30)
+        budgets = re.fullmatch(
+            r"\$\{\{ matrix.compilation == 'aot' && (\d+) \|\| (\d+) \}\}",
+            job['timeout-minutes'])
+        self.assertIsNotNone(budgets, 'Store builds must use separate AOT and JIT budgets')
+        aot_minutes, jit_minutes = map(int, budgets.groups())
+        nightly_aot = workflow('nightly-container-build.yml')['jobs']['build-aot']
+        self.assertEqual(aot_minutes, int(nightly_aot['timeout-minutes']))
+        self.assertGreater(aot_minutes, jit_minutes)
+        self.assertGreater(jit_minutes, 0)
+        self.assertLessEqual(jit_minutes, 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
         self.assertIn('matrix.profile', build['with']['cache-to'])
         self.assertIn('matrix.compilation', build['with']['cache-to'])
