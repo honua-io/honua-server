@@ -143,10 +143,7 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
         AssertOwnershipRefusal(strangerRead);
     }
 
-    /// <summary>
-    /// Seeds a saved version owned by the credential, then proposes publication over MCP.
-    /// Draft writes require human approval too; setup must not assume they execute inline.
-    /// </summary>
+    // Draft writes require human approval too; seed setup through the store.
     private async Task<string> ProposeAsync(StudioMcpHttpClient mcp, string label, string ownerId)
     {
         var packageKey = $"proposal-owner-{label}-{Guid.NewGuid():N}";
