@@ -152,6 +152,11 @@ public sealed class Cql2Lexer
                     _position++;
                     break;
 
+                case '!' when PeekNext() == '=':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.NotEqual, "!=", _position, 2));
+                    _position += 2;
+                    break;
+
                 case '<':
                     if (PeekNext() == '>')
                     {
