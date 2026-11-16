@@ -87,7 +87,7 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
         var create = new CreateConsoleContentItemRequest
         {
             Name = "test-map",
-            ItemType = ConsoleContentItemType.SavedMap,
+            ItemType = ConsoleContentItemType.Map,
             Title = "Test Map",
             Visibility = ConsoleVisibility.Organization,
             Tags = new[] { "test" },
@@ -110,7 +110,7 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
             await getResponse.Content.ReadAsStringAsync(), JsonOptions);
 
         Assert.Equal(created!.Data!.Id, fetched!.Data!.Id);
-        Assert.Equal(ConsoleContentItemType.SavedMap, fetched.Data.ItemType);
+        Assert.Equal(ConsoleContentItemType.Map, fetched.Data.ItemType);
         Assert.NotEmpty(fetched.Data.Actions);
         // Audit actor must be stamped from the authenticated principal even
         // for admin API-key requests, which carry no NameIdentifier/sub claim.
@@ -324,7 +324,7 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
         var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
             Name = "delete-target",
-            ItemType = ConsoleContentItemType.GeneratedApp,
+            ItemType = ConsoleContentItemType.App,
         }, JsonOptions);
         var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
