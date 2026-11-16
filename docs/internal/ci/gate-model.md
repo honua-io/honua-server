@@ -1856,7 +1856,7 @@ private-host classes, which costs one startup in that case.
 
 With this change on trunk 47eb3bc9ba, build-host runs of the three complete
 projects passed every case with no skips: OGC classic 592 (19m15s VSTest), STAC
-149 (5m29s) and OData 512 (36m27s). The unchanged OGC classic project did not
+149 (5m29s) and OData 512 (36m27s). The OGC classic project without this change did not
 finish within 111 minutes of execution on the same, heavily loaded host, so no
 paired whole-project time is claimed. As an estimate from unpaired data, per-case
 fixture time in the affected default-host classes was 2.1 to 3.5 seconds in full
