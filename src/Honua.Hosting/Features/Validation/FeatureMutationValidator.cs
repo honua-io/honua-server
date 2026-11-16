@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Geometries;
 using NetTopologySuite.IO;
