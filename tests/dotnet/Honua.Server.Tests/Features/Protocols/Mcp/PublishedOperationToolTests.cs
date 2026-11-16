@@ -580,7 +580,7 @@ public sealed partial class PublishedOperationToolTests
         // The pre-image is assembled from caller-influenced values (tenant, schema,
         // roles, parameter names/values). Without per-component escaping, a value
         // carrying the component delimiter could be re-parsed into another caller's
-        // key — the same injectivity requirement #3430 places on the MCP session
+        // key — the same injectivity requirement as the MCP session
         // binding key.
         var left = IPublishedOperationCache.BuildKey(
             "op",

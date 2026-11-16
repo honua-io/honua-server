@@ -258,7 +258,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     public async Task GetElevationValue_WhenElevationProtocolDisabled_ReturnsNotFound()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(1);
-        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        // Protocol gating reads MetadataV2Service.Protocols.
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,

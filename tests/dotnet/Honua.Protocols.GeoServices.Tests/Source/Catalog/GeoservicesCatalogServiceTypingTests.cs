@@ -40,7 +40,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
         var services = await GetServicesByNameAsync(fixture, RasterServiceName);
 
         // The raster service exposes only the ImageServer protocol, so it must NOT
-        // appear as a FeatureServer in the catalog (the #1853 mis-typing).
+        // appear as a FeatureServer in the catalog.
         services.Should().NotBeEmpty();
         services.Should().Contain(type => type == "ImageServer");
         services.Should().NotContain(type => type == "FeatureServer");

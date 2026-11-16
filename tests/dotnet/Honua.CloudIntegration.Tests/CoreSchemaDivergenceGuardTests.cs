@@ -1364,9 +1364,9 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
                 'upgrade-regression');
             """);
 
-        // Reproduce a pre-#3899 deployment: server migrations 031/059 were journaled in
-        // public while their guarded tables landed in honua, and the provider migration
-        // root plus the forward adoption migration were not yet part of that journal.
+        // Reproduce a legacy deployment: server migrations 031/059 are journaled in
+        // public while their guarded tables are in honua, and the provider migration
+        // root plus the forward adoption migration are not part of that journal.
         await ExecuteAsync(connectionString, $"""
             DELETE FROM public.schema_versions
             WHERE scriptname LIKE 'Honua.Postgres.Migrations.%'

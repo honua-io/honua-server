@@ -295,7 +295,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
 
         private async Task SetUpHonuaCatalogAsync(string schemaName)
         {
-            // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+            // This DDL creates/ALTERs the literal, process-global
             // honua / honua_data catalog schemas and tables (search_path isolation does not scope
             // them), so apply it under the shared seed advisory lock to keep parallel
             // [Collection("Database")] tests off the 40P01 deadlock path racing ACCESS EXCLUSIVE

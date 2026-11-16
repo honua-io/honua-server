@@ -97,7 +97,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
                 services.AddSingleton<ILicenseEntitlementService>(licenseService);
                 services.AddSingleton<ILicenseStatusProvider>(licenseService);
                 // Test-only protocol-shape provider: this certifies the
-                // deferred #1810 binary contract and must not be read as
+                // deferred binary contract and must not be read as
                 // evidence that a production host can render I3S.
                 services.AddSingleton<ISceneNodeGeometryProvider, StubSceneNodeGeometryProvider>();
             });
@@ -367,7 +367,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     {
         // The enriched 1.7 descriptor carries the z-bearing fullExtent (read from
         // the tileset root bounding volume), heightModelInfo, and format
-        // definitions/schema. With #1809 landed, the layer now ALSO advertises the
+        // definitions/schema. The layer ALSO advertises the
         // I3S 1.7 nodePages model (the fixture tileset is loadable), while
         // the legacy 1.6 store.rootNode tree stays absent — Honua serves the
         // nodePages traversal model, not a 1.6 root-node tree.

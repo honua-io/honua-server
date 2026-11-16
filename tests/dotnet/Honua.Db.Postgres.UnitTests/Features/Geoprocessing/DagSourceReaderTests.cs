@@ -425,7 +425,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_InsideJobScopeWithNoSubmitterSnapshot_RefusesTheRead()
     {
-        // honua-server#3068 fail-closed contract. An active job scope carrying NO submitter
+        // Fail-closed contract. An active job scope carrying NO submitter
         // snapshot means the read cannot be constrained to the caller: the request-scoped RLS
         // and field-mask sources would resolve "nothing applies" and hand back every row and
         // every attribute. The connector must refuse instead — and must refuse BEFORE touching

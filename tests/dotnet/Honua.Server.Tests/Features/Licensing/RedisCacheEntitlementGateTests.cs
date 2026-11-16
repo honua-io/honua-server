@@ -20,7 +20,7 @@ public sealed class RedisCacheEntitlementGateTests
     [UnitTest]
     public async Task IsRedisCacheEntitled_DevGrantPro_InDevelopment_EntitlesRedis()
     {
-        // Reproduces honua-server#1787: no signed license, only Licensing:DevGrantEdition=Pro.
+        // With no signed license, only Licensing:DevGrantEdition=Pro.
         var configuration = BuildConfiguration(
             redisConnectionString: RedisConnectionString,
             devGrantEdition: "Pro");

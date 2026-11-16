@@ -891,7 +891,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/layers")]
     public async Task MapServer_Layers_ReturnsSameDocumentAsAllLayersAndTables()
     {
-        // Regression for #1454: the ArcGIS Maps SDK for JavaScript and the .NET SDK
+        // The ArcGIS Maps SDK for JavaScript and the .NET SDK
         // hydrate sublayers via /MapServer/layers (not /allLayersAndTables). The
         // /layers resource must exist and return the identical {layers,tables} document.
         var layersResponse = await Fixture.Client.GetAsync(

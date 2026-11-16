@@ -123,8 +123,8 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             .Should().BeEquivalentTo("band_2", "band_3");
     }
 
-    // Enabled once #3184 landed: EdrHandler validates parameter-name against the
-    // collection's enumerated names instead of falling back to band_1 data.
+    // EdrHandler validates parameter-name against the collection's enumerated
+    // names instead of falling back to band_1 data.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /edr/collections/{collectionId}/position")]
@@ -209,7 +209,7 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         }
     }
 
-    // #4151 repro: a datetime disjoint from the raster instant selects no data. The handler must
+    // A datetime disjoint from the raster instant selects no data. The handler must
     // not sample the raster and stamp the requested time on its values; it answers 204.
     [IntegrationTest]
     [Operation(Operations.Query)]

@@ -710,7 +710,7 @@ public sealed class EnrichmentJobExecutorTests
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
 
         // Every real submission is stamped with the dataset layer the submit-time gate
-        // authorized (GeoprocessingLayerAccessGuard, #3043 review), so the default here
+        // authorized (GeoprocessingLayerAccessGuard), so the default here
         // mirrors a gate-approved job. Tests that exercise the binding itself override it
         // explicitly or opt out of the stamp entirely.
         if (stampAuthorizedDatasetLayer

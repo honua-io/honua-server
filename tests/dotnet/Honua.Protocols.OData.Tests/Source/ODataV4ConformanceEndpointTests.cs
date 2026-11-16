@@ -23,7 +23,7 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
     private const int SeededFeatureCount = 15;
     private const int SeededLayerCount = 2;
 
-    // Server page smaller than the seeded layer and feature counts, so the #1989 paging
+    // Server page smaller than the seeded layer and feature counts, so the paging
     // tests exercise server-driven paging. A client $top is a total ceiling and
     // cannot produce a continuation on its own.
     private const int MaxPageSize = 1;

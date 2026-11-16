@@ -10,9 +10,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Features.Import;
 
-// Regression coverage for honua-server#2352 (EsriJSON) and #2353 (WKB): both must be recognised
-// on the import path instead of falling through to null (WKB -> generic multipart error) or being
-// silently treated as GeoJSON (EsriJSON).
+// EsriJSON and WKB must both be recognised on the import path instead of falling through to null
+// (WKB -> generic multipart error) or being silently treated as GeoJSON (EsriJSON).
 public sealed class GeoServicesJsonWkbFormatDetectionTests
 {
     private readonly FileFormatDetectionService _service =

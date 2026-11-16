@@ -577,10 +577,10 @@ public sealed class ServingImageBoundaryTests
             functionsDockerfile.Should().Contain($"COPY src/{project}/*.csproj src/{project}/");
         }
 
-        // #3204 routing contract. The pull_request trigger carries the inputs
+        // Routing contract. The pull_request trigger carries the inputs
         // that DEFINE the image and nothing else. Managed-source inputs are
         // deliberately absent: they invalidate all three variants on nearly
-        // every pull request, which is what made this workflow a ~140-minute
+        // every pull request, which would make this workflow a ~140-minute
         // serial native build on every review-fix push. Their evidence is
         // placed on named lanes instead, asserted below.
         var pathsIndex = workflow.IndexOf("    paths:", StringComparison.Ordinal);

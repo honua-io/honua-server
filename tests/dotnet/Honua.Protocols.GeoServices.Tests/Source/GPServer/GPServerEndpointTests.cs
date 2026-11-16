@@ -876,8 +876,6 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         // analytics.cluster is protocol-only and cannot use either GPServer
         // execution route, so the response must not prescribe submitJob as a remedy.
-        // (conversion.geometry-format was this exemplar until #3936 gave it a real
-        // managed executor; the assertion below is unchanged.)
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -945,9 +943,9 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     {
         await StartDefaultApplicationAsync();
         // Esri's GP framework matches value lists case-insensitively, so the
-        // adapter accepts 'Detection'. Before #3053 it then passed the caller's
-        // spelling through verbatim and the ordinally-comparing canonical plan
-        // validator rejected the very submission the adapter had just accepted.
+        // adapter accepts 'Detection'. It must not then pass the caller's spelling
+        // through verbatim, or the ordinally-comparing canonical plan validator
+        // rejects the very submission the adapter just accepted.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1223,12 +1221,12 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithIdempotencyKeyParameter_ThreadsKeyToJobService()
     {
-        // GPServer previously submitted every job with a null
-        // idempotencyKey, so a caller-supplied key had no effect and a lost-response
-        // retry could be denied at quota / mint a second job instead of returning the
-        // original. Verify the optional GeoServices-style "idempotencyKey" request
-        // parameter reaches IGeoprocessingJobService.SubmitJobAsync and is excluded
-        // from the task's own input parameters.
+        // A caller-supplied idempotency key must take effect: submitting every job
+        // with a null idempotencyKey lets a lost-response retry be denied at quota or
+        // mint a second job instead of returning the original. Verify the optional
+        // GeoServices-style "idempotencyKey" request parameter reaches
+        // IGeoprocessingJobService.SubmitJobAsync and is excluded from the task's own
+        // input parameters.
         var recordingService = new RecordingGeoprocessingJobService();
         var submitFixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -1777,8 +1775,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task SubmitJob_WithEnvOutSR_IsAccepted()
     {
         await StartDefaultApplicationAsync();
-        // env:outSR is now recognized (not rejected) on submitJob, matching the
-        // synchronous execute route's behavior. See #1228.
+        // env:outSR is recognized (not rejected) on submitJob, matching the
+        // synchronous execute route's behavior.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",

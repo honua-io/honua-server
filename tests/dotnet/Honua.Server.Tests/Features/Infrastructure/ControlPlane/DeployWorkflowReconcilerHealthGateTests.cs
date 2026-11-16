@@ -337,9 +337,9 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
     [Fact]
     public async Task Reconcile_StagedCandidateWithMetricsPolicy_CutsOverOnPreCutoverChecks_AndStampsExposureAtCutover()
     {
-        // A single-switch backend reports Reconciling while its standby serves no traffic. Before #4617's
-        // follow-up the reconciler stamped that as exposure and demanded metrics the candidate could never
-        // produce, so the rollout held on warmup and a sample floor and rolled back without ever cutting over.
+        // A single-switch backend reports Reconciling while its standby serves no traffic. Stamping that as
+        // exposure would demand metrics the candidate can never produce, so the rollout would hold on warmup
+        // and a sample floor and roll back without ever cutting over.
         var store = new InMemoryWorkflowOperationStore();
         var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Reconciling, promotionRecommended: true)
         {

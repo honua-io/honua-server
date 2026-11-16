@@ -472,7 +472,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_ObjectIdField_IsTypedEsriFieldTypeOid()
     {
-        // Regression for #1299: Esri clients (including the ArcGIS Python SDK) locate the
+        // Esri clients (including the ArcGIS Python SDK) locate the
         // object-id field by filtering fields for type == "esriFieldTypeOID". The field that
         // matches objectIdField must therefore be typed esriFieldTypeOID, and there must be
         // exactly one such field per layer.
@@ -501,7 +501,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ObjectIdField_IsTypedEsriFieldTypeOid()
     {
-        // Regression for #1299: the query response fields[] array must also type the
+        // The query response fields[] array must also type the
         // object-id field as esriFieldTypeOID so feature-returning queries resolve the OID.
 
         // Act
@@ -787,10 +787,10 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.HasM.Should().BeFalse();
     }
 
-    // Regression: returnDistinctValues=true with a paramless WHERE clause (the canonical
-    // ArcGIS "where=1=1" select-all) plus a named outFields previously returned HTTP 500
-    // ("Parameter '' cannot be null") because the unlimited count path mis-bound parameters.
-    // See issue #1280 — ArcGIS Pro's Unique Values renderer relies on this exact request.
+    // returnDistinctValues=true with a paramless WHERE clause (the canonical ArcGIS
+    // "where=1=1" select-all) plus a named outFields must not return HTTP 500 ("Parameter ''
+    // cannot be null") from mis-bound parameters on the unlimited count path. ArcGIS Pro's
+    // Unique Values renderer relies on this exact request.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1608,7 +1608,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAdvancedSymbols=true")]
     public async Task QueryFeatures_WithReturnAdvancedSymbols_ReturnsOk()
     {
-        // Regression for #1455: the Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync)
+        // The Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync)
         // sends returnAdvancedSymbols=true on every layer query. It must be accepted and
         // ignored (HTTP 200) rather than rejected with 400, which would block the entire
         // .NET FeatureServer client.
@@ -1701,7 +1701,7 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
     }
 
-    // ObjectIds parameter tests (Issue #156)
+    // ObjectIds parameter tests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -3526,17 +3526,17 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WhileAnotherRequestHoldsTheSameIdempotencyKey_ReportsConflict()
     {
         await UseIsolatedApplicationAsync();
-        // The reservation's real purpose (BH5-001) must survive the #3052 release change: while a
-        // reservation is genuinely held, a second request carrying the same key must be rejected as a
-        // conflict rather than executing a duplicate edit. Reserving directly through the store makes
-        // the race deterministic — no timing window to lose.
+        // The reservation's real purpose must hold: while a reservation is genuinely held, a second
+        // request carrying the same key must be rejected as a conflict rather than executing a
+        // duplicate edit. Reserving directly through the store makes the race deterministic — no
+        // timing window to lose.
         //
-        // This also pins the conflict body's shape: the branch used to build its payload with
-        // Results.Conflict(new { ... }), an anonymous type that cannot be serialized once
+        // This also pins the conflict body's shape: it goes through the shared error helper like
+        // every other GeoServices error, carrying code 409 in the standard envelope. An
+        // anonymous-type payload built with Results.Conflict(new { ... }) cannot be serialized once
         // reflection-based serialization is off (Honua.Server sets
-        // JsonSerializerIsReflectionEnabledByDefault=false), so it was neither AOT-safe nor
-        // Esri-shaped. It now goes through the shared error helper like every other GeoServices
-        // error, carrying code 409 in the standard envelope.
+        // JsonSerializerIsReflectionEnabledByDefault=false), so it would be neither AOT-safe nor
+        // Esri-shaped.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
         // Resolve the caller from the fixture's real credentials and tenant middleware, so the held

@@ -1392,7 +1392,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         supportsHaving.GetBoolean().Should().BeTrue();
     }
 
-    // #3372 helper: the canonical aggregate request — count grouped by category, ordered by the
+    // The canonical aggregate request — count grouped by category, ordered by the
     // caller-supplied orderByFields — issued against the shared test layer.
     private const string StatisticsOutStatistics =
         """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"feature_count"}]""";

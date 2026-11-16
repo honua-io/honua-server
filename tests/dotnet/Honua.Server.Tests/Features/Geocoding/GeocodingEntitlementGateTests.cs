@@ -91,7 +91,7 @@ public sealed class GeocodingEntitlementGateTests
     public async Task BatchGeocode_WithProEntitlement_StillReturns402()
     {
         // Batch is Enterprise (ADR-0024's volume/enterprise geocoding workload), not Pro: the
-        // #2978 "Pro-is-not-enough" shape applies here too.
+        // "Pro-is-not-enough" shape applies here too.
         using var factory = CreateFactory(devGrantEdition: "Pro");
         using var client = factory.CreateClient();
 
@@ -219,7 +219,7 @@ public sealed class GeocodingEntitlementGateTests
 
             // Licensing:DevGrantEdition is read by AddHonuaLicensing while the minimal-hosting-model
             // WebApplicationBuilder is still being configured, before a ConfigureAppConfiguration
-            // callback added here would apply. UseSetting (mirrors the #2978
+            // callback added here would apply. UseSetting (mirrors the
             // IdentityEntitlementGateTests pattern) pushes it in early enough to be honored.
             if (devGrantEdition is not null)
             {

@@ -493,11 +493,10 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_MutableSourceWithoutPin_StampsTtlOnCachedPayload()
     {
-        // Ticket #789 contract: nodes the planner flags with
-        // `mutable-source-no-pin` must degrade via TTL. The orchestrator stamps
-        // the configured TTL onto the payload before PutAsync when the executor
-        // returned no TTL of its own; without it the entry would live forever
-        // and silently diverge from the mutable upstream.
+        // Nodes the planner flags with `mutable-source-no-pin` must degrade via
+        // TTL. The orchestrator stamps the configured TTL onto the payload before
+        // PutAsync when the executor returned no TTL of its own; without it the
+        // entry would live forever and silently diverge from the mutable upstream.
         var fixture = new OrchestratorFixture();
         var ttl = TimeSpan.FromMinutes(3);
 

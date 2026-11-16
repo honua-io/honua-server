@@ -50,7 +50,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
         // ADVERTISED executionType stays asynchronous (the established contract that
         // cross-repo integration tests assert). The synchronous execute route is
         // purely additive and self-gates via GPServerExecutionPolicy; it does not
-        // change advertised task metadata. See #1228.
+        // change advertised task metadata.
         task.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
         task.Parameters.Should().Contain(parameter => parameter.Name == "wkb" && parameter.Direction == "esriGPParameterDirectionInput");
         task.Parameters.Should().Contain(parameter => parameter.Name == "distance" && parameter.DataType == "GPDouble");

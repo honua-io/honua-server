@@ -211,15 +211,15 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     [Fact]
     public void BuildOptimizedSelectGmlQuery_WithCountAndStartIndex_DoesNotDoubleBindPagination()
     {
-        // Regression for honua-server#1749/#1750: WFS GetFeature (and OGC Features/KML) reads with a
-        // count + startIndex route through the optimized window-count GML builder
-        // (PostgresFeatureStore.BuildGmlFeatureCollection -> BuildOptimizedSelectGmlQuery). It
-        // previously appended the LIMIT/OFFSET *values* to WhereParameters in addition to emitting
-        // their placeholders, while FeatureDataAccess.AddQueryParameters binds pagination too —
-        // leaving more bound parameters than SQL placeholders. On the prepared-statement cache path
-        // the misalignment left a pagination placeholder unbound -> "Parameter cannot be null" ->
-        // HTTP 500 on the advertised WFS type. The sibling Esri-JSON builder is covered above; this
-        // locks the GML path (the one the WFS JS suite hits) against the same re-regression.
+        // WFS GetFeature (and OGC Features/KML) reads with a count + startIndex route through the
+        // optimized window-count GML builder (PostgresFeatureStore.BuildGmlFeatureCollection ->
+        // BuildOptimizedSelectGmlQuery). The builder must not append the LIMIT/OFFSET *values* to
+        // WhereParameters in addition to emitting their placeholders:
+        // FeatureDataAccess.AddQueryParameters binds pagination too, which would leave more bound
+        // parameters than SQL placeholders. On the prepared-statement cache path that misalignment
+        // leaves a pagination placeholder unbound -> "Parameter cannot be null" -> HTTP 500 on the
+        // advertised WFS type. The sibling Esri-JSON builder is covered above; this locks the GML
+        // path (the one the WFS JS suite hits).
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {

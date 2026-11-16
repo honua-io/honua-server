@@ -352,7 +352,7 @@ public class GeoServicesSqlParserTests
     public void Parse_ExtractUnsupportedField_ThrowsArgumentException()
     {
         // MILLENNIUM is a real Postgres field but is intentionally outside the allowlist,
-        // so it must still be rejected. (WEEK/DOW/etc. became supported in #1865.)
+        // so it must still be rejected. (WEEK/DOW/etc. are supported.)
         var act = () => _parser.Parse("EXTRACT(MILLENNIUM FROM created) >= 1");
 
         act.Should().Throw<ArgumentException>()

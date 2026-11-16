@@ -1611,7 +1611,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public void ServiceComposition_WithoutRedisOperationGateway_ResolvesOpsFindingsService()
     {
-        // Reproduces the #2511 startup failure at the composition level: the server registers
+        // Guards against startup failure at the composition level: the server registers
         // IOpsFindingsService unconditionally, but IOperationGateway is only registered when the
         // durable backend (Redis) is present. With ValidateOnBuild — exactly as Program.cs builds
         // the host — resolving the service must NOT throw when the gateway is absent.

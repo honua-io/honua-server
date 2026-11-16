@@ -545,7 +545,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_RollbackOnFailureFalse_CommitsTheValidRowBestEffort()
     {
-        // #4031 control: best-effort per-row apply stays available as an explicit opt-in.
+        // Control: best-effort per-row apply stays available as an explicit opt-in.
         EnableSyncEditing();
         var replicaId = await CreateReplicaForEditsAsync("RollbackFalse");
         const string name = "rollback-false-persists";

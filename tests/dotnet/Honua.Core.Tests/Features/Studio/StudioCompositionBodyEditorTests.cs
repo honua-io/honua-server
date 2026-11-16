@@ -118,10 +118,10 @@ public sealed class StudioCompositionBodyEditorTests
         // Dictionary<string, JsonElement>...
         Assert.Null(StudioJsonContext.Default.GetTypeInfo(typeof(Dictionary<string, JsonElement>)));
 
-        // ...so serializing the merged map threw at runtime for EVERY MCP or checkpoint mutation of
-        // an existing object body — the only path this merge exists to serve (honua-server#2999
-        // review). Writing the merged object through the JSON writer/DOM needs no metadata, and the
-        // returned element must stay readable after the writer's own document is disposed.
+        // ...so serializing the merged map would throw at runtime for EVERY MCP or checkpoint
+        // mutation of an existing object body — the only path this merge exists to serve. Writing
+        // the merged object through the JSON writer/DOM needs no metadata, and the returned element
+        // must stay readable after the writer's own document is disposed.
         JsonElement written;
         {
             using var document = JsonDocument.Parse(

@@ -238,10 +238,9 @@ public sealed class ExperimentalProviderGateTests
     [Fact]
     public void Databricks_HostConfiguredWithoutExperimentalFlag_DoesNotRegisterProvider()
     {
-        // The specific hole #2436 closed. Configuring a host was previously enough to
-        // register Databricks, because it had no gate to opt into — the provider was
-        // dormant-until-configured rather than experimental-until-opted-in. Supplying a
-        // host must now leave the provider unregistered while the gate is off.
+        // Configuring a host alone must not register Databricks: the provider is
+        // experimental-until-opted-in, not dormant-until-configured. Supplying a host
+        // leaves the provider unregistered while the gate is off.
         var configuration = BuildConfiguration(new Dictionary<string, string?>
         {
             ["Databricks:Host"] = "https://dbc-test.cloud.databricks.com",

@@ -297,8 +297,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         root.GetProperty("readyToSubmit").GetBoolean().Should().BeTrue();
         root.GetProperty("backendRegistered").GetBoolean().Should().BeTrue();
         // GitOps backends report SupportsRollback=false until they implement a real
-        // revert (#3301 truthfulness, flipped in #3627); the plan must relay that
-        // honestly rather than the old aspirational claim.
+        // revert; the plan must relay that honestly.
         root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeFalse();
     }
 

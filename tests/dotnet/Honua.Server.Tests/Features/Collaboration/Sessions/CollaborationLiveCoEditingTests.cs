@@ -1059,8 +1059,7 @@ public sealed class CollaborationLiveCoEditingTests
         // the snapshot tail is read. The client is no longer holding a complete history, so it
         // MUST be told to resync: silently restarting the tail from the new window base leaves it
         // believing it has every operation between its cursor and that base, and the durable
-        // document it never reloads only contains the checkpointed prefix (honua-server#2999
-        // review).
+        // document it never reloads only contains the checkpointed prefix.
         using var factory = CreateFactory(
             decorateOperationLog: inner => new WindowAdvancesAfterFirstReplayOperationLog(inner));
         using var client = CreateAdminClient(factory);

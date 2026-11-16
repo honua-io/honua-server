@@ -1202,7 +1202,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    // #4060 with imageSR: the bbox is reprojected into the output SRID and the image covers that
+    // Cover clip with imageSR: the bbox is reprojected into the output SRID and the image covers that
     // envelope. Expected Web Mercator ordinates use the spherical closed form, independent of PostGIS.
     [IntegrationTest]
     public async Task ExportImageAsync_WithCoverClipExtentAndOutputSrid_CoversReprojectedBbox()
@@ -1248,7 +1248,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    // #4060 on the mosaic path: west x[0,2] = 20, overlap-newest x[1,3] = 5 (newest), east x[2,4] = 40,
+    // Cover clip on the mosaic path: west x[0,2] = 20, overlap-newest x[1,3] = 5 (newest), east x[2,4] = 40,
     // all y[0,2]. bbox [-4,-2,4,2] at 80x40 gives 0.1-degree pixels; the data covers x[0,4] y[0,2],
     // i.e. 40x20 = 800 valid pixels, and the newest raster wins the overlaps.
     [IntegrationTest]
@@ -1339,7 +1339,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    // #4890 on the mosaic path: west x[0,2] = 20, overlap-newest x[1,3] = 5 (newest), east x[2,4] = 40,
+    // Inside-raster bbox, mosaic path: west x[0,2] = 20, overlap-newest x[1,3] = 5 (newest), east x[2,4] = 40,
     // all y[0,2] with 1-degree pixels. bbox [0.6,0.6,3.4,1.4] at 28x8 gives 0.1-degree pixels. No source
     // pixel centre lies inside the bbox vertically, yet the bbox is fully covered by data.
     [IntegrationTest]

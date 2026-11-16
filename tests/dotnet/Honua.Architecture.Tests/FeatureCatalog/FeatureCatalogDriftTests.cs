@@ -158,11 +158,11 @@ public sealed class FeatureCatalogDriftTests
             .Select(entry => entry.Route)
             .ToArray();
 
-        // /api/v1/temporal/* was promoted to GA and intentionally remains absent from this set.
+        // /api/v1/temporal/* is GA and intentionally remains absent from this set.
         // /api/v1/admin/alerts/* is opt-in Preview and is therefore not part of the default
         // advertised surface even though its maturity is preview rather than experimental.
-        // /api/v1/admin/security/client-certificates/* was promoted to GA in #2431 but DEMOTED
-        // back to experimental in #2958, so it IS a flipped experimental route group today.
+        // /api/v1/admin/security/client-certificates/* is experimental, so it IS a flipped
+        // experimental route group.
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
         // /api/v1/admin/services/{serviceId}/replicas* is not part of the FeatureServer sync
         // route family; the gated FeatureServer routes are covered by the preview set below.

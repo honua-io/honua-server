@@ -1030,10 +1030,9 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
     [IntegrationTest]
     public async Task Migration090_BackfillsDraftOwnerBeforeCreatorFallback()
     {
-        // PR #3018 review, round 6, item 2: an admin could create an item while explicitly
-        // assigning its existing draft to an end user before content-item owner_id existed.
-        // The migration must preserve that designated draft owner; created_by is only the
-        // fallback for an item without an owned draft.
+        // Rows written before content-item owner_id existed can have a draft that an admin
+        // explicitly assigned to an end user. The migration must preserve that designated
+        // draft owner; created_by is only the fallback for an item without an owned draft.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
         try
         {
@@ -1108,9 +1107,9 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
     [IntegrationTest]
     public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
     {
-        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
-        // version is ever saved, must not linger as an unopenable orphan in
-        // GET /content-items (no draft, no version, nothing to show or open).
+        // A draft-only item, deleted before any version is ever saved, must not linger as
+        // an unopenable orphan in GET /content-items (no draft, no version, nothing to show
+        // or open).
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
         try
         {
@@ -1262,7 +1261,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
             var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
 
             // A writer with no resolved request tenant (a background checkpoint, or any write
-            // predating honua-server#4905) records no tenant at all. Such rows belong to the
+            // predating tenant recording) records no tenant at all. Such rows belong to the
             // deployment's default tenant, which the caller's scope reports as IncludeUnassigned.
             var unassigned = await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "legacy"));
 

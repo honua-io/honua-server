@@ -377,7 +377,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.Equals("/stac", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/sta/", StringComparison.OrdinalIgnoreCase) ||
-               // Enterprise identity provisioning + SSO surfaces (#510 SCIM 2.0, #508 SAML 2.0).
+               // Enterprise identity provisioning + SSO surfaces (SCIM 2.0, SAML 2.0).
                // These routes are mapped unconditionally in Program.cs and tracked in
                // EndpointRegistry.All, so the drift comparison must include them.
                path.StartsWith("/scim/", StringComparison.OrdinalIgnoreCase) ||

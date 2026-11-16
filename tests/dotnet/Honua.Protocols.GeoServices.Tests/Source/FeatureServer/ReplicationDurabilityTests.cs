@@ -289,7 +289,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         winnerApplied.Should().BeTrue();
 
         // A concurrent sync that also read the original cursors must lose the compare-and-set
-        // instead of regressing the winner's cursor (the #1593 last-write-wins hazard).
+        // instead of regressing the winner's cursor (the last-write-wins hazard).
         var loser = original with
         {
             LastSyncTime = DateTimeOffset.UtcNow,
@@ -325,9 +325,9 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_BaselineReplicaLargerThanQueryRecordLimit_DeliversEveryFeature()
     {
-        // A generation-0 extract over more rows than Limits:Query:MaxRecordCount used to be a
-        // permanent 400 ("exceeds the configured per-layer ... limit"). Feature payloads are now read in
-        // pages of that cap, so the extract carries every row. The expected rows come back from SQL.
+        // A generation-0 extract over more rows than Limits:Query:MaxRecordCount must not be a permanent
+        // 400 ("exceeds the configured per-layer ... limit"). Feature payloads are read in pages of that
+        // cap, so the extract carries every row. The expected rows come back from SQL.
         var limitedFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.ConfigureAppConfiguration((_, configBuilder) =>

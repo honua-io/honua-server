@@ -250,7 +250,7 @@ public sealed class CapabilityKeyDriftTests
     [ArchitectureTest]
     public void GeoprocessingCatalog_IsPreviewFor2026_1WhileJobsAndAnalysisStayImplemented()
     {
-        // The 2026-10-25 founder re-tier makes the GP catalog Preview.
+        // The GP catalog is Preview for the 2026.1 release.
         // The demotion is the overrides file: routes stay registered. jobs.runner stays
         // Implemented because it is the durable substrate for imports, tiles and workflows
         // as well as geoprocessing. analysis.spatial stays Implemented because it is spatial

@@ -588,12 +588,12 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [Operation(Operations.Render)]
     public async Task GetStyledMap_VectorCollectionTiff_ReturnsCleanErrorNeverPngLabeledTiff()
     {
-        // Regression for #2365: the Skia styled-vector renderer (ADR-0048) has no TIFF
-        // encoder and silently fell back to PNG, while the response Content-Type was set
-        // from the requested format — so f=tiff on a vector collection returned PNG bytes
-        // mislabeled as image/tiff, corrupting GDAL/rasterio clients. TIFF is only encodable
-        // on the GDAL raster-coverage path, so the styled-vector path must reject it cleanly.
-        // Layer 0 is a seeded vector (Point) collection, so this exercises the Skia path.
+        // The Skia styled-vector renderer (ADR-0048) has no TIFF encoder. It must not
+        // silently fall back to PNG while the response Content-Type is set from the requested
+        // format: f=tiff on a vector collection would return PNG bytes mislabeled as
+        // image/tiff, corrupting GDAL/rasterio clients. TIFF is only encodable on the GDAL
+        // raster-coverage path, so the styled-vector path must reject it cleanly. Layer 0 is
+        // a seeded vector (Point) collection, so this exercises the Skia path.
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=tiff";
         var styleId = await StoreCollectionStyleAsync();
 

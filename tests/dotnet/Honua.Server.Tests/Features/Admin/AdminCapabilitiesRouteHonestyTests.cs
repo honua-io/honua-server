@@ -31,7 +31,7 @@ public sealed class AdminCapabilitiesRouteHonestyTests : IAsyncLifetime
             // is a different contract and cannot make the removed operation available.
             ["manifestExport"] = routes => routes.Contains("GET /api/v1/admin/manifest") ||
                 routes.Contains("GET /api/v{version:apiVersion}/admin/manifest"),
-            // Mutating manifest endpoints removed in #1035 — no registered route.
+            // Mutating manifest endpoints have no registered route.
             ["manifestApply"] = routes => routes.Any(r =>
                 r.Contains("manifest", StringComparison.OrdinalIgnoreCase) &&
                 r.Contains("apply", StringComparison.OrdinalIgnoreCase)),

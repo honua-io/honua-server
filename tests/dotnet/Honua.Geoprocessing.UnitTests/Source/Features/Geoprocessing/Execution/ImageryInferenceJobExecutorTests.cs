@@ -1009,8 +1009,8 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_FeaturePayloadDeclaringContrivedNearMissCrs_IsRejected()
     {
-        // Before #3053 the guard accepted any name CONTAINING "4326" or "CRS84",
-        // so these cleared it while naming a different CRS (or none at all).
+        // A guard that accepts any name CONTAINING "4326" or "CRS84" would let these
+        // through while they name a different CRS (or none at all).
         string[] nearMisses = ["EPSG:43260", "EPSG:14326", "NOT_CRS84", "CRS84_LOCAL", "my-4326-grid"];
 
         for (var i = 0; i < nearMisses.Length; i++)

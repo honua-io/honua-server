@@ -860,7 +860,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // raster.map-algebra's 'expression' is format-constrained (an allow-listed band
         // expression), not an undeclared discriminator: no rule branches on its value and
         // dataType/noData are optional on every branch. Treating the format rejection as a
-        // token domain downgraded this ordinary mapping to 'partially-translated' (#3040
+        // token domain downgraded this ordinary mapping to 'partially-translated' (unsupported token
         // review).
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
@@ -896,8 +896,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // data-management.delete-features validates cleanly but is reachable only through
         // its owning synchronous protocol endpoint, and translated tools execute through the
         // job runtime. A report that certifies it tells a migrating user a tool works when
-        // it can never execute from a toolbox (#3040 review, #4409 entry points).
-        // (conversion.geometry-format was this exemplar until #3936 gave it a job executor.)
+        // it can never execute from a toolbox (unsupported token review, #4409 entry points).
+        // (conversion.geometry-format has a job executor and is excluded.)
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """

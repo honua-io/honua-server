@@ -120,8 +120,8 @@ public sealed class CoordinatedReleaseReconcilerTests
     [Fact]
     public async Task Reconcile_FaultInMetadataStep_UnwindsMetadataThenContainerInReverse()
     {
-        // Demo C fault-injection / rollback proof: a fault at the DB-schema + metadata step (the
-        // #1753 safe-rollback path) must trigger ONE coordinated rollback that unwinds BOTH completed
+        // Fault-injection / rollback proof: a fault at the DB-schema + metadata step (the
+        // safe-rollback path) must trigger ONE coordinated rollback that unwinds BOTH completed
         // reversible steps in reverse order — metadata/schema first (reactivate prior revision + inverse
         // script), then the already-promoted container rollout (deploy rollback).
         var store = new InMemoryWorkflowOperationStore();

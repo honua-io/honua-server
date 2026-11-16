@@ -433,7 +433,7 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_TileMetadataDisabled_OmitsTileInfoAndCache()
     {
-        // Default (#1456-safe) contract: the ArcGIS Maps SDK for .NET native runtime
+        // Default (conf.json-safe) contract: the ArcGIS Maps SDK for .NET native runtime
         // reads this same descriptor from conf.json and rejects a service that
         // advertises a cache. Tiled advertising must stay off unless opted in.
         SetupSuccessfulMetadata();

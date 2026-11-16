@@ -154,7 +154,7 @@ internal static class WebAppFixtureSecureConnectionMixin
 
     private static async Task EnsureSecureConnectionProviderColumnAsync(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
-        // honua-server#1568 (signature 2 — 40P01: deadlock detected): WebAppFixture runs this on
+        // 40P01 (deadlock detected): WebAppFixture runs this on
         // every InitializeAsync, and the ALTER targets the literal, process-global
         // honua.data_connections table (the per-test search_path isolation does not scope it).
         // Under the parallel [Collection("Database")] shards, dozens of fixtures issue this

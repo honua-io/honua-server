@@ -316,10 +316,10 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_OrgAllowlistPolicy_NonAdminPrincipal_AllowedWhenOnList()
     {
-        // OrgAllowlist does not require the full admin role that the Open policy demands
-        // (PA-196). A non-admin caller that HOLDS the custom-code authorization (#2752 —
-        // Process.ExecuteCustomCode; granted here by the always-allow evaluator) is
-        // accepted, proving the #2752 who-gate is not an admin-only over-gate.
+        // OrgAllowlist does not require the full admin role that the Open policy
+        // demands. A non-admin caller that HOLDS the custom-code authorization
+        // (Process.ExecuteCustomCode; granted here by the always-allow evaluator) is
+        // accepted, proving the who-gate is not an admin-only over-gate.
         var sut = CreateService(options =>
         {
             options.RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist;
@@ -344,7 +344,7 @@ public sealed class CustomCodeSubmitTests
     public async Task SubmitJob_CustomCode_OrgAllowlist_WithoutCustomCodePermission_Forbidden()
     {
         // OrgAllowlist is the default posture. A caller authorized for Process.Execute but
-        // NOT for Process.ExecuteCustomCode must be rejected — this is the #2752 gap.
+        // NOT for Process.ExecuteCustomCode must be rejected.
         DenyCustomCodePermission();
         var sut = CreateService(options =>
         {
@@ -366,7 +366,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_SignedOnly_WithoutCustomCodePermission_Forbidden()
     {
-        // SignedOnly is the strictest repo policy; the #2752 who-gate must apply there too.
+        // SignedOnly is the strictest repo policy; the who-gate must apply there too.
         // The authorization denial precedes the signature check, so no verifier is needed.
         DenyCustomCodePermission();
         var sut = CreateService(options =>
@@ -412,7 +412,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_BuiltInTool_WithoutCustomCodePermission_StillSucceeds()
     {
-        // The #2752 who-gate must not over-gate ordinary geoprocessing: the SAME caller
+        // The who-gate must not over-gate ordinary geoprocessing: the SAME caller
         // that is denied ExecuteCustomCode can still submit a built-in-tool job, because
         // that only requires the baseline Process.Execute (which remains granted).
         DenyCustomCodePermission();

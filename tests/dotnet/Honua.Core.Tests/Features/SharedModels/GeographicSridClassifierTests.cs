@@ -25,10 +25,10 @@ public sealed class GeographicSridClassifierTests
     [InlineData(4490)]  // CGCS2000
     [InlineData(6668)]  // JGD2011
     [InlineData(4674)]  // SIRGAS 2000
-    // Resolved divergences: previously missing from the broad axis-order list.
-    [InlineData(4759)]  // NAD83(NSRS2007) — was geodesic-listed but not axis-listed.
-    [InlineData(4619)]  // SWEREF99 — was only in the Postgres fallback.
-    [InlineData(4617)]  // NAD83(CSRS) — Postgres fallback lacked it; now unified.
+    // Codes the broad axis-order list must also include.
+    [InlineData(4759)]  // NAD83(NSRS2007)
+    [InlineData(4619)]  // SWEREF99
+    [InlineData(4617)]  // NAD83(CSRS)
     public void IsGeographicSrid_KnownGeographicCrs_ReturnsTrue(int srid)
     {
         GeographicSridClassifier.IsGeographicSrid(srid).Should().BeTrue();
@@ -77,7 +77,7 @@ public sealed class GeographicSridClassifierTests
     [InlineData(4230)]  // ED50
     [InlineData(4490)]  // CGCS2000
     [InlineData(4979)]  // WGS 84 3D
-    [InlineData(4619)]  // SWEREF99 — geographic but NOT geodesic-safe (dropped from the Postgres fallback in #2732).
+    [InlineData(4619)]  // SWEREF99 — geographic but NOT geodesic-safe.
     [InlineData(4267)]  // NAD27 — geographic, but a direct WGS 84 spheroid distance skips the datum shift.
     // Projected / geocentric.
     [InlineData(3857)]
@@ -102,8 +102,8 @@ public sealed class GeographicSridClassifierTests
     [InlineData(4326)]  // WGS 84
     [InlineData(4269)]  // NAD83
     [InlineData(4979)]  // WGS 84 3D
-    // Unlisted EPSG 4000-4999 geographic-block codes that #2732 regressed to the planar branch when
-    // the ImageServer mensuration path was collapsed onto the enumerated broad list only.
+    // Unlisted EPSG 4000-4999 geographic-block codes: the ImageServer mensuration path must not send
+    // them to the planar branch just because the enumerated broad list omits them.
     [InlineData(4301)]  // Tokyo
     [InlineData(4314)]  // DHDN
     [InlineData(4322)]  // WGS 72
@@ -117,7 +117,7 @@ public sealed class GeographicSridClassifierTests
     [Theory]
     // Geocentric (X/Y/Z metre) codes in the 4000-4999 block must NOT be treated as lat/lon degrees;
     // measuring them planar in metres is correct.
-    [InlineData(4978)]  // WGS 84 geocentric — the code the #2732 audit named explicitly
+    [InlineData(4978)]  // WGS 84 geocentric
     [InlineData(4936)]  // ETRS89 geocentric
     [InlineData(4984)]  // WGS 72 geocentric
     // Projected / out-of-range codes stay planar.

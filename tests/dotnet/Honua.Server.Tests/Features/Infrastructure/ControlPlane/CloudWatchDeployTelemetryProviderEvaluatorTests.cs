@@ -534,7 +534,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     public async Task EvaluateAsync_ErrorRateSeriesAbsent_StillHolds()
     {
         // The substitution is bounded to an error-count numerator: an empty ratio cannot tell no
-        // errors from no traffic, so telemetry.error_rate.query keeps the #4617 behaviour.
+        // errors from no traffic, so telemetry.error_rate.query still holds.
         var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleExpression] = 120,

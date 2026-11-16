@@ -638,7 +638,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     public async Task ApplyEditsAsync_ReturnsDetailedOperationResults()
     {
         // This test verifies that the enhanced FeatureEditResult structure
-        // provides detailed operation results as required by issue #12
+        // provides detailed operation results for each requested operation
 
         // Arrange
         var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));

@@ -226,7 +226,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         }
     }
 
-    // honua-server#4002 fixture. The expected rows below are read off the fixture file and the
+    // Overwrite-guard fixture. The expected rows below are read off the fixture file and the
     // seed statements by hand, never captured from a run of the importer.
     private const string OverwriteGuardFixtureFileName = "overwrite-existing-false.geojson";
 
@@ -1655,7 +1655,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
 
     private async Task EnsureImportFunctionsAsync()
     {
-        // honua-server#1568 (signature 2): this creates the literal, process-global honua schema
+        // This creates the literal, process-global honua schema
         // and import functions (search_path isolation does not scope them), so apply it under the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
         // deadlock path racing locks on the same global schema/pg_proc objects.

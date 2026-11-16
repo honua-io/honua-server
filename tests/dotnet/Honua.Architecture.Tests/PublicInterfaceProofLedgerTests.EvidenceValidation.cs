@@ -102,7 +102,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
         // Declares the WMS CITE conformance lane but cites a workflow that answers a different
-        // question — the "workflow that answers an unrelated question" failure from honua-server#2877.
+        // question.
         var proof = MakeProof(
             proofClass: "standards-conformance",
             executionLane: "nightly:cite-wms-conformance",
@@ -140,8 +140,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
-        // Same proof shape as the rejected doc-only one, but repointed at a real architecture gate —
-        // the honua-server#2879 fix pattern.
+        // Same proof shape as the rejected doc-only one, but repointed at a real architecture gate.
         var proof = MakeProof(
             proofClass: "contract-governance",
             executionLane: "ci:architecture",

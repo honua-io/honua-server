@@ -86,7 +86,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_RelatedRecordsIsFlatArrayPerEsriSpec()
     {
-        // Regression for #1452: relatedRecords must be a FLAT array of records (the
+        // The relatedRecords member must be a FLAT array of records (the
         // ArcGIS Maps SDK for JavaScript reads relatedRecords.length), not a nested
         // FeatureSet object. Assert the raw JSON shape rather than the typed model.
         var response = await GetWithRetryAsync(

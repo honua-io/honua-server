@@ -355,8 +355,8 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_ManualReviewConflictHandling_WithholdsConflictingEdit()
     {
-        // conflictHandling=manualReview is the Honua extension that makes the previously dead
-        // manual-review branch reachable: the conflicting client edit is NOT committed, and the durable
+        // conflictHandling=manualReview is the Honua extension that makes the manual-review branch
+        // reachable: the conflicting client edit is NOT committed, and the durable
         // record is the only carrier of the client intent until an operator resolves it.
         var objectId = await AddFeatureAsync("manual-review-base");
         var replicaId = await CreateReplicaAsync("ManualReviewConflictTest", "0");
@@ -595,10 +595,10 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_Download_DeliversPostReplicaChangesAndAdvancesServerGen()
     {
-        // Repro for the #1775 download no-op: createReplica at generation N, add a feature server-side,
-        // then synchronizeReplica(download) must deliver the added feature (in edits) and advance
-        // serverGen past N. Previously the download direction returned success with no edits and echoed
-        // the client serverGen, so the post-replica feature was never delivered.
+        // createReplica at generation N, add a feature server-side, then synchronizeReplica(download)
+        // must deliver the added feature (in edits) and advance serverGen past N. A download that
+        // returns success with no edits and echoes the client serverGen never delivers the post-replica
+        // feature.
         var createRoot = await CreateReplicaWithResponseAsync("DownloadDelivery", "0");
         var replicaId = createRoot.GetProperty("replicaID").GetString()!;
         var baseServerGen = createRoot.GetProperty("serverGen").GetInt64();
@@ -775,7 +775,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
     public async Task Replicas_AfterCreateAndUnregister_ReflectsLiveRegistryImmediately()
     {
-        // #1775 minor bug: /replicas must reflect createReplica / unRegisterReplica immediately (served
+        // /replicas must reflect createReplica / unRegisterReplica immediately (served
         // from the live registry), not lag behind a cached snapshot.
         var replicaId = await CreateReplicaAsync("LiveRegistryReplica", "0");
 
@@ -1203,7 +1203,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_RetriedIdenticalUpload_ReplaysWithoutReapplyingAdds(string syncDirection)
     {
-        // #4026 repro: a client whose first response was lost re-sends the identical upload, with no key.
+        // A client whose first response was lost re-sends the identical upload, with no key.
         // The retry must return the original outcome and leave exactly one row, counted by a query.
         var createRoot = await CreateReplicaWithResponseAsync($"RetriedUpload-{syncDirection}", "0");
         var replicaId = createRoot.GetProperty("replicaID").GetString()!;

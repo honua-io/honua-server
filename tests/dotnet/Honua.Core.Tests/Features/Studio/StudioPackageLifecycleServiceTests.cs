@@ -309,10 +309,10 @@ public sealed partial class StudioPackageLifecycleServiceTests
     [UnitTest]
     public async Task CreateDraft_WithNullCollections_CoalescesToEmptyWithoutError()
     {
-        // Regression: honua-server#2351 — a client sending an explicit JSON null for
-        // bindings/dependencies/provenance must be treated identically to omitting them
-        // (empty), not persisted as a null collection that later triggers a spurious
-        // ArgumentNullException ("source") on the otherwise-successful path.
+        // A client sending an explicit JSON null for bindings/dependencies/provenance
+        // must be treated identically to omitting them (empty), not persisted as a null
+        // collection that later triggers a spurious ArgumentNullException ("source") on
+        // the otherwise-successful path.
         var provider = BuildServiceProvider();
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
 
@@ -709,9 +709,9 @@ public sealed partial class StudioPackageLifecycleServiceTests
     [UnitTest]
     public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
     {
-        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
-        // version is ever saved, must not linger as an unopenable orphan in
-        // GET /content-items (no draft, no version, nothing to show or open).
+        // A draft-only item, deleted before any version is ever saved, must not linger as
+        // an unopenable orphan in GET /content-items (no draft, no version, nothing to show
+        // or open).
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
         var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {

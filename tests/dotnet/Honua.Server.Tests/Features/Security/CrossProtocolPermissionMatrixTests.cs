@@ -307,7 +307,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         return "update";
     }
 
-    // ---- FeatureServer query (already wired in #1385; kept for matrix completeness) ----
+    // ---- FeatureServer query (kept for matrix completeness) ----
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]

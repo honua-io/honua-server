@@ -128,11 +128,11 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/enrich")]
     public async Task Enrich_PointInPolygonMethod_MatchesOnlySourcePointsInsideTheDatasetPolygon()
     {
-        // This assertion used to be "HTTP 200 and type ==
-        // FeatureCollection", which passed while the SQL path evaluated
-        // ST_Contains(sourcePoint, datasetPolygon) — always false — so synchronous
-        // point-in-polygon silently returned zero matches for every caller. The
-        // containment direction is now proven by the match counts themselves.
+        // Asserting only "HTTP 200 and type == FeatureCollection" would pass while
+        // the SQL path evaluated ST_Contains(sourcePoint, datasetPolygon) — always
+        // false — and synchronous point-in-polygon silently returned zero matches
+        // for every caller. The containment direction is proven by the match counts
+        // themselves.
         await SeedContainmentFixtureAsync();
 
         var payload = JsonSerializer.Serialize(new

@@ -169,7 +169,7 @@ internal static class SeedRunner
         => ex.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected
            || IsConcurrentSchemaCreationRace(ex);
 
-    // honua-server#1568 (CREATE SCHEMA race variant): under parallel collection seeding,
+    // CREATE SCHEMA race: under parallel collection seeding,
     // two setups racing `CREATE SCHEMA IF NOT EXISTS honua` can both pass the catalog
     // existence check and then collide on the `pg_namespace` unique index, surfacing as
     // 23505 (unique_violation) on pg_namespace_nspname_index rather than 40001/40P01.

@@ -612,7 +612,7 @@ public sealed class PortalTokenIssuerTests
         verified.Source.Version.Should().NotContain(adminPassword);
     }
 
-    // ─── #5491 federated exchange ───────────────────────────────────────────────
+    // ─── Federated exchange ───────────────────────────────────────────────
 
     [UnitTest]
     public async Task ExchangeAsync_PresentedFromAnotherBinding_ReturnsNull_Issue5491()

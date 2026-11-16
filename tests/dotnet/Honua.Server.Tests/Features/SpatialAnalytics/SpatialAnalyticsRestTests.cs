@@ -1004,7 +1004,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
     public async Task QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints()
     {
-        // Regression for honua-server#2945: prior density tests only asserted
+        // Density tests assert
         // featureCount > 0 per cell, never a real cell-count against known geometry.
         // Layer 0 has 5 seeded features (tests/seed/server.yaml); objectid 3 has a NULL
         // geometry and is excluded by the density query's "geometry IS NOT NULL" filter,

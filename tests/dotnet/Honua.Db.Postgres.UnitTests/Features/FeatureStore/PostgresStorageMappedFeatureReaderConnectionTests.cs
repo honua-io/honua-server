@@ -39,7 +39,7 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
             connectionEncryptionService: null);
 
         // null is the "use the default connection provider" signal honored by
-        // OpenConnectionAsync, restoring the pre-#1662 behavior.
+        // OpenConnectionAsync.
         resolved.Should().BeNull();
     }
 
@@ -68,7 +68,7 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
         var resolved = await ResolveBoundConnectionStringAsync(connection, encryptionService);
 
         // null is the "use the default connection provider" signal honored by
-        // OpenConnectionAsync, restoring the pre-#1662 behavior for the empty-ID sentinel.
+        // OpenConnectionAsync, including for the empty-ID sentinel.
         resolved.Should().BeNull();
     }
 

@@ -37,44 +37,8 @@ public sealed class ProcessCatalogTests
     {
         var all = _catalog.ListProcesses();
 
-        // 38 original trunk processes + 13 GeoETL transform/source/sink processes
-        // reconciled from feat/geoetl-baseline + 1 managed spatial-join
-        // (analytics.spatial-join-managed) added for the workflow/codemod job path
-        // + 3 managed analytics counterparts (analytics.cluster-managed,
-        // analytics.buffer-aggregate-managed, analytics.density-managed) added by
-        // #1260 + 2 native-profile GDAL worker processes (gdal.gdalwarp,
-        // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker + 1 durable
-        // import pipeline (import.dataset) added by #1630 + 1 native-profile
-        // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
-        // projected-CRS reproject) added by #1854
-        // + 13 Round-5 managed ops: 12 GP tool-pack ops
-        // (overlay.clip/intersect/union/erase/merge/split, proximity.near,
-        // proximity.near-table, statistics.summarize/frequency/calculate,
-        // data-management.append) added by the GP tool packs
-        // + 1 managed honua-layer sink (sink.honua-layer) added by the GeoETL
-        // honua-layer sink path
-        // + 10 Round-4 ops merged from trunk: 4 relational transforms
-        // (transform.attribute-join, transform.aggregate, transform.pivot,
-        // transform.unpivot) added alongside the safe expression engine + the
-        // first-class remote DAG source connectors (source.honua-layer,
-        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis)
-        // + 1 native-profile GDAL/OGR import reader (source.ogr, broad-format
-        // FeatureCollection canonicalization) added for the honua-worker-etl format
-        // breadth (ADR-0038 roadmap F).
-        // Round-5 (72) ∪ Round-4 (69) = 82 distinct processes (59 shared).
-        // + 4 native-profile raster analysis tool pack ops (raster.resample,
-        // raster.interpolate-idw, raster.interpolate-kriging, raster.mosaic) added
-        // by #2141.
-        // + 9 native-profile raster analysis & terrain ops added by #2239/#2240:
-        // raster.map-algebra, raster.spectral-index, raster.reclassify;
-        // proximity.euclidean-distance, proximity.euclidean-allocation,
-        // surface.contour, surface.viewshed, conversion.polygonize,
-        // conversion.rasterize.
-        // + 1 spatial-statistics tool-pack op (analytics.hotspot-managed, Hot Spot
-        // Analysis / Getis-Ord Gi*) added by #2142.
-        // + 1 delegated imagery/ML inference op (imagery.classify, cloud-backend
-        // delegation with no bundled model runtime) added by #2241.
-        // + 1 async batch enrichment op (enrichment.enrich) added by #2283.
+        // Pins the exact size of the built-in catalog: adding or removing a process must
+        // update this count.
         all.Should().HaveCount(101);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
@@ -97,11 +61,10 @@ public sealed class ProcessCatalogTests
     {
         var analytics = _catalog.GetProcessesByCategory("analytics");
 
-        // 4 trunk analytics + analytics.spatial-join-managed +
-        // 3 managed counterparts from #1260 (analytics.cluster-managed,
-        // analytics.buffer-aggregate-managed, analytics.density-managed) — the
-        // job-dispatchable managed counterparts to the PostGIS-protocol entries —
-        // + analytics.hotspot-managed (Getis-Ord Gi* Hot Spot Analysis, #2142).
+        // 4 PostGIS-protocol analytics entries + analytics.spatial-join-managed +
+        // their 3 job-dispatchable managed counterparts (analytics.cluster-managed,
+        // analytics.buffer-aggregate-managed, analytics.density-managed) +
+        // analytics.hotspot-managed (Getis-Ord Gi* Hot Spot Analysis).
         analytics.Should().HaveCount(9);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
     }
@@ -3474,7 +3437,7 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
-    // Fail-closed, catalog-driven approval gate (ADR-0029, #2814)
+    // Fail-closed, catalog-driven approval gate (ADR-0029)
     // -----------------------------------------------------------------------
 
     [UnitTest]

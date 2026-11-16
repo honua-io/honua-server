@@ -88,7 +88,7 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeGoldenQueryAsync_HealthyStatusButCorruptBody_DoesNotMatch()
     {
-        // The heart of #2811: status 200 but a wrong/garbled body must be a mismatch (correctness gate).
+        // Status 200 but a wrong/garbled body must be a mismatch (correctness gate).
         using var factory = BodyFactory(HttpStatusCode.OK, "<html>error page</html>");
         var probe = new HttpDeployHealthProbe(factory);
 

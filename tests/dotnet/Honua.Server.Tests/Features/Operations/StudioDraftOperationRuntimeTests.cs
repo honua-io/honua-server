@@ -453,9 +453,9 @@ public sealed partial class StudioDraftOperationRuntimeTests
     [UnitTest]
     public async Task LicensingDisabled_ComposesDirectly_WhilePublicationAndRollbackAwaitApproval()
     {
-        // Licensing:Mode=Disabled reports Enterprise, which used to route every Studio draft
-        // mutation, including create, to approval. Composition now executes directly, while the
-        // REST publish-request, the agent publication proposal and rollback still wait for approval.
+        // Licensing:Mode=Disabled reports Enterprise, which must not route every Studio draft
+        // mutation, including create, to approval. Composition executes directly, while the REST
+        // publish-request, the agent publication proposal and rollback still wait for approval.
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);

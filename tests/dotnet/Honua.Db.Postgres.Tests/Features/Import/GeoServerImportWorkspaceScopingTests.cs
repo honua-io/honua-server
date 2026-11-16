@@ -254,7 +254,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
 
         private static async Task EnsureHonuaServicesSchemaAsync(PostgresFixture postgresFixture)
         {
-            // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+            // This DDL creates/ALTERs the literal, process-global
             // honua.services / honua.migration_data_sources tables (search_path isolation does not
             // scope them), so apply it under the shared seed advisory lock to keep parallel
             // [Collection("Database")] tests off the 40P01 deadlock path racing ACCESS EXCLUSIVE
@@ -572,8 +572,8 @@ public sealed class GeoServerImportWorkspaceScopingTests
         }
 
         // Workspace-scoping tests only exercise catalog-service writes; the
-        // data-source / feature-copy / style writers added by #1015 slices 2-3
-        // are no-op stubs here so this double satisfies the contract.
+        // data-source / feature-copy / style writers are no-op stubs here so this
+        // double satisfies the contract.
         public Task<MigrationCatalogWriteOutcome> EnsureDataSourceAsync(
             string connectionString,
             MigrationDataSourceRequest request,

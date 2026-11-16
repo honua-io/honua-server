@@ -156,7 +156,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
             content.Should().NotContain("pg_user", "SQL injection should not return system information");
             content.Should().NotContain("SQLSTATE", "raw SQL errors must not leak to clients");
 
-            // Post-#2418 a rejected GeoServices query is signalled as HTTP 200 +
+            // A rejected GeoServices query is signalled as HTTP 200 +
             // {"error":{"code":400}} (or a legacy 400); a safe query returns HTTP 200 with
             // a normal result set. Both are acceptable — silent execution of the injection
             // is what the content assertions above guard against.

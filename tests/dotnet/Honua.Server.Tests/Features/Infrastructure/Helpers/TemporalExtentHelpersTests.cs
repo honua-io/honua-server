@@ -67,7 +67,7 @@ public sealed class TemporalExtentHelpersTests
     [Fact]
     public async Task TryResolveTemporalRangeV2Async_EndExtentNull_FallsBackToStartExtentEnd()
     {
-        // Regression for #379: when EndTimeField is configured but every row
+        // When EndTimeField is configured but every row
         // has a null end, the Postgres reader returns null for that field's
         // extent. Without the fallback, max collapses to null even though the
         // start field has valid latest values, so temporalExtent /

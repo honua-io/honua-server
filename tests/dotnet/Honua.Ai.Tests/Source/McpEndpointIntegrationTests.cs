@@ -73,7 +73,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task Initialize_With2025_06_18_NegotiatesThatRevision()
     {
-        // The server negotiates the 2025-06-18 revision (which
+        // The server negotiates the requested revision (which
         // adds the native tool outputSchema field this server publishes).
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
@@ -108,7 +108,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
 
         // Spec requires the server to advertise a version it actually supports
         // when the client asks for one it does not implement: the latest
-        // supported revision (2025-06-18, honua-server#1954).
+        // supported revision.
         root.GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be("2025-06-18");
     }
 
@@ -1076,9 +1076,8 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     {
         // An id no instance holds must be refused with the Streamable-HTTP 404 so
         // the client re-initializes, never served session-less with the default
-        // view (honua-release#531, journey stage 1.5). Serving it statelessly is
-        // the opt-in Mcp:StatelessSessionFallback development convenience (on by
-        // default only in Development), covered by
+        // view. Serving it statelessly is the opt-in Mcp:StatelessSessionFallback
+        // development convenience (on by default only in Development), covered by
         // McpStatelessSessionFallbackEnabledTests.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
@@ -1194,7 +1193,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         // A spec-compliant SDK client tolerates this and skips the stream —
         // instead of hanging it at a non-streaming ingress and treating its
         // teardown as session loss. The default-off posture makes the temporary
-        // CloudFront edge shim (honua-io/honua-iac#114) removable.
+        // CloudFront edge shim removable.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");

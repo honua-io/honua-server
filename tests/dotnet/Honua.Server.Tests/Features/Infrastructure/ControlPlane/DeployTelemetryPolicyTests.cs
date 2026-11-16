@@ -27,7 +27,7 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_WithTelemetryParametersButNoConnection_ProducesInvalidPolicy()
     {
-        // This used to return null, silently dropping the operator's telemetry configuration.
+        // Parsing to null here would silently drop the operator's telemetry configuration.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.prometheus.job"] = "honua-prod"
@@ -96,7 +96,7 @@ public sealed class DeployTelemetryPolicyTests
             ["telemetry.error_rate.threshold"] = "0.05"
         }));
 
-        // An explicit override no longer hides an unsupported preset name — silently ignoring
+        // An explicit override does not hide an unsupported preset name — silently ignoring
         // the preset the operator asked for is itself a rejected configuration.
         policy.Should().NotBeNull();
         policy!.IsValid.Should().BeFalse("an unsupported preset is rejected even alongside explicit query overrides");
@@ -107,7 +107,7 @@ public sealed class DeployTelemetryPolicyTests
     public void Parse_UnsupportedPresetWithoutOverride_ProducesInvalidPolicy()
     {
         // An unsupported preset synthesizes no queries, so telemetry.prometheus.job has nothing to feed.
-        // This used to short-circuit to null (ungated deploy); it is now a rejected policy.
+        // It must be a rejected policy, not a short-circuit to null (an ungated deploy).
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",

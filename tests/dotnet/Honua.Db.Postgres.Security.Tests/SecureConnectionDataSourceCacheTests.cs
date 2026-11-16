@@ -44,8 +44,8 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         // for the default (non-multiplexing, non-schema-header) path, the factory applies
         // search_path via a physical-connection-initializer SET statement instead of the
         // libpq `options` startup parameter, because AWS RDS Proxy rejects that startup
-        // parameter outright (0A000) — see PostgresDataSourceFactory.Configure and
-        // honua-server#1638. Parity with the default data source is exactly the point:
+        // parameter outright (0A000) — see PostgresDataSourceFactory.Configure.
+        // Parity with the default data source is exactly the point:
         // the secure cache must stay RDS-Proxy-safe too, not diverge onto the parameter
         // the default path deliberately avoids.
         var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);

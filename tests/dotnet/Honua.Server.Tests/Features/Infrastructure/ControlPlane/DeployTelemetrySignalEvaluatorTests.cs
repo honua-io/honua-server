@@ -1256,7 +1256,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [Fact]
     public async Task EvaluateAsync_PrometheusReturnsStaleSample_WithoutStalenessParameter_DefaultBoundTreatsAsAbsent()
     {
-        // Freshness is enforced by default: the provider's observation timestamp (2024-03-09)
+        // Freshness is enforced by default: the provider's observation timestamp
         // is far outside the 5-minute default bound, so the healthy-looking values are not evidence.
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(

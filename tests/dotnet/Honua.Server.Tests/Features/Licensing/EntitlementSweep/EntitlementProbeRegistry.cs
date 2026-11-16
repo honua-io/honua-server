@@ -116,7 +116,7 @@ internal static class EntitlementProbeRegistry
 
             // Analytics — elevation surfaces gate before reading the POST body; dataset "0"
             // is the default seeded elevation surface used by VisibilityAnalysisEndpointTests
-            // / SceneAnalysisEndpointTests (depth pack 1, #2960).
+            // / SceneAnalysisEndpointTests (depth pack 1).
             new("analytics.line-of-sight", HttpMethod.Post, "/elevation/0/line-of-sight", "{}"),
             new("analytics.viewshed", HttpMethod.Post, "/elevation/0/viewshed", "{}"),
             new("analytics.sun-shadow", HttpMethod.Post, "/elevation/0/sun-shadow", "{}"),
@@ -294,7 +294,7 @@ internal static class EntitlementProbeRegistry
         }.ToDictionary(e => e.Key, StringComparer.Ordinal);
 
     public static IReadOnlyDictionary<string, EntitlementKnownGapEntry> KnownGaps { get; } =
-        // #2997/#2998 resolved the last known gaps (OIDC identity.*, Alerts/Channels
+        // Coverage includes (OIDC identity.*, Alerts/Channels
         // alerts.*/channels.*, caching.output-cache): every declared Pro/Enterprise key with an
         // HTTP surface is now probed above, or carries a verified no-http-surface entry. Keep
         // this bucket empty — a new entry requires its own tracking issue.

@@ -111,7 +111,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_PostValidRequest_ReturnsGeometry()
     {
-        // Regression for #1443: clip clips each input geometry to the Esri `envelope`
+        // Clip clips each input geometry to the Esri `envelope`
         // parameter (not a `geometry` operand). A request that omits envelope must fail,
         // and a request supplying envelope must succeed.
         var body = """
@@ -147,7 +147,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_WithEnvelope_ClipsToEnvelopeBounds()
     {
-        // Regression for #1443. The target polygon is (0,0)-(4,4); the clip envelope is
+        // The target polygon is (0,0)-(4,4); the clip envelope is
         // (1,1)-(3,3). The clipped result is the (1,1)-(3,3) window, which differs from the
         // unclipped target, proving the envelope parameter is honored.
         var body = """
@@ -198,7 +198,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_MissingEnvelope_Returns400()
     {
-        // Regression for #1443: clip requires the `envelope` parameter, not `geometry`.
+        // Clip requires the `envelope` parameter, not `geometry`.
         var body = """
         {
             "geometries": {

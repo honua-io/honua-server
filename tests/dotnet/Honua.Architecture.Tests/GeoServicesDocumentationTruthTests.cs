@@ -59,7 +59,7 @@ public sealed class GeoServicesDocumentationTruthTests
         // The protocol reference must describe every served NAServer solver with the
         // HTTP methods actually registered, and keep the VersionManagementServer
         // 404-by-default caveat. Route and ServiceArea have GET routes; if another solver
-        // gains one, this fails so the docs are updated with it. #4030/#4034: the GP guide and
+        // gains one, this fails so the docs are updated with it. The GP guide and
         // parity judgment must state how `context` and failed sync runs behave.
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var protocol = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "protocols", "geoservices-rest.md"));

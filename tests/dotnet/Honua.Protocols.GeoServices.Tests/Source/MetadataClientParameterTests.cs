@@ -3,18 +3,16 @@
 //
 // Regression coverage for the ArcGIS Pro / arcpy FeatureServer-add failure: when
 // ArcGIS Pro resolves a FeatureServer service or layer by URL it appends
-// returnFieldGroups=true&returnPbfFeatureEncodings=true to the metadata request.
-// Honua's metadata allowlist previously permitted only "f", so those requests were
-// rejected with 400 on a cold output cache. ArcGIS Pro reported the layer as
-// "does not exist or is not supported" (MakeFeatureLayer / Add Data failed). These
-// tests assert the metadata endpoints accept and ignore those standard client
-// parameters, returning the same payload as a plain f=json request.
+// returnFieldGroups=true&returnPbfFeatureEncodings=true to the metadata request. A metadata allowlist that
+// permits only "f" rejects those requests with 400 on a cold output cache, and ArcGIS Pro reports the
+// layer as "does not exist or is not supported" (MakeFeatureLayer / Add Data fails). These tests assert
+// the metadata endpoints accept and ignore those standard client parameters, returning the same payload as
+// a plain f=json request.
 //
-// returnAdvancedSymbols is the same class of bug for a different client: the ArcGIS
-// Maps SDK for .NET appends it to the layer/service metadata GET during
-// ServiceFeatureTable.LoadAsync. #1455 accepted it on the layer-query endpoint but
-// not the metadata endpoints, so LoadAsync returned 400 and the entire .NET
-// FeatureServer client was blocked. It is folded into the parameter set below.
+// returnAdvancedSymbols is the same class of parameter for a different client: the ArcGIS Maps SDK for
+// .NET appends it to the layer/service metadata GET during ServiceFeatureTable.LoadAsync. If only the
+// layer-query endpoint accepts it, LoadAsync gets 400 and the entire .NET FeatureServer client is blocked.
+// It is folded into the parameter set below.
 
 using System.Net;
 using FluentAssertions;

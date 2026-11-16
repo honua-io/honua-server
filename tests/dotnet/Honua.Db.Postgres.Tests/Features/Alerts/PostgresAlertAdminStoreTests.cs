@@ -111,7 +111,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
 
     private async Task EnsureAlertSchemaAsync()
     {
-        // honua-server#1568 (signature 2): this DDL creates the literal, process-global
+        // This DDL creates the literal, process-global
         // honua.alert_* tables (search_path isolation does not scope them), so apply it under the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
         // deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global objects.

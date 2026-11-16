@@ -51,7 +51,7 @@ public sealed class StartupDatabaseResilienceTests
     [UnitTest]
     public void IsTransientConnectivityError_WithContractGatePolicyBlock_ReturnsFalse()
     {
-        // A migration-safety policy block (#2565 gate rejection, or the ADR-0060 unannotated fail-closed)
+        // A migration-safety policy block (a contract gate rejection, or the ADR-0060 unannotated fail-closed)
         // surfaces as an InvalidOperationException. It must classify as terminal/non-retryable so
         // degraded-start recovery gives up rather than retrying a policy block with backoff.
         var gateBlock = new InvalidOperationException(

@@ -684,7 +684,7 @@ public sealed partial class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
-        // The Kubernetes preset also contributes a latency signal; #4617 requires every configured
+        // The Kubernetes preset also contributes a latency signal; every configured
         // signal to carry evidence, so the fixture answers all three queries (sample, error, latency).
         var evaluator = CreateTelemetryEvaluator(
             $$$"""

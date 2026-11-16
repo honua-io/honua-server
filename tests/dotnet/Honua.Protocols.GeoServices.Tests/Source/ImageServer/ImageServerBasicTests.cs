@@ -583,8 +583,8 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
             [
                 new("f", "json")
             ]),
-            // The service-level POST keyProperties route (added in #1338)
-            // needs integration coverage for the ApiSurfaceCoverage arch test.
+            // The service-level POST keyProperties route needs integration
+            // coverage for the ApiSurfaceCoverage arch test.
             ($"/rest/services/{serviceId}/ImageServer/keyProperties",
             [
                 new("f", "json")

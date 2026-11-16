@@ -370,7 +370,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_ClientCredentialsGrant_WhenEnabledWithValidSecret_ReachesIssuanceAndBindsToClientIp()
     {
-        // Opt in to the client_credentials grant (ADR-0053, #1860) and provision an
+        // Opt in to the client_credentials grant (ADR-0053) and provision an
         // API key whose value is the client_secret, then exchange it end-to-end
         // through the real HTTP endpoint. The grant binds the issued token to the
         // calling client's IP (PortalTokenClientType.Ip); the in-process TestServer
@@ -380,7 +380,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         // the full happy path (valid full-admin secret + resolvable IP -> opaque
         // IP-bound admin token, no refresh token) is covered without a TestServer by
         // PortalOAuthClientCredentialsTests. Constrained keys are refused before the
-        // binding step (SharingManagedKeyAuthorityTests, #4577).
+        // binding step (SharingManagedKeyAuthorityTests).
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {

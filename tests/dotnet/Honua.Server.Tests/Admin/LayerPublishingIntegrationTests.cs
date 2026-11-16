@@ -814,7 +814,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
                 .Be(0);
         }
 
-        // A blank declared id publishes the object id; item_id is no longer a
+        // A blank declared id publishes the object id; item_id is not a
         // second-precedence identity.
         var blankCanonicalIdSearchResponse = await _client.GetAsync(
             $"/stac/search?collections={collectionId}&ids=901&limit=10");
@@ -1341,11 +1341,11 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted()
     {
-        // honua-server#4707. A published layer serves features from the live source table
-        // while the managed feature writer only ever writes the shared `features` table.
-        // An insert accepted on this collection therefore landed in the publish-time
-        // snapshot, answered 201 Created, and was never readable back through any protocol.
-        // The write surface now refuses it instead of acknowledging a lost write.
+        // A published layer serves features from the live source table while the managed
+        // feature writer only ever writes the shared `features` table. An insert accepted
+        // on this collection would land in the publish-time snapshot, answer 201 Created,
+        // and never be readable back through any protocol. The write surface refuses it
+        // instead of acknowledging a lost write.
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1407,7 +1407,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable()
     {
-        // honua-server#4707, the case the capability contract alone does not cover: a
+        // The case the capability contract alone does not cover: a
         // deployment that declares Create on a layer published over a source table. The
         // managed writer still cannot write that table, so the storage-routing guard — not
         // the capability guard — must refuse the insert.
@@ -1643,9 +1643,9 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_UnserviceableEditableRequests_AreRejectedBeforePublishing()
     {
-        // honua-server#4859 keeps the #4707/#4712 contract: a source-backed layer cannot be
-        // written through, so declaring an edit capability on one is refused at publish time
-        // instead of publishing a collection whose first insert answers 501.
+        // A source-backed layer cannot be written through, so declaring an edit capability
+        // on one is refused at publish time instead of publishing a collection whose first
+        // insert answers 501.
         var sourceBacked = await PostPublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,

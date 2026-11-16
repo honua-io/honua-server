@@ -131,7 +131,7 @@ public sealed class GPServerEsriTaskAliasesTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public void ProtocolOnlyDataManagementProcesses_CarryNoAlias()
     {
-        // Regression for #4781. Both processes mutate a caller-owned layer through the
+        // Both processes mutate a caller-owned layer through the
         // owning synchronous FeatureServer edit endpoint and register no job executor, so
         // GPServer must neither publish them nor claim an alias for them.
         var catalog = new BuiltInProcessCatalog();
@@ -154,7 +154,7 @@ public sealed class GPServerEsriTaskAliasesTests
     {
         // The GeoServices parity claim (docs/gis/data/geoservices-parity-judgment.json:
         // "40 unambiguous aliases ... are published alongside canonical process IDs")
-        // counts this contract. Changing one without the other is the drift #4781 filed:
+        // counts this contract. Changing one without the other is drift:
         // update the judgement source and rerun scripts/ci/generate-geoservices-parity.sh.
         GPServerEsriTaskAliases.Contract.Should().HaveCount(40);
     }

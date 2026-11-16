@@ -68,7 +68,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
     public async Task PostSunShadow_KnownInput_MatchesIndependentlyComputedNoaaSolarPosition()
     {
-        // Regression for honua-server#2945: prior tests only asserted altitude/shadow
+        // Assert both altitude/shadow
         // length are "> 0". These expected values were computed independently (Python,
         // NOAA solar position algorithm, not by reading the production implementation)
         // for the fixed observer/timestamp below:
@@ -290,7 +290,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("pixel grids are not aligned");
     }
 
-    // ---- Step terrain (honua-server#2982 depth pack 2) ----
+    // ---- Step terrain (depth pack 2) ----
     //
     // PostSlice_OverSurface_ReturnsIntersectionMetadata above only seeds FLAT terrain
     // (elevationMeters constant everywhere), so minElevation/maxElevation/reliefMeters and

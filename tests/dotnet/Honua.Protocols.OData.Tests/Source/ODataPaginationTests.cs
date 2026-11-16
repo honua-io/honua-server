@@ -517,8 +517,8 @@ public sealed class ODataPaginationTests : IAsyncLifetime
 
         // OData v4.01 §11.2.5.5: $count is the total number of items matching the request's
         // filter, independent of $skip/$top. Skipping beyond the last match yields an empty
-        // page, but the total is unchanged. The earlier expectation of 0 reflected a
-        // COUNT(*) OVER()-on-returned-rows bug (empty page => count 0) fixed in #1567/#1599.
+        // page, but the total is unchanged. A COUNT(*) OVER() over the returned rows
+        // would report 0 for the empty page.
         document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
         countElement.GetInt64().Should().Be(15);
     }

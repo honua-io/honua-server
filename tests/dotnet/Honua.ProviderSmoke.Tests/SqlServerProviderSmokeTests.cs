@@ -56,10 +56,9 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task FeatureServer_QueryWithBbox_ReturnsWindowedFeatures()
     {
-        // Enabled since the honua-server#2965 EWKB/plain-WKB converter fix landed: filter
-        // geometries are now translated to the plain WKB flavor SQL Server's
-        // geometry::STGeomFromWKB(wkb, srid) expects (previously the embedded SRID header
-        // corrupted ring/point-count parsing and every bbox query 500'd).
+        // Filter geometries are translated to the plain WKB flavor SQL Server's
+        // geometry::STGeomFromWKB(wkb, srid) expects; an embedded SRID header corrupts
+        // ring/point-count parsing and makes every bbox query 500.
         var (west, south, east, north) = ProviderSmokeData.NarrowBbox;
         var response = await Client.GetAsync(
             $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/query" +

@@ -94,7 +94,7 @@ public sealed class RelatedRecordsServiceTests
             outFields: null,
             relatedResource: CreateRelatedResource());
 
-        // Field schema is carried once at the top level (#1431 population preserved).
+        // Field schema is carried once at the top level.
         grouped.Fields.Should().NotBeEmpty();
         grouped.Fields.Select(field => field.Name)
             .Should().Contain("label")

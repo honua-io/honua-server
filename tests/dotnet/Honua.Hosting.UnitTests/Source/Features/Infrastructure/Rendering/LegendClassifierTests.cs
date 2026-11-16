@@ -148,9 +148,9 @@ public class LegendClassifierTests
 
         var result = LegendClassifier.Classify(layer);
 
-        // #2870 made the shared evaluator blend colours instead of coercing the stops to 0f,
-        // so a ramp is now representable: sampling it at its own stops yields entries whose
-        // swatches are exactly the colours GetMap paints for those attribute values.
+        // The shared evaluator blends colours instead of coercing the stops to 0f, so a ramp
+        // is representable: sampling it at its own stops yields entries whose swatches are
+        // exactly the colours GetMap paints for those attribute values.
         result.UnrepresentableReason.Should().BeNull();
         result.IsDataDriven.Should().BeTrue();
         result.Field.Should().Be("density");

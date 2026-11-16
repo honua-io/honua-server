@@ -53,7 +53,7 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
         var geometry = await QueryGeometryAsync(objectId);
 
         // The stored geometry is a densified linear polyline (paths), NOT a curvePaths echo:
-        // NTS/WKB cannot represent the true curve, so curves linearize at storage (#1877 Part B).
+        // NTS/WKB cannot represent the true curve, so curves linearize at storage.
         geometry.TryGetProperty("paths", out var paths).Should().BeTrue(
             "a densified true curve must surface as a linear paths polyline");
         geometry.TryGetProperty("curvePaths", out _).Should().BeFalse(

@@ -14,7 +14,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
 {
     private static readonly CapabilityRegistry Registry = new CapabilityRegistry();
 
-    // The frozen #1186 manifest roster, in the exact order the manifest serializes it.
+    // The frozen manifest roster, in the exact order the manifest serializes it.
     // Mirrors CapabilityManifestService's hand-curated list; the registry-derived path
     // must reproduce this order and set.
     private static readonly string[] ExpectedManifestCapabilityIds =
@@ -113,7 +113,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
-        // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
+        // temporal.* is Implemented (GA), so it is not omitted.
         // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
         // deployment-wide Preview gate is enabled.
         // Realtime feature streams are Experimental: they deliver from the PostgreSQL event log.
@@ -121,9 +121,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
-        // security.mtls was promoted to Implemented (GA) in #2431, then DEMOTED back to
-        // experimental in #2958 (release-safety follow-up): the always-on client-certificate
-        // scheme/RBAC layer interposed on admin requests regardless of bearer-token validity.
+        // security.mtls is experimental: the always-on client-certificate scheme/RBAC layer
+        // interposes on admin requests regardless of bearer-token validity.
         "security.mtls",
     ];
 

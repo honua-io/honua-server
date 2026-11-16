@@ -348,7 +348,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
         children[1].TryGetProperty("fidelityVerdict", out _).Should().BeFalse("a running child has no verdict yet");
 
-        // #4600 (AC1): the construct accounting is replayed from the persisted manifest and child rows. The
+        // The construct accounting is replayed from the persisted manifest and child rows. The
         // manifest discovers layers 0, 1 and 2; the batch selected 0 and 1, so layer 2 blocks.
         var accounting = doc.RootElement.GetProperty("constructAccounting");
         accounting.GetProperty("executed").GetBoolean().Should().BeTrue();

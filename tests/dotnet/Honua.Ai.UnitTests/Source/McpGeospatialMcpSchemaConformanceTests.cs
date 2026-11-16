@@ -116,11 +116,10 @@ public sealed partial class McpTaxonomyAlignmentTests
         // by any adopter that makes a different trust decision — but not by Honua.
         "edit_features",
         // Direct geoprocessing verbs: members of the standard's opt-in 'analysis'
-        // conformance profile (geospatial-mcp#55, upstream ADR-0029). The index
-        // marks them known-gap for the reference implementation; they are required
-        // for FULL only when a manifest declares the analysis profile. Honua does
-        // not ship direct verbs yet (#2555/#2566 and the A8/analysis track) —
-        // plan_analysis/execute_plan cover those workflows today.
+        // conformance profile (upstream ADR-0029). The index marks them known-gap
+        // for the reference implementation; they are required for FULL only when a
+        // manifest declares the analysis profile. Honua does not ship direct verbs
+        // yet — plan_analysis/execute_plan cover those workflows today.
         "buffer_features",
         "overlay_features",
         "summarize_statistics",
@@ -731,7 +730,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     // -------------------------------------------------------------------
-    // Resource-URI-TEMPLATE conformance (Track A, #2323): the live resource
+    // Resource-URI-TEMPLATE conformance: the live resource
     // grammar IS the contract. Every live URI template that maps onto a
     // standard resource family must match the vendored index.json uriForm
     // (Decision A grammar), and every standard family the index marks
@@ -822,7 +821,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     // -------------------------------------------------------------------
-    // Emitted-manifest conformance (Track A, #2323): the CapabilityManifestEmitter
+    // Emitted-manifest conformance: the CapabilityManifestEmitter
     // projection must stay bound to the live tool catalog and score FULL against
     // the vendored index — the same coverage check conformance/check_manifest.py
     // runs in geospatial-mcp CI.

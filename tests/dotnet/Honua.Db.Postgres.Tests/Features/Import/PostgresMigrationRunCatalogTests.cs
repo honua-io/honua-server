@@ -196,7 +196,7 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
 
     private async Task EnsureMigrationRunsTableAsync()
     {
-        // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+        // This DDL creates/ALTERs the literal, process-global
         // honua.migration_runs table (search_path isolation does not scope it), so apply it under
         // the shared seed advisory lock to keep parallel [Collection("Database")] tests off the
         // 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global object.

@@ -856,8 +856,8 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
     // NOTE: These tests are intentionally designed to FAIL with current implementation
     // to drive the implementation of spatial filter support in OData endpoints.
-    // Per issue #158: "Tests should intentionally fail rather than skip to force
-    // implementation of geo-spatial functions and CRS metadata alignment."
+    // They fail rather than skip, to force implementation of geo-spatial functions
+    // and CRS metadata alignment.
     //
     // When spatial filtering is implemented, these tests should pass.
     // DO NOT change these to pass without implementing actual spatial filtering.

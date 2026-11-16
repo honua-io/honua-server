@@ -44,7 +44,7 @@ public class ImageServerCatalogQueryHandlerTests
             new ImageServerCatalogFilterEvaluator(),
             transformService);
         // No field-mask policies apply in these tests, so the source returns an empty
-        // set and attribute output is byte-for-byte the pre-#2159 behavior.
+        // set and attribute output is byte-for-byte the unmasked output.
         var fieldMaskSource = Substitute.For<IFieldMaskSource>();
         fieldMaskSource
             .ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
@@ -180,7 +180,7 @@ public class ImageServerCatalogQueryHandlerTests
         // RBAC field-level masking on the ImageServer read path: masked
         // attributes must be absent from both the feature attributes AND the field
         // schema, even though no outFields restriction was requested (fail-secure,
-        // matching the FeatureServer masking semantics from #2108).
+        // matching the FeatureServer masking semantics).
         SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
         var handler = BuildHandlerWithMaskedFields("AcquisitionDate", "PixelType");
 
@@ -1049,7 +1049,7 @@ public class ImageServerCatalogQueryHandlerTests
     public async Task QueryCatalogAsync_EnvelopeGeometry_UsesEnvelopeOnlyPredicate()
     {
         // A bbox/envelope geometry is a windowing request and must stay envelope-only: the neutral
-        // query carries no exact geometry and the envelope-intersects relation (#2839, bbox rule).
+        // query carries no exact geometry and the envelope-intersects relation (bbox rule).
         SetupLayerWithRasters([CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5)]);
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)

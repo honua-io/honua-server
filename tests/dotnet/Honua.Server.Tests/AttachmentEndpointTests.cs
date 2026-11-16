@@ -502,8 +502,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             requestContent);
 
-        // 500 was previously accepted here, so an unhandled crash passed a media-type
-        // test. The endpoint must answer an unsupported media type with 415.
+        // The endpoint must answer an unsupported media type with 415. Accepting 500
+        // here would let an unhandled crash pass a media-type test.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
@@ -628,8 +628,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             requestContent);
 
-        // 500 was previously accepted here, so an unhandled crash passed a media-type
-        // test. The endpoint must answer an unsupported media type with 415.
+        // The endpoint must answer an unsupported media type with 415. Accepting 500
+        // here would let an unhandled crash pass a media-type test.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
@@ -808,8 +808,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             requestContent);
 
-        // 500 was previously accepted here, so an unhandled crash passed a media-type
-        // test. The endpoint must answer an unsupported media type with 415.
+        // The endpoint must answer an unsupported media type with 415. Accepting 500
+        // here would let an unhandled crash pass a media-type test.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");

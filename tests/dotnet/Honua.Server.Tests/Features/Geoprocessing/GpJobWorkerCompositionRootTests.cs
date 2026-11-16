@@ -43,10 +43,9 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
                 // whether to wire IConnectionMultiplexer. A deferred ConfigureAppConfiguration
                 // source would be applied too late for that gate. The connection string + Pro
                 // dev grant make the production composition root wire the multiplexer, the
-                // durable job store/queue, and — per the #1841 fix — the in-process worker (it
+                // durable job store/queue, and the in-process worker (it
                 // self-gates on IJobQueue, which AddJobOrchestration only registers when the
-                // multiplexer is present). This is the documented DevGrant=Pro topology from
-                // #1827/#1787.
+                // multiplexer is present). This is the documented DevGrant=Pro topology.
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             })
@@ -54,7 +53,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
             {
                 // With the DevGrant=Pro + Redis host settings above, the production
                 // composition root already wires the durable IConnectionMultiplexer, the job
-                // store/result-package store/queue, AND (per the #1841 fix) the worker. The
+                // store/result-package store/queue, AND the worker. The
                 // only substitution this test makes is the executor: replace the production
                 // geometry.buffer executor with a deterministic fixture so the test exercises
                 // the worker wiring and the GPServer protocol projection independently of the
@@ -73,7 +72,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
         {
             // The in-process job worker must be registered by the production composition
             // root (FeatureRegistrationExtensions), not by this test. This is the direct
-            // assertion of the #1841 fix; if AddJobWorker were dead code again, this fails
+            // assertion of that wiring; if AddJobWorker were dead code, this fails
             // before the (slower) end-to-end poll below.
             var workerHostedServices = fixture.Services
                 .GetServices<Microsoft.Extensions.Hosting.IHostedService>()

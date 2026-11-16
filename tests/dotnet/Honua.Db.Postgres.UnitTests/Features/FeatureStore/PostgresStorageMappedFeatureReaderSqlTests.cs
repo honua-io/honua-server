@@ -604,10 +604,10 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndJsonbColumn_AliasesInsteadOfThrowing()
     {
         // A STAC extension queryable such as `eo:cloud_cover` is a declared, filterable field
-        // whose name is not a bare SQL identifier. Admitting it to the projection (so it stops
-        // being silently dropped) made the FlatGeobuf/Geobuf builder alias it, and that alias
-        // site validated the name as a PostGIS identifier -- turning a missing field into an
-        // InvalidOperationException and an HTTP 500 (review finding on honua-server#3489).
+        // whose name is not a bare SQL identifier. It is admitted to the projection (so it is
+        // not silently dropped), and the FlatGeobuf/Geobuf builder aliases it. That alias site
+        // must not validate the name as a PostGIS identifier, which would turn the field into
+        // an InvalidOperationException and an HTTP 500.
         var resource = CreatePrefixedFieldResource();
         var reader = CreateReader(resource, attributesColumn: "attributes");
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(

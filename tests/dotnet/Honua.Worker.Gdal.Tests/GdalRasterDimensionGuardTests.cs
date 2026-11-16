@@ -352,7 +352,7 @@ public sealed class GdalRasterDimensionGuardTests
         GdalRasterDimensionGuard.TryAdmit(Jp2CodestreamMagic(), options, out var error).Should().BeTrue(error);
     }
 
-    // --- GeoTIFF ModelPixelScale read (resample -tr extent, #2793) -------------
+    // --- GeoTIFF ModelPixelScale read (resample -tr extent) -------------
 
     [UnitTest]
     public void ReadGeoTiffPixelScale_ReadsModelPixelScale_FromClassicTiff()

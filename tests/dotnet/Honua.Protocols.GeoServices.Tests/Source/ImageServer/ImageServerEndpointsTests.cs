@@ -2496,7 +2496,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     {
         // The raster models a 45° sun elevation. The two points are ~5 ground-meters apart (a 3-4-5
         // triangle near the Web Mercator origin), so the shadow-height h = shadowLength · tan(45°)
-        // ≈ shadowLength ≈ 5 m. Both shadow operations use the same formula (ADR-0065, #2667).
+        // ≈ shadowLength ≈ 5 m. Both shadow operations use the same formula (ADR-0065).
         var store = CreateRasterStoreSubstitute();
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>
@@ -3528,7 +3528,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Project)]
     public async Task Project_WithImageCoordinateSystemTransformation_ComposesWarpWithReprojectionAndDiffersFromNoTransformation()
     {
-        // #2840 round trip: the image-CS warp (image sample/line -> WGS84 ground) is composed with
+        // Round trip: the image-CS warp (image sample/line -> WGS84 ground) is composed with
         // the ground -> outSR reprojection. Requesting the transformation must move the geometry to
         // the warped/reprojected location, which differs from the untransformed reprojection of the
         // same input coordinate.
@@ -3946,7 +3946,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         }
     }
 
-    // Regression for #1900: the ArcGIS API for Python ImageryLayer.legend() (and the JS API)
+    // The ArcGIS API for Python ImageryLayer.legend() (and the JS API)
     // POST to /legend. The POST mirror must return the same payload as GET.
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/legend")]
@@ -4237,10 +4237,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         }
     }
 
-    // Regression coverage for #1445: the /slices route was unmapped and returned 404
-    // (GET and POST) for a hasMultidimensions:true service. The route is now mapped and
-    // returns the Esri slices document; with no enumerable multidimensional coverage it
-    // honestly returns a spec-shaped { "slices": [] } rather than 404.
+    // For a hasMultidimensions:true service the /slices route must be mapped (GET and
+    // POST) and return the Esri slices document, not 404; with no enumerable
+    // multidimensional coverage it honestly returns a spec-shaped { "slices": [] }.
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/slices")]
     [Endpoint("POST /rest/services/{id}/ImageServer/slices")]
@@ -4301,12 +4300,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task ConfJson_ReturnsServiceDescriptor_InGeoServicesRuntimeCompatibleShape()
     {
-        // Regression for #1456: the ArcGIS Maps SDK for .NET ImageServiceRaster
+        // The ArcGIS Maps SDK for .NET ImageServiceRaster
         // unconditionally fetches conf.json while loading and parses it strictly.
         // conf.json must return the service descriptor (like a real Esri ImageServer),
         // and that descriptor must use the Esri wire shape the native parser accepts:
         // allowedMosaicMethods as a comma-separated STRING (not an array) and no
-        // tile-cache storageInfo for a dynamic service. Any of these tripped
+        // tile-cache storageInfo for a dynamic service. Any of these trips
         // LoadAsync with "could not read configuration data" / "Invalid configuration file".
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try

@@ -133,7 +133,7 @@ public sealed class SceneTileCatalogTests
     public void IntersectsExtent_WithOverlappingFilter_ReturnsTrue()
     {
         // Node region spans ~0..5.7 degrees (0..0.1 rad); a filter overlapping
-        // that footprint must include the node (positive filter outcome, #10).
+        // that footprint must include the node (positive filter outcome).
         var node = new Domain.TileNode { BoundingVolume = new Domain.BoundingVolume { Region = [0, 0, 0.1, 0.1, 0, 10] } };
         var filter = new Proto.Extent3D { Extent = new Proto.Extent { Xmin = 1, Ymin = 1, Xmax = 4, Ymax = 4 } };
 

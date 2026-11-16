@@ -1688,7 +1688,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_AllowAnonymousWritePolicy_AllowsInsertWithoutRbac()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        // V2 cutover (#1035 72/N): per-resource access policy now lives on
+        // Per-resource access policy lives on
         // MetadataV2Object.AccessPolicy. Seed it directly via the test fixture.
         fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,

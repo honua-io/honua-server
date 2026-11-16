@@ -371,8 +371,8 @@ public sealed class DatabaseMigrationSafetyTests
     [ArchitectureTest]
     public void IssueMigrations126To128_DeclareExpand_SoTheSameEdgeIsRollbackSafeOnceReadersVerify()
     {
-        // The #6477 rollback (93cad86 against schema 128) refused 126-128. Each declares expand under the
-        // shared classifier, so a reader that implements verification would have accepted them.
+        // Migrations 126-128 each declare expand under the shared classifier, so a rollback reader
+        // that implements verification accepts them instead of refusing the edge.
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
         foreach (var name in new[]
         {

@@ -54,7 +54,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml()
     {
-        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        // Protocol gating reads MetadataV2Service.Protocols.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
@@ -344,7 +344,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
     public async Task Wmts_GetTile_WebMercatorQuad_StillReturnsPngImage()
     {
-        // #1660 no-regression guard: adding WorldCRS84Quad must not change the existing
+        // No-regression guard: adding WorldCRS84Quad must not change the existing
         // WebMercatorQuad GetTile path (the CITE-conformant baseline).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=0&TILECOL=0");

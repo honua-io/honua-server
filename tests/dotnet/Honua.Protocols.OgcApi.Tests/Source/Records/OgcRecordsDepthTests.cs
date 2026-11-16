@@ -28,7 +28,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
     public async Task GetItems_WithSixElementBbox_UsesHorizontalCoordinates()
     {
         // Spec-legal 3D bbox (minx,miny,minz,maxx,maxy,maxz) must not 400 and must
-        // filter on the horizontal ordinates only (#1987 regression).
+        // filter on the horizontal ordinates only.
         var intersecting = await GetRecordIdsAsync("bbox=-123,37,0,-122,38,100");
         intersecting.Should().Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
 
@@ -81,7 +81,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
     public async Task GetItems_WithDatetime_KeepsRecordsWithoutTemporalValue()
     {
         // Catalog records carry no temporal value, so a datetime filter must not drop
-        // them (#1988 regression): instants and half-open intervals all keep them.
+        // them: instants and half-open intervals all keep them.
         // The both-open "../.." form is not covered here: it is outside the OGC API
         // datetime ABNF (an interval needs at least one bound) and is rejected before
         // dispatch by the shared input-validation middleware.
@@ -130,7 +130,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
     public async Task GetItems_WithLimitOrOffsetOutOfRange_ReturnsBadRequest()
     {
         // A limit above the maximum is served at the maximum (OGC API - Features Part 1
-        // §7.15.4, #5510; see RecordsLandingAndLimitTests); a limit below 1 is still invalid.
+        // §7.15.4; see RecordsLandingAndLimitTests); a limit below 1 is still invalid.
         var underLimit = await _fixture.Client.GetAsync(
             $"/ogc/records/collections/{CatalogId}/items?limit=-1");
         underLimit.StatusCode.Should().Be(HttpStatusCode.BadRequest);

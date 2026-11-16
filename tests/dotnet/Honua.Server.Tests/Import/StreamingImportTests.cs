@@ -231,7 +231,7 @@ public partial class StreamingImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_EsriJsonFeatureSet_AutoDetectsAndImports()
     {
-        // Regression: honua-server#2352 — Esri JSON must auto-detect and import (not be silently
+        // Esri JSON must auto-detect and import (not be silently
         // parsed as GeoJSON). Mirrors the e2e format-harness sample.esrijson feature set.
         const string esriJson = """
             {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[
@@ -262,7 +262,7 @@ public partial class StreamingImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_WkbPayload_AutoDetectsAndImports()
     {
-        // Regression: honua-server#2353 — a WKB payload (concatenated WKB points) must auto-detect
+        // A WKB payload (concatenated WKB points) must auto-detect
         // and import rather than failing with "Multipart import request is invalid."
         using var buffer = new MemoryStream();
         WriteWkbPoint(buffer, -156.30, 20.80);
@@ -293,7 +293,7 @@ public partial class StreamingImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GpxWithGdalExtensions_ImportsWaypoints()
     {
-        // Regression: honua-server#2354 — GPX waypoints whose attributes live under <extensions>
+        // GPX waypoints whose attributes live under <extensions>
         // (GDAL GPX_USE_EXTENSIONS output) must import instead of yielding zero features.
         const string gpx = """
             <?xml version="1.0"?>

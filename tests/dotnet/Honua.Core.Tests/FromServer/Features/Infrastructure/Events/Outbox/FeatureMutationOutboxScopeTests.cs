@@ -473,7 +473,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task PublishAsync_WhenOutboxEnabled_SkipsCanonicalPublish()
     {
-        // Critical invariant for #692: when the outbox is the system of record for
+        // Critical invariant: when the outbox is the system of record for
         // change events, the protocol-layer's post-commit publish must be a no-op.
         // Otherwise consumers see duplicate events (one from the publish path and one
         // from the dispatcher) and the request hot path pays for an unnecessary

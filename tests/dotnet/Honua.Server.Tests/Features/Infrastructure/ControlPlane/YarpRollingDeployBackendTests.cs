@@ -297,7 +297,7 @@ public sealed class YarpRollingDeployBackendTests
     [Fact]
     public async Task RollbackAsync_PostRestartDuringObservationWindow_DurableProtectionProvesAlreadyPromoted()
     {
-        // honua-server#4618 ground-truth fix: once the old replica is retained (not removed) at
+        // Once the old replica is retained (not removed) at
         // cutover, BOTH replicas are running throughout the whole observation window — container
         // labels alone cannot tell "still baking, pre-cutover" from "cutover done, retained for
         // recovery" after a front-process restart resets in-memory proxy state. The durable

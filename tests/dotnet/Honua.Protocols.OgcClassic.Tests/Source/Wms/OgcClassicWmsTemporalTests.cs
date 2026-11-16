@@ -42,9 +42,9 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         content.Should().Contain("nearestValue=\"true\"");
         // The design calls for a continuous interval, and WMS 1.3.0 Annex C spells that
         // "min/max/0" - the third element is a resolution and the literal 0 declares
-        // every instant available. This asserted "PT0S", a zero-length ISO 8601 duration
-        // that is not a valid resolution: ArcGIS Pro rejected the dimension and reported
-        // the layer as not time-enabled, while QGIS tolerated it. See honua-server#5172.
+        // every instant available. "PT0S", a zero-length ISO 8601 duration, is not
+        // a valid resolution: ArcGIS Pro rejects the dimension and reports the
+        // layer as not time-enabled, while QGIS tolerates it.
         content.Should().Contain("/0</Dimension>");
         content.Should().NotContain("PT0S");
     }

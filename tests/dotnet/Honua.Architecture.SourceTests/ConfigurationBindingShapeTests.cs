@@ -39,12 +39,11 @@ public sealed partial class ConfigurationBindingShapeTests
 
     private static readonly string[] AuditedNestedGraphNames =
     [
-        // Limits -> Imports. #3306 was filed believing this reached
-        // Honua.Core.Features.Import.Domain.ImportLimits; it does not, and must not — that is a
-        // different type built by a hand parser and guarded by
-        // HandParsedConfigurationSectionTests. LimitsOptions.Imports is the settable
-        // Honua.Core.Configuration.ImportSizeLimits declared in AdvancedLimits.cs,
-        // and the walk must keep descending into it.
+        // Limits -> Imports. This does not reach
+        // Honua.Core.Features.Import.Domain.ImportLimits, and must not — that is a different
+        // type built by a hand parser and guarded by HandParsedConfigurationSectionTests.
+        // LimitsOptions.Imports is the settable Honua.Core.Configuration.ImportSizeLimits
+        // declared in AdvancedLimits.cs, and the walk must keep descending into it.
         "Honua.Core.Configuration.ImportSizeLimits",
         "Honua.Core.Configuration.AttachmentLimits",
         "Honua.Core.Configuration.TileLimits",

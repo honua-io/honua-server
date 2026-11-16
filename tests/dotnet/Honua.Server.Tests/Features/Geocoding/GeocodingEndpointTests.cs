@@ -1658,7 +1658,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
 
             // Licensing:DevGrantEdition is read by AddHonuaLicensing while the minimal-hosting-model
             // WebApplicationBuilder is still being configured, before a ConfigureAppConfiguration
-            // callback added here would apply. UseSetting (mirrors the #2978
+            // callback added here would apply. UseSetting (mirrors the
             // IdentityEntitlementGateTests pattern) pushes it in early enough to be honored.
             if (grantEnterpriseForBatch)
             {

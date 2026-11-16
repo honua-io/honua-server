@@ -7,10 +7,10 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Core.Tests.Features.Import;
 
-// Regression coverage for honua-server#2354: GPX produced by GDAL (ogr2ogr -f GPX
-// -dsco GPX_USE_EXTENSIONS=YES) stores source attributes under <extensions> with child
-// elements. The reader previously threw XmlException ("ReadElementContentAs() methods cannot
-// be called on an element that has child elements") and yielded no features.
+// GPX produced by GDAL (ogr2ogr -f GPX -dsco GPX_USE_EXTENSIONS=YES) stores source
+// attributes under <extensions> with child elements. The reader must yield those features
+// instead of throwing XmlException ("ReadElementContentAs() methods cannot be called on an
+// element that has child elements").
 public sealed class GpxFormatReaderTests
 {
     private static async Task<List<NetTopologySuite.Features.IFeature>> ReadAsync(string gpx)

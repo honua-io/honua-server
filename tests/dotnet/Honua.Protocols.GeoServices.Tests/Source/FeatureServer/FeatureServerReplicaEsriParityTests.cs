@@ -267,7 +267,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     public async Task SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope()
     {
         // Scope: envelope (60,10)-(61,11). Each row is classified from its state before the first change
-        // in the window (the change log's pre-change image, #4879) and its state now.
+        // in the window (the change log's pre-change image) and its state now.
         var leaving = await AddFeatureAsync("boundary-leaving", 60.25, 10.5);
         var staying = await AddFeatureAsync("boundary-staying", 60.75, 10.25);
         var entering = await AddFeatureAsync("boundary-entering", 62.5, 10.5);
@@ -466,7 +466,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope()
     {
-        // #5013 is deliberately narrow: only createReplica's unsupported dataFormat leaves the
+        // The exception is deliberately narrow: only createReplica's unsupported dataFormat leaves the
         // GeoServices HTTP 200 error-envelope convention.
         var (createStatus, createRoot) = await PostFormForStatusAsync("createReplica", new Dictionary<string, string>
         {

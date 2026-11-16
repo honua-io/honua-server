@@ -1227,7 +1227,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_QueryFeatures_ByServiceName_ResolvesAndReturnsSchemaValidContent()
     {
-        // #2578 contract: the tool addresses a layer by service NAME (not just id),
+        // The tool addresses a layer by service NAME (not just id),
         // mirroring the GeoServices catalog. The structuredContent must still
         // validate against the advertised outputSchema and echo the canonical
         // serviceId so the agent can chain a subsequent call deterministically.
@@ -1276,7 +1276,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_ByServiceName_ResolvesAndReturnsSchemaValidContent()
     {
-        // #2578 contract: render addressing by service NAME must resolve and emit
+        // Render addressing by service NAME must resolve and emit
         // structuredContent that validates against the advertised outputSchema.
         var pngBytes = Encoding.ASCII.GetBytes("PNGDATA");
         var renderer = Substitute.For<IRasterMapRenderer>();
@@ -1320,7 +1320,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_InvalidArguments_ReturnsSchemaValidToolError()
     {
-        // #2578 error-shape contract: an invalid render call must surface a
+        // Error-shape contract: an invalid render call must surface a
         // structured tool error (isError=true) whose envelope still validates
         // against the tool's advertised outputSchema (the oneOf error branch),
         // never leaking a protocol error or an unvalidatable payload.

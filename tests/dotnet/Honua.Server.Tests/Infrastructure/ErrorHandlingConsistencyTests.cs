@@ -170,7 +170,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
 
             // Assert
             // GeoServices surfaces (/rest/services, /tiles) now signal errors as
-            // HTTP 200 + {"error":{"code":400}} (#2418, PA-070/PA-117); OGC API and
+            // HTTP 200 + {"error":{"code":400}} (PA-070/PA-117); OGC API and
             // OData keep RFC 7807 HTTP status semantics.
             if (IsGeoServicesEndpoint(endpoint))
             {
@@ -207,14 +207,14 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
 
     // Zoom/tile-coordinate validation on /tiles still short-circuits before layer
     // resolution (StandardErrorHelpers.CreateBadRequest directly) and is unaffected by
-    // honua-server#2945, which only changed the layer-not-found path. So /tiles still
+    // the layer-not-found path. The /tiles route still
     // belongs in the 200-envelope classification for THIS (bad-request) scenario.
     private static bool IsGeoServicesEndpoint(string endpoint) =>
         endpoint.StartsWith("/rest/services", StringComparison.Ordinal) ||
         endpoint.StartsWith("/tiles", StringComparison.Ordinal);
 
     // /rest/services keeps the GeoServices 200-envelope for not-found; /tiles does not
-    // (honua-server#2945 — the tiles surface returns a real HTTP 404 + problem+json).
+    // (the tiles surface returns a real HTTP 404 + problem+json).
     private static bool IsGeoServicesRestEndpoint(string endpoint) =>
         endpoint.StartsWith("/rest/services", StringComparison.Ordinal);
 

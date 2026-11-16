@@ -481,7 +481,7 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests(PostgresFixt
         try
         {
             // Two aligned 2x2 rasters side by side: every input already shares the reference
-            // grid, so the union and its statistics are exactly the pre-#4792 result.
+            // grid, so the alignment step leaves the union and its statistics unchanged.
             var west = await InsertConstantRasterAsync(schemaName, "west", 0, 2, 1.0, 10, Day(1));
             var east = await InsertConstantRasterAsync(schemaName, "east", 2, 2, 1.0, 30, Day(2));
             var store = CreateStore(schemaName);

@@ -1769,7 +1769,7 @@ public sealed partial class GeoprocessingJobServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // Approval lane: gated plan -> persisted proposal -> resume (ADR-0064, #2814)
+    // Approval lane: gated plan -> persisted proposal -> resume (ADR-0064)
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -1780,7 +1780,7 @@ public sealed partial class GeoprocessingJobServiceTests
         // When a gated plan meets the approval gate AND the durable proposal surface
         // is available, the submission persists an AwaitingApproval proposal reusing
         // the shared control-plane gateway and surfaces its id for the honua://
-        // proposals/{id} resume path — instead of dead-ending (ADR-0064, #2814).
+        // proposals/{id} resume path — instead of dead-ending (ADR-0064).
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));

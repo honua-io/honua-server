@@ -228,7 +228,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
     [UnitTest]
     public async Task EvaluateAsync_ErrorCountNoRowsWithSampleFloorMet_PromotesWithZeroErrors()
     {
-        // honua-server#6474 parity: a binned error count over an error-free window has no rows.
+        // Provider parity: a binned error count over an error-free window has no rows.
         var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleQuery] = 80,

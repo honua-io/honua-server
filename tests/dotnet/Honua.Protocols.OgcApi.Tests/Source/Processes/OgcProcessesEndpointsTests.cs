@@ -639,8 +639,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     public async Task Execute_SynchronousWithoutDurableJobStore_RefusesImmediatelyInsteadOfWaiting()
     {
         // The synchronous path waits up to 30s on the terminal-result service. Without a job
-        // store the refusal must come from submission, before that wait — the no-hang half of
-        // the honua-release#202 contract.
+        // store the refusal must come from submission, before that wait, so the request never
+        // hangs.
         var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/geometry.buffer/execution");

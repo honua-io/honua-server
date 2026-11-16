@@ -1218,11 +1218,10 @@ public sealed partial class ServiceSettingsEndpointsTests
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithTimeInfoPayload_ReturnsOkAndRoundTrips()
     {
-        // Regression for honua-io/honua-server#1910 symptom 3: PUTting a timeInfo block
-        // on a layer must succeed (HTTP 200) and round-trip the configured fields rather
-        // than 500ing with a NullReferenceException. The typed V2 temporal write path
-        // (ToV2Temporal -> MutateResourcesForLayerAsync) must null-guard every slot it
-        // consumes.
+        // PUTting a timeInfo block on a layer must succeed (HTTP 200) and round-trip the
+        // configured fields rather than 500ing with a NullReferenceException. The typed
+        // V2 temporal write path (ToV2Temporal -> MutateResourcesForLayerAsync) must
+        // null-guard every slot it consumes.
         var body = """
             {
               "timeInfo": {

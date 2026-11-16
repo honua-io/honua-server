@@ -53,7 +53,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task GetUser_ByOidcSubject_ResolvesRecordWhoseUserNameDiffers()
     {
-        // #3141 finding 2: deferred snapshots capture the OIDC subject while SCIM keys the
+        // Deferred snapshots capture the OIDC subject while SCIM keys the
         // record by userName. The durable store must resolve either identifier to ONE record.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
         try
@@ -158,7 +158,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task DeprovisionUser_OnReplicaA_IsAuthoritativelyInactiveOnReplicaB()
     {
-        // #3141 acceptance 1: deactivating a managed user on replica A must
+        // Deactivating a managed user on replica A must
         // deterministically stop deferred work executing on replica B. The deferred lane
         // resolves membership through IUserStore.GetUserAsync; an inactive user (or a
         // resolution miss) fails closed.
@@ -487,7 +487,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     public async Task Reads_ManagedUserTablesAbsent_ReturnEmpty_DoNotThrow()
     {
         // Fresh/legacy DB where migration 106 has not run: reads must degrade to "no
-        // managed users" (honua-server#1341 resilience pattern) instead of surfacing 42P01.
+        // managed users" instead of surfacing 42P01.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
         try
         {

@@ -104,9 +104,9 @@ public sealed partial class NightlyImageCertificationTests
     [ArchitectureTest]
     public void NightlyBuild_ShouldRunAtTheSelectedSha_SoProvenanceNamesTheImagedCommit()
     {
-        // honua-io/honua-release#520: run 38072453832 was dispatched at 652f7ed, imaged
-        // 99cd5e3, and its Sigstore and BuildKit provenance named 652f7ed. Provenance can
-        // only bind to the run's own commit, so the build must RUN at the candidate.
+        // Provenance can only bind to the run's own commit, so the build must RUN at the
+        // candidate. A run dispatched at one commit that images another names the
+        // dispatch commit in its Sigstore and BuildKit provenance.
         var nightly = Read(NightlyPath);
         var select = Job(nightly, "select-candidate");
 
@@ -129,10 +129,10 @@ public sealed partial class NightlyImageCertificationTests
         selectStep.Should().Contain("\"refs/tags/nightly-candidate-${GITHUB_SHA:0:7}\"");
         selectStep.Should().Contain("--sha \"${GITHUB_SHA}\"");
 
-        // honua-io/honua-server#6613 (founder decision D10): the Actions token cannot create a
-        // candidate tag whose workflow files differ from trunk head (403, it can never hold
-        // `workflows`). It is read-only in every job; the two hand-off writes use a short-lived,
-        // repository-scoped GitHub App token, and a missing app fails by name, never by fallback.
+        // The Actions token cannot create a candidate tag whose workflow files differ from trunk
+        // head (403, it can never hold `workflows`). It is read-only in every job; the two
+        // hand-off writes use a short-lived, repository-scoped GitHub App token, and a missing
+        // app fails by name, never by fallback.
         Regex.IsMatch(nightly, @"^\s+(contents|actions): write$", RegexOptions.Multiline).Should().BeFalse(
             "no job grants the Actions token a write to contents or actions");
         select.Should().Contain("      actions: read\n      checks: read\n      contents: read\n");

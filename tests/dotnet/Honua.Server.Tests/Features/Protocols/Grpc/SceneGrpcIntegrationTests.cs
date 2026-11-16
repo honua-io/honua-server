@@ -784,7 +784,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         // The fixture region is ~(-75.6 lon, 40.04 lat) in degrees. An extent that
         // overlaps that footprint must still stream the matching tiles (positive
-        // filter outcome, #10), complementing the disjoint-yields-empty case.
+        // filter outcome), complementing the disjoint-yields-empty case.
         var request = new Proto.StreamTilesRequest { SceneId = FixtureSceneId };
         request.Extent = new Proto.Extent3D
         {

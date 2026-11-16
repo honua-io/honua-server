@@ -696,7 +696,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(MigrationCatalogWriteOutcome.Created);
 
-        // Issue #1256: GeoServer apply tests do not exercise relationship
+        // GeoServer apply tests do not exercise relationship
         // persistence; return an empty outcome set so the interface remains
         // satisfied.
         public Task<MigrationRelationshipApplyOutcome[]> EnsureRelationshipsAsync(

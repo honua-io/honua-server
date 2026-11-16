@@ -353,8 +353,8 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
         // The writer was dispatched and then threw, so whether rows landed is unknowable from the
         // exception. The reservation must survive: an immediate same-key retry gets the idempotency
         // conflict (code 409) instead of being allowed to re-run a write that may already have
-        // committed. Releasing here — which the first cut of #3052 did, because the "did anything
-        // commit?" flag was only assigned after ExecuteEdits returned — is what would duplicate rows.
+        // committed. Releasing here — for example because a "did anything commit?" flag is only
+        // assigned after ExecuteEdits returns — is what would duplicate rows.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var request = new ApplyEditsRequest
         {

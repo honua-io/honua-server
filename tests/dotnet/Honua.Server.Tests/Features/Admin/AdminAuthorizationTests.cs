@@ -44,7 +44,6 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     // --- AdminEndpoints (config, openapi, version, capabilities, tables) ---
-    // v1 manifest endpoints were removed in #1035 cutover; their auth tests removed with them.
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/config")]
@@ -354,7 +353,6 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --- MetadataResourceEndpoints removed in #1035 cutover; auth tests removed with them. ---
 
     // --- OperationsProgressEndpoints ---
 

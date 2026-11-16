@@ -216,7 +216,7 @@ public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandl
         var fsResponse = await _fixture.Client.GetAsync("/rest/services/non-existent/FeatureServer");
 
         // Assert - OGC uses RFC 7807 (real 404), FeatureServer uses the GeoServices
-        // contract: HTTP 200 + {"error":{"code":404}} (#2418, PA-070/PA-117).
+        // contract: HTTP 200 + {"error":{"code":404}}.
         ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         await fsResponse.AssertGeoServicesErrorAsync(404);
 

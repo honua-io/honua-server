@@ -183,10 +183,9 @@ public sealed class EditProcessorPreconditionTests
     {
         // A spatial layer does not universally require geometry: a nullable geometry
         // column legitimately accepts attribute-only ("null geometry") creates, which the
-        // GeoServices/OGC/OData edit paths all support (Issue #45). The edit-validation
-        // layer must not blanket-reject null geometry on a spatial layer; a NOT NULL
-        // geometry column is enforced by the database constraint instead. (Reverts the
-        // over-broad BH-014 gate from #2423 that regressed attribute-only creates.)
+        // GeoServices/OGC/OData edit paths all support. The edit-validation layer must
+        // not blanket-reject null geometry on a spatial layer; a NOT NULL geometry column
+        // is enforced by the database constraint instead.
         var processor = CreateProcessor();
 
         var resource = new MetadataV2Object

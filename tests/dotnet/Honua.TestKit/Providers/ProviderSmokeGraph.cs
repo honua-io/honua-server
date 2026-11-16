@@ -52,9 +52,8 @@ public static class ProviderSmokeGraph
                 // sort field instead of resolving the resource's actual primary-id field
                 // (resource.FindPrimaryIdField()?.Name), so any resource whose PK field is
                 // named anything else fails every paged query with a SQL binder error.
-                // Tracked as honua-server#2964; every existing seed/schema in this repo
-                // happens to already name its PK field "objectid", which is why this has
-                // never surfaced before.
+                // Every existing seed/schema in this repo
+                // names its PK field "objectid", so these fixtures do not cover other PK names.
                 Name = "objectid",
                 Type = MetadataV2FieldType.BigInteger,
                 Nullable = false,

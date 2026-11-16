@@ -284,7 +284,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_AtConfiguredFeatureLimit_Succeeds()
     {
-        // #4629 threshold boundary: exactly the configured cap must be admitted.
+        // Threshold boundary: exactly the configured cap must be admitted.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0), PointFeature(1, 1)]);
 
         var (status, _, _) = await RunAsync(
@@ -380,7 +380,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_SingleGeometryAtByteLimit_Succeeds()
     {
-        // #4629 threshold boundary for the per-geometry serialized-size cap
+        // Threshold boundary for the per-geometry serialized-size cap
         // (Limits:Geometry:MaxGeometrySize): a geometry of exactly the cap is admitted.
         var feature = LineFeature(vertexCount: 10);
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [feature]);
@@ -582,8 +582,8 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_GeographicLayer_BuffersByGroundMeters_NotDegrees()
     {
-        // #4623 regression: a geographic (EPSG:4326) layer buffered by a metric distance
-        // must NOT apply that distance as degrees (the prior bug) — the resulting buffer
+        // A geographic (EPSG:4326) layer buffered by a metric distance must NOT apply
+        // that distance as degrees — the resulting buffer
         // must be a few thousandths of a degree wide, not ~1000 degrees wide. The expected
         // envelope is computed from an INDEPENDENT closed-form approximation (the standard
         // ~111,320 m/degree-of-latitude constant and its cos(latitude) correction for
@@ -624,7 +624,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_NonMetricProjectedLayer_ConvertsDistanceToNativeUnit()
     {
-        // #4623 regression: a projected layer whose native linear unit is NOT meters (US
+        // A projected layer whose native linear unit is NOT meters (US
         // survey feet here) must convert the metric input distance into that native unit
         // before buffering — never assume every projected CRS is metric. The expected
         // buffer radius (in native units) is computed independently via plain division,
@@ -719,9 +719,9 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_TimeFilter_PropagatesToCanonicalSource()
     {
-        // Time/timeRelation used to be rejected outright; they now reach
-        // source.honua-layer verbatim, which evaluates them against the layer's
-        // configured temporal fields through the canonical translator.
+        // Time/timeRelation reach source.honua-layer verbatim, which evaluates them
+        // against the layer's configured temporal fields through the canonical
+        // translator.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
 
         var (status, _, request) = await RunAsync(
@@ -907,11 +907,11 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_MultipleStatisticsOnSameField_DoNotDoubleCountSamples()
     {
-        // #4624 regression: requesting more than one aggregate on the SAME field
-        // (e.g. "pop:sum;pop:mean") previously shared one FieldAccumulator keyed by field
-        // name but added the sample once per co-requested stat, silently multiplying
-        // SUM/MEAN by the stat count. Independent oracle: zone "a" has pop values 5 and
-        // 7 -> SUM=12, MEAN=6 regardless of how many stats target "pop".
+        // Requesting more than one aggregate on the SAME field (e.g. "pop:sum;pop:mean")
+        // must not add the sample once per co-requested stat to a FieldAccumulator shared
+        // by field name, which would silently multiply SUM/MEAN by the stat count.
+        // Independent oracle: zone "a" has pop values 5 and 7 -> SUM=12, MEAN=6
+        // regardless of how many stats target "pop".
         var source = new FakeDagFeatureSource(HonuaLayerSourceId,
         [
             BoxFeature(0, 0, 10, 10, ("zone", "a"), ("pop", 5)),
@@ -1109,7 +1109,7 @@ public sealed class LayerSourcedExecutorTests
     }
 
     // -------------------------------------------------------------------------
-    // #4624 catalog-to-execution parameter fidelity inventory
+    // Catalog-to-execution parameter fidelity inventory
     // -------------------------------------------------------------------------
 
     private static readonly string[] SharedSelectors =

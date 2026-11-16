@@ -306,9 +306,8 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         nmProp.GetInt64().Should().BeGreaterThanOrEqualTo(0,
             "numberMatched snapshot estimate must be a non-negative integer");
 
-        // The non-standard OGC-NumberMatched header was removed in #2418 (PA-122/PA-168):
-        // the count lives only in the spec-compliant JSON body location above. Guard that the
-        // header is not reintroduced.
+        // The count lives only in the spec-compliant JSON body location above. Guard that the
+        // non-standard OGC-NumberMatched header is not introduced.
         response.Headers.TryGetValues("OGC-NumberMatched", out _)
             .Should().BeFalse("the non-standard OGC-NumberMatched header was removed in #2418 (PA-122/PA-168)");
     }

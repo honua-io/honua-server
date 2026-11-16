@@ -682,7 +682,7 @@ public class OidcAuthenticationTests
         // capability, the client-certificate scheme/policy-scheme entry/enforcement
         // middleware must not be registered at all, so a valid bearer-token admin request
         // is authenticated by the bearer scheme alone with a clean 200 — no interposed
-        // cert-RBAC 403 (the concrete failure #2945's OIDC hardening work surfaced).
+        // cert-RBAC 403 (the concrete OIDC hardening failure).
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
         {
             // The ambient "Test" environment (appsettings.Test.json) turns every
@@ -1970,7 +1970,7 @@ public class OidcAuthenticationTests
 
         // Assert - Should require authentication by default. FeatureServer is a GeoServices
         // REST path, so an auth failure is emitted as the Esri contract: HTTP 200 +
-        // {"error":{"code":401|499}} (#2418, PA-167). The helper still fails on a
+        // {"error":{"code":401|499}} (PA-167). The helper still fails on a
         // success-shaped body, so it keeps catching a real "unauthenticated read allowed" leak.
         await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
         _output.WriteLine($"FeatureServer response requires auth: {response.StatusCode}");

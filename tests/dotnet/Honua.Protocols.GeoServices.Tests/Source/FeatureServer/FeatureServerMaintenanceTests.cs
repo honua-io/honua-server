@@ -527,7 +527,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression for #1446: validateSQL must accept the Esri `sql` parameter
+    // validateSQL must accept the Esri `sql` parameter
     // (with optional `sqlType`) and support both GET and a POST companion route.
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
@@ -556,7 +556,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression for #1901: the layer-level validateSQL must accept the same canonical Esri
+    // The layer-level validateSQL must accept the same canonical Esri
     // clause-type sqlType enum (esriSQLTypeWhere/OrderBy/Expression) and short forms
     // (where/orderBy/expression) that real ArcGIS clients and the service-level endpoint use,
     // in addition to the SQL-dialect aliases (standard/native).

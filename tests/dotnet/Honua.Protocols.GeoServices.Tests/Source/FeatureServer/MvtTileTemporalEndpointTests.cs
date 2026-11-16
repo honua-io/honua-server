@@ -154,7 +154,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         // non-empty time= filters with HTTP 400; falling back to the first
         // Date/DateTime attribute would silently filter on a non-temporal
         // column. Strict opt-in matches the WMS/WMTS rejection behavior.
-        // V2 cutover (#1035 72/N): clear the resource temporal so the layer is
+        // Clear the resource temporal so the layer is
         // unambiguously non-time-aware.
         _fixture.UpdateV2ResourceMetadata(TestLayerId, clearTemporal: true);
 

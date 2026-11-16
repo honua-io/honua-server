@@ -19,18 +19,18 @@ public sealed class ProcessCatalogSurfaceRasterTests
     public void Catalog_SurfaceRasterAndConversionCategories_AreRegistered()
     {
         // 6 gdaldem-backed surface products + surface.contour / surface.viewshed
-        // (gdal_contour / gdal_viewshed; #2240).
+        // (gdal_contour / gdal_viewshed).
         _catalog.GetProcessesByCategory("surface").Should().HaveCount(8);
         // 5 native raster idioms (clip, reproject, statistics, histogram,
         // zonal-statistics) + the raster analysis tool pack (resample,
-        // interpolate-idw, interpolate-kriging, mosaic; #2141) + gdal.gdalwarp
+        // interpolate-idw, interpolate-kriging, mosaic) + gdal.gdalwarp
         // (the native-profile raster reproject executed out-of-process by the
         // GDAL worker) + the map-algebra tool pack (map-algebra, spectral-index,
-        // reclassify; #2239).
+        // reclassify).
         _catalog.GetProcessesByCategory("raster").Should().HaveCount(13);
         // 4 managed conversion idioms + gdal.ogr2ogr (the native-profile vector
         // conversion executed out-of-process by the GDAL worker) + pcloud.translate
-        // (the native-profile LAZ/COPC decompress + projected-CRS reproject, #1854)
+        // (the native-profile LAZ/COPC decompress + projected-CRS reproject)
         // + conversion.polygonize / conversion.rasterize.
         _catalog.GetProcessesByCategory("conversion").Should().HaveCount(8);
     }
@@ -160,7 +160,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
     public void Catalog_SurfaceAndRasterProcesses_DeclareNativeProfile_AndOfferRasterSourceSelectors()
     {
         // The native worker pipeline reads a base64 GeoTIFF from the canonical
-        // 'source' input. As of #2264 the submit path can also materialize
+        // 'source' input. The submit path can also materialize
         // 'source' from a registered catalog raster referenced by 'layerId' or
         // 'rasterId', so all three selectors are declared OPTIONAL and the
         // "supply at least one" rule is enforced by the validator
@@ -383,7 +383,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Catalog_RasterAnalyticToolPack_IsRegistered_WithNativeProfileAndRasterOutput()
     {
-        // The #2141 raster analysis tool pack is executed out-of-process by the
+        // The raster analysis tool pack is executed out-of-process by the
         // native GDAL worker, so each entry MUST declare the native runtime profile.
         string[] toolPackIds =
         [
@@ -401,7 +401,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
             definition.OutputArtifactKinds.Should().ContainSingle().Which.Should().Be(ArtifactKind.Raster);
         }
 
-        // 'source' is an OPTIONAL raster selector (#2264 — supply one of
+        // 'source' is an OPTIONAL raster selector (supply one of
         // source/layerId/rasterId, enforced by the validator); 'cellSize' is the
         // genuinely-required resample parameter.
         _catalog.GetProcess("raster.resample")!.Parameters
@@ -665,7 +665,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Catalog_RasterAnalysisAndTerrainToolPack_DeclaresNativeProfile()
     {
-        // The #2239/#2240 tool pack is executed out-of-process by the native GDAL
+        // The raster analysis and terrain tool pack is executed out-of-process by the native GDAL
         // worker, so each entry MUST declare the native runtime profile.
         string[] toolPackIds =
         [

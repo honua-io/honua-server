@@ -39,7 +39,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // Serialize the raw CREATE SCHEMA on the shared schema-mutation
         // advisory lock (symmetric with the locked migration set below) so this per-test namespace DDL
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);

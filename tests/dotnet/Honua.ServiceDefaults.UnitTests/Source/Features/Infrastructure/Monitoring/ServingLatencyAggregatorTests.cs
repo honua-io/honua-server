@@ -138,7 +138,7 @@ public sealed class ServingLatencyAggregatorTests
     {
         // A replica that served traffic and then went quiet is not a freshly reset process.
         // Dropping the protocol entirely would make the diagnostic report the two identically,
-        // which is exactly the confusion #3909 is about.
+        // which prevents confusing worker latency with request latency.
         long now = 0;
         var aggregator = new ServingLatencyAggregator(
             TimeSpan.FromSeconds(60),

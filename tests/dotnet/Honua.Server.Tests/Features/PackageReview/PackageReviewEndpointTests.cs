@@ -117,7 +117,7 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
     {
         // The body `honua map publish <id> --package @map.json` sends
         // (honua-sdk-js map-package.publish), carrying the honua_map_package.v1 fixture from the
-        // sdk-js#1426 replay. It omits nothing the CLI omits and keeps the members the server's
+        // SDK CLI replay. It omits nothing the CLI omits and keeps the members the server's
         // MapPackage record does not model (view, layers, widgets, styleRefs[].body).
         var body = $$"""
             {

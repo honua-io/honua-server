@@ -87,7 +87,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_LargeFixtureAboveLodThreshold_ProducesMultiTileLodTileset()
     {
-        // #1200 acceptance: a feature set at/above the LOD threshold must
+        // A feature set at/above the LOD threshold must
         // generate a multi-tile, multi-LOD tileset (REPLACE refinement, a
         // nested tile tree, more than one GLB) instead of one oversized tile.
         BuildLayer();
@@ -276,7 +276,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_WithObjectStore_ReplicatesTreeAndRecordsStoragePrefix()
     {
-        // WS0 statelessness (#2459, ADR-0060): when an object store is available
+        // Statelessness (ADR-0060): when an object store is available
         // the publish path must upload the promoted tileset tree under a stable
         // scenes/{sceneId} prefix and record that prefix on the registration so
         // any node can hydrate and serve it. The promoted local dir is stamped
@@ -306,9 +306,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_WithoutObjectStore_RecordsNullStoragePrefix()
     {
-        // Legacy path: with no object store configured the scene stays node-local
-        // and the registration carries no storage prefix, so serving hydration is
-        // skipped entirely — no behavioural change from before #2459.
+        // With no object store configured the scene stays node-local and the
+        // registration carries no storage prefix, so serving hydration is skipped
+        // entirely.
         BuildLayer();
         _featureSource.Features = SamplePolygons();
 

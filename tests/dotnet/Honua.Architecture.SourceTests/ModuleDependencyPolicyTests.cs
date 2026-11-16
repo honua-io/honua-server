@@ -53,7 +53,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geometry,  ModuleRole.Core),
         (ModuleRole.Geocoding, ModuleRole.Abstractions),
         (ModuleRole.Geocoding, ModuleRole.Core),
-        // Routing (pgRouting engine + NAServer route/service-area solves, #1266).
+        // Routing (pgRouting engine + NAServer route/service-area solves).
         // Mirrors the Geocoding satellite: it depends on Abstractions only (the
         // IDatabaseConnectionProvider surface) and is consumed by the GeoServices
         // NAServer protocol adapter. It must NEVER reference a storage provider or
@@ -144,7 +144,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
-        // Plugin/extension SDK (#347, ADR-0024): protocol edit handlers consume ONLY the lean
+        // Plugin/extension SDK (ADR-0024): protocol edit handlers consume ONLY the lean
         // Honua.Plugins.Abstractions contract surface (IPluginEditPipeline) to fire plugin
         // validators/hooks. They must NOT couple to the host-side plugin runtime (Honua.Plugins) —
         // hence PluginsAbstractions, not Plugins, is the allowed provider here.
@@ -204,7 +204,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),
         // Intra-module self-edge: the GP Devkit golden-file test SDK
-        // (Honua.Geoprocessing.Testing, #2127) is a dev/test-support library
+        // (Honua.Geoprocessing.Testing) is a dev/test-support library
         // under src/ that wraps the runtime Honua.Geoprocessing it tests
         // (the headless GeoprocessingLocalRunner). It is deliberately NOT
         // packed or AOT-published — nothing in Honua.Server references it, so
@@ -240,7 +240,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Io, ModuleRole.Hosting),
         (ModuleRole.Io, ModuleRole.ServiceDefaults),
         // Io consumes the lean plugin contract surface to serve plugin-contributed feature output
-        // formats from the export endpoint (issue #2856, ADR-0067) — the same allowance protocol
+        // formats from the export endpoint (ADR-0067) — the same allowance protocol
         // assemblies have for IPluginEditPipeline. It must NOT couple to the host-side runtime
         // (ModuleRole.Plugins), which only Server composes.
         (ModuleRole.Io, ModuleRole.PluginsAbstractions),
@@ -257,7 +257,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Import, ModuleRole.Hosting),
         (ModuleRole.Import, ModuleRole.ServiceDefaults),
 
-        // Plugin/extension SDK (#347, ADR-0024), split into two roles so protocol assemblies can
+        // Plugin/extension SDK (ADR-0024), split into two roles so protocol assemblies can
         // depend on the lean public contract surface (PluginsAbstractions = Honua.Plugins.Abstractions,
         // which depends on Abstractions only) WITHOUT coupling to the host-side plugin runtime
         // (Plugins = Honua.Plugins, which depends on Core for the license gate + audit sink and on

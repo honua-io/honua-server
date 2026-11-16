@@ -124,10 +124,9 @@ public class PostgresSqlFilterTranslatorTests
     {
         // Normalisation only resolves properties that appear in comparison-to-literal position,
         // so for an IS NULL (and every other non-comparison shape) translation is the first place
-        // an undeclared property is detected at all. Throwing the plain base type made
+        // an undeclared property is detected at all. Throwing the plain base type would make
         // FilterExpressionService report an untyped failure, and a multi-collection STAC search
-        // answered 400 instead of skipping the collection that lacks the field
-        // (review finding on honua-server#3489).
+        // would answer 400 instead of skipping the collection that lacks the field.
         var isNull = new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("collection_specific_field"));
 
         var translate = () => _translator.Translate(isNull, _resource);
@@ -496,9 +495,9 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_SpatialDistance_ContextNotGeographicSweref99_KeepsPlanarFallback()
     {
-        // #2732 fallback delta: the narrow geodesic-safe bucket drops SWEREF99 (4619) that the old
-        // 6-code Postgres fallback carried. Without an explicit IsGeographic flag, 4619 now stays on
-        // the planar path; the primary spatial_ref_sys-derived flag still classifies it correctly.
+        // The narrow geodesic-safe bucket excludes SWEREF99 (4619). Without an explicit IsGeographic
+        // flag, 4619 stays on the planar path; the primary spatial_ref_sys-derived flag still
+        // classifies it correctly.
         var resource = CreateResource(new MetadataV2SpatialReference
         {
             Srid = 4619,
@@ -970,12 +969,11 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_ComparisonOnUpdatedSystemAlias_MapsToUpdatedAtColumn()
     {
-        // Regression: the OData $deltatoken "changed since" predicate
-        // targets the reserved audit-trail system alias "updated", which must
-        // resolve to the bare physical "updated_at" column on managed feature
-        // tables. #1415 mapped the alias to a bare "updated" column that does not
-        // exist (migration 001 defines created_at/updated_at), dropping the delta
-        // filter; this ensures the delta predicate applies again.
+        // The OData $deltatoken "changed since" predicate targets the reserved
+        // audit-trail system alias "updated", which must resolve to the bare
+        // physical "updated_at" column on managed feature tables. Mapping the alias
+        // to a bare "updated" column, which does not exist (migration 001 defines
+        // created_at/updated_at), drops the delta filter.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
 
         var predicate = new BinaryExpression(
@@ -1012,7 +1010,7 @@ public class PostgresSqlFilterTranslatorTests
     {
         // Guard: if the resource explicitly declares a queryable named "updated",
         // it is resolved through the schema as a JSONB attribute (not the system
-        // column), preserving the #1415 schema-resolution contract.
+        // column), preserving the schema-resolution contract.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
         var resource = CreateResource() with
         {

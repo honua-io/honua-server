@@ -175,9 +175,9 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
     public async Task ReadOnlyScopedKey_CannotPerformMutatingAdminOperations()
     {
-        // #1985 regression: before scoped enforcement an admin:read key was stamped
-        // Role=admin and silently passed every admin endpoint, including mutating
-        // ones. It must now be Forbidden (403) from creating, rotating, or revoking.
+        // An admin:read key must not be stamped Role=admin and silently pass every
+        // admin endpoint, including mutating ones. It must be Forbidden (403) from
+        // creating, rotating, or revoking.
         var created = await CreateApiKeyAsync("scoped-read-key-mutation", permissions: ["admin:read"]);
         var victim = await CreateApiKeyAsync("scoped-read-key-victim", permissions: ["admin:read"]);
         using var readKeyClient = CreateApiKeyClient(created.Key);

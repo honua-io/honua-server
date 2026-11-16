@@ -199,9 +199,9 @@ public class PMTilesDirectoryTests
 
         entries.Should().HaveCount(3);
 
-        // This used to look up the expected tile by payload LENGTH, so a writer
-        // that stored every tile at the wrong coordinate passed as long as the lengths were
-        // distinct. Match on the Hilbert tile id derived from z/x/y instead.
+        // Look up the expected tile by the Hilbert tile id derived from z/x/y, not by payload
+        // length: a writer that stored every tile at the wrong coordinate would pass a length
+        // lookup as long as the lengths were distinct.
         var expectedByTileId = new Dictionary<ulong, byte[]>
         {
             [HilbertCurve.XYZToTileId(0, 0, 0)] = tile0,

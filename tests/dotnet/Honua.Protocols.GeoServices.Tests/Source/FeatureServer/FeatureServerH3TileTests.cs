@@ -83,9 +83,8 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /tiles/{layerId}/h3/{z}/{x}/{y}.mvt")]
     public async Task H3Tile_NonExistentLayer_ReturnsRealNotFound()
     {
-        // Regression test for honua-server#2945: /tiles is not an Esri protocol surface,
-        // so layer-not-found must be a real HTTP 404 + problem+json, not the GeoServices
-        // 200-envelope.
+        // /tiles is not an Esri protocol surface, so layer-not-found must be a real HTTP
+        // 404 + problem+json, not the GeoServices 200-envelope.
         var response = await _fixture.Client.GetAsync("/tiles/999999/h3/5/16/11.mvt");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

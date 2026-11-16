@@ -188,11 +188,10 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
                 operations.Count(row => RequiredString(row, "entryPoint") == entryPoint));
         }
 
-        // The exact-ten-element literal range this replaced could
-        // never shrink even after #3848/#3850/#3851 closed — removing a resolved gap
-        // from the manifest failed the test instead of passing it. The manifest now
-        // owns membership; the guard only enforces the reference shape, so shared-gap
-        // closure is reconciled by editing this list, not by fighting the test.
+        // The manifest owns membership; the guard only enforces the reference shape,
+        // so shared-gap closure is reconciled by editing this list, not by fighting
+        // the test. An exact-length literal range could never shrink: removing a
+        // resolved gap from the manifest would fail the test instead of passing it.
         var sharedRuntimeGaps = root.GetProperty("sharedRuntimeGaps")
             .EnumerateArray()
             .Select(item => item.GetString())

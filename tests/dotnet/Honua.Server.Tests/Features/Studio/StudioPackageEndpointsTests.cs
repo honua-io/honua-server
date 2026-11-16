@@ -464,7 +464,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
     public async Task EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant()
     {
-        // honua-server#3001 role-fixture matrix: two genuinely non-admin principals (scoped
+        // Role-fixture matrix: two genuinely non-admin principals (scoped
         // admin API keys carrying neither a full-admin nor a layer-scoped write: grant --
         // see ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult -- authenticate
         // as role "scoped-api-key", never "admin") against a host with
@@ -559,7 +559,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
     public async Task GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler()
     {
-        // The end-user flag no longer hard-blocks non-admins at the route
+        // The end-user flag does not hard-block non-admins at the route
         // policy; instead each generate handler denies a grant-less non-admin at the elevated
         // authorization gate, before the request body is parsed or any draft is created.
         // Without a StudioDraft Execute operator grant the outcome stays 403.
@@ -653,7 +653,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // Same non-admin scoped-key principal as the flag-on matrix above, but against the
         // class fixture, which never sets Studio:EndUserAuthorization:Enabled (default false)
         // -- NFR-001: a non-admin caller is denied regardless of ownership, matching the
-        // pre-#3001 admin-only posture exactly.
+        // admin-only posture exactly.
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var scopedKey = await apiKeyStore.CreateAsync("carol", ["studio:enduser"], null, null, CancellationToken.None);
         using var scopedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
@@ -687,7 +687,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items")]
     public async Task ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything()
     {
-        // PR #3018 review, item 3: once end-user mode is on, ResolveEffectiveOwnerFilter scopes
+        // Once end-user mode is on, ResolveEffectiveOwnerFilter scopes
         // a non-admin caller's list request to their own resolved id. If ResolveCallerId cannot
         // resolve any id at all (for example a principal missing NameIdentifier/sub/api-key/name
         // claims -- not reachable via any api-key-authenticated request in this codebase today,
@@ -732,9 +732,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items")]
     public async Task ListContentItems_FlagOn_ResponseIncludesOwnerId()
     {
-        // PR #3018 review, item 4: StudioContentItemListRow.OwnerId was never populated by
-        // ToListRow, so GET /studio/content-items never returned the documented field even
-        // though the query already scopes by owner. Assert it is actually present in the
+        // StudioContentItemListRow.OwnerId must be populated by
+        // ToListRow so GET /studio/content-items returns the documented field.
+        // The query scopes by owner; assert the field is present in the
         // response.
         await using var endUserFixture = await CreateEndUserFixtureAsync();
         var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
@@ -896,7 +896,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_FlagOn_NonOwnerCanExportOnlyThePublishedVersion()
     {
-        // PR #3018 review, decision (documented in
+        // Authorization decision (documented in
         // docs/internal/admin-api/studio-package-lifecycle.md#authorization): a non-owner may
         // export a Studio content item's *published* version -- deliverable export mirrors the
         // read-visibility boundary above -- but never "latest" (which resolves by highest
@@ -994,7 +994,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
     public async Task PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner()
     {
-        // PR #3018 review, round 5, item 1 (P1): studio_content_items.owner_id is immutable, but
+        // The studio_content_items.owner_id column is immutable, but
         // a version's OwnerId only snapshots who created *that* version (for example an
         // admin-assisted draft created under an existing item on a different principal's
         // behalf) and can diverge from the item's recorded owner. Publish-request moves the
@@ -1020,7 +1020,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         // OperatorAuthorizationEvaluator resolves its grant-lookup subject through the same
         // chain as StudioAuthorizationService.ResolveCallerId (NameIdentifier -> sub ->
-        // api_key_id -> api_key_name; PR #3024 review), so each API-key principal's grants are
+        // api_key_id -> api_key_name), so each API-key principal's grants are
         // provisioned under its own api_key_id -- the same id it owns content under. Both
         // callers hold a real "own" grant, exactly as two OIDC principals each independently
         // would: Bob's denial below rests entirely on the item-vs-version ownership boundary
@@ -1054,7 +1054,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task Rollback_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner()
     {
-        // PR #3018 review, round 5, item 1 (P1): same rationale as
+        // Same rationale as
         // PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner -- rollback moves the
         // item's current/published pointer, so it must authorize against the item's owner, not
         // the target version's OwnerId.
@@ -1102,7 +1102,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions")]
     public async Task ListVersions_FlagOn_FiltersEachVersionByItsOwner()
     {
-        // PR #3018 review, round 6, item 1: content-item ownership cannot authorize the
+        // Content-item ownership cannot authorize the
         // complete immutable history when individual versions under that item have different
         // owners. Each returned version must satisfy the same owner-or-published rule as the
         // single-version endpoint.
@@ -1137,7 +1137,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/version-comparisons")]
     public async Task CompareVersions_FlagOn_BothSidesAuthorizedIndividually()
     {
-        // PR #3018 review, round 5, item 2 (P2): only the left version was authorized, so a
+        // Both versions must be authorized, otherwise a
         // caller owning leftVersionId could pass another principal's unpublished version as
         // rightVersionId and read it via the comparison output. Both requested versions must be
         // individually authorized.
@@ -1379,7 +1379,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/package-drafts")]
     public async Task CreateDraft_WithNullCollections_Returns201WithEmptyCollections()
     {
-        // Regression: honua-server#2351 — an explicit JSON null for bindings/dependencies/
+        // An explicit JSON null for bindings/dependencies/
         // provenance must be treated like an omitted (empty) collection: a clean 201 with
         // empty collections and no spurious ArgumentNullException logged on the success path.
         const string requestJson = """
@@ -1576,7 +1576,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
     public async Task GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant()
     {
-        // PR #3018 review, round 7 (P1): the group-level end-user widening must not implicitly
+        // The group-level end-user widening must not implicitly
         // open the package draft-creation endpoints to every authenticated principal -- draft
         // creation is an elevated operation requiring a StudioDraft Execute grant for non-admins.
         // An empty JSON body is sufficient on both sides of the boundary: the authorization
@@ -1605,7 +1605,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         // With the self-service "own"-sentinel Execute grant, provisioned under Alice's real
         // api_key_id-resolved subject id (the evaluator mirrors
-        // StudioAuthorizationService.ResolveCallerId; PR #3024 review): past the gate, into
+        // StudioAuthorizationService.ResolveCallerId): past the gate, into
         // prompt validation.
         roleStore.Grant(
             aliceKey.Record.Id.ToString("D"),
@@ -1613,9 +1613,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var allowedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
         allowedMap.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Per-key isolation (PR #3024 review, P1): Alice's Execute grant must not authorize
-        // Bob's key -- previously every API-key principal resolved to the same empty subject
-        // id, so any one key's grant opened generation to all of them.
+        // Per-key isolation: Alice's Execute grant must not authorize
+        // Bob's key. Each API-key principal must resolve to a distinct subject id so
+        // one key's grant cannot open generation to all of them.
         var bobDenied = await bobClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
         bobDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var bobProblem = JsonSerializer.Deserialize<JsonElement>(await bobDenied.Content.ReadAsStringAsync());

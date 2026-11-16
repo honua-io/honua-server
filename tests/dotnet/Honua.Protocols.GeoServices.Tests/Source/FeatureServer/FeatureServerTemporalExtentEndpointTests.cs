@@ -227,12 +227,12 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
     public async Task TemporalExtent_EpochMillisStoredValues_ReturnsExtent()
     {
-        // Regression for honua-io/honua-server#1910 symptom 2: a time field whose JSONB
-        // value is stored as epoch-milliseconds (a JSON number, as Esri applyEdits posts
-        // it) must NOT 500 with Postgres 22008 "date/time field value out of range". The
-        // MIN/MAX temporal-extent cast has to detect numeric epoch-ms and convert via
-        // to_timestamp, mirroring the WHERE/filter path. Insert a row whose `timestamp`
-        // attribute is a raw epoch-ms number alongside the ISO-string seed rows.
+        // A time field whose JSONB value is stored as epoch-milliseconds (a JSON number,
+        // as Esri applyEdits posts it) must NOT 500 with Postgres 22008 "date/time field
+        // value out of range". The MIN/MAX temporal-extent cast has to detect numeric
+        // epoch-ms and convert via to_timestamp, mirroring the WHERE/filter path. Insert
+        // a row whose `timestamp` attribute is a raw epoch-ms number alongside the
+        // ISO-string seed rows.
         await ConfigureLayerAsTimeAwareAsync();
 
         var epochMs = new DateTimeOffset(2023, 1, 2, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();

@@ -930,7 +930,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // The cap is set equal to the page size, so it is reached exactly when a page ends and
         // no row is visibly dropped inside the page. That branch used to exit without clearing
         // 'complete', so snapshot-end advertised an authoritative baseline while ids beyond the
-        // first page were never read — a client would discard valid features outside it (#3038
+        // first page were never read — a client would discard valid features outside it (invalid initial envelope
         // review). Any truncation must report complete=false.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
@@ -1011,7 +1011,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // ── #3181 REQ-001: every advertised layer is actually snapshot-servable ─────
+    // ── REQ-001: every advertised layer is actually snapshot-servable ─────
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
@@ -1085,7 +1085,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
     }
 
-    // ── #3181 REQ-001: the baseline is bounded by payload size, not only count ──
+    // ── REQ-001: the baseline is bounded by payload size, not only count ──
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
@@ -1251,7 +1251,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
     }
 
-    // ── #3181 REQ-002: an unservable snapshot is a typed problem, never a 500 ───
+    // ── REQ-002: an unservable snapshot is a typed problem, never a 500 ───
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]

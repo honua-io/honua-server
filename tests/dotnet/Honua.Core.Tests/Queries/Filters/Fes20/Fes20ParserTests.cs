@@ -705,7 +705,7 @@ public sealed class Fes20ParserTests
     [UnitTest]
     public void ParseFilter_ThreeDimensionalPosList_HonoursTheStrideAndKeepsXy()
     {
-        // SrsDimension=3 lat/lon/h triples (0 0 5) and (0 10 5) describe the
+        // With srsDimension 3, the lat/lon/h triples (0 0 5) and (0 10 5) describe the
         // equator from lon 0 to lon 10. Reading them as pairs yields (0,0) (0,5) (5,10), a line
         // that misses the point (5, 0).
         var posList = ParseLine("""

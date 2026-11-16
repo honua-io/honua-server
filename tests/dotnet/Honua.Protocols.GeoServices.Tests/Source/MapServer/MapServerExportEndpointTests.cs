@@ -548,9 +548,9 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
     public async Task MapServer_EstimateExportTilesSize_WholeWorldHighZoom_DoesNotMaterializeFullGrid()
     {
-        // A whole-world high-zoom estimate (~6.9e10 tiles at z18) previously built the full
-        // coordinate grid before applying maxTiles, allocating hundreds of GB -> OOM. The count must
-        // be computed first and the build bounded by maxTiles, so this returns promptly with the true
+        // A whole-world high-zoom estimate (~6.9e10 tiles at z18) must not build the full coordinate
+        // grid before applying maxTiles: that allocates hundreds of GB -> OOM. The count must be
+        // computed first and the build bounded by maxTiles, so this returns promptly with the true
         // count, ExceededTransferLimit=true, and no out-of-memory.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&minZoom=0&maxZoom=18&exportExtent=-180,-85,180,85&maxTiles=1");

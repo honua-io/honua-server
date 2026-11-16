@@ -577,8 +577,8 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
     public async Task MapServer_Find_WithEmptySearchFields_ReturnsFindResults()
     {
-        // Esri clients (ArcGIS API for Python) send searchFields= empty, which is the
-        // original honua-server#1771 repro that 500'd.
+        // Esri clients (ArcGIS API for Python) send searchFields= empty, which must
+        // not 500.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=a&layers=0&searchFields=&returnGeometry=true&f=json");
 

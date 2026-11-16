@@ -88,7 +88,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
     [Endpoint("GET /tiles/{layerId}/tile.json")]
     public async Task GetTileJson_NonExistentLayer_ReturnsRealNotFoundWithProblemJson()
     {
-        // Regression test for honua-server#2945: unknown layer must be a real HTTP 404
+        // An unknown layer must be a real HTTP 404
         // with an RFC 7807 problem+json body, not a 200-wrapped GeoServices error.
         var response = await _fixture.Client.GetAsync("/tiles/999999/tile.json");
 

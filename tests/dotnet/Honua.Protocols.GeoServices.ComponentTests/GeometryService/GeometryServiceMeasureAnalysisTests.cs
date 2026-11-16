@@ -370,7 +370,7 @@ public sealed class GeometryServiceMeasureAnalysisTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
     public async Task Densify_FiveElementArc_AcceptsIssueReproduction()
     {
-        // Preserve the exact payload from #4117. Esri documents four elements for a
+        // Preserve the exact five-element payload. Esri documents four elements for a
         // center-form circle and seven for an ellipse, but clients in the probe sent a
         // fifth trailing rotation value; treating it as the circular form is compatible
         // with that probe shape while the documented seven-element ellipse stays covered.

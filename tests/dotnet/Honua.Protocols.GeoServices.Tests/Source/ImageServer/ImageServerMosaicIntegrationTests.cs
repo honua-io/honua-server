@@ -411,9 +411,9 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Export)]
     public async Task ExportImagePost_WithTime_SelectsTemporalSliceAndAgreesWithGet()
     {
-        // Regression for #2364: CreateExportImageRequest (the POST body/query merge builder)
-        // did not map the `time` parameter, so POST exportImage silently ignored it and always
-        // returned the default (newest) mosaic — diverging from the GET path, which binds time.
+        // CreateExportImageRequest (the POST body/query merge builder) must map the `time`
+        // parameter; otherwise POST exportImage silently ignores it and always returns the
+        // default (newest) mosaic — diverging from the GET path, which binds time.
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
         try
         {

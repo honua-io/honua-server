@@ -166,10 +166,10 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         AssertCubeValuesDerivedFromDomain(doc.RootElement, band: 3, "band_3");
     }
 
-    // An unknown parameter-name previously fell back to band_1, returning a different
-    // physical quantity than the client asked for. OGC API - EDR /req/edr/parameter-name-response
-    // requires the value to come from the collection's enumerated parameter list and that only
-    // the listed parameters be returned, so an unknown name is an invalid query-parameter value.
+    // An unknown parameter-name must not fall back to band_1, which is a different physical
+    // quantity than the client asked for. OGC API - EDR /req/edr/parameter-name-response requires
+    // the value to come from the collection's enumerated parameter list and that only the listed
+    // parameters be returned, so an unknown name is an invalid query-parameter value.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /edr/collections/{collectionId}/position")]
@@ -318,7 +318,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_UtmRaster_AdvertisesCrs84ExtentAndAcceptsLonLatPosition()
     {
-        // #4149 for a CRS the in-memory transformer does not cover: a UTM zone 10N (EPSG:32610)
+        // A CRS the in-memory transformer does not cover: a UTM zone 10N (EPSG:32610)
         // raster around San Francisco reprojects through the coordinate transform service.
         UsePrimaryRaster(CreateRasterInfo() with
         {
@@ -389,7 +389,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/cube")]
     public async Task Edr_PositionAndCube_CrsOutsideCollectionCrs_Returns400WithoutSampling()
     {
-        // The collection advertises crs=[CRS84]. EPSG:3857 metres were previously read as
+        // The collection advertises crs=[CRS84]. EPSG:3857 metres must not be read as
         // CRS84 degrees; they must be rejected before any pixel is sampled.
         var position = await _fixture.Client.GetAsync(
             $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-13625000 4550000)&crs=EPSG:3857");

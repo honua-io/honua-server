@@ -392,7 +392,7 @@ public sealed class QueryConcurrencyGateTests
     }
 
     // ------------------------------------------------------------------
-    // Runtime-tunable admission seam (IRuntimeTunableAdmissionGate, #2561)
+    // Runtime-tunable admission seam (IRuntimeTunableAdmissionGate)
     // ------------------------------------------------------------------
 
     [UnitTest]
@@ -455,7 +455,7 @@ public sealed class QueryConcurrencyGateTests
     }
 
     // ------------------------------------------------------------------
-    // Admission pressure signal (DatabaseAdmissionPressure, #2805)
+    // Admission pressure signal (DatabaseAdmissionPressure)
     // ------------------------------------------------------------------
 
     [UnitTest]

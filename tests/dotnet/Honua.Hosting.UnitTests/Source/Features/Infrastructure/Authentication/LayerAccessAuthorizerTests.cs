@@ -256,7 +256,7 @@ public sealed class LayerAccessAuthorizerTests
     {
         // Documented behaviour: a never-published storage resource has no service policy to
         // apply, so it is evaluated against its own (here absent) policy only and any
-        // authenticated principal is admitted, exactly as before honua-server#6102.
+        // authenticated principal is admitted.
         var graph = BuildPublishedGraph(
             serviceLifecycle: MetadataV2LifecycleStatus.Active,
             publicationLifecycle: MetadataV2LifecycleStatus.Active,

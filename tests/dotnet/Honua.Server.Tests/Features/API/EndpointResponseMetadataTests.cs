@@ -165,7 +165,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
             .Select(process => $"{process.ProcessId}:{string.Join(',', process.OutputArtifactKinds)}")
             .Should().Equal(
             [
-                // conversion.geometry-format became an executable sync/async job in #3936;
+                // conversion.geometry-format is an executable sync/async job;
                 // it publishes a Scalar GeometryFormatResult document, so it joins the
                 // reachable raw-output set without adding a new media type.
                 "conversion.geometry-format:Scalar",

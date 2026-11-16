@@ -404,7 +404,7 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
 
     private async Task EnsureImportFunctionsAsync()
     {
-        // honua-server#1568 (signature 2): this creates the literal, process-global honua schema
+        // This creates the literal, process-global honua schema
         // and import functions (search_path isolation does not scope them), so apply it under the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
         // deadlock path racing locks on the same global schema/pg_proc objects.

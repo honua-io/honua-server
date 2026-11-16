@@ -115,9 +115,9 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
     public async Task QueryDateBins_MonthCalendarBin_ReturnsExactBucketCounts()
     {
-        // Regression for honua-server#2945: previous proving tests only checked that
-        // "features" is a JSON array, never that the bucket counts reflect the seeded
-        // timestamps. tests/seed/server.yaml layer 0 has 5 features with `timestamp`:
+        // A check that "features" is a JSON array is not enough: the bucket counts must
+        // reflect the seeded timestamps.
+        // tests/seed/server.yaml layer 0 has 5 features with `timestamp`:
         //   2022-12-31T23:00:00Z (objectid 4)             -> 2022-12 bucket
         //   2023-01-02T00:00:00Z, 2023-01-05T12:00:00Z,
         //   2023-01-20T00:00:00Z (objectids 1, 2, 5)       -> 2023-01 bucket (count 3)
