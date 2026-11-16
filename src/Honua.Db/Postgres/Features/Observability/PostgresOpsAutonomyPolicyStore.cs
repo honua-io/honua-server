@@ -11,10 +11,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Observability;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IOpsAutonomyPolicyStore"/> backed by
-/// <c>honua.ops_autonomy_*</c> tables.
-/// </summary>
 internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
 {
     private const string SettingsId = "global";

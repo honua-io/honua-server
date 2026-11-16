@@ -3,11 +3,6 @@
 
 namespace Honua.Scene.Grpc;
 
-/// <summary>
-/// Telemetry constants for the scene/tile/elevation gRPC adapters. The tag and
-/// operation names mirror the HTTP scene and elevation surfaces so traces stay
-/// consistent across protocols (per the cross-cutting telemetry convention).
-/// </summary>
 internal static class SceneGrpcTelemetry
 {
     public const string SceneIdTag = "honua.scene.id";

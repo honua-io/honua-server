@@ -9,9 +9,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Queries.Filters.Cql2;
 
-/// <summary>
-/// Recursive descent parser for CQL2-Text expressions
-/// </summary>
 public sealed class Cql2Parser
 {
     private IReadOnlyList<Cql2Token> _tokens = [];
@@ -19,12 +16,6 @@ public sealed class Cql2Parser
     private int _expressionDepth;
     private string _input = string.Empty;
 
-    /// <summary>
-    /// Parses a CQL2-Text expression into a FilterExpression AST
-    /// </summary>
-    /// <param name="cql2Text">CQL2-Text expression</param>
-    /// <returns>Filter expression AST</returns>
-    /// <exception cref="ArgumentException">Thrown when parsing fails</exception>
     public FilterExpression Parse(string cql2Text)
     {
         if (string.IsNullOrWhiteSpace(cql2Text))

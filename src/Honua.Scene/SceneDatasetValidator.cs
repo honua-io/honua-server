@@ -7,43 +7,16 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene;
 
-/// <summary>
-/// Pure shape/syntax validators for scene dataset registration inputs.
-/// </summary>
-/// <remarks>
-/// Validators are intentionally I/O-free so they can run inside admin
-/// endpoint handlers without taking on filesystem, network, or database
-/// dependencies. Containment of the asset root against a serving directory
-/// is enforced separately by the hosted-serving path's
-/// <c>SceneAssetResolver</c>.
-/// </remarks>
 public static partial class SceneDatasetValidator
 {
-    /// <summary>
-    /// Maximum allowed length for a scene id slug.
-    /// </summary>
     public const int MaxSceneIdLength = 64;
 
-    /// <summary>
-    /// Maximum allowed length for a scene display name.
-    /// </summary>
     public const int MaxSceneNameLength = 128;
 
-    /// <summary>
-    /// Maximum allowed length for the tileset filename (matches the Postgres
-    /// <c>tileset_file_name VARCHAR(64)</c> column).
-    /// </summary>
     public const int MaxTilesetFileNameLength = 64;
 
-    /// <summary>
-    /// Maximum allowed length for a CRS authority token (matches the Postgres
-    /// <c>crs VARCHAR(32)</c> column).
-    /// </summary>
     public const int MaxCrsLength = 32;
 
-    /// <summary>
-    /// Maximum allowed cache <c>max-age</c>, in seconds (24 hours).
-    /// </summary>
     public const int MaxCacheMaxAgeSeconds = 86_400;
 
     [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$", RegexOptions.CultureInvariant)]
@@ -55,9 +28,6 @@ public static partial class SceneDatasetValidator
     [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", RegexOptions.CultureInvariant)]
     private static partial Regex EditionGatePattern();
 
-    /// <summary>
-    /// Validates the scene id slug format.
-    /// </summary>
     public static bool TryValidateSceneId(string? id, [NotNullWhen(false)] out string? error)
     {
         if (string.IsNullOrWhiteSpace(id))
@@ -82,9 +52,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the scene display name length and content.
-    /// </summary>
     public static bool TryValidateName(string? name, [NotNullWhen(false)] out string? error)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -103,11 +70,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the asset root path shape. Rejects URI schemes, relative
-    /// traversal, backslashes, and shell metacharacters that have no place
-    /// in a server-side filesystem path.
-    /// </summary>
     public static bool TryValidateAssetRoot(string? assetRoot, [NotNullWhen(false)] out string? error)
     {
         if (string.IsNullOrWhiteSpace(assetRoot))
@@ -146,12 +108,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the tileset filename. Must be a non-empty relative filename
-    /// (no path separators, traversal segments, or shell metacharacters), and
-    /// must fit the underlying database column length. A null or whitespace
-    /// value is accepted and treated as "use the default" by callers.
-    /// </summary>
     public static bool TryValidateTilesetFileName(string? tilesetFileName, [NotNullWhen(false)] out string? error)
     {
         if (string.IsNullOrWhiteSpace(tilesetFileName))
@@ -189,9 +145,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the optional CRS authority token format.
-    /// </summary>
     public static bool TryValidateCrs(string? crs, [NotNullWhen(false)] out string? error)
     {
         if (crs is null)
@@ -222,9 +175,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the cache policy bounds.
-    /// </summary>
     public static bool TryValidateCachePolicy(SceneCachePolicy policy, [NotNullWhen(false)] out string? error)
     {
         ArgumentNullException.ThrowIfNull(policy);
@@ -239,9 +189,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the optional edition gate slug format.
-    /// </summary>
     public static bool TryValidateEditionGate(string? editionGate, [NotNullWhen(false)] out string? error)
     {
         if (editionGate is null)
@@ -260,9 +207,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Validates the WGS-84 extent bounds and ordering.
-    /// </summary>
     public static bool TryValidateExtent(SceneExtent? extent, [NotNullWhen(false)] out string? error)
     {
         if (extent is null)
@@ -293,14 +237,6 @@ public static partial class SceneDatasetValidator
         return true;
     }
 
-    /// <summary>
-    /// Cross-field check: a record must declare its access posture
-    /// unambiguously. Exactly one of <paramref name="isPublic"/> /
-    /// <paramref name="requiresAuth"/> must be <c>true</c>; both-true is a
-    /// direct contradiction, and both-false would leave the record's
-    /// admin-visible auth flag inconsistent with serving (the registry
-    /// projects any non-public record to a protected access policy).
-    /// </summary>
     public static bool TryValidateAccessFlags(bool isPublic, bool requiresAuth, [NotNullWhen(false)] out string? error)
     {
         if (isPublic && requiresAuth)

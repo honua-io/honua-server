@@ -8,47 +8,24 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the catalog
-/// <c>conversion.raster-format</c> process (#2138). Exports a source raster into
-/// another raster format (GTiff — also spelled GeoTIFF/TIFF/TIF — PNG, JPEG —
-/// also spelled JPG — and COG) via the real GDAL
-/// <c>gdal_translate -of &lt;driver&gt;</c> CLI, replacing the previous
-/// validation-only catalog stub. Reads a base64 GeoTIFF source, runs the
-/// translation in an isolated scratch workspace, and publishes the converted
-/// raster as a canonical data-URI artifact with the target format's content type.
-/// GDAL execution failures surface as proper GP job failures with sanitized
-/// messages rather than validation passes. Runs only inside the GDAL worker image
-/// — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
-/// A target driver disabled by <c>GdalWorker:Hardening:SkipDrivers</c> is rejected
-/// at admission (#3307) rather than failing later inside GDAL.
-/// </summary>
 internal sealed partial class GdalRasterFormatConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterFormatConvertJobExecutor> logger,
     IOptions<GdalHardeningOptions>? hardening = null) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "conversion.raster-format";
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it.
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

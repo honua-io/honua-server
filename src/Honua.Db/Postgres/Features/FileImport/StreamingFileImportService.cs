@@ -26,11 +26,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-/// <summary>
-/// Memory-efficient streaming file import service.
-/// Processes features incrementally using IAsyncEnumerable and batched database insertion
-/// to maintain constant memory usage regardless of file size.
-/// </summary>
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
     // PA-161: the batch-insert hot path (InsertBatchAsync, StreamingFileImportService.Batch.cs)
@@ -117,20 +112,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
     }
 
-    /// <summary>
-    /// Resolves the Esri-default datum-transformation PROJ pipeline for the
-    /// <paramref name="sourceSrid"/> -&gt; <paramref name="targetSrid"/> import reprojection,
-    /// so the import path honors the same auditable geotransformation the query path uses
-    /// (#1501). Returns <see langword="null"/> when no transform is needed (equal SRIDs),
-    /// no catalog is wired, or the catalog has no curated default for the pair — in every
-    /// such case the import keeps PROJ's default (2-argument <c>ST_Transform</c>) behavior.
-    /// </summary>
-    /// <remarks>
-    /// Reverse selections are oriented with <see cref="ProjPipelineInverter"/> before they
-    /// are bound. <c>honua.insert_import_feature</c> executes a non-empty pipeline with
-    /// <c>ST_TransformPipeline</c>. An exact <c>+proj=noop</c> selection is returned as-is;
-    /// the function rewrites that to <c>ST_SetSRID</c> so every ordinate is kept.
-    /// </remarks>
     private string? ResolveImportDatumPipeline(
         int sourceSrid,
         int targetSrid,
@@ -204,20 +185,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             : new DatumAreaEnvelope(west.Value, south.Value, east.Value, north.Value);
     }
 
-    /// <inheritdoc/>
     public ImportLimits Limits => _limits;
 
-    /// <inheritdoc/>
     public SupportedFileFormat? DetectFormat(string fileName) => _formatDetectionService.DetectFormat(fileName);
 
-    /// <inheritdoc/>
     public string[] GetSupportedExtensions() => _formatDetectionService.GetSupportedExtensions();
 
-    /// <inheritdoc/>
     public Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default)
         => ImportFileAsync(request, null, cancellationToken);
 
-    /// <inheritdoc/>
     public async Task<ImportResult> ImportFileAsync(
         ImportRequest request,
         IProgress<ImportProgress>? progress,

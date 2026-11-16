@@ -1336,7 +1336,7 @@ jobs:
           digest="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
             --tag "ghcr.io/honua-io/honua-server:nightly-compose-executor-${CANDIDATE_SHA:0:7}")"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      - name: Build and publish executor from the serving candidate digest
+      - name: Build executor candidate by digest from the serving candidate digest
         if: steps.existing_executor.outputs.digest == ''
         id: executor_build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -1345,10 +1345,7 @@ jobs:
           file: docker/Dockerfile.compose-executor
           build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-jit.outputs.image }}
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/honua-io/honua-server:nightly-compose-executor-${{ needs.select-candidate.outputs.sha7 }}
-            ghcr.io/honua-io/honua-server:nightly-compose-executor
+          outputs: type=image,name=ghcr.io/honua-io/honua-server,push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.title=Honua Compose executor
@@ -1361,6 +1358,36 @@ jobs:
           EXISTING_DIGEST: ${{ steps.existing_executor.outputs.digest }}
           BUILT_DIGEST: ${{ steps.executor_build.outputs.digest }}
         run: echo "digest=${EXISTING_DIGEST:-$BUILT_DIGEST}" >> "$GITHUB_OUTPUT"
+      # The customer quickstart pins this executor, so it gets the release gate the serving
+      # images get: no tag and no quickstart until its digest has no HIGH/CRITICAL finding
+      # with an upstream fix (see scripts/ci/trivy-release-gate.sh). The scan reads the
+      # runner's platform (linux/amd64); both platforms copy the same docker and compose
+      # release. An executor published before this gate is scanned again when its candidate
+      # is rerun. A failure holds the nightly candidate until the CLI pin is bumped or an
+      # exception is recorded in .trivyignore-release.
+      - name: Gate executor on fixable HIGH/CRITICAL vulnerabilities
+        env:
+          CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
+          TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
+      - name: Publish executor tags from the scanned digest
+        if: steps.existing_executor.outputs.digest == ''
+        env:
+          CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
+          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          SHA7: ${{ needs.select-candidate.outputs.sha7 }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' \
+            "ghcr.io/honua-io/honua-server:nightly-compose-executor-${SHA7}" \
+            "ghcr.io/honua-io/honua-server:nightly-compose-executor" \
+            | python3 scripts/ci/promote-verified-image.py \
+              --candidate "$CANDIDATE" \
+              --staging-tag "candidate-compose-executor-${CANDIDATE_SHA}" \
+              --authfile "$HOME/.docker/config.json"
       - name: Attest executor index
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

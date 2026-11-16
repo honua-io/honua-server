@@ -287,12 +287,6 @@ internal sealed partial class StreamingFileImportService
         return imported;
     }
 
-    /// <summary>
-    /// Keyed-upsert fast path: merge a whole batch through a single
-    /// <c>honua.bulk_upsert_import_features</c> call (unnest + <c>ON CONFLICT DO UPDATE</c>)
-    /// so colliding rows update in place and the rest insert, without dropping the target.
-    /// Returns the number of rows processed by the merge.
-    /// </summary>
     private static async Task<int> UpsertBatchFastAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -434,9 +428,6 @@ internal sealed partial class StreamingFileImportService
         return (imported, failed);
     }
 
-    /// <summary>
-    /// Build a JSON string of feature properties for import.
-    /// </summary>
     private static string BuildPropertiesJson(IFeature feature)
     {
         if (feature.Attributes is null)
@@ -460,17 +451,6 @@ internal sealed partial class StreamingFileImportService
         return JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
     }
 
-    /// <summary>
-    /// Create WKB for a feature geometry, enforcing configured validation limits and the
-    /// shared import validity gate (<c>ImportLimits.GeometryValidityMode</c>). This is
-    /// the single choke point every import reader (GeoJSON, shapefile, GeoPackage, CSV-WKT,
-    /// FlatGeobuf, GDAL, …) flows through, so applying the gate here guarantees consistent
-    /// repair/strict/accept behavior instead of a per-reader patchwork (#2743). Repairs and
-    /// skips are recorded in <paramref name="repairTally"/> for the import report.
-    /// A <see cref="WkbGateResult.Skipped"/> result means the feature must be excluded from
-    /// the insert entirely; a null <see cref="WkbGateResult.Wkb"/> without the skip flag is a
-    /// legitimate null-geometry row whose properties still import.
-    /// </summary>
     private WkbGateResult CreateWkb(
         IFeature feature,
         WKBWriter wkbWriter,
@@ -669,17 +649,6 @@ internal sealed partial class StreamingFileImportService
         return new WkbGateResult(wkb, false);
     }
 
-    /// <summary>
-    /// Picks the WKB writer dimensionality from the actual source geometry so XYZ,
-    /// XYM, and XYZM features round-trip their Z/M ordinates instead of being
-    /// silently flattened (#1981). 2-D geometries reuse the shared plain writer:
-    /// forcing emitZ/emitM on plain XY coordinates changes their dimensionality
-    /// and can violate a destination typmod. Missing samples within an actual
-    /// Z/M geometry use NaN, which PostGIS retains through WKB round trips.
-    /// Each higher-dimension
-    /// writer is allocated per call because <see cref="WKBWriter"/> is not
-    /// thread-safe and is shared across concurrent batch workers.
-    /// </summary>
     private static WKBWriter SelectWkbWriter(
         NetTopologySuite.Geometries.Geometry geometry,
         WKBWriter plainWriter,
@@ -696,29 +665,13 @@ internal sealed partial class StreamingFileImportService
         return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
     }
 
-    /// <summary>
-    /// Mutable per-import counter of geometries repaired by the shared validity gate.
-    /// Accumulated across all batches of a single import (streaming is sequential within an
-    /// import) and surfaced in the import report / progress so repair is never silent.
-    /// </summary>
     private sealed class GeometryRepairTally
     {
         public int Repaired { get; set; }
 
-        /// <summary>
-        /// Features excluded from the insert entirely because the geometry gate rejected their
-        /// geometry while <c>ImportLimits.SkipInvalidGeometry</c> was enabled (invalid
-        /// topology under Strict, failed/empty repair, or an exceeded size limit).
-        /// </summary>
         public int SkippedInvalid { get; set; }
     }
 
-    /// <summary>
-    /// Outcome of the geometry gate for one feature: the serialized WKB (null for a legitimate
-    /// null-geometry row) plus a flag telling the caller to exclude the feature from the insert.
-    /// The flag is required because a null WKB alone is indistinguishable from a null-geometry
-    /// row, which imports its properties.
-    /// </summary>
     private readonly record struct WkbGateResult(byte[]? Wkb, bool Skipped)
     {
         public static WkbGateResult Skip(GeometryRepairTally repairTally)

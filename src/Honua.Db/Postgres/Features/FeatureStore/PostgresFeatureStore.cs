@@ -26,22 +26,6 @@ using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.Ge
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
-/// <summary>
-/// PostgreSQL implementation of feature storage and retrieval using service composition
-/// </summary>
-/// <remarks>
-/// <para>This refactored implementation uses the composition pattern to separate concerns
-/// and improve maintainability. The large monolithic class has been broken down into
-/// focused services with single responsibilities.</para>
-///
-/// <para>Marked as internal to prevent exposure of database-specific implementations
-/// outside the Infrastructure layer (Clean Architecture principle).</para>
-///
-/// <para><strong>SECURITY NOTICE</strong>: WHERE clause handling has been secured using
-/// parameterized queries. The implementation parses simple WHERE expressions (e.g.,
-/// 'field = value', 'age > 18') and properly parameterizes all literal values while
-/// validating field names to prevent SQL injection attacks.</para>
-/// </remarks>
 internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
@@ -702,7 +686,6 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<FeatureEditApplication> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -721,14 +704,6 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return new SecuredWriterTransaction(this, inner);
     }
 
-    /// <summary>
-    /// Stamps the request-scoped write policy onto a batch before it reaches the provider
-    /// transaction: masked fields for precondition-preserving updates, and the caller's
-    /// row-level security predicate as the <c>WITH CHECK</c> every written row must satisfy
-    /// (honua-server#6103). Every protocol (GeoServices, OGC API Features, WFS-T, OData,
-    /// gRPC, forms, replica sync) writes through this store, so the check is enforced once
-    /// here rather than per adapter. A caller-supplied predicate is always replaced.
-    /// </summary>
     private async Task<FeatureEditBatch> PrepareEditBatchAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -753,10 +728,6 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return editBatch with { RowSecurityWriteCheck = writeCheck };
     }
 
-    /// <summary>
-    /// Cross-layer writer transaction that stamps each layer's write policy (see
-    /// <see cref="PrepareEditBatchAsync"/>) before delegating to the provider transaction.
-    /// </summary>
     private sealed class SecuredWriterTransaction(
         PostgresFeatureStoreRefactored owner,
         IFeatureWriterTransaction inner) : IFeatureWriterTransaction
@@ -879,10 +850,6 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
     #region Private Helper Methods
 
-    /// <summary>
-    /// Shared query control flow for all format-specific query methods.
-    /// Handles KNN, paginated-optimized, and unlimited query paths.
-    /// </summary>
     private async Task<QueryResult<T>> ExecuteFormatQueryAsync<T>(
         int layerId,
         FeatureQuery query,
@@ -941,13 +908,6 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return QueryResult<T>.Create(totalCount, items, hasMoreResults);
     }
 
-    /// <summary>
-    /// Computes the filtered total count for a windowed page that came back empty.
-    /// The optimized single-query path derives TotalCount from a COUNT(*) OVER()
-    /// column on returned rows, so an empty page (e.g. OData $skip beyond the last
-    /// match) would otherwise report TotalCount = 0 even though the filter matches
-    /// rows — breaking $count=true and any client paging on the total count.
-    /// </summary>
     private async Task<QueryResult<T>> CountEmptyPageAsync<T>(
         int layerId,
         FeatureQuery query,
