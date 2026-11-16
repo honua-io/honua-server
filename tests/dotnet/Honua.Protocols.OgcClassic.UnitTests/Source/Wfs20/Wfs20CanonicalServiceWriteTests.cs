@@ -94,7 +94,7 @@ public sealed class Wfs20CanonicalServiceWriteTests
         await writer.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(InsertAction)]
     [InlineData("<wfs:Update typeName=\"honua:svc-cities-layer-1\"><wfs:Property><wfs:ValueReference>name</wfs:ValueReference><wfs:Value>changed</wfs:Value></wfs:Property><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Update>")]
     [InlineData("<wfs:Delete typeName=\"honua:svc-cities-layer-1\"><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Delete>")]
