@@ -42,8 +42,9 @@ Resume the original request when supported, or read the returned proposal URI
 (`honua://proposals/{id}`). Wait for `Succeeded` or `Completed`; approval and
 running states are not completion. A publication proposal can report `Active`;
 verify its published version and audience. Stop on `Failed`, `Rejected` or `Cancelled`
-and report the outcome. Human approval does not supply missing requester
-permissions. If the installation rejects the requester's authority, report that
+and report the outcome. On `Indeterminate`, stop and report that the outcome is
+uncertain; retain the original proposal identity and do not submit the mutation
+again. Human approval does not supply missing requester permissions. If the installation rejects the requester's authority, report that
 blocker to the operator; do not switch to a more privileged credential.
 
 After completion, recover the resulting resource identities from the completed
