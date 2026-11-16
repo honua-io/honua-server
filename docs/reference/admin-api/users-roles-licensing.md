@@ -109,8 +109,16 @@ Run `GET /api/v1/admin/roles/{roleId}/permissions`, substituting `editor` or ano
 | PUT | `/api/v1/admin/oidc/providers/{id}` | Update an OIDC provider |
 | DELETE | `/api/v1/admin/oidc/providers/{id}` | Delete an OIDC provider |
 | POST | `/api/v1/admin/oidc/providers/{id}/test` | Test an OIDC provider connection |
+| GET | `/api/v1/admin/oidc/providers/{id}/revisions` | List the provider's recorded changes, newest first |
+| POST | `/api/v1/admin/oidc/providers/{id}/undo` | Undo the provider's newest change |
 
 Run `GET /api/v1/admin/oidc/providers`.
+
+### Settings history and undo
+
+OIDC providers and rate-limit policies (`/api/v1/admin/rate-limits/{id}/revisions` and `/api/v1/admin/rate-limits/{id}/undo`) keep their newest 32 changes when settings are stored in PostgreSQL. Each revision has a `revisionId`, its `change` (`baseline`, `created`, `updated` or `deleted`), the configuration `generation` it produced and when it happened. Stored values are never returned. History keeps earlier values encrypted in the database, including replaced client secrets, until 32 newer changes to the same item displace them. The history of a deleted item, its secrets included, stays in the database.
+
+To undo, send `{"expectedRevisionId": <newest revisionId>}`. The previous state is restored as a new revision with `restoredFrom` naming the undone one, so generations only increase. A later change by anyone returns `409`; read the history again. Undoing an undo re-applies the change. Settings written before history began start with a `baseline` revision, which has nothing to undo. Undo restores a deleted rate-limit policy, but not a deleted OIDC provider: create that provider again so the provider entitlement is checked. A server that keeps settings in process memory returns `409`.
 
 ## License
 
