@@ -42,6 +42,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
@@ -243,7 +245,11 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(_ => new PostgresStudioPackageStore(connectionProvider, _studioSchema));
         });
-        HumanApprovalHttpClient.Configure(replica, _identityProvider);
+        HumanApprovalHttpClient.Configure(replica, _identityProvider).ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
         await replica.InitializeAsync();
         try
         {

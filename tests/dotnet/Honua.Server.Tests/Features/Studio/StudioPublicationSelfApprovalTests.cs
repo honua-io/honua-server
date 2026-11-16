@@ -138,8 +138,8 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
         var proposalId = await ProposeAsync(proposer);
         var recorded = await GetProposalAsync(sameAdmin, proposalId);
-        recorded.GetProperty("requestedBy").GetString().Should().StartWith(
-            "subject:",
+        recorded.GetProperty("requestedBy").GetString().Should().Be(
+            $"bearer:subject:{Uri.EscapeDataString(Issuer)}:{subject}",
             "the Studio propose path records the issuer- and tenant-qualified owner key, not the raw subject");
 
         using var response = await sameAdmin.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
