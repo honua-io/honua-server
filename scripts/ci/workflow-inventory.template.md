@@ -1283,3 +1283,49 @@ duration remain unmeasured.
 A paired build-host run passed the same 22 cases with zero skips, one process each. VSTest case time was 1 minute 41 seconds before and 2 seconds after, because the one application start is now class-fixture time. Fixture-inclusive TRX duration fell from 110.869 to 24.444 seconds, saving 86.424 seconds (1.44 test-run runner-minutes). Compilation, admission and copyback are excluded.
 
 The whole Spec Printing and Static Maps 3 filter passed the same 142 cases with zero skips in both runs. VSTest reported 4 minutes 29 seconds before and 2 minutes 7 seconds after. TRX wall time fell from 281.6 to 152.9 seconds, saving 128.7 seconds (2.15 runner-minutes) per shard run.
+
+### OData endpoint read-only host lifetime
+
+`ODataEndpointTests` builds its Pro-licensed, `odata.yaml`-seeded application once
+per class through the `ReadOnlyProHost` class fixture. The read-only GET cases use
+that host's client and schema. The theory that changes the metadata graph and
+inserts a feature still builds, seeds and disposes a private Pro host per case.
+Assertions, endpoint attributes and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 47eb3bc9ba passed the same 65 cases
+with no skips. VSTest execution fell from 16m16s to 48s and the TRX interval from
+977.6 to 73.5 seconds. The build host was heavily loaded, so each private Pro host
+cost about 15 seconds there; full run 43709972683 spent 183 seconds of per-case
+fixture time in this class (2.8 seconds per case), which is the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the OData Core Endpoints shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### OData, OGC classic and STAC collection host lifetime
+
+The OData, OGC classic and STAC test assemblies serialize their database-backed
+classes in a `Database` collection that previously had no definition, so nothing
+held the reference-counted shared default host between cases. Each assembly now
+defines that collection with a collection-scoped default `WebAppFixture`, so
+default-configuration cases reuse the shared host instead of rebuilding it. The
+definition keeps default parallelization, so scheduling is unchanged. Existing
+per-case and per-class fixtures and their schemas are unchanged; classes with
+private configuration keep their hosts. The WMTS advertised-resource case now also
+clears any unconsumed graph activation, which could otherwise reach a later case.
+The collection fixture starts the shared host even when a filter selects only
+private-host classes, which costs one startup in that case.
+
+With this change on trunk 47eb3bc9ba, build-host runs of the three complete
+projects passed every case with no skips: OGC classic 592 (19m15s VSTest), STAC
+149 (5m29s) and OData 512 (36m27s). The OGC classic project without this change did not
+finish within 111 minutes of execution on the same, heavily loaded host, so no
+paired whole-project time is claimed. As an estimate from unpaired data, per-case
+fixture time in the affected default-host classes was 2.1 to 3.5 seconds in full
+run 43709972683 and 0.1 to 0.5 seconds in the build-host run, while private-host
+classes stayed near 3.4 seconds; across those 18 classes that is about 639
+seconds (10.7 runner-minutes) of fixture time per full run. Full CI job savings
+are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
