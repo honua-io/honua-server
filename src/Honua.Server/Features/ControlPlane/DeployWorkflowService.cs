@@ -443,7 +443,7 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
-                RequestedByActorId = Honua.Infrastructure.Security.CanonicalSecurityActor.Resolve(principal) is { IsAuthoritative: true } actor
+                RequestedByActorId = Honua.Infrastructure.Security.CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor
                     ? actor.ActorId : null,
                 ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
                 // The tenant binding is captured from the validated identity here,
