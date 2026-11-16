@@ -380,15 +380,14 @@ def matching_brace(masked: str, open_index: int) -> int | None:
 
 
 class Method:
-    def __init__(
-        self, path: str, name: str, types: str, line: int, body: list[str], static: bool = False
-    ) -> None:
+    static = False
+
+    def __init__(self, path: str, name: str, types: str, line: int, body: list[str]) -> None:
         self.path = path
         self.name = name
         self.types = types
         self.line = line
         self.body = body
-        self.static = static
 
     def endpoint(self, disambiguate: bool) -> str:
         suffix = f"@{self.line}" if disambiguate else ""
@@ -412,7 +411,9 @@ def extract_methods(path: str, text: str) -> tuple[list[Method], bool]:
                 is_static = signature[2]
                 if len(body) >= (STATIC_MIN_LINES if is_static else MIN_LINES):
                     line = text.count("\n", 0, index) + 1
-                    methods.append(Method(path, signature[0], signature[1], line, body, is_static))
+                    method = Method(path, signature[0], signature[1], line, body)
+                    method.static = is_static
+                    methods.append(method)
             depth += 1
         elif char == "}":
             depth -= 1
@@ -435,7 +436,9 @@ def iter_source_files(root: Path) -> list[Path]:
     return files
 
 
-def scan(root: Path, static_helpers: bool = False) -> tuple[list[str], list[str]]:
+def scan(root: Path, belongs=None) -> tuple[list[str], list[str]]:
+    """Pair the methods that belongs() keeps: is_general by default, is_static_helper for the lower threshold."""
+    belongs = belongs or is_general
     methods: list[Method] = []
     unbalanced: list[str] = []
     for path in iter_source_files(root):
@@ -445,7 +448,7 @@ def scan(root: Path, static_helpers: bool = False) -> tuple[list[str], list[str]
         if not balanced:
             unbalanced.append(relative)
             continue
-        methods.extend(method for method in found if in_tier(method, static_helpers))
+        methods.extend(method for method in found if belongs(method))
 
     by_endpoint: dict[str, list[Method]] = {}
     for method in methods:
@@ -481,9 +484,13 @@ def scan(root: Path, static_helpers: bool = False) -> tuple[list[str], list[str]
     return sorted(pairs), unbalanced
 
 
-def in_tier(method: Method, static_helpers: bool) -> bool:
-    """Short static helpers belong to the static-helper list only; longer methods to the general list only."""
-    return (len(method.body) < MIN_LINES) == static_helpers
+def is_general(method: Method) -> bool:
+    return len(method.body) >= MIN_LINES
+
+
+def is_static_helper(method: Method) -> bool:
+    """Only static methods are extracted below MIN_LINES, so a short method is a static helper."""
+    return len(method.body) < MIN_LINES
 
 
 def is_pair(left: Method, right: Method) -> bool:
@@ -493,6 +500,62 @@ def is_pair(left: Method, right: Method) -> bool:
     return left.body == right.body or difflib.SequenceMatcher(
         None, left.body, right.body, autojunk=False
     ).ratio() >= MIN_RATIO
+
+
+STATIC_HELPER_SAMPLE = '''
+namespace Demo;
+
+internal sealed class Short
+{
+    private static string Trim(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed;
+    }
+
+    private string Label(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed;
+    }
+}
+'''
+
+
+def static_helper_self_test(long_method: Method) -> str | None:
+    """Return the failure message for the static-helper tier, or None when it behaves."""
+    one, _ = extract_methods("src/C.cs", STATIC_HELPER_SAMPLE)
+    two, _ = extract_methods("src/D.cs", STATIC_HELPER_SAMPLE.replace("namespace Demo", "namespace Demo.Other"))
+    if [method.name for method in one] != ["Trim"]:
+        return f"self-test: expected only the static helper, found {[m.name for m in one]}"
+    if not is_pair(one[0], two[0]):
+        return "self-test: an exact static helper copy did not pair"
+    changed, _ = extract_methods("src/E.cs", STATIC_HELPER_SAMPLE.replace("value.Trim()", "value.TrimEnd()"))
+    if is_pair(one[0], changed[0]):
+        return "self-test: a short static helper with a different body paired"
+    if is_general(one[0]) or not is_static_helper(one[0]):
+        return "self-test: a short static helper belongs to the static-helper list only"
+    if is_static_helper(long_method) or not is_general(long_method):
+        return "self-test: a long method belongs to the general list only"
+    retyped_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", "Trim(ReadOnlySpan<char> value)")
+    retyped, _ = extract_methods("src/F.cs", retyped_sample)
+    if is_pair(one[0], retyped[0]):
+        return "self-test: short static helpers with different parameter types paired"
+    region_sample = STATIC_HELPER_SAMPLE.replace("    private string Label", "    #region static helpers\n    private string Label")
+    region, _ = extract_methods("src/G.cs", region_sample)
+    if [method.name for method in region] != ["Trim"]:
+        return "self-test: a preprocessor line made an instance method static"
+    return None
 
 
 def self_test() -> int:
@@ -549,61 +612,9 @@ internal static class Sample
         print("self-test: raw-string contents leaked into the normalized body", file=sys.stderr)
         return 1
     del root_text
-    helper = '''
-namespace Demo;
-
-internal sealed class Short
-{
-    private static string Trim(string value)
-    {
-        if (value.Length == 0)
-        {
-            return value;
-        }
-
-        var trimmed = value.Trim();
-        return trimmed;
-    }
-
-    private string Label(string value)
-    {
-        if (value.Length == 0)
-        {
-            return value;
-        }
-
-        var trimmed = value.Trim();
-        return trimmed;
-    }
-}
-'''
-    one, _ = extract_methods("src/C.cs", helper)
-    two, _ = extract_methods("src/D.cs", helper.replace("namespace Demo", "namespace Demo.Other"))
-    if [method.name for method in one] != ["Trim"]:
-        print(f"self-test: expected only the static helper, found {[m.name for m in one]}", file=sys.stderr)
-        return 1
-    if not is_pair(one[0], two[0]):
-        print("self-test: an exact static helper copy did not pair", file=sys.stderr)
-        return 1
-    changed, _ = extract_methods("src/E.cs", helper.replace("value.Trim()", "value.TrimEnd()"))
-    if is_pair(one[0], changed[0]):
-        print("self-test: a short static helper with a different body paired", file=sys.stderr)
-        return 1
-    if in_tier(one[0], False) or not in_tier(one[0], True):
-        print("self-test: a short static helper belongs to the static-helper list only", file=sys.stderr)
-        return 1
-    if in_tier(first[0], True) or not in_tier(first[0], False):
-        print("self-test: a long method belongs to the general list only", file=sys.stderr)
-        return 1
-    retyped, _ = extract_methods("src/F.cs", helper.replace("Trim(string value)", "Trim(ReadOnlySpan<char> value)"))
-    if is_pair(one[0], retyped[0]):
-        print("self-test: short static helpers with different parameter types paired", file=sys.stderr)
-        return 1
-    region, _ = extract_methods(
-        "src/G.cs", helper.replace("    private string Label", "    #region static helpers\n    private string Label")
-    )
-    if [method.name for method in region] != ["Trim"]:
-        print("self-test: a preprocessor line made an instance method static", file=sys.stderr)
+    failure = static_helper_self_test(first[0])
+    if failure is not None:
+        print(failure, file=sys.stderr)
         return 1
     print("self-test ok", file=sys.stderr)
     return 0
@@ -633,7 +644,7 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         return self_test()
     root = args.root or Path(__file__).resolve().parents[2]
-    pairs, unbalanced = scan(root, args.static_helpers)
+    pairs, unbalanced = scan(root, is_static_helper if args.static_helpers else is_general)
     if unbalanced:
         print("unbalanced C# files (scanner skipped them):", file=sys.stderr)
         for path in unbalanced:
