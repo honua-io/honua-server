@@ -93,7 +93,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         // check against, captured through CaptureStateTokenAsync before that check ran. The writer
         // re-computes the token from the locked row, or confirms expected absence, inside the write
         // transaction. Any edit arriving between the check and this write therefore fails the
-        // operation instead of being silently overwritten (#2430).
+        // operation instead of being silently overwritten.
         if (command.ExpectedRowAbsent || command.ExpectedStateToken is { Length: > 0 })
         {
             request.Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
@@ -131,7 +131,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         // An indeterminate row is NOT a failure: the writer is saying the resolution may have
         // committed. Reporting it as uncommitted releases the claim, and if the write did land the
         // next attempt sees this resolution's own change as a post-conflict edit and returns Stale
-        // forever (#2430).
+        // forever.
         return new ReplicaConflictApplyResult(
             Applied: false,
             FailureMessage,

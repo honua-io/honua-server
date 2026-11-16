@@ -743,7 +743,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         // Honor the idempotency key on the approval path: a repeated proposal (e.g.
         // propose → refresh → propose) must fold onto the existing active proposal
-        // rather than minting a duplicate AwaitingApproval record (#1693). The
+        // rather than minting a duplicate AwaitingApproval record. The
         // proposal id is derived deterministically from the key so a concurrent
         // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
         var now = DateTimeOffset.UtcNow;
@@ -1670,7 +1670,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     // per-operation DB connection), so resolve it from a fresh scope per audit write
     // rather than capturing it as a constructor dependency. Capturing the scoped
     // service would be a captive dependency and fails DI scope validation at startup
-    // under the durable control-plane path (honua-server#1908).
+    // under the durable control-plane path.
     private async Task<string?> WriteAuditAsync(
         OperationProposal proposal,
         string action,
@@ -1880,12 +1880,6 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9206, LogLevel.Error, "Approval audit for proposal {ProposalId} failed before actuation")]
         public static partial void ProposalApprovalAuditFailed(ILogger logger, string proposalId, Exception exception);
-
-        [LoggerMessage(9202, LogLevel.Warning, "No executor registered for direct-execute of operation kind {Kind}; returning NotSupported")]
-        public static partial void NoExecutorRegisteredForDirect(ILogger logger, string kind);
-
-        [LoggerMessage(9203, LogLevel.Warning, "No executor registered for approval of proposal {ProposalId} with kind {Kind}; failing proposal to terminal Failed")]
-        public static partial void NoExecutorRegisteredForApproval(ILogger logger, string proposalId, string kind);
 
         [LoggerMessage(9204, LogLevel.Warning, "Failed to enqueue ops-autonomy notification for finding {FindingId}")]
         public static partial void AutonomyNotificationFailed(ILogger logger, string findingId, Exception exception);

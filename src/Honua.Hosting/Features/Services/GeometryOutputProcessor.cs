@@ -100,7 +100,7 @@ internal static class GeometryOutputProcessor
         {
             4326 => ConvertMetersToDegrees(simplifyToleranceMeters.Value, geometry.EnvelopeInternal),
             // Web Mercator (3857) and its aliases already carry metre units; route the alias set
-            // through the canonical classifier (#2732) instead of a local literal list.
+            // through the canonical classifier instead of a local literal list.
             _ when Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(geometry.SRID)
                 => simplifyToleranceMeters.Value,
             _ => null

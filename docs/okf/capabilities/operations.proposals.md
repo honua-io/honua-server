@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Governed Operation Proposals"
-description: "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."
+description: "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane is Community and persists proposals in the PostgreSQL system database; a host without one advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."
 resource: "honua://capability/operations.proposals"
 tags: [capability, controlplane, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, controlplane, community]
 
 # Governed Operation Proposals
 
-The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt.
+The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane is Community and persists proposals in the PostgreSQL system database; a host without one advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt.
 
 | | |
 | --- | --- |

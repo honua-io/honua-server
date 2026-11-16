@@ -319,6 +319,12 @@ internal static partial class FeatureStreamEndpoints
             routabilityGuard: deps.RoutabilityGuard,
             subscriberSecurity: subscriberSecurity);
 
+        if (DescribeMaskedFilterField(filter) is { } maskedFieldError)
+        {
+            FeatureStreamLog.FilterValidationFailed(logger, maskedFieldError);
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, maskedFieldError));
+        }
+
         var snapshotScopeError = ValidateSnapshotScope(mode, filter);
         if (snapshotScopeError is not null)
         {
@@ -328,6 +334,12 @@ internal static partial class FeatureStreamEndpoints
 
         return new SubscriptionParseResult(filter, true, mode, null);
     }
+
+    // Same refusal as a feature query: a field hidden from the caller cannot drive a predicate.
+    private static string? DescribeMaskedFilterField(StreamSubscriptionFilter filter)
+        => filter.FindMaskedFilterField() is { } field
+            ? $"Field '{field}' is masked and cannot be used by a streaming filter."
+            : null;
 
     private static async Task<StreamSubscriberSecurity> ResolveSubscriberSecurityAsync(
         HttpContext context,

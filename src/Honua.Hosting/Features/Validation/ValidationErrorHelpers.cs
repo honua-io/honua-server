@@ -23,7 +23,7 @@ public static class ValidationErrorHelpers
             }
         };
 
-        // #2243: this builder bypasses the central formatter, so emit the error
+        // This builder bypasses the central formatter, so emit the error
         // telemetry here too. No HttpContext is available, so the surface is
         // recorded as the generic GeoServices service type.
         HonuaTelemetry.RecordErrorEnvelope(
@@ -177,7 +177,7 @@ public static class ValidationErrorHelpers
             }
         };
 
-        // #2243: this writer bypasses the central formatter, so emit the error
+        // This writer bypasses the central formatter, so emit the error
         // telemetry through the same funnel using the request path for surface
         // classification.
         StandardErrorResponseFormatter.RecordErrorTelemetry(context, statusCode);

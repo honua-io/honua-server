@@ -80,16 +80,15 @@ public static class GeoServicesServerAdminEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        // Deliberately NOT refusing an anonymous caller here. The original rule assumed a
-        // client holding a portal token would retry with token=; measurement says
-        // otherwise. arcpy composes this request itself, so a token appended to the
-        // workspace URL never reaches it, and SignInToPortal does not help either -
-        // ArcGIS Pro attaches a portal session token only to servers the portal declares
-        // federated, and a stand-alone Honua site is not one. A single MakeWCSLayer call
-        // was recorded issuing GET /rest/admin/{service}.MapServer and taking the 401 as
-        // final, after a successful SignInToPortal. CreateVersion does the same and stops
-        // at "ERROR 000301: The workspace is of the wrong type" - which is the whole of
-        // #5036.
+        // Deliberately NOT refusing an anonymous caller here. A client holding a portal
+        // token does not retry with token=. arcpy composes this request itself, so a
+        // token appended to the workspace URL never reaches it, and SignInToPortal does
+        // not help either - ArcGIS Pro attaches a portal session token only to servers
+        // the portal declares federated, and a stand-alone Honua site is not one. A
+        // single MakeWCSLayer call was recorded issuing GET
+        // /rest/admin/{service}.MapServer and taking the 401 as final, after a successful
+        // SignInToPortal. CreateVersion does the same and stops at "ERROR 000301: The
+        // workspace is of the wrong type".
         //
         // Nothing is widened by serving it. Visibility is still decided per principal,
         // twice and below: ProjectItem answers null for a service this caller cannot see

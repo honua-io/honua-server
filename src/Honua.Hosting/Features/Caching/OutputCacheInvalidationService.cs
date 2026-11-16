@@ -558,10 +558,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         Message = "Failed to evict metadata cache key {Key}")]
     private static partial void LogEvictMetadataKeyFailed(ILogger logger, string key, Exception exception);
 
-    [LoggerMessage(EventId = 4513, Level = LogLevel.Warning,
-        Message = "Failed to evict metadata cache pattern {Pattern}")]
-    private static partial void LogEvictMetadataPatternFailed(ILogger logger, string pattern, Exception exception);
-
     [LoggerMessage(EventId = 4515, Level = LogLevel.Warning,
         Message = "Failed to resolve owning services for layer {LayerId} during cache invalidation")]
     private static partial void LogResolveLayerServicesFailed(ILogger logger, int layerId, Exception exception);

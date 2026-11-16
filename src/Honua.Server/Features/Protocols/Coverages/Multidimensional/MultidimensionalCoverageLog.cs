@@ -36,18 +36,6 @@ internal static partial class MultidimensionalCoverageLog
     public static partial void Listed(ILogger logger, int count, int layerId);
 
     [LoggerMessage(
-        EventId = 8003,
-        Level = LogLevel.Warning,
-        Message = "Multidim coverage {RegistrationId} metadata scan rejected: reader not enabled. See ADR-0039.")]
-    public static partial void MetadataReaderUnavailable(ILogger logger, long registrationId);
-
-    [LoggerMessage(
-        EventId = 8004,
-        Level = LogLevel.Warning,
-        Message = "Multidim coverage {RegistrationId} metadata scan rejected: unsupported layout. {Reason}")]
-    public static partial void MetadataUnsupportedLayout(ILogger logger, long registrationId, string reason);
-
-    [LoggerMessage(
         EventId = 8005,
         Level = LogLevel.Information,
         Message = "Multidim coverage {RegistrationId} metadata scan completed: {VariableCount} variables, SRID {Srid}")]

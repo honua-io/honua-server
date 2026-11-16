@@ -520,8 +520,8 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        // A forced background import on a host without a runner is refused before the download
-        // (honua-server#5916); a size-triggered one is refused once the size is known.
+        // A forced background import on a host without a runner is refused before the download;
+        // a size-triggered one is refused once the size is known.
         if (request.ForceBackground && !CanAcceptBackgroundImports(context.RequestServices))
         {
             await AdminResponseWriter.WriteErrorAsync(
@@ -636,7 +636,7 @@ internal static partial class ImportEndpoints
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
 
-        // honua-server#5916: decide before staging anything whether this host can run a background
+        // Decide before staging anything whether this host can run a background
         // import at all. A Lambda host without a durable runner (and any host without a job
         // service) refuses with the typed 503 instead of accepting work it cannot finish.
         if (shouldQueueBackground && !CanAcceptBackgroundImports(context.RequestServices))
@@ -713,7 +713,7 @@ internal static partial class ImportEndpoints
                     return;
                 }
 
-                // #2459 / ADR-0060: a background import is consumed by a worker in a later
+                // ADR-0060: a background import is consumed by a worker in a later
                 // request, possibly on a different node. Its staged input must live in the
                 // shared object store (ICloudFileStorage), never on this node's local temp
                 // disk. cloudFileId is null only when no file storage is configured; refuse
@@ -767,7 +767,7 @@ internal static partial class ImportEndpoints
             // Re-importing into a table that is already published leaves the canonical
             // `honua.features` snapshot — and the MVT/tiles built from it — stale, while the
             // feature-query paths read the live source. Rebuild the snapshot so tiles stay
-            // consistent with the freshly imported data (honua-server#1628). Best-effort:
+            // consistent with the freshly imported data. Best-effort:
             // a refresh failure must not fail the import that already succeeded.
             if (importResult.Success)
             {
@@ -1363,7 +1363,7 @@ internal static partial class ImportEndpoints
            bool.TryParse(value, out var parsed) &&
            parsed;
 
-    // #2459 / ADR-0060: the staging directory is strictly WITHIN-REQUEST scratch. A staged
+    // ADR-0060: the staging directory is strictly WITHIN-REQUEST scratch. A staged
     // file is consumed and deleted inside the same HTTP request: the synchronous import path
     // reads it directly and the finally block deletes it, while the background path first
     // copies it into the shared object store (ICloudFileStorage) and hands the worker a

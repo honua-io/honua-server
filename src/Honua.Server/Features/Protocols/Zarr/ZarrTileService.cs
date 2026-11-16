@@ -127,7 +127,7 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix set '{tileMatrixSetId}' is not supported.");
         }
 
-        // Cross-CRS reprojection of the tile window is deferred (#1835 follow-up).
+        // Cross-CRS reprojection of the tile window is deferred.
         if (geometry.Srid != metadata.Srid)
         {
             return StandardErrorHelpers.CreateBadRequest(

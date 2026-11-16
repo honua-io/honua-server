@@ -34,5 +34,4 @@ docker compose -f "$compose_file" --profile multidim-fixture up \
 docker compose -f "$compose_file" --profile multidim-fixture run \
   --build \
   --rm \
-  --no-deps \
   multidim-fixture

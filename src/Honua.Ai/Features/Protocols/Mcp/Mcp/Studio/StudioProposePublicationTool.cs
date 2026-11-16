@@ -76,8 +76,8 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             throw new GeoprocessingValidationException("'route' and 'visibility' are required.");
         }
 
-        // Authorize against the item owner before disclosing whether the item or version exists
-        // (#3429): a missing item is an ownerless target, so a non-owner receives the same governed
+        // Authorize against the item owner before disclosing whether the item or version exists:
+        // a missing item is an ownerless target, so a non-owner receives the same governed
         // denial for an unknown id as for another owner's item.
         var pointers = await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
         var authorization = RequireAuthorizationService(httpContext);
@@ -88,8 +88,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             StudioAuthorizationOperation.PublishRequest,
             pointers?.OwnerId,
             // A missing item carries the caller's own tenant so the ownerless-target denial
-            // keeps deciding; an existing item is refused when it belongs to another tenant
-            // (honua-server#4905).
+            // keeps deciding; an existing item is refused when it belongs to another tenant.
             pointers is null ? RequestTenantId(httpContext) : pointers.TenantId,
             itemId.ToString("D"),
             "studio-content-item",

@@ -59,7 +59,7 @@ public static class GeoServicesEditErrorCodes
             // HTTP 423 — a lock-aware writer reported the feature as locked.
             423 => FeatureLocked,
             // HTTP 403 — the written row would fall outside the caller's row-level security
-            // partition (honua-server#6103); an authorization failure, not a conflict.
+            // partition; an authorization failure, not a conflict.
             EditOperationResult.NotPermittedErrorCode => NotPermitted,
             _ => GenericFailure,
         };

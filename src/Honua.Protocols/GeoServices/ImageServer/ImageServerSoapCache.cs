@@ -14,7 +14,7 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 
 internal static partial class ImageServerSoapEndpoints
 {
-    // Advertising stays opt-in (#1456). A service that does not advertise the cache still
+    // Advertising stays opt-in. A service that does not advertise the cache still
     // answers GetCacheDescriptionInfo with nil properties; tile reads say the service is
     // not fixed-scale instead of pretending the operation is unknown.
     private const string NotFixedScaleMessage = "Image service is not a fixed-scale cache.";

@@ -28,10 +28,10 @@ internal static class ReplicaManagementEndpoints
     public static void MapReplicaManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceId}/replicas")
-            // Promoted to GA in #2430 — no capability gate. The Pro entitlement that the experimental
-            // gate used to stand in front of is NOT implied by admin authorization, so every handler
-            // enforces it explicitly below: promoting the capability must not hand Community-edition
-            // admins a surface the GeoServices and FieldCollection sync paths already charge for.
+            // GA: no capability gate. The Pro entitlement is NOT implied by admin authorization, so
+            // every handler enforces it explicitly below: an ungated surface must not hand
+            // Community-edition admins what the GeoServices and FieldCollection sync paths already
+            // charge for.
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Replicas")
@@ -181,7 +181,7 @@ internal static class ReplicaManagementEndpoints
     private static string DeriveStatus(DateTimeOffset lastSyncTime) =>
         DateTimeOffset.UtcNow - lastSyncTime > ReplicaStaleAfter ? StatusExpired : StatusActive;
 
-    // ---- Conflict review (#1167, slice 2) ------------------------------------------------------
+    // ---- Conflict review -----------------------------------------------------------------
 
     private static async Task<IResult> HandleListConflicts(
         string serviceId,
@@ -311,7 +311,7 @@ internal static class ReplicaManagementEndpoints
 
         // The resolution is planned and committed by the shared service: it writes the resolved feature
         // state through the shared edit pipeline before recording the durable resolution, so the
-        // recorded outcome always matches the committed state (#2430).
+        // recorded outcome always matches the committed state.
         var result = await resolutionService.ResolveAsync(
             new ReplicaConflictResolutionServiceRequest(
                 replica.ReplicaId,
@@ -372,7 +372,7 @@ internal static class ReplicaManagementEndpoints
                 StatusCodes.Status501NotImplemented,
                 result.Message ?? "Applying this resolution is not supported by this deployment."),
             // 503 rather than 502: the write may have landed, the resolution stays claimed, and
-            // retrying the same request is the documented way to finish it (#2430).
+            // retrying the same request is the documented way to finish it.
             ReplicaConflictResolutionStatus.WriteOutcomeUnknown => (
                 StatusCodes.Status503ServiceUnavailable,
                 result.Message ?? "The resolved conflict state may or may not have been committed; retry the same request to complete it."),

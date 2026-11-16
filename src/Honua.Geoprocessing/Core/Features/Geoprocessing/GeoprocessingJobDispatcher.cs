@@ -151,7 +151,7 @@ internal sealed class GeoprocessingJobDispatcher
                 ? null
                 : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal),
             // Persist the submitter's row/field security identity with the proposal so the
-            // resumed job enforces the ORIGINAL submitter's RLS and masking (#3068).
+            // resumed job enforces the ORIGINAL submitter's RLS and masking.
             SubmitterSecurityContext = submitterSecurityContext,
         };
 
@@ -284,7 +284,7 @@ internal sealed class GeoprocessingJobDispatcher
         if (selected is null && geoprocessingWorkloads.Length > 0)
         {
             // An exact retry of a job accepted under the previous workload set does not
-            // need a compatible image selected again (#6069).
+            // need a compatible image selected again.
             if (await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
             {
                 return null;

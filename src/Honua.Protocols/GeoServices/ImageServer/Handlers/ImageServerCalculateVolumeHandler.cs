@@ -101,7 +101,7 @@ internal sealed class ImageServerCalculateVolumeHandler
             }
 
             // Resolve the DEM surface from the primary raster's sensor metadata. Same contract as the
-            // DEM-height mensuration path (#1879): a missing or non-layer-id dem_source is honest 501.
+            // DEM-height mensuration path: a missing or non-layer-id dem_source is honest 501.
             var metadata = await _rasterStore.GetSensorMetadataAsync([raster.Id], cancellationToken).ConfigureAwait(false);
             var sensor = metadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
             var demSource = sensor?.DemSource;

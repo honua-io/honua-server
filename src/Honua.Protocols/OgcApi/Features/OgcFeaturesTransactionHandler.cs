@@ -48,7 +48,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const string OgcFeaturesProtocolName = "OgcFeatures";
 
-    // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
+    // Open-protocol feature mutations are Community: no entitlement gate here. The
     // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
 
     public async Task<IResult> HandleBatchOperationAsync(
@@ -351,8 +351,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // The single-feature surfaces get this from ValidateCollectionWriteAccessV2Async,
             // which is called here without a specific operation because a batch body may mix
             // kinds. Each distinct kind present must still be declared by the publication,
-            // otherwise the batch surface accepts edits the collection never advertised
-            // (#4707).
+            // otherwise the batch surface accepts edits the collection never advertised.
             if (service is not null)
             {
                 var capability = op switch
@@ -425,7 +424,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // Collaborative-editing lease enforcement: a feature another editor
             // holds a lease on cannot be replaced or merged out from under them, on this
             // surface as much as on GeoServices applyEdits.
             if (await OgcFeatureLockGuard.RejectIfLockedAsync(
@@ -730,7 +729,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // Collaborative-editing lease enforcement: a feature another editor
             // holds a lease on cannot be replaced or merged out from under them, on this
             // surface as much as on GeoServices applyEdits.
             if (await OgcFeatureLockGuard.RejectIfLockedAsync(
@@ -1509,7 +1508,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         var validationFailed = false;
 
         // Resolve every update/delete target up front with at most two provider round
-        // trips instead of one feature lookup per operation (#1593). Ids that do not
+        // trips instead of one feature lookup per operation. Ids that do not
         // resolve are absent from the map and fail only their own operation below,
         // preserving per-operation error semantics.
         var resolvedFeatures = await ResolveBatchOperationTargetsAsync(
@@ -1558,7 +1557,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var preparedOperation = prepared.Operation! with { Index = index };
 
-            // Collaborative-editing lease enforcement (#4402). Evaluated here, after the
+            // Collaborative-editing lease enforcement. Evaluated here, after the
             // operation resolved to a concrete OBJECTID and before anything is written, so
             // a locked target fails validation and the whole batch — which always runs with
             // RollbackOnFailure — leaves every stored row untouched.
@@ -1647,7 +1646,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         // Reload every successfully created row with one batched ObjectIds query
         // (projected to the response CRS when it differs from storage) instead of a
-        // per-create read round trip (#1593). A row missing from the reload falls back
+        // per-create read round trip. A row missing from the reload falls back
         // to the payload-derived id for that operation only.
         var createdObjectIds = new List<long>();
         var createScanIndex = 0;

@@ -408,7 +408,7 @@ internal sealed partial class QueryResultCacheManager : IDisposable
         }
 
         // Add eviction callback to track statistics.  The callback is the authoritative
-        // signal for removing _keyStatistics entries — the idle timer no longer prunes
+        // signal for removing _keyStatistics entries — the idle timer does not prune
         // them so InvalidateAsync sees live keys.
         cacheOptions.RegisterPostEvictionCallback((key, value, reason, state) =>
         {
@@ -585,11 +585,5 @@ internal sealed partial class QueryResultCacheManager : IDisposable
             Level = LogLevel.Debug,
             Message = "Cache item evicted: {CacheKey} (reason: {Reason})")]
         public static partial void ItemEvicted(ILogger logger, string cacheKey, EvictionReason reason);
-
-        [LoggerMessage(
-            EventId = 9311,
-            Level = LogLevel.Warning,
-            Message = "Failed to update cache statistics")]
-        public static partial void StatisticsUpdateFailed(ILogger logger, Exception exception);
     }
 }

@@ -39,7 +39,7 @@ internal sealed partial class McpDataAccessSurface
         ProposalEvidenceVerifier? proposalEvidenceVerifier = null)
     {
         _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
-        // Dynamic, runtime-published tools (#2483). None composed by default, so the
+        // Dynamic, runtime-published tools. None composed by default, so the
         // surface behaves exactly as before unless a host opts a source in.
         _toolSources = toolSources?.ToList() ?? [];
         _resources = [.. resources, OperatingSkillsResource.Instance];
@@ -186,14 +186,14 @@ internal sealed partial class McpDataAccessSurface
                 McpErrorMapper.InvalidArgument("initialize.params.clientInfo.name is required."));
         }
 
-        // honua-server#2484: record whether the client advertised the elicitation
+        // Record whether the client advertised the elicitation
         // capability so the session issued on success carries it. Per MCP
         // 2025-06-18 an elicitation-capable client sends `capabilities.elicitation`
         // as an object; presence of the key (as an object) is the signal.
         httpContext.Items[ElicitationCapabilityItemKey] =
             AdvertisesElicitation(parameters.Capabilities.Value);
 
-        // honua-server#3428: the SESSION leg of the workflow-view negotiation
+        // The SESSION leg of the workflow-view negotiation
         // contract. A client that wants the bounded surface for the whole session
         // sends initialize.params._meta["honua.io/workflow-view"]; the transport
         // binds the negotiated name to the session it issues on success, exactly
@@ -220,13 +220,13 @@ internal sealed partial class McpDataAccessSurface
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
         // list_changed is delivered only on the optional GET /mcp stream. Advertising
         // it while that stream is off (the default) tells clients a notification
-        // channel exists that this transport can never send (honua-server#5629).
+        // channel exists that this transport can never send.
         var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
             ?.Value.ServerInitiatedStreamEnabled == true;
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
-            // honua-server#1954: when the stream is enabled the server emits
+            // When the stream is enabled the server emits
             // notifications/tools/list_changed and notifications/resources/list_changed.
             // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
@@ -275,12 +275,12 @@ internal sealed partial class McpDataAccessSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
-        // Merge the static, registry-bound catalog with any runtime-published tools
-        // (#2483). Static tools always win on a name collision, and the dynamic set is
+        // Merge the static, registry-bound catalog with any runtime-published tools.
+        // Static tools always win on a name collision, and the dynamic set is
         // empty unless a host composed a tool source, so default hosts are unchanged.
         var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
 
-        // honua-server#3428: resolve the effective workflow view from the explicit
+        // Resolve the effective workflow view from the explicit
         // request / session / HTTP / server-profile negotiation contract. Selecting a view
         // can only NARROW discovery — it never grants authority. The reserved
         // `full` export is explicit and authenticated. Discovery is not authority: every tools/call still
@@ -573,7 +573,7 @@ internal sealed partial class McpDataAccessSurface
 
         if (!_tools.TryGetValue(parameters.Name, out var tool))
         {
-            // Fall back to the runtime-published dynamic tools (#2483) before
+            // Fall back to the runtime-published dynamic tools before
             // declaring the name unknown, so a published operation tool advertised in
             // tools/list is callable. Static tools were checked first, so they win.
             tool = await ResolveDynamicToolAsync(parameters.Name, cancellationToken).ConfigureAwait(false);

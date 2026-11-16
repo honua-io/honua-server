@@ -34,10 +34,10 @@ internal static partial class I3sSceneServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Canonical GeoServices REST path (#1806): a registered Enterprise scene
+        // Canonical GeoServices REST path: a registered Enterprise scene
         // is discoverable as an Esri SceneServer under /rest/services/{id}, the
         // same addressing every other GeoServices service type uses, so the
-        // catalog (#1807) and ArcGIS clients resolve it without a bespoke route.
+        // catalog and ArcGIS clients resolve it without a bespoke route.
         endpoints.MapGet(
                 "/rest/services/{sceneId}/SceneServer",
                 HandleGetService)
@@ -68,7 +68,7 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
-        // I3S node-page traversal (#1809): a conformant SceneLayer client walks
+        // I3S node-page traversal: a conformant SceneLayer client walks
         // the layer's HLOD tree through nodepages/{n}. Each page projects a
         // fixed-size window of the tileset node tree (MBS/OBB in index CRS,
         // lodThreshold from geometric error, child references, per-node
@@ -88,7 +88,7 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
-        // I3S per-field statistics (#1811): an ArcGIS client reads the field
+        // I3S per-field statistics: an ArcGIS client reads the field
         // statistics summary to drive identify, classification, and renderer
         // ranges. Served from the layer's attributeStorageInfo + tileset stats.
         endpoints.MapGet(
@@ -106,7 +106,7 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
-        // Legacy /scenes/{id}/SceneServer routes (#1202) retained as a
+        // Legacy /scenes/{id}/SceneServer routes retained as a
         // documented ALIAS of the GeoServices path above so existing clients and
         // links keep working. Both paths share the same handlers and descriptor.
         endpoints.MapGet(
@@ -521,7 +521,7 @@ internal static partial class I3sSceneServerEndpoints
             .ConfigureAwait(false);
 
         // Advertise layer.nodePages only when the tileset actually projects to
-        // fetchable node pages (#1809), so a conformant client never requests a
+        // fetchable node pages, so a conformant client never requests a
         // node URL that 404s.
         var advertiseNodePages = I3sNodeStore.TryBuildNodePages(scene, out _);
 

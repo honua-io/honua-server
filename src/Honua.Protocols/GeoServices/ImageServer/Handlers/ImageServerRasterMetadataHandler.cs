@@ -115,7 +115,7 @@ internal sealed class ImageServerRasterMetadataHandler
         int[]? bands = null)
     {
         // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
-        // risk as statistics (#2991) — degrade to an empty histogram set rather than
+        // risk as statistics — degrade to an empty histogram set rather than
         // hang past the host's own request/function deadline.
         var histograms = await ImageServerStatisticsBudget.ResolveCancellableAsync(
             ct => rasters.Count == 1

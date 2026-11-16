@@ -49,6 +49,16 @@ class ProductionComposeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "Production Compose must render")
         return json.loads(result.stdout)
 
+    def test_scene_output_uses_writable_persistent_storage(self):
+        honua = self.model()["services"]["honua"]
+        output = Path(honua["environment"]["SceneGeneration__OutputRoot"])
+        self.assertTrue(honua["read_only"])
+        storage = next(volume for volume in honua["volumes"]
+                       if volume.get("target") == "/var/lib/honua/storage")
+        self.assertEqual(storage["type"], "volume")
+        self.assertFalse(storage.get("read_only", False))
+        self.assertTrue(output.is_relative_to(storage["target"]))
+
     def test_production_example_supplies_every_required_compose_input(self):
         example = (ROOT / ".env.production.example").read_text()
         keys = set(re.findall(r"(?m)^([A-Za-z_][A-Za-z0-9_]*)=", example))

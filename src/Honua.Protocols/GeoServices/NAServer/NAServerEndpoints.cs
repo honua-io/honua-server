@@ -31,7 +31,7 @@ internal static class NAServerEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
         GPServerEndpoints.MapNAServerAsyncRoutingEndpoints(endpoints);
 
-        // ANONYMOUS by design (#1144, #1266): NAServer Route/ServiceArea solves are
+        // ANONYMOUS by design: NAServer Route/ServiceArea solves are
         // stateless geospatial computations over a fixed routing capability — not a
         // metadata-published, per-tenant feature service — so there is no published
         // service to RBAC-gate. This mirrors the GeometryService buffer/simplify/project
@@ -136,7 +136,7 @@ internal static class NAServerEndpoints
             .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
             .AllowAnonymous();
 
-        // Metadata resources (#5035): the service resource and the per-solver analysis
+        // Metadata resources: the service resource and the per-solver analysis
         // layer resources ArcGIS Pro and arcpy.nax read before they will bind a
         // stand-alone routing service. They describe the same provider the solves run
         // on and carry no per-tenant data, so they are anonymous for the same reason.
@@ -209,7 +209,7 @@ internal static class NAServerEndpoints
         // the utility GPServer: arcpy.nax composes "{naServerUrl}/FindRoutes" and refuses
         // the stand-alone binding when it 404s, with "Portal ... is not configured with
         // the 'Route' web tool". Publishing the task on the GPServer alone was not
-        // enough - measured, the client never asks there for it (#5192). Same document
+        // enough - measured, the client never asks there for it. Same document
         // either way, so the two spellings cannot disagree.
         if (NAServerMetadata.IsRoutingWebTool(layerName))
         {

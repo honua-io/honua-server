@@ -60,7 +60,7 @@ internal static class GeoServicesErrorCodes
         499 => TokenRequired,
         500 => InternalServerError,
         // 501 passes through as a distinct "operation not supported" body code rather
-        // than collapsing to the 500 default; see NotImplemented remarks (honua-server#2795).
+        // than collapsing to the 500 default; see NotImplemented remarks.
         501 => NotImplemented,
         502 => BadGateway,
         503 => ServiceUnavailable,
