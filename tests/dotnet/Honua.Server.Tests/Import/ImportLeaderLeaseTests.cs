@@ -19,29 +19,9 @@ namespace Honua.Server.Tests.Import;
 public sealed class ImportLeaderLeaseUnitTests
 {
     [UnitTest]
-    public void IsClusterDurable_InProductionWithoutALeaseStore_IsFalse()
-    {
-        var manager = ImportManagers.Geoservices("Production", new ImportCoordinationStores(new OutageRedis().Multiplexer));
-
-        manager.IsClusterDurable.Should().BeFalse();
-        manager.CanAcceptNewJobs.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public void IsClusterDurable_InProductionWithALeaseStore_IsTrue()
-    {
-        var manager = ImportManagers.Geoservices(
-            "Production",
-            new ImportCoordinationStores(new OutageRedis().Multiplexer, new InMemoryLeaseStore()));
-
-        manager.IsClusterDurable.Should().BeTrue();
-        manager.CanAcceptNewJobs.Should().BeTrue();
-    }
-
-    [UnitTest]
     public async Task TryAcquireLeadershipAsync_InProductionWithoutALeaseStore_NeverLeads()
     {
-        var manager = ImportManagers.Geoservices("Production", new ImportCoordinationStores());
+        var manager = ImportManagers.Geoservices("Production", null);
 
         (await manager.LeaderElection.TryAcquireLeadershipAsync()).Should().BeFalse();
     }
@@ -49,7 +29,7 @@ public sealed class ImportLeaderLeaseUnitTests
     [UnitTest]
     public async Task TryAcquireLeadershipAsync_InDevelopmentWithoutALeaseStore_LeadsItsOwnNode()
     {
-        var manager = ImportManagers.Geoservices("Development", new ImportCoordinationStores());
+        var manager = ImportManagers.Geoservices("Development", null);
 
         (await manager.LeaderElection.TryAcquireLeadershipAsync()).Should().BeTrue();
     }
@@ -69,18 +49,6 @@ public sealed class ImportLeaderLeaseTests(DatabaseFixtureAdapter database) : IC
 
         outcomes.Count(leads => leads).Should().Be(1);
         nodes.Count(node => node.IsLeader).Should().Be(1);
-    }
-
-    [IntegrationTest]
-    public async Task TryAcquireLeadershipAsync_GeoServerAndGeoservicesNodes_EachElectTheirOwnLeader()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var geoserver = new[] { GeoServerNode(harness), GeoServerNode(harness) };
-
-        (await GeoservicesNode(harness).TryAcquireLeadershipAsync()).Should().BeTrue();
-        var outcomes = await Task.WhenAll(geoserver.Select(node => node.TryAcquireLeadershipAsync()));
-
-        outcomes.Count(leads => leads).Should().Be(1);
     }
 
     [IntegrationTest]
@@ -116,15 +84,7 @@ public sealed class ImportLeaderLeaseTests(DatabaseFixtureAdapter database) : IC
         => ControlPlaneStateHarness.CreateAsync(database, nameof(ImportLeaderLeaseTests));
 
     private static IDistributedLeaderElection GeoservicesNode(ControlPlaneStateHarness harness)
-        => ImportManagers.Geoservices("Production", new ImportCoordinationStores(Leases: harness.Leases)).LeaderElection;
-
-    private static IDistributedLeaderElection GeoServerNode(ControlPlaneStateHarness harness)
-        => new GeoServerImportJobManager(
-            new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance),
-            null,
-            NullLogger<GeoServerImportJobManager>.Instance,
-            new StaticHostEnvironment("Production"),
-            new ImportCoordinationStores(Leases: harness.Leases)).LeaderElection;
+        => ImportManagers.Geoservices("Production", harness.Leases).LeaderElection;
 
     private static Task ExpireAsync(ControlPlaneStateHarness harness, string leaseKey)
         => harness.ExecuteAsync(
@@ -134,14 +94,13 @@ public sealed class ImportLeaderLeaseTests(DatabaseFixtureAdapter database) : IC
 
 internal static class ImportManagers
 {
-    public static RedisImportJobManager Geoservices(string environmentName, ImportCoordinationStores stores)
-    {
-        var cache = new OutageDistributedCache();
-        return new(
-            new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance),
-            cache,
-            NullLogger<RedisImportJobManager>.Instance,
-            new StaticHostEnvironment(environmentName),
-            stores);
-    }
+    public static GeoservicesImportJobManager Geoservices(string environmentName, ILeaseStore? leases)
+        => new(
+            new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance),
+            NullLogger<GeoservicesImportJobManager>.Instance,
+            leaderElection: leases is not null
+                ? new LeaseLeaderElection(leases, "geoservices:import:leader", LeaseLeaderElection.DefaultLeaseDuration)
+                : environmentName == "Development"
+                    ? new NodeLocalLeaderElection()
+                    : new UnelectedLeaderElection());
 }

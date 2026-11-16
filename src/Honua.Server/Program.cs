@@ -251,7 +251,6 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
-var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
@@ -274,21 +273,6 @@ var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled
 if (tracingSection.Exists() || tracingEnabled)
 {
     builder.AddTelemetryDefaults();
-}
-
-// Add Redis if configured, otherwise fallback to in-memory cache
-if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-{
-    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = redisCacheConnectionString;
-        options.InstanceName = cacheKeyPrefix;
-    });
-}
-else
-{
-    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
