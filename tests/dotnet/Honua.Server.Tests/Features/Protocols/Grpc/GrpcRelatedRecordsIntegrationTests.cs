@@ -181,7 +181,7 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
     {
         await _fixture.UpdateV2ResourceAsync(WebAppFixture.TestLayerId, resource => resource with
         {
-            Editing = (resource.Editing ?? new MetadataV2ResourceEditing()) with { GlobalIdField = "globalid" },
+            Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with { GlobalIdField = "globalid" },
             SchemaFields = [.. resource.SchemaFields, new MetadataV2Field
             {
                 Name = "globalid", Type = MetadataV2FieldType.Uuid, Nullable = true
