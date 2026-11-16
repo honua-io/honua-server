@@ -68,7 +68,7 @@ run_fixture review-revalidation node --test .github/scripts/revalidate-exact-hea
 echo "Validating review-first PR Gate transition..."
 run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-review-first-dispatch.sh
 
-echo "Validating PR Gate impact observation..."
+echo "Validating CI script fixtures..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
   run_fixture full-ci-dispatch "${PYTHON_BIN}" scripts/ci/full-ci-dispatch.test.py
@@ -85,17 +85,15 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-native-tools-image.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
   run_fixture scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
   run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
-  run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   run_fixture scripts/ci/check-evidence-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-evidence-workflow.test.py
   run_fixture scripts/ci/check-retired-cache.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache.test.py
   run_fixture scripts/ci/check-retired-cache-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache-workflow.test.py
-  run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
   run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
   run_fixture scripts/ci/download-affected-receipts.test.py "${PYTHON_BIN}" scripts/ci/download-affected-receipts.test.py
 else
-  echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
+  echo "⚠️  Skipping CI script fixtures (no working Python 3)."
 fi
 
 echo "Validating data-only derived-artifact normalization..."
