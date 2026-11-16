@@ -21,12 +21,6 @@ using Moq;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Read-policy parity across storage providers (SEC-3): the row-level security and field-mask
-/// policy create handlers refuse a policy that targets a layer served by a provider that cannot
-/// enforce it, and startup refuses a policy store registered without its enforcement source.
-/// The handlers are exercised directly so no database or host is required.
-/// </summary>
 public sealed class RowLevelSecurityPolicyEnforceabilityTests
 {
     private const string WarehouseConnectionId = "conn-warehouse";

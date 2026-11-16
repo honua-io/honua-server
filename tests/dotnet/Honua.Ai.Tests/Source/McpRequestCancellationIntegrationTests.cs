@@ -20,12 +20,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Real loopback HTTP and PostGIS proof. An independent transaction blocks the
-/// production query; the original HTTP request remains open while a second POST
-/// cancels its captured wire id. No client abort or substituted feature reader
-/// can satisfy the cessation assertions.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime

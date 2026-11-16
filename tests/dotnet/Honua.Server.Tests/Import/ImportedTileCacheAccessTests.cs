@@ -16,12 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Read authorization for tiles served from the tile catalog (SEC-15). The decision binds a
-/// catalog row's layer identifier to the published layer it names and applies that layer's
-/// query authorization. Rows written by the package importer and by the WMTS tile-cache
-/// exporter carry the same identifier column and are decided the same way.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

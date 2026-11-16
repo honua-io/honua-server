@@ -7,10 +7,6 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Verifies that the shared read-only feature writer rejects all write operations
-/// (as registered by the DuckDB provider).
-/// </summary>
 public class ReadOnlyFeatureWriterTests
 {
     private readonly ReadOnlyFeatureWriter _writer = new("DuckDB");

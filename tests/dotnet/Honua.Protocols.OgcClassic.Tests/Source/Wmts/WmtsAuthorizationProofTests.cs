@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Authorization proof for WMTS <c>GetTile</c> (#4388). See
-/// <see cref="OgcClassicAuthorizationProofTestBase"/> for the fixture and for the
-/// shared denial floor this case asserts.
-/// </summary>
 [Collection("Database")]
 public sealed class WmtsAuthorizationProofTests : OgcClassicAuthorizationProofTestBase
 {

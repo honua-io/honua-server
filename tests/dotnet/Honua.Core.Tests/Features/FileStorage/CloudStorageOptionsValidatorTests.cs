@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FileStorage;
 
-/// <summary>
-/// Unit tests for CloudStorageOptionsValidator to ensure proper validation of cloud storage configuration.
-/// </summary>
 public class CloudStorageOptionsValidatorTests
 {
     private readonly CloudStorageOptionsValidator _validator = new();

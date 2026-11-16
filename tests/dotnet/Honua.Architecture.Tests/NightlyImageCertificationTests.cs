@@ -7,12 +7,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the contract between the nightly image and full-matrix certification
-/// (honua-io/honua-release#376 R18): the nightly images the newest certified trunk
-/// sha, publishes the per-sha tags the release resolver looks up, and a dispatched
-/// full matrix runs every certification lane ci.yml declares.
-/// </summary>
 public sealed partial class NightlyImageCertificationTests
 {
     private const string NightlyPath = ".github/workflows/nightly-container-build.yml";

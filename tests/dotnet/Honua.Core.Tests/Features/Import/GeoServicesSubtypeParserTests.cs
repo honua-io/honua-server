@@ -10,12 +10,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Unit coverage for the shared Esri subtype parser (honua-server#1378, #1254). The
-/// parser is the single source of truth for subtype capture, the subtype cap, and the
-/// per-subtype domain/default overrides (which reuse the shared field-domain parser so
-/// the same coded-value cap applies).
-/// </summary>
 public sealed class GeoServicesSubtypeParserTests
 {
     [Trait("Tier", "Fast")]

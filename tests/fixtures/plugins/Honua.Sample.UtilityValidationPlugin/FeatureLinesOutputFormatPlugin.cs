@@ -7,19 +7,6 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Sample.UtilityValidationPlugin;
 
-/// <summary>
-/// Reference plugin (issue #2856, ADR-0067) demonstrating the <see cref="IFeatureOutputFormat"/>
-/// extension point. Contributes a newline-delimited JSON feature format the host serves under the
-/// wire token <c>featurelines</c> — a third-party output format added entirely out-of-tree, with no
-/// core change. It declares the <see cref="PluginCapability.OutputFormats"/> capability required to
-/// contribute a format.
-/// </summary>
-/// <remarks>
-/// The writer is AOT-safe: it uses the low-level, reflection-free <see cref="Utf8JsonWriter"/> and a
-/// small type switch over attribute values, and encodes geometry as WKB hex so the sample takes no
-/// geometry-library dependency. It references only the lean <c>Honua.Plugins.Abstractions</c>
-/// contract package (the canonical <see cref="Feature"/> flows in transitively).
-/// </remarks>
 [Plugin("feature-lines-format", "1.0.0",
     Description = "Newline-delimited JSON feature output format.",
     Capabilities = PluginCapability.OutputFormats)]
@@ -27,16 +14,12 @@ public sealed class FeatureLinesOutputFormatPlugin : IFeatureOutputFormat
 {
     private static ReadOnlySpan<byte> Newline => "\n"u8;
 
-    /// <inheritdoc />
     public string FormatId => "featurelines";
 
-    /// <inheritdoc />
     public string MediaType => "application/x-ndjson";
 
-    /// <inheritdoc />
     public string FileExtension => "ndjson";
 
-    /// <inheritdoc />
     public async ValueTask<long> WriteAsync(
         IAsyncEnumerable<Feature> features,
         FeatureOutputFormatContext context,

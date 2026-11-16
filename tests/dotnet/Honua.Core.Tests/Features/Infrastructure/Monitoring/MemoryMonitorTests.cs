@@ -5,9 +5,6 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for MemoryMonitor functionality.
-/// </summary>
 public class MemoryMonitorTests
 {
     [Trait("Tier", "Fast")]

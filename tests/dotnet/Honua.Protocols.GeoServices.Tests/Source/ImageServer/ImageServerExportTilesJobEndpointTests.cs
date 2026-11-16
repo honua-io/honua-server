@@ -25,10 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Direct endpoint coverage for the asynchronous (Compact Cache V2 / TPKX) ImageServer exportTiles
-/// job lifecycle: submission, status projection, validation, and sanitized not-found scoping.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerExportTilesJobEndpointTests
 {

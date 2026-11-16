@@ -20,7 +20,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>Shared canonical filter compilation must execute against real imported columns.</summary>
 [Collection("Database")]
 public sealed class ReconciliationFilterIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {

@@ -14,11 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.OperateStatus;
 
-/// <summary>
-/// Integration tests for the server-authoritative aggregated operate-status endpoint and the
-/// read-only ops-reader authorization split (A12). Compile locally; the full assertions run in CI
-/// (Testcontainers).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.HealthCheck)]

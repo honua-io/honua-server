@@ -11,11 +11,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData v4 spatial filter tests validating geo.intersects and geo.distance
-/// functions across multiple geometry types with SRID transformations.
-/// Implements parity with OGC API Features Python test matrices per issue #200.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataSpatialMatrixTests : IAsyncLifetime

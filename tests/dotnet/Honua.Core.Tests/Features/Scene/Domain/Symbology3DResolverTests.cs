@@ -6,11 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Domain;
 
-/// <summary>
-/// Unit tests for the attribute-driven 3D symbology resolver. Verifies that a
-/// <see cref="Symbology3D"/> config resolves to the expected per-feature color,
-/// opacity, and visibility for sample features.
-/// </summary>
 public sealed class Symbology3DResolverTests
 {
     [UnitTest]

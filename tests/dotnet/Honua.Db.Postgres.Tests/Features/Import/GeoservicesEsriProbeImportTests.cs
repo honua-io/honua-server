@@ -18,11 +18,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// End-to-end regression probe for the ArcGIS FeatureServer migration workflow. The
-/// fixture advertises supportsPagination=false and only permits object-id windows;
-/// the current importer instead advances resultOffset and cannot complete.
-/// </summary>
 [Collection("Database")]
 public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
 {

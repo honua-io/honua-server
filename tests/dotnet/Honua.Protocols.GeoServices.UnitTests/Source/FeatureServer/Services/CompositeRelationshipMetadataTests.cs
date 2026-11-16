@@ -12,7 +12,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>Checks public ownership metadata and truthful edit capabilities.</summary>
 public sealed class CompositeRelationshipMetadataTests
 {
     private static readonly string[] EditableCapabilities = ["Query", "Create", "Update", "Delete"];

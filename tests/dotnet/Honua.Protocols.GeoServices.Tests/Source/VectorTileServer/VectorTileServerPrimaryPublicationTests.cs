@@ -21,12 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 
-/// <summary>
-/// root.json and the tile route must resolve the SAME primary publication on a
-/// multi-publication VectorTileServer service (honua-server#4112). Each storage layer's tile
-/// provider returns distinct bytes and each resource's stored style carries a distinct name,
-/// so the assertions identify exactly which publication each handler picked.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.VectorTileServer)]
 public sealed class VectorTileServerPrimaryPublicationTests :

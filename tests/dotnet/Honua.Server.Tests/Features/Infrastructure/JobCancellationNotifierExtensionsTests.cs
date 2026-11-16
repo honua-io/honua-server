@@ -8,9 +8,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
-/// <summary>
-/// Verifies shared fan-out behavior for multi-worker job cancellation.
-/// </summary>
 [Collection("Unit")]
 public sealed class JobCancellationNotifierExtensionsTests
 {

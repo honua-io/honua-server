@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.CrossServerConsume;
 
-/// <summary>
-/// Cross-server consume checks for Honua reading OGC services from GeoServer.
-/// </summary>
 [Collection("ExternalServer")]
 [Protocol(TestProtocols.Wms13)]
 [Protocol(TestProtocols.Wfs20)]

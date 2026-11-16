@@ -13,12 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for the additive metadata-release lifecycle review fixes (PR #1739):
-/// the singleton preflight gate must resolve the scoped compatibility prevalidation service per
-/// evaluation (no scoped-from-singleton capture), and idempotency-key replays that change the
-/// request must conflict rather than silently returning the prior operation.
-/// </summary>
 public sealed class MetadataReleaseLifecycleFixTests
 {
     [Fact]

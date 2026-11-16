@@ -38,11 +38,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Unit tests for <see cref="PrintingToolsRequestHandlers"/> helpers not covered by
-/// <see cref="LayoutTemplateRegistryTests"/> (edition gating, warnings, format/DPI resolution,
-/// and output-format constants).
-/// </summary>
 [Trait("Component", "PrintingTools")]
 public class PrintingToolsRequestHandlerTests
 {

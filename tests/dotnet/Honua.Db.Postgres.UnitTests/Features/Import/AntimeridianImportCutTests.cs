@@ -15,10 +15,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.UnitTests.Features.Import;
 
-/// <summary>
-/// A projected import aimed at a geographic target is cut after the ordinates are
-/// degrees. The vertex and ring limits are applied to that cut, not only to the source.
-/// </summary>
 public sealed class AntimeridianImportCutTests
 {
     [UnitTest]

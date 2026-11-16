@@ -1180,23 +1180,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         allowedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// Grants used by the round-5 mixed-owner publish-request/rollback tests: self-service
-    /// "own"-sentinel Publish and Rollback rights on StudioDraft resources.
-    /// </summary>
     private static readonly IReadOnlyList<PermissionGrant> StudioDraftOwnPublishAndRollbackGrants =
     [
         new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Publish" },
         new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Rollback" },
     ];
 
-    /// <summary>
-    /// Creates a Studio content item via <paramref name="adminClient"/> owned by
-    /// <paramref name="itemOwnerId"/>, then a second draft under the SAME item explicitly owned
-    /// by <paramref name="versionOwnerId"/>, saved as a version -- reproducing the mixed-owner
-    /// scenario from PR #3018 review round 5 item 1 (a version whose OwnerId diverges from the
-    /// immutable item owner_id). Returns <c>(itemId, mixedOwnerVersionId)</c>.
-    /// </summary>
     private async Task<(Guid ItemId, Guid MixedOwnerVersionId)> CreateItemWithMixedOwnerVersionAsync(
         HttpClient adminClient,
         string itemOwnerId,
@@ -1215,11 +1204,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return (itemId, mixedOwnerVersion.VersionId);
     }
 
-    /// <summary>
-    /// Creates an item owned by <paramref name="itemOwnerId"/>, establishes its first current
-    /// version, then creates (without saving) another draft under that item owned by
-    /// <paramref name="draftOwnerId"/>.
-    /// </summary>
     private async Task<(Guid ItemId, Guid CurrentVersionId, StudioPackageDraft MixedOwnerDraft)> CreateItemWithMixedOwnerDraftAsync(
         HttpClient adminClient,
         string itemOwnerId,
@@ -1266,10 +1250,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return (itemOwnerVersion.ItemId, itemOwnerVersion.VersionId, mixedOwnerDraft);
     }
 
-    /// <summary>
-    /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
-    /// on and the in-memory Studio store, for the honua-server#3001 end-user role-fixture tests.
-    /// </summary>
     private static async Task<WebAppFixture> CreateEndUserFixtureAsync(Action<IServiceCollection>? configureServices = null)
     {
         var fixture = new WebAppFixture()
@@ -1295,13 +1275,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return fixture;
     }
 
-    /// <summary>
-    /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
-    /// on and <see cref="IStudioAuthorizationService"/> replaced with a fake whose
-    /// <see cref="IStudioAuthorizationService.ResolveCallerId"/> always returns
-    /// <see langword="null"/> and <see cref="IStudioAuthorizationService.IsAdmin"/> always
-    /// returns <see langword="false"/>, for the PR #3018 review item 3 regression test.
-    /// </summary>
     private static async Task<WebAppFixture> CreateUnresolvableCallerFixtureAsync(CapturingAuditLog auditLog)
     {
         var fixture = new WebAppFixture()
@@ -1325,29 +1298,11 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return fixture;
     }
 
-    /// <summary>
-    /// Creates a Studio content item owned by <paramref name="ownerId"/> with two saved
-    /// versions, publishing only the first, via <paramref name="adminClient"/> (admin bypasses
-    /// the elevated publish-request operator-grant gate, so this setup helper does not need the
-    /// owner to hold a StudioDraft grant). Returns
-    /// <c>(itemId, publishedVersionId, currentUnpublishedVersionId)</c>.
-    /// </summary>
     private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionItemAsync(
         HttpClient adminClient,
         string ownerId)
         => await CreatePublishedTwoVersionItemAsync(adminClient, ownerId, BuildEnvelope("1=1"), "owner-scoped-query");
 
-    /// <summary>
-    /// Map-family variant of <see cref="CreatePublishedTwoVersionItemAsync(HttpClient, string)"/>
-    /// for the deliverable-export tests, which need a family the exporter can actually render
-    /// (kind must match family) <em>and</em> a body that satisfies
-    /// <c>StudioPackageValidator</c>'s strict <c>MapPackage</c> deserialization for the publish
-    /// request to be Accepted (required members: <c>mapPackageId</c>, <c>format</c>,
-    /// <c>status</c>, <c>createdAt</c>) -- the lighter body <see cref="BuildDeliverableEnvelope"/>
-    /// uses elsewhere in this file is fine for the composer (title/description/layers/basemap)
-    /// but throws during that stricter deserialization, which the plain export round-trip tests
-    /// never exercise (they never publish).
-    /// </summary>
     private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionMapItemAsync(
         HttpClient adminClient,
         string ownerId)
@@ -1869,18 +1824,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         };
     }
 
-    /// <summary>
-    /// A map envelope whose body satisfies both <c>StudioDeliverableComposer</c> (which
-    /// reads <c>title</c>/<c>description</c>/<c>layers</c>/<c>basemap</c> loosely) and
-    /// <c>StudioPackageValidator</c>'s <c>ValidateFamilyBody</c>, which deserializes the body
-    /// strictly into the geoprocessing <c>MapPackage</c> record (required:
-    /// <c>mapPackageId</c>/<c>format</c>/<c>status</c>/<c>createdAt</c>) -- unlike
-    /// <see cref="BuildDeliverableEnvelope"/>'s body, which is fine for the composer but throws
-    /// during that stricter deserialization, producing a Rejected (not Accepted) publication
-    /// request. Needed by the honua-server#3001 end-user export-authorization tests, which
-    /// (unlike the plain export round-trip tests above) must publish the item.
-    /// Each layer also needs a stable composition id so publication validation accepts it.
-    /// </summary>
     private static StudioPackageEnvelope BuildExportableMapEnvelope()
     {
         const string bodyJson = """
@@ -2274,14 +2217,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Fake <see cref="IStudioAuthorizationService"/> that simulates a non-admin principal whose
-/// caller id cannot be resolved (PR #3018 review item 3): end-user mode is always enabled, the
-/// principal is never treated as admin, and <see cref="ResolveCallerId"/> always returns
-/// <see langword="null"/> regardless of the actual claims presented, isolating
-/// StudioPackageEndpoints's "deny when unresolvable" fix from exactly how such a principal would
-/// authenticate in production.
-/// </summary>
 file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthorizationService
 {
     public bool IsEndUserAuthorizationEnabled => true;
@@ -2306,16 +2241,6 @@ file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthoriz
             "Authentication is required for Studio package lifecycle operations."));
 }
 
-/// <summary>
-/// Fake <see cref="IRoleStore"/> that returns pre-seeded <see cref="PermissionGrant"/>s for a
-/// given user id, for the PR #3018 review round 5 item 1 mixed-owner publish-request/rollback
-/// tests -- these need a real, evaluatable operator grant (unlike the rest of this file's
-/// grant-denial tests, which only assert the "no grant present" path) so the fix can be proven
-/// against a caller who legitimately holds a StudioDraft grant but is not the item's owner.
-/// Only <see cref="GetEffectivePermissionsAsync"/> is implemented; every other member is unused
-/// by <see cref="Honua.Infrastructure.Authentication.OperatorAuthorizationEvaluator"/>'s
-/// grant-lookup path exercised here.
-/// </summary>
 file sealed class FakeGrantingRoleStore : IRoleStore
 {
     private readonly Dictionary<string, List<PermissionGrant>> _grantsByUserId = new(StringComparer.Ordinal);
@@ -2363,11 +2288,6 @@ file sealed class FakeGrantingRoleStore : IRoleStore
         => throw new NotSupportedException("Not used by the tests exercising this fake.");
 }
 
-/// <summary>
-/// Fake <see cref="IStudioDeliverableExporter"/> that always reports the render-unavailable
-/// outcome (honua-server#4908), so the endpoint's HTTP mapping can be proven without depending
-/// on whether this test host happens to have a font that resolves glyphs.
-/// </summary>
 file sealed class RenderUnavailableStudioDeliverableExporter : IStudioDeliverableExporter
 {
     public const string ReasonCode = "studio_deliverable/no_renderable_typeface";

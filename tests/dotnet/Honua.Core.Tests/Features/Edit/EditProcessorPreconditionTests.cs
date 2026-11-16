@@ -12,13 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-/// <summary>
-/// Unit coverage for <see cref="EditProcessor.ToFeatureEditBatch"/> precondition mapping:
-/// optimistic-concurrency preconditions attached to a <see cref="UnifiedEditRequest"/>
-/// (request-level or via <see cref="EditConstraints.ExpectedStateToken"/> on updates) must
-/// flow into <see cref="FeatureEditBatch.Preconditions"/> so feature writers can enforce
-/// them inside the write transaction.
-/// </summary>
 public sealed class EditProcessorPreconditionTests
 {
     private static readonly MetadataV2Object Resource = new();

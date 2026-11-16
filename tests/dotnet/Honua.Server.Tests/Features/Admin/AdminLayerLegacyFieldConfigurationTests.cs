@@ -12,11 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Legacy snapshots omit <c>identifier</c> and keep only <c>layerIndex</c>. Field and filter
-/// writes must still succeed, and a fields PUT must not commit the field store when the graph
-/// write fails (honua-server#6179).
-/// </summary>
 public sealed class AdminLayerLegacyFieldConfigurationTests
 {
     private static readonly MetadataV2Status Active = new() { Lifecycle = MetadataV2LifecycleStatus.Active };

@@ -17,10 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// HTTP-level OData endpoint tests verifying basic endpoint behavior.
-/// For comprehensive OData client integration tests, see ODataClientIntegrationTests.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataEndpointTests : IAsyncLifetime

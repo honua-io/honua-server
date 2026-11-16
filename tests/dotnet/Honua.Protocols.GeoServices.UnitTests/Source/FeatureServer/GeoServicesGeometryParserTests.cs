@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit tests for <see cref="GeoServicesGeometryParser"/> geometryType validation (#1462).
-/// </summary>
 public sealed class GeoServicesGeometryParserTests
 {
     [UnitTest]

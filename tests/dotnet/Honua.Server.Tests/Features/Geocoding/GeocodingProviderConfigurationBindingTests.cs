@@ -8,17 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-/// <summary>
-/// Regression tests for honua-server's provider configuration binding. The provider
-/// configuration records previously used init-only properties, which the configuration
-/// binding source generator (EnableConfigurationBindingGenerator, required for the
-/// native-AOT Lambda image) cannot set — binding silently produced empty configurations,
-/// so an env-configured Amazon Location provider failed at construction with
-/// "Amazon Location place index name is required" even though
-/// Geocoding__Providers__AmazonLocation__PlaceIndexName was set (observed live on
-/// demo.honua.io, honua-server#2948). These tests bind through the same
-/// AddOptions().Bind() path the providers use.
-/// </summary>
 public sealed class GeocodingProviderConfigurationBindingTests
 {
     private static IConfiguration BuildConfiguration(IDictionary<string, string?> values) =>

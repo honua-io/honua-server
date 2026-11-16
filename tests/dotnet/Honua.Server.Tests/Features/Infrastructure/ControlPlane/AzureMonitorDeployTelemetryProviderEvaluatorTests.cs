@@ -12,12 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies the Azure Monitor deploy telemetry provider end-to-end through the multi-provider
-/// dispatcher with a faked Log Analytics query client (no live Azure subscription required). Mirrors
-/// <see cref="CloudWatchDeployTelemetryProviderEvaluatorTests"/> so the Azure evaluator is held to
-/// the same promote/rollback/wait contract as the AWS one.
-/// </summary>
 public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
 {
     private const string ErrorRateQuery = "requests | summarize errors=todouble(countif(success==false))/count()";
@@ -397,7 +391,6 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
 
         public string? LastEndpointOverride { get; private set; }
 
-        /// <summary>Queries answered by a successful, row-less result table.</summary>
         public HashSet<string> EmptyQueries { get; } = new(StringComparer.Ordinal);
 
         public Task<AzureMonitorScalarReading> GetScalarReadingAsync(

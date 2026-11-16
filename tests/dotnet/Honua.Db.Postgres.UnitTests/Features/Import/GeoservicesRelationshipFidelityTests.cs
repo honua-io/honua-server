@@ -17,17 +17,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Targeted fixtures for the per-relationship fidelity extraction added by
-/// issue #1256. The High Fidelity baseline asserts the simple (id,name,relatedTableId)
-/// case; these fixtures cover the explicit metadata-rich cases that drive the
-/// translator+apply pipeline:
-/// <list type="bullet">
-///   <item>Simple relationship with cardinality + role + keyField yields Automated</item>
-///   <item>Composite relationship downgrades to ManualReview</item>
-///   <item>Many-to-many relationship downgrades to ManualReview</item>
-/// </list>
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesRelationshipFidelityTests
 {

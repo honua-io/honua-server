@@ -181,13 +181,6 @@ public sealed class GeoServicesTileCachePackageReaderTests
         read.Should().ContainSingle(t => t.Z == 2 && t.Y == 10 && t.X == 20);
     }
 
-    /// <summary>
-    /// Regression test for BH-020: tiles whose encoded byte-size has bit 23 set
-    /// (≥ 8,388,608 bytes = 8 MB) must not be silently dropped.  The previous code
-    /// used an arithmetic right-shift on the signed Int64 index value, which sign-
-    /// extended negative Int64s into negative Int32 sizes, triggering the size-&lt;=0
-    /// guard and skipping the tile.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadTiles_CompactV2_TilesLargerThan8MB_AreNotSilentlyDropped()
