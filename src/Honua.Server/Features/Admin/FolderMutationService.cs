@@ -66,6 +66,9 @@ internal static class FolderMutationService
             if (authorization.Failure is not null)
                 return new(null, mutation, new FolderExecutionFailure.AffectedServices(authorization));
             var saved = await store.SaveAsync(mutation.Graph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+            var logger = services.GetService<ILoggerFactory>()?.CreateLogger("FolderMutations")
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+            FolderAuditLog.Mutated(logger, execution.Command.OperationId, saved.Graph.Revision);
             return new(saved, mutation, null, authorization);
         }
         catch (Exception exception) when (FolderMutationFailure.Handles(exception))

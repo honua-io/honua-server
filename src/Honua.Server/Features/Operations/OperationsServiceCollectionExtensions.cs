@@ -205,6 +205,12 @@ internal static class OperationsServiceCollectionExtensions
                             definition,
                             sp.GetRequiredService<IOperationSecretStore>()));
                 }
+                if (Honua.Server.Features.Infrastructure.Authentication.FolderOperationCredential.IsFolderMutation(definition.OperationId))
+                {
+                    services.AddDeferredOperationExecutor(definition.OperationId, sp => new FolderOperationExecutor(
+                        definition, sp, sp.GetRequiredService<IHttpContextAccessor>()));
+                    continue;
+                }
                 services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminApiOperationExecutor(
                     definition,
                     sp.GetRequiredService<IHttpClientFactory>(),

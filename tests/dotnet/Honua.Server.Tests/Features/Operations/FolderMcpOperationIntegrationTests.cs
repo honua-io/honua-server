@@ -118,6 +118,13 @@ public sealed partial class FolderOperationIntegrationTests
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse(payload);
         var result = document.RootElement.GetProperty("result");
         (result.TryGetProperty("isError", out var error) && error.ValueKind == JsonValueKind.True).Should().BeFalse(payload);
-        return result.GetProperty("structuredContent").Clone();
+        var structured = result.GetProperty("structuredContent");
+        var text = result.GetProperty("content").EnumerateArray()
+            .Where(block => block.GetProperty("type").GetString() == "text").ToArray();
+        text.Should().ContainSingle("the operation result must be available to text-only MCP clients");
+        using var textDocument = JsonDocument.Parse(text[0].GetProperty("text").GetString()!);
+        JsonElement.DeepEquals(structured, textDocument.RootElement).Should().BeTrue(
+            "both MCP result channels must describe the same operation outcome");
+        return structured.Clone();
     }
 }
