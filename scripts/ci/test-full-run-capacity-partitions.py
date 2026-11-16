@@ -85,6 +85,10 @@ print(f"measured-ranks=ok shards={check_measured_ranks(CONFIG)}")
 
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
+# A full run puts every shard in one server-tests matrix, and GitHub rejects larger matrices.
+GITHUB_MATRIX_JOB_LIMIT = 256
+assert len(CONFIG["shards"]) <= GITHUB_MATRIX_JOB_LIMIT, (
+    f"{len(CONFIG['shards'])} shards exceed GitHub's {GITHUB_MATRIX_JOB_LIMIT}-job matrix limit")
 
 # The fixed-name operator-eval-report upload fails without eval-report.json, so exactly one
 # shard uploads it and that shard runs the harness test that writes the report.
