@@ -16,6 +16,7 @@ from test_compose_release_lifecycle import ROOT, free_port, run
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
 from package_quickstart import package
 from compose_readiness_diagnostics import readiness_diagnostics
+from compose_contract_migrations import migrate_reviewed_contracts
 
 RC1 = "ghcr.io/honua-io/honua-server@sha256:c8d7aef98761618145725530b6a4e4b25ea4a9ae121da168362f9be4cf5f7d37"
 
@@ -187,6 +188,7 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
         sql("CREATE TABLE public.manual_rollback_marker(value text); INSERT INTO public.manual_rollback_marker VALUES ('retained')")
         run(legacy + ["stop", "honua"], env=legacy_env)
         backup = save_database_backup(current, env, install)
+        migrate_reviewed_contracts(current, env)
         run(current + ["up", "-d", "--no-deps", "honua"], env=env)
         wait_ready_with_diagnostics(port, "candidate upgrade", current_readiness)
         assert_revision(current, env, candidate)
@@ -199,6 +201,7 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
         assert sql("SELECT value FROM public.manual_rollback_marker") == "retained"
         assert sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions") == "140"
         run(legacy + ["stop", "honua"], env=legacy_env)
+        migrate_reviewed_contracts(current, env)
         run(current + ["up", "-d", "--no-deps", "honua"], env=env)
         wait_ready_with_diagnostics(port, "candidate return", current_readiness)
         assert_revision(current, env, candidate)

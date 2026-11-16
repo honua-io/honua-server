@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Internal;
@@ -372,6 +373,9 @@ internal static class GeoPackageExportWriter
 
     private static object NormalizeSqliteValue(object? value, ExportFieldType fieldType)
     {
+        if (value is JsonElement element)
+            value = NormalizeJsonValue(element, fieldType);
+
         if (value is null or DBNull)
             return DBNull.Value;
 
@@ -384,6 +388,19 @@ internal static class GeoPackageExportWriter
             _ => value
         };
     }
+
+    private static object? NormalizeJsonValue(JsonElement element, ExportFieldType fieldType) => element.ValueKind switch
+    {
+        JsonValueKind.Null or JsonValueKind.Undefined => null,
+        JsonValueKind.String when fieldType == ExportFieldType.Binary => DecodeBinary(element),
+        _ when fieldType == ExportFieldType.Json => element.GetRawText(),
+        JsonValueKind.Object or JsonValueKind.Array => element.GetRawText(),
+        _ => JsonElementConverter.ConvertToScalar(element)
+    };
+
+    // A string that is not base64 stays text, as a plain string in a binary field does.
+    private static object? DecodeBinary(JsonElement element) =>
+        element.TryGetBytesFromBase64(out var bytes) ? bytes : element.GetString();
 
     private static string FormatDate(object value)
     {

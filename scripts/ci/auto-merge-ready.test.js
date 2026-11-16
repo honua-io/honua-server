@@ -64,7 +64,11 @@ test('bot credentials are scoped and contributor code is never executed', () => 
   assert.match(workflow, /permission-pull-requests: write/);
   assert.match(workflow, /permission-workflows: write/);
   assert.match(workflow, /permissions: \{\}/);
-  assert.doesNotMatch(workflow, /actions\/checkout|pull_request_target/);
+  // pull_request_target runs the trunk copy with a trunk ref, which the bot-app environment's
+  // trunk-only rule admits; with no checkout, contributor code still never runs.
+  assert.match(workflow, /^on:\n  pull_request_target:\n/m);
+  assert.doesNotMatch(workflow, /^  pull_request:/m);
+  assert.doesNotMatch(workflow, /actions\/checkout/);
   assert.match(workflow, /cancel-in-progress: false\n  queue: max/);
 });
 
@@ -100,6 +104,17 @@ test('already mergeable pull requests stay neutral without direct merging', asyn
   for (const mergeStateStatus of ['CLEAN', 'UNSTABLE', 'HAS_HOOKS']) {
     assert.equal((await run({ ...ready(), mergeStateStatus })).length, 0);
   }
+});
+test('conflicted pull requests are not armed, but stale admission is still revoked', async () => {
+  // pull_request_target also fires for a PR whose merge ref cannot be built; pull_request did not.
+  const dirty = ready(); dirty.mergeStateStatus = 'DIRTY';
+  assert.deepEqual(await run(dirty), []);
+  const held = ready(); held.mergeStateStatus = 'DIRTY'; held.autoMergeRequest = { mergeMethod: 'SQUASH' };
+  held.labels.nodes = [{ name: 'hold' }];
+  assert.deepEqual((await run(held)).map(mutation => mutation.action), ['disable']);
+});
+test('the bot key is requested only inside the trunk-only bot-app environment', () => {
+  assert.match(workflow, /\n    environment: bot-app\n/);
 });
 test('Dependabot PRs are skipped before requesting unavailable App secrets', () => {
   assert.match(workflow, /github.event.pull_request.user.login != 'dependabot\[bot\]'/);

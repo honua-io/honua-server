@@ -13,13 +13,13 @@ namespace Honua.Core.Features.Studio.Services;
 /// </summary>
 public sealed partial class StudioPackageValidator : IStudioPackageValidator
 {
-    private readonly IStudioPackageFamilyRegistry _registry;
+    private readonly StudioPackageFamilyRegistry _registry;
     private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new Studio package validator.
     /// </summary>
-    public StudioPackageValidator(IStudioPackageFamilyRegistry registry, TimeProvider timeProvider)
+    public StudioPackageValidator(StudioPackageFamilyRegistry registry, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(timeProvider);

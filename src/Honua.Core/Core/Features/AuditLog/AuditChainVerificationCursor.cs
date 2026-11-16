@@ -21,6 +21,9 @@ internal readonly struct AuditChainLink
 
     public AuditActorType ActorType { get; init; }
 
+    // Agent identity is independent of the credential type stored in ActorType.
+    public string? ActorAgent { get; init; }
+
     public string ResourceType { get; init; } = string.Empty;
 
     public string? ResourceId { get; init; }
@@ -252,35 +255,43 @@ internal sealed class AuditChainVerificationCursor
     private static string Mac(ReadOnlySpan<byte> chainKey, string? previousHash, in AuditChainLink link)
         => AuditEntryHasher.ComputeEntryMac(
             chainKey,
-            previousHash,
-            link.Timestamp,
-            link.EventType,
-            link.Actor,
-            link.ActorType,
-            link.ResourceType,
-            link.ResourceId,
-            link.Action,
-            link.Outcome,
-            link.CorrelationId,
-            link.RemoteIp,
-            link.UserAgent,
-            link.Details);
+            new AuditEntryHashInput
+            {
+                PreviousHash = previousHash,
+                Timestamp = link.Timestamp,
+                EventType = link.EventType,
+                Actor = link.Actor,
+                ActorType = link.ActorType,
+                ResourceType = link.ResourceType,
+                ResourceId = link.ResourceId,
+                Action = link.Action,
+                Outcome = link.Outcome,
+                CorrelationId = link.CorrelationId,
+                RemoteIp = link.RemoteIp,
+                UserAgent = link.UserAgent,
+                Details = link.Details,
+                ActorAgent = link.ActorAgent,
+            });
 
     private static string Legacy(string? previousHash, in AuditChainLink link)
         => AuditEntryHasher.ComputeEntryHash(
-            previousHash,
-            link.Timestamp,
-            link.EventType,
-            link.Actor,
-            link.ActorType,
-            link.ResourceType,
-            link.ResourceId,
-            link.Action,
-            link.Outcome,
-            link.CorrelationId,
-            link.RemoteIp,
-            link.UserAgent,
-            link.Details);
+            new AuditEntryHashInput
+            {
+                PreviousHash = previousHash,
+                Timestamp = link.Timestamp,
+                EventType = link.EventType,
+                Actor = link.Actor,
+                ActorType = link.ActorType,
+                ResourceType = link.ResourceType,
+                ResourceId = link.ResourceId,
+                Action = link.Action,
+                Outcome = link.Outcome,
+                CorrelationId = link.CorrelationId,
+                RemoteIp = link.RemoteIp,
+                UserAgent = link.UserAgent,
+                Details = link.Details,
+                ActorAgent = link.ActorAgent,
+            });
 
     private static bool HashesMatch(string computed, string stored)
         => string.Equals(computed, stored, StringComparison.Ordinal);

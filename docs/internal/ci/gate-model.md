@@ -1,6 +1,8 @@
 # CI Gate Model
 
-A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
+Every source path has at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a path's owners are all over budget.
+
+#7678 split the nine over-budget shards that were still the only owners of 61 source paths (Admin Catalog and Configuration, Admin Network and Jobs, Admin Platform and Connections, OData Mutations and Batch, Miscellaneous 1 and 2, Cloud and Streaming Import, SensorThings, gRPC Protocol and Scene) into 28 children from the TRX class spans of full run `43580101834`. Classes longer than a child's 5.5-minute share are cut at method boundaries, and classes with no shard time in that run (Tier Fast or Slow) stay in the last child, which also owns future tests. Child ranks are estimates in `full-run-capacity-contracts.json` until the next passing full run measures them. Miscellaneous children continue that family's numbering (3 to 8).
 
 Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
 
@@ -529,12 +531,13 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. The selector itself, Format and source Analyzers use the
-fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
-Both test-analyzer rows and the four Fast/architecture matrix jobs always use
-`ubuntu-latest`. Test analyzers stay hosted even during light-pool qualification.
-All eight remain independent of producer admission and heavy settings and keep
-their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
+`server-test-producer` run, and which start jobs move to idle heavy runners. The
+selector itself, Format and source Analyzers use the fork-guarded
+`HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback. Both
+test-analyzer rows and the four Fast/architecture matrix jobs use `ubuntu-latest`
+unless the selector planned them onto the heavy pool (below); test analyzers never
+use the light pool, even during light-pool qualification. All eight keep their
+existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
 availability switch: keep it unset while the light pool is unhealthy; new jobs
 then fall back to hosted runners. Forks always use hosted runners. Routing does
 not move an already queued job when pool health changes. With the repository variable
@@ -550,7 +553,27 @@ host and read its heartbeat, nothing else) and runs
 - When the current instance's heartbeat is fresh and shows two idle gate runners,
   Build and tests and Server test producer use the selected gate label.
 - When the host is busy, or no heartbeat arrives within three minutes, the two
-  producers use `ubuntu-latest`. A stopped host is still woken for later runs.
+  producers use `ubuntu-latest`, unless idle heavy runners cover them (below). A
+  stopped host is still woken for later runs.
+- Heavy start plan (`start_heavy`): from the same proof, the selector never plans
+  three idle heavy runners (two for this gate's even affected shards, which have no
+  hosted fallback, and one for advisory and AOT jobs) and spends half of the idle
+  runners above that, at most two per gate, so a second gate reading the same
+  heartbeat still finds the reserve. The heartbeat records availability; it does
+  not reserve runners, so several gates starting together can still queue on the
+  pool, and a lost spot host leaves planned jobs queued as it does shards. A busy
+  gate pool moves both producers first, on the label that alone selects the heavy
+  pool (the group's own label, or a sole label that must be unique to the heavy
+  pool), because they gate the shards; without such a label, including a
+  group-only selector, nothing is planned and every start job stays hosted; the remaining budget goes to `analyzers-server`,
+  `architecture`, `server-fast` and `analyzers-other`, in that order (longest
+  median hosted run on 24 gates, 15 Nov 2026: 12.2, 12.0, 10.7 and 10.6 minutes
+  after 5 to 9 minutes of hosted queue). `server-governance` (starts PostGIS) and
+  `unit-fast` (shortest) stay hosted. A planned job runs on the fork-guarded
+  `HONUA_HEAVY_RUNNER` JSON selector; a stale or invalid proof, enforce mode,
+  drafts and forks keep it hosted. A failed-jobs rerun reuses the original plan.
+  Fast/architecture jobs pin temp to `RUNNER_TEMP` and skip the hosted-only
+  `sudo` disk cleanup on self-hosted runners.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
@@ -639,6 +662,7 @@ These workflows run on schedule and can be dispatched manually:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `release-please.yml` (SDK repos only) | Push | Version automation |
+| `disabled-workflow-check.yml` | Weekly schedule | Fails while a workflow disabled on GitHub is still in the tree, unless an active workflow calls it or a dated entry names the ticket that decides it |
 
 ## Attesting reviewers
 
@@ -665,11 +689,13 @@ REST reports `claude[bot]`, GraphQL reports `claude`. **The gate reads GraphQL**
 in production — a registry that accepted only `claude[bot]` would make every
 review the lane posts invisible to the gate.
 
-`claude` is also a real GitHub User, and a User can hold a PAT, so it is accepted
-only when GitHub additionally types the author as a `Bot`. That is why every
-`author` selection in the snapshot query carries `__typename`, and why
-`reviewerFor(login, typename)` takes two arguments. Dropping `__typename` from
-the query silently disables the Claude identity.
+Both suffix-less spellings are ordinary account names (`claude` is a real GitHub
+User; `chatgpt-codex-connector` is a registered Organization), and an account can
+hold a PAT, so each is accepted only when GitHub additionally types the author as
+a `Bot`. That is why every `author` selection in the snapshot query carries
+`__typename`, and why `reviewerFor(login, typename)` takes two arguments.
+Dropping `__typename` from the query silently disables both identities, and the
+gate then fails open: reviewer threads and objections stop blocking.
 
 ### The Claude lane (retired)
 
@@ -711,6 +737,28 @@ Receipts have scope `archived-customer-journey`, distinguish `candidate` from
 `customerJourneyComplete` becomes true only after both complete installations
 and their cleanup pass. A prospective PR receipt cannot qualify a shipped archive;
 release verification needs a recorded pass from the published candidate.
+
+Command output stays withheld; a failed command reports its operation, exit
+code and fixed signal labels. Compose prints `pull access denied` for an image
+the package builds locally (`LOCALLY_BUILT_IMAGES`: the PostGIS datum-grid image)
+before building it, so that line does not count when a build line follows it;
+denials of any other image, including official Docker Hub images Docker names
+without a path, still count. `localBuildStarted` says whether a build started.
+When initialization or the health read fails, the receipt also records the
+Compose version and each service's name, state, health and exit code (60-second
+reads, only short identifier-like values), and teardown still runs.
+
+### GP Scoped Key Contract
+
+`gp-scoped-key-contract.yml` runs one job per test project (6 jobs). Each job
+builds its project once and runs every case with `--no-build`, its own filter,
+its own TRX and the same execution proof: every source-derived method and theory
+row, required class and named method must run and pass
+(`scripts/ci/gp-scoped-key-contract.py`). Cases that never used PostgreSQL keep
+an empty `HONUA_TEST_DB_URL`. Before this, 8 of 13 jobs each compiled
+Honua.Server.Tests for one filter: run 43759686692 spent about 5,950 job-seconds,
+4,000 of them in those 8 jobs, mostly compiling. A failing case no longer stops
+the others; the job fails after all of them run.
 
 ### Check registration
 
@@ -1070,11 +1118,28 @@ runs and twice-daily full runs. That job already participates in CI Gate; no
 required check name or aggregate dependency changes. The runtime URL scan still
 runs and fails the trunk gate when a source/config link breaks.
 
-Derived Artifact Normalization watches .NET generator/proving-test code and
-client compatibility receipts instead of every test language, and GIS data
-instead of GIS prose. Runtime source, generator scripts, CITE status and all
-existing build/setup inputs remain covered. Its producer/consumer security
-boundary and deterministic replay are unchanged.
+Derived Artifact Normalization runs on pull requests only when its own recipe
+can change: the producer workflow, the .NET setup action, the envelope builder,
+every generator input the envelope pins (`GENERATOR_INPUTS` in
+`scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
+is observe-only since feature PRs stopped committing these projections (14 Nov),
+so an envelope for an ordinary source change produced no result anyone used.
+That generation still runs: PR Gate's architecture job regenerates the same
+projections and reports drift on every ready PR, ci.yml's foundation job does
+the same on affected trunk and twice-daily full runs, and the nightly
+generated-files-on-trunk writer publishes them. `validate-optional-pr-inputs.py`
+fails if a pinned generator input stops admitting the producer. The
+producer/consumer security boundary and deterministic replay are unchanged.
+
+The review-first and router validators project the workflow inventory into a
+scratch file (or compare it with `--check`) instead of rewriting the tracked
+page. The page is trunk-published and may lag the workflow YAML; a rewrite left
+the PR Gate checkout dirty, and the later private-feed restore proof, which
+requires an unchanged tracked checkout, failed on any PR touching its inputs.
+Among the `scripts/ci/*.sh` entry points only `regenerate-generated-files.sh`
+rewrites the page, and `generate-workflow-inventory.test.py` enforces that. The
+doc-link steps in ci.yml (after the router validators) and Docs Link Gate
+regenerate it on purpose so links are checked against this head's projection.
 
 ## Server test fixture lifetimes
 
@@ -1192,39 +1257,42 @@ definition.
 
 ### ImageServer raw pixel export database lifetime
 
-`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
-reference, so the shared PostgreSQL infrastructure starts once per class and
-stays up across its integration cases instead of restarting for each one. Each
-case still creates its own `WebAppFixture` host and isolated schema, and seeds
-the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
-live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
-only unit tests never starts a database.
-All cases and assertions remain in the GeoServices ImageServer Raster Rendering
-and GeoServices ImageServer Rendering and Support shards on selected PR runs and
-twice-daily full trunk runs. This changes no runner count, required check name,
-required aggregate dependency, workflow, or shard definition.
+`ImageServerRawPixelExportTests` holds a class-scoped `WebAppFixture` reference,
+which retains both the default web host and shared PostgreSQL infrastructure
+across its integration cases. Each case still creates its own fixture, client
+and isolated schema, and seeds the raster under the schema-mutation lock. The
+pure LERC/BIP encoder unit tests live in `ImageServerPixelBlockEncoderTests`,
+which has no fixture, so running only unit tests never starts a database.
+All cases and assertions remain in the selected raster rendering shard and
+twice-daily full trunk runs. See the raw pixel host lifetime section below for
+paired measurements. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
 
 ### ImageServer mosaic integration database lifetime
 
-`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
-which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
-infrastructure from the first case to the last instead of letting it be torn
-down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
-host with its own isolated application schema, raster seed and license
-entitlement configuration.
-All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+`ImageServerMosaicIntegrationTests` retains the default web host and PostgreSQL
+infrastructure through a class-scoped `WebAppFixture`. Each case still creates
+and disposes its own fixture and isolated application schema, and seeds its
+raster under the schema-mutation lock. Cases that configure license entitlements
+continue to build private hosts. The existing warm raster query performance
+assertion and all response assertions remain unchanged.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering 2
 shard on selected PR runs and twice-daily full trunk runs. This changes no
 runner count, required check name, required aggregate dependency, workflow, or
 shard definition.
 
+Paired build-host runs passed the same 20 cases with no failures or skips.
+VSTest execution fell from 115 to 46 seconds (69 seconds, or 1.15 execution
+runner-minutes saved). The fixture-inclusive TRX interval fell from 133.049096
+to 73.394077 seconds (59.655019 seconds saved). Both runs used one test
+process; complete CI shard/job savings remain unmeasured.
+
 ### GPServer endpoint application lifetime
 
-`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
-reference-counted PostgreSQL infrastructure starts once and stays alive until
-the last case in the class has run. The default `WebAppFixture` application
-starts only in cases that use the shared client, fixture or job store, and is
-disposed only if it was started. Every case still builds its own hosts, isolated
-schemas, in-memory job store and service replacements.
+`GPServerEndpointTests` shares one default application, isolated schema and
+in-memory execution-job store across its default-host cases through a class
+fixture; see the GPServer default application lifetime section below. Cases
+that replace services or configuration still build their own hosts.
 All cases and assertions remain in the GeoServices GPServer Endpoints shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
@@ -1373,14 +1441,38 @@ or shard definition.
 
 ### Secure connection default application lifetime
 
-`SecureConnectionEndpointsTests` starts its default application lazily: only
-cases that call `InitializeDefaultApplicationAsync()` start it, and only those
-cases dispose it. Cases that build a custom host no longer pay for an unused
-default application.
+`SecureConnectionEndpointsTests` starts its default application lazily, once per
+class, on the first case that uses it, and disposes it once after the class.
+Each case creates and disposes its own client. Cases that build a custom host
+never start the default application; see the secure connection endpoint test
+host reuse section below.
 All cases and assertions remain in the Server Features Admin Platform and
 Connections shard on selected PR runs and twice-daily full trunk runs. This
 changes no runner count, required check name, required aggregate dependency,
 workflow, or shard definition.
+
+### PrintingTools endpoint application lifetime
+
+`PrintingToolsEndpointTests` keeps one default application for the class. Each
+case creates its own admin client, as the per-case application did. Jobs are
+addressed by generated id. The incomplete-job result assertion still accepts
+either a completed parameter object or the GeoServices 400 error. No
+assertion, test selection, runner count, required check name, required
+aggregate dependency, workflow, or shard definition changes. The class stays in Server Features Spec Printing and Static
+Maps 3 on selected PR runs and twice-daily full trunk runs.
+
+A paired build-host run passed the same 22 cases with zero skips, one process
+each. VSTest case time was 1 minute 41 seconds before and 2 seconds after,
+because the one application start is now class-fixture time. Fixture-inclusive
+TRX duration fell from 110.869 to 24.444 seconds, saving
+86.424 seconds (1.44 test-run runner-minutes). Compilation, admission and
+copyback are excluded.
+
+The whole Spec Printing and Static Maps 3 filter ran as a paired build-host run
+with one process each. Both passed the same 142 cases with zero skips and an
+identical case and outcome list. VSTest reported 4 minutes 29 seconds before and
+2 minutes 7 seconds after. TRX wall time fell from 281.6 to 152.9 seconds,
+saving 128.7 seconds (2.15 runner-minutes) per shard run.
 
 ### Feature stream snapshot and conformance application lifetime
 
@@ -1486,17 +1578,25 @@ This change adds no runners or jobs: one lifecycle runner before and after.
 Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
+The manual rc.1 upgrade and return each run migrate-only after stopping rc.1
+and before candidate startup. The harness explicitly selects Gate, clears prior
+approval, and accepts exit 5 only for annotated contracts on its reviewed script
+allowlist with matching SHA-256 bytes. Migration 183 removes optional indexes;
+future contracts require a separate review. The exact returned nonce authorizes
+one retry, which must exit 0 with a verified schema. Unknown contracts, changed
+SQL, malformed summaries and failed verification stop the journey. This adds no
+jobs or runners (one lifecycle runner before and after). Run 43729796698's manual
+journey reported one pass and one failure in 349 seconds before this repair.
+Refusals name the script, refusal code and exit code, never raw output, and the
+checks raise explicitly so `python -O` cannot strip them.
+
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
-GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
-workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
-reconciles PR and managed-workflow start events using trusted default-branch code.
-It cancels only active managed Code Quality runs for the same PR whose SHA differs
-from the live PR head, rechecking that head before each cancellation. Current-head
-coverage, trunk scans, required checks and other PRs remain protected. The helper
-checks out no PR code and grants only Actions write, contents read and PR read.
+GitHub-managed Code Quality is switched off for this repository, so there is no
+managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
+only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
-already cancel superseded PR runs through their existing per-PR concurrency groups.
+cancel superseded PR runs through their per-PR concurrency groups.
 
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
@@ -1517,7 +1617,8 @@ CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
 `advisory-runner-select.yml` before allocating compute. Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
 and heartbeat. A heartbeat no older than 90 seconds must match the current
-instance and advertise an idle heavy runner. Otherwise the job uses its existing
+instance and advertise more than two idle heavy runners: two stay free for
+required PR Gate jobs. Otherwise the job uses its existing
 hosted label. Missing configuration, credentials, read failures and selector
 failure all fall back to hosted compute. This selector never wakes or resizes
 the host; AWS retries and step timeouts are bounded. The current role trusts PR
@@ -1556,3 +1657,83 @@ needed to verify it.
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### GPServer default application lifetime
+
+`GPServerEndpointTests` shares one seeded application through a class fixture.
+The sequential default-host cases clear their in-memory job store before use,
+so job listings and persisted-plan checks retain per-case state. Cases that
+replace authorization, metadata or geoprocessing services own separate hosts.
+All assertions and method filters remain unchanged; the GPServer/NAServer
+shards still run on selected PRs and full trunk runs.
+
+Paired build-host class runs passed the same 71/71 cases. VSTest reported
+342 seconds before and 132 seconds after (210 seconds saved). The wider TRX
+start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 seconds
+(3.40 test-run runner-minutes). Each used one test process with the same filter.
+No runner, workflow, required check, aggregate dependency or shard definition
+changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+### Admin authentication default application lifetime
+
+`AdminAuthEndpointsTests` starts its per-case default application on the first
+request for its default client. The 32 discovered methods (49 cases) that create separately
+configured OIDC or client-certificate applications avoid an unused default
+application. All 47 discovered test methods (64 cases) retain per-case fixture isolation and
+their existing assertions.
+The Server Features Admin Authentication and Credentials shard still runs these
+cases on selected PR runs and twice-daily full trunk runs. No required check,
+aggregate dependency, runner count, workflow or shard definition changes.
+
+Paired Release build-host runs passed the identical 64 cases with one test
+process each. VSTest reported execution fell from 437 to 306 seconds, saving
+131 seconds (2.18 execution runner-minutes). The wider TRX start-to-finish
+interval fell from 446.067028 to 314.676740 seconds, saving 131.390288 seconds
+(2.19 test-run runner-minutes). Queue and build time are excluded. Full-shard
+job savings remain unmeasured: the shard also includes
+`OperatorBearerTokenServiceTests` and CI setup.
+
+### ImageServer raw pixel host lifetime
+
+`ImageServerRawPixelExportTests` retains the default shared web host through a
+class-scoped `WebAppFixture`. Each case still creates and disposes its own fixture,
+client and schema, resets the raster samples, and holds the schema-mutation lock
+through every request. This avoids rebuilding the default web host between cases
+without sharing case data or changing assertions.
+
+Paired full-class build-host runs passed the same 45 cases with no skips. VSTest
+execution fell from 230 to 20 seconds, saving 210 seconds (3.50 execution
+runner-minutes). The wider TRX start-to-finish interval fell from 235.864591 to
+33.210444 seconds, saving 202.654147 seconds (3.38 test-run runner-minutes).
+Each run used one test process; full CI shard job savings remain unmeasured.
+The selected PR shard and twice-daily full trunk runs retain all cases and their
+existing budgets.
+No workflow, shard selection, runner count, required check or aggregate dependency
+changes are made.
+
+### Secure connection endpoint test host reuse
+
+`SecureConnectionEndpointsTests` lazily starts one class-owned application for
+its unchanged default admin authentication and database seed. Each case keeps
+its own authenticated client and uses unique connection names and IDs. Cases
+with substituted registries, connection drivers, audit logs, encryption failures
+or host-allowlist settings retain their private application hosts. No host is
+started when a shard selects only those custom cases. Assertions, test selection,
+parallelism and required checks remain unchanged.
+
+A paired build-host run passed the exact same 56 cases with zero skips in
+306 seconds before and 181 seconds after: 125 seconds (2.08 runner-minutes)
+saved with one test process in each run. TRX test-run duration fell from
+317.974 to 193.183 seconds. The 21 default-host case bodies took 103.834 versus
+8.437 seconds; the 35 private-host case bodies took 193.064 versus 172.680
+seconds. Ambient variation affects both groups, so the complete duration change
+is an observation rather than an attribution to fixture reuse alone. These are
+class execution measurements, excluding compilation, admission and copyback.
+
+A separate pair using the complete existing Platform and Connections shard
+filter passed identical 91-case/class/method/outcome multisets with zero skips.
+Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
+(1.58 runner-minutes); fixture-inclusive TRX duration fell from 470.055 to
+376.298 seconds. The other three classes are unchanged. This overlaps the
+class measurement and is not added to it. Complete CI-job setup and build
+duration remain unmeasured.

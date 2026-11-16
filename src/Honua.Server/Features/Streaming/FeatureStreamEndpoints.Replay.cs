@@ -19,7 +19,7 @@ internal static partial class FeatureStreamEndpoints
         ILogger logger,
         Guid sessionId,
         CancellationToken cancellationToken,
-        IStreamSubscriptionFilter? subscriptionFilter = null,
+        StreamSubscriptionFilter? subscriptionFilter = null,
         string? subscriptionId = null,
         FeatureStreamSessionManager? sessionManager = null,
         long subscriptionGeneration = 0,
@@ -156,7 +156,7 @@ internal static partial class FeatureStreamEndpoints
         Guid sessionId,
         FeatureStreamSessionManager sessionManager,
         CancellationToken cancellationToken,
-        IStreamSubscriptionFilter? subscriptionFilter = null,
+        StreamSubscriptionFilter? subscriptionFilter = null,
         string? subscriptionId = null,
         long subscriptionGeneration = 0,
         FeatureStreamDeliveredCursorWindow? liveDelivered = null)

@@ -35,7 +35,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
 
     private readonly IOptionsMonitor<ImageryInferenceOptions> _inferenceOptions;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
-    private readonly FrozenDictionary<string, IImageryInferenceClient> _clients;
+    private readonly FrozenDictionary<string, HttpImageryInferenceClient> _clients;
     private readonly ILogger<ImageryInferenceJobExecutor> _logger;
     private readonly IReadOnlyList<ICloudRangeReader> _rangeReaders;
     private readonly AiExecutionContextFactory? _contextFactory;
@@ -44,7 +44,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     public ImageryInferenceJobExecutor(
         IOptionsMonitor<ImageryInferenceOptions> inferenceOptions,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
-        IEnumerable<IImageryInferenceClient> clients,
+        IEnumerable<HttpImageryInferenceClient> clients,
         ILogger<ImageryInferenceJobExecutor> logger,
         IEnumerable<ICloudRangeReader>? rangeReaders = null,
         AiExecutionContextFactory? contextFactory = null,
