@@ -51,6 +51,10 @@ method; call it through the admin client's HTTP transport or a client generated 
 
 ## Publish a layer
 
+Use this SDK example for a small table that completes synchronously. For tables
+above the asynchronous publication threshold, use the generated admin client as
+described under [Large-table publication](#large-table-publication).
+
 ```python
 from honua_admin import HonuaAdminClient, PublishLayerRequest
 
@@ -125,6 +129,11 @@ honua query "default/$LAYER_ID" --count
 Use the actual service and layer ID from the publish result. The same catalog entry also drives OGC API Features, GeoServices, OData, vector tiles, and the other enabled protocol adapters.
 
 ## Large-table publication
+
+The published `honua-admin` 0.3.2 `publish_layer()` method expects a completed
+layer and cannot decode a background job handle. Use a client generated from
+[`admin-api.json`](../../developer/api-specs/admin-api.json) that preserves the
+HTTP 202 response for these publications and subsequent polling.
 
 Tables above `LayerPublishing:AsyncPublishRowThreshold` (10,000 rows by default)
 return HTTP 202 with a job handle instead of holding the request open for the
