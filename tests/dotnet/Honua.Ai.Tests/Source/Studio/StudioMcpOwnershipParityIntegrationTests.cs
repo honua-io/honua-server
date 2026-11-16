@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -62,17 +63,10 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
     public async Task RestAndMcp_ApplyTheSameOwnerAndCrossUserDenialRules(string family)
     {
-        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
-        var aliceKey = await apiKeyStore.CreateAsync(
-            "mcp-owner-alice", ["studio:enduser"], null, null, CancellationToken.None);
-        var bobKey = await apiKeyStore.CreateAsync(
-            "mcp-owner-bob", ["studio:enduser"], null, null, CancellationToken.None);
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
-        using var aliceClient = _fixture.CreateClient(
-            client => client.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
-        using var bobClient = _fixture.CreateClient(
-            client => client.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+        var aliceOwnerId = Guid.NewGuid().ToString("D");
+        var bobOwnerId = Guid.NewGuid().ToString("D");
+        using var aliceClient = await CreateOwnerSessionAsync(aliceOwnerId);
+        using var bobClient = await CreateOwnerSessionAsync(bobOwnerId);
         var aliceMcp = new StudioMcpHttpClient(aliceClient);
         var bobMcp = new StudioMcpHttpClient(bobClient);
 
@@ -139,6 +133,28 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var updatedDraft = await ApproveMutationAsync(aliceMcpUpdate);
         updatedDraft.GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
+    }
+
+    private async Task<HttpClient> CreateOwnerSessionAsync(string ownerId)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var sessions = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        var sessionId = await sessions.CreateAuthenticatedSessionAsync(new AdminAuthAuthenticatedSession
+        {
+            ProviderKey = "emulated-owner",
+            AccessToken = "emulated-owner-token",
+            Origin = AdminAuthSessionOrigin.InteractiveOidc,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
+            Claims = [new() { Type = ClaimTypes.NameIdentifier, Value = ownerId }],
+        }, CancellationToken.None);
+        var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
+        client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
+        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
+        return client;
     }
 
     private async Task<JsonElement> ApproveMutationAsync(JsonElement result)
