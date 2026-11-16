@@ -9,8 +9,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <!--
-      GP Devkit P6 (#2127): the golden-file GP test SDK. It wraps the headless
-      GeoprocessingLocalRunner (#2123) with xUnit-friendly golden-file assertion
+      GP Devkit P6: the golden-file GP test SDK. It wraps the headless
+      GeoprocessingLocalRunner with xUnit-friendly golden-file assertion
       helpers (NTS coordinate-tolerance geometry diff for vector outputs, a
       numeric/structural diff for raster/scalar outputs) plus an UPDATE mode.
 

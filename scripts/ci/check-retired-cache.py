@@ -12,10 +12,20 @@ POLICY_FILES = {
     "scripts/ci/check-retired-cache-workflow.test.py",
 }
 
+# CI routing data mirrors the test inventory: a shard filter, capacity contract or container
+# expectation names a cache test only while that test exists, and the test itself is checked.
+ROUTING_DATA_FILES = {
+    ".github/ci-shards.json",
+    "scripts/ci/fixtures/full-run-capacity-contracts.json",
+    "scripts/ci/fixtures/live-output-capacity-contracts.json",
+    "scripts/ci/test-shard-image-selection.py",
+}
+
 
 def exempt(path: str) -> bool:
     name = PurePosixPath(path)
     return (path in POLICY_FILES
+            or path in ROUTING_DATA_FILES
             or name.name.casefold() in {"changelog", "changelog.md", "changelog.rst", "changelog.txt",
                                         "third-party-notices.md", "third-party-notices.txt"}
             or path.casefold().startswith("docs/changelog/"))

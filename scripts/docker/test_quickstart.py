@@ -153,6 +153,24 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "Compose must render without disclosing credentials")
         return json.loads(result.stdout)["services"]
 
+    def test_monitoring_secret_init_runs_its_whole_script(self):
+        with tempfile.NamedTemporaryFile() as key_file:
+            result = subprocess.run(
+                ["docker", "compose", "--env-file", "/dev/null", "-f",
+                 str(ROOT / "docker/monitoring/compose.yml"), "config", "--format", "json"],
+                env={**os.environ, "HONUA_MONITORING_GRAFANA_PASSWORD": os.urandom(16).hex(),
+                     "HONUA_METRICS_SCRAPE_KEY_FILE": key_file.name},
+                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        init = json.loads(result.stdout)["services"]["prometheus-secret-init"]
+        self.assertEqual(["/bin/sh", "-ec"], init["entrypoint"])
+        # `sh -c` takes one script argument; Compose splits a string command into words,
+        # which would leave a bare `test` as the script.
+        self.assertEqual(1, len(init["command"]), init["command"])
+        for step in ("test -s /run/source/honua-scrape-key", "cp /run/source/honua-scrape-key",
+                     "chown 65534:65534", "chmod 0440"):
+            self.assertIn(step, init["command"][0])
+
     def test_console_healthcheck_reads_the_file_the_image_ships(self):
         with tempfile.NamedTemporaryFile() as env_file:
             services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),

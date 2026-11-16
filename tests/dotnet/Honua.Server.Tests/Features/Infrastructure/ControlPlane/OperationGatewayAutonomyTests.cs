@@ -92,6 +92,11 @@ public sealed class OperationGatewayAutonomyTests
             "operation.auto_executed",
             "operation.auto_verified",
             "operation.auto_applied");
+        auditLog.Events.Should().OnlyContain(item =>
+            item.Actor == "ops-findings-autonomy"
+            && item.ActorAgent == "ops-findings-autonomy");
+        auditLog.Events.Where(item => item.Action.StartsWith("operation.auto_", StringComparison.Ordinal))
+            .Should().OnlyContain(item => item.ActorType == AuditActorType.System);
         outbox.Events.Should().ContainSingle();
         outbox.Events[0].Source.Should().Be(AlertEventSources.Ops);
         outbox.Events[0].ServiceId.Should().Be("ops-autonomy");

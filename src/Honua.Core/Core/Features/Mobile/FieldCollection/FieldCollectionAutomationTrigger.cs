@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Mobile.FieldCollection;
 
-public sealed partial class FieldCollectionAutomationTrigger : IFieldCollectionAutomationTrigger
+public sealed partial class FieldCollectionAutomationTrigger
 {
     private readonly IFieldCollectionAutomationStore _store;
     private readonly IFieldCollectionActionDispatcher _dispatcher;

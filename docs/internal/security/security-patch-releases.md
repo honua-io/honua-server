@@ -19,9 +19,13 @@ ECS on Fargate is the deployment target this covers; Lambda images are out of sc
 
 The release rescan never writes advisory ids, package names or digests into a public issue.
 
-- **Private tracker (intended path).** Set the repository secret `SECURITY_FINDINGS_TOKEN`
-  (a fine-grained token with Issues: read and write on the private security tracker only)
-  and the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of that tracker). The
+- **Private tracker (intended path).** Set `SECURITY_FINDINGS_TOKEN` (a fine-grained token
+  with Issues: read and write on the private security tracker only) as a secret of the
+  `security-tracker` environment, whose deployment rule admits trunk only, and keep no
+  repository secret of that name: a repository secret is readable by a workflow on any branch.
+  A manual run of the security nightly from another branch therefore stops at the environment
+  and files nothing. Set the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of
+  that tracker). The
   report job then opens one issue per release, platform and advisory with the package, fixed
   version and due date, and skips findings that already have an open issue. Before reading
   findings, it checks the destination repository's visibility through the API. A public

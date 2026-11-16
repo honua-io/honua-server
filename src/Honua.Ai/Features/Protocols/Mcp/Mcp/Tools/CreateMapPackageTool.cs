@@ -16,13 +16,13 @@ internal sealed class CreateMapPackageTool : IMcpTool
     public const string ToolName = "honua_create_map_package";
 
     private readonly IGeoprocessingJobService _jobService;
-    private readonly IMapPackageDraftFactory _drafts;
+    private readonly MapPackageDraftFactory _drafts;
     private readonly IPackageDraftStore _draftStore;
     private readonly ILogger<CreateMapPackageTool> _logger;
 
     public CreateMapPackageTool(
         IGeoprocessingJobService jobService,
-        IMapPackageDraftFactory drafts,
+        MapPackageDraftFactory drafts,
         IPackageDraftStore draftStore,
         ILogger<CreateMapPackageTool> logger)
     {

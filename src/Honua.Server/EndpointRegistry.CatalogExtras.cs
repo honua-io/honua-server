@@ -9,6 +9,11 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> CatalogExtraEndpoints =>
     [
+        new("GET", "/api/v1/publications/{publicationId}/current.json"),
+        new("HEAD", "/api/v1/publications/{publicationId}/current.json"),
+        new("GET", "/api/v1/publications/{publicationId}/{version}/{fileName}"),
+        new("HEAD", "/api/v1/publications/{publicationId}/{version}/{fileName}"),
+
         // Data export
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export"),
 
