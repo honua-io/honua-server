@@ -653,8 +653,8 @@ internal sealed class PortalOAuthTokenService(
         {
             // No challenge was registered at authorize time. This branch is only
             // reachable when OAuth2.RequirePkce is disabled (the default-on hard
-            // requirement, #1484, rejects no-challenge codes before this call); in
-            // that explicit opt-out there is nothing to verify.
+            // requirement rejects no-challenge codes before this call); in that
+            // explicit opt-out there is nothing to verify.
             return true;
         }
 

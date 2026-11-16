@@ -99,7 +99,7 @@ internal static class SpatialJoinSupport
         // Carried attributes FIRST, computed fields after. A dataset whose attributes include
         // JOIN_COUNT (or a caller naming it in outputFields) otherwise overwrote the computed
         // count with the carried array, so the result silently violated the contract every
-        // consumer reads (honua-server#3043 review). The computed field is the one this process
+        // consumer reads. The computed field is the one this process
         // promises, so it wins the collision.
         foreach (var field in carryFields)
         {

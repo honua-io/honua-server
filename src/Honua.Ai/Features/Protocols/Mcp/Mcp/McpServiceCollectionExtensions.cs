@@ -182,13 +182,13 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
 
-        // Studio draft lifecycle + composition tools (honua-server#3002, AD-8:
-        // composition state IS a lifecycle draft; the browser is a projection).
-        // Every tool authorizes against the OperatorResourceType.StudioDraft
-        // grant family ("studio-compose") so #3001 can scope it independently
-        // of the existing package-review/authoring grants, and delegates all
+        // Studio draft lifecycle + composition tools (composition state IS a
+        // lifecycle draft; the browser is a projection). Every tool authorizes
+        // against the OperatorResourceType.StudioDraft grant family
+        // ("studio-compose") so it can be scoped independently of the existing
+        // package-review/authoring grants, and delegates all
         // state changes to IStudioPackageLifecycleService — no lifecycle logic
-        // is reimplemented here. Registered unconditionally (PR #3016 review):
+        // is reimplemented here. Registered unconditionally:
         // AddStudioPackageLifecycle registers IStudioPackageLifecycleService /
         // IStudioPackageValidator as Scoped and, in the real host composition
         // (FeatureRegistrationExtensions.AddServerFeatures), runs AFTER this

@@ -126,7 +126,7 @@ internal static class CollaborationSessionEndpoints
 
         // Session ids are NOT a secret capability: the participant id exposed to every session
         // member in snapshots equals the session id, so any participant could otherwise eject
-        // any other (honua-server#2999 review). Scope the leave to the route's canonical map AND
+        // any other. Scope the leave to the route's canonical map AND
         // to the caller's own identity (the same derivation join recorded); mismatches report
         // left=false exactly like an unknown session so probing cannot confirm one exists.
         var left = sessions.Leave(

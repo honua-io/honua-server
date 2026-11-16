@@ -924,12 +924,12 @@ Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRe
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
-// #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
-// first-class MCP tools. The audited Admin projection publishes by default (#3363;
-// Mcp:PublishOperations:AdminProjection=false withholds it); the full operations catalog
-// stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session Admin
-// operations never publish. Wired after the operations toolset so the tool source can
-// resolve the canonical IOperationCatalog.
+// ADR-0056 Increment 4: publish validated operations-toolset descriptors as first-class
+// MCP tools. The audited Admin projection publishes by default
+// (Mcp:PublishOperations:AdminProjection=false withholds it); the full operations
+// catalog stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session
+// Admin operations never publish. Wired after the operations toolset so the tool source
+// can resolve the canonical IOperationCatalog.
 #if !HONUA_EXCLUDE_MCP
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
@@ -984,13 +984,13 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IQuerySnapshotStore>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresQuerySnapshotStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-    // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
+    // Temporal history store: reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
     // providers keep the no-op store (history unsupported), matching the no-op change tracker.
     builder.Services.AddScoped<Honua.Core.Features.Temporal.Abstractions.ITemporalHistoryStore>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresTemporalHistoryStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-    // Branch-versioning manager (#1272 Track B, ADR-0051) — Postgres-only; read-only/non-Postgres
+    // Branch-versioning manager (ADR-0051) — Postgres-only; read-only/non-Postgres
     // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
@@ -1869,7 +1869,7 @@ app.MapRoleEndpoints();
 app.MapRlsPolicyEndpoints();
 app.MapFieldMaskPolicyEndpoints();
 
-// Enterprise identity provisioning + SSO (#510 SCIM 2.0, #508 SAML 2.0)
+// Enterprise identity provisioning + SSO (SCIM 2.0, SAML 2.0)
 app.MapScimEndpoints();
 app.MapSamlEndpoints();
 
@@ -1959,20 +1959,20 @@ app.MapMigrationBatchEndpoints();
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
-// Configure OGC API Features collection import endpoints (#1029 slice 2)
+// Configure OGC API Features collection import endpoints
 app.MapOgcApiFeaturesImportEndpoints();
-// Configure OGC WFS data import endpoints (#1016 slice 2)
+// Configure OGC WFS data import endpoints
 app.MapOgcWfsImportEndpoints();
-// Configure OGC WCS / OGC API Coverages GeoTIFF/COG import endpoints (issue #1030 slice 2)
+// Configure OGC WCS / OGC API Coverages GeoTIFF/COG import endpoints
 app.MapOgcCoverageImportEndpoints();
 
-// Configure legacy OGC WCS coverage import endpoints (issue #1030 slice 3)
+// Configure legacy OGC WCS coverage import endpoints
 app.MapOgcWcsImportEndpoints();
 
-// Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
+// Configure GeoServer migration run admin orchestration endpoints
 app.MapMigrationRunAdminEndpoints();
 
-// Configure OGC WMTS tile-cache export endpoints (#1016 slice 4)
+// Configure OGC WMTS tile-cache export endpoints
 app.MapOgcTileCacheExportEndpoints();
 
 // Configure Esri tile/vector-tile cache package import + serving endpoints

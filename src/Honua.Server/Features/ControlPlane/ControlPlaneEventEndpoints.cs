@@ -104,9 +104,9 @@ internal static class ControlPlaneEventEndpoints
         var expected = configuration["ControlPlane:EventToken"]
             ?? configuration["HONUA_CONTROL_PLANE_EVENT_TOKEN"];
 
-        // No token configured => fail closed (PA-060). Previously this returned true (fail-open),
-        // allowing unauthenticated access on deployments that had not set a token. Now 503 is
-        // returned so operators discover a misconfiguration rather than silently getting no auth.
+        // No token configured => fail closed (PA-060) with 503, so a deployment that has not set a
+        // token does not allow unauthenticated access and operators discover the misconfiguration
+        // rather than silently getting no auth.
         if (string.IsNullOrEmpty(expected))
         {
             return Problem(

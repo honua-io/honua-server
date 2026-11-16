@@ -59,7 +59,7 @@ internal static partial class ToolboxTranslationEndpoints
         // A non-JSON Content-Type is a MEDIA TYPE problem, not a malformed body:
         // ReadFromJsonAsync refuses it before deserialization ever runs, and the generic catch
         // below would report a perfectly well-formed payload as "Invalid request body". Check it
-        // up front so the caller gets 415 and knows what to change (honua-server#2145 review).
+        // up front so the caller gets 415 and knows what to change.
         if (!HasJsonContentType(context.Request))
         {
             MarkRejected(activity, "unsupported-media-type");

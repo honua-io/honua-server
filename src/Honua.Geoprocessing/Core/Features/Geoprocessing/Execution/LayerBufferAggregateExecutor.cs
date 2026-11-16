@@ -47,7 +47,7 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         if (stats.Count > 0 && !dissolve)
         {
             // Matches the catalog's documented constraint (and generalization.dissolve's
-            // identical guard, #4624): per-feature output cannot carry aggregate columns.
+            // identical guard): per-feature output cannot carry aggregate columns.
             throw new TransformInputException(
                 "'outStatistics' requires dissolve=true; per-feature output cannot carry aggregate columns.");
         }

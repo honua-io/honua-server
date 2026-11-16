@@ -139,16 +139,15 @@ internal static partial class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
-        // Per-operation RBAC grants are consulted first via the shared
-        // seam; the coarse AccessPolicy is the no-grant fallback. This central
-        // validator is the enforcement point for OData / OGC API Features / WFS /
-        // tiles / STAC layer reads & mutations, so wiring it here re-routes those
-        // adapters through the resolver consistently.
+        // Per-operation RBAC grants are consulted first via the shared seam; the coarse
+        // AccessPolicy is the no-grant fallback. This central validator is the enforcement
+        // point for OData / OGC API Features / WFS / tiles / STAC layer reads & mutations,
+        // so wiring it here re-routes those adapters through the resolver consistently.
         // /tiles' ProblemJson opt-in must also govern authorization failures, not just
         // not-found: AccessPolicyHelpers.RequireResourceAccessAsync formats denials via
         // StandardErrorHelpers, which the path-classified StandardErrorResponseFormatter
-        // would otherwise wrap as a GeoServices 200-envelope for /tiles (honua-server#2945
-        // review). Evaluate the decision directly and format it as problem+json here.
+        // would otherwise wrap as a GeoServices 200-envelope for /tiles. Evaluate the
+        // decision directly and format it as problem+json here.
         var accessError = protocol == ValidationProtocol.ProblemJson
             ? await RequireResourceAccessAsProblemJsonAsync(context, resource!, service, scope, effectiveToken).ConfigureAwait(false)
             : await AccessPolicyHelpers.RequireResourceAccessAsync(

@@ -127,7 +127,7 @@ internal sealed class InputValidationMiddleware
         // access in ValidateRequest reuses the cached result instead of blocking a
         // threadpool thread on sync-over-async body I/O (FormFeature.ReadForm).
         // An unmatched route has no handler that needs form fields. Parsing it
-        // would buffer an anonymous body before authentication (#5615 SRV-INF-008).
+        // would buffer an anonymous body before authentication.
         if (context.GetEndpoint() is not null
             && context.Request.HasFormContentType
             && !IsMultipartFormData(context.Request.ContentType))
@@ -213,7 +213,7 @@ internal sealed class InputValidationMiddleware
         }
 
         // Validate form data if applicable. An unmatched route has no handler that
-        // reads fields; touching Request.Form would buffer the body (#5615 SRV-INF-008).
+        // reads fields; touching Request.Form would buffer the body.
         if (request.HttpContext.GetEndpoint() is not null
             && request.HasFormContentType
             && !IsMultipartFormData(request.ContentType)
