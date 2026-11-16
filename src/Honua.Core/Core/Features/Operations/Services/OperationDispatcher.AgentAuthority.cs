@@ -66,7 +66,7 @@ public sealed partial class OperationDispatcher
                 return null;
             }
 
-            return await PersistAsync(
+            var denied = await RecordAgentDenialAsync(
                     envelope with
                     {
                         Status = OperationHandleStatus.Denied,
@@ -74,8 +74,10 @@ public sealed partial class OperationDispatcher
                         UpdatedAt = _clock.GetUtcNow(),
                         Reason = "Agent authority was revoked before actuation.",
                     },
+                    invocationContext,
                     cancellationToken)
                 .ConfigureAwait(false);
+            return await PersistAsync(denied, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

@@ -42,7 +42,8 @@ public sealed partial class OperationGatewayStateMachineTests
 
         Assert.NotEqual(OperationGatewayOutcome.Executed, result.Outcome);
         Assert.False(executor.Entered.Task.IsCompleted);
-        await ceiling.Received().GetAsync(null, "canonical-agent", Arg.Any<CancellationToken>());
+        // The HTTP identity resolves to the canonical actor id, which is what ceilings are keyed on.
+        await ceiling.Received().GetAsync(null, "test:subject:-:canonical-agent", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
