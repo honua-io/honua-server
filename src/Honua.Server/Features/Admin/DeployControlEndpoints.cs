@@ -598,7 +598,7 @@ internal static class DeployControlEndpoints
                     $"Deploy operation '{operationId}' was not found.");
             }
 
-            // honua-server#4958: fence the compensation before anything durable happens. This runs ahead of
+            // Fence the compensation before anything durable happens. This runs ahead of
             // the approval gate and the invoker so a refused rollback leaves the operation exactly as it
             // was — the pinned candidate admitted a fully mismatched rollback and only failed later, in the
             // backend, after the operation had already transitioned.

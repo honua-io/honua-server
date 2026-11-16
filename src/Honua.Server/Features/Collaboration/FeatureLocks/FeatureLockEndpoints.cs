@@ -17,8 +17,8 @@ internal static class FeatureLockEndpoints
     private const int MaxLeaseSeconds = 3600;
 
     // Published on every feature-lock route so a client discovers what a lease actually
-    // guarantees from the API description itself, not only from the documentation site
-    // (#4402). Every claim in this text is enforced by a test: FeatureServer, OGC API
+    // guarantees from the API description itself, not only from the documentation site.
+    // Every claim in this text is enforced by a test: FeatureServer, OGC API
     // Features and OData all consult IFeatureEditGuard before mutating a feature, and PostgreSQL-backed hosts share durable leases across nodes.
     private const string EnforcementScopeDescription =
         "Feature-edit leases are ENFORCED on every write path: while another editor holds " +

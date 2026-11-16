@@ -144,7 +144,7 @@ internal static class GeocodingEndpoints
         return endpoints;
     }
 
-    // #2981: batch geocoding (geocodeAddresses) is an Enterprise entitlement
+    // Batch geocoding (geocodeAddresses) is an Enterprise entitlement
     // (FeatureCatalog.BatchGeocodingKey; ADR-0024) — the volume/enterprise geocoding workload.
     // Applied directly to the geocodeAddresses routes (GET/POST scoped + GET alias) rather than
     // a shared MapGroup, since findAddressCandidates/reverseGeocode/suggest and GeocodeServer

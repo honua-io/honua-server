@@ -91,7 +91,7 @@ internal sealed class QueryFormatter
                     returnM,
                     effectiveLimits,
                     outFields)),
-            // T6 (#2342): do NOT silently fall back to GeoServices JSON for an unknown or
+            // T6: do NOT silently fall back to GeoServices JSON for an unknown or
             // gated-off output format. The `f`/output-format value is validated (and
             // capability-gated) at the endpoint seam (TryValidateOutputFormat) before dispatch,
             // so only a supported format reaches here; an unrecognised token is a programming
@@ -210,8 +210,8 @@ internal sealed class QueryFormatter
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         // Esri convention: wkid echoes the client's requested identifier while latestWkid
         // carries the canonical EPSG code. When the client requested a Web Mercator alias
-        // (e.g. outSR=102100) that normalized to EPSG:3857, echo {wkid:102100, latestWkid:3857}
-        // (#2736). Absent an aliased request, both fields carry the canonical SRID.
+        // (e.g. outSR=102100) that normalized to EPSG:3857, echo {wkid:102100, latestWkid:3857}.
+        // Absent an aliased request, both fields carry the canonical SRID.
         var spatialReference = hasGeometry
             ? requestedOutputSrid.HasValue
                 ? new GeoServicesSpatialReference { Wkid = requestedOutputSrid.Value, LatestWkid = srid }
@@ -346,7 +346,7 @@ internal sealed class QueryFormatter
                 }
             }
 
-            // returnDistinctValues has no stable OID; do not force-append it (#1427).
+            // returnDistinctValues has no stable OID; do not force-append it.
             if (!suppressObjectId)
             {
                 if (!all.ContainsKey(objectIdFieldName))
@@ -635,7 +635,7 @@ internal sealed class QueryFormatter
         // Decided from the MAPPED Esri type, not the logical one: a Json or Time column is
         // published as esriFieldTypeString and needs a positive length just as much as a
         // String column does. Keying off MetadataV2FieldType.String left those two with a
-        // null length in query responses while the layer resource gave them 256 (#5197).
+        // null length in query responses while the layer resource gave them 256.
         var isString = !isObjectId && geoServicesType == "esriFieldTypeString";
         return new GeoServicesFieldInfo
         {
@@ -706,7 +706,7 @@ internal sealed class QueryFormatter
         // members are all the same single-part type. RFC 7946 §3.1.4–3.1.7 requires a
         // homogeneous multipart geometry to be tagged MultiPoint / MultiLineString /
         // MultiPolygon, not GeometryCollection — strict consumers (QGIS, ogr2ogr) switch
-        // on the geometry `type` and mishandle the GeometryCollection form (#1824). Only a
+        // on the geometry `type` and mishandle the GeometryCollection form. Only a
         // genuinely mixed-type collection stays a GeometryCollection.
         if (geometry is GeometryCollection collection && geometry is not (MultiPoint or MultiLineString or MultiPolygon))
         {

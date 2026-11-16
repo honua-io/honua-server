@@ -24,7 +24,7 @@ internal static class GeocodingServiceCollectionExtensions
         services.AddGeocodingCore(configuration);
 
         // Nominatim stays the default when the flag is absent. An explicit false removes
-        // it from the host so a deployment can refuse public geocoding (#6601).
+        // it from the host so a deployment can refuse public geocoding.
         if (configuration.GetValue<bool?>("Geocoding:Providers:Nominatim:Enabled") != false)
         {
             services.AddNominatimGeocodeProvider(configuration);

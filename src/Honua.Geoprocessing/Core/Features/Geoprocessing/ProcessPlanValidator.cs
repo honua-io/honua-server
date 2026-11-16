@@ -23,7 +23,7 @@ internal static partial class ProcessPlanValidator
     //
     // Every token set below is built from ProcessValueDomains, which BuiltInProcessCatalog
     // publishes verbatim as ProcessParameterSpec.AllowedValues, so the enforced domain and
-    // the advertised choice list cannot drift apart (#3048).
+    // the advertised choice list cannot drift apart.
     private static readonly HashSet<string> ClusterAlgorithmValues =
         new(ProcessValueDomains.ClusterAlgorithm, StringComparer.OrdinalIgnoreCase);
 
@@ -321,7 +321,7 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterMosaicSemantics(step, violations);
                 break;
             case "imagery.classify":
-                // Delegated cloud inference (#2241). Shape/semantic validation only:
+                // Delegated cloud inference. Shape/semantic validation only:
                 // whether a backend is actually configured is a deployment concern the
                 // static validator cannot see, so an unconfigured deployment surfaces
                 // the clear "no cloud inference backend is configured" message as a
@@ -342,7 +342,7 @@ internal static partial class ProcessPlanValidator
                 ValidateProximityEuclideanDistanceSemantics(step, violations);
                 break;
             case "proximity.euclidean-allocation":
-                // Allocation shares the distance op's parameter surface (#2255):
+                // Allocation shares the distance op's parameter surface:
                 // 'source' (required), optional maxDistance / distUnits / values. The
                 // native worker computes the nearest-source raster via the custom
                 // gdal_euclidean_allocation.py step.
@@ -482,7 +482,7 @@ internal static partial class ProcessPlanValidator
     // distance, but GeometryBufferJobExecutor only implements planar buffering
     // and requires a strictly positive distance. Mirror both runtime guards at
     // submit time so the plan is refused up front instead of failing only once
-    // the job runs (#2733).
+    // the job runs.
     private static void ValidateGeometryBufferSemantics(
         AnalysisPlanStep step,
         List<GeoprocessingValidationFailure> violations)
@@ -703,7 +703,7 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    // enrichment.enrich (#2283) allow-lists mirror the EnrichmentJobExecutor body
+    // enrichment.enrich allow-lists mirror the EnrichmentJobExecutor body
     // so the validator rejects the same method/predicate/aggregate spellings the
     // executor refuses at runtime.
     private static readonly HashSet<string> EnrichmentMethodValues =
@@ -738,7 +738,7 @@ internal static partial class ProcessPlanValidator
         "count", "sum", "mean", "avg", "average", "min", "max", "stddev", "std"
     };
 
-    // enrichment.enrich (#2283) resolves the enrichment dataset at execution, so
+    // enrichment.enrich resolves the enrichment dataset at execution, so
     // dataset-dependent defaults (default predicate) cannot be validated here.
     // This mirrors the executor's submit-time-checkable rules: exactly one source
     // (layerId XOR input), the method/predicate enums, the conditional distance
@@ -943,7 +943,7 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    // Managed analytics counterparts (#1260) read an inline FeatureCollection
+    // Managed analytics counterparts read an inline FeatureCollection
     // and reject bad values at the executor with TransformInputException. These
     // validators mirror the executors' enum / conditional-required / range
     // checks so ValidatePlan rejects plans the executor would terminally fail.
@@ -1754,7 +1754,7 @@ internal static partial class ProcessPlanValidator
 
         // The native worker reads a base64 'source'; the submit path can also
         // materialize 'source' from a registered catalog raster referenced by
-        // 'layerId' or 'rasterId' (#2264). A plan that supplies NONE of the three
+        // 'layerId' or 'rasterId'. A plan that supplies NONE of the three
         // would route to the worker with no readable input and fail there, so the
         // catalog rejects it at submit-time validation instead. (The base required
         // loop no longer enforces 'source' because it is now optional.)
@@ -1774,7 +1774,7 @@ internal static partial class ProcessPlanValidator
     }
 
     // pcloud.translate decompresses LAZ/COPC and, when a projected source CRS is
-    // supplied, reprojects to EPSG:4979 (#1854). 'source' is a declared-required
+    // supplied, reprojects to EPSG:4979. 'source' is a declared-required
     // base64 input enforced by the base type-validator. 'sourceSrs' is optional;
     // when present it must match the conservative CRS-token allow-shape the native
     // PdalPointCloudConvertJobExecutor enforces (a bare positive EPSG integer or

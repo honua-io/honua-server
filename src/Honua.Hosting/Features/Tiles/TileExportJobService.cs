@@ -167,7 +167,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         ExecutionJobRecord record;
         try
         {
-            // Same check-and-create window as geoprocessing (#4691). Queueing stays outside so a
+            // Same check-and-create window as geoprocessing. Queueing stays outside so a
             // slow enqueue does not hold the shared lease.
             await using (var admissionWindow = await _admissionCoordinator.AcquireAsync(cancellationToken).ConfigureAwait(false))
             {

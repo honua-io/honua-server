@@ -43,7 +43,7 @@ internal sealed class TenantSchemaRoutingMiddleware(
         }
 
         // Usage-metering counter hook: attribute one request to the resolved tenant. This is the
-        // instrumentation seam; aggregation/persistence/billing are deferred (#346).
+        // instrumentation seam; aggregation/persistence/billing are deferred.
         _usageMeter.RecordRequest(tenantId);
 
         // Resolve the tenant's schema and route to it unless a schema is already pinned

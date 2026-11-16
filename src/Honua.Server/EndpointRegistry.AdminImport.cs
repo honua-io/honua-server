@@ -91,7 +91,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity"),
         new("GET", "/api/v1/admin/import/geoservices-rest/migrations/{runId}/parity"),
 
-        // v1 admin arcpy/toolbox translation lane (#2145)
+        // v1 admin arcpy/toolbox translation lane
         new("POST", "/api/v1/admin/import/toolbox/translation/validate"),
 
         // v1 admin import endpoints (Geoservices)
@@ -101,7 +101,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoservices/jobs"),
 
-        // v1 admin footprint-driven batch import orchestration (#1253)
+        // v1 admin footprint-driven batch import orchestration
         new("POST", "/api/v1/admin/import/migrations"),
         new("GET", "/api/v1/admin/import/migrations/{batchId}"),
 
@@ -127,10 +127,10 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/import/ogc-api-features/collection"),
         // v1 admin import endpoints (OGC WFS)
         new("POST", "/api/v1/admin/import/ogc-wfs/start"),
-        // v1 admin import endpoints (OGC Coverages - GeoTIFF/COG, issue #1030 slice 2)
+        // v1 admin import endpoints (OGC Coverages - GeoTIFF/COG)
         new("POST", "/api/v1/admin/import/ogc/coverages/import"),
 
-        // v1 admin import endpoints (legacy OGC WCS, issue #1030 slice 3)
+        // v1 admin import endpoints (legacy OGC WCS)
         new("POST", "/api/v1/admin/import/ogc-wcs/import"),
 
         // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
@@ -146,7 +146,7 @@ public static partial class EndpointRegistry
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
         new("POST", "/api/v1/admin/import/ogc-tiles/export"),
 
-        // Esri tile/vector-tile cache package import + serving binding (#1269)
+        // Esri tile/vector-tile cache package import + serving binding
         new("POST", "/api/v1/admin/import/tile-package"),
         new("GET", "/tiles/imported/{tileCacheId}"),
         new("GET", "/tiles/imported/{tileCacheId}/{z}/{x}/{y}"),

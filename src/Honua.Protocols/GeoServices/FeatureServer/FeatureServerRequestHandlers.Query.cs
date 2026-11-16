@@ -133,8 +133,8 @@ internal static partial class FeatureServerEndpoints
         => HandleServiceQueryFeaturesAsync(serviceId, context, queryHandler, queryValidator);
 
     // Esri Map/Feature services accept BOTH GET and POST for the service-level query
-    // operation; clients POST large layerDefs/layers arrays that exceed URL limits
-    // (honua-server#1825). The POST companion merges the form body over the query string
+    // operation; clients POST large layerDefs/layers arrays that exceed URL limits.
+    // The POST companion merges the form body over the query string
     // and shares this handler; it is AllowAnonymous because the per-layer access policy is
     // enforced below via RequireAnyResourceAccess/FilterAccessibleLayersV2.
     private static Task<IResult> HandleServiceQueryFeaturesPost(

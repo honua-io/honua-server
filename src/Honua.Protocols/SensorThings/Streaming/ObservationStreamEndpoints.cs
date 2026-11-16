@@ -100,7 +100,7 @@ internal static class ObservationStreamEndpoints
 
         // Admit before the WebSocket upgrade or SSE headers so a refused caller receives a
         // problem document, not an opened stream. Admission is keyed by the canonical actor
-        // within the resolved tenant, so one credential cannot exhaust the node (#4198).
+        // within the resolved tenant, so one credential cannot exhaust the node.
         var (session, rejectedBy) = await sessionManager.CreateSessionAsync(new ObservationStreamRequest(
             isWebSocket ? "WebSocket" : "SSE",
             datastreamId,

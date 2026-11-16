@@ -820,7 +820,7 @@ internal sealed class ImageServerExportTilesHandler
     }
 
     // -----------------------------------------------------------------------
-    // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) — #2707
+    // Asynchronous durable exportTiles (Compact Cache V2 / TPKX)
     // -----------------------------------------------------------------------
 
     private const string CompactV2StorageMode = "esriMapCacheStorageModeCompactV2";

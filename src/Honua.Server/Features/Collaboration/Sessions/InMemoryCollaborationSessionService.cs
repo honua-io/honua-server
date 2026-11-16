@@ -653,8 +653,8 @@ internal sealed partial class InMemoryCollaborationSessionService
 
             // Presence frames are disposable, but a committed operation (or a not-yet-delivered
             // resync notice) falling off the bounded outbox would permanently desync the client:
-            // later operations keep arriving while a cursor range silently vanishes
-            // (honua-server#2999). Turn any such eviction into an explicit resync-required error
+            // later operations keep arriving while a cursor range silently vanishes.
+            // Turn any such eviction into an explicit resync-required error
             // so the client replays the op log from its last known cursor.
             var operationEvicted = false;
             while (state.Outbox.Count >= MaxOutboxDepth)

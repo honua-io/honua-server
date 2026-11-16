@@ -372,7 +372,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Data enrichment (#2283)
+        // Data enrichment
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -401,7 +401,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Layer-aware overlay operations (#2206, #2139)
+        // Layer-aware overlay operations
         // Managed (NetTopologySuite) overlay ops operating over TWO inline
         // FeatureCollections addressed by data URI — the layer-aware counterparts
         // of the single-WKB geometry.* primitives, so the high-frequency Esri
@@ -491,7 +491,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Proximity operations (#2139)
+        // Proximity operations
         // Managed nearest-feature distance tools. Distances are planar (CRS units);
         // geodesic conversion is not performed.
         // -----------------------------------------------------------------------
@@ -528,7 +528,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Euclidean proximity operations (#2240)
+        // Euclidean proximity operations
         // Raster proximity products implemented natively by the heavyweight GDAL
         // worker via gdal_proximity.py. Declared RuntimeProfile = native; the lean
         // image validates these plans but never executes them.
@@ -569,7 +569,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Statistics/summarization operations (#2140)
+        // Statistics/summarization operations
         // Managed table-producing aggregates over a single inline FeatureCollection.
         // Table outputs are null-geometry FeatureCollections (one feature per row).
         // -----------------------------------------------------------------------
@@ -1004,7 +1004,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Imagery / ML inference (1)
-        // Delegated cloud inference (#2241): Honua GP orchestrates, a configured
+        // Delegated cloud inference: Honua GP orchestrates, a configured
         // cloud endpoint runs the model. No model runtime is bundled and no
         // training/distributed inference exists here by design. Managed profile:
         // the lean dispatcher executes the delegation (it is an HTTP exchange),
@@ -1244,7 +1244,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Data-import operations (1)
-        // First-class durable import pipeline (#1630). import.dataset owns the
+        // First-class durable import pipeline. import.dataset owns the
         // full fetch -> validate+chunk -> import -> publish -> tile ->
         // extent+MVT refresh -> provenance flow as ONE managed durable job,
         // composing the existing import / publishing / raster services. This is
@@ -1538,7 +1538,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 // Declared as LayerId (not WholeNumber) because it IS a catalog layer
                 // reference: the submit-time per-layer read gate derives the layers a plan
                 // reads from the declared LayerId parameters, and this connector streams a
-                // catalog layer's features straight into a job artifact (honua-server#3046).
+                // catalog layer's features straight into a job artifact.
                 Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.LayerId, required: true),
                 Param("where", "Where", "Optional GeoServices-style SQL where clause filtering the features.", ProcessParameterValueType.Text),
                 Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter in the output CRS.", ProcessParameterValueType.Text),
@@ -1638,7 +1638,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // Managed writers / Npgsql only — no GDAL.
         // The catalog honua-layer sink (sink.honua-layer) loads into a named layer in the
         // Honua catalog database. It reaches the catalog NpgsqlDataSource through the
-        // optional IHonuaLayerSink capability (#2210), which is registered only when the
+        // optional IHonuaLayerSink capability, which is registered only when the
         // catalog database is present — so the geoprocessing dispatcher, constructed
         // unconditionally including in lean Postgres-free deployments, never takes a
         // Postgres dependency, and no catalog connection string is leaked through plan
@@ -1783,12 +1783,12 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // Point-cloud conversion (1)
         // LAZ/COPC decompression + optional projected-CRS reprojection executed
         // out-of-process by the heavyweight GDAL/PDAL worker via the `pdal
-        // translate` CLI (#1854). Declared RuntimeProfile = native so the submit
+        // translate` CLI. Declared RuntimeProfile = native so the submit
         // path stamps ExecutionJobSpec.RuntimeProfile = "native" and the claim
         // fence routes the job to the worker (PdalPointCloudConvertJobExecutor
         // handles exactly this id) and away from the lean dispatcher, which has no
         // executor for it. The native counterpart to the pure-managed LAS reader
-        // (LasPointCloudReader, #1840): the worker decompresses the cloud-optimized
+        // (LasPointCloudReader): the worker decompresses the cloud-optimized
         // / arithmetic-coded chunks the managed reader cannot decode and, when a
         // projected source CRS is supplied, reprojects to geographic EPSG:4979,
         // returning uncompressed LAS the managed scene tiler then turns into 3D

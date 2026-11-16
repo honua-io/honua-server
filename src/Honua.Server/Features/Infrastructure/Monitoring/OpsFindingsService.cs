@@ -114,7 +114,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         var alertObservation = _alertHealth.LastObservation;
         var alertSource = BuildAlertDispatchSource(alertObservation);
         // The workflow store's posture is derived from the reads the deployment rules perform below,
-        // never from the store merely being registered (#4840).
+        // never from the store merely being registered.
         var workflowCollection = _workflowStore is null
             ? null
             : new OpsFindingsStoreCollection(
@@ -465,7 +465,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     };
 
     // Rule (a): alert-dispatch backlog / dead-letters over threshold. Dead-letters carry a real
-    // recommended action now that the ops-action registry has a redrive actuator (#2579): re-enqueue
+    // recommended action now that the ops-action registry has a redrive actuator: re-enqueue
     // the dead-lettered rows for redelivery. A pending-only backlog (not yet dead-lettered) stays
     // informational — there is no safe automatic fix for deliveries that are merely lagging.
     private void EvaluateAlertDispatchBacklog(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings, AlertDispatchBacklog? backlog)
@@ -1003,7 +1003,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
             && candidate.CreatedAt > stuck.CreatedAt;
 
     // Rule (g): per-protocol serving-latency/error-rate SLO breach, evidenced from the persisted
-    // ops-health rollup history (#2553) rather than the live in-process window, so a short blip does not
+    // ops-health rollup history rather than the live in-process window, so a short blip does not
     // flap the finding. Informational — a generic protocol-level latency/error-rate breach has no single
     // safe automatic remediation (unlike the post-promotion case, there is no specific deploy to roll
     // back). Fails open when the rollup store is unavailable or errors (#2511-style graceful degradation).
@@ -1036,7 +1036,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
 
         foreach (var point in latestPerProtocol)
         {
-            // Min-sample guard (#2809): a protocol with too few in-window requests has statistically
+            // Min-sample guard: a protocol with too few in-window requests has statistically
             // meaningless percentiles (at n=1, p95 == that single request), so a lone slow or failed request
             // would flap a finding. Require a configurable minimum sample count before evaluating.
             if (point.RequestCount < options.ServingLatencyMinSampleCount)
@@ -1047,7 +1047,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
             var p95Breach = point.P95Ms >= options.ServingLatencyP95ThresholdMs;
             var p99Breach = point.P99Ms >= options.ServingLatencyP99ThresholdMs;
             var errorRateBreach = point.ErrorRate >= options.ServingErrorRateThreshold;
-            // Error-budget burn rate (#2805): the windowed error rate relative to the SLO error budget. A
+            // Error-budget burn rate: the windowed error rate relative to the SLO error budget. A
             // fast burn (multiple above the threshold) catches an error spike sharper than the raw-rate check.
             var burnRate = options.ServingErrorRateThreshold > 0
                 ? point.ErrorRate / options.ServingErrorRateThreshold

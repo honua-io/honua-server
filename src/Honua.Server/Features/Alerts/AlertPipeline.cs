@@ -108,7 +108,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 stateByKey.TryGetValue(new AlertStateLookupKey(rule.RuleId, change.LayerId, change.ObjectId), out var currentState);
 
                 // A replayed change at or behind the stored generation must not emit
-                // again. Dwell sweeps do not come through this path (#6190).
+                // again. Dwell sweeps do not come through this path.
                 if (currentState is not null && change.Generation <= currentState.LastGeneration)
                 {
                     continue;

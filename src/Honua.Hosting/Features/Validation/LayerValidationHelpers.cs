@@ -139,7 +139,7 @@ internal static partial class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
-        // Per-operation RBAC grants are consulted first (#1376) via the shared
+        // Per-operation RBAC grants are consulted first via the shared
         // seam; the coarse AccessPolicy is the no-grant fallback. This central
         // validator is the enforcement point for OData / OGC API Features / WFS /
         // tiles / STAC layer reads & mutations, so wiring it here re-routes those
@@ -902,9 +902,9 @@ internal static partial class LayerValidationHelpers
 
         // Declared capabilities are an editing contract, not advisory text. The Esri
         // GeoServices edits handler already refuses an edit kind the publication never
-        // declared (#4073); this surface did not, so a layer published with the default
+        // declared; this surface did not, so a layer published with the default
         // ["Query","Extract"] capabilities accepted OGC API Features writes it never
-        // advertised (#4707). Both surfaces now resolve capabilities the same way.
+        // advertised. Both surfaces now resolve capabilities the same way.
         var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
         if (capabilityError != null)
         {
@@ -918,7 +918,7 @@ internal static partial class LayerValidationHelpers
 
         // Storage-routing contract: refuse a mutation the managed feature writer cannot
         // land where the serving protocols read, instead of acknowledging a write that is
-        // never readable back (#4707).
+        // never readable back.
         var routingError = await ValidateWriteRoutingAsync(
             context, validation, cancellationToken).ConfigureAwait(false);
         if (routingError != null)
