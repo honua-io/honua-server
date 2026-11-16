@@ -8,11 +8,14 @@ namespace Honua.Core.Features.Migration.Abstractions;
 
 public interface IDistributedImportJobManager
 {
-    IDistributedJobQueueService JobQueue { get; }
-
     IDistributedLeaderElection LeaderElection { get; }
 
     IDistributedProgressStore<GeoservicesImportProgress> ProgressStore { get; }
 
-    IDistributedProgressStore<GeoservicesImportRequest> RequestStore { get; }
+    Task SubmitAsync(
+        GeoservicesImportRequest request,
+        GeoservicesImportProgress initialProgress,
+        CancellationToken cancellationToken = default);
+
+    Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
 }

@@ -10,6 +10,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.TestKit.Extensions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -35,7 +37,6 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Import;
 
@@ -56,7 +57,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         // The geoserver import endpoints are gated behind the Enterprise "import.geoserver"
         // entitlement (FeatureCatalog); without an Enterprise license every discover/start
         // request short-circuits to 402 before reaching the behavior under test.
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithProductionJobSubstrate()
             .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(_importService);
     }
@@ -184,22 +185,10 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         const string envKey = "HONUA_TEST_GEOSERVER_IMPORT_PASSWORD";
         const string envValue = "resolved-geoserver-secret";
         var previousValue = Environment.GetEnvironmentVariable(envKey);
-        var distributedCache = new TrackingDistributedCache();
         var isolatedImportService = new TestGeoServerImportService(TimeSpan.FromMilliseconds(25));
-        var isolatedFixture = new WebAppFixture()
+        var isolatedFixture = new WebAppFixture().WithProductionJobSubstrate()
             .WithTestLicense(HonuaEdition.Enterprise)
-            .ReplaceService<IGeoServerImportService>(isolatedImportService)
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IDistributedCache>();
-                services.AddSingleton<IDistributedCache>(distributedCache);
-                services.RemoveAll<GeoServerImportJobManager>();
-                services.AddSingleton(sp => new GeoServerImportJobManager(
-                    sp.GetRequiredService<IUniversalProgressStore>(),
-                    distributedCache,
-                    sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
-                    new StaticHostEnvironment("Test")));
-            });
+            .ReplaceService<IGeoServerImportService>(isolatedImportService);
 
         Environment.SetEnvironmentVariable(envKey, envValue);
 
@@ -219,7 +208,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
             var jobId = await GetJobIdAsync(startResponse);
 
-            var requestPayload = Encoding.UTF8.GetString(distributedCache.Get($"geoserver:import:request:{jobId}")!);
+            var requestPayload = (await isolatedFixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(jobId))!.Spec.Parameters["honua.import.request"];
             requestPayload.Should().Contain($"\"passwordSecretReference\":\"env:{envKey}\"");
             requestPayload.Should().NotContain(envValue);
             requestPayload.Should().NotContain("\"password\":");
@@ -267,122 +256,6 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
-    public async Task Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState()
-    {
-        var distributedCache = new TrackingDistributedCache();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        var database = Substitute.For<IDatabase>();
-        RedisImportTestStubs.ConfigureDurableProgressTransactions(database);
-        database.ListLeftPushAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
-            .Returns(_ => Task.FromException<long>(new RedisConnectionException(ConnectionFailureType.UnableToResolvePhysicalConnection, "queue unavailable")));
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>())
-            .Returns(database);
-
-        var isolatedFixture = new WebAppFixture()
-            .WithTestLicense(HonuaEdition.Enterprise)
-            .ReplaceService<IGeoServerImportService>(_importService)
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IDistributedCache>();
-                services.AddSingleton<IDistributedCache>(distributedCache);
-                services.RemoveAll<GeoServerImportJobManager>();
-                services.AddSingleton(sp => new GeoServerImportJobManager(
-                    sp.GetRequiredService<IUniversalProgressStore>(),
-                    distributedCache,
-                    sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
-                    new StaticHostEnvironment("Production"),
-                    new ImportCoordinationStores(redis, new InMemoryLeaseStore())));
-            });
-
-        try
-        {
-            await isolatedFixture.InitializeAsync();
-
-            var response = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
-            {
-                GeoServerRestUrl = "https://example.com/geoserver/rest",
-                DryRun = true
-            });
-
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            (await response.Content.ReadAsStringAsync()).Should().Contain("Distributed GeoServer import queue is temporarily unavailable");
-
-            distributedCache.Keys.Should().NotContain(key => key.StartsWith("geoserver:import:request:", StringComparison.Ordinal));
-            distributedCache.Keys.Should().NotContain(key => key.StartsWith("universal:progress:", StringComparison.Ordinal));
-            distributedCache.Keys.Should().NotContain(key => key.StartsWith("universal:type:", StringComparison.Ordinal));
-        }
-        finally
-        {
-            await isolatedFixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
-    public async Task Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart()
-    {
-        var coordination = OutageCoordination.ForGeoServer();
-        var importService = new TestGeoServerImportService(TimeSpan.FromMilliseconds(25));
-        var isolatedFixture = new WebAppFixture()
-            .WithTestLicense(HonuaEdition.Enterprise)
-            .ReplaceService<IGeoServerImportService>(importService)
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<GeoServerImportJobManager>();
-                services.AddSingleton((GeoServerImportJobManager)coordination.JobManager);
-                ImportWorkerTestServices.RemoveHostedImportWorkers(services);
-            });
-        var request = new
-        {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
-            DryRun = true
-        };
-
-        try
-        {
-            await isolatedFixture.InitializeAsync();
-
-            coordination.BeginOutage();
-            var refused = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", request);
-            refused.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-
-            // Redis returns. Nothing restarts and nothing writes a dummy value: the start
-            // request itself must probe the stale coordination flags back to healthy.
-            coordination.EndOutage();
-            coordination.ElapseRetryThrottles();
-            var accepted = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", request);
-            accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
-            var jobId = await GetJobIdAsync(accepted);
-            coordination.Redis.ListContents("geoserver:import:queue").Should().Equal(jobId);
-
-            using (var worker = ActivatorUtilities.CreateInstance<GeoServerImportBackgroundService>(isolatedFixture.Services))
-            {
-                await worker.StartAsync(CancellationToken.None);
-                try
-                {
-                    using var completed = await WaitForJobStatusAsync(isolatedFixture.Client, jobId, "Completed", TimeSpan.FromSeconds(30));
-                }
-                finally
-                {
-                    await worker.StopAsync(CancellationToken.None);
-                }
-            }
-
-            importService.ImportRequests.Should().ContainSingle().Which.JobId.Should().Be(jobId);
-            coordination.Redis.ListContents("geoserver:import:queue").Should().BeEmpty();
-            coordination.Redis.ListContents("geoserver:import:queue:processing").Should().BeEmpty();
-            coordination.Cache.Keys
-                .Where(key => key.StartsWith("universal:type:", StringComparison.Ordinal))
-                .Should().Equal($"universal:type:{jobId}");
-        }
-        finally
-        {
-            await isolatedFixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/geoserver/jobs")]
     public async Task ListJobs_WithQueuedJob_ReturnsActiveJobs()
     {
@@ -420,7 +293,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     public async Task CancelJob_WithQueuedJob_ReturnsCancelled()
     {
         var importService = new TestGeoServerImportService(TimeSpan.Zero);
-        var fixture = WithoutGeoServerWorker(new WebAppFixture()
+        var fixture = WithoutGeoServerWorker(new WebAppFixture().WithProductionJobSubstrate()
             .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(importService));
 
@@ -444,7 +317,6 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             // Delivery after cancellation must neither invoke import nor replace its status.
-            (await manager.JobQueue.DequeueAsync(TimeSpan.FromSeconds(5))).Should().Be(jobId);
             await ProcessDequeuedJobAsync(fixture, jobId).WaitAsync(TimeSpan.FromSeconds(20));
             using var response = await client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -487,8 +359,10 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             .Returns(call => underlying.SetProgressAsync(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
         store.TrySetProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<OperationStatus>(), Arg.Any<CancellationToken>())
             .Returns(call => underlying.TrySetProgressAsync(call.Arg<OperationProgressWrite>(), call.Arg<OperationStatus>(), call.Arg<CancellationToken>()));
+        store.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
+            .Returns(call => underlying.TryReplaceProgressAsync(call.Arg<OperationProgressWrite>(), call.Arg<IOperationProgress?>(), call.Arg<CancellationToken>()));
         var importService = new TestGeoServerImportService(TimeSpan.Zero);
-        var fixture = WithoutGeoServerWorker(new WebAppFixture()
+        var fixture = WithoutGeoServerWorker(new WebAppFixture().WithProductionJobSubstrate()
             .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IUniversalProgressStore>(store)
             .ReplaceService<IGeoServerImportService>(importService));
@@ -504,7 +378,6 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             start.StatusCode.Should().Be(HttpStatusCode.Accepted);
             var jobId = await GetJobIdAsync(start);
             var manager = fixture.Services.GetRequiredService<GeoServerImportJobManager>();
-            (await manager.JobQueue.DequeueAsync(TimeSpan.FromSeconds(5))).Should().Be(jobId);
             Interlocked.Exchange(ref armed, 1);
             // Drive exactly the dequeue -> first-read boundary without scheduler delays.
             processing = ProcessDequeuedJobAsync(fixture, jobId);
@@ -520,7 +393,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
             payload!.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
             importService.ImportRequests.Should().BeEmpty();
-            (await manager.RequestStore.GetProgressAsync(jobId)).Should().BeNull();
+            (await fixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(jobId))!.Status.Should().Be(Honua.Core.Features.ControlPlane.Domain.ExecutionJobStatus.Cancelled);
         }
         finally
         {
@@ -540,8 +413,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         var store = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Development");
-        var manager = new GeoServerImportJobManager(store, null,
-            NullLogger<GeoServerImportJobManager>.Instance, environment);
+        var manager = new GeoServerImportJobManager(store, NullLogger<GeoServerImportJobManager>.Instance);
         const string jobId = "cancelled-stale-worker";
         var queued = GeoServerImportProgress.CreateInitial(jobId,
             "https://example.com/geoserver/rest", "https://honua.example.com");
@@ -568,17 +440,15 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         => fixture.ConfigureServices(services =>
         {
             var worker = services.Single(d => d.ServiceType == typeof(IHostedService) &&
-                d.ImplementationType == typeof(GeoServerImportBackgroundService));
+                d.ImplementationType == typeof(Honua.ControlPlane.JobExecutionService));
             services.Remove(worker);
         });
 
     private static async Task ProcessDequeuedJobAsync(WebAppFixture fixture, string jobId)
     {
-        using var worker = ActivatorUtilities.CreateInstance<GeoServerImportBackgroundService>(fixture.Services);
-        var processing = (Task)typeof(GeoServerImportBackgroundService)
-            .GetMethod("ProcessJobAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(worker, [jobId, CancellationToken.None])!;
-        await processing;
+        var worker = ActivatorUtilities.CreateInstance<GeoServerImportJobExecutor>(fixture.Services);
+        var job = await fixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(jobId);
+        await worker.ExecuteAsync(job!, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
     }
 
     private async Task<string> GetJobIdAsync(HttpResponseMessage response)
