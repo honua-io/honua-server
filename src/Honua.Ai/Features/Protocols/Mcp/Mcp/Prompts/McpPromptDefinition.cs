@@ -76,7 +76,7 @@ internal sealed record McpPromptDefinition(
         return values;
     }
 
-    private string SubstituteValues(IReadOnlyDictionary<string, string> values)
+    private string SubstituteValues(Dictionary<string, string> values)
     {
         // One pass over the template. Values are copied as text, so a value
         // that contains a later argument's {name} is not rewritten.
