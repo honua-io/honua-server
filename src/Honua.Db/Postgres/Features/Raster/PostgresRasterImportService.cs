@@ -15,10 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// PostgreSQL-based raster import service using PostGIS ST_FromGDALRaster.
-/// Handles file loading, statistics computation, and tile pre-generation.
-/// </summary>
 internal sealed class PostgresRasterImportService : IRasterImportService
 {
     // GeoTIFF magic bytes: "II" (little-endian) or "MM" (big-endian) followed by 42
@@ -63,14 +59,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         _rasterFootprintsTable = SchemaSearchPath.QualifyTable("raster_footprints", schemaName);
     }
 
-    /// <inheritdoc />
     public SupportedRasterFormat? DetectFormat(string fileName) =>
         RasterImportFormatDetector.DetectFormat(fileName);
 
-    /// <inheritdoc />
     public string[] GetSupportedExtensions() => [.. RasterImportFormatDetector.SupportedExtensions];
 
-    /// <inheritdoc />
     public async Task<RasterImportResult> ImportAsync(
         RasterImportRequest request,
         IProgress<RasterImportProgress>? progress = null,
@@ -173,8 +166,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 }
 
                 // Phase 5: Optional persisted overview pyramids. Dynamic tile reads sample the
-                // original raster because these rows have no native-source lineage (#5848), so
-                // the default request leaves OverviewFactors empty (#5856). Best-effort when a
+                // original raster because these rows have no native-source lineage, so
+                // the default request leaves OverviewFactors empty. Best-effort when a
                 // caller still sets factors: a missing raster_overviews table (schema predates
                 // migration 061) is tolerated.
                 if (request.OverviewFactors.Length > 0 && srid > 0)
@@ -189,7 +182,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
                 // Phase 6: Persist the per-raster footprint (and a default seamline equal to the
                 // footprint) so esriMosaicSeamline can clip each raster to its cutline before the
-                // union (#1804). Best-effort: a missing raster_footprints table (schema predates
+                // union. Best-effort: a missing raster_footprints table (schema predates
                 // migration 062) is tolerated; seamline mosaics then fall back to the footprint.
                 if (srid > 0)
                 {
@@ -304,10 +297,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // tile pre-generation at configured zoom levels provides the overview mechanism.
     }
 
-    /// <summary>
-    /// True when the PNG IHDR color type is grayscale-plus-alpha. Pixel type is not a substitute:
-    /// PostGIS does not retain GDAL color interpretation after <c>ST_FromGDALRaster</c>.
-    /// </summary>
     internal static bool PngDeclaresGrayAlpha(ReadOnlySpan<byte> png)
     {
         if (png.Length < 26 || !png[..8].SequenceEqual(_pngSignature))
@@ -377,12 +366,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         }
     }
 
-    /// <summary>
-    /// Detects whether a <see cref="PostgresException"/> originated from PostGIS/GDAL
-    /// raster processing (corrupt file, unsupported driver, etc.) rather than a true
-    /// infrastructure failure. Matched errors are surfaced as user-input validation
-    /// failures (400) instead of internal server errors (500).
-    /// </summary>
     private static bool IsRasterDataError(PostgresException ex)
         => ex.SqlState == "XX000" &&
            (ex.MessageText.Contains("rt_raster", StringComparison.OrdinalIgnoreCase) ||
@@ -493,18 +476,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     // phase is in flight at a time) so the SET/RELEASE/ROLLBACK TO names always match.
     private const string BestEffortSavepointName = "honua_raster_best_effort";
 
-    /// <summary>
-    /// Runs a best-effort enrichment phase inside a SQL savepoint so that ANY failure (a missing
-    /// table on a schema that predates the migration, or a PostGIS/GDAL function quirk on a
-    /// particular server build) rolls back to the savepoint and leaves the surrounding import
-    /// transaction usable, downgrading to a warning instead of aborting the import.
-    /// </summary>
-    /// <remarks>
-    /// Without the savepoint, a failed statement in one of these phases aborts the whole
-    /// transaction; the catch handler swallows the original error but every subsequent
-    /// statement then fails with <c>25P02 (in_failed_sql_transaction)</c>, breaking an import
-    /// that does not even depend on the enrichment having succeeded (honua-server#1804/#1836).
-    /// </remarks>
     private static async Task RunBestEffortPhaseAsync(
         DbConnection connection,
         DbTransaction transaction,
@@ -588,14 +559,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             reader.GetInt32(reader.GetOrdinal("srid")));
     }
 
-    /// <summary>
-    /// Verifies the newly inserted raster shares the layer's canonical SRID and band count.
-    /// Returns null on success or a client-safe error message describing the mismatch.
-    /// First raster in a layer always passes (it sets the canonical values). Layers that
-    /// already contain heterogeneous data (e.g. seeded outside the import path) are also
-    /// rejected so callers see the real invariant violation rather than an opaque ST_Union
-    /// failure at query time.
-    /// </summary>
     private async Task<string?> CheckLayerHomogeneityAsync(
         DbConnection connection,
         DbTransaction transaction,
@@ -939,16 +902,9 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     }
 
     // =============================================================================
-    // Overview pyramids (#1836)
+    // Overview pyramids
     // =============================================================================
 
-    /// <summary>
-    /// Builds and persists power-of-two reduced-resolution overview rasters (reprojected to
-    /// EPSG:3857) into <c>raster_overviews</c>. Only factors that actually coarsen the source
-    /// (target ground resolution &gt; the source's 3857 resolution) are stored, so a finer factor
-    /// than the source already provides is skipped rather than producing an upsampled copy.
-    /// Best-effort: a missing table (schema predates migration 061) downgrades to a warning.
-    /// </summary>
     private async Task GenerateAndStoreOverviewsAsync(
         DbConnection connection,
         DbTransaction transaction,
@@ -1031,17 +987,9 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private const int OverviewComputeTimeoutSeconds = 300;
 
     // =============================================================================
-    // Footprint / seamline store (#1804)
+    // Footprint / seamline store
     // =============================================================================
 
-    /// <summary>
-    /// Persists the per-raster footprint (the convex hull of the raster's valid-data envelope)
-    /// and a default seamline equal to that footprint into <c>raster_footprints</c>. The default
-    /// seamline gives <c>esriMosaicSeamline</c> a deterministic per-raster clip even before a
-    /// hand-authored cutline is supplied; a later operation can replace the seamline geometry.
-    /// Best-effort: a missing table (schema predates migration 062) downgrades to a warning, and
-    /// seamline mosaics then contribute each raster's full footprint.
-    /// </summary>
     private async Task GenerateAndStoreFootprintAsync(
         DbConnection connection,
         DbTransaction transaction,

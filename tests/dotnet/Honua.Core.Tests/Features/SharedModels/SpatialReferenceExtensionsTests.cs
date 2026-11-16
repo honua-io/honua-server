@@ -7,11 +7,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Unit coverage for <see cref="SpatialReferenceExtensions"/> SRID normalization.
-/// The Web Mercator alias table (#2360) must stay in sync across the query, import,
-/// and edit paths so an incoming 102100 spatial reference is treated as EPSG:3857.
-/// </summary>
 public sealed class SpatialReferenceExtensionsTests
 {
     [Trait("Tier", "Fast")]

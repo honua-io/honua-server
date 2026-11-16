@@ -10,10 +10,6 @@ using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Unit tests for DuckDB SQL query generation.
-/// Verifies correct DuckDB SQL dialect, parameter handling, and unsupported operation rejection.
-/// </summary>
 public class DuckDBFeatureQueryBuilderTests
 {
     private readonly DuckDBFeatureQueryBuilder _builder;
@@ -495,11 +491,6 @@ public class DuckDBFeatureQueryBuilderTests
             _builder.BuildSelectQuery(999, new FeatureQuery()));
     }
 
-    /// <summary>
-    /// Regression test for BH-016: a WHERE clause that references a field not in the
-    /// layer mapping must produce ArgumentException (HTTP 400), not let the unknown
-    /// column reach DuckDB where it causes a DbException (HTTP 500).
-    /// </summary>
     [Theory]
     [InlineData("populaton > 1000")]          // misspelled — not in mapping
     [InlineData("nonexistent = 'foo'")]        // entirely unknown field
@@ -690,11 +681,6 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains(500.0, result.WhereParameters.OfType<double>());
     }
 
-    /// <summary>
-    /// BH4-024: Permanent row-visibility filter must be included in the generated WHERE clause.
-    /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
-    /// bypassed.
-    /// </summary>
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()
     {

@@ -21,13 +21,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// End-to-end smoke test for the mobile offline demo fixture (honua-server#965).
-/// Exercises createReplica → extractChanges → applyEdits → synchronizeReplica → query
-/// against the seeded <c>mobile_offline_demo / 68910</c> layer that the mobile
-/// Cloud Acceptance workflow targets. Prevents regressions of the FeatureServer
-/// replication contract that unblocks honua-mobile#92.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime

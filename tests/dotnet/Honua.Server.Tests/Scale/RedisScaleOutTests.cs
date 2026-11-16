@@ -7,7 +7,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Scale;
 
-// Scale-out validation for multi-node deployments behind the nginx load balancer.
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class RedisScaleOutTests
 {

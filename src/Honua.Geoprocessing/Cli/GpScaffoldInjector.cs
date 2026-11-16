@@ -5,30 +5,8 @@ using System.Text;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>
-/// Injects the DI registration, catalog <c>ProcessDefinition</c>, and job-capability
-/// classification for a scaffolded process into the existing source files (GP Devkit P4,
-/// issue #2125). Keeping
-/// these as anchored, idempotent text transforms — rather than editing by hand — is what
-/// makes <c>honua gp new</c> a single command that yields a REGISTERED, runnable process.
-/// All methods are pure string transforms so they are unit-testable offline.
-/// </summary>
 public static class GpScaffoldInjector
 {
-    /// <summary>
-    /// Inserts a registration call into the auto-registration method body, immediately after
-    /// the last existing call of the same shape (<c>Register&lt;...&gt;(services);</c> for the
-    /// managed extension, <c>RegisterGdalExecutor&lt;...&gt;(services);</c> for the GDAL one).
-    /// The insert is idempotent: if the exact call is already present the source is returned
-    /// unchanged.
-    /// </summary>
-    /// <param name="source">The full text of the registration extension file.</param>
-    /// <param name="registrationCall">
-    /// The call to insert, e.g. <c>Register&lt;MyJobExecutor&gt;(services);</c>.
-    /// </param>
-    /// <param name="result">On success, the transformed source.</param>
-    /// <param name="error">On failure, the reason the anchor could not be found.</param>
-    /// <returns><see langword="true"/> when the call was inserted (or already present).</returns>
     public static bool TryInsertRegistration(
         string source,
         string registrationCall,
@@ -80,18 +58,6 @@ public static class GpScaffoldInjector
         return true;
     }
 
-    /// <summary>
-    /// Inserts a <c>ProcessDefinition</c> block into the catalog's <c>BuildDefinitions()</c>
-    /// collection expression, immediately before the <c>];</c> that closes it. Idempotent on
-    /// the process id: if a definition with that id is already present the source is returned
-    /// unchanged.
-    /// </summary>
-    /// <param name="source">The full text of <c>BuiltInProcessCatalog.cs</c>.</param>
-    /// <param name="processId">The new process id.</param>
-    /// <param name="kind">Managed vs native, which sets the runtime profile + title hint.</param>
-    /// <param name="result">On success, the transformed source.</param>
-    /// <param name="error">On failure, the reason the anchor could not be found.</param>
-    /// <returns><see langword="true"/> when the definition was inserted (or already present).</returns>
     public static bool TryInsertCatalogEntry(
         string source,
         string processId,
@@ -136,16 +102,6 @@ public static class GpScaffoldInjector
         return true;
     }
 
-    /// <summary>
-    /// Inserts a scaffolded process id into the exhaustive <c>JobProcessIds</c>
-    /// classification used by the built-in catalog. Idempotent when the job set already
-    /// contains the exact id.
-    /// </summary>
-    /// <param name="source">The full text of <c>ProcessExecutionCapabilityCatalog.cs</c>.</param>
-    /// <param name="processId">The scaffolded process id.</param>
-    /// <param name="result">On success, the transformed source.</param>
-    /// <param name="error">On failure, the reason the job-set anchor could not be found.</param>
-    /// <returns><see langword="true"/> when the classification was inserted or already present.</returns>
     public static bool TryInsertJobClassification(
         string source,
         string processId,
@@ -199,11 +155,6 @@ public static class GpScaffoldInjector
         return true;
     }
 
-    /// <summary>
-    /// Renders the <c>ProcessDefinition</c> block for the scaffolded process: a single
-    /// optional <c>value</c> text input matching the scaffold executor's body, the right
-    /// category/runtime-profile for the kind, and a TODO pointer.
-    /// </summary>
     internal static string RenderCatalogEntry(string processId, GpProcessKind kind)
     {
         var stem = GpScaffolder.ToTypeStem(processId);

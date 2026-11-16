@@ -10,10 +10,6 @@ using System.Text;
 
 namespace Honua.TestKit.Formats;
 
-/// <summary>
-/// Builds synthetic Zarr v2 store layouts for tests. Each fixture is returned as
-/// a path-to-bytes dictionary suitable for <see cref="InMemoryZarrRangeReader"/>.
-/// </summary>
 public static class ZarrFixtureBuilder
 {
     public static Dictionary<string, byte[]> BuildSingleVariableUncompressed(
@@ -88,12 +84,6 @@ public static class ZarrFixtureBuilder
         return objects;
     }
 
-    /// <summary>
-    /// Builds a grouped store with a 3D (time, y, x) variable and optional
-    /// temporal <c>.zattrs</c> keys. When <paramref name="includeTemporalAttrs"/>
-    /// is false the time-axis attributes are omitted so the extractor reports a
-    /// null temporal extent. Chunk payloads are not written (metadata-only fixture).
-    /// </summary>
     public static Dictionary<string, byte[]> BuildGroupedWithTime(
         string root,
         int timeSteps,
@@ -137,11 +127,6 @@ public static class ZarrFixtureBuilder
         return objects;
     }
 
-    /// <summary>
-    /// Builds a Zarr v3 single-array store (root <c>zarr.json</c> with
-    /// <c>node_type: array</c>), little-endian float32, the default
-    /// <c>c/</c>-prefixed chunk key encoding, optionally gzip-coded chunks.
-    /// </summary>
     public static Dictionary<string, byte[]> BuildV3SingleArray(
         string root,
         int rows,
@@ -172,11 +157,6 @@ public static class ZarrFixtureBuilder
         return objects;
     }
 
-    /// <summary>
-    /// Builds a Zarr v3 group store (root <c>zarr.json</c> with
-    /// <c>node_type: group</c> and a <c>variables</c> attribute manifest) holding a
-    /// single georeferenced float32 array.
-    /// </summary>
     public static Dictionary<string, byte[]> BuildV3Group(
         string root,
         int rows,
@@ -226,10 +206,6 @@ public static class ZarrFixtureBuilder
         return objects;
     }
 
-    /// <summary>
-    /// Builds a Zarr v3 single array declaring an unsupported codec (blosc) so the
-    /// reader's codec-pipeline gating can be asserted.
-    /// </summary>
     public static Dictionary<string, byte[]> BuildV3UnsupportedCodec(string root)
     {
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
@@ -301,13 +277,6 @@ public static class ZarrFixtureBuilder
         }
     }
 
-    /// <summary>
-    /// Builds a grouped store with a 3D (elevation, y, x) variable plus an
-    /// <c>axes</c> manifest declaring the additional vertical axis. When
-    /// <paramref name="explicitCoordinates"/> is true the axis is described by an
-    /// explicit coordinate array; otherwise by an evenly-spaced start/end pair.
-    /// Chunk payloads are written so a slice read can be exercised.
-    /// </summary>
     public static Dictionary<string, byte[]> BuildGroupedWithVerticalAxis(
         string root,
         int levels,

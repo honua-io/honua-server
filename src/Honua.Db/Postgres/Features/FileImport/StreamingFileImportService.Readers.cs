@@ -28,9 +28,6 @@ internal sealed partial class StreamingFileImportService
     private static readonly string[] GeoPackageTimestampFormats =
         ["yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", "yyyy-MM-dd'T'HH:mm:ssK"];
 
-    /// <summary>
-    /// Stream Shapefile features from extracted components on disk.
-    /// </summary>
     private static async IAsyncEnumerable<IFeature> ReadShapefileStreamingAsync(
         string shapefilePath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -61,9 +58,6 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    /// <summary>
-    /// Stream GeoPackage features from a stream by using a temporary SQLite file.
-    /// </summary>
     private async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
         Stream stream,
         string? sourceLayer,
@@ -177,7 +171,7 @@ internal sealed partial class StreamingFileImportService
                     // EPSG:27700 in gpkg_spatial_ref_sys). Always stamp the resolved layer SRID
                     // over the header value so downstream per-feature SRID consumers never see
                     // the local numbering; when resolution failed (non-EPSG authority, reserved
-                    // 0/-1) clear it so the caller's explicit source SRID applies instead (#2743).
+                    // 0/-1) clear it so the caller's explicit source SRID applies instead.
                     geometry.SRID = layer.Srid ?? 0;
                 }
             }
@@ -236,7 +230,7 @@ internal sealed partial class StreamingFileImportService
         await connection.OpenAsync(cancellationToken);
 
         // Resolve the layer's srs_id through gpkg_spatial_ref_sys rather than trusting srs_id to be
-        // an EPSG code directly (#2743). The GeoPackage spec allows local srs_id numbering: a file
+        // an EPSG code directly. The GeoPackage spec allows local srs_id numbering: a file
         // may declare srs_id=1 whose row maps to organization='EPSG', organization_coordsys_id=27700.
         // Reading srs_id as the EPSG code would silently mis-georeference every feature.
         //
@@ -297,16 +291,6 @@ internal sealed partial class StreamingFileImportService
         return result is not null;
     }
 
-    /// <summary>
-    /// Resolves a GeoPackage geometry-column <c>srs_id</c> to an EPSG code via its
-    /// <c>gpkg_spatial_ref_sys</c> row (#2743). Honors the spec's reserved ids
-    /// (<c>0</c> undefined-geographic, <c>-1</c> undefined-cartesian → undetected) and only
-    /// trusts <c>organization_coordsys_id</c> for EPSG-authored rows. A non-EPSG organization
-    /// (or a row that resolves to a non-positive code) is treated as undetected so the caller
-    /// must supply an explicit source SRID rather than the import guessing a wrong EPSG code.
-    /// Falls back to the raw <c>srs_id</c> only when no matching <c>gpkg_spatial_ref_sys</c> row
-    /// exists (best effort for a malformed file that still numbers by EPSG).
-    /// </summary>
     private static int? ResolveGeoPackageSrid(int? srsId, string? organization, int? organizationCoordSysId)
     {
         if (!srsId.HasValue)

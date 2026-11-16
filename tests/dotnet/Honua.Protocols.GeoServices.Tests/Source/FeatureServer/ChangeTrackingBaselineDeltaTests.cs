@@ -15,12 +15,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for FeatureServer incremental change tracking (#1876): the change-log delta path
-/// must report a feature added since a generation as an add on a sync from that generation, and must
-/// NOT re-report it on the next sync from the advanced generation (snapshot-once-then-delta). Also
-/// verifies migration 059 seeds a baseline so pre-change-tracking data is discoverable from gen 0.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime

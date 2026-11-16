@@ -13,42 +13,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Server-side half of the cross-repo SLO metric guard (honua-release#5).
-/// <para>
-/// honua-helm's PrometheusRule, honua-devops' recording rules and honua-release's
-/// gate-observability all reference Honua Prometheus series names from OTHER repositories.
-/// Every one of those layers was individually reviewed and individually correct, and the
-/// system was still blind: nothing asserted that the names matched ACROSS the seam. A PromQL
-/// ratio whose denominator series is absent evaluates to an empty vector, so the alert emits
-/// no series and never fires — the failure mode is SILENCE, not a red alert.
-/// </para>
-/// <para>
-/// This test pins the producer end against the real Prometheus text exposition (not the .NET
-/// instrument names — the OTel Prometheus exporter rewrites names from the instrument's unit,
-/// which is exactly how the platform ended up exporting
-/// <c>honua_serving_request_duration_ms_milliseconds</c> while every consumer asked for
-/// <c>honua_serving_request_duration_ms_count</c>). honua-release's
-/// <c>tools/check_metric_contract.py</c> pins the consumer end against the same contract file.
-/// </para>
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Performance")]
 public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFactory>
 {
     private const string AdminPassword = "slo-metric-contract-admin-key";
 
-    /// <summary>
-    /// Names the exporter WOULD produce if the SLO instruments re-declared an OpenTelemetry unit.
-    /// These are the names the platform silently exported before honua-release#5; asserting their
-    /// absence turns a future `unit:` re-addition into a red test instead of a silent alerting hole.
-    /// </summary>
-    /// <remarks>
-    /// The histogram entry is the <c>_count</c> child, not the bare <c>..._milliseconds</c> base
-    /// name: a Prometheus histogram never emits a sample under its base name (only
-    /// <c>_count</c>/<c>_sum</c>/<c>_bucket</c>), so asserting the base name is absent would be an
-    /// assertion that can never fail.
-    /// </remarks>
     private static readonly string[] UnitMangledRegressionNames =
     [
         "honua_geoservices_error_total_errors_total",
@@ -191,12 +161,6 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
             "a selector member with no matching protocol constant is dead weight that hides a rename");
     }
 
-    /// <summary>
-    /// Records one measurement on each SLO-contract instrument, then scrapes /metrics.
-    /// Prometheus only exposes series that have received a measurement, so the emission is
-    /// part of the assertion: it proves the instrument reaches the exporter, not merely that
-    /// a constant string exists in the source.
-    /// </summary>
     private async Task<string> ScrapeAfterEmittingContractInstrumentsAsync()
     {
         using var client = _factory.CreateClient();
@@ -236,7 +200,6 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
         return new SloMetricContract(emitted);
     }
 
-    /// <summary>Series names in a Prometheus text exposition (the token before '{' or whitespace).</summary>
     private static HashSet<string> ParseSeriesNames(string exposition)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -267,7 +230,6 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
             ?? string.Empty;
     }
 
-    /// <summary>Distinct values of <paramref name="label"/> across all samples of a series.</summary>
     private static HashSet<string> ParseLabelValues(string exposition, string series, string label)
     {
         var values = new HashSet<string>(StringComparer.Ordinal);
@@ -296,7 +258,6 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
         return values;
     }
 
-    /// <summary>Label names attached to any sample of <paramref name="series"/>.</summary>
     private static HashSet<string> ParseLabelNames(string exposition, string series)
     {
         var labels = new HashSet<string>(StringComparer.Ordinal);

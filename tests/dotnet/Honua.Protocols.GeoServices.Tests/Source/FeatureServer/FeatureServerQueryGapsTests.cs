@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Endpoint tests for three FeatureServer query capabilities flagged by the Esri SDK
-/// certification matrix: <c>returnExtentOnly</c>, point + <c>distance</c>/<c>units</c>
-/// spatial buffering, and the <c>sqlFormat</c> parameter.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>

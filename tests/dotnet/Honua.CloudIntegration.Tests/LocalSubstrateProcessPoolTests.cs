@@ -12,17 +12,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// ADR-0060 substrate-neutral GEOPROCESSING lane (#2166, #2457). Proves the single-host, zero-cloud GP
-/// executor by driving the REAL <see cref="LocalProcessPoolBatchComputeBackend"/> against real child
-/// processes: run-to-completion with exit-code mapping, cancellation that kills the process tree,
-/// non-blocking pool-saturation admission (pending marker then launch), the injected <c>HONUA_*</c>
-/// environment contract, and the serving↔worker job-contract-version gate.
-///
-/// The child binary is a shell-free managed helper compiled by
-/// <see cref="LocalSubstrateProcessHelperFixture"/> and launched via the <c>dotnet</c> muxer, so no OS
-/// coreutil is required. Tests that launch a process skip when that helper is unavailable.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
 public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrateProcessHelperFixture>
 {

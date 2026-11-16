@@ -15,7 +15,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 internal sealed partial class PostgresVersionManager
 {
     // Telemetry source name "Honua" matches the registered OTel source so reconcile/post spans are
-    // collected alongside the rest of the platform (#1553).
+    // collected alongside the rest of the platform.
     private static readonly ActivitySource VersioningActivitySource = new("Honua", "1.0.0");
 
     private Task<TResult> RunUnderVersionLockAsync<TResult>(
@@ -25,14 +25,14 @@ internal sealed partial class PostgresVersionManager
         => _versionLock.RunExclusiveAsync(
             new VersionLockRequest(_lockScope, versionId, MaintenanceLockLease), work, cancellationToken);
 
-    // Reconcile/post core (#1272 Track B Slice 2, ADR-0051; conflict-resolution layer #371). Reconcile
+    // Reconcile/post core with its conflict-resolution layer (ADR-0051). Reconcile
     // diffs DEFAULT feature_changes since the version's merge base against the version's tagged overlay
     // edits. For overlapping (layer_id, objectid) pairs it loads the three-way base/DEFAULT/version
     // images and:
     //   * auto-merges disjoint field-level edits (a feature edited in both the branch and DEFAULT but on
     //     DISJOINT attribute sets is merged into the overlay, not flagged);
     //   * classifies the rest as genuine conflicts (overlapping fields, geometry-vs-geometry,
-    //     update-vs-delete) and, per #371, either auto-resolves them per the supplied policy
+    //     update-vs-delete) and either auto-resolves them per the supplied policy
     //     (last-write-wins / version-wins / default-wins) or persists them as pending conflicts for
     //     manual review and blocks post.
     // A clean reconcile (no remaining conflicts) advances common_ancestor_gen. Post (only when
@@ -46,7 +46,7 @@ internal sealed partial class PostgresVersionManager
     // against the same base `features` table (and its change-tracking trigger), preserving objectid and
     // the raw JSONB image, inside a single transaction. Read/edit still flow through the shared pipeline.
     //
-    // Production hardening (#1553): reconcile/post (and a conflicting resolve) run under a durable
+    // Production hardening: reconcile/post (and a conflicting resolve) run under a durable
     // (service, version) lock (IVersionLock) so concurrent maintenance for the same version is
     // serialized; a contended lock surfaces VersionLockedException for a clear in-progress 409. The
     // clean-reconcile conflict-clear + common-ancestor advance commit in one transaction so a crash
@@ -54,7 +54,6 @@ internal sealed partial class PostgresVersionManager
     // the durable overlay (idempotent/resumable). The synchronous engine here is the fast path; the
     // canonical async wrapper (IVersionJobRunner) calls these same methods on a durable, pollable job.
 
-    /// <inheritdoc />
     public Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
@@ -85,7 +84,7 @@ internal sealed partial class PostgresVersionManager
         {
             // The visible generation and the overlap scan share one REPEATABLE READ snapshot.
             // last_value includes nextval calls from transactions that have not committed, so advancing
-            // the ancestor to it skips those DEFAULT edits forever (#6139).
+            // the ancestor to it skips those DEFAULT edits forever.
             var analysis = await AnalyzeOverlapsAsync(versionId, version.CommonAncestorGeneration, detection, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -111,7 +110,7 @@ internal sealed partial class PostgresVersionManager
 
             // Persist the unresolved set and advance the merge base atomically in one transaction so a
             // crash mid-reconcile cannot leave the durable conflict set and the common-ancestor cursor
-            // disagreeing (#1553). A re-run after a restart recomputes from the durable overlay +
+            // disagreeing. A re-run after a restart recomputes from the durable overlay +
             // feature_changes and rewrites the same pending set, so reconcile is idempotent/resumable.
             var canPost = unresolved.Count == 0;
             await PersistConflictsAndAdvanceAsync(
@@ -142,7 +141,6 @@ internal sealed partial class PostgresVersionManager
         }
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<VersionReconcileConflict>> GetPendingConflictsAsync(
         Guid versionId,
         CancellationToken cancellationToken = default)
@@ -179,7 +177,6 @@ internal sealed partial class PostgresVersionManager
         return results;
     }
 
-    /// <inheritdoc />
     public Task<VersionConflictResolutionResult> ResolveConflictsAsync(
         Guid versionId,
         IReadOnlyList<VersionConflictResolution> resolutions,
@@ -211,7 +208,6 @@ internal sealed partial class PostgresVersionManager
         return new VersionConflictResolutionResult(resolved, remaining, CanPost: remaining == 0);
     }
 
-    /// <inheritdoc />
     public Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
         => RunUnderVersionLockAsync(versionId, token => PostUnderLockAsync(versionId, token), cancellationToken);
 
@@ -247,12 +243,12 @@ internal sealed partial class PostgresVersionManager
             // silently overwritten by the whole-row overlay replay (lost update). ReplayOverlayOntoDefault
             // re-validates each overlay row's captured base_* image against the LIVE DEFAULT row inside the
             // post transaction; if any update/delete target diverged, it rolls back and reports the
-            // divergent keys here so the caller must reconcile again instead of clobbering (#2063).
+            // divergent keys here so the caller must reconcile again instead of clobbering.
             if (replay.Conflicted)
             {
                 // The replay transaction has already rolled back. Persist the drifted keys as pending
                 // conflicts on a new connection so the block is visible and a later reconcile, whose
-                // ancestor did not skip the in-flight generation, can refresh the same rows (#6139).
+                // ancestor did not skip the in-flight generation, can refresh the same rows.
                 await PersistDriftBlockedConflictsAsync(versionId, replay.ConflictingKeys, cancellationToken)
                     .ConfigureAwait(false);
                 activity?.SetTag("honua.version.conflict_count", replay.ConflictingKeys.Count);
@@ -276,12 +272,6 @@ internal sealed partial class PostgresVersionManager
         }
     }
 
-    /// <summary>
-    /// Replays the version's net overlay rows onto the live DEFAULT features table inside a single
-    /// transaction, preserving objectid and the raw JSONB/geometry image, then clears the overlay. The
-    /// DEFAULT change-tracking trigger fires per row (no version GUC set), advancing the generation and
-    /// recording NULL-version DEFAULT changes. Returns the applied row count and the post generation.
-    /// </summary>
     private async Task<OverlayReplayResult> ReplayOverlayOntoDefaultAsync(
         Guid versionId,
         CancellationToken cancellationToken)
@@ -295,7 +285,7 @@ internal sealed partial class PostgresVersionManager
         var transaction = (NpgsqlTransaction)dbTransaction;
         await using var __ = transaction;
 
-        // Optimistic-concurrency guard (#2063): an update/delete overlay row may only be replayed when the
+        // Optimistic-concurrency guard: an update/delete overlay row may only be replayed when the
         // LIVE DEFAULT row still matches the base image the branch captured on first touch. If DEFAULT was
         // edited since (committed by a concurrent DEFAULT writer the version lock cannot block), the
         // whole-row replay would silently discard that committed edit. Detect every diverged
@@ -432,11 +422,6 @@ internal sealed partial class PostgresVersionManager
         return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);
     }
 
-    /// <summary>
-    /// Outcome of replaying a version's overlay onto DEFAULT. <see cref="Conflicted"/> is set (and nothing
-    /// is written) when a concurrent DEFAULT edit diverged from the overlay's captured base image for an
-    /// update/delete target, listing the divergent keys (#2063).
-    /// </summary>
     private sealed record OverlayReplayResult(
         int Applied,
         long ServerGeneration,
@@ -455,12 +440,6 @@ internal sealed partial class PostgresVersionManager
         return await ReadSingleAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Loads the three-way (base/DEFAULT/version) images for every overlay row that shadows an
-    /// (layer_id, objectid) DEFAULT also changed since the merge base, classifies each as a genuine
-    /// conflict or an auto-mergeable disjoint-field edit, and returns both sets plus the committed
-    /// generation visible to that same snapshot.
-    /// </summary>
     private async Task<OverlapAnalysis> AnalyzeOverlapsAsync(
         Guid versionId,
         long commonAncestorGen,
@@ -479,7 +458,7 @@ internal sealed partial class PostgresVersionManager
 
         // Committed watermark. Rolled-back nextval leaves holes in last_value, so a gap below last_value
         // is not proof of an in-flight write. Migration 067 holds pg_advisory_xact_lock across commit,
-        // which makes this MAX gap-free for feature_changes (#6139, same rule as PostgresChangeTracker).
+        // which makes this MAX gap-free for feature_changes (same rule as PostgresChangeTracker).
         long visibleGeneration;
         await using (var generationCommand = new NpgsqlCommand(
             "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection)
@@ -570,7 +549,7 @@ internal sealed partial class PostgresVersionManager
             // By-attribute detection auto-merges disjoint edits and only flags genuinely-overlapping
             // edits (overlapping fields or geometry-vs-geometry). By-object detection flags ANY feature
             // edited on both sides since the merge base as a conflict, with no field-level auto-merge —
-            // this is the documented Esri esriReconcileByObject behavior (#2135).
+            // this is the documented Esri esriReconcileByObject behavior.
             var autoMergeable = detection == VersionConflictDetection.ByAttribute
                 && overlappingFields.Length == 0
                 && !geometryChangedOnBoth;
@@ -603,11 +582,6 @@ internal sealed partial class PostgresVersionManager
         return new OverlapAnalysis(conflicts, merges, visibleGeneration);
     }
 
-    /// <summary>
-    /// Records post-time DEFAULT drift as pending conflicts after the replay transaction has rolled
-    /// back. A re-reconcile deletes status 0 and rewrites the set, so this row is what the caller
-    /// sees until that refresh, and only stays if the ancestor still covers the drifted generation.
-    /// </summary>
     private async Task PersistDriftBlockedConflictsAsync(
         Guid versionId,
         IReadOnlyList<(int LayerId, long ObjectId)> keys,
@@ -662,10 +636,6 @@ internal sealed partial class PostgresVersionManager
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Auto-merges DEFAULT's disjoint field changes (and an optional DEFAULT-only geometry change) into
-    /// the branch overlay row so the subsequent post carries both sides of a non-conflicting edit.
-    /// </summary>
     private async Task ApplyFieldMergeAsync(Guid versionId, FieldMerge merge, CancellationToken cancellationToken)
     {
         if (merge.DefaultChangedFields.Count == 0 && !merge.MergeDefaultGeometry)
@@ -683,10 +653,10 @@ internal sealed partial class PostgresVersionManager
         // Rebase the overlay's captured base image onto the live DEFAULT row in the SAME statement. An
         // auto-merge accepts DEFAULT's current state (its disjoint field/geometry edits are layered in),
         // so the merged overlay row's new base MUST be the live DEFAULT — otherwise the post-time drift
-        // guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) still sees the stale common-ancestor base,
+        // guard (f.* IS NOT DISTINCT FROM ve.base_*) still sees the stale common-ancestor base,
         // treats DEFAULT's now-merged divergence as drift, and blocks the post even though reconcile
         // reported CanPost. This mirrors the "take version" rebase in ApplyResolutionToOverlayAsync and
-        // keeps reconcile's CanPost consistent with post's drift check (#2135/#2063).
+        // keeps reconcile's CanPost consistent with post's drift check.
         var patchJson = BuildMergePatchJson(merge.DefaultChangedFields, merge.DefaultFields);
         var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
         var geometryClause = merge.MergeDefaultGeometry ? ", geometry = f.geometry" : string.Empty;
@@ -707,11 +677,6 @@ internal sealed partial class PostgresVersionManager
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Deterministically resolves a single conflict per the supplied policy by rewriting the overlay row
-    /// to the winning side, so a subsequent post carries the resolved image. Returns false (leaving the
-    /// conflict for manual review) when a policy cannot be applied to the pairing.
-    /// </summary>
     private async Task<bool> TryAutoResolveAsync(
         Guid versionId,
         OverlapConflict conflict,
@@ -736,10 +701,6 @@ internal sealed partial class PostgresVersionManager
         return true;
     }
 
-    /// <summary>
-    /// Resolves the last-write-wins side by comparing the latest change generation produced by the
-    /// branch overlay against the latest DEFAULT change generation for the feature since the merge base.
-    /// </summary>
     private async Task<VersionConflictResolutionChoice> ResolveLastWriteWinsSideAsync(
         Guid versionId,
         OverlapConflict conflict,
@@ -768,10 +729,6 @@ internal sealed partial class PostgresVersionManager
             : VersionConflictResolutionChoice.TakeDefault;
     }
 
-    /// <summary>
-    /// Applies one operator-submitted manual resolution: rewrites the overlay row to the chosen side and
-    /// marks the persisted pending conflict resolved. Returns false when there was no pending conflict.
-    /// </summary>
     private async Task<bool> ApplyManualResolutionAsync(
         Guid versionId,
         VersionConflictResolution resolution,
@@ -798,12 +755,6 @@ internal sealed partial class PostgresVersionManager
         return true;
     }
 
-    /// <summary>
-    /// Rewrites the branch overlay row for the resolved feature so the post replays the chosen side:
-    /// take-version keeps the overlay as-is; take-default rewrites the overlay to the live DEFAULT image
-    /// (or removes the overlay row when DEFAULT deleted it); take-base rewrites to the captured base
-    /// image. All keep the overlay-mediated post path so DEFAULT data is untouched until post.
-    /// </summary>
     private async Task ApplyResolutionToOverlayAsync(
         Guid versionId,
         int layerId,
@@ -845,7 +796,7 @@ internal sealed partial class PostgresVersionManager
             // image (a no-op post against DEFAULT); if DEFAULT deleted it, drop the overlay row so the
             // branch no longer shadows/posts the feature. Rebase the overlay's base image onto DEFAULT too
             // (base_geometry/base_attributes = DEFAULT's): the resolution accepts the live DEFAULT as the
-            // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) sees no
+            // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*) sees no
             // drift and the post proceeds — without this the stale common-ancestor base still differs from
             // the diverged DEFAULT and the post is wrongly blocked even though reconcile reported CanPost.
             await using var command = new NpgsqlCommand($"""
@@ -876,7 +827,7 @@ internal sealed partial class PostgresVersionManager
         // onto the live DEFAULT row in the same statement. SET reads the pre-update ve.base_* columns,
         // so geometry/attributes become the ancestor while base_* becomes DEFAULT. Without that rebase
         // the post drift guard (f.* IS NOT DISTINCT FROM ve.base_*) blocks forever, and a later
-        // reconcile treats the unresolved DEFAULT divergence as an auto-merge back onto DEFAULT (#6138).
+        // reconcile treats the unresolved DEFAULT divergence as an auto-merge back onto DEFAULT.
         // PostgreSQL evaluates SET against the old row, so the ancestor image is copied before base_* moves.
         await using (var baseCommand = new NpgsqlCommand($"""
             UPDATE honua.version_edits ve
@@ -916,18 +867,6 @@ internal sealed partial class PostgresVersionManager
         await insertBaseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Replaces the version's persisted pending conflict set with the supplied unresolved conflicts and,
-    /// when the reconcile is clean, advances the common-ancestor cursor — all in one transaction (#1553).
-    /// Clearing stale pending rows (auto-merged / auto-resolved this run), inserting the current set, and
-    /// advancing the merge base commit atomically, so a crash cannot leave the durable conflict set and
-    /// the cursor disagreeing. The operation is naturally idempotent: a re-run recomputes the same set
-    /// from the durable overlay and rewrites it.
-    /// </summary>
-    /// <param name="versionId">Version being reconciled.</param>
-    /// <param name="conflicts">Unresolved conflicts to persist as pending.</param>
-    /// <param name="advanceToGeneration">When non-null, advance the merge base to this generation (clean reconcile).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     private async Task PersistConflictsAndAdvanceAsync(
         Guid versionId,
         IReadOnlyCollection<VersionReconcileConflict> conflicts,
@@ -1054,10 +993,6 @@ internal sealed partial class PostgresVersionManager
         }
     }
 
-    /// <summary>
-    /// Returns the set of attribute names whose value differs between the base image and a target image
-    /// (added, removed, or value-changed keys), compared by canonical JSON text.
-    /// </summary>
     private static HashSet<string> ChangedFields(
         ImmutableDictionary<string, JsonElement> baseFields,
         ImmutableDictionary<string, JsonElement> targetFields)
@@ -1108,11 +1043,6 @@ internal sealed partial class PostgresVersionManager
     private static string? Render(ImmutableDictionary<string, JsonElement> fields, string name)
         => fields.TryGetValue(name, out var value) ? value.GetRawText() : null;
 
-    /// <summary>
-    /// Builds a JSON object literal of DEFAULT's changed fields for the JSONB merge patch, rendering a
-    /// field DEFAULT removed as a JSON null. Values are emitted from their raw JSON text so the merged
-    /// value preserves DEFAULT's original JSON shape (numbers, strings, nested objects).
-    /// </summary>
     private static string BuildMergePatchJson(
         IReadOnlyCollection<string> changedFields,
         ImmutableDictionary<string, JsonElement> defaultFields)

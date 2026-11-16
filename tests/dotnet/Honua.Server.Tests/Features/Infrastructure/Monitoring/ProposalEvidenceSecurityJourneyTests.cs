@@ -45,11 +45,6 @@ using LegacyExecutor = Honua.Core.Features.ControlPlane.Abstractions.IOperationE
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Full production-route security journey for model-selected release proposals (#3888).
-/// The only substituted boundaries are the deterministic model provider, mutation spies,
-/// clock, signing secret, and explicit durable-store failure switches.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.TestInfrastructure)]

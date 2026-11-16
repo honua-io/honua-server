@@ -14,11 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerStatisticsBudget"/> (#2991): a slow/cold-cache
-/// statistics computation must degrade to an empty result within a bounded time
-/// budget rather than hang the request indefinitely.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerStatisticsBudgetTests
 {

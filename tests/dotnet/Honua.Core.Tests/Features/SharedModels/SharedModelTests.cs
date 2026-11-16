@@ -8,9 +8,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Tests.Features.SharedModels;
 
-/// <summary>
-/// Tests for shared model components and their conversions
-/// </summary>
 public class SharedModelTests
 {
     private static readonly double[] _expectedBbox = [-180.0, -90.0, 180.0, 90.0];

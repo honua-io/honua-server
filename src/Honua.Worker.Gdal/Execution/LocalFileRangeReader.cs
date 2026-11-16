@@ -6,16 +6,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Bounded range reader over a single local scratch file, letting the worker run the
-/// shared <see cref="Honua.Core.Features.Raster.CogParser.CogRasterHeaderProbe"/>
-/// against the output it just produced (grid summary for published descriptors,
-/// #3089). The bucket/key/ETag identity parameters are ignored: the file is a
-/// worker-private scratch artifact that cannot change identity under the probe.
-/// </summary>
 internal sealed class LocalFileRangeReader : ICloudRangeReader
 {
-    /// <summary>Placeholder identity accepted for every probe argument.</summary>
     public const string LocalIdentity = "local";
 
     private readonly string _path;

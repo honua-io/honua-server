@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Hosting;
 
-// Boots the real server entry point in Production with a system database configured and no
-// operation key-ring certificate. The system database switches the durable operation secret
-// channel on, which needs the certificate. The refusal must name the setting and exit with
-// StartupRefusal.ExitCode, not abort the runtime ("signal: aborted" on Lambda, 134 / 139 locally).
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class KeyRingCertificateRefusalExitTests
 {
@@ -24,6 +20,7 @@ public sealed class KeyRingCertificateRefusalExitTests
         "HONUA_DB_DEGRADED_START",
         "Operations__SecretChannel__KeyRingCertificatePath",
         "Operations__SecretChannel__KeyRingCertificatePkcs12",
+        "Operations__SecretChannel__KeyRingSecret",
     ];
 
     [IntegrationTest]
@@ -33,6 +30,7 @@ public sealed class KeyRingCertificateRefusalExitTests
         var output = await RunRefusedBootAsync(certificatePath: null);
         output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePath");
         output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePkcs12");
+        output.Should().Contain("Operations:SecretChannel:KeyRingSecret");
     }
 
     [IntegrationTest]

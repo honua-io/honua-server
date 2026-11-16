@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
-/// <summary>
-/// Unit tests for the I3S scene-layer to 3D Tiles tileset converter (#1268).
-/// </summary>
 public sealed class I3sToTilesetConverterTests
 {
     private static I3sSceneLayerDocument BuildSampleLayer(string layerType = "3DObject") => new()

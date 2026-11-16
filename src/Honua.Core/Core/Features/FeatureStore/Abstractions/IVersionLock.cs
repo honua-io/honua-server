@@ -3,27 +3,8 @@
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-// Durable mutual-exclusion lock keyed by (service, version) that serializes branch-version
-// reconcile/post and conflicting conflict-resolution work. Only one reconcile, post, or conflicting
-// resolve may hold the lock for a given version at a time; a competing acquisition fails fast so the
-// caller can return a clear in-progress (409) response or queue an async job. The production
-// implementation holds a PostgreSQL lease so the lock is honored across every server replica; without
-// a system database the in-process implementation is a single-node mutex. The lock is advisory over
-// the version-maintenance workflow only and is never taken on the DEFAULT read/edit path.
 public interface IVersionLock
 {
-    /// <summary>
-    /// Attempts to acquire the version lock without blocking. Returns a disposable handle that releases
-    /// the lock when disposed, or null when the lock is already held for the (service, version) pair.
-    /// </summary>
-    /// <param name="service">Owning service identity (lock scope).</param>
-    /// <param name="versionId">Branch version to lock.</param>
-    /// <param name="leaseDuration">
-    /// How long the lock is held before it auto-expires if not released (crash safety). The handle
-    /// renews the lease while it is alive.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A lock handle on success, or null when the lock is contended.</returns>
     Task<IVersionLockHandle?> TryAcquireAsync(
         string service,
         Guid versionId,
@@ -31,10 +12,6 @@ public interface IVersionLock
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// A held version lock (#1553). Disposing the handle releases the lock; the lock also auto-expires after
-/// its lease if the holder crashes before releasing.
-/// </summary>
 public interface IVersionLockHandle : IAsyncDisposable
 {
     // Cancelled once the holder cannot prove it owns the lock, after which another holder

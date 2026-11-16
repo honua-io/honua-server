@@ -13,12 +13,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Configuration;
 
-/// <summary>
-/// The host's composed <see cref="ISecretProvider"/> treats <c>env://NAME</c> as a secret
-/// reference (so callers such as the Studio AI transcript signer that gate on
-/// <see cref="ISecretProvider.IsSecretReference"/> accept a CI-injected key) and resolves it
-/// without the value ever reaching a log line.
-/// </summary>
 [Collection("Security")]
 [SecurityTest]
 public sealed class EnvSecretReferenceSecretProviderTests

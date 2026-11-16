@@ -21,9 +21,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// OGC API Processes process discovery and execution endpoints.
-/// </summary>
 internal static class ProcessEndpoints
 {
     private const string BasePath = "/ogc/processes";
@@ -203,20 +200,8 @@ internal static class ProcessEndpoints
         return Results.Json(processList, OgcProcessesJsonContext.Default.OgcProcessList, MediaTypes.Json);
     }
 
-    /// <summary>
-    /// Maximum accepted <c>Idempotency-Key</c> header length (server#4627). Bounds abusive
-    /// payloads; the resolved GP job id is a fixed-size hash of the key regardless of length.
-    /// </summary>
     private const int MaxIdempotencyKeyLength = 512;
 
-    /// <summary>
-    /// Resolves the optional <c>Idempotency-Key</c> request header (server#4627): OGC API
-    /// Processes has no native idempotency-key concept, so this is a documented, additive
-    /// Honua extension wired to the same canonical <c>Idempotency-Key</c> header semantics
-    /// MCP and the admin/webhook endpoints already use. Absent header ⇒ unchanged legacy
-    /// behavior (a fresh job id every submission). Present but malformed ⇒ a clear 400
-    /// rather than silently ignoring a client's deduplication intent.
-    /// </summary>
     private static bool TryResolveIdempotencyKey(HttpContext context, out string? idempotencyKey, out string? error)
     {
         idempotencyKey = null;

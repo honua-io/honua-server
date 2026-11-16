@@ -12,13 +12,6 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Server.Tests.Hosting;
 
-/// <summary>
-/// Boots the real server entry point with migrations skipped against a database whose raster
-/// baseline table exists and does not match the creation contract, so the provider root is not
-/// adopted. The schema-floor refusal must exit with <see cref="GatedBootShutdown.RefusalExitCode"/>
-/// and the refusal text, not abort the runtime (honua-server#6496). An in-process host cannot
-/// observe the process status, so this test starts <c>Honua.Server.dll</c> out of process.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class SchemaFloorRefusalExitTests
 {

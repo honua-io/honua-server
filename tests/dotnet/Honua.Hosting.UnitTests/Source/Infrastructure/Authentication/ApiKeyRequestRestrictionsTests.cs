@@ -16,10 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Optional referrer (origin) and client-IP restrictions on managed API keys: the matcher,
-/// enforcement on the <c>X-API-Key</c> and <c>token</c> transports, and storage shape.
-/// </summary>
 public sealed class ApiKeyRequestRestrictionsTests
 {
     private const string BootstrapAdminPassword = "RestrictionTests-AdminPassword123!";

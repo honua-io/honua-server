@@ -8,10 +8,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Checks h3-pg extension availability by querying pg_extension.
-/// The result is cached after the first successful check.
-/// </summary>
 internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -30,11 +26,6 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
     private static long s_failureCacheExpiryMs;
     private static readonly SemaphoreSlim s_lock = new(1, 1);
 
-    /// <summary>
-    /// How long to cache a transient failure before re-probing. Prevents repeated
-    /// serialized DB round-trips when the database is unreachable.
-    /// Units: milliseconds (matching <see cref="Environment.TickCount64"/>).
-    /// </summary>
     private static readonly long FailureCacheDurationMs = (long)TimeSpan.FromSeconds(60).TotalMilliseconds;
 
     public PostgresH3CapabilityChecker(

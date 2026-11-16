@@ -17,8 +17,6 @@ public sealed class UbuntuRuntimeLibrdkafkaPublishTests
     private static readonly string[] OtherServerPublishDockerfiles =
     [
         "docker/Dockerfile.lambda",
-        "docker/Dockerfile.functions",
-        "docker/Dockerfile.functions.aot",
     ];
 
     [ArchitectureTest]

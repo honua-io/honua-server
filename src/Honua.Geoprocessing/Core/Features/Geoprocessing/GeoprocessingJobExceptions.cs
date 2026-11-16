@@ -7,63 +7,25 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Distinguishes why an operator authorization check denied a caller so adapters can surface
-/// a distinct structured reason (honua-server#2851). A grant denial and a scope denial both
-/// produce an authorization failure, but an operator debugging a rejected OAuth agent needs to
-/// tell "the principal lacks the grant" apart from "the token's scopes are too narrow".
-/// </summary>
 internal enum AuthorizationDenialReason
 {
-    /// <summary>The principal's operator grants do not authorize the operation.</summary>
     InsufficientGrant,
 
-    /// <summary>The presented OAuth bearer token's scopes do not permit the operation.</summary>
     InsufficientScope,
 
-    /// <summary>
-    /// Live identity membership no longer authorizes a deferred submission that the durable
-    /// role snapshot previously authorized.
-    /// </summary>
     StalePrincipalMembership,
 }
 
-/// <summary>
-/// Raised when a geoprocessing authorization check fails.
-/// </summary>
 internal sealed class GeoprocessingAuthorizationException : Exception
 {
-    /// <summary>
-    /// Whether the caller needs authentication (vs. insufficient permissions).
-    /// </summary>
     public bool RequiresAuthentication { get; }
 
-    /// <summary>
-    /// Why the check denied the caller. Defaults to
-    /// <see cref="AuthorizationDenialReason.InsufficientGrant"/> so existing grant-denial
-    /// call sites keep their meaning; scope narrowing sets
-    /// <see cref="AuthorizationDenialReason.InsufficientScope"/>.
-    /// </summary>
     public AuthorizationDenialReason DenialReason { get; }
 
-    /// <summary>
-    /// The resource type the denied check evaluated, when known. Lets protocol adapters
-    /// emit a security-log entry naming the real resource rather than a hard-coded default.
-    /// </summary>
     public OperatorResourceType? ResourceType { get; }
 
-    /// <summary>
-    /// The operation the denied check evaluated, when known. Carried so a mutating-process
-    /// (or custom-code) denial is logged as that operation instead of an indistinguishable
-    /// baseline <see cref="OperatorOperation.Execute"/> denial (#2798).
-    /// </summary>
     public OperatorOperation? Operation { get; }
 
-    /// <summary>
-    /// Stable policy-specific denial code, when the authorizer exposes one.
-    /// Protocol adapters can retain this alongside their transport-level
-    /// <c>permission_denied</c>/<c>unauthenticated</c> classification.
-    /// </summary>
     public string? PolicyCode { get; }
 
     public GeoprocessingAuthorizationException(bool requiresAuthentication)
@@ -75,18 +37,6 @@ internal sealed class GeoprocessingAuthorizationException : Exception
         DenialReason = AuthorizationDenialReason.InsufficientGrant;
     }
 
-    /// <summary>
-    /// Creates an authorization failure with a caller-supplied message (e.g. one
-    /// naming the specific permission the caller lacks) so structured error
-    /// contracts can surface an actionable denial, and records the resource/operation
-    /// the check evaluated so adapters log the real denied operation.
-    /// </summary>
-    /// <param name="requiresAuthentication">Whether the caller needs authentication (vs. insufficient permissions).</param>
-    /// <param name="message">The denial message surfaced to the caller.</param>
-    /// <param name="resourceType">The resource type the denied check evaluated, when known.</param>
-    /// <param name="operation">The operation the denied check evaluated, when known.</param>
-    /// <param name="denialReason">Why the check denied the caller (grant vs. OAuth scope).</param>
-    /// <param name="policyCode">Stable policy-specific denial code, when available.</param>
     public GeoprocessingAuthorizationException(
         bool requiresAuthentication,
         string message,
@@ -104,25 +54,10 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     }
 }
 
-/// <summary>
-/// Raised when an approval gate blocks the operation. When a durable operation
-/// proposal was persisted for the gated plan (ADR-0064, #2814), <see cref="ProposalId"/>
-/// carries the proposal identifier so an adapter can surface the
-/// <c>honua://proposals/{id}</c> resume path instead of dead-ending the caller.
-/// </summary>
 internal sealed class GeoprocessingApprovalRequiredException : Exception
 {
-    /// <summary>
-    /// The policy reference that requires approval.
-    /// </summary>
     public string PolicyRef { get; }
 
-    /// <summary>
-    /// Identifier of the persisted <c>AwaitingApproval</c> proposal for the gated plan,
-    /// when the approval lane persisted one. Null when no proposal was created (for
-    /// example when the durable proposal surface is unavailable and the submission
-    /// hard-fails). Adapters surface a <c>honua://proposals/{id}</c> resume path from it.
-    /// </summary>
     public string? ProposalId { get; }
 
     public GeoprocessingApprovalRequiredException(string policyRef, string? detail = null, string? proposalId = null)
@@ -136,37 +71,26 @@ internal sealed class GeoprocessingApprovalRequiredException : Exception
     }
 }
 
-/// <summary>
-/// Raised when a requested job or entity is not found.
-/// </summary>
 internal sealed class GeoprocessingNotFoundException : Exception
 {
     public GeoprocessingNotFoundException(string message) : base(message) { }
 }
 
-/// <summary>
-/// Raised when a precondition is not met (e.g., cancelling a terminal job).
-/// </summary>
 internal class GeoprocessingPreconditionFailedException : Exception
 {
     public GeoprocessingPreconditionFailedException(string message) : base(message) { }
 }
 
-/// <summary>Raised when the selected runtime backend cannot cancel a job.</summary>
 internal sealed class GeoprocessingCancellationUnsupportedException : GeoprocessingPreconditionFailedException
 {
     public GeoprocessingCancellationUnsupportedException(string message) : base(message) { }
 }
 
-/// <summary>Raised when bounded cancellation retries cannot confirm an outcome.</summary>
 internal sealed class GeoprocessingCancellationUnconfirmedException : GeoprocessingPreconditionFailedException
 {
     public GeoprocessingCancellationUnconfirmedException(string message) : base(message) { }
 }
 
-/// <summary>
-/// Raised when plan validation fails structurally.
-/// </summary>
 internal sealed class GeoprocessingValidationException : Exception
 {
     public GeoprocessingValidationException(string message) : base(message) { }
@@ -245,9 +169,6 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
     public bool HasDependencyReceipt => ErrorCode is not null;
 }
 
-/// <summary>
-/// Raised when an idempotency key collision is detected with a different request.
-/// </summary>
 internal sealed class GeoprocessingIdempotencyConflictException : Exception
 {
     public GeoprocessingIdempotencyConflictException(string? conflictingJobId = null)
@@ -256,32 +177,13 @@ internal sealed class GeoprocessingIdempotencyConflictException : Exception
         ConflictingJobId = conflictingJobId;
     }
 
-    /// <summary>
-    /// Identifier of the job that already owns the idempotency key, so a client
-    /// can recover by inspecting the winning job rather than blindly retrying.
-    /// </summary>
     public string? ConflictingJobId { get; }
 }
 
-/// <summary>
-/// Raised when an <c>env:overwriteOutput=true</c> replacement cannot complete
-/// because the artifact store failed to delete the colliding artifact
-/// (<c>DeleteAsync</c> returned <c>false</c>). Rather than proceeding to add a
-/// second <c>Available</c> artifact under the same label — leaving the workspace
-/// with a duplicate or half-replaced output — the replacement is aborted and
-/// this is surfaced through the same curated failure channel as
-/// <see cref="ArtifactAlreadyExistsException"/>.
-/// </summary>
 internal sealed class ArtifactReplacementFailedException : Exception
 {
-    /// <summary>
-    /// Identifier of the workspace whose replacement could not complete.
-    /// </summary>
     public string WorkspaceId { get; }
 
-    /// <summary>
-    /// Stable output label whose existing artifact could not be deleted.
-    /// </summary>
     public string Label { get; }
 
     public ArtifactReplacementFailedException(string workspaceId, string label)
@@ -295,32 +197,14 @@ internal sealed class ArtifactReplacementFailedException : Exception
     }
 }
 
-/// <summary>
-/// Raised when a runtime admission control blocks job submission.
-/// Both Throttled and Denied outcomes surface through this exception; the outcome
-/// and dimension are preserved for protocol mapping, telemetry, and eval harness signals.
-/// </summary>
 internal sealed class GeoprocessingAdmissionException : Exception
 {
-    /// <summary>
-    /// Terminal admission outcome (<see cref="Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Throttled"/>
-    /// or <see cref="Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Denied"/>).
-    /// </summary>
     public Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome Outcome { get; }
 
-    /// <summary>
-    /// Control dimension that rejected the request.
-    /// </summary>
     public Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionDimension DenyingDimension { get; }
 
-    /// <summary>
-    /// Machine-readable policy reference that rejected the request.
-    /// </summary>
     public string PolicyRef { get; }
 
-    /// <summary>
-    /// Suggested retry delay in seconds.
-    /// </summary>
     public int RetryAfterSeconds { get; }
 
     public GeoprocessingAdmissionException(

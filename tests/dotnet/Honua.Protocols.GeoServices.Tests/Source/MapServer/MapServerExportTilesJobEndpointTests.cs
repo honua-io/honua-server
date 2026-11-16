@@ -14,10 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Direct endpoint coverage for the asynchronous (Compact Cache V2 / TPKX) MapServer exportTiles
-/// job lifecycle: submission, status, cancellation, and result scoping.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerExportTilesJobEndpointTests
 {

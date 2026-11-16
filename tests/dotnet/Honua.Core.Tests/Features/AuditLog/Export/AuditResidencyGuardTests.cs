@@ -6,9 +6,6 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Core.Tests.Features.AuditLog.Export;
 
-/// <summary>
-/// Unit tests for <see cref="AuditResidencyGuard"/> data-residency policy (#2157).
-/// </summary>
 public sealed class AuditResidencyGuardTests
 {
     [Trait("Tier", "Fast")]

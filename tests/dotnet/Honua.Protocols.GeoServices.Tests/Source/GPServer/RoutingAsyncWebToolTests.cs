@@ -20,7 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>Exercises routing GP aliases through the real durable worker and canonical provider.</summary>
 // One host and durable worker serve every case that changes only the routing provider: each case
 // installs its own provider substitute and starts from an empty job substrate. The Development
 // case needs a different environment and provider lifetime, so it owns its host; the PostgreSQL

@@ -22,9 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit coverage for the server-side MCP operational-observability adapter (#2555).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class McpOpsObservabilityReaderTests
 {

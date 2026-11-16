@@ -5,9 +5,6 @@ using System.Globalization;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
 
-/// <summary>
-/// Validates DuckDB provider configuration before the provider starts serving requests.
-/// </summary>
 internal static class DuckDBOptionsValidator
 {
     private static readonly HashSet<string> SupportedFormats = new(StringComparer.OrdinalIgnoreCase)

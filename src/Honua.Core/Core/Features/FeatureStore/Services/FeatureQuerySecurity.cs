@@ -11,12 +11,6 @@ using Honua.Core.Queries.Filters.GeoServicesSql;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Applies the field-level security contract to query expressions that can otherwise
-/// consume a masked value without returning it in the normal feature projection.
-/// Providers call this after resolving <see cref="FeatureQuery.EnforcedMaskedFields"/>
-/// and before building any SQL for the query.
-/// </summary>
 public static class FeatureQuerySecurity
 {
     public static void Validate(FeatureQuery query)
@@ -127,15 +121,6 @@ public static class FeatureQuerySecurity
         }
     }
 
-    /// <summary>
-    /// Rejects a parsed filter that references any of <paramref name="maskedFields"/>. Every
-    /// field reference in the tree counts, whichever operator, negation or function consumes
-    /// it, so a protocol adapter can refuse the predicate before it reaches a provider.
-    /// </summary>
-    /// <param name="expression">Parsed filter, or null when the request has none.</param>
-    /// <param name="maskedFields">Fields masked from the caller.</param>
-    /// <param name="surface">Request parameter named in the refusal.</param>
-    /// <exception cref="ArgumentException">The filter references a masked field.</exception>
     public static void ValidateFilterExpression(
         FilterExpression? expression,
         IEnumerable<string>? maskedFields,
@@ -203,20 +188,12 @@ public static class FeatureQuerySecurity
         ValidateBinFields(query.EnforcedMaskedFields, dateBin.BinField, dateBin.OutStatistics, "queryDateBins");
     }
 
-    /// <summary>
-    /// Validates a clustering request: the shared query expressions plus the per-cluster
-    /// statistics, which aggregate source-layer fields.
-    /// </summary>
     public static void ValidateClusters(FeatureQuery query, ClusterQuery clusterQuery)
     {
         Validate(query);
         ValidateAnalyticsFields(query.EnforcedMaskedFields, clusterQuery.OutStatistics, fields: null, "queryClusters");
     }
 
-    /// <summary>
-    /// Validates a buffer-aggregate request: the shared query expressions plus the
-    /// group-by fields and per-group statistics.
-    /// </summary>
     public static void ValidateBufferAggregate(FeatureQuery query, BufferAggregateQuery bufferQuery)
     {
         Validate(query);
@@ -224,10 +201,6 @@ public static class FeatureQuerySecurity
             query.EnforcedMaskedFields, bufferQuery.OutStatistics, bufferQuery.GroupByFields, "buffer aggregate");
     }
 
-    /// <summary>
-    /// Validates a density request: the shared query expressions plus the optional
-    /// weight field summed per cell.
-    /// </summary>
     public static void ValidateDensity(FeatureQuery query, DensityQuery densityQuery)
     {
         Validate(query);
@@ -238,12 +211,6 @@ public static class FeatureQuerySecurity
         }
     }
 
-    /// <summary>
-    /// Validates a spatial join. The target layer's masks govern <paramref name="targetQuery"/>;
-    /// carry fields and join-side statistics read the <em>join</em> layer, so they are checked
-    /// against <paramref name="joinLayerMaskedFields"/> — masks are per layer and a field name
-    /// masked on one side says nothing about the other.
-    /// </summary>
     public static void ValidateSpatialJoin(
         FeatureQuery targetQuery,
         SpatialJoinQuery joinQuery,

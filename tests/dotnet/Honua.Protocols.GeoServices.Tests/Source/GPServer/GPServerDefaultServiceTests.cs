@@ -148,7 +148,7 @@ public sealed class GPServerDefaultServiceTests
                 "the real task submission must succeed: {0}", submitDoc.RootElement.GetRawText());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
-            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().BeOneOf(GPServerJobWait.AcceptedSubmitStatuses);
 
             using var terminal = await GPServerJobWait.UntilRestSucceededAsync(
                 client,

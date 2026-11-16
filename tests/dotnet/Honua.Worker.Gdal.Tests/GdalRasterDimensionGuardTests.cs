@@ -8,13 +8,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalRasterDimensionGuard"/> — the pre-processing
-/// pixel-dimension admission control (#2766). Exercises the cheap TIFF-header
-/// dimension read AND the pure cap evaluation directly, with NO GDAL binary, so
-/// the decompression-bomb reject is proven to happen from a header read before any
-/// full-raster allocation.
-/// </summary>
 public sealed class GdalRasterDimensionGuardTests
 {
     private static GdalWorkerOptions Options() => new();

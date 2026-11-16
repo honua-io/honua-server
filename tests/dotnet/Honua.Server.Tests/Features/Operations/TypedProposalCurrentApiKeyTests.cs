@@ -28,7 +28,6 @@ using CanonicalExecutor = Honua.Core.Features.Operations.Abstractions.IOperation
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>Real authenticated REST proposal/replay with only the final no-cloud actuator substituted.</summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.TestInfrastructure)]

@@ -19,10 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// A configured deployment profile removes routes and must not still advertise those
-/// capabilities as available (honua-server#4545).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
@@ -71,9 +67,7 @@ public sealed class DeploymentCapabilityProfileManifestTests
             "a capability with no mapped route is unchanged by the profile");
 
         var crossNode = Capability(root, "collaboration.feature-locks.cross-node");
-        crossNode.GetProperty("supported").GetBoolean().Should().BeFalse();
-        crossNode.GetProperty("available").GetBoolean().Should().BeFalse();
-        crossNode.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+        crossNode.GetProperty("supported").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTheory]

@@ -14,20 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-/// <summary>
-/// Unit-level tests for the OIDC provider admin entitlement filter
-/// (<c>OidcProviderEndpoints.ApplyProviderEntitlementGatesAsync</c>, #2997). These exercise the
-/// two invariants that the HTTP-level tests in
-/// <see cref="OidcEntitlementGateTests"/> cannot pin down deterministically:
-/// <list type="bullet">
-/// <item>the create route is identified from endpoint metadata, so the connectivity-test route is
-/// never mistaken for a create (a request-path suffix check misclassified the equally valid
-/// trailing-slash form <c>…/providers/{id}/test/</c>);</item>
-/// <item>the provider-count check and the store mutation are one critical section, so concurrent
-/// creates cannot all observe an empty store and collectively bypass the Enterprise
-/// <c>identity.oidc-multi-provider</c> entitlement.</item>
-/// </list>
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
 public sealed class OidcProviderEntitlementFilterTests
@@ -133,14 +119,6 @@ public sealed class OidcProviderEntitlementFilterTests
         return context;
     }
 
-    /// <summary>
-    /// Minimal in-memory provider store. When <c>concurrentArrivals</c> is set,
-    /// <see cref="ListProvidersAsync"/> holds each caller until that many callers have arrived (or
-    /// the arrival timeout elapses), which pins the filter's check-then-act window open
-    /// deterministically instead of relying on scheduler timing. The timeout is what lets a
-    /// correctly serialized implementation still make progress: it can only ever have one caller
-    /// inside, so the barrier must not be a hard rendezvous.
-    /// </summary>
     private sealed class FakeOidcProviderStore : IOidcProviderStore
     {
         private readonly List<OidcProviderConfiguration> _providers = [];

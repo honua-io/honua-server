@@ -12,76 +12,31 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Docker fixture for the ADR-0060 substrate-neutral serving lane (#2166, #2457). Builds two tiny
-/// disposable HTTP replica images that stand in for two revisions of the Honua serving process, and
-/// exposes the REAL container-runtime and local-health-probe seams
-/// (<see cref="ProcessContainerRuntimeClient"/> / <see cref="HttpLocalReplicaHealthProbe"/>) that the
-/// <see cref="YarpRollingDeployBackend"/> drives against a real <c>docker</c> daemon.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Scope (honua-server#4415): this lane proves the YARP atomic-cutover primitive, not upgrade or
-/// rollback safety.</b> "Revision A" and "revision B" are both the same 3-line <c>busybox:1.36</c>
-/// Dockerfile running <c>httpd</c> over a one-file docroot whose <c>index.html</c> is the revision
-/// marker — no Honua process, no database, nothing written under one revision and read under the
-/// other. It proves the standby-launch/health-gate/proxy-swap/drain mechanics work against a real
-/// container runtime; it proves nothing about whether an actual Honua upgrade preserves data or
-/// behavior across revisions, and must not be cited as upgrade/rollback evidence. That obligation is
-/// carried by honua-release's <c>gate-upgrade.yml</c> <c>kind-upgrade</c> job, which upgrades a real
-/// Honua deployment.
-/// </para>
-/// <para>
-/// Image choice rationale (unrelated to the scope note above): the busybox image mirrors the existing
-/// kind lane's busybox worker images (no new base-image dependency), serves HTTP 200 on <c>/</c>
-/// (satisfying the backend's default <c>/healthz/ready</c> health probe once the probe path is pointed
-/// at <c>/</c>), and returns an identifiable version body so the zero-downtime request loop can prove
-/// the v1→v2 flip. The two images are built by the fixture itself (idempotent) so the lane is
-/// self-contained on any Docker host; the workflow additionally pre-pulls <c>busybox</c> to warm the
-/// cache.
-/// </para>
-/// <para>
-/// When Docker is unavailable the build fails, <see cref="Available"/> stays false, and the dependent
-/// <c>[SkippableFact]</c> tests skip (never fail) — mirroring <see cref="KindClusterFixture"/> and
-/// <see cref="LocalStackFixture"/>. cloud-integration-harness.yml's TRX-based counts tripwire (#4415)
-/// fails the workflow if that ever happens on a CI runner, so a skip can only be silent locally.
-/// </para>
-/// </remarks>
 public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
 {
     private const string ContainerRuntime = "docker";
     private const string BaseImage = "busybox:1.36";
 
-    /// <summary>Container image serving the "v1" revision marker on port 8080.</summary>
     public string V1Image { get; } = "honua-ci/ls-replica:v1";
 
-    /// <summary>Container image serving the "v2" revision marker on port 8080.</summary>
     public string V2Image { get; } = "honua-ci/ls-replica:v2";
 
-    /// <summary>Revision marker body served by <see cref="V1Image"/>.</summary>
     public const string V1Marker = "honua-revision-v1";
 
-    /// <summary>Revision marker body served by <see cref="V2Image"/>.</summary>
     public const string V2Marker = "honua-revision-v2";
 
-    /// <summary>Container port the replica images publish.</summary>
     public const int ReplicaContainerPort = 8080;
 
     private ServiceProvider? _services;
 
-    /// <summary>True when Docker is available and both replica images built successfully.</summary>
     public bool Available { get; private set; }
 
-    /// <summary>Real container runtime seam the rolling-deploy backend drives.</summary>
     internal IContainerRuntimeClient Runtime { get; private set; } = null!;
 
-    /// <summary>Real loopback replica health-probe seam the rolling-deploy backend drives.</summary>
     internal ILocalReplicaHealthProbe HealthProbe { get; private set; } = null!;
 
-    /// <summary>The container runtime executable name (<c>docker</c>).</summary>
     public string RuntimeExecutable => ContainerRuntime;
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         try
@@ -118,7 +73,6 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
         }
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         if (_services is not null)
@@ -128,10 +82,6 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Force-removes every container carrying the supplied <c>honua.target</c> label. Best-effort
-    /// cleanup so a failed scenario cannot leak the standby/active replicas it launched.
-    /// </summary>
     public async Task CleanupTargetAsync(string targetId)
     {
         var (_, stdout, _) = await RunProcessAsync(
@@ -145,10 +95,6 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Polls a URL until it returns HTTP 200 with the expected body, or the timeout elapses. Used to
-    /// confirm a freshly launched replica container is actually serving before a scenario proceeds.
-    /// </summary>
     public static async Task<bool> WaitForBodyAsync(string url, string expectedBody, TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
@@ -178,7 +124,6 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
         return false;
     }
 
-    /// <summary>Reserves an ephemeral loopback TCP port for a replica container's host binding.</summary>
     public static int GetFreeTcpPort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

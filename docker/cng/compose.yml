@@ -8,7 +8,7 @@ services:
         - github_actor
         - github_token
     ports:
-      - "${HONUA_CNG_SERVER_PORT:-8094}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CNG_SERVER_PORT:-8094}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - Experimental__Features__RedshiftProvider=false
@@ -67,7 +67,7 @@ services:
       - POSTGRES_PASSWORD=cng_password
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     ports:
-      - "${HONUA_CNG_POSTGRES_PORT:-5435}:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CNG_POSTGRES_PORT:-5435}:5432"
     networks:
       - cng-network
     healthcheck:

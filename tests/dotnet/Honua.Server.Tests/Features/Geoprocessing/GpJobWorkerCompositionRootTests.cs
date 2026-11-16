@@ -17,11 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-// The production composition root must wire the in-process job worker so that authenticated
-// GPServer submitJob jobs are claimed, executed and advanced to a terminal esriJobSucceeded
-// status with a retrievable result package. The test deliberately does not register the
-// worker itself: the only thing that drains the queue is the worker the composition root
-// registers, so if that wiring regresses the worker assertion fails immediately.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GpJobWorkerCompositionRootTests(DatabaseFixtureAdapter database)

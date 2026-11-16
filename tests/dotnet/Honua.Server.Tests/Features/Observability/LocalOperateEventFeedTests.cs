@@ -19,10 +19,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Observability;
 
-/// <summary>
-/// Unit tests for <see cref="LocalOperateEventFeed"/> covering fan-out, sort,
-/// partial-failure handling, and post-merge filters (#1168).
-/// </summary>
 public sealed class LocalOperateEventFeedTests
 {
     [UnitTest]

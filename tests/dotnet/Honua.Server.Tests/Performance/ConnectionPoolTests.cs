@@ -12,15 +12,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Performance;
 
-/// <summary>
-/// Integration tests verifying connection pool behavior under load.
-/// Tests for connection leaks, pool exhaustion, and proper resource cleanup.
-///
-/// Targets from Issue #46:
-/// - Connection pool sizing guidance for production
-/// - Connection leak verification to prevent resource exhaustion
-/// - Load testing with concurrent request scenarios
-/// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Performance")]
 [Collection("Database")]
@@ -43,10 +34,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Verifies that connections are properly returned to the pool after use.
-    /// Opens and closes many connections sequentially to detect leaks.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task Connections_ReturnsToPoolAfterUse()
@@ -69,10 +56,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.True(finalConn.State == System.Data.ConnectionState.Open);
     }
 
-    /// <summary>
-    /// Verifies connection pool behavior under concurrent load.
-    /// Multiple tasks acquiring connections simultaneously.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task Connections_HandlesConcurrentRequests()
@@ -114,10 +97,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.Equal(0, failureCount);
     }
 
-    /// <summary>
-    /// Verifies connections are properly disposed even when exceptions occur.
-    /// Tests that error paths don't leak connections.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task Connections_NoLeakOnException()
@@ -157,10 +136,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.Equal(1, result);
     }
 
-    /// <summary>
-    /// Tests sustained connection usage over a period of time.
-    /// Verifies no memory growth or connection accumulation.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     [Trait("Category", "Slow")]
@@ -197,10 +172,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.True(memoryGrowthMB < 10, $"Memory grew by {memoryGrowthMB:F2}MB, expected less than 10MB");
     }
 
-    /// <summary>
-    /// Verifies connection pool metrics can be queried.
-    /// Tests that we can monitor pool health.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task ConnectionPool_CanQueryMetrics()
@@ -236,10 +207,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.True(count >= 0, "Should be able to query active connections");
     }
 
-    /// <summary>
-    /// Tests connection pool behavior with transaction usage.
-    /// Verifies transactions don't leak connections.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task Connections_TransactionsNoLeaks()
@@ -264,9 +231,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.True(testConn.State == System.Data.ConnectionState.Open);
     }
 
-    /// <summary>
-    /// Tests connection pool behavior when transactions are rolled back.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task Connections_RolledBackTransactionsNoLeaks()
@@ -291,10 +255,6 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.True(testConn.State == System.Data.ConnectionState.Open);
     }
 
-    /// <summary>
-    /// Tests that connection pool handles burst traffic.
-    /// Simulates sudden spike in connection requests.
-    /// </summary>
     [IntegrationTest]
     [Trait("Operation", "ConnectionPool")]
     public async Task ConnectionPool_HandlesBurstTraffic()

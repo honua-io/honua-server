@@ -25,9 +25,6 @@ using OpenTelemetry.Trace;
 
 namespace Honua.ServiceDefaults;
 
-/// <summary>
-/// Service default configuration extensions for application setup.
-/// </summary>
 public static partial class Extensions
 {
     // Performance monitoring constants
@@ -46,7 +43,7 @@ public static partial class Extensions
         // PA-112: the SensorThings observation-stream slow-consumer drop counter was
         // tracked in-memory but never exported as an OTel metric.
         "Honua.SensorThings",
-        // #4404: the attachment orphan counter exists so an operator can alert on a
+        // The attachment orphan counter exists so an operator can alert on a
         // storage object that outlived its metadata row; without this entry neither the
         // Prometheus nor the OTLP exporter would ever collect it.
         LoggingAttachmentOrphanLedger.MeterName
@@ -73,25 +70,19 @@ public static partial class Extensions
         "Honua.Snowflake.FeatureStore",
         "Honua.Redshift.FeatureStore",
         "Honua.Oracle.FeatureStore",
-        // PA-016 / PA-017 / PA-018 / PA-019 / PA-020: hot-path ActivitySources added by the
-        // 2026-07 observability audit (#2401) that previously had no span coverage at all.
+        // Hot-path ActivitySources (import jobs, federation, edit, feature store).
         "Honua.Import.Jobs",
         "Honua.Federation",
         "Honua.Core.Edit",
         "Honua.Core.FeatureStore",
         // PA-108: federated ArcGIS REST provider query span (paging loop).
         "Honua.GeoServicesRest",
-        // A3-004 (#5476): replica conflict resolution and the Zarr slice readers declared their
-        // own sources but were never subscribed, so their spans were dropped.
+        // Replica conflict resolution and the Zarr slice readers declare their own sources;
+        // unless they are subscribed here their spans are dropped.
         "Honua.Server.ReplicaConflicts",
         "Honua.Core.Raster.Zarr"
     ];
 
-    /// <summary>
-    /// Adds the standard telemetry defaults without applying the full service-default stack.
-    /// </summary>
-    /// <param name="builder">The application builder being configured.</param>
-    /// <returns>The application builder for chaining.</returns>
     [RequiresUnreferencedCode("Calls AddAdaptiveSampling which binds configuration via Configure<TOptions>(IConfiguration).")]
     public static IHostApplicationBuilder AddTelemetryDefaults(this IHostApplicationBuilder builder)
     {
@@ -100,11 +91,6 @@ public static partial class Extensions
         return builder;
     }
 
-    /// <summary>
-    /// Configures OpenTelemetry tracing, metrics, and logging exporters for the current application.
-    /// </summary>
-    /// <param name="builder">The application builder being configured.</param>
-    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
     {
         // Bind tracing options from configuration
@@ -146,7 +132,7 @@ public static partial class Extensions
 
         // Ensure IMeterFactory is available in DI so metrics classes can create their
         // instruments on a factory-owned "Honua" meter instead of a process-global static
-        // Meter (#2802). Idempotent (TryAdd-based); the hosting builder usually registers it
+        // Meter. Idempotent (TryAdd-based); the hosting builder usually registers it
         // already, but AddMetrics guarantees it for every host and test factory.
         builder.Services.AddMetrics();
 
@@ -209,7 +195,7 @@ public static partial class Extensions
                 if (useXRay)
                 {
                     tracing.AddXRayTraceId();
-                    // Qualified: the Honua.Sdk.* packages (#4599) put a Honua.Sdk namespace in scope.
+                    // Qualified: the Honua.Sdk.* packages put a Honua.Sdk namespace in scope.
                     OpenTelemetry.Sdk.SetDefaultTextMapPropagator(new AWSXRayPropagator());
                 }
 
@@ -274,18 +260,9 @@ public static partial class Extensions
         return builder;
     }
 
-    /// <summary>
-    /// Maps the native Prometheus text exposition endpoint.
-    /// </summary>
-    /// <param name="app">The application endpoint builder.</param>
     public static WebApplication MapPrometheusEndpoint(this WebApplication app)
         => MapPrometheusEndpoint(app, configureEndpoint: null);
 
-    /// <summary>
-    /// Maps the native Prometheus text exposition endpoint and applies host conventions.
-    /// </summary>
-    /// <param name="app">The application endpoint builder.</param>
-    /// <param name="configureEndpoint">Optional endpoint conventions supplied by the host.</param>
     public static WebApplication MapPrometheusEndpoint(
         this WebApplication app,
         Action<IEndpointConventionBuilder>? configureEndpoint)
@@ -329,12 +306,6 @@ public static partial class Extensions
         return configuration["OTEL_EXPORTER_OTLP_HEADERS"];
     }
 
-    /// <summary>
-    /// Resolves whether AWS X-Ray tracing should be enabled. Precedence:
-    /// explicit <c>Tracing:XRay:Enabled</c> configuration first, then the
-    /// AWS-provided environment signals (<c>AWS_XRAY_TRACING_ENABLED</c>, or an
-    /// <c>AWS_XRAY_DAEMON_ADDRESS</c> present alongside a Lambda runtime).
-    /// </summary>
     private static bool ResolveXRayEnabled(IConfiguration configuration, TracingOptions tracingOptions)
     {
         if (tracingOptions.XRay.Enabled)
@@ -409,13 +380,6 @@ public static partial class Extensions
         }
     }
 
-    /// <summary>
-    /// Makes <see cref="TracingOptions.MaxEventsPerSpan"/> an export ceiling rather than an
-    /// annotation (#5475). A span processor cannot remove events from an <see cref="Activity"/>, so
-    /// the limit is handed to the OTLP exporter, which drops events past
-    /// <c>OTEL_SPAN_EVENT_COUNT_LIMIT</c> while serializing and reports them as dropped. An
-    /// explicitly configured <c>OTEL_SPAN_EVENT_COUNT_LIMIT</c> still wins.
-    /// </summary>
     private static void ApplyExporterSpanEventLimit(IConfigurationManager configuration, TracingOptions tracingOptions)
     {
         if (tracingOptions.MaxEventsPerSpan <= 0 ||
@@ -606,11 +570,6 @@ public static partial class Extensions
         }
     }
 
-    /// <summary>
-    /// Adds performance monitoring services to the application.
-    /// </summary>
-    /// <param name="builder">The host application builder</param>
-    /// <returns>The host application builder for chaining</returns>
     public static IHostApplicationBuilder AddPerformanceMonitoring(this IHostApplicationBuilder builder)
     {
         // Add performance monitoring services
@@ -631,9 +590,6 @@ public static partial class Extensions
         return builder;
     }
 
-    /// <summary>
-    /// Background service for periodic memory monitoring.
-    /// </summary>
     internal sealed class MemoryMonitoringService : BackgroundService
     {
         private readonly IPerformanceMonitor _performanceMonitor;
@@ -705,11 +661,6 @@ public static partial class Extensions
         public static partial void MemoryMonitoringServiceFailed(ILogger logger, Exception exception);
     }
 
-    /// <summary>
-    /// Adds the baseline health checks used by all Honua-hosted services.
-    /// </summary>
-    /// <param name="builder">The application builder being configured.</param>
-    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
     {
         builder.Services.AddHealthChecks()
@@ -718,11 +669,6 @@ public static partial class Extensions
         return builder;
     }
 
-    /// <summary>
-    /// Maps the default infrastructure endpoints exposed by Honua services.
-    /// </summary>
-    /// <param name="app">The web application being configured.</param>
-    /// <returns>The web application for chaining.</returns>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
         // Map development health endpoints
@@ -738,9 +684,6 @@ public static partial class Extensions
         return app;
     }
 
-    /// <summary>
-    /// Adds adaptive sampling services for intelligent distributed tracing.
-    /// </summary>
     private static IHostApplicationBuilder AddAdaptiveSampling(this IHostApplicationBuilder builder)
     {
         // Bind adaptive sampling configuration from environment variables

@@ -14,14 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// End-to-end proof of invariant #6: a hydrated scoped-job principal is authorized
-/// by the EXISTING shared RBAC pipeline (<see cref="ServiceDataEditorAuthorization"/>)
-/// unchanged. The mint freezes the intersection as <c>data-editor:{service}</c>
-/// roles, and the same service-scoped-role check every other request flows through
-/// grants in-scope access and denies out-of-scope access — authorization is never
-/// forked.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

@@ -25,13 +25,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for FeatureServer metadata endpoints.
-/// Tests Issue #5 - Layer metadata endpoint implementation.
-/// </summary>
-/// <summary>
-/// Integration tests for streaming query functionality (Issue #229)
-/// </summary>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
@@ -1710,9 +1703,6 @@ public sealed partial class FeatureServerEndpointTests
 
     // ObjectIds parameter tests (Issue #156)
 
-    /// <summary>
-    /// Tests query with single objectId parameter returns only that feature
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1740,9 +1730,6 @@ public sealed partial class FeatureServerEndpointTests
         ReadObjectIdValue(objectIdValue).Should().Be(1);
     }
 
-    /// <summary>
-    /// Tests query with multiple objectIds parameter returns multiple specific features
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1770,9 +1757,6 @@ public sealed partial class FeatureServerEndpointTests
         returnedObjectIds.Should().Contain(new long[] { 1, 3, 5 });
     }
 
-    /// <summary>
-    /// Tests that objectIds queries are not truncated by the default result record count.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1829,9 +1813,6 @@ public sealed partial class FeatureServerEndpointTests
             options => options.WithoutStrictOrdering());
     }
 
-    /// <summary>
-    /// Tests query with objectIds parameter via POST request
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1869,9 +1850,6 @@ public sealed partial class FeatureServerEndpointTests
         returnedObjectIds.Should().Contain(new long[] { 2, 4 });
     }
 
-    /// <summary>
-    /// Tests combining objectIds with where clause (intersection semantics)
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1892,9 +1870,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.Features.Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Tests objectIds parameter with returnIdsOnly=true
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1918,9 +1893,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.Features.Should().BeNull();
     }
 
-    /// <summary>
-    /// Tests objectIds parameter with returnCountOnly=true
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1943,9 +1915,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.ObjectIdFieldName.Should().BeNull();
     }
 
-    /// <summary>
-    /// Tests error handling for invalid objectId formats
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1973,9 +1942,6 @@ public sealed partial class FeatureServerEndpointTests
         details.Should().Contain(d => d!.Contains("objectIds"));
     }
 
-    /// <summary>
-    /// Tests objectIds parameter with form data POST request
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2011,9 +1977,6 @@ public sealed partial class FeatureServerEndpointTests
         returnedObjectIds.Should().Contain(new long[] { 1, 5 });
     }
 
-    /// <summary>
-    /// Tests objectIds parameter with non-existent IDs returns empty result
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2037,9 +2000,6 @@ public sealed partial class FeatureServerEndpointTests
 
     // Query paging tests (Issue #8)
 
-    /// <summary>
-    /// Tests that the resultOffset parameter correctly skips the specified number of records
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2064,9 +2024,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.ExceededTransferLimit.Should().BeFalse("because all remaining features after offset are returned");
     }
 
-    /// <summary>
-    /// Tests that the resultRecordCount parameter correctly limits the number of returned features
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2088,9 +2045,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.ExceededTransferLimit.Should().BeTrue("because 5 features exist but only 3 were requested");
     }
 
-    /// <summary>
-    /// Tests that combining resultOffset and resultRecordCount parameters returns the correct page of results
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2150,9 +2104,6 @@ public sealed partial class FeatureServerEndpointTests
         page1Ids.Intersect(page2Ids).Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Tests that the exceededTransferLimit flag is correctly set when more results are available than requested
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2177,9 +2128,6 @@ public sealed partial class FeatureServerEndpointTests
         jsonDoc.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
     }
 
-    /// <summary>
-    /// Tests that the exceededTransferLimit flag is correctly set to false when all results are returned
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2208,9 +2156,6 @@ public sealed partial class FeatureServerEndpointTests
         allResultsExceeded.GetBoolean().Should().BeFalse();
     }
 
-    /// <summary>
-    /// Tests that POST query requests correctly handle paging parameters (resultOffset and resultRecordCount)
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2244,9 +2189,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.ExceededTransferLimit.Should().BeTrue("because offset=1 leaves 4 features, but only 2 were requested");
     }
 
-    /// <summary>
-    /// Tests that spatial queries with point geometry and default spatial relationship (intersects) work correctly
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2272,9 +2214,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests spatial queries with polygon geometry using contains relationship
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2305,9 +2244,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests that spatial relationship mapping works correctly for all supported relationships
-    /// </summary>
     [Theory]
     [InlineData("esriSpatialRelIntersects")]
     [InlineData("esriSpatialRelContains")]
@@ -2335,9 +2271,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests error handling for invalid geometry in spatial queries
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2354,9 +2287,6 @@ public sealed partial class FeatureServerEndpointTests
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    /// <summary>
-    /// Tests error handling for unsupported spatial relationships
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2374,9 +2304,6 @@ public sealed partial class FeatureServerEndpointTests
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    /// <summary>
-    /// Tests that spatial queries can be combined with WHERE clauses
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2403,9 +2330,6 @@ public sealed partial class FeatureServerEndpointTests
 
     // Output format tests (Issue #9)
 
-    /// <summary>
-    /// Tests that f=json returns GeoServices REST JSON format with correct content type
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2432,9 +2356,6 @@ public sealed partial class FeatureServerEndpointTests
         });
     }
 
-    /// <summary>
-    /// Tests that f=geojson returns GeoJSON format with correct content type
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2474,9 +2395,6 @@ public sealed partial class FeatureServerEndpointTests
         });
     }
 
-    /// <summary>
-    /// Tests that GeoJSON format includes exceededTransferLimit only when exceeded
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2503,9 +2421,6 @@ public sealed partial class FeatureServerEndpointTests
         jsonDoc.RootElement.TryGetProperty("properties", out _).Should().BeFalse();
     }
 
-    /// <summary>
-    /// Tests that outFields parameter filters returned attributes in both formats
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2544,9 +2459,6 @@ public sealed partial class FeatureServerEndpointTests
         });
     }
 
-    /// <summary>
-    /// Tests that outFields supports wildcard combined with explicit fields
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2573,9 +2485,6 @@ public sealed partial class FeatureServerEndpointTests
         });
     }
 
-    /// <summary>
-    /// Tests that returnGeometry=false omits geometry in both formats
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2608,9 +2517,6 @@ public sealed partial class FeatureServerEndpointTests
         geoJsonQueryResponse!.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
     }
 
-    /// <summary>
-    /// Tests that POST requests support format parameter in request body
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2647,9 +2553,6 @@ public sealed partial class FeatureServerEndpointTests
         });
     }
 
-    /// <summary>
-    /// Tests that invalid format parameter returns 400 with validation details
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2669,9 +2572,6 @@ public sealed partial class FeatureServerEndpointTests
         details.Should().Contain(detail => detail!.Contains("Output format 'invalid' is not supported"));
     }
 
-    /// <summary>
-    /// Tests that GeoJSON features include proper IDs from objectid field
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2721,9 +2621,6 @@ public sealed partial class FeatureServerEndpointTests
 
     #region Geometry Type Support Tests (Issue #94)
 
-    /// <summary>
-    /// Tests spatial queries with LineString geometry
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2755,9 +2652,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests spatial queries with MultiPoint geometry
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2789,9 +2683,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests spatial queries with Envelope geometry (bounding box)
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2823,9 +2714,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests spatial queries with MultiPolygon geometry (polygon with multiple rings)
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2857,9 +2745,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests error handling for invalid geometry formats in new geometry types
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -2883,9 +2768,6 @@ public sealed partial class FeatureServerEndpointTests
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    /// <summary>
-    /// Tests error handling for empty geometry arrays
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -3628,11 +3510,6 @@ public sealed partial class FeatureServerEndpointTests
         secondBody.Should().Be(firstBody, "the retry is genuinely re-attempted and reaches the same outcome");
     }
 
-    /// <summary>
-    /// Asserts an <c>applyEdits</c> response is not the #3052 idempotency conflict. GeoServices
-    /// reports errors Esri-style (HTTP 200 with an <c>{"error":{"code":...}}</c> body), so a leaked
-    /// reservation surfaces as body code 409, not as an HTTP 409 status.
-    /// </summary>
     private static void ShouldNotBeIdempotencyConflict(string body, string because)
     {
         using var document = JsonDocument.Parse(body);
