@@ -15,7 +15,6 @@
 # covered by the global rule above).
 *.sh text eol=lf
 docker/cloud/lambda/bootstrap.sh text eol=lf
-docker/cloud/azure-functions/handler.sh text eol=lf
 
 # Common binary types: never normalize or diff as text.
 *.png binary

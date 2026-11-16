@@ -128,19 +128,15 @@ public enum ExecutionJobStatus
 
 public enum DeployTargetKind
 {
-    Kubernetes,
+    Kubernetes = 0,
 
-    AwsEcs,
+    AwsEcs = 1,
 
-    AzureContainerApps,
+    AwsLambda = 3,
 
-    AwsLambda,
+    SelfHostedRolling = 5,
 
-    AzureFunctions,
-
-    SelfHostedRolling,
-
-    LocalCompose
+    LocalCompose = 6
 }
 
 public enum BatchComputeTargetKind
