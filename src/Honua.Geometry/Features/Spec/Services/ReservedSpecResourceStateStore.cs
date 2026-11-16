@@ -37,12 +37,6 @@ internal sealed class ReservedSpecResourceStateStore
         throw BuildException(state.Name);
     }
 
-    public Task DestroyAsync(string resourceName, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(resourceName);
-        throw BuildException(resourceName);
-    }
-
     private SpecExecutionException BuildException(string name) =>
         new(
             SpecDiagnosticCodes.SpecKindNotInS1,

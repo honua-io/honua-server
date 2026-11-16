@@ -102,26 +102,6 @@ internal sealed class GeocodeProviderRegistry : IGeocodeProviderRegistry
         return GetProvider(providerName);
     }
 
-    public IReadOnlyList<string> GetAvailableProviders()
-    {
-        return GetProvidersByPriority();
-    }
-
-    public IGeocodeProvider GetDefaultProvider()
-    {
-        var defaultProviderName = _configuration.Value.DefaultProvider;
-        var provider = GetProvider(defaultProviderName);
-        if (provider != null)
-        {
-            return provider;
-        }
-
-        var providers = GetAllProviders();
-        return providers.Count > 0
-            ? providers[0]
-            : throw new InvalidOperationException("No geocoding providers are registered.");
-    }
-
     private IEnumerable<IGeocodeProvider> OrderProviders(IEnumerable<IGeocodeProvider> providers)
     {
         return providers
