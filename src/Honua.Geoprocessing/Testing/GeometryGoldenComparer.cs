@@ -7,31 +7,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Testing;
 
-/// <summary>
-/// Compares a vector GeoJSON artifact against a golden GeoJSON file with a coordinate
-/// tolerance via NetTopologySuite — NOT a byte-for-byte equality (GP Devkit P6, issue
-/// #2127).
-///
-/// <para>
-/// The comparison is structural-with-tolerance: both sides are parsed into NTS
-/// <see cref="FeatureCollection"/>s (a bare <c>Feature</c> or <c>Geometry</c> is wrapped
-/// into a single-feature collection), features are aligned positionally, each geometry is
-/// checked for the same structure (type, ring/part/point counts) and then coordinate-by-
-/// coordinate within <see cref="GoldenTolerance.Coordinate"/>, and non-geometry attributes
-/// are diffed structurally with the numeric tolerance. This tolerates the least-significant
-/// digit drift that buffer segmentation and reprojection produce across platforms while
-/// still catching a genuinely different geometry.
-/// </para>
-/// </summary>
 public static class GeometryGoldenComparer
 {
-    /// <summary>
-    /// Compares <paramref name="actualGeoJson"/> against <paramref name="goldenGeoJson"/>.
-    /// </summary>
-    /// <param name="actualGeoJson">The GeoJSON the process produced.</param>
-    /// <param name="goldenGeoJson">The recorded golden GeoJSON.</param>
-    /// <param name="tolerance">The coordinate/numeric tolerances to apply.</param>
-    /// <returns>A matched result, or a mismatch carrying located differences.</returns>
     public static GoldenComparisonResult Compare(
         string actualGeoJson,
         string goldenGeoJson,

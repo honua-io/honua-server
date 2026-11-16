@@ -9,57 +9,34 @@ using Honua.Geoprocessing.CustomCode;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>How a process executes, which decides what it needs before it can run here.</summary>
 public enum GpExecutionMode
 {
-    /// <summary>In-process managed code (NTS and friends); needs only the devkit itself.</summary>
     Managed,
 
-    /// <summary>Native GDAL work; needs the worker image or the host GDAL CLIs.</summary>
     Native,
 
-    /// <summary>Reads or writes a configured server resource; needs the integration stack.</summary>
     ServiceBacked,
 
-    /// <summary>User code under the custom-code harness; needs the matching local harness.</summary>
     Custom,
 }
 
-/// <summary>One prerequisite and whether this machine satisfies it.</summary>
-/// <param name="Name">What is needed.</param>
-/// <param name="Status"><c>satisfied</c>, <c>missing</c>, or <c>unchecked</c>.</param>
-/// <param name="Detail">Where it was looked for, or how to satisfy it.</param>
 public sealed record GpPrerequisite(string Name, string Status, string Detail)
 {
-    /// <summary>Whether the prerequisite is known to be met.</summary>
     public bool Satisfied => Status == "satisfied";
 }
 
-/// <summary>
-/// The devkit's answer to "can this registered function run on this machine?". Registration
-/// alone never proves readiness: a native op needs GDAL, a service-backed op needs the
-/// integration stack, custom code needs its harness. The verdict names the first missing
-/// prerequisite so the developer knows what to install, and the devkit never answers a
-/// blocked function by submitting it to a server.
-/// </summary>
 public sealed record GpRunnability
 {
-    /// <summary>The execution mode the process was classified into.</summary>
     public required GpExecutionMode ExecutionMode { get; init; }
 
-    /// <summary>Every prerequisite checked, in order.</summary>
     public required IReadOnlyList<GpPrerequisite> Prerequisites { get; init; }
 
-    /// <summary>Deployment targets the mode supports.</summary>
     public required IReadOnlyList<string> SupportedTargets { get; init; }
 
-    /// <summary>True when every prerequisite is satisfied.</summary>
     public bool RunnableHere => Prerequisites.All(static p => p.Satisfied);
 
-    /// <summary>The first missing or unchecked prerequisite, or null when runnable.</summary>
     public string? BlockedBy => Prerequisites.FirstOrDefault(static p => !p.Satisfied)?.Name;
 
-    /// <summary>The mode as the JSON/text label.</summary>
     public string ExecutionModeLabel => ExecutionMode switch
     {
         GpExecutionMode.Managed => "managed",
@@ -68,7 +45,6 @@ public sealed record GpRunnability
         _ => "custom",
     };
 
-    /// <summary>Renders the verdict as JSON fields merged into a describe/list descriptor.</summary>
     public void WriteTo(JsonObject descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -92,11 +68,6 @@ public sealed record GpRunnability
     }
 }
 
-/// <summary>
-/// Facts about this machine the runnability assessment needs. Each probe is cheap and
-/// cached; the container probe is opt-in because it shells out to the container runtime.
-/// Tests inject fixed answers.
-/// </summary>
 public sealed class GpEnvironmentProbe
 {
     private readonly Func<string, bool> _executableAvailable;
@@ -106,9 +77,6 @@ public sealed class GpEnvironmentProbe
     private readonly Lazy<bool> _integrationStack;
     private readonly Lazy<bool> _dotnetSdk;
 
-    /// <summary>Creates a probe that inspects the real machine.</summary>
-    /// <param name="workerImageAvailable">The container probe result when the caller ran it; null means unchecked.</param>
-    /// <param name="workerImage">The worker image reference the container probe looked for.</param>
     public GpEnvironmentProbe(bool? workerImageAvailable = null, string workerImage = "honua-worker-etl")
     {
         WorkerImageAvailable = workerImageAvailable;
@@ -125,15 +93,6 @@ public sealed class GpEnvironmentProbe
         _dotnetSdk = new Lazy<bool>(HasDotnet10Sdk);
     }
 
-    /// <summary>Creates a probe with fixed answers (tests).</summary>
-    /// <param name="hostGdalAvailable">Whether the host GDAL CLIs are present.</param>
-    /// <param name="workerImageAvailable">The container probe result, or null when unchecked.</param>
-    /// <param name="pythonAvailable">Whether a Python interpreter is present.</param>
-    /// <param name="integrationStackConfigured">Whether the integration stack is configured.</param>
-    /// <param name="workerImage">The worker image reference.</param>
-    /// <param name="executableAvailable">Executable lookup. Null treats every name like <paramref name="hostGdalAvailable"/>.</param>
-    /// <param name="configurationAvailable">Configuration lookup. Null uses <paramref name="integrationStackConfigured"/>.</param>
-    /// <param name="dotnetSdkAvailable">Whether a .NET 10 SDK is installed. Null follows <paramref name="executableAvailable"/> for <c>dotnet</c>.</param>
     public GpEnvironmentProbe(bool hostGdalAvailable, bool? workerImageAvailable, bool pythonAvailable, bool integrationStackConfigured, string workerImage = "honua-worker-etl",
         Func<string, bool>? executableAvailable = null, Func<string, bool>? configurationAvailable = null, bool? dotnetSdkAvailable = null)
     {
@@ -148,31 +107,20 @@ public sealed class GpEnvironmentProbe
         _dotnetSdk = new Lazy<bool>(() => dotnetSdkAvailable ?? executable("dotnet"));
     }
 
-    /// <summary>Whether <c>ogr2ogr</c> and <c>gdal_translate</c> resolve on PATH.</summary>
     public bool HostGdalAvailable => _hostGdal.Value;
 
-    /// <summary>The container probe result, or null when it was not run.</summary>
     public bool? WorkerImageAvailable { get; }
 
-    /// <summary>The worker image reference.</summary>
     public string WorkerImage { get; }
 
-    /// <summary>Whether a Python interpreter resolves on PATH.</summary>
     public bool PythonAvailable => _python.Value;
 
-    /// <summary>
-    /// Whether a .NET 10 SDK is installed. The <c>dotnet</c> host that runs the devkit is not
-    /// enough to build a scaffolded project.
-    /// </summary>
     public bool DotnetSdkAvailable => _dotnetSdk.Value;
 
-    /// <summary>Whether a server connection or database connection string is configured in the environment.</summary>
     public bool IntegrationStackConfigured => _integrationStack.Value;
 
-    /// <summary>Whether the selected process's executable resolves on PATH.</summary>
     public bool ExecutableAvailable(string executable) => _executableAvailable(executable);
 
-    /// <summary>Whether the named configuration prerequisite is present.</summary>
     public bool ConfigurationAvailable(string dependency) => _configurationAvailable(dependency);
 
     private static bool HasConfiguration(string key)
@@ -208,8 +156,6 @@ public sealed class GpEnvironmentProbe
         return false;
     }
 
-    /// <summary>Whether <paramref name="sdkList"/> from <c>dotnet --list-sdks</c> names a 10.x SDK.</summary>
-    /// <param name="sdkList">The command's stdout.</param>
     internal static bool SdkListIncludesNet10(string sdkList)
     {
         foreach (var raw in sdkList.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -276,14 +222,8 @@ public sealed class GpEnvironmentProbe
     }
 }
 
-/// <summary>Classifies a process and checks its prerequisites against a probe.</summary>
 public static class GpRunnabilityAssessor
 {
-    /// <summary>Assesses one registered process.</summary>
-    /// <param name="definition">The catalog definition (null when the executor is registered without one).</param>
-    /// <param name="processId">The process id.</param>
-    /// <param name="runtimeProfile">The runtime profile the executor accepts (<c>native</c>, <c>custom-code</c>, or managed/null).</param>
-    /// <param name="probe">The machine facts.</param>
     public static GpRunnability Assess(ProcessDefinition? definition, string processId, string? runtimeProfile, GpEnvironmentProbe probe)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processId);
@@ -375,11 +315,6 @@ public static class GpRunnabilityAssessor
         _ => [],
     };
 
-    /// <summary>
-    /// A valid example value per parameter: the declared default, else the first allowed
-    /// value, else a type-appropriate sample (a WKB point, a tiny GeoJSON document, ...).
-    /// </summary>
-    /// <param name="definition">The catalog definition.</param>
     public static JsonObject ExampleValues(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);

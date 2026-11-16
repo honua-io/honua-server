@@ -14,22 +14,10 @@ using Honua.Import.FileImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Issue #1253. Admin endpoints that start and observe footprint-driven batch
-/// migration runs. <c>POST /api/v1/admin/import/migrations</c> initiates an
-/// ordered, resumable batch from a footprint/selection and returns a batch run
-/// id; <c>GET /api/v1/admin/import/migrations/{batchId}</c> returns the rolled-up
-/// batch status plus per-child progress. Both are thin adapters over
-/// <see cref="IMigrationBatchOrchestrator"/> and <see cref="IMigrationBatchRunCatalog"/>.
-/// </summary>
 internal static partial class MigrationBatchEndpoints
 {
     private const int MaxFootprintLayers = 500;
 
-    /// <summary>
-    /// Maps the batch import orchestration endpoints under
-    /// <c>/api/v1/admin/import/migrations</c>.
-    /// </summary>
     public static void MapMigrationBatchEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/migrations")
@@ -261,9 +249,6 @@ internal static partial class MigrationBatchEndpoints
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// #4600 (AC1): the pre-apply construct accounting, replayed from the persisted manifest and child rows.
-    /// </summary>
     private static async Task<MigrationConstructAccountingReport> AccountAsync(
         IMigrationBatchRunCatalog catalog,
         MigrationBatchRunRecord batch,
@@ -340,7 +325,6 @@ internal static partial class MigrationBatchEndpoints
     private static ILogger<MigrationBatchEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<MigrationBatchEndpointsLog>>();
 
-    /// <summary>Log category marker for migration batch endpoint operations.</summary>
     internal sealed class MigrationBatchEndpointsLog;
 
     private static partial class Log
@@ -350,51 +334,30 @@ internal static partial class MigrationBatchEndpoints
     }
 }
 
-/// <summary>
-/// Request body for <c>POST /api/v1/admin/import/migrations</c>.
-/// </summary>
 public sealed record MigrationBatchStartApiRequest
 {
-    /// <summary>Source kind identifier such as <c>arcgis-geoservices-rest</c>.</summary>
     public string? SourceKind { get; init; }
 
-    /// <summary>Redacted source URL describing the footprint origin (display only).</summary>
     public string? SourceUrl { get; init; }
 
-    /// <summary>Optional operator-visible source display name.</summary>
     public string? SourceDisplayName { get; init; }
 
-    /// <summary>Footprint layer-import specifications.</summary>
     public MigrationBatchLayerApiSpec[]? Layers { get; init; }
 
-    /// <summary>Optional manifest JSON body used for post-publish relationship application (#1256).</summary>
     public string? ManifestBody { get; init; }
 
-    /// <summary>Whether to apply manifest relationship classes after all layers publish.</summary>
     public bool? ApplyRelationships { get; init; }
 
-    /// <summary>
-    /// When true, the batch is refused with 422 if pre-apply construct accounting finds a blocking construct
-    /// or cannot run for lack of a readable manifest (issue #4600).
-    /// </summary>
     public bool? RequireFullFidelity { get; init; }
 }
 
-/// <summary>
-/// 422 body for a batch refused by pre-apply construct accounting.
-/// </summary>
 public sealed record MigrationBatchRefusedResponse
 {
-    /// <summary>Operator-visible refusal reason.</summary>
     public required string Error { get; init; }
 
-    /// <summary>The accounting that refused the selection.</summary>
     public required MigrationConstructAccountingReport ConstructAccounting { get; init; }
 }
 
-/// <summary>
-/// One layer-import specification in a batch footprint request.
-/// </summary>
 public sealed record MigrationBatchLayerApiSpec
 {
     public GeoservicesImportPlan? Plan { get; init; }
@@ -406,142 +369,87 @@ public sealed record MigrationBatchLayerApiSpec
 
     public string? Namespace { get; init; }
 
-    /// <summary>Stable source resource id (must match manifest ids for relationship-apply).</summary>
     public string? SourceResourceId { get; init; }
 
-    /// <summary>Source ArcGIS service URL.</summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>Source layer id within the service.</summary>
     public int LayerId { get; init; }
 
-    /// <summary>Target PostGIS table name.</summary>
     public string? TableName { get; init; }
 
-    /// <summary>Optional target schema for imported operational data.</summary>
     public string? TargetSchema { get; init; }
 
-    /// <summary>Optional target Honua service name for auto-publishing.</summary>
     public string? ServiceName { get; init; }
 
-    /// <summary>Source resource ids this layer depends on (imported first).</summary>
     public string[]? DependsOn { get; init; }
 }
 
-/// <summary>
-/// Response for batch start and batch status. Mirrors the batch run aggregate
-/// plus per-child progress.
-/// </summary>
 public sealed record MigrationBatchResponse
 {
-    /// <summary>Stable batch id.</summary>
     public required string BatchId { get; init; }
 
-    /// <summary>Source kind.</summary>
     public required string SourceKind { get; init; }
 
-    /// <summary>Redacted source URL.</summary>
     public string SourceUrl { get; init; } = string.Empty;
 
-    /// <summary>Operator-visible source display name.</summary>
     public string? SourceDisplayName { get; init; }
 
-    /// <summary>Rolled-up batch status: running, succeeded, failed, cancelled, needs-review.</summary>
     public required string Status { get; init; }
 
-    /// <summary>UTC start instant.</summary>
     public required DateTimeOffset StartedAt { get; init; }
 
-    /// <summary>UTC completion instant (null while running).</summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>Total child layer imports in the footprint.</summary>
     public int TotalChildren { get; init; }
 
-    /// <summary>Number of succeeded children.</summary>
     public int SucceededChildren { get; init; }
 
-    /// <summary>Number of failed children.</summary>
     public int FailedChildren { get; init; }
 
-    /// <summary>Number of cancelled children.</summary>
     public int CancelledChildren { get; init; }
 
-    /// <summary>Whether relationship-apply was requested.</summary>
     public bool ApplyRelationships { get; init; }
 
-    /// <summary>Whether relationship-apply has run.</summary>
     public bool RelationshipsApplied { get; init; }
 
-    /// <summary>Operator-visible note.</summary>
     public string? StatusNote { get; init; }
 
-    /// <summary>Per-child progress, ordered by execution ordinal.</summary>
     public MigrationBatchChildResponse[] Children { get; init; } = [];
 
-    /// <summary>
-    /// Service-level migration fidelity verdict (issue #4600): <c>full-fidelity</c>, <c>unverified</c> or
-    /// <c>incomplete</c>. Null while the batch is running. The status says whether the batch finished; this
-    /// says whether the migrated service is proven equivalent to the source.
-    /// </summary>
     public string? FidelityVerdict { get; init; }
 
-    /// <summary>Per-resource differences that produced <see cref="FidelityVerdict"/>, ordered by code then subject.</summary>
     public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
 
-    /// <summary>
-    /// Pre-apply accounting of every construct discovered on the source against this batch's selection
-    /// (issue #4600). Available from the moment the batch starts; its differences fold into
-    /// <see cref="FidelityVerdict"/> when the batch finishes.
-    /// </summary>
     public MigrationConstructAccountingReport? ConstructAccounting { get; init; }
 }
 
-/// <summary>
-/// Per-child progress within a <see cref="MigrationBatchResponse"/>.
-/// </summary>
 public sealed record MigrationBatchChildResponse
 {
-    /// <summary>Zero-based execution ordinal.</summary>
     public int Ordinal { get; init; }
 
-    /// <summary>Stable source resource id.</summary>
     public required string SourceResourceId { get; init; }
 
-    /// <summary>Source ArcGIS service URL.</summary>
     public required string ServiceUrl { get; init; }
 
-    /// <summary>Source layer id.</summary>
     public int SourceLayerId { get; init; }
 
-    /// <summary>Target PostGIS table name.</summary>
     public required string TableName { get; init; }
 
-    /// <summary>Optional target Honua service name.</summary>
     public string? ServiceName { get; init; }
 
-    /// <summary>Source resource ids this child depends on.</summary>
     public string[] DependsOn { get; init; } = [];
 
-    /// <summary>Child status: pending, running, succeeded, failed, needs-review, cancelled.</summary>
     public required string Status { get; init; }
 
-    /// <summary>Per-layer import job id once queued.</summary>
     public string? JobId { get; init; }
 
-    /// <summary>Resolved Honua layer id once the child publishes.</summary>
     public int? PublishedLayerId { get; init; }
 
-    /// <summary>Operator-visible note recorded on failure or review.</summary>
     public string? StatusNote { get; init; }
 
-    /// <summary>Per-layer fidelity verdict reported by the child import job (issue #4600); null until terminal.</summary>
     public string? FidelityVerdict { get; init; }
 }
 
-/// <summary>
-/// Source-generated JSON serialization context for batch migration API types.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

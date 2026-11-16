@@ -18,18 +18,12 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Provides response formatting and content negotiation services for OGC Features.
-/// </summary>
 internal static partial class OgcResponseFormatter
 {
     private const int StreamingFlushInterval = 32;
     private const string Wfs20SchemaUrl = "http://schemas.opengis.net/wfs/2.0/wfs.xsd";
     private const string Epsg4326UrnSrsName = "urn:ogc:def:crs:EPSG::4326";
 
-    /// <summary>
-    /// Formats feature responses based on requested output format.
-    /// </summary>
     public static IResult FormatFeatureResponse<T>(
         T payload,
         JsonTypeInfo<T> typeInfo,
@@ -50,9 +44,6 @@ internal static partial class OgcResponseFormatter
         return Results.Json(payload, typeInfo, contentType: contentType);
     }
 
-    /// <summary>
-    /// Builds an HTML document for browser-friendly feature display.
-    /// </summary>
     public static string BuildHtmlDocument(string title, string json)
     {
         var encodedTitle = WebUtility.HtmlEncode(title);
@@ -175,9 +166,6 @@ internal static partial class OgcResponseFormatter
         }
     }
 
-    /// <summary>
-    /// Builds GML representation of a feature collection.
-    /// </summary>
     public static string BuildGmlFeatureCollection(
         IEnumerable<GeoJsonFeature> features,
         long? numberMatched = null,
@@ -240,9 +228,6 @@ internal static partial class OgcResponseFormatter
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Builds GML representation of a feature collection from provider-backed GML features.
-    /// </summary>
     public static string BuildGmlFeatureCollection(
         IEnumerable<GmlFeature> features,
         long? numberMatched = null,
@@ -288,9 +273,6 @@ internal static partial class OgcResponseFormatter
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Streams GML representation of a feature collection.
-    /// </summary>
     public static async Task StreamGmlFeatureCollectionAsync(
         IAsyncEnumerable<GmlFeature> features,
         System.IO.Pipelines.PipeWriter bodyWriter,
@@ -361,12 +343,6 @@ internal static partial class OgcResponseFormatter
         await writer.FlushAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Writes a GML FeatureCollection from a pre-buffered list of features.
-    /// Use this overload when the caller has already buffered and truncated the list
-    /// (e.g. for cursor-paging: buffer limit+1 rows, detect hasMoreResults, truncate,
-    /// then pass the truncated list here to avoid double-buffering).
-    /// </summary>
     public static async Task StreamGmlFeatureCollectionAsync(
         IReadOnlyList<GmlFeature> features,
         System.IO.Pipelines.PipeWriter bodyWriter,
@@ -422,9 +398,6 @@ internal static partial class OgcResponseFormatter
         await writer.FlushAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Builds GML representation of a single feature.
-    /// </summary>
     public static string BuildGmlSingleFeature(
         GeoJsonFeature feature,
         string? outputCrsUri = null,
@@ -445,9 +418,6 @@ internal static partial class OgcResponseFormatter
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Builds GML representation of a single provider-backed feature.
-    /// </summary>
     public static string BuildGmlSingleFeature(
         GmlFeature feature,
         string? outputCrsUri = null,
@@ -464,9 +434,6 @@ internal static partial class OgcResponseFormatter
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Builds GML geometry representation from GeoJSON geometry.
-    /// </summary>
     private static string BuildGmlGeometry(
         SimpleGeoJsonGeometry? geometry,
         string indent = "",
@@ -512,10 +479,6 @@ internal static partial class OgcResponseFormatter
         return $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos>{coordinatesJson}</gml:pos></gml:Point>";
     }
 
-    /// <summary>
-    /// Extracts "x y" GML posList tokens from a JSON coordinate ring, skipping any
-    /// coordinate tuple with fewer than 2 ordinates.
-    /// </summary>
     private static List<string> ExtractGmlCoordinatePairs(JsonElement ring)
         => ring.EnumerateArray()
             .Select(coord => coord.EnumerateArray().ToArray())
@@ -934,9 +897,6 @@ internal static partial class OgcResponseFormatter
         }
     }
 
-    /// <summary>
-    /// Builds CSV representation of features for data export.
-    /// </summary>
     public static string BuildCsvResponse(IEnumerable<GeoJsonFeature> features, string[] fieldNames)
     {
         var builder = new StringBuilder();

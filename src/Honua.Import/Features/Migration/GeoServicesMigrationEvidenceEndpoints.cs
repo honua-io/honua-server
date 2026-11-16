@@ -381,7 +381,6 @@ internal static partial class GeoServicesMigrationEvidenceEndpoints
     private static ILogger<GeoServicesMigrationEvidenceEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<GeoServicesMigrationEvidenceEndpointsLog>>();
 
-    /// <summary>Log category marker for ArcGIS migration evidence endpoint operations.</summary>
     internal sealed class GeoServicesMigrationEvidenceEndpointsLog;
 
     private static partial class Log
@@ -391,35 +390,22 @@ internal static partial class GeoServicesMigrationEvidenceEndpoints
     }
 }
 
-/// <summary>
-/// Request body for recording an ArcGIS migration manifest artifact.
-/// </summary>
 public sealed record GeoServicesMigrationManifestIngestionRequest
 {
-    /// <summary>Canonical source URL the manifest was generated from.</summary>
     public string? SourceUrl { get; init; }
 
-    /// <summary>Optional operator-visible source display name.</summary>
     public string? SourceDisplayName { get; init; }
 
-    /// <summary>Optional source system version.</summary>
     public string? SourceVersion { get; init; }
 
-    /// <summary>UTC instant to store on the run record. Defaults to server receive time.</summary>
     public DateTimeOffset? CreatedAt { get; init; }
 
-    /// <summary>Optional operator or service account identifier that produced the run.</summary>
     public string? Actor { get; init; }
 
-    /// <summary>Manifest artifact emitted by the ArcGIS migration planning pipeline.</summary>
     public MigrationManifestArtifact? Manifest { get; init; }
 }
 
-/// <summary>
-/// Request body for recording an ArcGIS migration parity artifact.
-/// </summary>
 public sealed record GeoServicesMigrationParityIngestionRequest
 {
-    /// <summary>Parity artifact emitted after the manifest has been applied.</summary>
     public GeoServicesMigrationParityArtifact? Parity { get; init; }
 }

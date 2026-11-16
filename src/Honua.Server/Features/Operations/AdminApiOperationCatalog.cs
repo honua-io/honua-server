@@ -13,11 +13,6 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Lane-B admin operations, projected directly from the shipped Admin OpenAPI contract.
-/// Keeping the OpenAPI document as the schema source prevents the agent surface from
-/// acquiring a hand-maintained fork of the REST request and response shapes.
-/// </summary>
 internal static class AdminApiOperationCatalog
 {
     internal sealed record Definition(

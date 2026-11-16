@@ -24,16 +24,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Shared utilities and constants for OGC API Features endpoints
-/// </summary>
 internal static class OgcFeaturesUtilities
 {
     private const string TokenQueryParameter = "token";
 
-    /// <summary>
-    /// Allowed query parameters by operation type
-    /// </summary>
     public static class AllowedQueryParameters
     {
         public static readonly FrozenSet<string> Metadata =
@@ -80,9 +74,6 @@ internal static class OgcFeaturesUtilities
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Supported feature formats
-    /// </summary>
     public static readonly ImmutableArray<FormatOption> FeatureFormats = ImmutableArray.Create(
         new FormatOption("geojson", MediaTypes.GeoJson, "GeoJSON"),
         new FormatOption("json", MediaTypes.Json, "JSON"),
@@ -107,9 +98,6 @@ internal static class OgcFeaturesUtilities
     public static string BuildGmlApplicationSchemaUrl(string baseUrl)
         => string.Concat(baseUrl, GmlApplicationSchemaPath);
 
-    /// <summary>
-    /// Builds supported CRS definitions for a Metadata V2 collection.
-    /// </summary>
     public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
         MetadataV2Object resource,
         ICrsRegistry crsRegistry,
@@ -142,9 +130,6 @@ internal static class OgcFeaturesUtilities
         return definitions;
     }
 
-    /// <summary>
-    /// Returns supported CRS URIs for a Metadata V2 collection.
-    /// </summary>
     public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
         MetadataV2Object resource,
         ICrsRegistry crsRegistry,
@@ -157,9 +142,6 @@ internal static class OgcFeaturesUtilities
             .ToImmutableArray();
     }
 
-    /// <summary>
-    /// Normalizes CRS inputs to canonical URI forms (e.g. EPSG:4326 -> http://www.opengis.net/def/crs/EPSG/0/4326).
-    /// </summary>
     public static string NormalizeCrsUri(string crs)
     {
         var trimmed = crs.Trim();
@@ -168,9 +150,6 @@ internal static class OgcFeaturesUtilities
             : trimmed;
     }
 
-    /// <summary>
-    /// Resolves CRS parameters against supported CRS definitions.
-    /// </summary>
     public static bool TryResolveCrs(
         string? crs,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
@@ -205,9 +184,6 @@ internal static class OgcFeaturesUtilities
         return false;
     }
 
-    /// <summary>
-    /// Resolves request CRS parameters against the CRS contract advertised by the collection metadata.
-    /// </summary>
     public static async ValueTask<(bool IsSuccess, CrsDefinition Definition, string? Error)> TryResolveCrsAsync(
         string? crs,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
@@ -225,15 +201,9 @@ internal static class OgcFeaturesUtilities
         return (false, default, error ?? $"Unsupported CRS '{crs}'.");
     }
 
-    /// <summary>
-    /// Determines whether a Metadata V2 field is queryable for simple parameter filtering.
-    /// </summary>
     public static bool IsSimpleQueryableField(MetadataV2Field field)
         => !field.Hidden && OgcQueryablesUtilities.IsSimpleQueryableField(field);
 
-    /// <summary>
-    /// Validates items query parameters against the Metadata V2 queryable field set.
-    /// </summary>
     public static BadRequest<string>? ValidateItemsQueryParameters(
         HttpRequest request,
         MetadataV2Object resource)
@@ -252,13 +222,6 @@ internal static class OgcFeaturesUtilities
         return error == null ? null : TypedResults.BadRequest(error);
     }
 
-    /// <summary>
-    /// Builds a temporal extent from the Metadata V2 temporal declaration and feature store values.
-    /// </summary>
-    /// <param name="resource">V2 resource carrying the temporal field declaration.</param>
-    /// <param name="layerIndex">Service-local integer layer id used by the feature reader.</param>
-    /// <param name="featureReader">Feature reader providing the extent probe.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public static Task<TemporalExtent?> BuildTemporalExtentAsync(
         MetadataV2Object resource,
         int layerIndex,
@@ -280,9 +243,6 @@ internal static class OgcFeaturesUtilities
         => OgcQueryablesUtilities.TryResolveTemporalFieldsV2(
             resource, out startFieldName, out startPropertyType, out endFieldName, out endPropertyType);
 
-    /// <summary>
-    /// Invalidates output cache for a layer after mutation operations.
-    /// </summary>
     public static async Task InvalidateLayerCacheAsync(
         HttpContext context,
         int layerId,
@@ -295,9 +255,6 @@ internal static class OgcFeaturesUtilities
         }
     }
 
-    /// <summary>
-    /// Builds standard OGC feature links (self, alternates, collection).
-    /// </summary>
     public static ImmutableArray<Link> BuildFeatureLinks(
         HttpRequest request,
         string collectionId,
@@ -343,9 +300,6 @@ internal static class OgcFeaturesUtilities
         return links.ToImmutableArray();
     }
 
-    /// <summary>
-    /// Builds the self URL for a feature, used in Location headers for 201 Created responses.
-    /// </summary>
     public static string BuildFeatureSelfUrl(
         HttpRequest request,
         string collectionId,

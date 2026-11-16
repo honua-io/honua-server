@@ -31,9 +31,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Handler for OGC Features transaction operations and complex multi-step operations.
-/// </summary>
 internal sealed partial class OgcFeaturesTransactionHandler(
     OgcFeaturesTransactionDependencies dependencies,
     ILogger<OgcFeaturesTransactionHandler> logger)
@@ -54,9 +51,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
     // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
 
-    /// <summary>
-    /// Handles batch feature operations in a single transaction.
-    /// </summary>
     public async Task<IResult> HandleBatchOperationAsync(
         string collectionId,
         HttpContext context,
@@ -315,13 +309,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    /// <summary>
-    /// Per-operation authorization for a mixed batch (BH3-001/BH3-014). Requires the caller to
-    /// hold the data-editor authorization for each distinct operation kind present in the batch
-    /// (CREATE=Insert, UPDATE=Update, DELETE=Delete). Returns the first denial error, or
-    /// <see langword="null"/> when every present operation kind is authorized. Unknown operation
-    /// types are ignored here — they are rejected later by the batch preparation validation.
-    /// </summary>
     private static async Task<IResult?> AuthorizeBatchOperationKindsAsync(
         HttpContext context,
         MetadataV2Object resource,
@@ -383,9 +370,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return null;
     }
 
-    /// <summary>
-    /// Handles feature replacement with optimistic concurrency control.
-    /// </summary>
     public async Task<IResult> HandleReplaceFeatureAsync(
         string collectionId,
         string featureId,
@@ -688,9 +672,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 detail: "The resource has been modified since the provided ETag.");
     }
 
-    /// <summary>
-    /// Handles partial feature updates with merge semantics and optimistic concurrency control.
-    /// </summary>
     public async Task<IResult> HandlePatchFeatureAsync(
         string collectionId,
         string featureId,
@@ -1129,13 +1110,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Build per-operation-kind queues of geometry-change flags. Handles both ordered
-    /// Operations (the path OGC Features batch takes via <c>UnifiedEditRequest.WithOperations</c>)
-    /// and split Creates/Updates/Deletes batches: each kind's queue lists the flags in the
-    /// order the data layer dequeues them. Deletes default to false (the inline publish
-    /// path also defaults to false for delete events).
-    /// </summary>
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
     {
         if (editBatch.IsEmpty)
@@ -1203,12 +1177,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
            result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Resolves the existing rows for every update/delete operation in the batch through
-    /// <see cref="OgcFeatureIdentifierResolver.ResolveManyAsync"/> (at most two provider
-    /// round trips) instead of one lookup per operation. Missing ids are simply absent
-    /// from the returned map so each unresolved id fails only its own operation.
-    /// </summary>
     private async Task<IReadOnlyDictionary<string, OgcFeatureIdentifierResolver.ResolvedFeature>> ResolveBatchOperationTargetsAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
@@ -1724,11 +1692,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return results.ToList();
     }
 
-    /// <summary>
-    /// Build per-operation-kind queues of <c>{traceIdentifier}:{operationId}</c> request ids
-    /// in the same order ApplyEditsAsync iterates rows for each kind, so the outbox payload
-    /// preserves subrequest correlation that the now no-op post-commit publish used to emit.
-    /// </summary>
     private static Dictionary<string, IReadOnlyList<string>>? BuildBatchPerOperationRequestIds(
         string traceIdentifier,
         ImmutableArray<PreparedBatchOperation> preparedOperations,
@@ -1785,15 +1748,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return result;
     }
 
-    /// <summary>
-    /// Build per-operation-kind queues of geometry-change flags from prepared batch
-    /// operations. Update operations (which OGC Features batch always submits as
-    /// Replace-mode) flag the change when either the request feature carries a
-    /// non-null WKB or the existing row had geometry that the operation will overwrite
-    /// or clear; the only no-change case is null-to-null. Create flags follow
-    /// request-feature WKB. Deletes default to false (the inline publish path also
-    /// defaults to false for delete events).
-    /// </summary>
     internal static Dictionary<string, IReadOnlyList<bool>>? BuildBatchPerOperationGeometryChanged(
         ImmutableArray<PreparedBatchOperation> preparedOperations)
     {

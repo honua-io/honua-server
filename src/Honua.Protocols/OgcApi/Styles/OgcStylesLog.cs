@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Styles;
 
-/// <summary>
-/// Structured logging for OGC API - Styles operations.
-/// Event ID range: 5950-5999 (avoiding collisions with other features).
-/// </summary>
 internal static partial class OgcStylesLog
 {
     [LoggerMessage(

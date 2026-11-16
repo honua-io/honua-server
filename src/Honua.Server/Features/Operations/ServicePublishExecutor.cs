@@ -16,14 +16,6 @@ using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Concrete executor for <c>service.publish</c>. It WRAPS the existing
-/// <see cref="ILayerPublishingService"/> rather than reimplementing publish:
-/// <see cref="ValidateAsync"/> delegates to <c>ValidateTableForPublishAsync</c> and
-/// <see cref="SubmitAsync"/> maps the request onto a <see cref="LayerPublishRequest"/> and
-/// calls <c>PublishLayerAsync</c>. The resulting Metadata v2 revision is surfaced on the
-/// returned handle.
-/// </summary>
 internal sealed class ServicePublishExecutor
     : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
@@ -36,20 +28,6 @@ internal sealed class ServicePublishExecutor
     private readonly IPublishedServiceStore? _publishedServices;
     private readonly CommittedSinkPublicationSources? _sourceProof;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
-    /// </summary>
-    /// <param name="publishingService">Shared layer publishing service (reused, not reimplemented).</param>
-    /// <param name="connectionResolver">Resolves the target connection string from the request connection id.</param>
-    /// <param name="metadataGraphProvider">Read access to the Metadata v2 graph for revision surfacing.</param>
-    /// <param name="clock">Time provider for handle id generation.</param>
-    /// <param name="notifications">Optional catalog-change broadcaster resolved by production composition.</param>
-    /// <param name="jobs">
-    /// Accepts the publish off the request token. Omitted only by tests that construct the executor
-    /// directly; production composition always supplies it.
-    /// </param>
-    /// <param name="publishedServices">Optional persisted service store for promotion identity checks.</param>
-    /// <param name="sourceProof">Durable source jobs and result-package catalog for committed sink publication.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
@@ -74,10 +52,8 @@ internal sealed class ServicePublishExecutor
         _sourceProof = sourceProof;
     }
 
-    /// <inheritdoc />
     public string OperationId => ServicePublishOperation.OperationId;
 
-    /// <inheritdoc />
     public async Task<OperationRequest> PrepareAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -176,7 +152,6 @@ internal sealed class ServicePublishExecutor
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationValidation> ValidateAsync(
         OperationRequest request,
         CancellationToken cancellationToken = default)
@@ -212,7 +187,6 @@ internal sealed class ServicePublishExecutor
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationHandle> SubmitAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -381,7 +355,6 @@ internal sealed class ServicePublishExecutor
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handle);

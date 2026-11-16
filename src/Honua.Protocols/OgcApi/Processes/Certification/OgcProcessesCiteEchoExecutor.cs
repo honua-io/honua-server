@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Deterministic certification executor registered only by the exact CITE profile.
-/// It publishes bounded JSON data artifacts through the same worker context as every
-/// production process; it does not own a job lifecycle or store.
-/// </summary>
 internal sealed class OgcProcessesCiteEchoExecutor : IProcessExecutor
 {
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;

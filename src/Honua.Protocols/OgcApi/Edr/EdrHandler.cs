@@ -18,14 +18,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Edr;
 
-/// <summary>
-/// OGC API - Environmental Data Retrieval (EDR) handler (#1757). Adapts EDR
-/// <c>position</c> (point time-series) and <c>cube</c> (area/subset) queries onto the
-/// registered coverage/datacube catalog: collections are the same storage layers exposed
-/// through OGC API - Coverages, point sampling rides <see cref="IRasterStore.IdentifyAsync"/>,
-/// and cube subsetting samples the canonical raster read pipeline on a bounded grid. Results
-/// are returned as CoverageJSON.
-/// </summary>
 internal sealed partial class EdrHandler
 {
     private const string CoveragesProtocol = "OGC-API-Coverages";
@@ -518,10 +510,6 @@ internal sealed partial class EdrHandler
         return builder.ToImmutable();
     }
 
-    /// <summary>
-    /// The enumerated <c>parameter-name</c> options this collection offers, matching the
-    /// <c>parameter_names</c> keys advertised in the collection metadata response.
-    /// </summary>
     private static ImmutableArray<string> AvailableParameterNames(RasterInfo raster)
     {
         var bandCount = Math.Max(1, raster.BandCount);
@@ -534,19 +522,6 @@ internal sealed partial class EdrHandler
         return names.MoveToImmutable();
     }
 
-    /// <summary>
-    /// Validates the EDR <c>parameter-name</c> query parameter for the position and cube
-    /// query paths and yields the requested names when they are all offered by the collection.
-    /// </summary>
-    /// <remarks>
-    /// OGC API - EDR <c>/req/edr/parameter-name-response</c> requires (A) that only the listed
-    /// parameters be returned and (B) that the value be drawn from the enumerated option list in
-    /// the collection metadata. A name outside that list is therefore an invalid query-parameter
-    /// value, which OGC API - Common Part 1 (8.1.3) maps to <c>400</c>. Honua rejects strictly:
-    /// a request carrying any unknown name fails even when other names in the same list are
-    /// valid, so a client can never receive a silently narrowed selection that is
-    /// indistinguishable from a full result (#3184).
-    /// </remarks>
     private static IResult? ValidateRequestedParameters(HttpContext context, RasterInfo raster, out string[] requested)
     {
         requested = ParseParameterNames(context.Request.Query["parameter-name"].ToString());
@@ -571,15 +546,6 @@ internal sealed partial class EdrHandler
             [$"Available parameter names: {string.Join(", ", available)}."]);
     }
 
-    /// <summary>
-    /// Binds the position/cube <c>f</c> and <c>crs</c> query parameters to the collection's
-    /// advertised <c>output_formats</c> and <c>crs</c> lists.
-    /// </summary>
-    /// <remarks>
-    /// OGC API - Common Part 1 (8.1.3) maps an unsupported query-parameter value to <c>400</c>.
-    /// Before #4153 the handler never read either parameter, so <c>f=csv</c> returned CoverageJSON
-    /// and <c>crs=EPSG:3857</c> reinterpreted projected metres as CRS84 degrees.
-    /// </remarks>
     private static IResult? ValidateOutputFormatAndCrs(HttpContext context)
     {
         var format = context.Request.Query["f"].ToString();
@@ -634,11 +600,6 @@ internal sealed partial class EdrHandler
 
     // ---- parsing helpers ----
 
-    /// <summary>
-    /// Parses the EDR position <c>coords</c> WKT: a <c>POINT</c>, or a <c>MULTIPOINT</c> in either
-    /// the parenthesised member form <c>MULTIPOINT((x y),(x y))</c> shown in the EDR 1.1 examples or
-    /// the bare form <c>MULTIPOINT(x y, x y)</c>.
-    /// </summary>
     private static bool TryParsePositions(string coords, out (double Lon, double Lat)[] positions, out bool isMultiPoint)
     {
         positions = [];
@@ -710,10 +671,6 @@ internal sealed partial class EdrHandler
             out lat);
     }
 
-    /// <summary>
-    /// Parses a WKT position as <c>x y</c> or <c>x y z</c>. Every token must be a number: a third
-    /// token is a Z ordinate (ignored for 2D sampling), never unvalidated trailing text.
-    /// </summary>
     private static bool TryParseOrdinates(string[] ordinates, out double lon, out double lat)
     {
         lon = 0;
@@ -743,22 +700,6 @@ internal sealed partial class EdrHandler
             ? Array.Empty<string>()
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>
-    /// Validates the EDR <c>datetime</c> query parameter and decides whether the collection's
-    /// temporal geometry intersects it (#4151).
-    /// </summary>
-    /// <remarks>
-    /// The coverage is a single raster whose temporal geometry is one instant: its acquisition
-    /// date, falling back to its creation date (<see cref="ResolveRasterInstant"/>). OGC API - EDR
-    /// 1.1 <c>/req/edr/datetime-response</c> only returns data whose temporal geometry intersects
-    /// the requested instant or interval, so a disjoint request selects no data and the query
-    /// paths answer <c>204 No Content</c> instead of stamping the requested time onto the raster's
-    /// values. A value that is not an RFC 3339 date-time or <c>start/end</c> interval (with
-    /// <c>..</c> or empty open ends) is an invalid parameter value, which OGC API - Common Part 1
-    /// maps to <c>400</c>; the grammar is checked here because the shared range parser accepts any
-    /// <see cref="DateTimeOffset"/> text. The intersection is exact to the tick, and the t-axis
-    /// advertises the instant with its fractional seconds, so echoing it back selects it.
-    /// </remarks>
     private static IResult? ValidateDatetime(HttpContext context, RasterInfo raster, out bool intersects)
     {
         intersects = true;

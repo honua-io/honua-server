@@ -10,32 +10,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Import.TileCachePackage;
 
-/// <summary>
-/// A publication a served tile cache is bound to, resolved from the current metadata graph.
-/// </summary>
 internal sealed record ImportedTileCacheSource(
     MetadataV2Layer Publication,
     MetadataV2Object Resource,
     MetadataV2Service Service);
 
-/// <summary>
-/// Read authorization for tiles served out of the tile catalog under <c>/tiles/imported</c>.
-/// A catalog row records only the logical layer identifier it was written for, by the package
-/// importer or by the WMTS tile-cache exporter alike. That identifier is bound to the layer it
-/// names in the current metadata graph, and the caller must hold the same query grant the
-/// layer's own tile endpoints require. A row that names no layer, names more than one layer,
-/// or names a layer hidden from the request tenant is not served.
-/// </summary>
 internal static class ImportedTileCacheAccess
 {
-    /// <summary>
-    /// Whether the current caller may read tiles from the cache. Fails closed: an unbound,
-    /// ambiguous, retired, tenant-hidden or access-denied origin returns <see langword="false"/>.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="layerIdentifier">The layer identifier recorded on the cache row.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><see langword="true"/> when every bound publication grants the caller query access.</returns>
     internal static async Task<bool> CanReadAsync(
         HttpContext context,
         string? layerIdentifier,
@@ -83,17 +64,6 @@ internal static class ImportedTileCacheAccess
         return true;
     }
 
-    /// <summary>
-    /// Binds a cache's layer identifier to the routable, visible publications it names. The
-    /// identifier matches a publication's advertised collection id, the publication id or the
-    /// resource id. Display titles are not identifiers and never match. When the matches span
-    /// more than one resource the binding is ambiguous, and when any match is hidden from the
-    /// request tenant the cache is not visible; both return nothing.
-    /// </summary>
-    /// <param name="snapshot">The current metadata graph snapshot.</param>
-    /// <param name="layerIdentifier">The layer identifier recorded on the cache row.</param>
-    /// <param name="isVisible">Tenant visibility predicate for the request.</param>
-    /// <returns>The bound publications, or an empty list when the origin does not resolve.</returns>
     internal static IReadOnlyList<ImportedTileCacheSource> ResolveSources(
         MetadataV2GraphSnapshot snapshot,
         string layerIdentifier,

@@ -23,9 +23,6 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Background worker that processes queued GeoServer import jobs.
-/// </summary>
 internal sealed partial class GeoServerImportBackgroundService : BackgroundService
 {
     private readonly IConfiguration _configuration;

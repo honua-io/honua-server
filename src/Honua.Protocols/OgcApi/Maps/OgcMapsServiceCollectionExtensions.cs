@@ -5,14 +5,8 @@ using Honua.Protocols.Ogc.Api.Maps.Handlers;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Service collection extensions for OGC API - Maps feature registration.
-/// </summary>
 internal static class OgcMapsServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers OGC API - Maps services with dependency injection.
-    /// </summary>
     public static IServiceCollection AddOgcMaps(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

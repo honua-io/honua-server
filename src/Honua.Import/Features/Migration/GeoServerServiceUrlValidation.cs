@@ -37,20 +37,17 @@ internal static class GeoServerServiceUrlValidation
     internal const string DisallowedHostMessage =
         "GeoServerRestUrl host is not in the configured Migration:AllowedServiceHostSuffixes allowlist.";
 
-    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<GeoServerServiceUrlValidationResult> ValidateAsync(
         string geoServerRestUrl,
         CancellationToken cancellationToken = default)
         => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls: false, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
 
-    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<GeoServerServiceUrlValidationResult> ValidateAsync(
         string geoServerRestUrl,
         bool allowUnsafeLocalUrls,
         CancellationToken cancellationToken = default)
         => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
 
-    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<GeoServerServiceUrlValidationResult> ValidateAsync(
         string geoServerRestUrl,
         bool allowUnsafeLocalUrls,

@@ -26,20 +26,11 @@ internal static class OgcTilesUtilities
         "application/octet-stream"
     ];
 
-    /// <summary>
-    /// Allowed query parameter sets for OGC Tiles endpoints.
-    /// </summary>
     public static class AllowedQueryParameters
     {
-        /// <summary>
-        /// Allowed parameters for tile matrix set metadata endpoints.
-        /// </summary>
         public static readonly FrozenSet<string> Metadata =
             new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Allowed parameters for dataset tileset metadata endpoints.
-        /// </summary>
         public static readonly FrozenSet<string> DatasetTilesetMetadata = new[]
             {
                 "f",
@@ -48,15 +39,9 @@ internal static class OgcTilesUtilities
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Allowed parameters for OpenAPI endpoints.
-        /// </summary>
         public static readonly FrozenSet<string> OpenApi =
             new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Allowed parameters for tiles endpoints.
-        /// </summary>
         public static readonly FrozenSet<string> Tiles = new[]
             {
                 "f",
@@ -68,9 +53,6 @@ internal static class OgcTilesUtilities
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Allowed parameters for dataset tiles endpoints.
-        /// </summary>
         public static readonly FrozenSet<string> DatasetTiles = new[]
             {
                 "f",
@@ -90,51 +72,25 @@ internal static class OgcTilesUtilities
     public const string WebMercatorScaleSet = "http://www.opengis.net/def/wkss/OGC/1.0/GoogleMapsCompatible";
     public const string WebMercatorTitle = "Web Mercator Quad";
 
-    /// <summary>
-    /// WorldCRS84Quad tile matrix set identifier.
-    /// </summary>
     public const string WorldCrs84QuadId = "WorldCRS84Quad";
 
-    /// <summary>
-    /// WorldCRS84Quad tile matrix set URI.
-    /// </summary>
     public const string WorldCrs84QuadUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WorldCRS84Quad";
 
-    /// <summary>
-    /// OGC CRS84 URI.
-    /// </summary>
     public const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
-    /// <summary>
-    /// WorldCRS84Quad well-known scale set URI.
-    /// </summary>
     public const string WorldCrs84ScaleSet = "http://www.opengis.net/def/wkss/OGC/1.0/GoogleCRS84Quad";
 
-    /// <summary>
-    /// WorldCRS84Quad display title.
-    /// </summary>
     public const string WorldCrs84Title = "World CRS84 Quad";
 
     private const double WebMercatorExtent = SpatialConstants.WebMercatorExtent;
     private const int DefaultTileSize = 256;
     private const double PixelSizeMeters = SpatialConstants.PixelSizeMeters;
 
-    /// <summary>
-    /// Cell size in degrees per pixel at the equator (standardised OGC value).
-    /// </summary>
     private const double DegreesPerPixel = SpatialConstants.DegreesPerPixel;
 
-    /// <summary>
-    /// Returns true when the tile matrix set identifier is WorldCRS84Quad.
-    /// </summary>
     public static bool IsWorldCrs84Quad(string tileMatrixSetId)
         => string.Equals(tileMatrixSetId, WorldCrs84QuadId, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Resolves the well-known scale set URI advertised for a registered tile matrix set. The two
-    /// built-ins keep their canonical OGC well-known scale sets; operator-defined custom gridsets
-    /// advertise none.
-    /// </summary>
     public static string? GetWellKnownScaleSet(TileMatrixSetEntry entry)
     {
         if (!entry.IsBuiltIn)
@@ -147,9 +103,6 @@ internal static class OgcTilesUtilities
             : WebMercatorScaleSet;
     }
 
-    /// <summary>
-    /// Builds a tile matrix set summary item from a registry entry.
-    /// </summary>
     public static TileMatrixSetItem BuildTileMatrixSetItem(TileMatrixSetEntry entry, string baseUrl)
     {
         var selfHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{entry.Id}";
@@ -167,12 +120,6 @@ internal static class OgcTilesUtilities
         };
     }
 
-    /// <summary>
-    /// Builds the full tile matrix set definition from a registry entry and its grid geometry.
-    /// For the two built-ins this reproduces the exact byte-identical output of the legacy
-    /// <c>BuildWebMercatorQuadDefinition</c>/<c>BuildWorldCrs84QuadDefinition</c> paths because the
-    /// registry seeds them from the same constants and formulas.
-    /// </summary>
     public static TileMatrixSetDefinition BuildTileMatrixSetDefinition(
         TileMatrixSetEntry entry,
         GridGeometry geometry,
@@ -211,10 +158,6 @@ internal static class OgcTilesUtilities
         };
     }
 
-    /// <summary>
-    /// Builds tile matrix set limits (full coverage) from a grid geometry. Each level exposes the
-    /// full matrix-width × matrix-height extent.
-    /// </summary>
     public static ImmutableArray<TileMatrixSetLimit> BuildTileMatrixSetLimits(GridGeometry geometry, int minLevel = 0)
     {
         var matrixLimits = ImmutableArray.CreateBuilder<TileMatrixSetLimit>(geometry.Levels.Length);
@@ -292,9 +235,6 @@ internal static class OgcTilesUtilities
         };
     }
 
-    /// <summary>
-    /// Builds a <see cref="TileMatrixSetItem"/> for WorldCRS84Quad.
-    /// </summary>
     public static TileMatrixSetItem BuildWorldCrs84QuadItem(string baseUrl)
     {
         var selfHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{WorldCrs84QuadId}";
@@ -312,9 +252,6 @@ internal static class OgcTilesUtilities
         };
     }
 
-    /// <summary>
-    /// Builds the full WorldCRS84Quad tile matrix set definition.
-    /// </summary>
     public static TileMatrixSetDefinition BuildWorldCrs84QuadDefinition(TileLimits limits)
     {
         var minZoom = Math.Max(0, limits.MinTileZoom);
@@ -354,9 +291,6 @@ internal static class OgcTilesUtilities
         };
     }
 
-    /// <summary>
-    /// Builds tile matrix set limits for WebMercatorQuad (square tiles, 1×1 at zoom 0).
-    /// </summary>
     public static ImmutableArray<TileMatrixSetLimit> BuildWebMercatorQuadLimits(TileLimits limits)
     {
         var minZoom = Math.Max(0, limits.MinTileZoom);
@@ -381,9 +315,6 @@ internal static class OgcTilesUtilities
         return matrixLimits.ToImmutableArray();
     }
 
-    /// <summary>
-    /// Builds tile matrix set limits for WorldCRS84Quad (2 cols x 1 row at zoom 0).
-    /// </summary>
     public static ImmutableArray<TileMatrixSetLimit> BuildWorldCrs84QuadLimits(TileLimits limits)
     {
         var minZoom = Math.Max(0, limits.MinTileZoom);
@@ -408,9 +339,6 @@ internal static class OgcTilesUtilities
         return matrixLimits.ToImmutableArray();
     }
 
-    /// <summary>
-    /// Checks whether the request accepts vector tile responses.
-    /// </summary>
     public static bool AcceptsVectorTiles(HttpRequest request)
     {
         var accept = request.Headers.Accept;
@@ -423,9 +351,6 @@ internal static class OgcTilesUtilities
         return vectorQuality > 0;
     }
 
-    /// <summary>
-    /// Checks whether the request asks for a PNG raster tile.
-    /// </summary>
     public static bool AcceptsPngTiles(HttpRequest request)
     {
         var accept = request.Headers.Accept;
@@ -438,10 +363,6 @@ internal static class OgcTilesUtilities
         return pngQuality > 0;
     }
 
-    /// <summary>
-    /// Determines whether the requested tile format is PNG (raster).
-    /// Checks the <c>f</c> query parameter and <c>Accept</c> header.
-    /// </summary>
     public static bool IsRasterTileFormat(
         string? format,
         HttpRequest request,
@@ -474,9 +395,6 @@ internal static class OgcTilesUtilities
             : pngQuality > vectorQuality;
     }
 
-    /// <summary>
-    /// Gets a timeout-aware cancellation token from the HTTP context.
-    /// </summary>
     public static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
         => TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 }

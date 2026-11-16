@@ -35,9 +35,6 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
-/// <summary>
-/// File import endpoints for uploading and processing geospatial files
-/// </summary>
 // Note: the broad `catch (Exception ex)` clauses below are intentional. This surface parses
 // untrusted, caller-supplied files/URLs; each catch logs the full exception via Log.* and
 // returns a generic, client-safe error message/status rather than leaking parser internals.
@@ -58,12 +55,8 @@ internal static partial class ImportEndpoints
         HttpMethods.Delete,
         HttpMethods.Patch
     ];
-    /// <summary>Log category marker for file import endpoint operations.</summary>
     internal sealed class ImportEndpointsLog;
 
-    /// <summary>
-    /// Map file import endpoints to the web application with formal API versioning
-    /// </summary>
     public static void MapImportEndpoints(this WebApplication app)
     {
         // Primary v1 routes at /api/v1/admin/import with formal versioning
@@ -79,9 +72,6 @@ internal static partial class ImportEndpoints
         MapCompatibilityImportRoutes(app);
     }
 
-    /// <summary>
-    /// Map import routes to a route group
-    /// </summary>
     private static void MapImportRoutes(IEndpointRouteBuilder group, bool isV1)
     {
         var nameSuffix = isV1 ? "V1" : "";
@@ -204,9 +194,6 @@ internal static partial class ImportEndpoints
             .WithSummary("Get current import configuration limits method not allowed");
     }
 
-    /// <summary>
-    /// Get supported file formats and extensions
-    /// </summary>
     private static async Task HandleGetSupportedFormats(HttpContext context)
     {
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
@@ -241,9 +228,6 @@ internal static partial class ImportEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Preview file contents without importing
-    /// </summary>
     private static async Task HandlePreviewFile(HttpContext context)
     {
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -315,10 +299,6 @@ internal static partial class ImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Import geospatial file to PostgreSQL using memory-efficient streaming.
-    /// Large files are automatically queued for background processing.
-    /// </summary>
     private static async Task HandleImportFile(HttpContext context)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
@@ -638,11 +618,6 @@ internal static partial class ImportEndpoints
     internal const string BackgroundImportUnavailableMessage =
         "Background import service not available. File is too large for synchronous import.";
 
-    /// <summary>
-    /// Whether this host accepts a background import: a job service is registered and the
-    /// runner resolved at composition (<see cref="IBackgroundImportRunnerInfo"/>) is not
-    /// <c>unavailable</c>.
-    /// </summary>
     internal static bool CanAcceptBackgroundImports(IServiceProvider services)
         => services.GetService<IImportJobService>() is not null
             && services.GetService<IBackgroundImportRunnerInfo>() is not { AcceptsBackgroundImports: false };
@@ -863,11 +838,6 @@ internal static partial class ImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Best-effort rebuild of the canonical <c>honua.features</c> snapshot for any published
-    /// layer backed by the just-imported source table, so MVT/tiles reflect the new data.
-    /// A failure here is logged and swallowed: the import itself already succeeded.
-    /// </summary>
     private static async Task TryRefreshPublishedSnapshotAsync(
         HttpContext context,
         string? targetSchema,
@@ -1417,9 +1387,6 @@ internal static partial class ImportEndpoints
         });
 
 
-    /// <summary>
-    /// Get current import configuration limits
-    /// </summary>
     private static async Task HandleGetLimits(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -1435,9 +1402,6 @@ internal static partial class ImportEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Get the progress of a file upload operation
-    /// </summary>
     private static async Task HandleGetUploadProgress(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -1485,9 +1449,6 @@ internal static partial class ImportEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Cancel a running file upload operation
-    /// </summary>
     private static async Task HandleCancelUpload(HttpContext context)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
@@ -1524,9 +1485,6 @@ internal static partial class ImportEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Get all active file upload operations
-    /// </summary>
     private static async Task HandleGetActiveUploads(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -1560,9 +1518,6 @@ internal static partial class ImportEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Get all active import jobs
-    /// </summary>
     private static async Task HandleGetActiveJobs(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -1597,9 +1552,6 @@ internal static partial class ImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Get a specific import job status
-    /// </summary>
     private static async Task HandleGetImportJobStatus(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -1647,9 +1599,6 @@ internal static partial class ImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Cancel a running import job
-    /// </summary>
     private static async Task HandleCancelImportJob(HttpContext context)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
@@ -1711,66 +1660,24 @@ internal static partial class ImportEndpoints
 
     private static partial class Log
     {
-        /// <summary>
-        /// Logs when importing a file preview fails.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="fileName">The name of the file that failed to preview.</param>
-        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3300, Level = LogLevel.Error, Message = "Failed to preview import file {FileName}")]
         public static partial void PreviewFailed(ILogger logger, string fileName, Exception exception);
 
-        /// <summary>
-        /// Logs when importing data to a table fails.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="tableName">The name of the table where import failed.</param>
-        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3301, Level = LogLevel.Error, Message = "Import failed for table {TableName}")]
         public static partial void ImportFailed(ILogger logger, string tableName, Exception exception);
 
-        /// <summary>
-        /// Logs when upload progress fails to update.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="uploadId">The upload identifier.</param>
-        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3302, Level = LogLevel.Warning, Message = "Failed to update upload progress for {UploadId}")]
         public static partial void ProgressUpdateFailed(ILogger logger, string uploadId, Exception exception);
 
-        /// <summary>
-        /// Logs when cleanup of cancelled import resources fails.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="uploadId">The upload identifier.</param>
-        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3303, Level = LogLevel.Warning, Message = "Failed to cleanup cancelled import resources for {UploadId}")]
         public static partial void CleanupFailed(ILogger logger, string uploadId, Exception exception);
 
-        /// <summary>
-        /// Logs when cloud storage upload fails during import staging.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="fileName">The sanitized file name.</param>
-        /// <param name="failureReason">Provider-specific failure reason.</param>
         [LoggerMessage(EventId = 3304, Level = LogLevel.Warning, Message = "Cloud upload failed for import file {FileName}: {FailureReason}")]
         public static partial void CloudUploadFailed(ILogger logger, string fileName, string failureReason);
 
-        /// <summary>
-        /// Logs when the post-import canonical snapshot rebuild for published layers fails.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="tableName">The imported source table name.</param>
-        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3305, Level = LogLevel.Warning, Message = "Failed to rebuild published feature snapshot after importing table {TableName}")]
         public static partial void SnapshotRefreshFailed(ILogger logger, string tableName, Exception exception);
 
-        /// <summary>
-        /// Logs when the post-import canonical snapshot rebuild refreshes one or more layers.
-        /// </summary>
-        /// <param name="logger">The logger instance.</param>
-        /// <param name="tableName">The imported source table name.</param>
-        /// <param name="layerCount">Number of published layers whose snapshot was rebuilt.</param>
         [LoggerMessage(EventId = 3306, Level = LogLevel.Information, Message = "Rebuilt published feature snapshot for {LayerCount} layer(s) after importing table {TableName}")]
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
 
@@ -1788,43 +1695,22 @@ internal static partial class ImportEndpoints
 
 }
 
-/// <summary>
-/// Response containing supported file formats and their descriptions for the import API
-/// </summary>
 internal sealed record FileFormatsResponse
 {
     public required string[] SupportedExtensions { get; init; }
     public required Dictionary<string, string> FormatDescriptions { get; init; }
 }
 
-/// <summary>
-/// Response when a file is queued for background import processing
-/// </summary>
 internal sealed record BackgroundImportResponse
 {
-    /// <summary>
-    /// Unique identifier for tracking the import job
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Human-readable status message
-    /// </summary>
     public required string Message { get; init; }
 
-    /// <summary>
-    /// URL to check the status of the import job
-    /// </summary>
     public required string StatusUrl { get; init; }
 
-    /// <summary>
-    /// URL to cancel the import job
-    /// </summary>
     public required string CancelUrl { get; init; }
 
-    /// <summary>
-    /// Upload ID for tracking file upload progress (optional)
-    /// </summary>
     public string? UploadId { get; init; }
 
     public string? OperationInstanceId { get; init; }
@@ -1922,56 +1808,26 @@ internal sealed record CloudUploadStageResult
 }
 
 
-/// <summary>
-/// Response for cancel upload request
-/// </summary>
 internal sealed record CancelUploadResponse
 {
-    /// <summary>
-    /// Upload identifier that was cancelled
-    /// </summary>
     public required string UploadId { get; init; }
 
-    /// <summary>
-    /// Confirmation message
-    /// </summary>
     public required string Message { get; init; }
 }
 
-/// <summary>
-/// Response containing all active uploads
-/// </summary>
 internal sealed record ActiveUploadsResponse
 {
-    /// <summary>
-    /// List of active upload operations
-    /// </summary>
     public required UploadProgress[] Uploads { get; init; }
 }
 
-/// <summary>
-/// Response containing all active import jobs
-/// </summary>
 internal sealed record ActiveImportJobsResponse
 {
-    /// <summary>
-    /// List of active import jobs
-    /// </summary>
     public required ImportProgress[] Jobs { get; init; }
 }
 
-/// <summary>
-/// Response for cancel import job request
-/// </summary>
 internal sealed record CancelImportJobResponse
 {
-    /// <summary>
-    /// Job identifier that was cancelled
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Confirmation message
-    /// </summary>
     public required string Message { get; init; }
 }

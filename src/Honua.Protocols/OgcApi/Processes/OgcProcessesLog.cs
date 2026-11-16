@@ -3,10 +3,6 @@
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Source-generated structured log methods for OGC API Processes operations.
-/// Event ID range: 8100-8199.
-/// </summary>
 internal static partial class OgcProcessesLog
 {
     // 8100-8109: Landing/Conformance

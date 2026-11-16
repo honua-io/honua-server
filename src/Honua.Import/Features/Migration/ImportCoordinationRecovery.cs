@@ -7,19 +7,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Restores cached import-coordination health after Redis returns (honua-server#4877).
-/// </summary>
-/// <remarks>
-/// <see cref="IImportCoordinationHealth.CanAcceptNewJobs"/> reads per-component
-/// durability flags that only a component's own operations can clear. Every admission
-/// gate (worker loop and start endpoints) therefore probes the unavailable components
-/// before trusting the flag; gating first would keep admission closed forever. Each
-/// component recovers through its own channel — the queue through the queue connection,
-/// the request and progress stores through their distributed cache — so one healthy
-/// connection never declares the others recovered. Probes never write, never dequeue,
-/// never enable local fallback, and are throttled by each component's retry interval.
-/// </remarks>
 internal static class ImportCoordinationRecovery
 {
     private static readonly TimeSpan _componentProbeTimeout = TimeSpan.FromSeconds(5);
@@ -28,10 +15,6 @@ internal static class ImportCoordinationRecovery
     // the gate stays held until that probe finishes so the next tick does not start another.
     private static readonly ConditionalWeakTable<object, SemaphoreSlim> _probeGates = new();
 
-    /// <summary>
-    /// Probes every coordination component, bounding each probe so one hung dependency
-    /// cannot stall recovery of the others or the caller.
-    /// </summary>
     public static async Task ProbeAsync<TRequest, TProgress>(
         IDistributedJobQueueService jobQueue,
         IDistributedProgressStore<TRequest> requestStore,
@@ -53,10 +36,6 @@ internal static class ImportCoordinationRecovery
         }
     }
 
-    /// <summary>
-    /// Returns whether a new job may be admitted, first probing recovery when the cached
-    /// coordination health reports an outage. Still-unavailable coordination is refused.
-    /// </summary>
     public static async Task<bool> TryAdmitAsync<TRequest, TProgress>(
         IImportCoordinationHealth health,
         IDistributedJobQueueService jobQueue,

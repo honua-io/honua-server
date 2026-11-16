@@ -18,16 +18,8 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// OGC API Features collection import endpoints. Companion to the migration scanner endpoint:
-/// once an operator confirms an inventory artifact, they invoke this endpoint to materialize a
-/// single collection into the catalog target.
-/// </summary>
 internal static partial class OgcApiFeaturesImportEndpoints
 {
-    /// <summary>
-    /// Maps OGC API Features collection import endpoints.
-    /// </summary>
     public static void MapOgcApiFeaturesImportEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/ogc-api-features")
@@ -196,7 +188,6 @@ internal static partial class OgcApiFeaturesImportEndpoints
     private static ILogger<OgcApiFeaturesImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<OgcApiFeaturesImportEndpointsLog>>();
 
-    /// <summary>Log category marker for OGC API Features import endpoint operations.</summary>
     internal sealed class OgcApiFeaturesImportEndpointsLog;
 
     private static partial class Log
@@ -206,41 +197,27 @@ internal static partial class OgcApiFeaturesImportEndpoints
     }
 }
 
-/// <summary>
-/// HTTP request body for the OGC API Features collection import endpoint.
-/// </summary>
 internal sealed record OgcApiFeaturesImportApiRequest
 {
-    /// <summary>Source OGC API Features landing page URL.</summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>Collection identifier to import.</summary>
     public string? CollectionId { get; init; }
 
-    /// <summary>Target schema in the catalog.</summary>
     public string? TargetSchema { get; init; }
 
-    /// <summary>Optional target table name. Defaults to <see cref="CollectionId"/> when omitted.</summary>
     public string? TargetTable { get; init; }
 
-    /// <summary>Optional per-page size for items requests.</summary>
     public int? PageSize { get; init; }
 
-    /// <summary>Optional cap on total features imported.</summary>
     public int? MaxFeatures { get; init; }
 
-    /// <summary>Optional cap on the number of paged HTTP requests.</summary>
     public int? MaxPages { get; init; }
 
-    /// <summary>Optional overall import timeout in seconds.</summary>
     public int? TimeoutSeconds { get; init; }
 
-    /// <summary>Optional CQL2-text filter forwarded as <c>filter=...&amp;filter-lang=cql2-text</c>.</summary>
     public string? Filter { get; init; }
 
-    /// <summary>Optional 4- or 6-tuple bbox forwarded as <c>bbox=</c>.</summary>
     public double[]? Bbox { get; init; }
 
-    /// <summary>Optional RFC3339 instant or interval forwarded as <c>datetime=</c>.</summary>
     public string? Datetime { get; init; }
 }

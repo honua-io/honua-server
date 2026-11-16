@@ -25,14 +25,8 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Unified migration source scanner endpoints.
-/// </summary>
 internal static partial class MigrationScannerEndpoints
 {
-    /// <summary>
-    /// Maps migration source scanner endpoints.
-    /// </summary>
     public static void MapMigrationScannerEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import")
@@ -472,7 +466,6 @@ internal static partial class MigrationScannerEndpoints
     private static ILogger<MigrationScannerEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<MigrationScannerEndpointsLog>>();
 
-    /// <summary>Log category marker for migration scanner endpoint operations.</summary>
     internal sealed class MigrationScannerEndpointsLog;
 
     private static partial class Log
@@ -482,59 +475,26 @@ internal static partial class MigrationScannerEndpoints
     }
 }
 
-/// <summary>
-/// API request model for migration source inventory scans.
-/// </summary>
 internal sealed record MigrationInventoryScanRequest
 {
-    /// <summary>
-    /// Source kind identifier.
-    /// </summary>
     public string? SourceKind { get; init; }
 
-    /// <summary>
-    /// Source URL to scan.
-    /// </summary>
     public string? SourceUrl { get; init; }
 
-    /// <summary>
-    /// Optional username for source authentication.
-    /// </summary>
     public string? Username { get; init; }
 
-    /// <summary>
-    /// Optional password for source authentication.
-    /// </summary>
     public string? Password { get; init; }
 
-    /// <summary>
-    /// Optional ArcGIS credential descriptor for GeoServices source scans.
-    /// </summary>
     public GeoservicesCredentialDescriptor? Credentials { get; init; }
 
-    /// <summary>
-    /// Optional scan timeout in seconds.
-    /// </summary>
     public int? TimeoutSeconds { get; init; }
 
-    /// <summary>
-    /// Whether to include GeoServer style content when available.
-    /// </summary>
     public bool? IncludeStyleContent { get; init; }
 
-    /// <summary>
-    /// Optional OGC service version to request during discovery.
-    /// </summary>
     public string? ServiceVersion { get; init; }
 
-    /// <summary>
-    /// Artifact response mode. Use <c>all</c> to include inventory, manifest, and parity evidence.
-    /// </summary>
     public string? ArtifactSet { get; init; }
 
-    /// <summary>
-    /// Optional target service name used when generating a migration manifest.
-    /// </summary>
     public string? TargetServiceName { get; init; }
 
     public string? PublicName { get; init; }
@@ -547,23 +507,11 @@ internal sealed record MigrationInventoryScanRequest
     public GeoservicesImportPlan? Plan { get; init; }
 }
 
-/// <summary>
-/// Response envelope for callers that request all migration scan artifacts.
-/// </summary>
 internal sealed record MigrationScanArtifactSet
 {
-    /// <summary>
-    /// Source inventory artifact.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Generated migration manifest artifact.
-    /// </summary>
     public required MigrationManifestArtifact Manifest { get; init; }
 
-    /// <summary>
-    /// Generated parity evidence artifact.
-    /// </summary>
     public required MigrationParityEvidenceArtifact ParityEvidence { get; init; }
 }

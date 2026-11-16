@@ -7,24 +7,12 @@ using System.Text.Json;
 
 namespace Honua.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Builds the OpenAPI 3.0 definition the OGC API Records landing page links as <c>service-desc</c>.
-/// </summary>
-/// <remarks>
-/// honua-server#5510: OGC API - Records Part 1 <c>/req/core/root-success</c> (inherited from OGC API -
-/// Common) requires the landing page to link an API definition that describes this API. The document
-/// is generated from the same constants the handlers enforce (paging bounds, accepted item query
-/// parameters), so the advertised contract cannot drift from runtime behaviour.
-/// </remarks>
 internal static class OgcRecordsOpenApiDocument
 {
     private const string GeoJson = "application/geo+json";
     private const string Json = "application/json";
     private const string ProblemJson = "application/problem+json";
 
-    /// <summary>
-    /// Serializes the Records API definition for the given public base URL.
-    /// </summary>
     public static string Build(string baseUrl, int defaultLimit, int maxLimit)
     {
         var buffer = new ArrayBufferWriter<byte>();

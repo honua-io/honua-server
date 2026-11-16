@@ -20,9 +20,6 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Redis-backed coordination for GeoServer import jobs with in-memory fallback in development and tests.
-/// </summary>
 internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>
 {
     private readonly IUniversalProgressStore _universalProgressStore;

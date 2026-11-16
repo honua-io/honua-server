@@ -30,27 +30,15 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Import.RasterImport;
 
-/// <summary>
-/// Raster file import endpoints for uploading GeoTIFF and world-file rasters into PostGIS.
-/// </summary>
 internal static partial class RasterImportEndpoints
 {
     private const string InvalidRasterImportRequestMessage = "Raster import request is invalid.";
-    /// <summary>
-    /// Maximum size for sidecar text files (world files, .prj).
-    /// World files are ~200 bytes; .prj files are typically &lt; 5 KB.
-    /// 64 KB is generous while preventing unbounded memory allocation.
-    /// </summary>
     private const int MaxSidecarFileSizeBytes = 64 * 1024;
 
-    /// <summary>Log category marker for raster import endpoint operations.</summary>
     internal sealed class RasterImportEndpointsLog
     {
     }
 
-    /// <summary>
-    /// Map raster import endpoints to the web application with formal API versioning.
-    /// </summary>
     public static void MapRasterImportEndpoints(this WebApplication app)
     {
         var v1Group = app.MapGroup("/api/v{version:apiVersion}/admin/import/raster")
@@ -78,11 +66,6 @@ internal static partial class RasterImportEndpoints
             .DisableAntiforgery();
     }
 
-    /// <summary>
-    /// Delete an imported raster by id (#1875). Cascades to raster_statistics, raster_tiles, and
-    /// raster_sensor_metadata via the FK ON DELETE CASCADE. Returns 204 on success, 404 when the
-    /// raster does not exist.
-    /// </summary>
     private static async Task<IResult> HandleDeleteRaster(long rasterId, HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -109,11 +92,6 @@ internal static partial class RasterImportEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>
-    /// Update an imported raster's mutable descriptive metadata (#1875): name, description,
-    /// acquisition date. Returns the updated metadata on success, 404 when the raster does not
-    /// exist, 400 when the body carries no recognised fields or an invalid value.
-    /// </summary>
     private static async Task<IResult> HandleUpdateRaster(
         long rasterId,
         UpdateRasterRequest request,
@@ -196,9 +174,6 @@ internal static partial class RasterImportEndpoints
         return Results.Json(response, RasterImportJsonContext.Default.RasterMetadataResponse);
     }
 
-    /// <summary>
-    /// Get supported raster file formats and extensions.
-    /// </summary>
     private static async Task HandleGetRasterFormats(HttpContext context)
     {
         var importService = context.RequestServices.GetRequiredService<IRasterImportService>();
@@ -223,9 +198,6 @@ internal static partial class RasterImportEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Import a raster file into PostGIS via multipart upload.
-    /// </summary>
     private static async Task HandleImportRaster(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -492,11 +464,6 @@ internal static partial class RasterImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Parses <paramref name="zoomStr"/> as comma-separated zoom levels in 0-24.
-    /// Values that do not fit in an <see cref="int"/> are a client error, not a
-    /// server fault (#6177).
-    /// </summary>
     internal static bool TryParseTileZoomLevels(string zoomStr, out int[] levels, out string error)
     {
         var tokens = zoomStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -583,60 +550,30 @@ internal static partial class RasterImportEndpoints
 
     internal sealed record RasterFormatsResponse
     {
-        /// <summary>
-        /// Supported file extensions for raster import.
-        /// </summary>
         public required string[] SupportedExtensions { get; init; }
 
-        /// <summary>
-        /// Format descriptions keyed by extension.
-        /// </summary>
         public required Dictionary<string, string> FormatDescriptions { get; init; }
     }
 
-    /// <summary>
-    /// PATCH body for updating an imported raster's mutable descriptive metadata (#1875). Each
-    /// field is optional (PATCH semantics): a field omitted from the JSON body (deserialized as
-    /// <c>null</c>) is left unchanged. To clear <see cref="Description"/> send an empty string; to
-    /// clear <see cref="AcquisitionDate"/> send an empty string.
-    /// </summary>
     public sealed record UpdateRasterRequest
     {
-        /// <summary>
-        /// New display name. Omit to leave unchanged; must be non-empty when present.
-        /// </summary>
         public string? Name { get; init; }
 
-        /// <summary>
-        /// New description. Omit to leave unchanged; send an empty string to clear it.
-        /// </summary>
         public string? Description { get; init; }
 
-        /// <summary>
-        /// New acquisition date as an ISO 8601 timestamp. Omit to leave unchanged; send an empty
-        /// string to clear it.
-        /// </summary>
         public string? AcquisitionDate { get; init; }
     }
 
-    /// <summary>
-    /// Response describing an imported raster's metadata after an update (#1875).
-    /// </summary>
     public sealed record RasterMetadataResponse
     {
-        /// <summary>Raster identifier.</summary>
         public required long RasterId { get; init; }
 
-        /// <summary>Owning layer identifier.</summary>
         public required int LayerId { get; init; }
 
-        /// <summary>Display name.</summary>
         public required string Name { get; init; }
 
-        /// <summary>Acquisition timestamp, when set.</summary>
         public DateTimeOffset? AcquisitionDate { get; init; }
 
-        /// <summary>Last modification timestamp.</summary>
         public DateTimeOffset? ModifiedAt { get; init; }
     }
 

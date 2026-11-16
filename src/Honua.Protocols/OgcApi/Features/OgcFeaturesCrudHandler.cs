@@ -27,9 +27,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Handler for OGC Features CRUD operations (Create, Update, Delete).
-/// </summary>
 internal sealed partial class OgcFeaturesCrudHandler(
     OgcFeaturesCrudDependencies dependencies,
     ILogger<OgcFeaturesCrudHandler> logger)
@@ -50,9 +47,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
     // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
     // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
 
-    /// <summary>
-    /// Handles feature creation requests.
-    /// </summary>
     public async Task<IResult> HandleCreateFeatureAsync(
         string collectionId,
         HttpContext context,
@@ -213,9 +207,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
     }
 
-    /// <summary>
-    /// Handles feature deletion requests.
-    /// </summary>
     public async Task<IResult> HandleDeleteFeatureAsync(
         string collectionId,
         string featureId,
@@ -383,12 +374,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
     }
 
-    /// <summary>
-    /// Threads the V2 canonical resource through the edit pipeline:
-    /// adapter conversion, edit-processor optimize/validate/to-batch, and
-    /// outbox-scope resolution (the storage SRID is read from
-    /// <see cref="MetadataV2SpatialExtensions.ReadSrid"/>).
-    /// </summary>
     internal async Task<FeatureEditResult> ExecuteEditAsync(
         HttpContext context,
         int layerId,

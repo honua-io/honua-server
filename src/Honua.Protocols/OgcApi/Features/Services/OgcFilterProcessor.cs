@@ -19,14 +19,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Simple bounding box representation.
-/// </summary>
 internal sealed record BoundingBox(double MinX, double MinY, double MaxX, double MaxY);
 
-/// <summary>
-/// Processes and combines CQL2, spatial, and temporal filters for OGC Features queries.
-/// </summary>
 internal sealed partial class OgcFilterProcessor
 {
     private const string InvalidCqlFilterPrefix = "Invalid CQL filter";
@@ -35,9 +29,6 @@ internal sealed partial class OgcFilterProcessor
     private const string InvalidFilterProcessingMessage = "Invalid filter parameters.";
     private const string InvalidCqlSyntaxMessage = "Syntax error in filter expression.";
 
-    /// <summary>
-    /// Result of filter processing operation.
-    /// </summary>
     internal sealed class FilterProcessingResult
     {
         public bool IsSuccess { get; init; }
@@ -89,9 +80,6 @@ internal sealed partial class OgcFilterProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Processes all filter types against a V2 canonical resource.
-    /// </summary>
     public async Task<FilterProcessingResult> ProcessFiltersAsync(
         HttpRequest request,
         MetadataV2Object resource,

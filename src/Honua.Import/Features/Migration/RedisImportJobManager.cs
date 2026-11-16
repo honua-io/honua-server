@@ -20,10 +20,6 @@ using StackExchange.Redis;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Redis-based distributed import job manager with in-memory fallback.
-/// Uses StackExchange.Redis primitives when available, falling back to IDistributedCache.
-/// </summary>
 // Note: the broad `catch (Exception ex)` clauses throughout this file (and the RedisJobQueue and
 // RedisProgressStore<T> types below) are intentional. Redis is a best-effort dependency here: every
 // catch marks the affected component unavailable, logs via Log.RedisFailed, and falls back to
@@ -55,23 +51,11 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
         => !hostEnvironment.IsDevelopment() && !hostEnvironment.IsEnvironment("Test");
 }
 
-/// <summary>
-/// Reports whether the distributed import coordination subsystem is healthy
-/// enough to accept new import jobs.
-/// </summary>
 public interface IImportCoordinationHealth
 {
-    /// <summary>
-    /// Gets a value indicating whether the coordinator can currently accept new
-    /// import jobs (for example, when durable Redis-backed coordination is available).
-    /// </summary>
     bool CanAcceptNewJobs { get; }
 }
 
-/// <summary>
-/// Redis-based job queue using StackExchange.Redis lists.
-/// Falls back to an in-memory queue when Redis is unavailable.
-/// </summary>
 internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 {
     private const string StrictModeUnavailableMessage = "Distributed import queue is unavailable while durable coordination is required.";
@@ -393,9 +377,6 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
     }
 }
 
-/// <summary>
-/// Redis-based progress store using IDistributedCache.
-/// </summary>
 internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T>, IProgressStoreRecovery where T : class
 {
     private const string ActiveIdsKeySuffix = "__active";
@@ -870,9 +851,6 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     }
 }
 
-/// <summary>
-/// JSON serialization context for Geoservices import types.
-/// </summary>
 [JsonSerializable(typeof(GeoservicesImportProgress))]
 [JsonSerializable(typeof(GeoservicesImportRequest))]
 [JsonSerializable(typeof(GeoservicesCredentialDescriptor))]

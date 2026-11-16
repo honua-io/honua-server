@@ -432,9 +432,6 @@ internal static partial class OgcTilesCollectionsEndpointLogging
     public static partial void LogCollectionQueryFailed(ILogger logger, string collectionId, Exception exception);
 }
 
-/// <summary>
-/// Logger category for OGC Tiles collections endpoints.
-/// </summary>
 internal sealed class OgcTilesCollectionsLog
 {
 }

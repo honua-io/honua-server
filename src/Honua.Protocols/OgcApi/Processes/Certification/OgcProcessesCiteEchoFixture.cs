@@ -11,11 +11,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Contract for the suite-owned OGC API Processes echo fixture. Registration is
-/// deliberately gated on the exact certification profile, Test environment, and
-/// standalone test-infrastructure opt-in; normal hosts never add it to the catalog.
-/// </summary>
 internal static class OgcProcessesCiteEchoFixture
 {
     internal const string ProcessId = "honua-cite-echo";

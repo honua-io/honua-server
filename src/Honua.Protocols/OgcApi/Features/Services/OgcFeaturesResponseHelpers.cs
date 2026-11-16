@@ -12,10 +12,6 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 internal static class OgcFeaturesResponseHelpers
 {
-    /// <summary>
-    /// Reads the storage SRID from <see cref="MetadataV2SpatialExtensions.ReadSrid"/>,
-    /// defaulting to <c>4326</c> when the resource declares no SRID.
-    /// </summary>
     public static Task<Feature?> LoadFeatureForResponseAsync(
         IFeatureReader featureReader,
         int layerId,
@@ -32,12 +28,6 @@ internal static class OgcFeaturesResponseHelpers
             featureReader, layerId, resourceSrid, objectId, responseCrs, cancellationToken);
     }
 
-    /// <summary>
-    /// Loads a batch of features for mutation responses with a single
-    /// <see cref="FeatureQuery.ObjectIds"/> query (projected to the response CRS when it
-    /// differs from storage), keyed by internal object id. Object ids that no longer
-    /// resolve are simply absent from the result.
-    /// </summary>
     public static async Task<IReadOnlyDictionary<long, Feature>> LoadFeaturesForResponseAsync(
         IFeatureReader featureReader,
         int layerId,
@@ -112,11 +102,6 @@ internal static class OgcFeaturesResponseHelpers
         return result.Items.IsDefaultOrEmpty ? null : result.Items[0];
     }
 
-    /// <summary>
-    /// Loads a projected feature and the storage snapshot it was projected from.
-    /// A second storage read after the projection must match the first. Otherwise the
-    /// response body and the entity tag would describe different row versions.
-    /// </summary>
     public static Task<ConsistentProjectedFeatureRead> LoadProjectedConsistentWithStorageAsync(
         IFeatureReader featureReader,
         int layerId,
@@ -179,7 +164,6 @@ internal static class OgcFeaturesResponseHelpers
         => new(ConsistentFeatureReadStatus.Unstable, null, null);
 }
 
-/// <summary>Whether a projected read and its storage snapshot describe one row version.</summary>
 internal enum ConsistentFeatureReadStatus
 {
     Found,
@@ -187,7 +171,6 @@ internal enum ConsistentFeatureReadStatus
     Unstable,
 }
 
-/// <summary>A projected response feature paired with the storage snapshot hashed into its ETag.</summary>
 internal readonly record struct ConsistentProjectedFeatureRead(
     ConsistentFeatureReadStatus Status,
     Feature? Response,

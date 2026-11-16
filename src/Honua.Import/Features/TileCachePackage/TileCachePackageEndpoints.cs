@@ -14,24 +14,11 @@ using Honua.Core.Features.TileCachePackage.Services;
 
 namespace Honua.Import.TileCachePackage;
 
-/// <summary>
-/// Admin import endpoint + serving binding for Esri tile/vector-tile cache
-/// packages (<c>.tpk</c>/<c>.tpkx</c>/<c>.vtpk</c>) (#1269).
-///
-/// The importer ingests a prebuilt package into Honua's tile catalog; the serving
-/// binding lets the imported cache be served through Honua tile endpoints without
-/// re-rendering. The package is uploaded as the raw request body (the tileset id and
-/// optional zoom range are query parameters) so a single binary file streams straight
-/// to a bounded temp file for random-access (ZIP) reading.
-/// </summary>
 internal static class TileCachePackageEndpoints
 {
     // Fallback when Limits options are not registered. Matches Imports.MaxTilePackageSize.
     private const long DefaultMaxPackageBytes = 2L * 1024 * 1024 * 1024;
 
-    /// <summary>
-    /// Maps the tile-cache package import + serving endpoints.
-    /// </summary>
     public static void MapTileCachePackageEndpoints(this WebApplication app)
     {
         var importGroup = app.MapGroup("/api/v{version:apiVersion}/admin/import/tile-package")
@@ -327,92 +314,62 @@ internal static class TileCachePackageEndpoints
     }
 }
 
-/// <summary>
-/// API result for the tile-cache package import endpoint.
-/// </summary>
 internal sealed record TileCachePackageImportApiResult
 {
-    /// <summary>Whether the import succeeded.</summary>
     public required bool Success { get; init; }
 
-    /// <summary>Stable tile-cache identifier the tiles were written to.</summary>
     public string? TileCacheId { get; init; }
 
-    /// <summary>Detected storage format.</summary>
     public required string StorageFormat { get; init; }
 
-    /// <summary>Detected payload kind.</summary>
     public required string DataType { get; init; }
 
-    /// <summary>Served tile content type.</summary>
     public required string ContentType { get; init; }
 
-    /// <summary>Resolved Honua tile-matrix-set identifier.</summary>
     public required string TileMatrixSet { get; init; }
 
-    /// <summary>Resolved minimum zoom imported.</summary>
     public required int MinZoom { get; init; }
 
-    /// <summary>Resolved maximum zoom imported.</summary>
     public required int MaxZoom { get; init; }
 
-    /// <summary>Number of tiles inserted.</summary>
     public required int TilesImported { get; init; }
 
-    /// <summary>Number of tiles skipped (already present).</summary>
     public required int TilesSkipped { get; init; }
 
-    /// <summary>Whether this was a dry-run.</summary>
     public required bool DryRun { get; init; }
 
-    /// <summary>Relative URL the imported tileset is served from.</summary>
     public string? ServeUrl { get; init; }
 
-    /// <summary>Tiling-scheme assumption, when the package WKID was missing or zero.</summary>
     public string? Assumption { get; init; }
 }
 
-/// <summary>
-/// TileJSON-style descriptor for an imported served tileset.
-/// </summary>
 internal sealed record TileCachePackageTileSetJson
 {
-    /// <summary>TileJSON version.</summary>
     [JsonPropertyName("tilejson")]
     public required string TileJson { get; init; }
 
-    /// <summary>Tileset name.</summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }
 
-    /// <summary>Payload kind (raster/vector).</summary>
     [JsonPropertyName("dataType")]
     public required string DataType { get; init; }
 
-    /// <summary>Honua tile-matrix-set identifier.</summary>
     [JsonPropertyName("tileMatrixSet")]
     public required string TileMatrixSet { get; init; }
 
-    /// <summary>Tile content type.</summary>
     [JsonPropertyName("format")]
     public required string Format { get; init; }
 
-    /// <summary>Minimum zoom.</summary>
     [JsonPropertyName("minzoom")]
     public required int MinZoom { get; init; }
 
-    /// <summary>Maximum zoom.</summary>
     [JsonPropertyName("maxzoom")]
     public required int MaxZoom { get; init; }
 
-    /// <summary>Tile URL templates.</summary>
     [JsonPropertyName("tiles")]
     public required string[] Tiles { get; init; }
 }
 
-/// <summary>
-/// Source-generated JSON context for the tile-cache package endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

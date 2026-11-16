@@ -8,10 +8,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Styles;
 
-/// <summary>
-/// JSON serialization context for OGC API - Styles models.
-/// Enables AOT-compatible, source-generated JSON serialization for the Styles slice.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LandingPage))]
 [JsonSerializable(typeof(ConformanceDeclaration))]

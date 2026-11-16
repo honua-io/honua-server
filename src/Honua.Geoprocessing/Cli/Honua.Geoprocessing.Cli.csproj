@@ -25,7 +25,7 @@
     <PublishAot>false</PublishAot>
 
     <!-- Console front-end intentionally writes to stdout/stderr. -->
-    <NoWarn>$(NoWarn);CA1303;CA2007</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CA1303;CA2007</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

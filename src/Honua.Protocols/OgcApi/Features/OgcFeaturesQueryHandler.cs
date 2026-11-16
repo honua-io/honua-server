@@ -34,9 +34,6 @@ using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Handler for OGC Features query operations with filtering, pagination, and spatial/temporal queries.
-/// </summary>
 internal sealed partial class OgcFeaturesQueryHandler(
     OgcFeaturesQueryDependencies dependencies,
     ILogger<OgcFeaturesQueryHandler> logger)
@@ -58,9 +55,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private const int StreamingThreshold = 200;
     private const int StreamingFlushInterval = 128;
     private const string OgcFeaturesProtocolName = "OgcFeatures";
-    /// <summary>
-    /// Handles GetItems request with comprehensive filtering and pagination.
-    /// </summary>
     public async Task<IResult> HandleGetItemsAsync(
         string collectionId,
         HttpContext context,
@@ -605,9 +599,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Handles GetItem request for a single feature by ID.
-    /// </summary>
     public async Task<IResult> HandleGetItemAsync(
         string collectionId,
         string featureId,
@@ -1111,12 +1102,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";
 
-    /// <summary>
-    /// Resolves the feature reader for a V2-routed read. Falls back to the
-    /// shared injected reader when the V2 graph carries no storage binding for
-    /// the publication or the provider router is not wired (test fixtures).
-    /// Mirrors v1 <c>ShouldRouteProviderReader</c> semantics over the V2 graph.
-    /// </summary>
     private async Task<IFeatureReader> ResolveReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
@@ -1139,10 +1124,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private static bool ShouldRouteProviderReader(MetadataV2Layer publication)
         => !string.IsNullOrEmpty(publication.StorageBindingId);
 
-    /// <summary>
-    /// True when a reader reported its page length as the match count.
-    /// A complete first page (no further rows, offset zero) is an exact total.
-    /// </summary>
     internal static bool IsPageSizedTotal(long reportedTotal, int numberReturned, bool hasMore, int offset)
         => reportedTotal < 0
             || (hasMore && reportedTotal <= numberReturned)

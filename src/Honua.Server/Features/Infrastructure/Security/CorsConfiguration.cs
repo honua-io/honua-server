@@ -5,10 +5,6 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// CORS configuration for Honua Server with security-first approach.
-/// Provides separate policies for different environments and use cases.
-/// </summary>
 public static class CorsConfiguration
 {
     private const string LoggerCategory = "Honua.Server.CorsConfiguration";
@@ -20,13 +16,6 @@ public static class CorsConfiguration
         "http://localhost:8080"
     ];
 
-    /// <summary>
-    /// Request headers allowed on cross-origin requests by default. Includes the full
-    /// set of conditional headers (<c>If-Match</c>, <c>If-Unmodified-Since</c>, …) so
-    /// browser/Office clients can send ETag preconditions on PATCH/PUT/DELETE — without
-    /// these, optimistic concurrency is silently unavailable cross-origin (#1629).
-    /// Additional headers can be appended via <c>Cors:AllowedHeaders</c> configuration.
-    /// </summary>
     private static readonly string[] DefaultAllowedHeaders =
     [
         "X-Honua-CSRF", "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
@@ -46,20 +35,8 @@ public static class CorsConfiguration
     public const string ProductionPolicy = HttpCorsPolicyNames.Production;
     public const string RestrictedPolicy = "RestrictedCors";
 
-    /// <summary>
-    /// CORS policy for the public embed governance endpoints (<c>/api/v1/embed/*</c>).
-    /// These are intentionally reachable cross-origin from arbitrary ISV sites, so the
-    /// browser preflight must be permitted from any origin — the authoritative gate is
-    /// the per-embed-key origin allow-list enforced inside the handler (which echoes
-    /// <c>Access-Control-Allow-Origin</c> only for approved origins). The global
-    /// <see cref="ProductionPolicy"/> restricts origins to the server allow-list, which
-    /// would reject the preflight before the handler ever runs (#1191).
-    /// </summary>
     public const string EmbedPolicy = "EmbedCors";
 
-    /// <summary>
-    /// Configures CORS policies for different environments.
-    /// </summary>
     public static void AddCorsPolicies(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
         // Guard against booting a Development profile on a hosted environment.
@@ -140,9 +117,6 @@ public static class CorsConfiguration
         });
     }
 
-    /// <summary>
-    /// Configures the production CORS policy with allowed origins from configuration.
-    /// </summary>
     private static void ConfigureProductionPolicy(CorsPolicyBuilder policy, IConfiguration configuration, IWebHostEnvironment environment, ILogger logger)
     {
         var allowedOrigins = ResolveAllowedOrigins(configuration);
@@ -182,12 +156,6 @@ public static class CorsConfiguration
         }
     }
 
-    /// <summary>
-    /// Resolves the cross-origin allowed-request-header list: the standard default set
-    /// (which includes conditional/ETag headers) unioned with any operator-supplied
-    /// <c>Cors:AllowedHeaders</c> entries. Configured headers extend the defaults rather
-    /// than replacing them, so adding a custom header never silently drops <c>If-Match</c>.
-    /// </summary>
     private static string[] ResolveAllowedHeaders(IConfiguration configuration)
     {
         var configured = configuration.GetSection("Cors:AllowedHeaders").Get<string[]>();
@@ -225,9 +193,6 @@ public static class CorsConfiguration
         return merged.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    /// <summary>
-    /// Configures the most restrictive CORS policy for sensitive operations.
-    /// </summary>
     private static void ConfigureRestrictedPolicy(CorsPolicyBuilder policy, IConfiguration configuration)
     {
         var allowedOrigins = configuration.GetSection("Cors:RestrictedOrigins").Get<string[]>() ?? Array.Empty<string>();
@@ -253,15 +218,6 @@ public static class CorsConfiguration
         }
     }
 
-    /// <summary>
-    /// Configures the CORS policy for the public embed governance endpoints. Unlike the
-    /// production policy, this permits the cross-origin preflight from ANY origin because
-    /// embed widgets load on arbitrary ISV pages; the embed handler is the authoritative
-    /// origin gate (it validates the request origin against the per-embed-key allow-list
-    /// and echoes <c>Access-Control-Allow-Origin</c> only for approved origins). Credentials
-    /// are never enabled here — embed authentication travels in the <c>X-Honua-Embed-Key</c>
-    /// header, not cookies — so <c>AllowAnyOrigin</c> is safe.
-    /// </summary>
     private static void ConfigureEmbedPolicy(CorsPolicyBuilder policy, IConfiguration configuration)
     {
         // Reflect the request Origin instead of AllowAnyOrigin(): the preflight must still
@@ -280,10 +236,6 @@ public static class CorsConfiguration
               .SetPreflightMaxAge(TimeSpan.FromMinutes(5));
     }
 
-    /// <summary>
-    /// Validates if an origin is allowed based on configured patterns.
-    /// Supports exact matches and wildcard subdomains.
-    /// </summary>
     private static bool IsOriginAllowed(string origin, string[] allowedOrigins)
     {
         if (string.IsNullOrWhiteSpace(origin))
@@ -404,9 +356,6 @@ public static class CorsConfiguration
         return true;
     }
 
-    /// <summary>
-    /// Extension method to apply the appropriate CORS policy based on environment.
-    /// </summary>
     public static void UseHonuaCors(this IApplicationBuilder app, IWebHostEnvironment environment)
     {
         if (environment.IsDevelopment())
@@ -420,25 +369,14 @@ public static class CorsConfiguration
     }
 }
 
-/// <summary>
-/// Source-generated logger for CORS configuration (AOT compatible).
-/// </summary>
 internal static partial class CorsLog
 {
-    /// <summary>
-    /// Log warning when no CORS origins are configured in production.
-    /// </summary>
     [LoggerMessage(
         EventId = 4060,
         Level = LogLevel.Warning,
         Message = "No CORS origins configured. All cross-origin requests will be blocked in production.")]
     public static partial void NoCorsOriginsConfigured(ILogger logger);
 
-    /// <summary>
-    /// Log when Development CORS is refused because the process appears to be running inside
-    /// a container or Kubernetes-managed environment. This prevents a misconfigured
-    /// ASPNETCORE_ENVIRONMENT from exposing AllowAnyOrigin on a hosted deployment.
-    /// </summary>
     [LoggerMessage(
         EventId = 4061,
         Level = LogLevel.Warning,

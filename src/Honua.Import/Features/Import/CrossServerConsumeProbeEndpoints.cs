@@ -5,17 +5,10 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Import;
 
-/// <summary>
-/// Test-only endpoints used by the cross-server consume suite to route outbound
-/// reference-server reads through Honua's HTTP pipeline.
-/// </summary>
 internal static partial class CrossServerConsumeProbeEndpoints
 {
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// Maps cross-server consume probe endpoints when the host runs in the Test environment.
-    /// </summary>
     public static IEndpointRouteBuilder MapCrossServerConsumeProbeEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // PA-155: defense-in-depth authorization even though this endpoint is only registered in

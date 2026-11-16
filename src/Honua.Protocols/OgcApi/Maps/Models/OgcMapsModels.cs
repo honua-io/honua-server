@@ -7,104 +7,56 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Models;
 
-/// <summary>
-/// OGC API - Maps conformance declaration.
-/// </summary>
 public sealed class OgcMapsConformance
 {
     [JsonPropertyName("conformsTo")]
     public required string[] ConformsTo { get; init; }
 }
 
-/// <summary>
-/// Map rendering request parameters for OGC API - Maps.
-/// </summary>
 public sealed class OgcMapRequest
 {
-    /// <summary>
-    /// Collections to include in the map (comma-separated for dataset maps).
-    /// </summary>
     [StringLength(500, ErrorMessage = "Collections parameter is too long")]
     public string? Collections { get; init; }
 
-    /// <summary>
-    /// Style identifier to apply.
-    /// </summary>
     [StringLength(100, ErrorMessage = "StyleId is too long")]
     [RegularExpression(@"^[a-zA-Z0-9_-]+$", ErrorMessage = "StyleId contains invalid characters")]
     public string? StyleId { get; init; }
 
-    /// <summary>
-    /// Coordinate Reference System for the response.
-    /// </summary>
     [StringLength(200, ErrorMessage = "CRS parameter is too long")]
     public string? Crs { get; init; }
 
-    /// <summary>
-    /// Bounding box (bbox) for spatial subsetting.
-    /// Format: minx,miny,maxx,maxy
-    /// </summary>
     [RegularExpression(@"^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$",
         ErrorMessage = "Bbox must be in format: minX,minY,maxX,maxY")]
     [StringLength(100, ErrorMessage = "Bbox is too long")]
     public string? Bbox { get; init; }
 
-    /// <summary>
-    /// CRS for the bbox coordinates.
-    /// </summary>
     [FromQuery(Name = "bbox-crs")]
     [StringLength(200, ErrorMessage = "BboxCrs parameter is too long")]
     public string? BboxCrs { get; init; }
 
-    /// <summary>
-    /// Width of the map in pixels.
-    /// </summary>
     [Range(1, 4096, ErrorMessage = "Width must be between 1 and 4096 pixels")]
     public int? Width { get; init; } = 256;
 
-    /// <summary>
-    /// Height of the map in pixels.
-    /// </summary>
     [Range(1, 4096, ErrorMessage = "Height must be between 1 and 4096 pixels")]
     public int? Height { get; init; } = 256;
 
-    /// <summary>
-    /// Output format of the map. When omitted, the HTTP Accept header is used for
-    /// content negotiation per OGC API - Maps. Falls back to PNG when neither is specified.
-    /// </summary>
     [RegularExpression(@"^(png|jpeg|jpg|tiff|tif)$", ErrorMessage = "Format must be png, jpeg, jpg, tiff, or tif")]
     public string? F { get; init; }
 
-    /// <summary>
-    /// Whether the background should be transparent.
-    /// </summary>
     public bool? Transparent { get; init; } = true;
 
-    /// <summary>
-    /// Background color when not transparent.
-    /// </summary>
     [FromQuery(Name = "bgcolor")]
     [RegularExpression(@"^0x[0-9A-Fa-f]{6}$", ErrorMessage = "BackgroundColor must be in format 0xRRGGBB")]
     [StringLength(8, ErrorMessage = "BackgroundColor is too long")]
     public string? BackgroundColor { get; init; } = "0xFFFFFF";
 
-    /// <summary>
-    /// Temporal instant or interval for time-enabled collections.
-    /// ISO 8601 format.
-    /// </summary>
     [StringLength(100, ErrorMessage = "Datetime parameter is too long")]
     public string? Datetime { get; init; }
 
-    /// <summary>
-    /// Quality parameter for lossy compression formats (1-100).
-    /// </summary>
     [Range(1, 100, ErrorMessage = "Quality must be between 1 and 100")]
     public int? Quality { get; init; }
 }
 
-/// <summary>
-/// Link object for OGC API responses.
-/// </summary>
 public sealed class OgcLink
 {
     [JsonPropertyName("href")]
@@ -126,9 +78,6 @@ public sealed class OgcLink
     public bool? Templated { get; init; }
 }
 
-/// <summary>
-/// Map response with links to different formats and metadata.
-/// </summary>
 public sealed class MapResponse
 {
     [JsonPropertyName("title")]
@@ -153,9 +102,6 @@ public sealed class MapResponse
     public required OgcLink[] Links { get; init; }
 }
 
-/// <summary>
-/// Spatial and temporal extent for maps.
-/// </summary>
 public sealed class MapExtent
 {
     [JsonPropertyName("spatial")]
@@ -168,9 +114,6 @@ public sealed class MapExtent
     public string? Crs { get; init; }
 }
 
-/// <summary>
-/// Spatial extent with bounding box.
-/// </summary>
 public sealed class SpatialExtent
 {
     [JsonPropertyName("bbox")]
@@ -180,9 +123,6 @@ public sealed class SpatialExtent
     public string? Crs { get; init; } = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 }
 
-/// <summary>
-/// Temporal extent with intervals.
-/// </summary>
 public sealed class TemporalExtent
 {
     [JsonPropertyName("interval")]
@@ -192,9 +132,6 @@ public sealed class TemporalExtent
     public string? Trs { get; init; } = "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian";
 }
 
-/// <summary>
-/// Collection information for maps.
-/// </summary>
 public sealed class MapCollectionInfo
 {
     [JsonPropertyName("id")]
@@ -222,9 +159,6 @@ public sealed class MapCollectionInfo
     public OgcLink[]? Links { get; init; }
 }
 
-/// <summary>
-/// Style information for styled maps.
-/// </summary>
 public sealed class MapStyle
 {
     [JsonPropertyName("id")]
@@ -243,9 +177,6 @@ public sealed class MapStyle
     public OgcLink[]? Links { get; init; }
 }
 
-/// <summary>
-/// Dataset-wide map information.
-/// </summary>
 public sealed class DatasetMap
 {
     [JsonPropertyName("title")]
@@ -267,9 +198,6 @@ public sealed class DatasetMap
     public required OgcLink[] Links { get; init; }
 }
 
-/// <summary>
-/// Tile set list response for OGC API - Maps tile metadata.
-/// </summary>
 public sealed class TileSetsList
 {
     [JsonPropertyName("tilesets")]
@@ -279,9 +207,6 @@ public sealed class TileSetsList
     public required OgcLink[] Links { get; init; }
 }
 
-/// <summary>
-/// TileSet definition for integration with OGC API - Tiles.
-/// </summary>
 public sealed class TileSet
 {
     [JsonPropertyName("title")]

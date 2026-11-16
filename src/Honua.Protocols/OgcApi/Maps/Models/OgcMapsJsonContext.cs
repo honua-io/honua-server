@@ -6,10 +6,6 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Models;
 
-/// <summary>
-/// JSON serialization context for OGC API - Maps models.
-/// Enables AOT-compatible JSON serialization for OGC Maps endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LandingPage))]
 // The Maps slice declares its own SpatialExtent/TemporalExtent, so the landing page's

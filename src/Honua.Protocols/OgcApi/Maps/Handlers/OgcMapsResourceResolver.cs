@@ -14,19 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 
-/// <summary>
-/// Shared collision-aware resolution of an OGC API - Maps collection to its canonical
-/// resource and Maps-enabled service.
-/// </summary>
-/// <remarks>
-/// A compatibility publication can expose the same numeric layer id through both a raster
-/// binding and a vector/map binding. <see cref="MetadataV2GraphIndex.ResourcesByStorageLayerId"/>
-/// is deliberately one-to-one and first-wins, so its entry can be the ImageServer-only
-/// resource while a later colliding binding owns the valid Maps publication. Every OGC API -
-/// Maps surface (rendering + tile-set handlers) resolves through this helper so the
-/// map, map/tiles, and dataset-map endpoints agree on the same resource for a colliding
-/// storage layer id, and a fallback is logged once so the collision is diagnosable.
-/// </remarks>
 internal static class OgcMapsResourceResolver
 {
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
@@ -69,16 +56,6 @@ internal static class OgcMapsResourceResolver
         return (new(resource, service!), null);
     }
 
-    /// <summary>
-    /// Enumerates the dataset's collision-aware storage-layer entries once, so dataset
-    /// rendering and dataset discovery describe the same resources (#5048).
-    /// </summary>
-    /// <remarks>
-    /// Protocol enablement and access policy are deliberately NOT applied here: the caller
-    /// applies them, because discovery and rendering evaluate them against their own
-    /// operation. Falls back to the indexed resource for non-colliding / non-Maps layers so
-    /// their behaviour is unchanged (#2799).
-    /// </remarks>
     public static List<(int LayerId, MetadataV2Object Resource, MetadataV2Service? Service)> EnumerateDatasetEntries(
         MetadataV2GraphSnapshot snapshot,
         ILogger logger,
@@ -109,22 +86,6 @@ internal static class OgcMapsResourceResolver
         return entries;
     }
 
-    /// <summary>
-    /// Combines the supplied resources into one dataset extent expressed in the first
-    /// resource's CRS, using the canonical coordinate transform service (#5048).
-    /// </summary>
-    /// <remarks>
-    /// Rendering previously combined extents through the synchronous
-    /// <c>CoordinateTransformer</c>, which supports far fewer CRS pairs than the canonical
-    /// PostGIS-backed <see cref="ICoordinateTransformService"/>, and it turned an
-    /// unsupported pair into an exception that surfaced as HTTP 500. The transform result is
-    /// reported instead: <c>TransformUnavailable</c> lets the caller answer with an
-    /// actionable client error, or omit the metadata, rather than inventing an extent.
-    /// </remarks>
-    /// <returns>
-    /// The combined extent (<see langword="null"/> when no resource declares bounds) and
-    /// whether a required transform could not be performed.
-    /// </returns>
     public static async Task<(FeatureExtent? Extent, bool TransformUnavailable)> BuildDatasetExtentAsync(
         IEnumerable<MetadataV2Object> resources,
         ICoordinateTransformService? coordinateTransformService,
@@ -239,11 +200,6 @@ internal static class OgcMapsResourceResolver
 
     private sealed record TransformResult(FeatureExtent Extent);
 
-    /// <summary>
-    /// Resolves the resource and Maps-enabled service for a storage layer id, preferring the
-    /// O(1) indexed entry and only falling back to a colliding binding when the indexed
-    /// resource is not published through a Maps-enabled service.
-    /// </summary>
     public static (MetadataV2Object? Resource, MetadataV2Service? Service) ResolveMapsResource(
         MetadataV2GraphSnapshot snapshot,
         int storageLayerId,
@@ -296,10 +252,6 @@ internal static class OgcMapsResourceResolver
         return (null, null);
     }
 
-    /// <summary>
-    /// Returns the first Maps-enabled service that publishes <paramref name="resource"/>, or
-    /// <see langword="null"/> when no Maps publication exists.
-    /// </summary>
     public static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Object resource, string? tenantId = null)
     {
         foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
@@ -321,9 +273,6 @@ internal static class OgcMapsResourceResolver
         return null;
     }
 
-    /// <summary>
-    /// Determines whether <paramref name="service"/> advertises the supplied protocol.
-    /// </summary>
     public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 }

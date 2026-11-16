@@ -19,10 +19,6 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Background service for processing Geoservices import jobs.
-/// Uses Redis leader election when available, with a local fallback leader when Redis is unavailable.
-/// </summary>
 internal sealed partial class GeoservicesImportBackgroundService : BackgroundService
 {
     private readonly ILicenseOperationPolicy? _licensePolicy;

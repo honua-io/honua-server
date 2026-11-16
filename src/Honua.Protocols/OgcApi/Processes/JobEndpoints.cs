@@ -24,9 +24,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// OGC API Processes job lifecycle endpoints (status, results, dismiss, list).
-/// </summary>
 internal static class JobEndpoints
 {
     private const string BasePath = "/ogc/processes";

@@ -19,12 +19,6 @@ internal static class OgcFeatureMutationHelpers
         CrsDefinition? InputCrs,
         string? ErrorMessage);
 
-    /// <summary>
-    /// Resolves storage SRID, primary geometry field, and attribute validation
-    /// from the V2 canonical resource. <paramref name="isUpdate"/> distinguishes
-    /// create- vs update-path attribute validation (non-editable fields are
-    /// rejected on update).
-    /// </summary>
     public static async Task<FeatureBuildResult> TryBuildFeatureAsync(
         HttpRequest request,
         MetadataV2Object resource,
@@ -61,10 +55,6 @@ internal static class OgcFeatureMutationHelpers
             cancellationToken);
     }
 
-    /// <summary>
-    /// Builds a canonical feature from an OGC GeoJSON payload using Metadata v2
-    /// resource schema and CRS metadata.
-    /// </summary>
     public static async Task<FeatureBuildResult> TryBuildFeatureAsync(
         MetadataV2Object resource,
         GeoJsonFeature requestFeature,

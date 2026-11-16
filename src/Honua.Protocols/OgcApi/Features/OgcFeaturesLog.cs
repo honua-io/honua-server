@@ -3,15 +3,6 @@
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Structured logging for OGC API Features operations.
-/// Event ID ranges:
-/// - 5200-5299: Basic operations (existing)
-/// - 5300-5349: Collections metadata
-/// - 5350-5399: Core/conformance/landing
-/// - 5400-5449: Query performance and validation
-/// - 5450-5499: Parameter validation
-/// </summary>
 internal static partial class OgcFeaturesLog
 {
     // 5200-5299: Basic Operations

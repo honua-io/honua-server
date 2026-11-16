@@ -7,455 +7,224 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.Ogc.Api.Processes.Models;
 
-/// <summary>
-/// OGC API Processes process summary returned in process list responses.
-/// </summary>
 public sealed record OgcProcessSummary
 {
-    /// <summary>
-    /// Process identifier.
-    /// </summary>
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    /// <summary>
-    /// Human-readable title for the process.
-    /// </summary>
     [JsonPropertyName("title")]
     public string? Title { get; init; }
 
-    /// <summary>
-    /// Description of the process.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Process version.
-    /// </summary>
     [JsonPropertyName("version")]
     public string? Version { get; init; }
 
-    /// <summary>
-    /// Supported job control options (sync-execute, async-execute, dismiss).
-    /// </summary>
     [JsonPropertyName("jobControlOptions")]
     public ImmutableArray<string>? JobControlOptions { get; init; }
 
-    /// <summary>
-    /// Supported output transmission modes.
-    /// </summary>
     [JsonPropertyName("outputTransmission")]
     public ImmutableArray<string>? OutputTransmission { get; init; }
 
-    /// <summary>
-    /// Links to related resources.
-    /// </summary>
     [JsonPropertyName("links")]
     public ImmutableArray<Ogc.Common.Link>? Links { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes process list response.
-/// </summary>
 public sealed record OgcProcessList
 {
-    /// <summary>
-    /// List of available processes.
-    /// </summary>
     [JsonPropertyName("processes")]
     public required ImmutableArray<OgcProcessSummary> Processes { get; init; }
 
-    /// <summary>
-    /// Links to related resources.
-    /// </summary>
     [JsonPropertyName("links")]
     public ImmutableArray<Ogc.Common.Link>? Links { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes input/output description using JSON Schema.
-/// </summary>
 public sealed record OgcProcessIoDescription
 {
-    /// <summary>
-    /// Human-readable title.
-    /// </summary>
     [JsonPropertyName("title")]
     public string? Title { get; init; }
 
-    /// <summary>
-    /// Description of the input or output.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Minimum number of occurrences required in an execution request.
-    /// </summary>
     [JsonPropertyName("minOccurs")]
     public int? MinOccurs { get; init; }
 
-    /// <summary>
-    /// JSON Schema describing the value.
-    /// </summary>
     [JsonPropertyName("schema")]
     public required OgcProcessIoSchema Schema { get; init; }
 }
 
-/// <summary>
-/// Minimal JSON Schema fragment for process input/output descriptions.
-/// </summary>
 public sealed record OgcProcessIoSchema
 {
-    /// <summary>
-    /// JSON Schema type (string, number, object, array, etc.).
-    /// </summary>
     [JsonPropertyName("type")]
     public string? Type { get; init; }
 
-    /// <summary>
-    /// Optional JSON Schema format hint (for example, binary).
-    /// </summary>
     [JsonPropertyName("format")]
     public string? Format { get; init; }
 
-    /// <summary>
-    /// JSON Schema regular-expression constraint for string values.
-    /// </summary>
     [JsonPropertyName("pattern")]
     public string? Pattern { get; init; }
 
-    /// <summary>
-    /// Content media type hint for complex inputs.
-    /// </summary>
     [JsonPropertyName("contentMediaType")]
     public string? ContentMediaType { get; init; }
 
-    /// <summary>
-    /// JSON Schema content encoding hint.
-    /// </summary>
     [JsonPropertyName("contentEncoding")]
     public string? ContentEncoding { get; init; }
 
-    /// <summary>
-    /// Inclusive lower bound for numeric values.
-    /// </summary>
     [JsonPropertyName("minimum")]
     public double? Minimum { get; init; }
 
-    /// <summary>
-    /// Inclusive upper bound for numeric values.
-    /// </summary>
     [JsonPropertyName("maximum")]
     public double? Maximum { get; init; }
 
-    /// <summary>
-    /// Enumerated string values accepted by the schema.
-    /// </summary>
     [JsonPropertyName("enum")]
     public ImmutableArray<string>? Enum { get; init; }
 
-    /// <summary>
-    /// Item schema for array values.
-    /// </summary>
     [JsonPropertyName("items")]
     public OgcProcessIoSchema? Items { get; init; }
 
-    /// <summary>
-    /// Minimum number of items accepted by an array schema.
-    /// </summary>
     [JsonPropertyName("minItems")]
     public int? MinItems { get; init; }
 
-    /// <summary>
-    /// Maximum number of items accepted by an array schema.
-    /// </summary>
     [JsonPropertyName("maxItems")]
     public int? MaxItems { get; init; }
 
-    /// <summary>
-    /// Property schemas for object values.
-    /// </summary>
     [JsonPropertyName("properties")]
     public IReadOnlyDictionary<string, OgcProcessIoSchema>? Properties { get; init; }
 
-    /// <summary>
-    /// Property names required when the value is an object.
-    /// </summary>
     [JsonPropertyName("required")]
     public ImmutableArray<string>? Required { get; init; }
 
-    /// <summary>
-    /// Alternative JSON Schema representations accepted for this value.
-    /// </summary>
     [JsonPropertyName("oneOf")]
     public ImmutableArray<OgcProcessIoSchema>? OneOf { get; init; }
 
-    /// <summary>
-    /// Conjunctive schemas, including the OGC bounding-box format marker.
-    /// </summary>
     [JsonPropertyName("allOf")]
     public ImmutableArray<OgcProcessIoSchema>? AllOf { get; init; }
 
-    /// <summary>
-    /// Schema that the value must not satisfy.
-    /// </summary>
     [JsonPropertyName("not")]
     public OgcProcessIoSchema? Not { get; init; }
 }
 
-/// <summary>
-/// Full OGC API Processes process description.
-/// </summary>
 public sealed record OgcProcessDescription
 {
-    /// <summary>
-    /// Process identifier.
-    /// </summary>
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    /// <summary>
-    /// Human-readable title for the process.
-    /// </summary>
     [JsonPropertyName("title")]
     public string? Title { get; init; }
 
-    /// <summary>
-    /// Description of the process.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Process version.
-    /// </summary>
     [JsonPropertyName("version")]
     public string? Version { get; init; }
 
-    /// <summary>
-    /// Supported job control options.
-    /// </summary>
     [JsonPropertyName("jobControlOptions")]
     public ImmutableArray<string>? JobControlOptions { get; init; }
 
-    /// <summary>
-    /// Supported output transmission modes.
-    /// </summary>
     [JsonPropertyName("outputTransmission")]
     public ImmutableArray<string>? OutputTransmission { get; init; }
 
-    /// <summary>
-    /// Input descriptions keyed by input identifier.
-    /// </summary>
     [JsonPropertyName("inputs")]
     public IReadOnlyDictionary<string, OgcProcessIoDescription>? Inputs { get; init; }
 
-    /// <summary>
-    /// Output descriptions keyed by output identifier.
-    /// </summary>
     [JsonPropertyName("outputs")]
     public IReadOnlyDictionary<string, OgcProcessIoDescription>? Outputs { get; init; }
 
-    /// <summary>
-    /// Links to related resources.
-    /// </summary>
     [JsonPropertyName("links")]
     public ImmutableArray<Ogc.Common.Link>? Links { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes execution request body.
-/// </summary>
 public sealed record OgcExecuteRequest
 {
-    /// <summary>
-    /// Process inputs keyed by input identifier. Values are arbitrary JSON (string, object, array, etc.).
-    /// </summary>
     [JsonPropertyName("inputs")]
     public ImmutableDictionary<string, JsonElement>? Inputs { get; init; }
 
-    /// <summary>
-    /// Requested outputs keyed by output identifier. Omitted or empty means all outputs.
-    /// </summary>
     [JsonPropertyName("outputs")]
     public ImmutableDictionary<string, JsonElement>? Outputs { get; init; }
 
-    /// <summary>
-    /// Desired response mode (document or raw).
-    /// </summary>
     [JsonPropertyName("response")]
     public string? Response { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes job status info (StatusInfo schema).
-/// </summary>
 public sealed record OgcStatusInfo
 {
-    /// <summary>
-    /// Process identifier that created this job.
-    /// </summary>
     [JsonPropertyName("processID")]
     public string? ProcessId { get; init; }
 
-    /// <summary>
-    /// Resource type discriminator.
-    /// </summary>
     [JsonPropertyName("type")]
     public string Type { get; init; } = "process";
 
-    /// <summary>
-    /// Job identifier.
-    /// </summary>
     [JsonPropertyName("jobID")]
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Current OGC job status.
-    /// </summary>
     [JsonPropertyName("status")]
     public required string Status { get; init; }
 
-    /// <summary>
-    /// Human-readable status message.
-    /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
-    /// <summary>
-    /// Job creation timestamp (RFC 3339).
-    /// </summary>
     [JsonPropertyName("created")]
     public string? Created { get; init; }
 
-    /// <summary>
-    /// Last update timestamp (RFC 3339).
-    /// </summary>
     [JsonPropertyName("updated")]
     public string? Updated { get; init; }
 
-    /// <summary>
-    /// Progress percentage (0-100).
-    /// </summary>
     [JsonPropertyName("progress")]
     public int? Progress { get; init; }
 
-    /// <summary>
-    /// Links to related resources.
-    /// </summary>
     [JsonPropertyName("links")]
     public ImmutableArray<Ogc.Common.Link>? Links { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes exception response (RFC 7807).
-/// </summary>
 public sealed record OgcProcessError
 {
-    /// <summary>
-    /// Error type URI.
-    /// </summary>
     [JsonPropertyName("type")]
     public string? Type { get; init; }
 
-    /// <summary>
-    /// Short human-readable summary.
-    /// </summary>
     [JsonPropertyName("title")]
     public string? Title { get; init; }
 
-    /// <summary>
-    /// HTTP status code.
-    /// </summary>
     [JsonPropertyName("status")]
     public int? Status { get; init; }
 
-    /// <summary>
-    /// Detailed human-readable explanation.
-    /// </summary>
     [JsonPropertyName("detail")]
     public string? Detail { get; init; }
 
-    /// <summary>
-    /// URI identifying the specific occurrence.
-    /// </summary>
     [JsonPropertyName("instance")]
     public string? Instance { get; init; }
 
-    /// <summary>
-    /// Machine-readable error code (RFC 7807 extension member) for problem families that need a
-    /// stable code beyond <see cref="Type"/>/<see cref="Status"/>, for example
-    /// <c>dependency-unavailable</c>. Omitted when not set.
-    /// </summary>
     [JsonPropertyName("code")]
     public string? Code { get; init; }
 
-    /// <summary>
-    /// Capability-manifest id this refusal disables (RFC 7807 extension member), for example
-    /// <c>jobs.runner</c>, so a client can join the refusal to the capabilities manifest
-    /// (honua-release#202). Omitted when not set.
-    /// </summary>
     [JsonPropertyName("capability")]
     public string? Capability { get; init; }
 
-    /// <summary>
-    /// Identifier of the infrastructure dependency that was not composed (RFC 7807 extension
-    /// member), for example <c>redis</c>. Omitted when not set.
-    /// </summary>
     [JsonPropertyName("missingDependency")]
     public string? MissingDependency { get; init; }
 
-    /// <summary>
-    /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
-    /// extension member), for example <c>caching.redis</c>. Present instead of
-    /// <c>missingDependency</c> when the dependency is deployed but not licensed.
-    /// </summary>
     [JsonPropertyName("missingEntitlement")]
     public string? MissingEntitlement { get; init; }
 
-    /// <summary>
-    /// Operator-facing remediation sentence (RFC 7807 extension member). Omitted when not set.
-    /// </summary>
     [JsonPropertyName("remediation")]
     public string? Remediation { get; init; }
 
-    /// <summary>
-    /// Documentation reference for <see cref="Remediation"/> (RFC 7807 extension member).
-    /// Omitted when not set.
-    /// </summary>
     [JsonPropertyName("remediationRef")]
     public string? RemediationRef { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes job list response per §11.2 (jobList.yaml schema).
-/// </summary>
 public sealed record OgcJobList
 {
-    /// <summary>
-    /// List of job status documents.
-    /// </summary>
     [JsonPropertyName("jobs")]
     public required ImmutableArray<OgcStatusInfo> Jobs { get; init; }
 
-    /// <summary>
-    /// Navigation links (self, next, prev).
-    /// </summary>
     [JsonPropertyName("links")]
     public ImmutableArray<Ogc.Common.Link>? Links { get; init; }
 }
 
-/// <summary>
-/// OGC API Processes document-mode results response.
-/// Keys are stable output identifiers, values are the output payloads.
-/// </summary>
 public sealed record OgcResultsDocument
 {
-    /// <summary>
-    /// Output values keyed by stable output identifier.
-    /// </summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Outputs { get; init; }
 }

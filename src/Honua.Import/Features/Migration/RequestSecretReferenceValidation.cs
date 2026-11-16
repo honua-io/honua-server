@@ -7,17 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Shared handling of request-supplied secret references for the import endpoints and workers.
-/// Every reference goes through <see cref="IRequestSecretReferenceResolver"/>; when that service is
-/// not registered the reference is refused.
-/// </summary>
 internal static class RequestSecretReferenceValidation
 {
-    /// <summary>
-    /// Returns a client-safe validation message when <paramref name="secretReference"/> is present
-    /// and not permitted, otherwise <see langword="null"/>. Never resolves the reference.
-    /// </summary>
     public static string? Validate(IServiceProvider serviceProvider, string? secretReference, string fieldName)
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);
@@ -37,10 +28,6 @@ internal static class RequestSecretReferenceValidation
         return decision.IsPermitted ? null : $"{fieldName}: {decision.Reason}";
     }
 
-    /// <summary>
-    /// Resolves a permitted reference. Refusals and resolution failures surface as a
-    /// <see cref="SecretNotFoundException"/> whose message names only the kind of secret.
-    /// </summary>
     public static async Task<string> ResolveRequiredAsync(
         IServiceProvider serviceProvider,
         string secretReference,

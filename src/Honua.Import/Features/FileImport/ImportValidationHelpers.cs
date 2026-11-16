@@ -17,9 +17,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Import.FileImport;
 
-/// <summary>
-/// Shared validation helpers for import endpoints.
-/// </summary>
 internal static class ImportValidationHelpers
 {
     public static bool IsValidTableName(string tableName)
@@ -44,10 +41,6 @@ internal static class ImportValidationHelpers
                (char.IsLetter(schemaName[0]) || schemaName[0] == '_');
     }
 
-    /// <summary>
-    /// Whether <paramref name="schemaName"/> may be an import target: omitted, or one of the configured
-    /// operational schemas and not the metadata schema or a database system schema (SEC-23).
-    /// </summary>
     public static bool IsPermittedTargetSchema(string? schemaName, IServiceProvider services)
         => ImportTargetSchemaPolicy.IsAllowed(schemaName, services.GetService<IConfiguration>());
 }

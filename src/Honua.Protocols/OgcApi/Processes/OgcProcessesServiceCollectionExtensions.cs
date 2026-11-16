@@ -8,14 +8,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-/// <summary>
-/// Extension methods to register OGC API Processes adapter services.
-/// </summary>
 internal static class OgcProcessesServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers OGC API Processes adapter services and configuration.
-    /// </summary>
     public static IServiceCollection AddOgcProcesses(
         this IServiceCollection services,
         IConfiguration configuration,

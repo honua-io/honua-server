@@ -7,34 +7,10 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
 
-/// <summary>
-/// One domain axis of a CoverageJSON grid response. Values are regularly
-/// spaced and described by start/stop/num; spatial axes carry CRS coordinates
-/// while non-referenced axes carry grid indices.
-/// </summary>
-/// <param name="Name">Axis name (matches the source dimension name).</param>
-/// <param name="Start">First cell value.</param>
-/// <param name="Stop">Last cell value.</param>
-/// <param name="Count">Cell count.</param>
 internal sealed record CoverageJsonAxis(string Name, double Start, double Stop, int Count);
 
-/// <summary>
-/// AOT-safe CoverageJSON (CovJSON 1.0) writer for Zarr-backed coverage
-/// subsets. Emits a Grid-domain coverage with one NdArray range built with
-/// <see cref="Utf8JsonWriter"/> because the document shape (axis names, value
-/// arrays) is data-driven and unsuitable for source-generated serializer types.
-/// </summary>
 internal static class CoverageJsonWriter
 {
-    /// <summary>
-    /// Writes a CoverageJSON document for one decoded Zarr subset.
-    /// </summary>
-    /// <param name="result">Decoded subset payload (little-endian buffer).</param>
-    /// <param name="axes">Domain axes in the same order as the subset shape.</param>
-    /// <param name="xAxisName">Axis name carrying CRS x coordinates, when georeferenced.</param>
-    /// <param name="yAxisName">Axis name carrying CRS y coordinates, when georeferenced.</param>
-    /// <param name="srid">EPSG SRID for the spatial axes; 0 when not georeferenced.</param>
-    /// <returns>UTF-8 encoded CoverageJSON payload.</returns>
     public static byte[] Write(
         ZarrSubsetResult result,
         IReadOnlyList<CoverageJsonAxis> axes,

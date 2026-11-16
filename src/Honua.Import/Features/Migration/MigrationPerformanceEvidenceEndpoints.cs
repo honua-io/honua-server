@@ -18,41 +18,11 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Admin / SDK HTTP endpoints exposing published migration performance evidence (#1033 slice 5).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Three read-only endpoints are mapped under <c>/api/v1/admin/migration/performance-evidence</c>:
-/// </para>
-/// <list type="bullet">
-///   <item>
-///     <c>GET /latest</c> — the most recent record whose status is <c>Pass</c>, or
-///     <c>204 No Content</c> when no passing record has been published yet.
-///   </item>
-///   <item>
-///     <c>GET /history?sourceFamily=&amp;size=&amp;limit=</c> — per-fixture history page
-///     in newest-first order with optional source-family and fixture-size filters.
-///   </item>
-///   <item>
-///     <c>GET /{evidenceId}</c> — a single record by stable evidence identifier; <c>404</c>
-///     when no matching record exists.
-///   </item>
-/// </list>
-/// <para>
-/// The endpoints render the full <see cref="MigrationPerformanceEvidenceArtifact"/> the way slice 4
-/// emits it; no truncation, no thresholds re-derived server-side. The admin UI and SDKs render
-/// the artifact directly so the website link and the API surface stay consistent.
-/// </para>
-/// </remarks>
 internal static class MigrationPerformanceEvidenceEndpoints
 {
     private const int DefaultHistoryLimit = 25;
     private const int MaxHistoryLimit = 200;
 
-    /// <summary>
-    /// Maps the migration performance evidence endpoints.
-    /// </summary>
     public static void MapMigrationPerformanceEvidenceEndpoints(this WebApplication app)
     {
         var group = app
@@ -189,25 +159,15 @@ internal static class MigrationPerformanceEvidenceEndpoints
     }
 }
 
-/// <summary>
-/// Response envelope returned by the history endpoint. Wrapping the items in an object
-/// (rather than returning a bare array) lets the API evolve with cursor pagination or
-/// filter echoes without breaking callers.
-/// </summary>
 internal sealed record MigrationPerformanceEvidenceHistoryResponse
 {
-    /// <summary>Echoed source-family filter, if any.</summary>
     public string? SourceFamily { get; init; }
 
-    /// <summary>Echoed fixture-size filter, if any.</summary>
     public string? FixtureSize { get; init; }
 
-    /// <summary>Effective record cap applied by the store.</summary>
     public required int Limit { get; init; }
 
-    /// <summary>Count of records returned in this response.</summary>
     public required int Count { get; init; }
 
-    /// <summary>Records in newest-first order.</summary>
     public required IReadOnlyList<MigrationPerformanceEvidenceRecord> Items { get; init; }
 }
