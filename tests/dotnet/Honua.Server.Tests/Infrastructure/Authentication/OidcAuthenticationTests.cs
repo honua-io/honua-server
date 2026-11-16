@@ -23,6 +23,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -1961,6 +1962,10 @@ public class OidcAuthenticationTests
         using var factory = CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings())
             .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             {
+                // The data fixture removes provider-backed CRS detection; keep the
+                // production query resolver usable without changing tenant handling.
+                services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
+                services.AddSingleton<ICrsRegistry, TestCrsRegistry>();
                 services.RemoveAll<IFeatureReader>();
                 services.AddScoped<IFeatureReader>(provider =>
                 {
