@@ -54,7 +54,8 @@ public sealed class FeatureQueryBuilderIdProjectionIntegrationTests(PostgresFixt
         try
         {
             await SeedFeatureAsync(schema, projection.AttributesJson);
-            var pool = new DefaultObjectPoolProvider().Create(new StringBuilderPooledObjectPolicy());
+            var pool = new DefaultObjectPoolProvider().Create(
+                new Honua.Db.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
             var builder = new FeatureQueryBuilder(pool, new GeometryProcessor(), schema);
             var query = new FeatureQuery { OutFields = ["id", "name", "secret"], EnforcedMaskedFields = projection.MaskedFields };
             var result = plan == QueryPlan.Optimized
