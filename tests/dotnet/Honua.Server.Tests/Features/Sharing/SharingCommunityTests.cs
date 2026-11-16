@@ -21,14 +21,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Integration tests for the ArcGIS Portal community-group + item-sharing surface
-/// (#1868): createGroup, addUsers/removeUsers, content/items/{id}/share·unshare,
-/// plus the authentication/authorization gates. The mutation endpoints require an
-/// authenticated principal; these drive a referer-bound portal token (issued via
-/// the shared <c>IPortalTokenIssuer</c>) as the caller so the portal-token bridge
-/// authenticates the request on the AllowAnonymous route.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]

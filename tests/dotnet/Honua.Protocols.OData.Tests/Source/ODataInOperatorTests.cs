@@ -11,10 +11,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Verifies the OData $filter <c>in</c> operator maps to the shared canonical filter
-/// pipeline so multi-select category filters do not require manual or-chains (issue #1621).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataInOperatorTests : IAsyncLifetime

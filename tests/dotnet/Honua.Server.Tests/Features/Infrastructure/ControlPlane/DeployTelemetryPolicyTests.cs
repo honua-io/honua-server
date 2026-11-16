@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Dedicated coverage for <see cref="DeployTelemetryPolicy.Parse"/> (#2161). The parser turns deploy
-/// spec parameters into a provider-neutral telemetry gate policy; before this suite it had no direct
-/// tests. Exercises the malformed / missing-threshold / preset-and-override combinations that decide
-/// whether the gate is valid (settles the deploy) or invalid (parks/escalates it).
-/// </summary>
 public sealed class DeployTelemetryPolicyTests
 {
     [Fact]

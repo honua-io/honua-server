@@ -24,7 +24,7 @@ internal static class DatumTransformSql
         {
             // The catalog pair is geographic. Projected endpoints keep that pipeline
             // and let PROJ's defining conversion move between the projected CRS and
-            // the geographic CRS the grid expects (#5630).
+            // the geographic CRS the grid expects.
             var needsInner = fromSrid is int sourceSrid && sourceSrid != selection.FromSrid;
             var needsOuter = toSrid != selection.ToSrid;
             if (needsInner || needsOuter)
@@ -47,7 +47,7 @@ internal static class DatumTransformSql
             // pipeline verbatim for reverse selections and only flips TransformForward, so the
             // reverse direction must invert the pipeline here — otherwise a reverse selection
             // (e.g. NAD83 -> NAD27) would apply the forward shift and move coordinates roughly
-            // twice the intended correction in the wrong direction (#2069). Mirrors the
+            // twice the intended correction in the wrong direction. Mirrors the
             // import-path guard, but applies the inverse rather than dropping the pipeline.
             var orientedPipeline = ProjPipelineInverter.Orient(pipeline, selection.TransformForward);
             var pipelineOperand = ClampGeographicOperandForWebMercator(operand, fromSrid, toSrid);

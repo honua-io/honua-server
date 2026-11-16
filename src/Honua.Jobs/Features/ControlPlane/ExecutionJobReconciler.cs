@@ -183,7 +183,7 @@ internal sealed partial class ExecutionJobReconciler(
         }
         catch (Exception ex) when (IsTransientInfrastructureFailure(ex))
         {
-            // A Redis or database timeout while observing says nothing about the job. A running
+            // A database timeout while observing says nothing about the job. A running
             // worker keeps heartbeating, and stamping the record terminal Failed here makes that
             // worker lose its lease and cancel a healthy attempt (honua-server#6507). Leave the
             // record as it is and let the next sweep observe it again.
@@ -722,8 +722,7 @@ internal sealed partial class ExecutionJobReconciler(
     }
 
     internal static bool IsTransientInfrastructureFailure(Exception exception)
-        => exception is StackExchange.Redis.RedisException
-            or TimeoutException
+        => exception is TimeoutException
             or System.Net.Sockets.SocketException
             or System.Data.Common.DbException
             or Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException

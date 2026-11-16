@@ -21,13 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Resume / partial-failure / cancellation evidence for the generated tile-cache generation
-/// checkpoint core (issue #2661). Each scenario drives the shared
-/// <see cref="TileOperationExecutionCore"/> seed path with a recording tile source and asserts
-/// that a retry under the same generation id regenerates only the failed units and re-renders
-/// zero already-successful units.
-/// </summary>
 public sealed class TileCacheGenerationCheckpointResumeTests
 {
     private const string GenerationId = "gen-resume-001";

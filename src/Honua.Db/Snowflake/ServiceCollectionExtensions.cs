@@ -37,7 +37,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<SnowflakeFeatureStore>());
 
-        // Capability provider for the feature-change transactional outbox (#692). Snowflake is
+        // Capability provider for the feature-change transactional outbox. Snowflake is
         // read-only in this slice and reports SupportsTransactionalOutbox = false so the server
         // skips dispatcher startup for Snowflake-only deployments. Registered with TryAdd so
         // PostgreSQL's true-capability provider wins when both providers are active.

@@ -20,42 +20,20 @@ using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Execution-content proof for <c>conversion.geometry-format</c> (#3936).
-///
-/// The catalog advertised the operation and the reference documentation promised
-/// it ran inline on the synchronous execute route, but it was classified
-/// protocol-only with no executor behind it, so no caller could convert anything.
-/// These cases drive the production <see cref="GeometryFormatConvertJobExecutor"/>
-/// over a committed polygon-with-hole fixture for every advertised target
-/// encoding and assert the DECODED output — parsed back with an independent
-/// reader and compared against literal expected ordinates, never against the
-/// input geometry object or a captured snapshot of the executor's own output.
-/// </summary>
 [Trait("Category", "GeometryFormatExecutionProof")]
 public sealed class GeometryFormatConversionExecutionProofTests
 {
     private const string ScalarDataUriPrefix = "data:application/json;base64,";
 
-    /// <summary>
-    /// Polygon with one hole, little-endian WKB, no SRID. Exterior
-    /// (0 0, 10 0, 10 10, 0 10, 0 0); interior (2 2, 2 4, 4 4, 4 2, 2 2).
-    /// </summary>
     private const string PolygonWithHoleWkbBase64 =
         "AQMAAAACAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkQAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAkQAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAQQAAAAAAAABBAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABA";
 
-    /// <summary>The same polygon as PostGIS EWKB carrying SRID 4326.</summary>
     private const string PolygonWithHoleEwkbBase64 =
         "AQMAACDmEAAAAgAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAQQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQA==";
 
-    /// <summary>
-    /// The same polygon wound the WRONG way for RFC 7946: clockwise exterior,
-    /// counter-clockwise hole. Common in Esri applyEdits and shapefile imports.
-    /// </summary>
     private const string ClockwisePolygonWkbBase64 =
         "AQMAAAACAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAkQAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAEEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAEEAAAAAAAAAAQAAAAAAAAABA";
 
-    /// <summary>The same polygon as EWKB carrying a PROJECTED SRID (Web Mercator).</summary>
     private const string WebMercatorPolygonEwkbBase64 =
         "AQMAACARDwAAAgAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAQQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQA==";
 
@@ -217,15 +195,9 @@ public sealed class GeometryFormatConversionExecutionProofTests
         RuntimeProfiles.Normalize(process.RuntimeProfile).Should().Be(RuntimeProfiles.Managed);
     }
 
-    /// <summary>
-    /// The same polygon with its hole dropped: a plausible wrong-but-well-formed
-    /// conversion, since a writer that only walks the exterior ring emits exactly
-    /// this and it parses cleanly in every target encoding.
-    /// </summary>
     private const string FilledPolygonEwkbBase64 =
         "AQMAACDmEAAAAQAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAA==";
 
-    /// <summary>The same rings translated one degree east, as a reprojection would.</summary>
     private const string ShiftedPolygonEwkbBase64 =
         "AQMAACDmEAAAAgAAAAUAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAJkAAAAAAAAAAAAAAAAAAACZAAAAAAAAAJEAAAAAAAADwPwAAAAAAACRAAAAAAAAA8D8AAAAAAAAAAAUAAAAAAAAAAAAIQAAAAAAAAABAAAAAAAAACEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAEEAAAAAAAAAUQAAAAAAAAABAAAAAAAAACEAAAAAAAAAAQA==";
 
@@ -263,11 +235,6 @@ public sealed class GeometryFormatConversionExecutionProofTests
     // Oracle
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Asserts the decoded geometry against the literal fixture ordinates. A
-    /// plausible wrong-but-well-formed output — the exterior ring alone, a
-    /// filled polygon, a swapped-axis copy, or a reprojected copy — fails here.
-    /// </summary>
     private static void AssertPolygonContent(Geometry decoded, string target)
     {
         var polygon = decoded.Should().BeOfType<Polygon>($"target '{target}' must round-trip a polygon").Subject;
@@ -289,7 +256,6 @@ public sealed class GeometryFormatConversionExecutionProofTests
         }
     }
 
-    /// <summary>Decodes an emitted value with a reader independent of the writer under test.</summary>
     private static Geometry Decode(string value, string target) => target switch
     {
         "wkt" => new WKTReader().Read(value),

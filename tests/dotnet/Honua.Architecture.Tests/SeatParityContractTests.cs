@@ -11,9 +11,6 @@ using Honua.Server;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Architecture contracts for the console/agent seat-parity promise tracked by #2567.
-/// </summary>
 public sealed class SeatParityContractTests
 {
     private const string OpsParityMapRelativePath =

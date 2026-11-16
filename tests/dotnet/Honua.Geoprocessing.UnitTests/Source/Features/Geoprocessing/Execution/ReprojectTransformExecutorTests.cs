@@ -18,12 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for transform.reproject, reusing the trunk
-/// CoordinateTransformer (no native dependency). Verifies the WGS 84 → Web
-/// Mercator case, identity passthrough, attribute carry-through, and rejection
-/// of unsupported datum-shift pairs.
-/// </summary>
 public sealed class ReprojectTransformExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

@@ -11,13 +11,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Membership oracles for the WithinDistance envelope prefilter (honua-server#5461). Every
-/// expected match is proven to lie inside the geodesic radius by an independent ellipsoidal
-/// path-length upper bound (a parallel or meridian arc on WGS84; the geodesic is never longer),
-/// so a missing row means the index prefilter dropped a true match before the exact
-/// <c>ST_DWithin(geography)</c> check could see it.
-/// </summary>
 [Collection("Database")]
 public sealed class FeatureQueryBuilderDistancePrefilterIntegrationTests(PostgresFixture fixture)
 {

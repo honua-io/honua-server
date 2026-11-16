@@ -19,6 +19,7 @@ using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Portal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -285,6 +286,8 @@ internal static class InfrastructureCompositionRoot
             {
                 innerCache = new ExternalRevisionResponseCache(innerCache, revisions);
             }
+
+            innerCache = new ProcessCacheHitResponseCache(innerCache, sp.GetRequiredService<IHttpContextAccessor>());
 
             return new MonitoredResponseCacheDecorator(
                 innerCache,

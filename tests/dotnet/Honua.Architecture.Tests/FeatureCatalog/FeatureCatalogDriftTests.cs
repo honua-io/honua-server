@@ -9,27 +9,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Drift guard for the evidence-based feature catalog (#1946, ADR-0054). The
-/// catalog (<c>docs/gis/data/feature-catalog.json</c>) is a generated projection
-/// of the shipped API surface, and this guard makes drift a red build:
-/// <list type="number">
-///   <item><description>
-///     every <see cref="EndpointRegistry.All"/> route has a catalog entry;
-///   </description></item>
-///   <item><description>
-///     every catalog entry resolves to a real registered route and carries at
-///     least one <c>[Endpoint]</c>-attributed proving test;
-///   </description></item>
-///   <item><description>
-///     the committed artifact equals freshly-generated output — so a hand-edit,
-///     or a new endpoint added without regenerating, fails the build.
-///   </description></item>
-/// </list>
-/// It mirrors the proof-ledger governance tests in
-/// <see cref="PublicInterfaceProofLedgerTests"/> and reuses the same
-/// endpoint↔test↔proof-ledger discovery helpers.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class FeatureCatalogDriftTests
 {

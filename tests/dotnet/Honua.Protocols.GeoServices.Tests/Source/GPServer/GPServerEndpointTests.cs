@@ -29,10 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Integration tests for GPServer REST endpoints operating as a protocol adapter
-/// over the canonical process runtime.
-/// </summary>
 // PostgresFixture keeps the reference-counted PostgreSQL infrastructure alive between cases.
 // Default-host cases share one isolated host. Cases that replace other services
 // build their own host.
@@ -2383,14 +2379,6 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// Test double for the async results/{param} path with env:outSR in the job
-    /// metadata. Serves a single WGS 84 (EPSG:4326) GeoJSON point output so the
-    /// handler's env:outSR reprojection can be exercised end to end. Factory
-    /// methods pick the working-SRID metadata: <see cref="Reprojectable"/> stores a
-    /// known 4326 working SRID (reprojects to 3857); <see cref="UnknownWorkingSr"/>
-    /// omits it (the transform cannot be applied and must be rejected).
-    /// </summary>
     private sealed class OutSrResultBackedGeoprocessingJobService : IGeoprocessingJobService
     {
         private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
@@ -2516,17 +2504,6 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// Test double for the synchronous /execute path: submission returns a
-    /// terminal Succeeded job immediately, so the PollUntilTerminalAsync loop
-    /// completes on the first tick. Submission echoes the protocol metadata
-    /// back through the job's spec so the binding-validation gate (which
-    /// reads gpserver.serviceId/gpserver.taskName from Parameters) sees the
-    /// values that the adapter stamped on the plan. <paramref name="terminalStatus"/>
-    /// selects the terminal state the job reports (Failed/Cancelled drive the
-    /// synchronous failure envelope), and <paramref name="artifactUri"/> lets a test
-    /// serve an inline GeoJSON data URI instead of the default stored-artifact URL.
-    /// </summary>
     private sealed class SyncExecuteGeoprocessingJobService(
         ExecutionJobStatus terminalStatus = ExecutionJobStatus.Succeeded,
         string? errorMessage = null,

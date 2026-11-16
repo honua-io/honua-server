@@ -10,9 +10,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Tests for workspace lifecycle service orchestration.
-/// </summary>
 public class WorkspaceLifecycleServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 4, 11, 12, 0, 0, TimeSpan.Zero);

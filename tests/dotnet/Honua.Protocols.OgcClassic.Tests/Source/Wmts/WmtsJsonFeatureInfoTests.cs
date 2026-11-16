@@ -11,9 +11,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Verifies native-client JSON identify envelopes and attribute types on every WMTS route.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
 public sealed class WmtsJsonFeatureInfoTests : IAsyncLifetime

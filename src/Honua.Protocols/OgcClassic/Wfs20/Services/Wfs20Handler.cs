@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Claims;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
@@ -1605,22 +1604,6 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static bool IsAnonymousWriteAllowed(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service)
-    {
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        var anonymousPrincipal = new ClaimsPrincipal(new ClaimsIdentity());
-        var decision = evaluator.Evaluate(
-            anonymousPrincipal,
-            resource.AccessPolicy,
-            service?.AccessPolicy,
-            AccessScope.Write);
-
-        return decision.IsAllowed;
-    }
-
     private static string[] ParseQualifiedList(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1944,7 +1927,11 @@ internal sealed partial class Wfs20Handler
         string LocalName,
         string NamespacePrefix,
         string NamespaceUri,
-        MetadataV2GraphSnapshot Snapshot);
+        MetadataV2GraphSnapshot Snapshot)
+    {
+        // The encoding the deployer declared for the resource under extensions.wfs.
+        public WfsDeclaredEncoding Declared { get; init; } = WfsDeclaredEncoding.None;
+    }
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,

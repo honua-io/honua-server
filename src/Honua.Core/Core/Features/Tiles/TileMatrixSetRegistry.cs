@@ -228,7 +228,7 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
         };
     }
 
-    // Static fallback-tier classification (#2794): this registry is a DI singleton seeded once from
+    // Static fallback-tier classification: this registry is a DI singleton seeded once from
     // TileMatrixSetDefinitionOptions at construction, with no async context and a lifetime that
     // cannot capture the scoped, registry-backed IGeographicSridClassifier. Custom operator-defined
     // gridsets are config-authored and rare, so the static allowlist is an acceptable answer for the

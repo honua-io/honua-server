@@ -15,10 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration tests for the OGC API Features collection sink. Exercises real PostgreSQL/PostGIS
-/// via the shared Testcontainers fixture so the SQL/PostGIS contract is enforced.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresOgcApiFeaturesCollectionSinkTests : IAsyncLifetime
 {

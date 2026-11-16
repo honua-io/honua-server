@@ -7,11 +7,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Pins the FeatureServer layer descriptor's <c>hasZ</c>/<c>hasM</c> advertisement (#1877 Part C):
-/// the flags are emitted when authored true, and omitted (CITE/byte-stable) when false/default so
-/// 2D layer documents stay identical to prior behavior.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class LayerResponseHasZMSerializationTests
 {

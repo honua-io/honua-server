@@ -19,11 +19,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Admin.Federation;
 
-/// <summary>
-/// Unit tests for the HTTP federated-source connectors (issue #341). Remote I/O is faked with a
-/// capturing <see cref="HttpMessageHandler"/>, so these tests exercise the real push-down URI
-/// construction and GeoJSON-to-canonical-feature mapping without contacting a live source.
-/// </summary>
 public sealed class FederatedSourceConnectorTests
 {
     private const string GeoJsonResponse = """

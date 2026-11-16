@@ -23,13 +23,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Proves that synchronizing the metadata-v2 style graph is treated as a post-commit,
-/// best-effort mirror: by the time it runs the catalog write has already committed and
-/// incremented <c>style_version</c>, so a synchronization failure must not be reported as a
-/// failed edit (#3188). Reporting it would surface an applied edit as a 500, the endpoint
-/// would skip its output-cache eviction, and a client retry would apply a second revision.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
 public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
@@ -132,10 +125,6 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
         return JsonSerializer.Serialize(style);
     }
 
-    /// <summary>
-    /// Stands in for the real graph sync and always fails, simulating a losing optimistic
-    /// ETag check against a concurrent metadata writer.
-    /// </summary>
     private sealed class ThrowingStyleGraphSync : IMetadataV2StyleGraphSync
     {
         public Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)

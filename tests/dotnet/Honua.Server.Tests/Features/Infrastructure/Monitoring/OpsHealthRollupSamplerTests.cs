@@ -11,10 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for the ops-health rollup sampler surface (#2553): history-query parsing, and a perf
-/// assertion bounding the sampler's per-flush in-process capture overhead so it stays off serving paths.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsHealthRollupSamplerTests
 {

@@ -6,10 +6,6 @@ using Honua.Core.Features.Tiles;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit coverage for the generated tile-cache generation checkpoint store contract (issue #2661):
-/// Load/Save/Delete round-trip and the deterministic bounding of the persisted failed-unit set.
-/// </summary>
 public sealed class TileCacheGenerationCheckpointStoreTests
 {
     [Fact]

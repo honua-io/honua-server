@@ -443,7 +443,10 @@ def tracked_files(repo_root):
     listed = subprocess.run(["git", "ls-files", "-z"], cwd=repo_root, capture_output=True)
     if listed.returncode:
         raise SystemExit(f"error: reachability needs a git checkout at {repo_root}; pass --skip-reachability")
-    return [path for path in listed.stdout.decode().split("\0") if path]
+    # Generated pages can be removed before the index is updated. Grade only
+    # pages still present; link validation separately rejects deleted targets.
+    return [path for path in listed.stdout.decode().split("\0")
+            if path and os.path.isfile(os.path.join(repo_root, path))]
 
 
 def markdown_link_targets(repo_root, files):

@@ -37,14 +37,12 @@ internal static class OgcServiceUrlValidation
     internal const string DisallowedHostMessage =
         "SourceUrl host is not in the configured Migration:AllowedServiceHostSuffixes allowlist.";
 
-    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<OgcServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         bool allowUnsafeLocalUrls,
         CancellationToken cancellationToken = default)
         => ValidateAsync(serviceUrl, allowUnsafeLocalUrls, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
 
-    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<OgcServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         bool allowUnsafeLocalUrls,

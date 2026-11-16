@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// The sampler functions are the planning boundary for corrected nearest SQL.
-/// </summary>
 [Collection("Database")]
 public sealed class RasterSamplingFunctionsIntegrationTests(PostgresFixture fixture)
 {

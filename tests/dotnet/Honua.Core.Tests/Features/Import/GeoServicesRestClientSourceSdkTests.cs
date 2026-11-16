@@ -14,12 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// #4599: ArcGIS source reads go through the published Honua.Sdk.GeoServices client. These cases pin
-/// the wire shapes the SDK sends for every supported source root, the values the adapter hands the
-/// import pipeline, and the server-owned transport guarantees (credential headers, SSRF guard, retry
-/// and Retry-After, HTTP-200 error envelopes, sanitized errors, bounded bodies, cancellation).
-/// </summary>
 public sealed class GeoServicesRestClientSourceSdkTests
 {
     private const string PointFeatures = """

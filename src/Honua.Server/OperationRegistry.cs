@@ -3,22 +3,6 @@
 
 namespace Honua.Server;
 
-/// <summary>
-/// Registry of public-interface operations that are not fully represented by HTTP route metadata alone.
-/// Complements <see cref="EndpointRegistry"/> by tracking dispatched operations, query-option operation
-/// families, and gRPC service methods.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <see cref="EndpointRegistry"/> enforces HTTP route drift and integration-test coverage.
-/// This registry extends that policy to logical operations dispatched within a single route
-/// (WFS 2.0 and WMS 1.3.0), option-driven OData surfaces, and non-HTTP protocol surfaces (gRPC).
-/// </para>
-/// <para>
-/// Add new dispatched operations here when the implementation ships so the
-/// architecture tests can enforce integration coverage.
-/// </para>
-/// </remarks>
 public static class OperationRegistry
 {
     // Protocol constants duplicated from Honua.TestKit.Constants.Protocols
@@ -43,9 +27,6 @@ public static class OperationRegistry
     private const string ImageServer = "ImageServer";
     private const string GPServer = "GPServer";
 
-    /// <summary>
-    /// All public-interface operations that require integration test coverage.
-    /// </summary>
     public static IReadOnlyList<OperationDefinition> All { get; } =
     [
         // WFS 2.0 operations (dispatched via GET|POST /wfs?REQUEST=...)
@@ -234,9 +215,4 @@ public static class OperationRegistry
     ];
 }
 
-/// <summary>
-/// Describes a public-interface operation by protocol and operation name.
-/// </summary>
-/// <param name="Protocol">Protocol identifier (e.g. "WFS-2.0", "Grpc").</param>
-/// <param name="Operation">Operation name or fully-qualified gRPC method path.</param>
 public sealed record OperationDefinition(string Protocol, string Operation);

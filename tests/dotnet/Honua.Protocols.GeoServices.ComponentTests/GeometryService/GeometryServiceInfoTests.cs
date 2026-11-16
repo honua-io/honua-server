@@ -10,11 +10,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Covers the GeometryServer root-info endpoint that Esri REST clients probe
-/// before invoking operations. Without this endpoint the client's discovery
-/// handshake fails and no operation request is ever made.
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceInfoTests

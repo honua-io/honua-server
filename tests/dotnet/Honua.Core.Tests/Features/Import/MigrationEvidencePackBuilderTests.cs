@@ -11,9 +11,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Slice 4 of issue #1015: deterministic evidence-pack generation.
-/// </summary>
 public sealed class MigrationEvidencePackBuilderTests
 {
     [Trait("Tier", "Fast")]
@@ -189,15 +186,6 @@ public sealed class MigrationEvidencePackBuilderTests
         pack.Bundle.WorkspaceScope.WorkspaceNames.Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Nightly fixture emission hook (slice 4 of #1015). When the
-    /// <c>HONUA_EMIT_EVIDENCE_PACK</c> environment variable is set the
-    /// fixture-driven evidence-pack JSON is written to the path supplied via
-    /// <c>HONUA_EVIDENCE_PACK_OUTPUT</c> so the nightly workflow can upload it
-    /// as a CI artifact. The contents are deterministic — the same fixture
-    /// always produces the same fingerprint — so workflow consumers can diff
-    /// or pin the artifact across runs.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public void EmitNightlyEvidencePack_WhenEnvVarSet_WritesDeterministicArtifact()

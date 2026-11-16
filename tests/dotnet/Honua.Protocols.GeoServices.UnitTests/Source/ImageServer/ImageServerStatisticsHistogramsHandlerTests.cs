@@ -19,10 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerStatisticsHistogramsHandler"/>. A polygon AOI
-/// is clipped to the polygon; raster selection still uses the bounding envelope.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerStatisticsHistogramsHandlerTests
 {

@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Validation-gate tests for the standard-owned <c>interactions</c>/<c>layout</c>
-/// composition blocks (geospatial-mcp ADR-0030). The editor's admission gate covers
-/// bindings authored through <c>honua_studio_bind_interaction</c>; these cover the
-/// second gate — a document authored WHOLESALE through the draft-update surface, which
-/// never passes through the editor.
-/// </summary>
 public sealed class StudioPackageValidatorInteractionsTests
 {
     [UnitTest]

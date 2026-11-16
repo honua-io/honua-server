@@ -10,13 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Contract;
 
-/// <summary>
-/// Keeps the Esri field types the GeoServices projections advertise inside the client
-/// field-type contract that the JavaScript integration suite enforces. That suite only
-/// runs in the trailing matrix, so a new advertised type (for example
-/// <c>esriFieldTypeDateOnly</c> for calendar dates, #4833) must fail here, on the PR,
-/// until <c>tests/js/shared/esri-field-types.json</c> accepts it.
-/// </summary>
 public sealed class GeoServicesFieldTypeClientContractTests
 {
     private static readonly string[] FixedIdentityFieldTypes = ["esriFieldTypeOID", "esriFieldTypeGlobalID"];

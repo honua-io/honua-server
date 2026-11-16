@@ -592,7 +592,7 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         }
 
         // Ready-transitioning generations stamp the shadow (now attempt-ready) edge/vertex
-        // table names onto the generation row itself, so promotion (#2719) and a later
+        // table names onto the generation row itself, so promotion and a later
         // rollback need only copy the target generation's own columns into
         // honua.network_datasets rather than re-deriving them from rebuild-attempt history.
         var affected = await transaction.ExecuteAsync(

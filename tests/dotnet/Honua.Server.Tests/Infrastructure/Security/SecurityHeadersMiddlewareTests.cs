@@ -10,10 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
-/// <summary>
-/// Tests for the SecurityHeadersMiddleware class.
-/// Verifies security header generation including enhanced CSP functionality.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "Security")]
 [Trait("Feature", "SecurityHeaders")]

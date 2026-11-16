@@ -24,7 +24,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.TestKit.Postgres.Hosting;
 
-/// <summary>Production request services over an already provisioned component database.</summary>
 public static class PostgresComponentServices
 {
     public static void Configure(WebApplicationBuilder builder, string connectionString)

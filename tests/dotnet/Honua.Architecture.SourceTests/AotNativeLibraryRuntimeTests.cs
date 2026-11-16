@@ -5,16 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the published native-AOT images against shipping native libraries they cannot load
-/// (honua-server#4912). ParquetSharp (the GeoParquet <c>f=parquet</c> encoder) and DuckDB ship
-/// only glibc native assets. The canonical AOT image was published as <c>linux-musl-x64</c> on
-/// Alpine, so the publish copied the glibc <c>ParquetSharpNative.so</c> and every
-/// <c>f=parquet</c> request answered 501. The Lambda image was glibc but lacked
-/// <c>libatomic.so.1</c>, with the same result. The boundary check, unit lanes and the CNG
-/// branch lane (which builds the JIT image) all passed on that shape, so these assertions pin
-/// the image shape and the build-lane smoke that exercises the encoder.
-/// </summary>
 public sealed class AotNativeLibraryRuntimeTests
 {
     private static readonly string[] _publishedServerAotDockerfiles =
@@ -73,14 +63,6 @@ public sealed class AotNativeLibraryRuntimeTests
         }
     }
 
-    /// <summary>
-    /// honua-server#4949: the distro-linked <c>SkiaSharp.NativeAssets.Linux</c> linux-arm64 binary
-    /// references <c>uuid_*</c> and <c>FT_Get_BDF_Property</c> without declaring the libraries that
-    /// define them, so the canonical AOT image's <c>ldd -r</c> gate failed every arm64 build and no
-    /// multi-arch index was published after 548b7a5. Both published AOT images must restore and
-    /// publish the self-contained asset, keep <c>libSkiaSharp.so</c> under the link gate, and ship
-    /// the font file the asset renders text with (honua-server#4908).
-    /// </summary>
     [ArchitectureTest]
     public void PublishedServerAotDockerfiles_ShouldShipSelfContainedSkiaWithAPinnedFont()
     {

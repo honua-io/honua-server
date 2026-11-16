@@ -5,12 +5,6 @@ using Honua.Db.Oracle.Features.FeatureStore.Services;
 
 namespace Honua.Db.Oracle.Tests;
 
-/// <summary>
-/// Unit tests for <see cref="OracleFeatureDataAccess.DecodeWkbValue"/>.
-/// BH2-D03 regression: the previous catch-all arm silently returned null for unexpected
-/// types (DBNull included), masking driver upgrade regressions and server-side conversion
-/// errors by dropping geometry for the row rather than throwing a diagnostic exception.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class OracleFeatureDataAccessWkbTests
 {

@@ -725,11 +725,14 @@ internal static partial class TilesEndpoints
                 tileCol,
                 tileRow,
                 zoomLevel,
-                CreateVectorTileQuery(
-                    layer.SpatialReferenceSrid,
-                    isGeographic,
-                    temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
-                    gridGeometry: vectorGridGeometry),
+                await VectorTileQuery.ForLayerAsync(
+                    context,
+                    layer.Resource,
+                    CreateVectorTileQuery(
+                        layer.SpatialReferenceSrid,
+                        isGeographic,
+                        temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
+                        gridGeometry: vectorGridGeometry)).ConfigureAwait(false),
                 tileOptionsValue,
                 tileLimits,
                 cancellationToken,
@@ -1701,12 +1704,6 @@ internal static partial class TilesEndpoints
             snapshot);
     }
 
-    /// <summary>
-    /// Resolves the feature reader used for raster (PNG) tile rendering through
-    /// <see cref="TileFeatureProviderResolver"/> (honua-server#2962), so a layer whose
-    /// storage binding names a secondary/additional provider connection is rendered from
-    /// that provider rather than the DI-registered primary reader.
-    /// </summary>
     private static async Task<TileFeatureReaderResolution> ResolveFeatureReaderAsync(
         TileRequestLayer layer,
         IFeatureReader fallbackReader,
@@ -1735,13 +1732,6 @@ internal static partial class TilesEndpoints
             layer.StorageLayerId,
             cancellationToken).ConfigureAwait(false);
 
-    /// <summary>
-    /// Resolves the tile provider used for vector (MVT) tile rendering through
-    /// <see cref="TileFeatureProviderResolver"/> (honua-server#2962). When routing resolves to
-    /// a provider that does not implement <see cref="ITileProvider"/>, this returns a 501
-    /// problem response naming the collection/provider rather than silently falling back to
-    /// the DI-registered primary tile provider.
-    /// </summary>
     private static async Task<(ITileProvider? Provider, IResult? Error)> ResolveTileProviderAsync(
         HttpContext context,
         TileRequestLayer layer,

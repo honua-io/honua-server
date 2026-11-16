@@ -12,12 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
-/// <summary>
-/// Engine-level behavior tests for <see cref="WorkflowOrchestrationEngine"/>. Each test
-/// drives the engine through explicit reconcile ticks using in-memory stores, so the
-/// acceptance criteria (chained execution, scheduled execution, dependency-aware recovery)
-/// can be verified without background timers.
-/// </summary>
 public sealed class WorkflowOrchestrationEngineTests
 {
     private static readonly ClaimsPrincipal Operator = new(

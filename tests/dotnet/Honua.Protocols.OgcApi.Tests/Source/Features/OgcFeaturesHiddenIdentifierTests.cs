@@ -14,9 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Provides a PostGIS application whose custom public identifier is hidden as an attribute.
-/// </summary>
 public sealed class OgcFeaturesHiddenIdentifierFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -48,9 +45,6 @@ public sealed class OgcFeaturesHiddenIdentifierFixture : IAsyncLifetime
     public Task DisposeAsync() => App.DisposeAsync();
 }
 
-/// <summary>
-/// Verifies hiding an identifier attribute preserves collection and item identity binding.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]

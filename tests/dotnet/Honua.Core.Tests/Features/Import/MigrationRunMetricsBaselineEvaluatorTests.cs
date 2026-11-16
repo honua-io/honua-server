@@ -12,10 +12,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Tests for <see cref="MigrationRunMetricsBaselineEvaluator"/> and the seed
-/// catalog supplied by <see cref="MigrationFixtureBaselineCatalog"/> (issue #1033 slice 2).
-/// </summary>
 public sealed class MigrationRunMetricsBaselineEvaluatorTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
