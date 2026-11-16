@@ -83,6 +83,47 @@ public sealed class FolderReplayAuthorizationFilterTests
         context.User.Should().BeSameAs(original, "delegation must end with the folder invocation");
     }
 
+    [UnitTheory]
+    [InlineData("valid", true)]
+    [InlineData("unapproved", false)]
+    [InlineData("wrong-instance", false)]
+    [InlineData("wrong-tenant", false)]
+    [InlineData("wrong-stored-proposal-id", false)]
+    [InlineData("missing-proposal-grant", false)]
+    [InlineData("wrong-route-grant", false)]
+    [InlineData("changed-plan", false)]
+    public async Task AuthorizeAsync_WithoutHttpContext_RequiresDurableApprovalBeforeDelegating(string scenario, bool authorized)
+    {
+        var proposal = Proposal();
+        if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
+        if (scenario == "wrong-stored-proposal-id") proposal = proposal with { ProposalId = "another" };
+        if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
+        using var services = Services(proposal, "public", "proposal");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+            new Claim(ClaimTypes.Role, "custom-service-role"),
+            new Claim(AdminApiKeyPermission.PermissionClaimType,
+                AdminApiKeyPermission.CreateApprovedOperationGrant(scenario == "wrong-route-grant" ? "DELETE" : "PATCH", "/api/v1/admin/folders/folder")),
+            new Claim(AdminApiKeyPermission.PermissionClaimType,
+                FolderOperationCredential.ProposalGrant(scenario == "missing-proposal-grant" ? "another" : "proposal")),
+            new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, "public")], "ApiKey"));
+        var authority = await FolderReplayAuthority.AuthorizeAsync(new FolderReplayAdmission
+        {
+            Principal = principal,
+            OperationId = "folder.update",
+            ProposalId = "proposal",
+            OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance",
+            TenantId = scenario == "wrong-tenant" ? "another" : "public"
+        }, services);
+        (authority is not null).Should().Be(authorized);
+        principal.IsInRole("custom-service-role").Should().BeTrue();
+        principal.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeFalse();
+        if (authority is null) return;
+        authority.RequesterPrincipal.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        authority.OperatorPrincipal.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeTrue();
+        authority.Proposal.Should().BeSameAs(proposal);
+    }
+
     [UnitTest]
     public async Task InvokeAsync_HandlerThrows_RestoresTransportPrincipal()
     {
