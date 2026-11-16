@@ -18,14 +18,8 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Admin endpoints for OGC WMTS tile-cache export (#1016 slice 4).
-/// </summary>
 internal static partial class OgcTileCacheExportEndpoints
 {
-    /// <summary>
-    /// Maps tile-cache export endpoints.
-    /// </summary>
     public static void MapOgcTileCacheExportEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/ogc-tiles")
@@ -181,7 +175,6 @@ internal static partial class OgcTileCacheExportEndpoints
     private static ILogger<OgcTileCacheExportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<OgcTileCacheExportEndpointsLog>>();
 
-    /// <summary>Log category marker for OGC tile-cache export endpoint operations.</summary>
     internal sealed class OgcTileCacheExportEndpointsLog;
 
     private static partial class Log
@@ -191,63 +184,41 @@ internal static partial class OgcTileCacheExportEndpoints
     }
 }
 
-/// <summary>
-/// API request model for the WMTS tile-cache export endpoint.
-/// </summary>
 internal sealed record OgcTileCacheExportApiRequest
 {
-    /// <summary>WMTS service URL (root or GetCapabilities URL).</summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>Optional WMTS version.</summary>
     public string? Version { get; init; }
 
-    /// <summary>Specific WMTS layer identifiers to export (omit to export every automated tile-set).</summary>
     public string[]? LayerIdentifiers { get; init; }
 
-    /// <summary>Specific WMTS tile-matrix-set identifiers to export.</summary>
     public string[]? TileMatrixSetIdentifiers { get; init; }
 
-    /// <summary>Output tile format (defaults to image/png).</summary>
     public string? TileFormat { get; init; }
 
-    /// <summary>WMTS style identifier (defaults to "default").</summary>
     public string? StyleIdentifier { get; init; }
 
-    /// <summary>Minimum zoom level (inclusive).</summary>
     public int? MinZoom { get; init; }
 
-    /// <summary>Maximum zoom level (inclusive).</summary>
     public int? MaxZoom { get; init; }
 
-    /// <summary>Optional per-zoom tile window.</summary>
     public OgcTileCacheExportWindowApiModel? Window { get; init; }
 
-    /// <summary>Preview mode: resolve plan + URLs without fetching tile bytes.</summary>
     public bool? DryRun { get; init; }
 
-    /// <summary>Operator opt-in safety gate for non-dry-run exports.</summary>
     public bool? ApplyMode { get; init; }
 
-    /// <summary>Per-tile HTTP timeout in seconds.</summary>
     public int? RequestTimeoutSeconds { get; init; }
 }
 
-/// <summary>
-/// API tile-window model.
-/// </summary>
 internal sealed record OgcTileCacheExportWindowApiModel
 {
-    /// <summary>Inclusive minimum tile column.</summary>
     public required int MinColumn { get; init; }
 
-    /// <summary>Inclusive maximum tile column.</summary>
     public required int MaxColumn { get; init; }
 
-    /// <summary>Inclusive minimum tile row.</summary>
     public required int MinRow { get; init; }
 
-    /// <summary>Inclusive maximum tile row.</summary>
     public required int MaxRow { get; init; }
 }
 

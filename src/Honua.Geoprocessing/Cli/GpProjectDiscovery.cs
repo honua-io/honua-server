@@ -6,37 +6,16 @@ using System.Text.Json.Nodes;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>
-/// Dependency-aware discovery for one scaffolded custom-code project (<c>honua-gp.yaml</c>).
-/// Registration of a catalog function is a different question: this verdict says whether
-/// <em>this</em> project can run on this machine. A missing prerequisite is named and the
-/// devkit never turns the project into a server submission.
-/// </summary>
 public static class GpProjectDiscovery
 {
-    /// <summary>The language runtime prerequisite for a Python project.</summary>
     public const string PythonRuntimeName = "Python 3 interpreter";
 
-    /// <summary>The language runtime prerequisite for a .NET project.</summary>
     public const string DotnetRuntimeName = ".NET SDK";
 
-    /// <summary>The local harness prerequisite.</summary>
     public const string HarnessName = "local harness";
 
-    /// <summary>Sentence every blocked detail carries so a failure cannot be read as a remote submit.</summary>
     public const string NoSubmit = "The devkit does not submit to a server.";
 
-    /// <summary>
-    /// Assesses the project's language runtime, committed dependency lock, and local harness.
-    /// </summary>
-    /// <param name="manifest">The loaded project descriptor.</param>
-    /// <param name="projectDirectory">The project root the lock path is resolved against.</param>
-    /// <param name="probe">Machine facts. Tests inject fixed answers.</param>
-    /// <param name="resolvedHarnessRoot">A harness directory already found on disk, or null.</param>
-    /// <param name="allowInstalledRestore">
-    /// Whether a missing harness directory may be satisfied by the matching installed devkit
-    /// restoring <c>.honua/toolchain</c> on <c>test</c>. Callers that will not restore pass false.
-    /// </param>
     public static GpRunnability Assess(
         GpProjectManifest manifest,
         string projectDirectory,
@@ -63,9 +42,6 @@ public static class GpProjectDiscovery
         };
     }
 
-    /// <summary>The human-readable description of a project verdict.</summary>
-    /// <param name="manifest">The project.</param>
-    /// <param name="verdict">The verdict from <see cref="Assess"/>.</param>
     public static string RenderText(GpProjectManifest manifest, GpRunnability verdict)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -86,12 +62,6 @@ public static class GpProjectDiscovery
         return builder.ToString();
     }
 
-    /// <summary>
-    /// The machine-readable project descriptor: identity plus the same runnability fields
-    /// <c>list</c> and <c>describe</c> emit for a catalog process.
-    /// </summary>
-    /// <param name="manifest">The project.</param>
-    /// <param name="verdict">The verdict from <see cref="Assess"/>.</param>
     public static JsonObject WriteDescriptor(GpProjectManifest manifest, GpRunnability verdict)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -108,9 +78,6 @@ public static class GpProjectDiscovery
         return descriptor;
     }
 
-    /// <summary>The first unsatisfied prerequisite, rendered as the <c>test</c> error.</summary>
-    /// <param name="manifest">The project.</param>
-    /// <param name="verdict">A verdict that is not runnable.</param>
     public static string BlockedError(GpProjectManifest manifest, GpRunnability verdict)
     {
         ArgumentNullException.ThrowIfNull(manifest);
