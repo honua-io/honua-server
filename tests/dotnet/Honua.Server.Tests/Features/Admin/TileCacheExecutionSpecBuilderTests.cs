@@ -99,12 +99,50 @@ public sealed class TileCacheExecutionSpecBuilderTests
         decoded.Operation.Should().Be("publish");
         decoded.ServiceId.Should().Be("svc-9");
         decoded.LayerId.Should().Be(7);
+        decoded.PublicationRevision.Should().BeNull();
         decoded.MinZoom.Should().Be(0);
         decoded.MaxZoom.Should().Be(12);
         decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
         decoded.MaxTiles.Should().Be(100_000);
         decoded.Bbox.Should().NotBeNull();
         decoded.Bbox!.Should().Equal(1.5, 2.5, 3.5, 4.5);
+    }
+
+    [UnitTheory]
+    [InlineData(0L)]
+    [InlineData(long.MaxValue)]
+    public void BuildThenTryParse_PreservesPublicationRevision(long revision)
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "paired-publish", ServiceId = "svc-1", LayerId = 1,
+            PublicationRevision = revision
+        };
+        var spec = TileCacheExecutionSpecBuilder.Build(request, null, new TileCacheBatchOptions());
+
+        TileCacheExecutionSpecBuilder.TryParse(spec.Parameters, out var decoded, out _, out var error)
+            .Should().BeTrue(error);
+
+        decoded.PublicationRevision.Should().Be(revision);
+    }
+
+    [UnitTheory]
+    [InlineData("")]
+    [InlineData("-1")]
+    [InlineData("9223372036854775808")]
+    [InlineData("invalid")]
+    public void TryParse_InvalidPublicationRevision_RejectsJob(string revision)
+    {
+        var request = new TileOperationStartRequest { Operation = "paired-publish", ServiceId = "svc-1", LayerId = 1 };
+        var spec = TileCacheExecutionSpecBuilder.Build(request, null, new TileCacheBatchOptions());
+        var parameters = new Dictionary<string, string>(spec.Parameters)
+        {
+            [TileCacheJobParameterKeys.PublicationRevision] = revision
+        };
+
+        TileCacheExecutionSpecBuilder.TryParse(parameters, out _, out _, out var error).Should().BeFalse();
+
+        error.Should().Contain("publication_revision");
     }
 
     [UnitTest]

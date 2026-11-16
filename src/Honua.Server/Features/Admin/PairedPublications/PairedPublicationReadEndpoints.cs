@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Infrastructure.FileStorage;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,6 +24,7 @@ internal static class PairedPublicationReadEndpoints
             .WithName("GetCurrentPairedPublication")
             .WithSummary("Resolve a paired publication to its immutable descriptor URL");
         group.MapMethods("/{version}/{fileName}", ["GET", "HEAD"], VersionAsync)
+            .WithSharedCacheClass(ResponseCacheClass.StaticObject)
             .WithName("GetPairedPublicationArtifact")
             .WithSummary("Read an authorized paired publication descriptor or artifact with byte ranges");
         return endpoints;
@@ -31,11 +33,7 @@ internal static class PairedPublicationReadEndpoints
     private static async Task<IResult> CurrentAsync(
         string publicationId, HttpContext context, [FromServices] PairedPublicationReader reader, CancellationToken cancellationToken)
     {
-        var unauthorized = RequireAuthentication(context);
-        if (unauthorized is not null)
-        {
-            return unauthorized;
-        }
+        context.Response.Headers.CacheControl = "private, no-store";
         var target = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
         return error ?? Results.Redirect(
@@ -47,11 +45,7 @@ internal static class PairedPublicationReadEndpoints
         string publicationId, string version, string fileName, HttpContext context,
         [FromServices] PairedPublicationReader reader, [FromServices] ArtifactByteReader byteReader, CancellationToken cancellationToken)
     {
-        var unauthorized = RequireAuthentication(context);
-        if (unauthorized is not null)
-        {
-            return unauthorized;
-        }
+        context.Response.Headers.CacheControl = "private, no-store";
         var current = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, current, cancellationToken).ConfigureAwait(false);
         if (error is not null)
@@ -64,24 +58,27 @@ internal static class PairedPublicationReadEndpoints
             return Results.NotFound();
         }
         var metadata = await reader.GetFileAsync(target, fileName, cancellationToken).ConfigureAwait(false);
-        return metadata is null ? Results.NotFound() :
-            await ArtifactHttpResponse.ServeAsync(context, metadata, byteReader, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static IResult? RequireAuthentication(HttpContext context)
-    {
-        context.Response.Headers.CacheControl = "private, no-store";
-        if (context.User.Identity?.IsAuthenticated == true)
+        if (metadata is null)
         {
-            return null;
+            return Results.NotFound();
         }
-        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
-        return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+        SharedCacheResponse.UsePublication(context, current!.Source.Service, current.Source.Publication);
+        if (SharedCacheGuard.RequestMayBeShared(context))
+        {
+            context.Response.Headers.Remove("Cache-Control");
+        }
+        return await ArtifactHttpResponse.ServeConfigurationBoundAsync(
+            new(context, metadata, byteReader), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IResult?> RequireAccessAsync(
         HttpContext context, PairedPublicationReadTarget? target, CancellationToken cancellationToken)
     {
+        if (target is null && context.User.Identity?.IsAuthenticated != true)
+        {
+            AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+            return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+        }
         if (target is null || !TenantScopeHelpers.IsPublicationVisible(
             context, target.Source.Publication, target.Source.Resource, target.Source.Service))
         {

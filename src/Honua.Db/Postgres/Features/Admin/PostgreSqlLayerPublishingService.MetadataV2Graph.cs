@@ -190,7 +190,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             idPrefix: "pub",
             request.Enabled,
             now,
-            capabilities);
+            capabilities) with
+        {
+            PairedPublication = ValidatePairedPublication(
+                request.PairedPublication, new(resource, service.Metadata.Id, graph), storage)
+        };
         var stacPublication = string.IsNullOrWhiteSpace(storage.GeometryColumn) ? null : BuildPublishedPublication(
             service,
             resource,

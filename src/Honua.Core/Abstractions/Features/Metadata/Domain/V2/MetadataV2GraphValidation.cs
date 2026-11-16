@@ -45,6 +45,7 @@ public static class MetadataV2GraphValidator
         ValidateResources(errors, graph.Resources, storageBindingsById);
         ValidateCompositeRelationships(errors, resourcesById);
         ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
+        ValidatePairedPublications(errors, graph.Publications, resourcesById);
         ValidateUnboundPublicationLayerIndexes(errors, graph, resourcesById);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
@@ -52,6 +53,28 @@ public static class MetadataV2GraphValidator
         ValidateStyleResources(errors, graph);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
+    }
+
+    private static void ValidatePairedPublications(
+        List<string> errors, IEnumerable<MetadataV2Layer> publications, Dictionary<string, MetadataV2Object> resources)
+    {
+        var artifactIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var publication in publications)
+        {
+            if (publication.PairedPublication is not { } recipe)
+            {
+                continue;
+            }
+            if (!artifactIds.Add(recipe.PublicationId))
+            {
+                errors.Add($"paired publication id '{recipe.PublicationId}' is assigned to more than one publication.");
+            }
+            if (resources.TryGetValue(publication.ResourceId, out var resource)
+                && MetadataV2PairedPublicationRules.Problem(recipe, resource) is { } problem)
+            {
+                errors.Add($"publication '{publication.Metadata.Id}': {problem}");
+            }
+        }
     }
 
     private static void ValidateCompositeRelationships(

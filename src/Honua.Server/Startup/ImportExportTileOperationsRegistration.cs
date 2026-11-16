@@ -13,6 +13,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Admin.PairedPublications;
 using Honua.Io.Export;
 using Honua.Import;
 using Honua.Migration;
@@ -147,11 +148,14 @@ internal static class ImportExportTileOperationsRegistration
         // jobs whose own pipeline is idempotent, so the scheduled-tick handler is registered in BOTH
         // trigger modes; the in-process timer is hosted only under TriggerMode=Poll (default,
         // on-prem), keeping that path byte-for-byte unchanged.
+        services.TryAddSingleton<PairedPublicationRefreshLease>(sp => new(sp.SharedLeaseStore()));
+        services.TryAddSingleton<PairedPublicationRefreshHostedService>();
         services.TryAddSingleton<TileCacheExpiryHostedService>();
         services.AddSingleton<IScheduledTickHandler, TileCacheExpiryScheduledTickHandler>();
         if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
         {
             services.AddHostedService(sp => sp.GetRequiredService<TileCacheExpiryHostedService>());
+            services.AddHostedService(sp => sp.GetRequiredService<PairedPublicationRefreshHostedService>());
         }
 
         Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);

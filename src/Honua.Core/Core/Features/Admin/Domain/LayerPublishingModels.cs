@@ -50,6 +50,8 @@ public sealed class LayerPublishRequest
 
     public string? GlobalIdField { get; init; }
 
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2PairedPublication? PairedPublication { get; init; }
+
     // A published date or date-time column; when set, the layer reports temporal history.
     public string? TemporalColumn { get; init; }
 

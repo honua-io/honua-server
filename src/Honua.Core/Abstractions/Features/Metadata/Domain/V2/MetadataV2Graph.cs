@@ -644,6 +644,10 @@ public sealed record MetadataV2Layer : ExtensibleJsonRecord, IJsonOnDeserializin
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; init; } = string.Empty;
 
+    [JsonPropertyName("pairedPublication")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MetadataV2PairedPublication? PairedPublication { get; init; }
+
     [JsonPropertyName("storageBindingId")]
     public string? StorageBindingId { get; init; }
 

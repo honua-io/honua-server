@@ -13,8 +13,15 @@ namespace Honua.Server.Features.Infrastructure.FileStorage;
 internal static class ArtifactHttpConditions
 {
     internal static ArtifactHttpDecision Evaluate(HttpContext context, CloudFile metadata)
+        => Evaluate(context, metadata, new(CreateEntityTag(metadata), metadata.UploadedAt));
+
+    // An artifact's timestamp cannot validate the current configuration that authorizes its bytes.
+    internal static ArtifactHttpDecision EvaluateConfigurationBound(HttpContext context, CloudFile metadata, EntityTagHeaderValue etag)
+        => Evaluate(context, metadata, new(etag, null));
+
+    private static ArtifactHttpDecision Evaluate(HttpContext context, CloudFile metadata, ArtifactValidators validators)
     {
-        var etag = CreateEntityTag(metadata);
+        var etag = validators.EntityTag;
         var lastModified = DateTimeOffset.FromUnixTimeSeconds(metadata.UploadedAt.ToUnixTimeSeconds());
         context.Response.Headers[HeaderNames.ETag] = etag.ToString();
         context.Response.Headers[HeaderNames.LastModified] = lastModified.ToString("R", CultureInfo.InvariantCulture);
@@ -30,7 +37,7 @@ internal static class ArtifactHttpConditions
                 return new(StatusCodes.Status412PreconditionFailed, null);
             }
         }
-        else if (TryReadDate(headers[HeaderNames.IfUnmodifiedSince].ToString(), out var unmodified) && lastModified > unmodified)
+        else if (validators.DateRevision is { } unmodifiedRevision && TryReadDate(headers[HeaderNames.IfUnmodifiedSince].ToString(), out var unmodified) && unmodifiedRevision.ToUnixTimeSeconds() > unmodified.ToUnixTimeSeconds())
         {
             return new(StatusCodes.Status412PreconditionFailed, null);
         }
@@ -43,7 +50,7 @@ internal static class ArtifactHttpConditions
                 return new(StatusCodes.Status304NotModified, null);
             }
         }
-        else if (TryReadDate(headers[HeaderNames.IfModifiedSince].ToString(), out var modified) && lastModified <= modified)
+        else if (validators.DateRevision is { } modifiedRevision && TryReadDate(headers[HeaderNames.IfModifiedSince].ToString(), out var modified) && modifiedRevision.ToUnixTimeSeconds() <= modified.ToUnixTimeSeconds())
         {
             return new(StatusCodes.Status304NotModified, null);
         }
@@ -108,5 +115,7 @@ internal static class ArtifactHttpConditions
     private static bool TryReadDate(string value, out DateTimeOffset result)
         => HeaderUtilities.TryParseDate(value, out result);
 }
+
+internal readonly record struct ArtifactValidators(EntityTagHeaderValue EntityTag, DateTimeOffset? DateRevision);
 
 internal readonly record struct ArtifactHttpDecision(int? StatusCode, string? RangeHeader);

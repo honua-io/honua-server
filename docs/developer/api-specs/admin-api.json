@@ -25311,6 +25311,19 @@
             "maxLength": 2048,
             "description": "Optional absolute HTTP(S) URL for source documentation"
           },
+          "pairedPublication": {
+            "type": "object",
+            "nullable": true,
+            "description": "Persisted automatic paired PMTiles/GeoParquet refresh settings. Requires managed storage and a visible text identity field with unique, non-empty values.",
+            "required": ["publicationId", "identityField"],
+            "properties": {
+              "publicationId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$" },
+              "identityField": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$" },
+              "minZoom": { "type": "integer", "minimum": 0, "maximum": 22, "default": 0 },
+              "maxZoom": { "type": "integer", "minimum": 0, "maximum": 22, "default": 8 },
+              "maxTiles": { "type": "integer", "minimum": 1, "maximum": 1000000, "default": 10000 }
+            }
+          },
           "geometryColumn": {
             "type": "string",
             "maxLength": 64,

@@ -104,6 +104,6 @@ internal static class CogArtifactEndpoints
         }
 
         return await ArtifactHttpResponse.ServeAsync(
-            context, target.File with { ContentType = CogArtifactService.ContentType }, rangeProxy, cancellationToken).ConfigureAwait(false);
+            new(context, target.File with { ContentType = CogArtifactService.ContentType }, rangeProxy), cancellationToken).ConfigureAwait(false);
     }
 }

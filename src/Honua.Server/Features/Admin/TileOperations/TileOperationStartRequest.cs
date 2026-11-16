@@ -26,4 +26,8 @@ internal sealed record TileOperationStartRequest
     public string? PublicationId { get; init; }
 
     public string? IdentityField { get; init; }
+
+    // Automatic jobs must execute the metadata revision from which their recipe was queued.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public long? PublicationRevision { get; init; }
 }

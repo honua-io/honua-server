@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.SharedCaching;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Infrastructure.FileStorage;
@@ -10,11 +12,26 @@ namespace Honua.Server.Features.Infrastructure.FileStorage;
 // Call only after checking the artifact's current source and authorization policy.
 internal static class ArtifactHttpResponse
 {
-    internal static async Task<IResult> ServeAsync(
-        HttpContext context, CloudFile metadata, ArtifactByteReader rangeProxy, CancellationToken cancellationToken)
+    internal static Task<IResult> ServeAsync(
+        ArtifactReadRequest request, CancellationToken cancellationToken)
+        => ServeAsync(request, ArtifactHttpConditions.Evaluate(request.Context, request.Metadata), cancellationToken);
+
+    internal static async Task<IResult> ServeConfigurationBoundAsync(
+        ArtifactReadRequest request, CancellationToken cancellationToken)
     {
+        var (context, metadata, _) = request;
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context,
+            ArtifactHttpConditions.CreateEntityTag(metadata).ToString(), metadata.ContentType).ConfigureAwait(false);
+        var conditions = ArtifactHttpConditions.EvaluateConfigurationBound(context, metadata, EntityTagHeaderValue.Parse(etag));
+        return await ServeAsync(request, conditions, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> ServeAsync(
+        ArtifactReadRequest request, ArtifactHttpDecision conditions,
+        CancellationToken cancellationToken)
+    {
+        var (context, metadata, rangeProxy) = request;
         var response = context.Response;
-        var conditions = ArtifactHttpConditions.Evaluate(context, metadata);
         if (conditions.StatusCode is { } statusCode)
         {
             return TypedResults.StatusCode(statusCode);
@@ -54,6 +71,7 @@ internal static class ArtifactHttpResponse
                 response.Headers[HeaderNames.ContentRange] = $"bytes {rangeResult.Start}-{rangeResult.End}/{rangeResult.TotalSize}";
                 response.StatusCode = StatusCodes.Status206PartialContent;
                 response.ContentLength = rangeResult.Payload?.LongLength ?? 0L;
+                SharedCacheResponse.Apply(context);
                 if (rangeResult.Payload is { Length: > 0 })
                 {
                     await response.Body.WriteAsync(rangeResult.Payload, cancellationToken).ConfigureAwait(false);
@@ -71,3 +89,5 @@ internal static class ArtifactHttpResponse
         }
     }
 }
+
+internal sealed record ArtifactReadRequest(HttpContext Context, CloudFile Metadata, ArtifactByteReader Reader);

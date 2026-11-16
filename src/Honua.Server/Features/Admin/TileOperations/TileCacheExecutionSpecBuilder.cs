@@ -91,6 +91,11 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.IdentityField] = request.IdentityField;
         }
 
+        if (request.PublicationRevision.HasValue)
+        {
+            parameters[TileCacheJobParameterKeys.PublicationRevision] = request.PublicationRevision.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
         if (!string.IsNullOrWhiteSpace(schemaName))
         {
             parameters[TileCacheJobParameterKeys.SchemaName] = schemaName;
@@ -221,6 +226,12 @@ internal static class TileCacheExecutionSpecBuilder
         parameters.TryGetValue(TileCacheJobParameterKeys.Compression, out var tileCompression);
         parameters.TryGetValue(TileCacheJobParameterKeys.PublicationId, out var publicationId);
         parameters.TryGetValue(TileCacheJobParameterKeys.IdentityField, out var identityField);
+        var publicationRevision = ParsePublicationRevision(parameters);
+        if (publicationRevision.Error is { } revisionError)
+        {
+            error = revisionError;
+            return false;
+        }
         if (!string.IsNullOrWhiteSpace(tileCompression) && !TileArchiveCompression.IsSupported(tileCompression))
         {
             error = $"invalid tile-cache parameter 'compression'; expected one of: {TileArchiveCompression.SupportedValues}";
@@ -246,6 +257,7 @@ internal static class TileCacheExecutionSpecBuilder
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
             PublicationId = string.IsNullOrWhiteSpace(publicationId) ? null : publicationId,
             IdentityField = string.IsNullOrWhiteSpace(identityField) ? null : identityField,
+            PublicationRevision = publicationRevision.Revision,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
             TileCompression = TileArchiveCompression.Normalize(tileCompression),
         };
@@ -261,6 +273,18 @@ internal static class TileCacheExecutionSpecBuilder
         }
 
         return true;
+    }
+
+    private static (long? Revision, string? Error) ParsePublicationRevision(
+        IReadOnlyDictionary<string, string> parameters)
+    {
+        if (!parameters.TryGetValue(TileCacheJobParameterKeys.PublicationRevision, out var revisionRaw))
+        {
+            return (null, null);
+        }
+        return long.TryParse(revisionRaw, NumberStyles.None, CultureInfo.InvariantCulture, out var revision)
+            ? (revision, null)
+            : (null, "invalid tile-cache parameter 'publication_revision'");
     }
 
     public static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)

@@ -17,6 +17,25 @@ namespace Honua.Server.Tests.Admin;
 public sealed class LayerPublishWireContractTests
 {
     [UnitTest]
+    public void PublishRequest_PairedRecipe_SurvivesGeneratedJsonAndQueuedRequestMapping()
+    {
+        const string json = """
+            {"schema":"public","table":"roads","layerName":"Roads","pairedPublication":{
+              "publicationId":"roads-current","identityField":"road_key","minZoom":2,"maxZoom":6,"maxTiles":200}}
+            """;
+        var request = JsonSerializer.Deserialize(json, LayerPublishingJsonContext.Default.PublishLayerRequest)!;
+        var domain = LayerPublishRequestMapper.CreateDomain(request, Guid.NewGuid(), null);
+        var restored = LayerPublishRequestMapper.ToHttp(domain);
+        Assert.NotNull(restored.PairedPublication);
+        Assert.Equal("roads-current", restored.PairedPublication.PublicationId);
+        Assert.Equal("road_key", restored.PairedPublication.IdentityField);
+        Assert.Equal(2, restored.PairedPublication.MinZoom);
+        Assert.Equal(6, restored.PairedPublication.MaxZoom);
+        Assert.Equal(200, restored.PairedPublication.MaxTiles);
+        Assert.Equal(request.PairedPublication, restored.PairedPublication);
+    }
+
+    [UnitTest]
     public void PublishedLayer_SourceGeneratedJson_LabelsStorageHandle()
     {
         var layer = new PublishedLayerSummary

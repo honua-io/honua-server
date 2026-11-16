@@ -91,7 +91,8 @@ public sealed partial class LayerPublishingIntegrationTests
         }
     }
 
-    private LayerPublishRequest RevisionPinnedPublication(long? revision, string? etag = null) => new()
+    private LayerPublishRequest RevisionPinnedPublication(long? revision, string? etag = null,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2PairedPublication? pairedPublication = null) => new()
     {
         Schema = _schema,
         Table = _tableName,
@@ -104,6 +105,7 @@ public sealed partial class LayerPublishingIntegrationTests
         Fields = _idNamePopulationFields,
         ConnectionId = _connectionId,
         StorageMode = LayerStorageMode.Managed,
+        PairedPublication = pairedPublication,
         ExpectedMetadataRevision = revision,
         ExpectedMetadataEtag = revision is null ? null : etag ?? _fixture.GetCurrentV2GraphSnapshot().Etag
     };

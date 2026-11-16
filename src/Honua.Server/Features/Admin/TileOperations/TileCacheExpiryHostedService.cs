@@ -5,14 +5,24 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedService service)
+internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedService service,
+    Honua.Server.Features.Admin.PairedPublications.PairedPublicationRefreshHostedService publications)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
 {
     public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
         => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.TileCacheExpiry;
 
-    public Task RunTickAsync(CancellationToken cancellationToken = default)
-        => service.SweepAsync(cancellationToken);
+    public async Task RunTickAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await publications.SweepAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await service.SweepAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 }
 
 internal sealed partial class TileCacheExpiryHostedService(

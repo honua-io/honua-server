@@ -33,4 +33,6 @@ internal static class TileCacheJobParameterKeys
     public const string PublicationId = "honua.tilecache.publication_id";
 
     public const string IdentityField = "honua.tilecache.identity_field";
+
+    public const string PublicationRevision = "honua.tilecache.publication_revision";
 }

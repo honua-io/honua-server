@@ -130,6 +130,7 @@ internal sealed partial class TileOperationExecutionCore
 
         var source = await PairedPublicationSource.OpenAsync(
             graphProvider, services, request.ServiceId!, request.LayerId!.Value, cancellationToken).ConfigureAwait(false);
+        RequireCurrentAutomaticRecipe(request, source);
         if (pointerETag is not null)
         {
             await RequireSameSourceAsync(store, source, cancellationToken).ConfigureAwait(false);
@@ -141,6 +142,21 @@ internal sealed partial class TileOperationExecutionCore
         var run = new PairedPublicationRun(
             request.PublicationId!, PairedPublicationDescriptorFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
         return new PairedPublishContext(run, source, fields, store, pointerETag);
+    }
+
+    private static void RequireCurrentAutomaticRecipe(TileOperationStartRequest request, PairedPublicationSource source)
+    {
+        if (request.PublicationRevision is not { } queuedRevision)
+        {
+            return;
+        }
+        var recipe = source.Published.Publication.PairedPublication;
+        if (queuedRevision != source.MetadataRevision || recipe is null
+            || recipe.PublicationId != request.PublicationId || recipe.IdentityField != request.IdentityField
+            || recipe.MinZoom != request.MinZoom || recipe.MaxZoom != request.MaxZoom || recipe.MaxTiles != request.MaxTiles)
+        {
+            throw new PairedPublicationException("The automatic publication recipe changed while this job was queued; retry from current metadata.");
+        }
     }
 
     // A publication id names one dataset; another layer must not silently replace it for its readers.

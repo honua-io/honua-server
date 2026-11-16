@@ -201,6 +201,7 @@ public sealed partial class PairedPublishEndpointTests
     public async Task PublicationRead_Anonymous_IsRefusedBeforeExistenceOrConditionChecks()
     {
         var published = await PublishAsync(IdentityField);
+        SetPublicationAccess(new AccessPolicy { AllowAnonymous = false });
         using var anonymous = _fixture.CreateClient();
         foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.parquet", "missing/descriptor.json" })
         {

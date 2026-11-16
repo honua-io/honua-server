@@ -125,9 +125,25 @@ The identity field must hold a unique, non-empty value for every feature, so eac
 
 Paired publish needs a layer stored in Honua's managed feature table (imported or created in Honua), because the capture check reads that table's edit log; layers that read an external source table are refused. The completed job status carries `publishedPublication` with the version, capture ID, descriptor key and pointer key.
 
-Authenticated `GET` or `HEAD` requests to `/api/v1/publications/{publicationId}/current.json` return a `307` redirect to the current version's `descriptor.json`. Resolve the descriptor's relative artifact links against that immutable URL to keep both files on the same capture when a later publish moves the pointer. Versioned files support byte ranges, `HEAD` and conditional requests with `ETag`.
+To build the initial generation and refresh it automatically after edits, include `pairedPublication` in the layer's publish settings:
 
-Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Responses use `private, no-store` so shared caches cannot bypass these checks.
+```json
+{
+  "pairedPublication": {
+    "publicationId": "maui-county-parcels",
+    "identityField": "tmk_txt",
+    "minZoom": 8,
+    "maxZoom": 14,
+    "maxTiles": 200000
+  }
+}
+```
+
+These settings are stored with the canonical publication. The refresh worker checks them every minute when in-process timers are enabled; externally scheduled deployments use the existing tile-cache expiry tick. A shared lease coalesces workers and an active job prevents another submission for the same service and layer. The worker compares metadata and managed-layer edit generations with the last validated capture and submits `paired-publish` when they differ or no capture exists. A failed refresh retains the previous pointer and is retried on a later tick. Remove `pairedPublication` to stop automatic refresh; retained versions remain subject to current read access. Automatic refresh requires configured cloud file storage and a shared lease store.
+
+`GET` or `HEAD` requests to `/api/v1/publications/{publicationId}/current.json` return a `307` redirect to the current version's `descriptor.json`. Resolve the descriptor's relative artifact links against that immutable URL to keep both files on the same capture when a later publish moves the pointer. Versioned files support byte ranges, `HEAD` and conditional requests with `ETag`.
+
+Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Authenticated responses and current-pointer redirects use `private, no-store`. Anonymous reads of a currently public, unrestricted layer may use the shared cache policy for static objects. Their ETags include the configuration generation; layer edits and administrative changes use the existing CDN invalidation path. Access changes therefore depend on purge delivery and the bounded shared-cache lifetime, as with other public layer responses. Date-only conditions cannot validate the current access configuration.
 
 ## Troubleshoot
 

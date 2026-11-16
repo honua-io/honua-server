@@ -125,6 +125,8 @@ public sealed class PublishLayerRequest
     [StringLength(63)]
     public string? GlobalIdField { get; init; }
 
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2PairedPublication? PairedPublication { get; init; }
+
     [StringLength(63)]
     public string? TemporalColumn { get; init; }
 
