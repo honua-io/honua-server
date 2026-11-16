@@ -87,13 +87,13 @@ internal static class PairedPublicationReadEndpoints
         PublicReadContext read, string fileName, CancellationToken cancellationToken)
     {
         var advertiser = read.Context.RequestServices.GetService<PublicPublicationAdvertisement>();
-        if (advertiser is null)
+        if (advertiser is null || read.Target.Source.Publication.LayerIndex is not { } layerIndex)
         {
             return Task.FromResult<Uri?>(null);
         }
         var target = read.Target;
         var source = new PublicPublicationSourceIdentity(target.Source, target.Snapshot.Revision,
-            target.Source.Publication.LayerIndex);
+            layerIndex);
         return advertiser.ResolveAsync(new(new(target.Descriptor.PublicationId, target.Descriptor.Version), source, fileName),
             cancellationToken);
     }
