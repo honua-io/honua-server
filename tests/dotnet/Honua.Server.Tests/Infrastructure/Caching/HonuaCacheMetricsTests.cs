@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;
 
-/// <summary>
-/// Verifies that the canonical hit/miss/eviction counters wired through HonuaCacheMetrics
-/// fire for at least one concrete cache call site (MemoryResponseCache).
-/// </summary>
 [Collection("Unit")]
 public sealed class HonuaCacheMetricsTests : IDisposable
 {
@@ -105,10 +101,6 @@ public sealed class HonuaCacheMetricsTests : IDisposable
 
     private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
 
-    /// <summary>
-    /// Test-only MeterListener that captures long measurements emitted by a named
-    /// instrument on the "Honua" meter. Disposable to keep parallel test runs isolated.
-    /// </summary>
     private sealed class MetricsCollector : IDisposable
     {
         private readonly MeterListener _listener;

@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// SOAP ExportImage/GetImage band selection reads only the band-id element.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerSoapBandSelectionTests
 {

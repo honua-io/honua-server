@@ -7,11 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Unit tests for <see cref="ConfigCatalogDiscoveryRegistryStore"/> (honua-server#1279,
-/// #1283 follow-up): an unconfigured store fabricates nothing, and configured seeds are
-/// projected verbatim. The store no longer ships hard-coded synthetic dialect endpoints.
-/// </summary>
 public sealed class ConfigCatalogDiscoveryRegistryStoreTests
 {
     [UnitTest]

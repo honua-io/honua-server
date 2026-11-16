@@ -8,10 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ensures every registered public-interface operation has at least one integration test.
-/// Complements <see cref="ApiSurfaceCoverageTests"/> which covers HTTP endpoint-level coverage.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class OperationCoverageTests
 {

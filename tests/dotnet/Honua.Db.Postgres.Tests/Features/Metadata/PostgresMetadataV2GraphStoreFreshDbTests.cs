@@ -18,11 +18,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
-/// <summary>
-/// Metadata v2 store integration coverage. Migration 031 is provisioned explicitly by this
-/// test fixture for normal store scenarios. Missing-migration cases assert a typed schema-floor
-/// failure and prove ordinary reads/writes never self-apply the migration (#3899).
-/// </summary>
 [Collection("Database")]
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
 {

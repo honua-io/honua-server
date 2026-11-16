@@ -15,11 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Secret/ConfigMap-sourced worker environment for the Kubernetes Job backend (honua-helm#98,
-/// owner decision 18): references render into <c>envFrom</c> / <c>valueFrom</c>, launch variables stay
-/// literal and protected, and only reference names ever reach the server.
-/// </summary>
 public sealed class KubernetesJobEnvironmentTests
 {
     [UnitTest]

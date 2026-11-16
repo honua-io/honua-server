@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit tests for the durable disconnected-sync conflict field/geometry diff (#1287). The diff powers
-/// the Console conflict reviewer's per-field and geometry comparison; it must surface only diverging
-/// fields and stay defensive about absent or malformed state envelopes.
-/// </summary>
 public sealed class ReplicaConflictDiffTests
 {
     private static JsonElement State(string json)

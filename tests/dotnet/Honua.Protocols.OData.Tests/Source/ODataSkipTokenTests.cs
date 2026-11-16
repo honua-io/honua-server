@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData cursor-based $skiptoken pagination.
-/// Verifies that opaque skip tokens are generated in nextLink URLs and can be followed
-/// to retrieve subsequent pages. Also validates error handling for invalid tokens.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataSkipTokenTests : IAsyncLifetime

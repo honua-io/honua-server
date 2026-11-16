@@ -227,11 +227,14 @@ internal sealed partial class Wfs20Handler
     // A storage layer published through several WFS-enabled services (the compat svc-*-ogc and
     // svc-*-feature pair) would otherwise be listed once per publication under the same title, which
     // OWSLib rejects as ambiguous. Only discovery listings collapse; explicit typenames and RESOURCEID
-    // requests still resolve every publication.
+    // requests still resolve every publication. Publishing also writes a STAC collection publication
+    // beside the feature publication; it is listed only when the layer has no other publication,
+    // because it does not carry the layer's declared edit capabilities.
     private static ImmutableArray<WfsFeatureTypeDescriptor> SelectAdvertisedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes)
         => publishedTypes
             .OrderBy(static featureType => featureType.StorageLayerId)
+            .ThenBy(static featureType => featureType.Publication.PublicationType == MetadataV2LayerType.StacCollection)
             .ThenBy(static featureType => featureType.Publication.LayerIndex ?? int.MaxValue)
             .ThenBy(static featureType => featureType.Publication.Metadata.Id, StringComparer.Ordinal)
             .DistinctBy(static featureType => featureType.StorageLayerId)

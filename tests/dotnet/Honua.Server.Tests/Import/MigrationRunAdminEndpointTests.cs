@@ -18,12 +18,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the slice-5 admin orchestration endpoints
-/// (<c>/api/v1/admin/migration/runs</c>). Uses an in-memory fake catalog so
-/// the endpoints exercise routing, serialization, and status-code policy
-/// without requiring the slice-4 evidence pack pipeline.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

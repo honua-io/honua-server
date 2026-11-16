@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.UnitTests.Features.Geoprocessing.ProcessRelease;
 
-/// <summary>
-/// Binding activation policy, the in-memory store's compare-and-set under concurrency, and
-/// admission-time pinning (honua-server#6221): a release is activated exactly once per expected
-/// version, every refusal is named, rollback must target the previous release, and a job that
-/// names a process is stamped with the release it was admitted under.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpProcessReleaseBindingTests
 {

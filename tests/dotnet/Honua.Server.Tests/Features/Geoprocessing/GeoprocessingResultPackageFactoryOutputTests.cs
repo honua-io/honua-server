@@ -12,14 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Result-package projection of typed raster output descriptors (#3089): staged
-/// descriptors surface as metadata-rich artifacts through an authenticated route,
-/// and — per the review — a descriptor-shaped reference this release cannot
-/// interpret (for example a future contract version) must surface as an
-/// unavailable artifact, never leaking the raw descriptor JSON (store reference,
-/// object key, checksum) as the client-facing value.
-/// </summary>
 public sealed class GeoprocessingResultPackageFactoryOutputTests
 {
     [Theory]

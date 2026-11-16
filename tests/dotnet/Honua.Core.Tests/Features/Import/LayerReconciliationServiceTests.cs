@@ -19,11 +19,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Exercises the post-publish data-reconciliation service (issue #1247): count/geometry/content/
-/// extent probes and the pass/warn/fail/skipped classification bands that the parity gate (#1380)
-/// consumes.
-/// </summary>
 public sealed class LayerReconciliationServiceTests
 {
     [Trait("Tier", "Fast")]

@@ -21,32 +21,18 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
-/// <summary>
-/// Shared helpers for multipart form-data parsing and file staging cleanup.
-/// </summary>
 internal static class MultipartParsingHelpers
 {
-    /// <summary>
-    /// Returns true if the content disposition represents a file upload section.
-    /// </summary>
     public static bool HasFileContentDisposition(ContentDispositionHeaderValue contentDisposition)
         => contentDisposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase) &&
            (!StringSegment.IsNullOrEmpty(contentDisposition.FileName) ||
             !StringSegment.IsNullOrEmpty(contentDisposition.FileNameStar));
 
-    /// <summary>
-    /// Returns true if the content disposition represents a plain form-data field.
-    /// </summary>
     public static bool HasFormDataContentDisposition(ContentDispositionHeaderValue contentDisposition)
         => contentDisposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase) &&
            StringSegment.IsNullOrEmpty(contentDisposition.FileName) &&
            StringSegment.IsNullOrEmpty(contentDisposition.FileNameStar);
 
-    /// <summary>
-    /// Best-effort deletion of a staged temporary file.
-    /// Failures are logged at Debug when a logger is supplied so that
-    /// dangling uploads and permission errors remain diagnosable.
-    /// </summary>
     public static void TryDeleteFile(string? path, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
@@ -62,27 +48,11 @@ internal static class MultipartParsingHelpers
         }
     }
 
-    /// <summary>
-    /// Maximum size, in bytes, of a non-file multipart form-data field (e.g. TableName,
-    /// TargetSchema, layerId, name). These manual <see cref="MultipartReader"/> parsers do
-    /// not run through <c>ReadFormAsync</c>, so Kestrel's MultipartBodyLengthLimit does not
-    /// apply; this cap bounds the managed allocation for scalar fields to defend against a
-    /// malicious client streaming a multi-gigabyte form-field section into memory.
-    /// </summary>
     public const int MaxFormFieldBytes = 64 * 1024;
 
-    /// <summary>
-    /// Reads the content of a non-file multipart form-data field as a UTF-8 string, rejecting
-    /// sections that exceed <see cref="MaxFormFieldBytes"/>. Form fields in these parsers carry
-    /// short scalar values, so an oversized section indicates abuse and is surfaced as an
-    /// <see cref="InvalidDataException"/> (which the endpoint catch blocks translate to a 400).
-    /// </summary>
     public static Task<string> ReadFormFieldStringAsync(MultipartSection section, CancellationToken cancellationToken)
         => ReadBoundedSectionStringAsync(section, MaxFormFieldBytes, cancellationToken, "Form field");
 
-    /// <summary>
-    /// Resolves the filename from a content disposition header, preferring FileNameStar over FileName.
-    /// </summary>
     public static string? ResolveFileName(ContentDispositionHeaderValue contentDisposition)
     {
         var fileNameStar = HeaderUtilities.RemoveQuotes(contentDisposition.FileNameStar).Value;
@@ -94,13 +64,6 @@ internal static class MultipartParsingHelpers
         return HeaderUtilities.RemoveQuotes(contentDisposition.FileName).Value;
     }
 
-    /// <summary>
-    /// Reads the content of a multipart section as a UTF-8 string, rejecting sections that
-    /// exceed <paramref name="maxBytes"/>. Use for sidecar files (world files, .prj) and for
-    /// scalar form fields where the expected payload is small and unbounded reads would be a
-    /// resource risk. <paramref name="sectionDescription"/> names the section in the error so
-    /// the resulting <see cref="InvalidDataException"/> is actionable.
-    /// </summary>
     public static async Task<string> ReadBoundedSectionStringAsync(
         MultipartSection section,
         int maxBytes,
@@ -123,10 +86,6 @@ internal static class MultipartParsingHelpers
         return Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
     }
 
-    /// <summary>
-    /// Copies a source stream to a temporary file with a maximum size limit.
-    /// Creates the parent directory if needed. The caller is responsible for cleanup on failure.
-    /// </summary>
     public static async Task<long> CopyStreamToTempFileAsync(
         Stream sourceStream,
         string tempFilePath,

@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Publishing.Content;
 
-/// <summary>
-/// Unit tests for content publication primitives: slug normalization, content/token
-/// hashing, and public-link verification.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationPrimitivesTests
 {

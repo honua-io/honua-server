@@ -22,16 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for secure connection admin endpoints.
-/// </summary>
-/// <remarks>
-/// Tests cover:
-/// - Admin API authorization requirements
-/// - CRUD operations for secure connections
-/// - Security validation and error handling
-/// - Data sanitization in responses
-/// </remarks>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

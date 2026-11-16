@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that MCP resource handlers serialize domain records into the
-/// canonical <c>honua://...</c> JSON envelope advertised in
-/// <c>AI_OPERATOR_CONTRACT.md §9</c>. The tests pin the wire fields that
-/// operators parse — job ids, resource URIs, map-package identifiers, and
-/// stub markers — so accidental rename of a JSON property breaks the build.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpResourceSerializationTests
 {

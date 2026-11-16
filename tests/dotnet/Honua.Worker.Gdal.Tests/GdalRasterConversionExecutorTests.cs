@@ -11,13 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for the conversion idioms wired to real GDAL executors
-/// (#2138): <c>conversion.raster-format</c> (gdal_translate) and
-/// <c>conversion.raster-reproject</c> (gdalwarp, sharing the catalog reproject
-/// executor). Each test pins routing, argument projection, the artifact content
-/// type, and GDAL-failure-to-job-failure mapping.
-/// </summary>
 public sealed class GdalRasterConversionExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-conversion-test";
@@ -116,17 +109,6 @@ public sealed class GdalRasterConversionExecutorTests
         }
     }
 
-    /// <summary>
-    /// Cross-project honesty check (#3048 review): <c>conversion.raster-format</c> publishes
-    /// <see cref="ProcessValueDomains.RasterFormat"/> as <c>targetFormat</c>'s
-    /// <c>AllowedValues</c>, and the canonical <c>ProcessPlanValidator</c> enforces the same
-    /// array, so an OGC Processes or GPServer client that picks any advertised value clears
-    /// catalog validation, schema validation, and submit validation. This test proves the last
-    /// hop: the native worker must actually execute every one of those values instead of
-    /// killing the accepted job at the CLI boundary with an invalid-format failure. Drives the
-    /// real executor per value rather than reading the executor's private map, so a future
-    /// widening of the published domain fails here unless the worker is widened too.
-    /// </summary>
     [UnitTest]
     public async Task RasterFormat_EveryPublishedAllowedValue_IsExecutableByTheWorker()
     {
@@ -168,11 +150,6 @@ public sealed class GdalRasterConversionExecutorTests
             + "job the worker cannot finish");
     }
 
-    /// <summary>
-    /// The alias spellings the published domain adds must resolve to the driver they name -
-    /// GeoTIFF/TIFF/TIF are spellings of the GTiff driver and JPG is a spelling of JPEG - not
-    /// merely to some driver that happens to run.
-    /// </summary>
     [UnitTest]
     public async Task RasterFormat_AliasSpellings_ResolveToTheirCanonicalDriver()
     {

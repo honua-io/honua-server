@@ -16,12 +16,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Verifies PA-199: <see cref="GroundingService.GroundAsync"/> starts a
-/// "honua.grounding.ground" span on the MCP/AI grounding hot path so a pass
-/// through the deterministic engine, authorization filter, and drafting is
-/// visible in traces.
-/// </summary>
 public sealed class GroundingServiceTelemetryTests
 {
     [Fact]

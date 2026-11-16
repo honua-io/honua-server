@@ -17,12 +17,6 @@ using Moq;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
-/// <summary>
-/// In-process tests for the Azure Key Vault license-content resolver. They exercise reference
-/// recognition, the fail-safe contract (never throw — degrade to Community), and end-to-end Pro
-/// activation through <see cref="FileBackedLicenseService"/> using a mocked <see cref="SecretClient"/>
-/// so no live Key Vault or Azure credentials are required.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public sealed class AzureKeyVaultLicenseContentResolverTests

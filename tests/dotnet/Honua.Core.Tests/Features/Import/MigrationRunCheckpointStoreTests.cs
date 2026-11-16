@@ -10,10 +10,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Behaviour tests for <see cref="InMemoryMigrationRunCheckpointStore"/> and
-/// <see cref="FileSystemMigrationRunCheckpointStore"/> (issue #1033 slice 3).
-/// </summary>
 public sealed class MigrationRunCheckpointStoreTests
 {
     [Trait("Tier", "Fast")]

@@ -7,21 +7,11 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Process catalog projected specifically onto the OGC API Processes surface.
-/// </summary>
 internal interface IOgcProcessesCatalog : IProcessCatalog
 {
-    /// <summary>
-    /// Gets the shared process catalog used to validate canonical plans.
-    /// Protocol-only definitions exposed by this adapter are intentionally absent.
-    /// </summary>
     IProcessCatalog CanonicalCatalog { get; }
 }
 
-/// <summary>
-/// Certification-profile decorator over the immutable production process catalog.
-/// </summary>
 internal sealed class OgcProcessesCiteEchoCatalog : IOgcProcessesCatalog
 {
     private readonly IProcessCatalog _inner;

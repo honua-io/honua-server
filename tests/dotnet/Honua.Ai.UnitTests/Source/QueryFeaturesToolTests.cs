@@ -27,10 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Publisher-hidden fields stay out of MCP feature queries, layer descriptions, and the
-/// grounding catalog (#6118).
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class QueryFeaturesToolTests
 {

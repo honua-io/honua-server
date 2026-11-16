@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FileStorage.Domain;
 
-/// <summary>
-/// Unit tests for UploadResult domain model
-/// </summary>
 public class UploadResultTests
 {
     [UnitTest]

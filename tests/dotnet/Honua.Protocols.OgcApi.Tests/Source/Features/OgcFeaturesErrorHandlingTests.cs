@@ -141,6 +141,48 @@ public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandl
         problem.GetProperty("status").GetInt32().Should().Be(404);
     }
 
+    [IntegrationTheory]
+    [InlineData("properties=name", "properties")]
+    [InlineData("f=json&properties=name", "properties")]
+    [InlineData("limit=1", "limit")]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetItem_UnsupportedQueryParameter_ReturnsBadRequestNamingTheParameter(string query, string parameter)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/items/1?{query}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+        problem.GetProperty("status").GetInt32().Should().Be(400);
+        problem.GetProperty("detail").GetString().Should().Contain(parameter);
+    }
+
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("?f=json")]
+    [InlineData("?f=json&crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84")]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetItem_SupportedQueryParameters_ReturnsFeature(string query)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/items/1{query}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        JsonSerializer.Deserialize<JsonElement>(content).GetProperty("properties").EnumerateObject().Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetItem_NonExistentFeatureWithUnsupportedQueryParameter_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/items/non-existent?properties=name");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     [Fact]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]

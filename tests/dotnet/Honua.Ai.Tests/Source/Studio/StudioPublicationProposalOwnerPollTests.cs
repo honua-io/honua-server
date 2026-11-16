@@ -24,19 +24,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Regression proof for honua-server#4910: the principal that proposed a Studio
-/// publication can poll that proposal's status over MCP, and no other principal can.
-/// </summary>
-/// <remarks>
-/// The propose side records the Studio owner key
-/// (<c>subject:{iss}:{sub}@tenant:{tenant}</c> for an issuer-bearing subject, the bare
-/// key id for an API key) while the read side compared the scheme-qualified canonical
-/// actor id, so the owner's every poll was refused with <c>permission_denied</c>. The
-/// bearer case deliberately mints an <b>issuer-bearing</b> token — an issuer-less test
-/// identity collapses both encodings onto the same bare subject and cannot observe the
-/// defect at all.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
@@ -145,6 +132,7 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
 
     // Draft writes require human approval too; seed setup through the store.
     private async Task<string> ProposeAsync(StudioMcpHttpClient mcp, string label, string ownerId)
+
     {
         var packageKey = $"proposal-owner-{label}-{Guid.NewGuid():N}";
         var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();

@@ -18,9 +18,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
-/// <summary>
-/// Unit tests for COG tile format handling.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class CogTileResolverTests
 {

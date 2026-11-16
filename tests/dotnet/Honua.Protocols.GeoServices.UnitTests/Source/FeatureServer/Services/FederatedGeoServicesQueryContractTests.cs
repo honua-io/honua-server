@@ -17,9 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Federated ArcGIS REST query translation for where clauses and envelope relationships.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FederatedGeoServicesQueryContractTests
 {

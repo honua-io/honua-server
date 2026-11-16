@@ -11,19 +11,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Regression coverage for honua-server#1911: WMS/WMTS GetCapabilities returned
-/// HTTP 500 (a <c>ServiceExceptionReport</c> with <c>NoApplicableCode</c>) on
-/// services whose time-configured layer stored temporal values as
-/// epoch-milliseconds text (e.g. <c>1672617600000</c>, the encoding Esri
-/// <c>applyEdits</c> writes) rather than ISO-8601. The capabilities builder
-/// pre-fetches each time-aware layer's temporal extent with a MIN/MAX aggregate
-/// whose <c>::timestamptz</c>/<c>::date</c> cast raised PostgreSQL SQLSTATE 22008
-/// (<c>date/time field value out of range</c>) on the numeric text, failing the
-/// whole document. These tests configure the shared test layer as time-aware,
-/// write an epoch-ms value into its temporal column, and assert that both
-/// GetCapabilities surfaces return 200 with a well-formed capabilities document.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicWmsCapabilitiesRobustnessTests : IAsyncLifetime

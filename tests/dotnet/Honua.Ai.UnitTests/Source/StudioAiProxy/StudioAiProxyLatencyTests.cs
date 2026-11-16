@@ -15,14 +15,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Enforces the NFR-001 latency-overhead budget documented in
-/// <c>docs/guides/run-studio-ai-proxy.md</c>: the proxy's own processing overhead — translating the
-/// request plus re-parsing and re-emitting every streamed frame — must stay under 100ms for a
-/// realistic steady-state 200-frame streamed turn. No network is involved (a canned in-process SSE
-/// body), so this isolates the proxy's own cost from upstream provider latency, which the proxy
-/// cannot bound.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiProxyLatencyTests
 {
@@ -84,7 +76,6 @@ public sealed class StudioAiProxyLatencyTests
         return textDeltaCount;
     }
 
-    /// <summary>Builds a canned OpenAI-compatible SSE body with <paramref name="frames"/> text-delta chunks.</summary>
     private static string BuildFixture(int frames)
     {
         var builder = new StringBuilder();

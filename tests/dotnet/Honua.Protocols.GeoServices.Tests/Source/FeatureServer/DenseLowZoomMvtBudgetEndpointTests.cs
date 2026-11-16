@@ -12,10 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// The zoom-0 tile of a dense layer used to be refused with 413. Every vector-tile route that
-/// shares the PostGIS encoder now returns a decodable tile inside <c>Limits:Tiles:MaxTileSize</c>.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Protocol(TestProtocols.OgcApiTiles)]
 [Protocol(TestProtocols.VectorTileServer)]

@@ -7,14 +7,14 @@ using Honua.Core.Features.Console.Domain;
 namespace Honua.Server.Features.Console.Services;
 
 internal sealed class ProjectedConsoleContentStore(
-    InMemoryConsoleContentStore authoredContent,
+    IAuthoredConsoleContent authoredContent,
     PublishedConsoleContent publishedContent) : IConsoleContentStore
 {
     public async Task<ConsoleContentListResult> ListAsync(ConsoleContentQuery query, CancellationToken cancellationToken = default)
     {
         var published = await publishedContent.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var items = published.Items.Values.Concat(authoredContent.SnapshotItems()
-            .Where(item => !published.OwnedIds.Contains(item.Id)));
+        var authored = await authoredContent.SnapshotItemsAsync(cancellationToken).ConfigureAwait(false);
+        var items = published.Items.Values.Concat(authored.Where(item => !published.OwnedIds.Contains(item.Id)));
         return ConsoleContentSelection.Page(items, query);
     }
 
@@ -31,7 +31,7 @@ internal sealed class ProjectedConsoleContentStore(
         var published = await publishedContent.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (published.OwnedIds.Contains(item.Id))
         {
-            throw new InvalidOperationException("Published metadata is read-only in the content catalog.");
+            throw ConsoleContentIdConflictException.PublishedMetadata();
         }
         return await authoredContent.CreateAsync(item, cancellationToken).ConfigureAwait(false);
     }

@@ -14,11 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Role-fixture matrix for <see cref="StudioAuthorizationService"/> (honua-server#3001): flag
-/// on/off, admin vs. non-admin, own vs. cross-user resources, and the elevated
-/// (publish-request/rollback) operator-grant tier.
-/// </summary>
 public sealed class StudioAuthorizationServiceTests
 {
     private const string Alice = "alice";
@@ -710,11 +705,6 @@ public sealed class StudioAuthorizationServiceTests
         }
     }
 
-    /// <summary>
-    /// Records every evaluated request and grants access only for explicitly allow-listed
-    /// (resourceType, resourceId, operation) tuples -- deny-by-default, matching the real
-    /// evaluator's posture for a principal with no matching grant.
-    /// </summary>
     private sealed class FakeOperatorAuthorizationEvaluator : IOperatorAuthorizationEvaluator
     {
         private readonly HashSet<(OperatorResourceType, string, OperatorOperation)> _allowed = [];

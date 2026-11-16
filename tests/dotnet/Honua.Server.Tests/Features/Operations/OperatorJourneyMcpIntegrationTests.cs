@@ -16,15 +16,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// An admin finishes the closed operator roster through MCP. A caller without the admin grant
-/// is permission_denied and creates no connection row.
-/// </summary>
-/// <remarks>
-/// Lane A and Lane B executors compose only when a durable proposal store is already registered.
-/// Entitled Redis is what makes <c>Program</c> register that store before
-/// <c>AddOperationsToolset</c>, which is the same host the operator journey runs against.
-/// </remarks>
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Mcp)]
 public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)

@@ -7,25 +7,6 @@ using Honua.Core.Features.Tiles.PMTiles;
 
 namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 
-/// <summary>
-/// Archive-level PMTiles evidence: gzip-compressed real MVT tiles, matched by z/x/y, resolved
-/// through a leaf directory (honua-server#4397).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Before this file no test decompressed a <see cref="PMTilesCompression.Gzip"/> tile, no test
-/// exercised the leaf-directory path (every round trip fit in the root directory), and the one
-/// end-to-end round trip matched tiles to their expected bytes <em>by payload length</em> — so a
-/// writer that placed every tile at the wrong coordinate would have passed as long as the lengths
-/// happened to be distinct.
-/// </para>
-/// <para>
-/// The tile payloads here are real Mapbox Vector Tiles, encoded and decoded by the small
-/// protobuf helpers at the bottom of this file rather than by any code under test, so "the tile
-/// survived the archive" means the layer name, extent and point coordinates survived — not that
-/// an opaque blob round-tripped.
-/// </para>
-/// </remarks>
 public class PMTilesArchiveRoundTripTests
 {
     [Trait("Tier", "Fast")]
@@ -162,11 +143,6 @@ public class PMTilesArchiveRoundTripTests
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Resolves a z/x/y coordinate to its tile bytes by walking the archive exactly as an
-    /// independent PMTiles reader does: header, root directory, then a leaf directory when the
-    /// matching root entry is a pointer (run length 0).
-    /// </summary>
     private sealed class ArchiveReader
     {
         private readonly byte[] _archive;
@@ -182,10 +158,6 @@ public class PMTilesArchiveRoundTripTests
 
         public byte[]? ReadTile(int z, int x, int y) => ReadTileThroughDirectories(z, x, y).Bytes;
 
-        /// <summary>
-        /// Resolves a coordinate and reports whether a leaf directory had to be read, so a test
-        /// can assert that a miss was decided by the leaf rather than short-circuited by the root.
-        /// </summary>
         public Lookup ReadTileThroughDirectories(int z, int x, int y)
         {
             var tileId = HilbertCurve.XYZToTileId(z, x, y);
@@ -251,12 +223,6 @@ public class PMTilesArchiveRoundTripTests
         }
     }
 
-    /// <summary>
-    /// A minimal Mapbox Vector Tile encoder/decoder, written against the published
-    /// <c>vector_tile.proto</c> wire format and sharing no code with anything under test. It emits
-    /// one layer holding one point feature, which is enough for "did this exact tile survive the
-    /// archive?" to be answerable from the decoded content.
-    /// </summary>
     private static class MiniMvt
     {
         public static byte[] Encode(string layerName, int featureX, int featureY)
