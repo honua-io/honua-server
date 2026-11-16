@@ -127,7 +127,7 @@ public sealed class GeoservicesCatalogSceneServerTests
         try
         {
             await ResetSceneRegistryAsync(fixture);
-            await RegisterSceneAsync(fixture, isPublic: false);
+            await RegisterSceneAsync(fixture, SceneVisibility.Protected);
             using var administrator = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
             using var anonymous = await fixture.Client.GetAsync("/rest/services?f=json");
@@ -203,7 +203,9 @@ public sealed class GeoservicesCatalogSceneServerTests
         }
     }
 
-    private static async Task RegisterSceneAsync(WebAppFixture fixture, bool isPublic = true)
+    private enum SceneVisibility { Public, Protected }
+
+    private static async Task RegisterSceneAsync(WebAppFixture fixture, SceneVisibility visibility = SceneVisibility.Public)
     {
         var registration = fixture.GetService<ISceneRegistrationService>();
         await registration.RegisterAsync(new SceneDatasetRecord
@@ -215,8 +217,8 @@ public sealed class GeoservicesCatalogSceneServerTests
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
             CachePolicy = SceneCachePolicy.Default,
-            IsPublic = isPublic,
-            RequiresAuth = !isPublic,
+            IsPublic = visibility == SceneVisibility.Public,
+            RequiresAuth = visibility == SceneVisibility.Protected,
             Status = SceneDatasetStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedBy = "test",

@@ -39,6 +39,12 @@ internal static partial class SceneDiscoveryEndpoints
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status500InternalServerError);
 
+        MapSceneDetails(endpoints);
+        return endpoints;
+    }
+
+    private static void MapSceneDetails(IEndpointRouteBuilder endpoints)
+    {
         endpoints.MapGet("/api/scenes/{sceneId}/resolve", HandleResolveScene)
             .WithName("ResolvePublicScene")
             .WithDisplayName("Resolve Public Scene Render Endpoints")
@@ -63,7 +69,6 @@ internal static partial class SceneDiscoveryEndpoints
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status500InternalServerError);
 
-        return endpoints;
     }
 
     private static async Task<IResult> HandleListScenes(
@@ -181,20 +186,14 @@ internal static partial class SceneDiscoveryEndpoints
 
         try
         {
-            var lookup = await ResolveSceneForDiscoveryAsync(
-                sceneId,
-                context,
-                registry,
-                cancellationToken).ConfigureAwait(false);
-            if (lookup is not { } resolved)
-            {
-                return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
-            }
-
-            if (RequireReadAccess(context, resolved) is { } denied)
+            var (scene, denied) = await ResolveReadableSceneAsync(sceneId, context, registry, cancellationToken)
+                .ConfigureAwait(false);
+            if (denied is not null)
             {
                 return denied;
             }
+
+            var resolved = scene!.Value;
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var response = resolved.Record is not null
@@ -222,20 +221,14 @@ internal static partial class SceneDiscoveryEndpoints
 
         try
         {
-            var lookup = await ResolveSceneForDiscoveryAsync(
-                sceneId,
-                context,
-                registry,
-                cancellationToken).ConfigureAwait(false);
-            if (lookup is not { } resolved)
-            {
-                return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
-            }
-
-            if (RequireReadAccess(context, resolved) is { } denied)
+            var (scene, denied) = await ResolveReadableSceneAsync(sceneId, context, registry, cancellationToken)
+                .ConfigureAwait(false);
+            if (denied is not null)
             {
                 return denied;
             }
+
+            var resolved = scene!.Value;
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var response = resolved.Record is not null
@@ -250,6 +243,18 @@ internal static partial class SceneDiscoveryEndpoints
             Log.SceneDiscoveryFailed(logger, "resolve", ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to resolve scene.");
         }
+    }
+
+    private static async Task<(ResolvedScene? Scene, IResult? Denied)> ResolveReadableSceneAsync(
+        string sceneId,
+        HttpContext context,
+        ISceneDatasetRegistry registry,
+        CancellationToken cancellationToken)
+    {
+        var scene = await ResolveSceneForDiscoveryAsync(sceneId, context, registry, cancellationToken).ConfigureAwait(false);
+        return scene is { } resolved
+            ? (resolved, RequireReadAccess(context, resolved))
+            : (null, StandardErrorHelpers.CreateNotFound(context, "Scene was not found."));
     }
 
     // The same decision the scene's asset routes make, so discovery describes a scene only to a

@@ -15,7 +15,7 @@ public sealed class SceneDiscoveryAuthProjectionTests
     [UnitTest]
     public void ToAuth_RoleRestrictedRecord_AdvertisesAuthenticationWithoutRoleNames()
     {
-        var auth = SceneDiscoveryEndpoints.ToAuth(CreateRecord(isPublic: false, requiresAuth: true, "scene-reader"));
+        var auth = SceneDiscoveryEndpoints.ToAuth(CreateRecord() with { IsPublic = false, RequiresAuth = true, AllowedRoles = ["scene-reader"] });
         var json = JsonSerializer.Serialize(auth, PublicSceneDiscoveryJsonContext.Default.PublicSceneAuthRequirements);
 
         auth.RequiresAuthentication.Should().BeTrue();
@@ -26,21 +26,18 @@ public sealed class SceneDiscoveryAuthProjectionTests
     [UnitTest]
     public void ToAuth_PublicRecord_RequiresNoAuthentication()
     {
-        var auth = SceneDiscoveryEndpoints.ToAuth(CreateRecord(isPublic: true, requiresAuth: false));
+        var auth = SceneDiscoveryEndpoints.ToAuth(CreateRecord() with { IsPublic = true, RequiresAuth = false });
 
         auth.RequiresAuthentication.Should().BeFalse();
         auth.Schemes.Should().BeEmpty();
     }
 
-    private static SceneDatasetRecord CreateRecord(bool isPublic, bool requiresAuth, params string[] allowedRoles)
+    private static SceneDatasetRecord CreateRecord()
         => new()
         {
             Id = "scene",
             Name = "Scene",
             AssetRoot = "/data/scene",
             CreatedBy = "tester",
-            IsPublic = isPublic,
-            RequiresAuth = requiresAuth,
-            AllowedRoles = allowedRoles,
         };
 }

@@ -10,11 +10,11 @@ namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 public sealed class SceneServingProjectionTests
 {
     [UnitTheory]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, true)]
-    [InlineData(false, false, true)]
-    [InlineData(true, true, true)]
-    public void ToAccessPolicy_AccessFlags_ProtectUnlessOnlyPublic(bool isPublic, bool requiresAuth, bool expectProtected)
+    [InlineData("public")]
+    [InlineData("authenticated")]
+    [InlineData("private")]
+    [InlineData("public-authenticated")]
+    public void ToAccessPolicy_AccessFlags_ProtectUnlessOnlyPublic(string access)
     {
         var record = new SceneDatasetRecord
         {
@@ -22,14 +22,14 @@ public sealed class SceneServingProjectionTests
             Name = "Scene",
             AssetRoot = "/data/scene",
             CreatedBy = "tester",
-            IsPublic = isPublic,
-            RequiresAuth = requiresAuth,
+            IsPublic = access is "public" or "public-authenticated",
+            RequiresAuth = access is "authenticated" or "public-authenticated",
             AllowedRoles = ["scene-reader"],
         };
 
         var policy = SceneServingProjection.ToAccessPolicy(record);
 
-        (policy is not null).Should().Be(expectProtected);
+        (policy is not null).Should().Be(access != "public");
         policy?.AllowAnonymous.Should().BeFalse();
     }
 }

@@ -1200,6 +1200,15 @@ internal static class GeoservicesCatalogEndpoints
             return false;
         }
 
+        AddSceneServerEntries(entries, scenes, baseUrl);
+        return true;
+    }
+
+    private static void AddSceneServerEntries(
+        List<ServiceDirectoryEntry> entries,
+        IEnumerable<SceneDatasetRecord> scenes,
+        string baseUrl)
+    {
         foreach (var scene in scenes)
         {
             var escapedSceneId = Uri.EscapeDataString(scene.Id);
@@ -1212,7 +1221,6 @@ internal static class GeoservicesCatalogEndpoints
             });
         }
 
-        return true;
     }
 
     private readonly record struct ImageServerProbeRequest(
