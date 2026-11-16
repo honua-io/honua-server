@@ -3050,6 +3050,32 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-live",
+      "route": "/api/v1/admin/live",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_Anonymous_ReturnsUnauthorized",
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_FullSubscriptionCloses_EmitsSlowConsumerReset",
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_InvalidCursor_ReturnsBadRequest",
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_UnknownTopic_ReturnsBadRequest",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_AnotherTaskPublishes_ReceivesHealthAndResumesTransitionsOnReplacementTask",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_InProcessProvider_WakesAfterCommittedProposalAndWorkflowWrites",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_StatusOnlyConnection_ReplaysEventsAfterDisconnect",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_WorkflowTransitions_ShareEventIdentityWithRestTimeline",
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.AdminLive_PlatformOrUnboundAdministrator_CanOpen",
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.GlobalAdministration_TenantAdministrator_IsForbidden",
+        "Honua.Server.Tests.Features.Security.AuthorizedRouteAnonymousDenialMatrixTests.EveryAuthorizedRoute_AnonymousCaller_Returns401",
+        "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.AdminLive_WithSqlInjectionInQuery_ReturnsBadRequest",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-metadata-coordinated-releases-operations-operationid-approval-review-gate",
       "route": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}",
       "method": "GET",
@@ -6257,54 +6283,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-publications-publicationid-current-json",
-      "route": "/api/v1/publications/{publicationId}/current.json",
-      "method": "GET",
-      "family": "Paired Publication HTTP",
-      "protocol": "http-route",
-      "code_location": "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Anonymous_IsRefusedBeforeExistenceOrConditionChecks",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_CurrentCallerPolicy_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_DeniedExport_IsRefusedBeforeArchivedVersionExistence",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ImplicitObjectId_RemainsReadableUntilExplicitlyHidden",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_MalformedPointer_RefusesCurrentAndPinnedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_NewlyHiddenField_RefusesPreviouslyPublishedBytes",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ReboundStorage_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Republish_PinsDescriptorAndRelativeArtifactsToOneVersion",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_RetiredSource_RefusesPreviouslyPublishedBytes",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_TenantChanged_RefusesPreviouslyPublishedBytes"
-      ],
-      "proof_ledger_surface": "paired-publication-read",
-      "maturity": "implemented",
-      "capability": "serve.vector-tiles"
-    },
-    {
-      "id": "get-api-v1-publications-publicationid-version-filename",
-      "route": "/api/v1/publications/{publicationId}/{version}/{fileName}",
-      "method": "GET",
-      "family": "Paired Publication HTTP",
-      "protocol": "http-route",
-      "code_location": "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Anonymous_IsRefusedBeforeExistenceOrConditionChecks",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Artifacts_SupportRangeHeadAndConditionalRequests",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_CurrentCallerPolicy_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_DeniedExport_IsRefusedBeforeArchivedVersionExistence",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_GenericPMTilesProxy_RefusesPairedArchives",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ImplicitObjectId_RemainsReadableUntilExplicitlyHidden",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_MalformedPointer_RefusesCurrentAndPinnedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_NewlyHiddenField_RefusesPreviouslyPublishedBytes",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ReboundStorage_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Republish_PinsDescriptorAndRelativeArtifactsToOneVersion",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_RetiredSource_RefusesPreviouslyPublishedBytes",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_TenantChanged_RefusesPreviouslyPublishedBytes"
-      ],
-      "proof_ledger_surface": "paired-publication-read",
-      "maturity": "implemented",
-      "capability": "serve.vector-tiles"
-    },
-    {
       "id": "get-api-v1-published-routeslug",
       "route": "/api/v1/published/{*routeSlug}",
       "method": "GET",
@@ -6867,8 +6845,7 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RangeRequest_Returns206WithRangeHeaders",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_ServedArchive_IsReadableAsAWholePMTilesArchive",
-        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_UnsatisfiableRange_Returns416",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_GenericPMTilesProxy_RefusesPairedArchives"
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_UnsatisfiableRange_Returns416"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
       "maturity": "implemented",
@@ -14235,13 +14212,13 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_CommunityEdition_ReturnsForbidden",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_InvalidCoordinateMetadata_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_MissingDeclaredObservationSidecar_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_MissingScene_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_ProtectedSceneRequiresAuthAndReturnsPrivateCache",
-        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_PublicConstructionScene_ReturnsDeterministicUsdaManifest",
-        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_WithMatchingIfNoneMatch_ReturnsNotModified"
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_PublicConstructionScene_ReturnsDeterministicUsdaManifest"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "experimental",
@@ -14269,6 +14246,8 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAuthorizationTests.GetTileset_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAuthorizationTests.GetTileset_PublicScene_DoesNotRequireAuth",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAuthorizationTests.GetTileset_PublicScene_ReturnsPublicCacheControl",
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalProtectedSceneRead_Gzip_KeepsAcceptEncodingAndCredentialVary",
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_HttpThenHttps_ResolvesBothAndCachesWithinScheme",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_InternalAndAdvertisedHosts_SharePublicCacheEntry",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_MissingThenPublished_DoesNotRetain404AcrossHostsOrSchemes",
@@ -14293,6 +14272,7 @@
       "proving_tests": [
         "Honua.Protocols.Scene.ComponentTests.SceneComponentTests.PublicAsset_ConditionalAndRangeRequests_PreserveWireContract",
         "Honua.Protocols.Scene.ComponentTests.SceneGenerationETagTests.GetAsset_GenerationChangesWithIdenticalContent_ReturnsNewValidator",
+        "Honua.Protocols.Scene.ComponentTests.SceneGenerationETagTests.GetAsset_GzipAcceptedForBinaryAsset_PreservesStrongIfRangeValidator",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetSceneAsset_ObservationsSidecar_ReturnsJsonWithStableSceneId",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetSceneAsset_StructureTile_ReturnsB3dmBinary",
         "Honua.Server.Tests.Features.Protocols.Scene.PublicSceneDiscoveryEndpointTests.GetSceneAsset_ForDowntownHonoluluFixture_ReturnsSceneMetadataJson",
@@ -16016,44 +15996,6 @@
       "capability": "serve.wps"
     },
     {
-      "id": "head-api-v1-publications-publicationid-current-json",
-      "route": "/api/v1/publications/{publicationId}/current.json",
-      "method": "HEAD",
-      "family": "Paired Publication HTTP",
-      "protocol": "http-route",
-      "code_location": "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_CurrentCallerPolicy_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_DeniedExport_IsRefusedBeforeArchivedVersionExistence",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ImplicitObjectId_RemainsReadableUntilExplicitlyHidden",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ReboundStorage_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Republish_PinsDescriptorAndRelativeArtifactsToOneVersion",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_TenantChanged_RefusesPreviouslyPublishedBytes"
-      ],
-      "proof_ledger_surface": "paired-publication-read",
-      "maturity": "implemented",
-      "capability": "serve.vector-tiles"
-    },
-    {
-      "id": "head-api-v1-publications-publicationid-version-filename",
-      "route": "/api/v1/publications/{publicationId}/{version}/{fileName}",
-      "method": "HEAD",
-      "family": "Paired Publication HTTP",
-      "protocol": "http-route",
-      "code_location": "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_Artifacts_SupportRangeHeadAndConditionalRequests",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_CurrentCallerPolicy_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_DeniedExport_IsRefusedBeforeArchivedVersionExistence",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ImplicitObjectId_RemainsReadableUntilExplicitlyHidden",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_ReboundStorage_RefusesCurrentAndArchivedArtifacts",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_TenantChanged_RefusesPreviouslyPublishedBytes"
-      ],
-      "proof_ledger_surface": "paired-publication-read",
-      "maturity": "implemented",
-      "capability": "serve.vector-tiles"
-    },
-    {
       "id": "head-api-v1-rasters-cog-artifactid",
       "route": "/api/v1/rasters/cog/{*artifactId}",
       "method": "HEAD",
@@ -16081,8 +16023,7 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_ConditionalReads_HonorValidatorsBeforeRanges",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadMissingArtifact_Returns404",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadRequest_Returns200WithContentLengthAndNoBody",
-        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes",
-        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PublicationRead_GenericPMTilesProxy_RefusesPairedArchives"
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
       "maturity": "implemented",
@@ -16096,6 +16037,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.HeadTileset_ReturnsHeadersWithoutBody"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
@@ -23124,6 +23066,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_EsriFeatureEnvelopeAndDeleteIds_RoundTripAllOperations",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormFailingEdit_ReturnsErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormUpload_AppliesEdits",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ForeignCommitAfterUpload_RetainsExactConflictResolutionBase",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_IdenticalUploadAfterAnotherUpload_AppliesAgain",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ManualReviewConflictHandling_WithholdsConflictingEdit",
@@ -23351,6 +23294,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithValidPointGeometry_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithZCoordinates_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.GdbVersionFlow_EditQueryReconcilePost_IsolatesThenMerges",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.FeatureEdits_ProtectedVersionOfAnotherOwner_AreDeniedAndWriteNothing",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate",

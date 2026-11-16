@@ -18,7 +18,7 @@ internal sealed partial class OperateObservabilityFixtureStartupSeedService(
         }
 
         await using var scope = scopeFactory.CreateAsyncScope();
-        var seeder = scope.ServiceProvider.GetRequiredService<IOperateObservabilityFixtureSeeder>();
+        var seeder = scope.ServiceProvider.GetRequiredService<OperateObservabilityFixtureSeeder>();
         var response = await seeder.SeedAsync(options.Value.Profile, cancellationToken).ConfigureAwait(false);
         SeededOnStartup(logger, response.Profile, response.Investigation.InvestigationId);
     }
