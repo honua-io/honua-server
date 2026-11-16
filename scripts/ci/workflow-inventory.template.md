@@ -706,19 +706,6 @@ Five composite actions were added to `.github/actions/` for shared CI setup and 
 
 **Rationale**: Features and Tiles used the same checkout/build/run/parse/upload/fail skeleton as the reusable CITE workflow. Keeping only suite-specific inputs in the dispatcher files reduces drift in cache scopes, artifact upload behavior, and failure handling.
 
-### Semantic inventory pilot placement
-
-The optional #6051 metadata observation runs in `ci.yml`'s managed `build`
-producer after normal managed compilation and pristine test-output publication.
-The Architecture collector's existing generated coverage references materialize
-OData units, Scene components and GDAL outputs there, together with their project
-reference metadata. The complete collector still gates the downstream foundation
-server consumer. The pilot adds only its small tool build; no additional inspected
-project build or dependency artifact transport is introduced. Fixture regressions
-fail the producer; real-project metadata observation remains advisory and its
-reports are retained separately as `source-inventory-pilot-<attempt>`.
-
-
 ### Grouped unit and component shards
 
 The server matrix combines 33 small unit/component assemblies into four jobs:
