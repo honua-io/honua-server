@@ -85,7 +85,7 @@ public static partial class FeatureAttributeValidator
             // The compatibility profile accepts wire 0/1 and persists declared Booleans.
             if (_options.Profile == AttributeValidationProfile.GeoServices &&
                 field.Type == MetadataV2FieldType.Boolean && normalizedValue is not null &&
-                TryGetBooleanFromNumeric(normalizedValue, out var booleanValue))
+                ReadNumericBoolean(normalizedValue) is { } booleanValue)
             {
                 normalizedValue = booleanValue;
             }

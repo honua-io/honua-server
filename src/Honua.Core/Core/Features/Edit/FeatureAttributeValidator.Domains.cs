@@ -41,8 +41,8 @@ public static partial class FeatureAttributeValidator
         if (field.Type == MetadataV2FieldType.Decimal && value is string exactText)
         {
             var numericDecimal = ExactAttributeValues.ParseDecimal(exactText);
-            if (!TryReadDecimalBound(domain.Range[0], out var decimalMin) ||
-                !TryReadDecimalBound(domain.Range[1], out var decimalMax))
+            if (ReadDecimalBound(domain.Range[0]) is not { } decimalMin ||
+                ReadDecimalBound(domain.Range[1]) is not { } decimalMax)
             {
                 return $"Field '{field.Name}' has unsupported decimal range bounds.";
             }
@@ -50,14 +50,14 @@ public static partial class FeatureAttributeValidator
                 ? $"Field '{field.Name}' value is outside the allowed range."
                 : null;
         }
-        if (!TryGetDouble(value, out var numeric))
+        if (ReadDouble(value) is not { } numeric)
         {
             // Non-numeric value against a numeric range — type validation
             // already covers the canonical-type case; let it pass.
             return null;
         }
-        if (!TryReadRangeBound(domain.Range[0], out var min) ||
-            !TryReadRangeBound(domain.Range[1], out var max))
+        if (ReadRangeBound(domain.Range[0]) is not { } min ||
+            ReadRangeBound(domain.Range[1]) is not { } max)
         {
             return null;
         }
@@ -68,26 +68,24 @@ public static partial class FeatureAttributeValidator
         return null;
     }
 
-    private static bool TryReadDecimalBound(JsonElement bound, out decimal value)
+    private static decimal? ReadDecimalBound(JsonElement bound)
     {
         if (bound.ValueKind == JsonValueKind.Number)
         {
-            return bound.TryGetDecimal(out value);
+            return bound.TryGetDecimal(out var value) ? value : null;
         }
         if (bound.ValueKind == JsonValueKind.String)
         {
             try
             {
-                value = ExactAttributeValues.ParseDecimal(bound.GetString()!);
-                return true;
+                return ExactAttributeValues.ParseDecimal(bound.GetString()!);
             }
             catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
             {
-                // Invalid bounds are ignored, matching unsupported range metadata below.
+                // The caller rejects unsupported decimal range metadata.
             }
         }
-        value = default;
-        return false;
+        return null;
     }
 
     private static bool CodedValueMatches(JsonElement code, object value)
@@ -104,11 +102,11 @@ public static partial class FeatureAttributeValidator
                     return string.Equals(coded, value.ToString(), StringComparison.Ordinal);
                 }
             case JsonValueKind.Number:
-                if (code.TryGetInt64(out var codedLong) && TryGetInt64(value, out var valueLong))
+                if (code.TryGetInt64(out var codedLong) && ReadInt64(value) is { } valueLong)
                 {
                     return codedLong == valueLong;
                 }
-                if (code.TryGetDouble(out var codedDouble) && TryGetDouble(value, out var valueDouble))
+                if (code.TryGetDouble(out var codedDouble) && ReadDouble(value) is { } valueDouble)
                 {
                     return Math.Abs(codedDouble - valueDouble) < double.Epsilon;
                 }
@@ -124,19 +122,18 @@ public static partial class FeatureAttributeValidator
         }
     }
 
-    private static bool TryReadRangeBound(JsonElement bound, out double value)
+    private static double? ReadRangeBound(JsonElement bound)
     {
-        if (bound.ValueKind == JsonValueKind.Number && bound.TryGetDouble(out value))
+        if (bound.ValueKind == JsonValueKind.Number && bound.TryGetDouble(out var numeric))
         {
-            return true;
+            return numeric;
         }
         if (bound.ValueKind == JsonValueKind.String &&
-            double.TryParse(bound.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+            double.TryParse(bound.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var textValue))
         {
-            return true;
+            return textValue;
         }
-        value = 0;
-        return false;
+        return null;
     }
 
 }

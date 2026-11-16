@@ -13,13 +13,13 @@ public static partial class FeatureAttributeValidator
         {
             MetadataV2FieldType.String => ValidateString(field, value),
             MetadataV2FieldType.Integer => ValidateInteger(field, value),
-            MetadataV2FieldType.BigInteger => TryGetInt64(value, out _)
+            MetadataV2FieldType.BigInteger => ReadInt64(value).HasValue
                 ? null : $"Field '{field.Name}' must be a 64-bit integer.",
-            MetadataV2FieldType.Double or MetadataV2FieldType.Float => TryGetDouble(value, out _)
+            MetadataV2FieldType.Double or MetadataV2FieldType.Float => ReadDouble(value).HasValue
                 ? null : $"Field '{field.Name}' must be a number.",
             MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset => ValidateExact(field, value),
             MetadataV2FieldType.Boolean => value is bool ||
-                (profile == AttributeValidationProfile.GeoServices && TryGetBooleanFromNumeric(value, out _))
+                (profile == AttributeValidationProfile.GeoServices && ReadNumericBoolean(value).HasValue)
                 ? null : $"Field '{field.Name}' must be a boolean.",
             MetadataV2FieldType.DateTime => ValidateDateTimeValue(field.Name, value, profile),
             MetadataV2FieldType.Date => ValidateDateValue(field.Name, value, profile),
@@ -43,7 +43,7 @@ public static partial class FeatureAttributeValidator
 
     private static string? ValidateInteger(MetadataV2Field field, object value)
     {
-        if (!TryGetInt64(value, out var number))
+        if (ReadInt64(value) is not { } number)
         {
             return $"Field '{field.Name}' must be an integer.";
         }

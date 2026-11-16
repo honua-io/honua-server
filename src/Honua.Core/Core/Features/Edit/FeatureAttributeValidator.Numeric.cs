@@ -5,108 +5,50 @@ namespace Honua.Core.Features.Edit;
 
 public static partial class FeatureAttributeValidator
 {
-    private static bool TryGetInt64(object value, out long result)
+    private static long? ReadInt64(object value) => value switch
     {
-        switch (value)
-        {
-            case sbyte sbyteValue:
-                result = sbyteValue;
-                return true;
-            case byte byteValue:
-                result = byteValue;
-                return true;
-            case short shortValue:
-                result = shortValue;
-                return true;
-            case ushort ushortValue:
-                result = ushortValue;
-                return true;
-            case int intValue:
-                result = intValue;
-                return true;
-            case uint uintValue:
-                result = uintValue;
-                return true;
-            case long longValue:
-                result = longValue;
-                return true;
-            case ulong ulongValue when ulongValue <= long.MaxValue:
-                result = (long)ulongValue;
-                return true;
-            case float floatValue when IsWholeNumber(floatValue):
-                result = (long)floatValue;
-                return true;
-            case double doubleValue when IsWholeNumber(doubleValue):
-                result = (long)doubleValue;
-                return true;
-            case decimal decimalValue when decimal.Truncate(decimalValue) == decimalValue &&
-                                           decimalValue >= long.MinValue &&
-                                           decimalValue <= long.MaxValue:
-                result = (long)decimalValue;
-                return true;
-            default:
-                result = 0;
-                return false;
-        }
-    }
+        sbyte number => number,
+        byte number => number,
+        short number => number,
+        ushort number => number,
+        int number => number,
+        uint number => number,
+        long number => number,
+        ulong number when number <= long.MaxValue => (long)number,
+        float number when IsWholeNumber(number) => (long)number,
+        double number when IsWholeNumber(number) => (long)number,
+        decimal number when decimal.Truncate(number) == number &&
+            number >= long.MinValue && number <= long.MaxValue => (long)number,
+        _ => null,
+    };
 
-    private static bool TryGetDouble(object value, out double result)
+    private static double? ReadDouble(object value) => value switch
     {
-        switch (value)
-        {
-            case float floatValue:
-                result = floatValue;
-                return true;
-            case double doubleValue:
-                result = doubleValue;
-                return true;
-            case decimal decimalValue:
-                result = (double)decimalValue;
-                return true;
-            case sbyte sbyteValue:
-                result = sbyteValue;
-                return true;
-            case byte byteValue:
-                result = byteValue;
-                return true;
-            case short shortValue:
-                result = shortValue;
-                return true;
-            case ushort ushortValue:
-                result = ushortValue;
-                return true;
-            case int intValue:
-                result = intValue;
-                return true;
-            case uint uintValue:
-                result = uintValue;
-                return true;
-            case long longValue:
-                result = longValue;
-                return true;
-            case ulong ulongValue:
-                result = ulongValue;
-                return true;
-            default:
-                result = 0;
-                return false;
-        }
-    }
+        float number => number,
+        double number => number,
+        decimal number => (double)number,
+        sbyte number => number,
+        byte number => number,
+        short number => number,
+        ushort number => number,
+        int number => number,
+        uint number => number,
+        long number => number,
+        ulong number => number,
+        _ => null,
+    };
 
-    private static bool TryGetBooleanFromNumeric(object value, out bool booleanValue)
+    private static bool? ReadNumericBoolean(object value)
     {
-        if (TryGetInt64(value, out var longValue))
+        if (ReadInt64(value) is { } integer)
         {
-            booleanValue = longValue == 1;
-            return longValue is 0 or 1;
+            return integer is 0 or 1 ? integer == 1 : null;
         }
-        if (TryGetDouble(value, out var doubleValue))
+        if (ReadDouble(value) is { } number)
         {
-            booleanValue = doubleValue == 1;
-            return doubleValue is 0 or 1;
+            return number is 0 or 1 ? number == 1 : null;
         }
-        booleanValue = false;
-        return false;
+        return null;
     }
 
     private static bool IsWholeNumber(double value)
