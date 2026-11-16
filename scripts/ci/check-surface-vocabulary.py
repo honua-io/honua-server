@@ -34,7 +34,7 @@ EXTRACTORS = {
 # Keep string bodies intact while masking comments, so examples in comments do
 # not become routes and comment markers inside a route remain literal text.
 CS_TOKENS = re.compile(
-    r'(?P<string>"{3,}.*?"{3,}|@"(?:""|[^"])*"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+    r'(?P<string>(?P<raw_quotes>"{3,})(?!").*?(?P=raw_quotes)(?!")|@"(?:""|[^"])*"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
     r'|(?P<comment>//[^\n]*|/\*.*?\*/)', re.S)
 ROUTE_LITERAL = re.compile(
     r'\.Map(?:Get|Head|Post|Put|Patch|Delete|Methods|Group|Fallback|FallbackToFile|Hub|GrpcService)'

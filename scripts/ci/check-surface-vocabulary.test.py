@@ -160,6 +160,10 @@ class SurfaceVocabularyTests(unittest.TestCase):
             var ordinary = "app.MapGet(\"/workspaces/string\", Read)";
             var verbatim = @"app.MapGet(""/workspaces/verbatim"", Read)";
             var raw = """app.MapGet("/workspaces/raw", Read)""";
+            var fourQuotes = """"
+                embedded triple: """
+                app.MapGet("/workspaces/still-raw", Read);
+                """";
             var slash = '/';
             app.MapGet("/maps", Read); // app.MapGet("/workspaces/tail", Read);
         ''')
