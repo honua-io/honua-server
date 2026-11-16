@@ -8,7 +8,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.ComponentTests;
 
-/// <summary>Candidate fixture qualification, separate from the HTTP parity measurement.</summary>
 [Trait("Category", "FixtureLifecycle")]
 [Trait("Tier", "Integration")]
 public sealed class PostgresFixtureLifecycleTests

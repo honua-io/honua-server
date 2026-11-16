@@ -23,13 +23,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Protocol-shape integration tests for the read-only Esri I3S SceneServer
-/// endpoints (#1202). The geometry-backed cases deliberately install a
-/// test-only provider to certify the deferred payload contract; they do not
-/// claim that production ships renderable I3S. Production-container coverage
-/// below verifies the ADR-0078 metadata-preview boundary separately.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
@@ -123,10 +116,6 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         await RegisterBuildingSceneAsync();
     }
 
-    /// <summary>
-    /// Registers a database-backed Building scene so the I3S layerType mapping
-    /// (#1812) is exercised: the descriptor must advertise <c>Building</c>.
-    /// </summary>
     private async Task RegisterBuildingSceneAsync()
     {
         var registration = _enterpriseFixture.GetService<ISceneRegistrationService>();
@@ -147,12 +136,6 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         });
     }
 
-    /// <summary>
-    /// Registers a database-backed scene with a persisted extent so the
-    /// registration branch of <c>ResolveExtentAsync</c> populates the I3S
-    /// <c>fullExtent</c>. The scene is public so the descriptor is reachable
-    /// without auth.
-    /// </summary>
     private async Task RegisterExtentSceneAsync()
     {
         var registration = _enterpriseFixture.GetService<ISceneRegistrationService>();
@@ -693,13 +676,6 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
-    /// <summary>
-    /// In-memory <see cref="ISceneNodeGeometryProvider"/> that transcodes a
-    /// single fixture square with the real <see cref="I3sGeometryTranscoder"/>,
-    /// proving the #1810 geometries route serves genuine transcoded bytes. It
-    /// returns <see langword="null"/> for the dedicated no-geometry scene so the
-    /// route's honest 404 path is exercised.
-    /// </summary>
     private sealed class StubSceneNodeGeometryProvider : ISceneNodeGeometryProvider
     {
         public Task<I3sTranscodedGeometry?> GetNodeGeometryAsync(
@@ -737,10 +713,6 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 
 }
 
-/// <summary>
-/// Production-profile registration tests kept separate from the protocol-shape
-/// fixture so no test-only geometry provider can leak into the assertion.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sProductionRouteRegistrationTests
 {

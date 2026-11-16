@@ -137,30 +137,6 @@ jobs:
             runner: ubuntu-24.04
             provenance: mode=max
             sbom: true
-          - image_key: functions-jit
-            image_name: Functions Development JIT Image
-            dockerfile: docker/Dockerfile.functions
-            tag_suffix: -functions-jit
-            cache_scope: honua-functions-jit
-            sarif_output: trivy-results-functions
-            sarif_category: trivy-functions
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-            provenance: true
-            sbom: true
-          - image_key: functions-aot
-            image_name: Functions AOT Image
-            dockerfile: docker/Dockerfile.functions.aot
-            tag_suffix: -functions-aot
-            cache_scope: honua-functions-aot
-            sarif_output: trivy-results-functions-aot
-            sarif_category: trivy-functions-aot
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-            provenance: mode=max
-            sbom: true
     permissions:
       contents: read
       packages: write
@@ -392,7 +368,7 @@ jobs:
           set -euo pipefail
           docker pull "$CANDIDATE"
           attestation_args=()
-          if [[ "${{ matrix.image_key }}" == "lambda-aot" || "${{ matrix.image_key }}" == "functions-aot" ]]; then
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends skopeo
             docker buildx imagetools inspect "$CANDIDATE"
@@ -670,14 +646,6 @@ jobs:
           # reachable under its explicit `-lambda-aot-arm64` tag.
           - image_name: Lambda AOT Image
             tag_suffix: -lambda-aot
-            source_arches: "amd64"
-            publish_aot_alias: true
-          - image_name: Functions Development JIT Image
-            tag_suffix: -functions-jit
-            source_arches: "amd64"
-            publish_aot_alias: false
-          - image_name: Functions AOT Image
-            tag_suffix: -functions-aot
             source_arches: "amd64"
             publish_aot_alias: true
     permissions:

@@ -34,9 +34,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Unit tests for WFS 2.0 publication gating.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20EnablementTests
 {

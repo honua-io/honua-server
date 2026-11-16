@@ -15,9 +15,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the admin SLD import/export endpoints (ticket 375).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class SldImportExportEndpointsTests : IAsyncLifetime

@@ -19,11 +19,6 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Internal signal that a <see cref="FeatureEditPrecondition"/> attached to an edit batch
-/// no longer matched the stored row when re-validated inside the write transaction. The
-/// edit paths translate this into <see cref="EditOperationResult.PreconditionFailed"/>.
-/// </summary>
 internal sealed class FeatureEditPreconditionFailedException : Exception
 {
     public FeatureEditPreconditionFailedException(long objectId, Feature currentFeature)
@@ -37,10 +32,6 @@ internal sealed class FeatureEditPreconditionFailedException : Exception
     public Feature CurrentFeature { get; }
 }
 
-/// <summary>
-/// Signals that COMMIT started but its acknowledgement was not observed. The transaction may
-/// have committed server-side even when a subsequent rollback reports that it already completed.
-/// </summary>
 internal sealed class FeatureEditCommitOutcomeUnknownException : Exception
 {
     public FeatureEditCommitOutcomeUnknownException(Exception innerException)
@@ -49,21 +40,6 @@ internal sealed class FeatureEditCommitOutcomeUnknownException : Exception
     }
 }
 
-/// <summary>
-/// Internal signal that a create was rejected because the layer's geometry column is
-/// non-nullable (a database NOT NULL constraint fired) and the feature supplied no
-/// geometry. The edit paths translate this into a clean, actionable validation error
-/// ("Geometry is required for create operation on a spatial layer") instead of leaking a
-/// raw provider constraint violation.
-/// </summary>
-/// <remarks>
-/// BH-014 fix-forward (#2423 / reverted by #2433): the original fix added a blanket
-/// client-side pre-check that rejected null geometry on ANY spatial layer, which wrongly
-/// failed valid attribute-only creates on nullable geometry columns (Issue #45) and
-/// regressed ~10 CI shards. Mapping the actual database NOT NULL violation preserves the
-/// clean-error UX for genuinely non-nullable geometry columns while never rejecting a
-/// legitimate null-geometry create on a nullable column.
-/// </remarks>
 internal sealed class GeometryRequiredForCreateException : Exception
 {
     public GeometryRequiredForCreateException(Exception innerException)
@@ -74,17 +50,9 @@ internal sealed class GeometryRequiredForCreateException : Exception
 
 internal sealed partial class FeatureDataAccess
 {
-    /// <summary>
-    /// Client-safe validation message surfaced when a create supplies no geometry for a
-    /// layer whose geometry column is non-nullable (database NOT NULL constraint).
-    /// </summary>
     internal const string GeometryRequiredForCreateMessage =
         "Geometry is required for create operation on a spatial layer";
 
-    /// <summary>
-    /// Recognizes the common PostGIS geometry column names so a NOT NULL constraint
-    /// violation on the geometry column can be mapped to a clean validation error.
-    /// </summary>
     internal static bool IsGeometryColumn(string? columnName)
     {
         if (string.IsNullOrEmpty(columnName))
@@ -98,12 +66,6 @@ internal sealed partial class FeatureDataAccess
             || columnName.Equals("the_geom", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// True when a provider exception is a database NOT NULL constraint violation on the
-    /// geometry column, i.e. the layer's geometry column is non-nullable and the create
-    /// supplied no geometry. Used to map the raw provider error to a clean validation
-    /// message without a client-side pre-check (BH-014 fix-forward).
-    /// </summary>
     internal static bool IsGeometryNotNullViolation(PostgresException ex)
         => ex.SqlState == PostgresErrorCodes.NotNullViolation && IsGeometryColumn(ex.ColumnName);
 
@@ -209,7 +171,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         // The feature row and its attachment rows commit together. Blobs follow that commit,
-        // including when this delete is the only statement in the request (#6137).
+        // including when this delete is the only statement in the request.
         await using var rowTransaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var npgsqlRowTransaction = (NpgsqlTransaction)rowTransaction;
         await EnsureExistingRowVisibleAsync(policy.RowFilter, new RowSecurityContext(conn, npgsqlRowTransaction, new(_tableName, layerId, (null, featureId))), cancellationToken).ConfigureAwait(false);
@@ -308,10 +270,6 @@ internal sealed partial class FeatureDataAccess
 
     private static readonly AsyncLocal<PendingGrpcEditReceipt?> PendingGrpcReceipt = new();
 
-    /// <summary>
-    /// Applies the batch and, when it commits, writes <paramref name="receipt"/> on that same
-    /// transaction before the commit is acknowledged.
-    /// </summary>
     public async Task<FeatureEditApplication> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -344,7 +302,7 @@ internal sealed partial class FeatureDataAccess
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        // Branch-versioned edits route to the overlay write path (#1272 Track B, ADR-0051). DEFAULT
+        // Branch-versioned edits route to the overlay write path (ADR-0051). DEFAULT
         // (null/IsDefault) falls through to the byte-identical base write path below, untouched.
         if (editBatch.VersionContext is { IsDefault: false } version)
         {
@@ -365,7 +323,7 @@ internal sealed partial class FeatureDataAccess
             // A single UPDATE has no cross-operation snapshot to preserve. ReadCommitted
             // lets its locked precondition read observe the latest committed row and report
             // a stale token instead of SQLSTATE 40001. GeoServices can then re-read and merge
-            // a partial request without overwriting unrelated concurrent changes (#4113).
+            // a partial request without overwriting unrelated concurrent changes.
             var singleUpdate = editBatch.Updates.Length == 1 &&
                 editBatch.Creates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty &&
                 editBatch.Operations.IsDefaultOrEmpty;
@@ -421,7 +379,7 @@ internal sealed partial class FeatureDataAccess
             partialCreatedIds = createdIds;
             partialCreateResults = createResults;
             // A cancelled autocommit returns the rows already recorded. Do not start
-            // the next kind; the catch below attaches the unknown tail (#6028).
+            // the next kind; the catch below attaches the unknown tail.
             cancellationToken.ThrowIfCancellationRequested();
 
             var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
@@ -489,7 +447,7 @@ internal sealed partial class FeatureDataAccess
             // rollbackOnFailure and a keyed receipt share one transaction. Dispose rolls
             // it back, so a partial receipt would name rows that do not stay committed.
             // Autocommit (no transaction) falls through and returns the rows already
-            // committed plus an unknown tail (#6028). Staged attachment blobs belong to
+            // committed plus an unknown tail. Staged attachment blobs belong to
             // rows this dispose restores, so they must not be deleted.
             DiscardPendingAttachmentBlobs(transaction!);
             throw;
@@ -529,7 +487,7 @@ internal sealed partial class FeatureDataAccess
             // not yet produce a result (the unprocessed tail) should be reported as failed.
             // Reporting all as failed previously drove clients to re-submit already-committed
             // rows, creating duplicates. Cancellation uses the same shape so an autocommit
-            // that already landed is not reported as a clean rollback (#6028).
+            // that already landed is not reported as a clean rollback.
             var unrecordedMessage = ex is OperationCanceledException
                 ? "Edit cancelled."
                 : "Edit batch failed.";
@@ -579,11 +537,6 @@ internal sealed partial class FeatureDataAccess
             (NpgsqlTransaction)transaction);
     }
 
-    /// <summary>
-    /// Builds an object-id keyed lookup of row-state expectations from the batch's
-    /// preconditions. Returns null when the batch carries no preconditions so the hot
-    /// path stays allocation-free.
-    /// </summary>
     private static Dictionary<long, FeatureEditPrecondition>? BuildPreconditionMap(FeatureEditBatch editBatch)
     {
         if (editBatch.Preconditions.IsDefaultOrEmpty)
@@ -601,15 +554,6 @@ internal sealed partial class FeatureDataAccess
         return map.Count == 0 ? null : map;
     }
 
-    /// <summary>
-    /// Re-validates an optimistic-concurrency precondition inside the active write transaction.
-    /// Existing rows are locked with SELECT ... FOR UPDATE (so a concurrent writer cannot modify
-    /// one between this check and the subsequent UPDATE/DELETE). The method either verifies the
-    /// canonical <see cref="FeatureStateToken"/> or verifies that the row is still absent.
-    /// </summary>
-    /// <exception cref="ResourceNotFoundException">The row no longer exists.</exception>
-    /// <exception cref="FeatureEditPreconditionFailedException">The stored row state changed since the caller's snapshot.</exception>
-    /// <returns>The locked row, or null when an expected-absence precondition holds.</returns>
     private async Task<Feature?> EnsurePreconditionSatisfiedAsync(
         int layerId,
         long objectId,
@@ -782,7 +726,7 @@ internal sealed partial class FeatureDataAccess
     internal static Feature PreserveOmittedAttributes(Feature update, Feature current)
     {
         // A partial update that omitted geometry takes it from the row locked in this
-        // transaction, not from the caller's earlier unlocked read (#6094).
+        // transaction, not from the caller's earlier unlocked read.
         if (update.PreserveOmittedGeometry)
         {
             update = update with { Geometry = current.Geometry };
@@ -868,7 +812,7 @@ internal sealed partial class FeatureDataAccess
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // An open transaction, including ApplyEditsWithinTransactionAsync, still
-                // rolls back. Autocommit keeps the rows already recorded (#6028).
+                // rolls back. Autocommit keeps the rows already recorded.
                 if (transaction != null)
                 {
                     throw;
@@ -906,12 +850,6 @@ internal sealed partial class FeatureDataAccess
         return orderedResult;
     }
 
-    /// <summary>
-    /// Builds the autocommit receipt for an ordered batch cancelled at
-    /// <paramref name="firstUnrecordedIndex"/>. Recorded results keep their object
-    /// ids. The operation at that index and everything after it are an unknown tail:
-    /// the in-flight statement may have committed, and later statements did not run.
-    /// </summary>
     internal static FeatureEditResult CancelledAutocommitOrderedResult(
         FeatureEditBatch editBatch,
         int firstUnrecordedIndex,
@@ -983,7 +921,7 @@ internal sealed partial class FeatureDataAccess
 
         // Ordered batches keep request sequence. Unordered creates, updates, and deletes use the
         // same processors as a committing ApplyEditsAsync, but this caller owns the transaction:
-        // a later batch can still roll the earlier ones back (#6359).
+        // a later batch can still roll the earlier ones back.
         if (!editBatch.Operations.IsDefaultOrEmpty)
         {
             return await ApplyOrderedEditsAsync(
@@ -1004,11 +942,6 @@ internal sealed partial class FeatureDataAccess
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Applies an unordered batch on a caller-owned transaction without committing or
-    /// rolling that transaction back. Row failures with <see cref="FeatureEditBatch.RollbackOnFailure"/>
-    /// return <see cref="FeatureEditResult.Rollback"/> and leave the SQL transaction open.
-    /// </summary>
     private async Task<FeatureEditResult> ApplyUnorderedEditsWithinCallerTransactionAsync(
         int layerId,
         FeatureEditBatch editBatch,
@@ -1427,13 +1360,8 @@ internal sealed partial class FeatureDataAccess
         public bool Superseded { get; set; }
     }
 
-    /// <summary>Outcome of committing a staged edit, possibly with its idempotency receipt.</summary>
     internal readonly record struct StagedEditCommit(bool ReceiptDurable, bool SupersededByExistingReceipt);
 
-    /// <summary>
-    /// Writes <paramref name="receipt"/> on <paramref name="transaction"/> and only then commits.
-    /// A failed or conflicting receipt write does not commit the edit.
-    /// </summary>
     internal static async Task<StagedEditCommit> CommitStagedEditAsync(
         DbTransaction transaction,
         FeatureEditResult result,
@@ -1641,19 +1569,15 @@ internal sealed partial class FeatureDataAccess
         }
         catch (PostgresException ex) when (IsGeometryNotNullViolation(ex))
         {
-            // BH-014 fix-forward: a null-geometry create against a non-nullable geometry
-            // column surfaces as a clean validation error rather than a raw provider
-            // constraint violation. This maps only the database's own decision (the
-            // NOT NULL constraint actually fired), so nullable geometry columns still
-            // accept valid attribute-only creates (Issue #45) with no client-side gate.
+            // A null-geometry create against a non-nullable geometry column surfaces as
+            // a clean validation error rather than a raw provider constraint violation.
+            // This maps only the database's own decision (the NOT NULL constraint
+            // actually fired), so nullable geometry columns still accept valid
+            // attribute-only creates with no client-side gate.
             throw new GeometryRequiredForCreateException(ex);
         }
     }
 
-    /// <summary>
-    /// Case-insensitive owner comparison against one JSON attributes document.
-    /// Null when <paramref name="guard"/> is null. An absent owner matches an empty expected value.
-    /// </summary>
     private static string? OwnerMatchExpression(OwnerEditGuard? guard, string attributesSql, int fieldParameter, int valueParameter)
     {
         if (guard is null)
@@ -1809,12 +1733,6 @@ internal sealed partial class FeatureDataAccess
         Feature? Snapshot,
         IReadOnlyList<DeletedAttachmentBlob>? AttachmentBlobs = null);
 
-    /// <summary>
-    /// Deletes attachment rows for a feature that this statement just removed. An open batch
-    /// transaction keeps the blob paths until that transaction commits. Autocommit returns
-    /// the paths on <see cref="DeleteOutcome.AttachmentBlobs"/> so the caller can remove the
-    /// blobs after <see cref="RunRowMutationAtomicallyAsync{TResult}"/> commits the row.
-    /// </summary>
     private async Task<DeleteOutcome> CaptureDeletedAttachmentsAsync(
         int layerId,
         long featureId,
@@ -1869,7 +1787,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         // The feature row and attachment rows are already durable. Blob failure is an orphan,
-        // not an edit failure, and must not replace a partial autocommit receipt (#6028).
+        // not an edit failure, and must not replace a partial autocommit receipt.
         return _attachmentCleanup.DeleteBlobsAsync(blobs, CancellationToken.None);
     }
 
@@ -1974,7 +1892,7 @@ internal sealed partial class FeatureDataAccess
         var outboxActive = TryUseTransactionalOutbox(out _);
 
         // Replica uploads also require the row transaction so provenance is stamped atomically.
-        // A row-level security write check (#6103) does too: each row is re-selected with the
+        // A row-level security write check does too: each row is re-selected with the
         // caller's predicate and rolled back when it falls outside it, which the autocommit
         // bulk INSERT cannot do.
         if (transaction == null && features.Length > 1 && !outboxActive && !FeatureOperationEvidenceScope.IsActive && ReplicaUploadOriginScope.Current is null &&
@@ -1996,7 +1914,7 @@ internal sealed partial class FeatureDataAccess
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
-                        // Let the adaptive splitter keep the committed prefix and stop (#6028).
+                        // Let the adaptive splitter keep the committed prefix and stop.
                         throw;
                     }
                     // Intentionally broad: per-feature failure in an adaptive batch; sanitize via
@@ -2051,7 +1969,7 @@ internal sealed partial class FeatureDataAccess
             {
                 // BH7-020: stop the rest of the batch. An open transaction still rolls
                 // back, so that cancellation propagates. Autocommit returns the rows
-                // already recorded; the in-flight row stays in the unknown tail (#6028).
+                // already recorded; the in-flight row stays in the unknown tail.
                 if (transaction != null)
                 {
                     throw;
@@ -2104,7 +2022,7 @@ internal sealed partial class FeatureDataAccess
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // One autocommit statement: its ids were not observed. Splitting would
-            // insert the same rows again if the statement had already committed (#6028).
+            // insert the same rows again if the statement had already committed.
             throw;
         }
         // Intentionally broad: adaptive bisection on any batch-insert failure, recursively split in
@@ -2285,7 +2203,7 @@ internal sealed partial class FeatureDataAccess
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // BH7-020: stop the rest of the batch. An open transaction still rolls
-                // back. Autocommit returns the rows already recorded (#6028).
+                // back. Autocommit returns the rows already recorded.
                 if (transaction != null)
                 {
                     throw;
@@ -2377,7 +2295,7 @@ internal sealed partial class FeatureDataAccess
                     if (transaction is null)
                     {
                         // rollbackOnFailure is false: this row already committed. Remove its
-                        // blobs now so a later failed edit cannot leave them behind (#6137).
+                        // blobs now so a later failed edit cannot leave them behind.
                         await ReleaseCommittedAttachmentBlobsAsync(deleted.Value.AttachmentBlobs).ConfigureAwait(false);
                     }
 
@@ -2392,7 +2310,7 @@ internal sealed partial class FeatureDataAccess
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // BH7-020: stop the rest of the batch. An open transaction still rolls
-                // back. Autocommit returns the rows already recorded (#6028).
+                // back. Autocommit returns the rows already recorded.
                 if (transaction != null)
                 {
                     throw;
@@ -2415,11 +2333,6 @@ internal sealed partial class FeatureDataAccess
         return (deletedCount, results.ToImmutableArray());
     }
 
-    /// <summary>
-    /// Writes an outbox row inside the in-flight mutation transaction (or in a new auto-commit
-    /// statement on the same connection if no transaction is active). Used by the batch and
-    /// ordered-edit paths where the connection/transaction are already managed by ApplyEdits.
-    /// </summary>
     private async Task TryWriteOutboxRowForBatchAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -2462,20 +2375,6 @@ internal sealed partial class FeatureDataAccess
         await _outboxRepository!.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Runs a row mutation paired with its outbox insert atomically. When the caller already
-    /// holds a batch transaction the work runs inside it; when the batch is non-transactional
-    /// (RollbackOnFailure=false) but an outbox scope is active, a per-row transaction wraps
-    /// the mutation and outbox INSERT so a crash between them cannot leave a committed feature
-    /// row without its CDC envelope. When no outbox scope is active the work runs directly on
-    /// the connection so the autocommit fast path is preserved. Per-row failures bubble up to
-    /// the caller's try/catch and are recorded as edit operation failures while preserving
-    /// partial-success semantics.
-    /// Callers enforcing an optimistic-concurrency precondition pass
-    /// <paramref name="requireTransaction"/> so the SELECT ... FOR UPDATE re-validation and
-    /// the row mutation always share a transaction even on the otherwise-autocommit path;
-    /// the row lock would be released immediately without one.
-    /// </summary>
     private async Task<RowMutationResult<TResult>> RunRowMutationAtomicallyAsync<TResult>(
         NpgsqlConnection connection,
         NpgsqlTransaction? batchTransaction,
@@ -2550,11 +2449,6 @@ internal sealed partial class FeatureDataAccess
         return message.Length <= 160 ? message : message[..160];
     }
 
-    /// <summary>
-    /// Creates a sanitized row failure while distinguishing a server-rejected statement from a
-    /// transport or acknowledgement failure. PostgreSQL error responses and local validation
-    /// failures prove that the row did not commit; other provider failures remain unknown.
-    /// </summary>
     internal static EditOperationResult CreateFailedOperationResult(
         Exception exception,
         string operation,
@@ -2563,7 +2457,7 @@ internal sealed partial class FeatureDataAccess
         var errorMessage = GetSafeEditOperationError(exception, operation);
         if (exception is RowSecurityWriteCheckFailedException)
         {
-            // The row was rolled back before this was raised (#6103); never report it as possibly committed.
+            // The row was rolled back before this was raised; never report it as possibly committed.
             return EditOperationResult.Failure(errorMessage, EditOperationResult.NotPermittedErrorCode, objectId);
         }
 

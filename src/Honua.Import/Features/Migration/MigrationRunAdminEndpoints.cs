@@ -22,22 +22,11 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Slice 5 of issue #1015. Admin orchestration endpoints that the migration
-/// UI and SDK call to list runs, fetch a run, download the slice-4 evidence
-/// pack for a run, or cancel a still-running run. The endpoints are a thin
-/// adapter over <see cref="IMigrationRunCatalog"/>; all storage decisions
-/// (Postgres today, alternate backends tomorrow) live behind the catalog.
-/// </summary>
 internal static partial class MigrationRunAdminEndpoints
 {
     private const int DefaultPageLimit = 25;
     private const int MaxPageLimit = 100;
 
-    /// <summary>
-    /// Maps the four migration-run admin orchestration endpoints under
-    /// <c>/api/v1/admin/migration/runs</c>.
-    /// </summary>
     public static void MapMigrationRunAdminEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/migration/runs")
@@ -591,7 +580,6 @@ internal static partial class MigrationRunAdminEndpoints
     private static ILogger<MigrationRunAdminEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<MigrationRunAdminEndpointsLog>>();
 
-    /// <summary>Log category marker for migration-run admin endpoint operations.</summary>
     internal sealed class MigrationRunAdminEndpointsLog;
 
     private static partial class Log
@@ -604,130 +592,78 @@ internal static partial class MigrationRunAdminEndpoints
     }
 }
 
-/// <summary>
-/// Request body for recording a migration run start.
-/// </summary>
 public sealed record MigrationRunStartRequest
 {
-    /// <summary>Stable run identifier supplied by the migration producer.</summary>
     public string? RunId { get; init; }
 
-    /// <summary>Source kind identifier, for example <c>arcgis-geoservices-rest</c>.</summary>
     public string? SourceKind { get; init; }
 
-    /// <summary>Redacted source URL. Optional for offline-manifest runs.</summary>
     public string? SourceUrl { get; init; }
 
-    /// <summary>Optional operator-visible source display name.</summary>
     public string? SourceDisplayName { get; init; }
 
-    /// <summary>UTC instant the run started. Defaults to server receive time.</summary>
     public DateTimeOffset? StartedAt { get; init; }
 
-    /// <summary>Optional operator-visible note.</summary>
     public string? StatusNote { get; init; }
 }
 
-/// <summary>
-/// Request body for recording the terminal state of a migration run.
-/// </summary>
 public sealed record MigrationRunCompletionRequest
 {
-    /// <summary>Terminal status: <c>succeeded</c>, <c>failed</c>, or <c>cancelled</c>.</summary>
     public string? Status { get; init; }
 
-    /// <summary>UTC instant the run completed. Defaults to server receive time.</summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>Optional storage reference for the evidence pack.</summary>
     public string? EvidencePackRef { get; init; }
 
-    /// <summary>Optional evidence pack fingerprint.</summary>
     public string? EvidencePackFingerprint { get; init; }
 
-    /// <summary>Optional evidence pack JSON body to persist inline.</summary>
     public string? EvidencePackBody { get; init; }
 
-    /// <summary>Optional operator-visible note.</summary>
     public string? StatusNote { get; init; }
 }
 
-/// <summary>
-/// Wire representation of a <see cref="MigrationRunRecord"/> returned by the
-/// admin endpoints. <see cref="HasEvidencePack"/> is a convenience flag so
-/// UIs can decide whether to render the download button without fetching the
-/// pack body.
-/// </summary>
 public sealed record MigrationRunDto
 {
-    /// <summary>Stable run id.</summary>
     public required string RunId { get; init; }
 
-    /// <summary>Source kind (e.g. <c>geoserver-rest</c>).</summary>
     public required string SourceKind { get; init; }
 
-    /// <summary>Redacted source URL.</summary>
     public string SourceUrl { get; init; } = string.Empty;
 
-    /// <summary>Operator-visible source display name.</summary>
     public string? SourceDisplayName { get; init; }
 
-    /// <summary>Lowercase status: running, succeeded, failed, cancelled.</summary>
     public required string Status { get; init; }
 
-    /// <summary>UTC start instant.</summary>
     public required DateTimeOffset StartedAt { get; init; }
 
-    /// <summary>UTC completion instant (null while running).</summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>Storage reference for the slice-4 evidence pack.</summary>
     public string? EvidencePackRef { get; init; }
 
-    /// <summary>Bundle fingerprint of the slice-4 evidence pack.</summary>
     public string? EvidencePackFingerprint { get; init; }
 
-    /// <summary>Operator-visible note recorded on cancel or failure.</summary>
     public string? StatusNote { get; init; }
 
-    /// <summary>True when the evidence pack is available for download.</summary>
     public bool HasEvidencePack { get; init; }
 
-    /// <summary>Fingerprint of the signed reconciliation scorecard (issue #1381), when recorded.</summary>
     public string? ReconciliationScorecardFingerprint { get; init; }
 
-    /// <summary>True when the reconciliation scorecard is available for download.</summary>
     public bool HasReconciliationScorecard { get; init; }
 }
 
-/// <summary>
-/// Response envelope for <c>GET /api/v1/admin/migration/runs</c>.
-/// </summary>
 public sealed record MigrationRunListResponse
 {
-    /// <summary>Records in this page.</summary>
     public required MigrationRunDto[] Items { get; init; }
 
-    /// <summary>Total matching records (pre-paging).</summary>
     public required long TotalCount { get; init; }
 
-    /// <summary>Echo of the applied page limit.</summary>
     public required int Limit { get; init; }
 
-    /// <summary>Echo of the applied page offset.</summary>
     public required int Offset { get; init; }
 }
 
-/// <summary>
-/// Request body for <c>POST /api/v1/admin/migration/runs/{runId}/cancel</c>.
-/// </summary>
 public sealed record MigrationRunCancelRequest
 {
-    /// <summary>
-    /// Optional operator-supplied note explaining why the run was cancelled.
-    /// Persisted verbatim into <c>migration_runs.status_note</c>; no secrets
-    /// expected.
-    /// </summary>
     public string? Reason { get; init; }
 }
 

@@ -6,9 +6,6 @@ using Honua.Core.Features.Attachments.Domain;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Test implementation of IAttachmentStore for unit and integration tests
-/// </summary>
 public sealed class TestAttachmentStore : IAttachmentStore
 {
     private readonly Dictionary<(int layerId, long featureId), List<Attachment>> _attachments = new();
@@ -184,9 +181,6 @@ public sealed class TestAttachmentStore : IAttachmentStore
         return Task.FromResult<AttachmentContent?>(attachmentContent);
     }
 
-    /// <summary>
-    /// Seeds test data for integration tests
-    /// </summary>
     public async Task SeedTestData(int layerId, long featureId)
     {
         var attachment1 = Attachment.CreateForUpload(

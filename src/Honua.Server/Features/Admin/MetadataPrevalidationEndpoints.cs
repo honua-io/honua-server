@@ -27,7 +27,8 @@ internal static class MetadataPrevalidationEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Accepts<MetadataPrevalidateRequest>("application/json")
             .Produces<ApiResponse<MetadataCompatibilityReport>>()
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithRouteAgentRule("Changes nothing.");
     }
 
     private static async Task<IResult> HandlePrevalidate(

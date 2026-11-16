@@ -212,7 +212,7 @@ internal static class OperationsEndpoints
         }
 
         if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-            && OperatorGateRefusal(context, descriptor.OperationId) is { } refusal)
+            && OperatorGateRefusal(context, descriptor) is { } refusal)
         {
             return refusal;
         }
@@ -406,13 +406,13 @@ internal static class OperationsEndpoints
             DryRun = request.DryRun
         };
 
-    // An agent's access-policy or publish change continues to the dispatcher, whose agent rule files
-    // a proposal for a person to approve. Any other operator-gated change is refused for an agent
-    // whatever the OperatorApproval settings.
-    private static IResult? OperatorGateRefusal(HttpContext context, string operationId)
+    // An agent's change continues to the dispatcher, whose agent rule files a proposal for a person
+    // to approve. Any other operator-gated operation is refused for an agent whatever the
+    // OperatorApproval settings.
+    private static IResult? OperatorGateRefusal(HttpContext context, IOperationDescriptor descriptor)
     {
         var roles = AgentPrincipal.EffectiveRoles(context.User);
-        if (AgentApprovalRule.Applies(operationId, roles))
+        if (AgentApprovalRule.Applies(descriptor, roles))
         {
             return null;
         }

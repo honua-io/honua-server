@@ -5,26 +5,11 @@ using System.Text;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Inline CityGML documents for the wired ingest tests (#1207). Kept in source
-/// so the exact XML driving the ingest executor and admin endpoint is visible
-/// alongside the assertions.
-/// </summary>
 internal static class CityGmlSceneFixtures
 {
-    /// <summary>
-    /// A minimal CityGML 2.0 city model with one building (ground + roof + two
-    /// walls) in geographic EPSG:4326 lon/lat degrees, carrying a building-level
-    /// generic attribute and storey count. The small lon/lat coordinates place
-    /// the building on the ellipsoid through the geographic pass-through.
-    /// </summary>
     public static byte[] SingleBuildingGeographic()
         => Encoding.UTF8.GetBytes(BuildXml("urn:ogc:def:crs:EPSG::4326"));
 
-    /// <summary>
-    /// The same building declared in a projected CRS (EPSG:25832, UTM 32N) to
-    /// exercise the v1 unsupported-CRS rejection path.
-    /// </summary>
     public static byte[] SingleBuildingProjected()
         => Encoding.UTF8.GetBytes(BuildXml("urn:ogc:def:crs:EPSG::25832"));
 

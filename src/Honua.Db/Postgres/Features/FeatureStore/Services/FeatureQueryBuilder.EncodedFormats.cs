@@ -105,7 +105,7 @@ internal sealed partial class FeatureQueryBuilder
 
     internal static IEnumerable<MetadataV2Field> GetEncodedBinaryAttributeFields(MetadataV2Object resource, FeatureQuery query)
     {
-        // Field-level security (#1940): drop masked columns from the binary-format
+        // Field-level security: drop masked columns from the binary-format
         // projection regardless of the requested outFields (fail-secure).
         var maskedFields = ResolveMaskedFields(query);
 

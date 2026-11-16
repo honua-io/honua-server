@@ -5,32 +5,24 @@ using System.Net;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// A faked <see cref="HttpMessageHandler"/> that records every request (method, path, captured
-/// auth headers, and body) and replies with queued canned responses keyed by path suffix. Lets the
-/// publish-flow tests assert the call sequence, payload mapping, and auth header fully offline.
-/// </summary>
 internal sealed class RecordingHttpMessageHandler : HttpMessageHandler
 {
     private readonly List<(string Suffix, HttpStatusCode Status, string Body)> _responses = [];
 
     public List<RecordedRequest> Requests { get; } = [];
 
-    /// <summary>Queues a 200 response with an <c>ApiResponse</c>-shaped JSON body for the path suffix.</summary>
     public RecordingHttpMessageHandler RespondOk(string suffix, string dataJson)
     {
         _responses.Add((suffix, HttpStatusCode.OK, $"{{\"success\":true,\"data\":{dataJson}}}"));
         return this;
     }
 
-    /// <summary>Queues a 201 response with an <c>ApiResponse</c>-shaped JSON body for the path suffix.</summary>
     public RecordingHttpMessageHandler RespondCreated(string suffix, string dataJson)
     {
         _responses.Add((suffix, HttpStatusCode.Created, $"{{\"success\":true,\"data\":{dataJson}}}"));
         return this;
     }
 
-    /// <summary>Queues a raw status + body response for the path suffix (e.g. an auth failure).</summary>
     public RecordingHttpMessageHandler Respond(string suffix, HttpStatusCode status, string body)
     {
         _responses.Add((suffix, status, body));
@@ -73,7 +65,6 @@ internal sealed class RecordingHttpMessageHandler : HttpMessageHandler
     }
 }
 
-/// <summary>A single recorded outbound request.</summary>
 internal sealed record RecordedRequest(
     string Method,
     string Path,

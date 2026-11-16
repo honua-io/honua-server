@@ -16,9 +16,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for OIDC provider admin endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]

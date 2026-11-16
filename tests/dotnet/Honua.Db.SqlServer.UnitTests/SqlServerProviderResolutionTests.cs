@@ -17,12 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.SqlServer.Tests;
 
-/// <summary>
-/// Verifies that the SQL Server provider plugs into the shared Metadata v2 provider seam:
-/// it is discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
-/// whose connection selects the SQL Server engine.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class SqlServerProviderResolutionTests
 {

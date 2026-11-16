@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster;
 
-/// <summary>
-/// Verifies the class-signature math against hand-computed expected values on small synthetic
-/// pixel sets: per-class count, per-band mean, sample covariance (n-1), and per-band summaries.
-/// </summary>
 public sealed class RasterClassStatisticsCalculatorTests
 {
     [UnitTest]

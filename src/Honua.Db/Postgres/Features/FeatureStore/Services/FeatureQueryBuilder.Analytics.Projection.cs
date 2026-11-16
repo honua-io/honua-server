@@ -8,10 +8,6 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
-    /// <summary>
-    /// Projects nonempty points in bounded batches, avoiding a fresh PROJ
-    /// pipeline for every feature. Other geometries retain per-row projection.
-    /// </summary>
     internal static void AppendGeographicClusterProjectionCtes(StringBuilder sql, string pipelineSql)
     {
         // Record the filtered input order before grouping or joining. Point
@@ -44,10 +40,6 @@ internal sealed partial class FeatureQueryBuilder
             """);
     }
 
-    /// <summary>
-    /// Projects rows whose <c>center_lat</c> and <c>center_lon</c> already name
-    /// the azimuthal plane, in batches that do not mix planes.
-    /// </summary>
     private static void AppendGeographicPlaneProjectionCtes(StringBuilder sql, string sourceRelation)
     {
         if (sourceRelation is not ("tile_membership" or "kmeans_input"))

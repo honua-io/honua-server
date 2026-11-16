@@ -11,7 +11,6 @@ using NSubstitute;
 
 namespace Honua.TestKit.OData;
 
-/// <summary>Pure provider-routing test data shared by unit and hosted OData suites.</summary>
 public static class ODataProviderTestData
 {
     public static FeatureProviderQueryRouter CreateRouter(Guid connectionId, IFeatureDataProvider provider)

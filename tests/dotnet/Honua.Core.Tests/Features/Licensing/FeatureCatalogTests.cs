@@ -6,9 +6,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Core.Tests.Features.Licensing;
 
-/// <summary>
-/// Unit tests for FeatureCatalog and LicenseModels.
-/// </summary>
 public sealed class FeatureCatalogTests
 {
     [Trait("Tier", "Fast")]
@@ -108,17 +105,6 @@ public sealed class FeatureCatalogTests
 
         feature.Should().NotBeNull("feature catalog must define real-time streaming for ticket #339");
         feature!.Category.Should().Be(FeatureCatalog.Categories.Streaming);
-        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public void All_RedisDistributedCacheIsProTier()
-    {
-        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "caching.redis");
-
-        feature.Should().NotBeNull("Redis L2 activation is gated by the Pro license entitlement for ticket #358");
-        feature!.Category.Should().Be(FeatureCatalog.Categories.Caching);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 

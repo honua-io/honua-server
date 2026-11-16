@@ -3,13 +3,8 @@
 
 namespace Honua.Routing.Features.Routing.Domain;
 
-/// <summary>Validates canonical routing inputs against the provider that will solve them.</summary>
 public static class RoutingRequestValidation
 {
-    /// <summary>
-    /// Returns an error for an unsupported barrier kind or travel mode, or null when
-    /// the provider supports the inputs. An absent travel mode uses the provider default.
-    /// </summary>
     public static string? ValidateCapabilities(
         RoutingProviderCapabilities capabilities,
         IReadOnlyList<RouteBarrier> barriers,

@@ -9,10 +9,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Integration tests for CorrelationIdMiddleware ensuring proper correlation ID handling
-/// across client-provided IDs, OpenTelemetry integration, and fallback generation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Health)]
 [Operation(Operations.HealthCheck)]

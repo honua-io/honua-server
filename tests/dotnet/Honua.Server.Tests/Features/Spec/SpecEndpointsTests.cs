@@ -19,11 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Spec;
 
-/// <summary>
-/// End-to-end coverage of the <c>/v1/spec/*</c> HTTP surface. Proves the SSE
-/// event shape, plan structure, artifact retrieval, and error envelopes — the
-/// operator-facing evidence for ticket #789's acceptance criteria.
-/// </summary>
 [Protocol(TestProtocols.Spec)]
 public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixture>
 {
@@ -940,21 +935,12 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
         });
     }
 
-    /// <summary>
-    /// The <c>/v1/spec/*</c> endpoints are admin-gated (#1984). Enable the
-    /// Test-only development auth bypass — the same posture the shared
-    /// integration fixtures use — so these endpoint tests authenticate without
-    /// attaching an API key at every call site.
-    /// </summary>
     private static void ApplySpecAuthBypass(IWebHostBuilder builder)
     {
         builder.UseSetting("HONUA_DEV_AUTH", "true");
         builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
     }
 
-    /// <summary>
-    /// Creates the default admin-authorized test host for the spec surface.
-    /// </summary>
     private static WebApplicationFactory<Program> CreateFactory()
         => new TestWebApplicationFactory().WithWebHostBuilder(ApplySpecAuthBypass);
 

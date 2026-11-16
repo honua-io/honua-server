@@ -3,25 +3,12 @@
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Samples source pixels directly onto a requested grid without an intermediate warp extent.
-/// </summary>
 internal static class RasterGeneralNearestSql
 {
-    /// <summary>
-    /// Uses target pixel centers and the source affine transform for nearest-neighbor sampling.
-    /// Coordinate projection is batched once per grid; each distinct requested source cell is
-    /// read once per band. Work arrays contain only the requested output cells, never a dump of
-    /// the entire source. Mosaic inputs retain a temporary coverage mask; single outputs retain native metadata.
-    /// </summary>
     internal static string Sample(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
         => RasterSamplingSql.FunctionCall(
             RasterSamplerKind.GeneralNearest, rasterExpression, gridExpression, preserveCoverageMask);
 
-    /// <summary>
-    /// Body of <c>honua_raster.general_nearest_v1</c>. Callers use <see cref="Sample"/> so the
-    /// general fallback is planned only when native and separable sampling both return null.
-    /// </summary>
     internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var pixelType = preserveCoverageMask ? "'64BF'" : "m.pixeltype";

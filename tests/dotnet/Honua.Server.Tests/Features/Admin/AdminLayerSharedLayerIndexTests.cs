@@ -247,11 +247,6 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
         after.Graph.Resources.Should().BeEquivalentTo(before.Graph.Resources);
     }
 
-    /// <summary>
-    /// Publishes a second, unrelated resource at <see cref="LayerId"/> through its own service: a
-    /// clone of the seeded layer's resource (same schema, so the request validates against both)
-    /// carrying its own storage binding and a distinct permanent filter / hidden field.
-    /// </summary>
     private (MetadataV2GraphSnapshot Before, string TargetResourceId) AddTwinAtLayerId(bool retireTwin, int twinStorageLayerId = LayerId)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();

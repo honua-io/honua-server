@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Claims;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
@@ -1603,22 +1602,6 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteAttributeString("previous", previous);
         }
-    }
-
-    private static bool IsAnonymousWriteAllowed(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service)
-    {
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        var anonymousPrincipal = new ClaimsPrincipal(new ClaimsIdentity());
-        var decision = evaluator.Evaluate(
-            anonymousPrincipal,
-            resource.AccessPolicy,
-            service?.AccessPolicy,
-            AccessScope.Write);
-
-        return decision.IsAllowed;
     }
 
     private static string[] ParseQualifiedList(string? value)

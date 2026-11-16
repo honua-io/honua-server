@@ -16,34 +16,6 @@ using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Server↔SDK GeoParquet interop conformance lane (honua-server#2845, part of #2842).
-///
-/// <para>
-/// This suite locks the GeoParquet wire contract that <c>honua-sdk-js</c> (and any standard
-/// GeoParquet reader) depends on. It proves the server's emitted output actually interoperates
-/// with a real reader rather than only round-tripping through the server's own encoder:
-/// </para>
-/// <list type="bullet">
-///   <item>the emitted <c>geo</c> metadata validates against the authoritative
-///     <see href="https://geoparquet.org/releases/v1.1.0/schema.json">GeoParquet 1.1.0 JSON Schema</see>,
-///     whose <c>crs</c> field is validated in turn against the bundled
-///     <see href="https://proj.org/schemas/v0.7/projjson.schema.json">PROJJSON v0.7 schema</see>;</item>
-///   <item>the SDK-relied fields (version, primary_column, encoding, geometry_types, crs,
-///     covering.bbox) are present and pinned so silent drift fails loudly;</item>
-///   <item>the documented constraints (encoding=WKB, XY/XYZ only, M stripped) are locked;</item>
-///   <item>geometry (WKB), CRS (PROJJSON), and attributes round-trip with correct (x, y) axis
-///     order through an independent Arrow/Parquet reader.</item>
-/// </list>
-///
-/// <para>
-/// The reference reader used here is ParquetSharp's native Arrow reader plus NetTopologySuite's
-/// WKB reader. The complementary live-server round-trip through the real <c>geopandas</c> /
-/// <c>pyarrow</c> / <c>pyproj</c> stack lives in
-/// <c>tests/python/feature_server/test_geoparquet_interop.py</c>, cross-linked to the SDK reader
-/// tracking issue (honua-sdk-js#630).
-/// </para>
-/// </summary>
 public sealed class GeoParquetSdkInteropConformanceTests
 {
     private static readonly JSchema GeoParquetSchema = LoadGeoParquetSchema();

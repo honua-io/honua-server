@@ -14,17 +14,10 @@ using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Features/Items CRUD endpoints for OGC API Features.
-/// Refactored to delegate to focused handlers for better maintainability.
-/// </summary>
 internal static partial class FeaturesEndpoints
 {
     private static readonly string[] _patchMethods = ["PATCH"];
 
-    /// <summary>
-    /// Maps features/items CRUD endpoints with delegation to specialized handlers.
-    /// </summary>
     public static IEndpointRouteBuilder MapFeaturesEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/ogc/features/collections/{collectionId}/items", HandleGetItems)
@@ -129,9 +122,6 @@ internal static partial class FeaturesEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Handles GetItems request by delegating to the query handler.
-    /// </summary>
     private static async Task<IResult> HandleGetItems(
         string collectionId,
         HttpContext context,
@@ -177,16 +167,6 @@ internal static partial class FeaturesEndpoints
             collectionId, context, f, parsedLimit, parsedOffset, bbox, datetime, filter, ids, properties, sortby, crs, cancellationToken);
     }
 
-    /// <summary>
-    /// Parses an optional integer query parameter, mapping an unparseable value
-    /// to a structured error message instead of an empty framework response.
-    /// </summary>
-    /// <remarks>
-    /// A repeated query parameter (<c>?limit=3&amp;limit=5</c>) binds as the
-    /// comma-joined <see cref="Microsoft.Extensions.Primitives.StringValues"/>
-    /// text and therefore also lands here as an explicit rejection rather than
-    /// an ambiguous silent pick.
-    /// </remarks>
     private static bool TryParseIntegerQueryParameter(
         string? raw,
         string parameterName,
@@ -215,9 +195,6 @@ internal static partial class FeaturesEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Handles GetItem request by delegating to the query handler.
-    /// </summary>
     private static async Task<IResult> HandleGetItem(
         string collectionId,
         string featureId,
@@ -236,9 +213,6 @@ internal static partial class FeaturesEndpoints
             collectionId, featureId, context, f, crs, cancellationToken);
     }
 
-    /// <summary>
-    /// Handles CreateFeature request by delegating to the CRUD handler.
-    /// </summary>
     private static async Task<IResult> HandleCreateFeature(
         string collectionId,
         HttpContext context,
@@ -253,9 +227,6 @@ internal static partial class FeaturesEndpoints
         return await crudHandler.HandleCreateFeatureAsync(collectionId, context, cancellationToken);
     }
 
-    /// <summary>
-    /// Handles UpdateFeature request by delegating to the transaction handler.
-    /// </summary>
     private static async Task<IResult> HandleUpdateFeature(
         string collectionId,
         string featureId,
@@ -272,9 +243,6 @@ internal static partial class FeaturesEndpoints
         return await transactionHandler.HandleReplaceFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
 
-    /// <summary>
-    /// Handles PatchFeature request by delegating to the transaction handler.
-    /// </summary>
     private static async Task<IResult> HandlePatchFeature(
         string collectionId,
         string featureId,
@@ -291,9 +259,6 @@ internal static partial class FeaturesEndpoints
         return await transactionHandler.HandlePatchFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
 
-    /// <summary>
-    /// Handles DeleteFeature request by delegating to the CRUD handler.
-    /// </summary>
     private static async Task<IResult> HandleDeleteFeature(
         string collectionId,
         string featureId,
@@ -310,9 +275,6 @@ internal static partial class FeaturesEndpoints
         return await crudHandler.HandleDeleteFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
 
-    /// <summary>
-    /// Handles batch operations request by delegating to the transaction handler.
-    /// </summary>
     private static async Task<IResult> HandleBatchOperation(
         string collectionId,
         HttpContext context,

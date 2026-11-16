@@ -7,11 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Captures and observes PostgreSQL's transaction-specific commit marker after an acknowledgement is
-/// lost. Unlike probing a row touched by an idempotent mutation, the xid distinguishes this exact
-/// transaction from state that was already present before it began.
-/// </summary>
 internal static class PostgresTransactionOutcomeObserver
 {
     public static async Task<string> CaptureTransactionIdAsync(

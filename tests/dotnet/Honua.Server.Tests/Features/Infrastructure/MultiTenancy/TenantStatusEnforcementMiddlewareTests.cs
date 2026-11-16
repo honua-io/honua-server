@@ -14,10 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Unit tests for suspended/deleted tenant enforcement (issue #2156). Suspension must block access
-/// for both reads and writes, while unmanaged and active tenants pass through unchanged.
-/// </summary>
 public sealed class TenantStatusEnforcementMiddlewareTests
 {
     [UnitTest]

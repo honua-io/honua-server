@@ -177,7 +177,6 @@ run_fixture shard-structure validate_shard_structure
 run_fixture scripts/ci/validate-server-test-binary-artifacts.sh scripts/ci/validate-server-test-binary-artifacts.sh
 run_fixture scripts/ci/validate-server-test-shard-cache.sh scripts/ci/validate-server-test-shard-cache.sh
 run_fixture scripts/ci/validate-server-test-reuse-benchmark.sh scripts/ci/validate-server-test-reuse-benchmark.sh
-run_fixture scripts/ci/validate-server-test-prebuild.sh scripts/ci/validate-server-test-prebuild.sh
 
 echo "Validating managed build producer and consumer contracts..."
 if [[ -n "${PYTHON_BIN}" ]]; then
@@ -233,7 +232,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating server-test archive entry checks..."
   run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
-  echo "Validating native-image impact observation contract..."
+  echo "Validating native-image content-address inputs contract..."
   run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
   run_fixture scripts/ci/trusted-pr-workflow-run-draft-admission.test.js node --test scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate

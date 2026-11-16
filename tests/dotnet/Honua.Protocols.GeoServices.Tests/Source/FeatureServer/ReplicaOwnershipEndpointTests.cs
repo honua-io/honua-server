@@ -17,31 +17,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Cross-principal isolation for the Esri replica surface (honua-server#4405).
-/// </summary>
-/// <remarks>
-/// <para>
-/// A replica records its creating principal in <c>ReplicaRecord.OwnerId</c> and every replica
-/// handler gates on <c>IsReplicaOwnerOrAdmin</c>, but that enforcement was proven only at unit
-/// level (<c>FeatureQuerySecurityMatrixTests.ReplicaOwnershipMatrixEnforcesOwnerPolicy</c>). No
-/// endpoint test ever drove principal B's client against principal A's replicaId, so the wiring
-/// between the handler gate and a real authenticated identity was unverified end to end.
-/// </para>
-/// <para>
-/// Both principals here are scoped API keys: they authenticate (so this is genuinely
-/// cross-principal denial, not the anonymous 401 the rest of the replica suite covers) and carry
-/// identical <c>read:</c> and <c>write:</c> authority over the same service, so the only thing
-/// separating them is replica ownership. <c>createReplica</c> returns the replica's features, so
-/// a write-only key is forbidden (see
-/// <c>CreateReplica_WithWriteOnlyLayerRole_IsForbiddenBecauseTheResponseCarriesData</c>); these
-/// keys can query and edit, and still are not administrators. Denial is expected as a masked
-/// not-found rather than an ownership acknowledgement — the handlers deliberately hide a replica
-/// the caller does not own — and each case additionally proves the replica still works for its
-/// real owner, so a masked denial cannot be confused with a replica that was destroyed or never
-/// created.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
@@ -169,11 +144,6 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
         ownDetail.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// <c>returnAttachments</c> used to bind and then be read nowhere in <c>src/</c>: a client
-    /// asking for an attachment-carrying replica silently got one without attachments. The
-    /// parameter is now rejected rather than ignored (honua-server#4405).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
@@ -212,12 +182,6 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
         accepted.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// A key granted only layer 0 (<c>read:</c> and <c>write:test/Test Layer</c>, the seeded name
-    /// of layer id 0) may create a replica of that layer and must be denied <c>layers=0,1</c>.
-    /// The denial is the per-layer grant check, not a service-level null-resource rejection.
-    /// The read grant is required because <c>createReplica</c> returns feature data (#4018, #5689).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
@@ -247,11 +211,6 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
             "a read grant on the layer includes the replica payload");
     }
 
-    /// <summary>
-    /// A write-only scoped key is not a replica reader. <c>createReplica</c> returns feature
-    /// attributes and geometries, including <c>syncModel=none</c>, so the call is forbidden
-    /// (#4018, #5689).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
@@ -275,16 +234,6 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
     private static StringContent JsonBody(object payload)
         => new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-    /// <summary>
-    /// Asserts a cross-principal replica request was masked: the response must not be a success
-    /// and must not disclose the replica. The handlers answer <c>404</c> deliberately.
-    /// </summary>
-    /// <summary>
-    /// Asserts a cross-principal replica request was masked. The handlers answer "not found"
-    /// deliberately, and this surface signals it the GeoServices way — HTTP 200 carrying an
-    /// <c>error</c> envelope with code 404 — so the assertion is on the envelope, not on the
-    /// transport status.
-    /// </summary>
     private static async Task AssertReplicaMaskedAsync(HttpResponseMessage response, string replicaId)
     {
         await response.AssertGeoServicesErrorAsync(404);
@@ -347,11 +296,6 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
             .ToArray();
     }
 
-    /// <summary>
-    /// Feature count for the test layer. Reads <c>count</c> when the service honours
-    /// <c>returnCountOnly</c> and falls back to counting the returned features otherwise, so the
-    /// "a denied synchronize applied no edits" assertion does not depend on which shape comes back.
-    /// </summary>
     private async Task<int> CountFeaturesAsync()
     {
         // The dev-auth bypass is disabled on this host, so the fixture's default client is

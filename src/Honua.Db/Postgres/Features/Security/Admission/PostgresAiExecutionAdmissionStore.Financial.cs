@@ -28,19 +28,7 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         var period = policy.PeriodAnchorUtc.AddTicks(checked(periods * TimeSpan.FromSeconds(policy.PeriodSeconds).Ticks));
         // Policy row is already locked by the enclosing acquisition transaction. No competing
         // reserve, settlement or control can change any scope between this read and insertion.
-        await using var counts = new NpgsqlCommand($"""
-            SELECT COUNT(*), COALESCE(bool_or(attempt_id = @attempt), false),
-                COALESCE(SUM(charged_tokens) FILTER (WHERE state <> 'settled' OR period_start = @period), 0),
-                COALESCE(SUM(charged_money) FILTER (WHERE state <> 'settled' OR period_start = @period), 0),
-                COALESCE(SUM(charged_tokens) FILTER (WHERE actor_key = @actor AND (state <> 'settled' OR period_start = @period)), 0),
-                COALESCE(SUM(charged_money) FILTER (WHERE actor_key = @actor AND (state <> 'settled' OR period_start = @period)), 0),
-                COALESCE(SUM(charged_tokens) FILTER (WHERE actor_key = @actor AND use_case = @use_case AND (state <> 'settled' OR period_start = @period)), 0),
-                COALESCE(SUM(charged_money) FILTER (WHERE actor_key = @actor AND use_case = @use_case AND (state <> 'settled' OR period_start = @period)), 0),
-                COALESCE(SUM(charged_tokens) FILTER (WHERE workflow_key = @workflow AND (state <> 'settled' OR period_start = @period)), 0),
-                COALESCE(SUM(charged_money) FILTER (WHERE workflow_key = @workflow AND (state <> 'settled' OR period_start = @period)), 0),
-                COALESCE(bool_or(state IN ('overrun', 'conflict')), false)
-            FROM {_financial} WHERE deployment_id = @deployment
-            """, connection, transaction);
+        await using var counts = CreateFinancialCountsCommand(connection, transaction);
         counts.Parameters.AddWithValue("deployment", context.DeploymentId);
         counts.Parameters.AddWithValue("attempt", attemptId);
         counts.Parameters.AddWithValue("period", period);
@@ -59,6 +47,18 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
                     || reader.GetDecimal(3 + index * 2) + money > limits[index].Money)
                     return ("financial_budget_exceeded", null);
         }
+        var monthly = new MonthlyActorReservation
+        {
+            Connection = connection,
+            Transaction = transaction,
+            Context = context,
+            Policy = policy,
+            Now = now,
+            Tokens = tokens,
+            Money = money,
+        };
+        if (await ExceedsMonthlyActorAsync(monthly, cancellationToken).ConfigureAwait(false))
+            return ("financial_monthly_actor_exceeded", null);
         await using var insert = new NpgsqlCommand($"""
             INSERT INTO {_financial} (deployment_id, attempt_id, generation_id, grant_epoch, deadline_at, lease_expires_at, actor_key, use_case, workflow_key,
                 period_start, reserved_at, request_digest, provider, destination_digest, basis_digest, basis_json, currency, money_scale,
@@ -90,6 +90,23 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         insert.Parameters.AddWithValue("tokens", tokens);
         await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return (null, new(request.RequestDigest, basis.Digest));
+    }
+
+    private NpgsqlCommand CreateFinancialCountsCommand(NpgsqlConnection connection, NpgsqlTransaction transaction)
+    {
+        return new NpgsqlCommand($"""
+            SELECT COUNT(*), COALESCE(bool_or(attempt_id = @attempt), false),
+                COALESCE(SUM(charged_tokens) FILTER (WHERE state <> 'settled' OR period_start = @period), 0),
+                COALESCE(SUM(charged_money) FILTER (WHERE state <> 'settled' OR period_start = @period), 0),
+                COALESCE(SUM(charged_tokens) FILTER (WHERE actor_key = @actor AND (state <> 'settled' OR period_start = @period)), 0),
+                COALESCE(SUM(charged_money) FILTER (WHERE actor_key = @actor AND (state <> 'settled' OR period_start = @period)), 0),
+                COALESCE(SUM(charged_tokens) FILTER (WHERE actor_key = @actor AND use_case = @use_case AND (state <> 'settled' OR period_start = @period)), 0),
+                COALESCE(SUM(charged_money) FILTER (WHERE actor_key = @actor AND use_case = @use_case AND (state <> 'settled' OR period_start = @period)), 0),
+                COALESCE(SUM(charged_tokens) FILTER (WHERE workflow_key = @workflow AND (state <> 'settled' OR period_start = @period)), 0),
+                COALESCE(SUM(charged_money) FILTER (WHERE workflow_key = @workflow AND (state <> 'settled' OR period_start = @period)), 0),
+                COALESCE(bool_or(state IN ('overrun', 'conflict')), false)
+            FROM {_financial} WHERE deployment_id = @deployment
+            """, connection, transaction);
     }
 
     public async Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)

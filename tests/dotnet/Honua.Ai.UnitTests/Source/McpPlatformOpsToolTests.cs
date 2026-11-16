@@ -16,9 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit coverage for MCP platform-ops tools (#2566).
-/// </summary>
 public sealed class McpPlatformOpsToolTests
 {
     [UnitTest]

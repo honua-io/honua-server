@@ -8,16 +8,6 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Postgres-backed editing store for the <c>honua.network_datasets</c> registry
-/// (#1882 editing surface). Implements list / get / register / update / delete over the
-/// registry table provisioned by migration 062 and extended by migrations 066 and
-/// 084. Registration atomically creates the initial active topology generation. All
-/// inputs are validated by <see cref="NetworkDatasetValidation"/> before they reach the
-/// database; values are bound as parameters (never interpolated), and the edge/vertex
-/// table identifiers are additionally constrained to safe schema-qualified identifiers
-/// because the read path interpolates them into the pgRouting edges-SQL string.
-/// </summary>
 internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
 {
     private const string SelectColumns =
@@ -26,13 +16,9 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresNetworkDatasetStore"/> class.
-    /// </summary>
     public PostgresNetworkDatasetStore(IDatabaseSessionFactory sessionFactory)
         => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<NetworkDatasetRecord>> ListAsync(
         bool includeDisabled = false,
         CancellationToken cancellationToken = default)
@@ -56,7 +42,6 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
         return results;
     }
 
-    /// <inheritdoc />
     public async Task<NetworkDatasetRecord?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -77,7 +62,6 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<NetworkDatasetRecord> RegisterAsync(
         NetworkDatasetRecord dataset,
         CancellationToken cancellationToken = default)
@@ -145,7 +129,6 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
         return saved;
     }
 
-    /// <inheritdoc />
     public async Task<NetworkDatasetRecord?> UpdateAsync(
         NetworkDatasetRecord dataset,
         CancellationToken cancellationToken = default)
@@ -190,7 +173,6 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
         return await GetAsync(dataset.Id, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);

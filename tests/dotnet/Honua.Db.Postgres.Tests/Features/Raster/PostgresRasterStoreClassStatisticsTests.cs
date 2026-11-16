@@ -15,12 +15,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Provider-backed numerical fixtures for the class-statistics pixel read
-/// (<see cref="PostgresRasterStore.ReadClippedBandVectorsAsync"/>, #2662): seeds a two-band raster
-/// with known per-pixel values, reads the aligned band vectors inside an AOI clip, and asserts the
-/// class signature (count/mean/covariance) computed from them matches hand-computed values.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreClassStatisticsTests(PostgresFixture fixture)
 {

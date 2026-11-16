@@ -7,19 +7,14 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Migration;
 using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Compare-and-set semantics of <see cref="UniversalProgressStore"/> in its in-memory mode
-/// (no distributed cache configured), the atomicity baseline for honua-server#1593.
-/// </summary>
 [Collection("Unit")]
 public sealed class UniversalProgressStoreCompareAndSetTests
 {
     private static UniversalProgressStore CreateInMemoryStore()
-        => new(null, NullLogger<UniversalProgressStore>.Instance);
+        => new();
 
     private static UploadProgress CreateProgress(string uploadId, OperationStatus status)
         => UploadProgress.CreateInitial(uploadId, "data.bin", 100) with { Status = status };

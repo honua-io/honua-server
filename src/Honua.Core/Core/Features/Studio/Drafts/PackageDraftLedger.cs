@@ -5,21 +5,12 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-/// <summary>
-/// Owner check, TTL read, and per-kind capacity shared by every
-/// <see cref="IPackageDraftStore"/>. The backing decides whether the bytes are
-/// process-local or shared; this type does not.
-/// </summary>
 public sealed class PackageDraftLedger : IPackageDraftStore
 {
     private readonly IPackageDraftBacking _backing;
     private readonly PackageDraftRetentionOptions _retention;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>Initializes a new instance of the <see cref="PackageDraftLedger"/> class.</summary>
-    /// <param name="backing">Where records are held.</param>
-    /// <param name="retention">TTL and per-kind capacity.</param>
-    /// <param name="timeProvider">Clock stamped onto each write.</param>
     public PackageDraftLedger(
         IPackageDraftBacking backing,
         PackageDraftRetentionOptions retention,
@@ -33,21 +24,18 @@ public sealed class PackageDraftLedger : IPackageDraftStore
         _timeProvider = timeProvider;
     }
 
-    /// <inheritdoc />
     public Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(package);
         return SaveAsync(PackageDraftKind.Map, package.MapPackageId, ownerId, package, app: null, cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(package);
         return SaveAsync(PackageDraftKind.App, package.AppPackageId, ownerId, map: null, package, cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<MapPackage?> GetMapDraftAsync(
         string mapPackageId,
         string ownerId,
@@ -58,7 +46,6 @@ public sealed class PackageDraftLedger : IPackageDraftStore
         return record?.Map;
     }
 
-    /// <inheritdoc />
     public async Task<AppPackage?> GetAppDraftAsync(
         string appPackageId,
         string ownerId,

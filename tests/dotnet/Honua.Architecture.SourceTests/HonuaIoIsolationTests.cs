@@ -6,20 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the Honua.Io isolation contract: the carved-out file input/output
-/// surface (file storage + export writers; upload primitives planned) must never
-/// take a ProjectReference on Honua.Server, directly or transitively. The whole
-/// reason Honua.Io exists is to flip that edge — Server references Io, never the
-/// reverse — so the host's composition root no longer carries the file-storage
-/// services, upload-progress stores, and retention cleanup background service.
-/// </summary>
-/// <remarks>
-/// Io is ASP.NET-coupled (it owns HTTP endpoints and a BackgroundService) and
-/// depends on Hosting. It deliberately does NOT carry the NTS file-format
-/// readers — those stay in the light Honua.Geometry so the storage providers
-/// can consume them without pulling this module's ASP.NET surface.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class HonuaIoIsolationTests
 {
