@@ -85,6 +85,8 @@ public sealed class OutboxReconciliationRunnerTests
     }
 
     [UnitTest]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2201:Do not raise reserved exception types",
+        Justification = "Injects a runtime failure to verify it propagates without retry or logging.")]
     public async Task RunAsync_OutOfMemory_DoesNotRetry()
     {
         var failure = new OutOfMemoryException();
