@@ -39,9 +39,10 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
-# Validate the projection of this head without requiring feature PRs to commit it.
+# Validate the projection of this head without requiring feature PRs to commit
+# it, and without rewriting the tracked page: drift is reported, not written.
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py
+  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py --check
 fi
 
 # shellcheck source=scripts/ci/lib/router-fixtures.sh
@@ -50,9 +51,9 @@ router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
-  run_fixture code-quality-trust "${PYTHON_BIN}" scripts/ci/fixtures/validate-code-quality-supersession.py
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
+  run_fixture disabled-workflows "${PYTHON_BIN}" scripts/ci/check-disabled-workflows.test.py
   run_fixture shard-identities-tests "${PYTHON_BIN}" scripts/ci/check-shard-identities.test.py
   run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
   run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
@@ -61,7 +62,6 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 fi
 
 run_fixture normalization-consumer-admission node --test scripts/ci/admit-normalization-consumer.test.js scripts/ci/cancel-older-normalization-consumers.test.js
-run_fixture code-quality-supersession node --test scripts/ci/cancel-superseded-code-quality.test.js
 run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 
@@ -489,10 +489,6 @@ assert_exact_shards \
 assert_exact_shards \
   "headroom-split-migration-source-imports" \
   "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs" \
-  '["Migration","Migration Source Imports"]'
-assert_exact_shards \
-  "import-coordination-outage-recovery-owner" \
-  "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs" \
   '["Migration","Migration Source Imports"]'
 assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
@@ -1834,21 +1830,17 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration Source Imports" \
   --assert-owner \
-    "Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests" \
+    "Honua.Server.Tests.Import.ImportJobExecutorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Migration Source Imports" \
+    "File and Raster Import 1" \
   --assert-owner \
     "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration 1" \
   --assert-owner \
-    "Honua.Server.Tests.Import.ImportCancellationMonitorTests" \
+    "Honua.Server.Tests.Import.ImportExecutionJobQueueTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import 1" \
-  --assert-owner \
-    "Honua.Server.Tests.Import.ImportCoordinatorRecoveryTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import 2" \
+    "Migration 3" \
   --assert-owner \
     "Honua.Server.Tests.Import.StreamingImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2101,10 +2093,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
     "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj" \
     "Runtime Units" \
-  --assert-owner \
-    "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import 2" \
   `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
   `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
   `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \

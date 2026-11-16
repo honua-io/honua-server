@@ -420,7 +420,7 @@
     },
     {
       "name": "Migration capacity split (#3204)",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.PostgresMigrationStyleApplicator|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.PostgresMigrationStyleApplicator|FullyQualifiedName~Honua.Server.Tests.Import.ImportExecutionJobQueue|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore",
       "children": [
         "Migration 1",
         "Migration 2",
@@ -430,7 +430,7 @@
     },
     {
       "name": "File and Raster Import capacity split (#3204)",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportJobExecutor|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests",
       "children": [
         "File and Raster Import 1",
         "File and Raster Import 2",
@@ -648,7 +648,7 @@
     {
       "name": "Core Endpoints",
       "shard_name": "Core Endpoints",
-      "dispatch_rank": 3.3,
+      "dispatch_rank": 3.4,
       "artifact_suffix": "core-endpoints",
       "log_name": "server-tests-core-endpoints",
       "_comment": "#6451: lossless method partition of Core Endpoints after a 41-minute capacity timeout. All source triggers, tier policy and 41m/51m budgets are unchanged. The complement retains metadata, rendering and future methods.",
@@ -776,7 +776,7 @@
     {
       "name": "Core Related Records and Limits",
       "shard_name": "Core Related Records and Limits",
-      "dispatch_rank": 12.5,
+      "dispatch_rank": 12.0,
       "artifact_suffix": "core-records-limits",
       "log_name": "server-tests-core-records-limits",
       "_comment": "#6451: lossless capacity split of Core Attachments and Records. Retains both budgets, all source triggers and tier policy. Earlier child selectors are excluded so overlapping substrings cannot duplicate execution.",
@@ -846,7 +846,7 @@
     {
       "name": "Core and Cloud Contracts 1",
       "shard_name": "Core and Cloud Contracts 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 6.1,
       "artifact_suffix": "core-cloud-contracts-1",
       "log_name": "server-tests-core-cloud-contracts-1",
       "_comment": "Conservative serial spans plus at least four minutes job overhead. Final child also owns future tests; contract proves exact method ownership.",
@@ -900,7 +900,7 @@
     {
       "name": "Core and Cloud Contracts 2",
       "shard_name": "Core and Cloud Contracts 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.7,
       "artifact_suffix": "core-cloud-contracts-2",
       "log_name": "server-tests-core-cloud-contracts-2",
       "_comment": "Conservative serial spans plus at least four minutes job overhead. Final child also owns future tests; contract proves exact method ownership.",
@@ -954,7 +954,7 @@
     {
       "name": "Core and Cloud Contracts 3",
       "shard_name": "Core and Cloud Contracts 3",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 5.6,
       "artifact_suffix": "core-cloud-contracts-3",
       "log_name": "server-tests-core-cloud-contracts-3",
       "_comment": "Conservative serial spans plus at least four minutes job overhead. Final child also owns future tests; contract proves exact method ownership.",
@@ -1120,7 +1120,7 @@
     {
       "name": "Admin & Infrastructure 3",
       "shard_name": "Admin & Infrastructure 3",
-      "dispatch_rank": 8.6,
+      "dispatch_rank": 7.2,
       "artifact_suffix": "admin-infra-3",
       "log_name": "server-tests-admin-infra-3",
       "timeout_minutes": 42,
@@ -1178,7 +1178,7 @@
     {
       "name": "Raster Serving Scene Geometry and Terrain 1",
       "shard_name": "Raster Serving Scene Geometry and Terrain 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.6,
       "artifact_suffix": "raster-serving-scene-geometry-terrain-1",
       "log_name": "server-tests-raster-serving-scene-geometry-terrain-1",
       "timeout_minutes": 30,
@@ -1260,7 +1260,7 @@
     {
       "name": "Migration 1",
       "shard_name": "Migration 1",
-      "dispatch_rank": 12.2,
+      "dispatch_rank": 8.4,
       "artifact_suffix": "migration-1",
       "log_name": "server-tests-migration-1",
       "timeout_minutes": 39,
@@ -1268,7 +1268,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigrationEvidenceEndpointTests|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslationEndpointTests)",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.ImportExecutionJobQueue|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigrationEvidenceEndpointTests|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslationEndpointTests)",
       "paths": [
         "src/Honua.Core/Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
         "src/Honua.Core/Core/Features/Migration/",
@@ -1290,7 +1290,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
@@ -1301,10 +1300,8 @@
         "tests/dotnet/Honua.Server.Tests/Import/OgcWcsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/OgcWfsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/PostgresMigrationStyleApplicatorTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerAtomicityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionJobQueueTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
@@ -1331,7 +1328,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.MigrationScannerEndpointTests|FullyQualifiedName~Honua.Server.Tests.Import.MigrationRunAdminEndpointTests)",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.ImportExecutionJobQueue|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.MigrationScannerEndpointTests|FullyQualifiedName~Honua.Server.Tests.Import.MigrationRunAdminEndpointTests)",
       "paths": [
         "src/Honua.Core/Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
         "src/Honua.Core/Core/Features/Migration/",
@@ -1353,7 +1350,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
@@ -1364,10 +1360,8 @@
         "tests/dotnet/Honua.Server.Tests/Import/OgcWcsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/OgcWfsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/PostgresMigrationStyleApplicatorTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerAtomicityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionJobQueueTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
@@ -1386,7 +1380,7 @@
     {
       "name": "Migration 3",
       "shard_name": "Migration 3",
-      "dispatch_rank": 9.7,
+      "dispatch_rank": 7.7,
       "artifact_suffix": "migration-3",
       "log_name": "server-tests-migration-3",
       "timeout_minutes": 39,
@@ -1394,7 +1388,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&FullyQualifiedName!~Honua.Server.Tests.Import.GeoServicesMigrationEvidenceEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Import.ToolboxTranslationEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Import.MigrationScannerEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Import.MigrationRunAdminEndpointTests",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.ImportExecutionJobQueue|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&FullyQualifiedName!~Honua.Server.Tests.Import.GeoServicesMigrationEvidenceEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Import.ToolboxTranslationEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Import.MigrationScannerEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Import.MigrationRunAdminEndpointTests",
       "paths": [
         "src/Honua.Core/Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
         "src/Honua.Core/Core/Features/Migration/",
@@ -1416,7 +1410,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
@@ -1427,10 +1420,8 @@
         "tests/dotnet/Honua.Server.Tests/Import/OgcWcsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/OgcWfsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/PostgresMigrationStyleApplicatorTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerAtomicityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionJobQueueTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
@@ -1458,7 +1449,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Whole-class capacity partition after full run 43540829683 exhausted the parent budget with live output. Preserves paths, project, tiers and time limits; dispatch rank inherits the parent pending complete child measurements.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportJobExecutor|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportJobExecutor|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
       "paths": [
         "src/Honua.Core/Core/Features/FileImport/",
         "src/Honua.Core/Core/Features/Import/",
@@ -1483,8 +1474,10 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetUrlPreviewTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportAuthorizationParityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportBackgroundServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCancellationMonitorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportWorkerTestServices.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
@@ -1510,7 +1503,7 @@
     {
       "name": "File and Raster Import 2",
       "shard_name": "File and Raster Import 2",
-      "dispatch_rank": 10.6,
+      "dispatch_rank": 10.2,
       "artifact_suffix": "file-and-raster-import-2",
       "log_name": "server-tests-file-and-raster-import-2",
       "timeout_minutes": 38,
@@ -1519,7 +1512,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Whole-class capacity partition after full run 43540829683 exhausted the parent budget with live output. Preserves paths, project, tiers and time limits; dispatch rank inherits the parent pending complete child measurements.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests)",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportJobExecutor|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&(FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests)",
       "paths": [
         "src/Honua.Core/Core/Features/FileImport/",
         "src/Honua.Core/Core/Features/Import/",
@@ -1544,8 +1537,10 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetUrlPreviewTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportAuthorizationParityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportBackgroundServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCancellationMonitorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportWorkerTestServices.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
@@ -1571,7 +1566,7 @@
     {
       "name": "File and Raster Import 3",
       "shard_name": "File and Raster Import 3",
-      "dispatch_rank": 9.0,
+      "dispatch_rank": 8.0,
       "artifact_suffix": "file-and-raster-import-3",
       "log_name": "server-tests-file-and-raster-import-3",
       "timeout_minutes": 38,
@@ -1580,7 +1575,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Whole-class capacity partition after full run 43540829683 exhausted the parent budget with live output. Preserves paths, project, tiers and time limits; dispatch rank inherits the parent pending complete child measurements.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&FullyQualifiedName!~Honua.Server.Tests.Import.ImportEndpoint&FullyQualifiedName!~Honua.Server.Tests.Import.ImportCancellationMonitorTests&FullyQualifiedName!~Honua.Server.Tests.Import.ImportDistributedState&FullyQualifiedName!~Honua.Server.Tests.Import.ImportBackgroundService&FullyQualifiedName!~Honua.Server.Tests.Import.ImportLeaderLease&FullyQualifiedName!~Honua.Server.Tests.Import.UniversalImportJobService&FullyQualifiedName!~Honua.Server.Tests.Import.DirectImportCrsContractTests&FullyQualifiedName!~Honua.Server.Tests.Import.ImportAuthorizationParity&FullyQualifiedName!~Honua.Server.Tests.Import.ImportReadWriteContractTests",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportJobExecutor|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService))&FullyQualifiedName!~Honua.Server.Tests.Import.ImportEndpoint&FullyQualifiedName!~Honua.Server.Tests.Import.ImportDistributedState&FullyQualifiedName!~Honua.Server.Tests.Import.ImportJobExecutor&FullyQualifiedName!~Honua.Server.Tests.Import.ImportLeaderLease&FullyQualifiedName!~Honua.Server.Tests.Import.UniversalImportJobService&FullyQualifiedName!~Honua.Server.Tests.Import.DirectImportCrsContractTests&FullyQualifiedName!~Honua.Server.Tests.Import.ImportAuthorizationParity&FullyQualifiedName!~Honua.Server.Tests.Import.ImportReadWriteContractTests",
       "paths": [
         "src/Honua.Core/Core/Features/FileImport/",
         "src/Honua.Core/Core/Features/Import/",
@@ -1605,8 +1600,10 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetUrlPreviewTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportAuthorizationParityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportBackgroundServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCancellationMonitorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportWorkerTestServices.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
@@ -1663,7 +1660,7 @@
     {
       "name": "FeatureServer Replica Management",
       "shard_name": "FeatureServer Replica Management",
-      "dispatch_rank": 9.3,
+      "dispatch_rank": 9.1,
       "artifact_suffix": "featureserver-replica-management",
       "log_name": "server-tests-featureserver-replica-management",
       "timeout_minutes": 38,
@@ -1741,7 +1738,7 @@
     {
       "name": "FeatureServer Replica",
       "shard_name": "FeatureServer Replica",
-      "dispatch_rank": 10.0,
+      "dispatch_rank": 9.0,
       "artifact_suffix": "featureserver-replica",
       "log_name": "server-tests-featureserver-replica",
       "timeout_minutes": 38,
@@ -1780,7 +1777,7 @@
     {
       "name": "FeatureServer Maintenance and Temporal",
       "shard_name": "FeatureServer Maintenance and Temporal",
-      "dispatch_rank": 9.2,
+      "dispatch_rank": 8.7,
       "artifact_suffix": "featureserver-maintenance-temporal",
       "log_name": "server-tests-featureserver-maintenance-temporal",
       "timeout_minutes": 32,
@@ -1811,7 +1808,7 @@
     {
       "name": "FeatureServer Editing and Relationships",
       "shard_name": "FeatureServer Editing and Relationships",
-      "dispatch_rank": 12.2,
+      "dispatch_rank": 11.8,
       "artifact_suffix": "featureserver-editing-and-relationships",
       "log_name": "server-tests-featureserver-editing-and-relationships",
       "timeout_minutes": 47,
@@ -2138,7 +2135,7 @@
     {
       "name": "OGC API Features 2",
       "shard_name": "OGC API Features 2",
-      "dispatch_rank": 14.8,
+      "dispatch_rank": 12.4,
       "artifact_suffix": "ogc-api-features-2",
       "log_name": "server-tests-ogc-api-features-2",
       "timeout_minutes": 39,
@@ -2414,7 +2411,7 @@
     {
       "name": "STAC and API Governance 1",
       "shard_name": "STAC and API Governance 1",
-      "dispatch_rank": 9.2,
+      "dispatch_rank": 4.1,
       "artifact_suffix": "stac-api-governance-1",
       "log_name": "server-tests-stac-api-governance-1",
       "timeout_minutes": 30,
@@ -2446,7 +2443,7 @@
     {
       "name": "STAC and API Governance 2",
       "shard_name": "STAC and API Governance 2",
-      "dispatch_rank": 8.7,
+      "dispatch_rank": 6.8,
       "artifact_suffix": "stac-api-governance-2",
       "log_name": "server-tests-stac-api-governance-2",
       "timeout_minutes": 30,
@@ -2478,7 +2475,7 @@
     {
       "name": "OData Core Endpoints",
       "shard_name": "OData Core Endpoints",
-      "dispatch_rank": 9.0,
+      "dispatch_rank": 8.4,
       "artifact_suffix": "odata-core-endpoints",
       "log_name": "server-tests-odata-core-endpoints",
       "timeout_minutes": 39,
@@ -2506,7 +2503,7 @@
     {
       "name": "OData Core",
       "shard_name": "OData Core",
-      "dispatch_rank": 12.8,
+      "dispatch_rank": 11.6,
       "artifact_suffix": "odata-core",
       "log_name": "server-tests-odata-core",
       "timeout_minutes": 39,
@@ -2534,7 +2531,7 @@
     {
       "name": "OData Advanced and Filters 1",
       "shard_name": "OData Advanced and Filters 1",
-      "dispatch_rank": 14.5,
+      "dispatch_rank": 11.4,
       "artifact_suffix": "odata-advanced-filters-1",
       "log_name": "server-tests-odata-advanced-filters-1",
       "timeout_minutes": 32,
@@ -2592,7 +2589,7 @@
     {
       "name": "OData Pagination and Spatial",
       "shard_name": "OData Pagination and Spatial",
-      "dispatch_rank": 17.1,
+      "dispatch_rank": 15.2,
       "artifact_suffix": "odata-pagination-spatial",
       "log_name": "server-tests-odata-pagination-spatial",
       "timeout_minutes": 32,
@@ -2775,7 +2772,7 @@
     {
       "name": "OGC API Maps Rendering and Records 1",
       "shard_name": "OGC API Maps Rendering and Records 1",
-      "dispatch_rank": 9.1,
+      "dispatch_rank": 5.9,
       "artifact_suffix": "ogc-api-maps-rendering-records-1",
       "log_name": "server-tests-ogc-api-maps-rendering-records-1",
       "timeout_minutes": 32,
@@ -2798,7 +2795,7 @@
     {
       "name": "OGC API Maps Rendering and Records 2",
       "shard_name": "OGC API Maps Rendering and Records 2",
-      "dispatch_rank": 9.2,
+      "dispatch_rank": 6.0,
       "artifact_suffix": "ogc-api-maps-rendering-records-2",
       "log_name": "server-tests-ogc-api-maps-rendering-records-2",
       "timeout_minutes": 32,
@@ -2844,7 +2841,7 @@
     {
       "name": "OGC API Tiles Coverages and Processes 1",
       "shard_name": "OGC API Tiles Coverages and Processes 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 6.5,
       "artifact_suffix": "ogc-api-tiles-coverages-processes-1",
       "log_name": "server-tests-ogc-api-tiles-coverages-processes-1",
       "timeout_minutes": 32,
@@ -2874,7 +2871,7 @@
     {
       "name": "OGC API Tiles Coverages and Processes 2",
       "shard_name": "OGC API Tiles Coverages and Processes 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.2,
       "artifact_suffix": "ogc-api-tiles-coverages-processes-2",
       "log_name": "server-tests-ogc-api-tiles-coverages-processes-2",
       "timeout_minutes": 32,
@@ -2904,7 +2901,7 @@
     {
       "name": "OGC API Tiles Coverages and Processes 3",
       "shard_name": "OGC API Tiles Coverages and Processes 3",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 5.1,
       "artifact_suffix": "ogc-api-tiles-coverages-processes-3",
       "log_name": "server-tests-ogc-api-tiles-coverages-processes-3",
       "timeout_minutes": 32,
@@ -2964,7 +2961,7 @@
     {
       "name": "OGC Classic Maps Core",
       "shard_name": "OGC Classic Maps Core",
-      "dispatch_rank": 9.6,
+      "dispatch_rank": 9.1,
       "artifact_suffix": "ogc-classic-maps-core",
       "log_name": "server-tests-ogc-classic-maps-core",
       "timeout_minutes": 30,
@@ -3018,7 +3015,7 @@
     {
       "name": "OGC Classic WMTS 1",
       "shard_name": "OGC Classic WMTS 1",
-      "dispatch_rank": 12.8,
+      "dispatch_rank": 6.7,
       "artifact_suffix": "ogc-classic-wmts-1",
       "log_name": "server-tests-ogc-classic-wmts-1",
       "timeout_minutes": 30,
@@ -3038,7 +3035,7 @@
     {
       "name": "OGC Classic WMTS 2",
       "shard_name": "OGC Classic WMTS 2",
-      "dispatch_rank": 9.6,
+      "dispatch_rank": 6.5,
       "artifact_suffix": "ogc-classic-wmts-2",
       "log_name": "server-tests-ogc-classic-wmts-2",
       "timeout_minutes": 30,
@@ -3058,7 +3055,7 @@
     {
       "name": "GeoServices MapServer",
       "shard_name": "GeoServices MapServer",
-      "dispatch_rank": 13.4,
+      "dispatch_rank": 13.2,
       "artifact_suffix": "geoservices-mapserver",
       "log_name": "server-tests-geoservices-mapserver",
       "timeout_minutes": 39,
@@ -3083,7 +3080,7 @@
     {
       "name": "GeoServices MapServer Export",
       "shard_name": "GeoServices MapServer Export",
-      "dispatch_rank": 15.5,
+      "dispatch_rank": 15.2,
       "artifact_suffix": "geoservices-mapserver-export",
       "log_name": "server-tests-geoservices-mapserver-export",
       "timeout_minutes": 39,
@@ -3135,7 +3132,7 @@
     {
       "name": "GeoServices ImageServer 1",
       "shard_name": "GeoServices ImageServer 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.7,
       "artifact_suffix": "geoservices-imageserver-1",
       "log_name": "server-tests-geoservices-imageserver-1",
       "timeout_minutes": 45,
@@ -3169,7 +3166,7 @@
     {
       "name": "GeoServices ImageServer 2",
       "shard_name": "GeoServices ImageServer 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.5,
       "artifact_suffix": "geoservices-imageserver-2",
       "log_name": "server-tests-geoservices-imageserver-2",
       "timeout_minutes": 45,
@@ -3203,7 +3200,7 @@
     {
       "name": "GeoServices ImageServer 3",
       "shard_name": "GeoServices ImageServer 3",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.4,
       "artifact_suffix": "geoservices-imageserver-3",
       "log_name": "server-tests-geoservices-imageserver-3",
       "timeout_minutes": 45,
@@ -3237,7 +3234,7 @@
     {
       "name": "GeoServices ImageServer 4",
       "shard_name": "GeoServices ImageServer 4",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.8,
       "artifact_suffix": "geoservices-imageserver-4",
       "log_name": "server-tests-geoservices-imageserver-4",
       "timeout_minutes": 45,
@@ -3271,7 +3268,7 @@
     {
       "name": "GeoServices ImageServer 5",
       "shard_name": "GeoServices ImageServer 5",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.6,
       "artifact_suffix": "geoservices-imageserver-5",
       "log_name": "server-tests-geoservices-imageserver-5",
       "timeout_minutes": 45,
@@ -3339,7 +3336,7 @@
     {
       "name": "GeoServices GPServer and NAServer 1",
       "shard_name": "GeoServices GPServer and NAServer 1",
-      "dispatch_rank": 9.7,
+      "dispatch_rank": 8.8,
       "artifact_suffix": "geoservices-gpserver-naserver-1",
       "log_name": "server-tests-geoservices-gpserver-naserver-1",
       "timeout_minutes": 32,
@@ -3429,7 +3426,7 @@
     {
       "name": "GeoServices GPServer SOAP",
       "shard_name": "GeoServices GPServer SOAP",
-      "dispatch_rank": 8.1,
+      "dispatch_rank": 7.3,
       "artifact_suffix": "geoservices-gpserver-soap",
       "log_name": "server-tests-geoservices-gpserver-soap",
       "timeout_minutes": 32,
@@ -3519,7 +3516,7 @@
     {
       "name": "GeoServices GPServer Endpoints",
       "shard_name": "GeoServices GPServer Endpoints",
-      "dispatch_rank": 16.3,
+      "dispatch_rank": 13.3,
       "artifact_suffix": "geoservices-gpserver-endpoints",
       "log_name": "server-tests-geoservices-gpserver-endpoints",
       "timeout_minutes": 32,
@@ -3545,7 +3542,7 @@
     {
       "name": "GeoServices Geometry VectorTile and Versioning 1",
       "shard_name": "GeoServices Geometry VectorTile and Versioning 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.4,
       "artifact_suffix": "geoservices-geometry-vectortile-versioning-1",
       "log_name": "server-tests-geoservices-geometry-vectortile-versioning-1",
       "timeout_minutes": 34,
@@ -3579,7 +3576,7 @@
     {
       "name": "GeoServices Geometry VectorTile and Versioning 2",
       "shard_name": "GeoServices Geometry VectorTile and Versioning 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.5,
       "artifact_suffix": "geoservices-geometry-vectortile-versioning-2",
       "log_name": "server-tests-geoservices-geometry-vectortile-versioning-2",
       "timeout_minutes": 34,
@@ -3613,7 +3610,7 @@
     {
       "name": "GeoServices Geometry VectorTile and Versioning 3",
       "shard_name": "GeoServices Geometry VectorTile and Versioning 3",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.3,
       "artifact_suffix": "geoservices-geometry-vectortile-versioning-3",
       "log_name": "server-tests-geoservices-geometry-vectortile-versioning-3",
       "timeout_minutes": 34,
@@ -3647,7 +3644,7 @@
     {
       "name": "GeoServices Geometry VectorTile and Versioning 4",
       "shard_name": "GeoServices Geometry VectorTile and Versioning 4",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.1,
       "artifact_suffix": "geoservices-geometry-vectortile-versioning-4",
       "log_name": "server-tests-geoservices-geometry-vectortile-versioning-4",
       "timeout_minutes": 34,
@@ -3681,7 +3678,7 @@
     {
       "name": "GeoServices Geometry VectorTile and Versioning 5",
       "shard_name": "GeoServices Geometry VectorTile and Versioning 5",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.9,
       "artifact_suffix": "geoservices-geometry-vectortile-versioning-5",
       "log_name": "server-tests-geoservices-geometry-vectortile-versioning-5",
       "timeout_minutes": 34,
@@ -3749,7 +3746,7 @@
     {
       "name": "GeoServices Versioning 1",
       "shard_name": "GeoServices Versioning 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 6.0,
       "artifact_suffix": "geoservices-versioning-1",
       "log_name": "server-tests-geoservices-versioning-1",
       "timeout_minutes": 34,
@@ -3817,7 +3814,7 @@
     {
       "name": "Security and Authorization 1",
       "shard_name": "Security and Authorization 1",
-      "dispatch_rank": 8.2,
+      "dispatch_rank": 7.5,
       "artifact_suffix": "security-authorization-1",
       "log_name": "server-tests-security-authorization-1",
       "timeout_minutes": 70,
@@ -4048,7 +4045,7 @@
     {
       "name": "Caching File Storage Styling and Infrastructure",
       "shard_name": "Caching File Storage Styling and Infrastructure",
-      "dispatch_rank": 26.7,
+      "dispatch_rank": 26.2,
       "artifact_suffix": "caching-file-storage-styling-infrastructure",
       "log_name": "server-tests-caching-file-storage-styling-infrastructure",
       "timeout_minutes": 40,
@@ -4133,7 +4130,7 @@
     {
       "name": "Styling Depth and Catalog",
       "shard_name": "Styling Depth and Catalog",
-      "dispatch_rank": 12.8,
+      "dispatch_rank": 11.8,
       "artifact_suffix": "styling-depth-catalog",
       "log_name": "server-tests-styling-depth-catalog",
       "timeout_minutes": 40,
@@ -4213,7 +4210,7 @@
     {
       "name": "Operator Eval Harness 2",
       "shard_name": "Operator Eval Harness 2",
-      "dispatch_rank": 12.0,
+      "dispatch_rank": 9.3,
       "artifact_suffix": "operator-eval-2",
       "log_name": "server-tests-operator-eval-2",
       "timeout_minutes": 30,
@@ -4315,7 +4312,7 @@
     {
       "name": "MCP Endpoints",
       "shard_name": "MCP Endpoints",
-      "dispatch_rank": 13.4,
+      "dispatch_rank": 13.1,
       "artifact_suffix": "mcp-endpoints",
       "log_name": "server-tests-mcp-endpoints",
       "timeout_minutes": 30,
@@ -4382,7 +4379,7 @@
     {
       "name": "MCP and Sessions 2",
       "shard_name": "MCP and Sessions 2",
-      "dispatch_rank": 12.2,
+      "dispatch_rank": 9.1,
       "artifact_suffix": "mcp-and-sessions-2",
       "log_name": "server-tests-mcp-and-sessions-2",
       "timeout_minutes": 30,
@@ -4416,7 +4413,7 @@
     {
       "name": "Scene",
       "shard_name": "Scene",
-      "dispatch_rank": 8.3,
+      "dispatch_rank": 8.2,
       "artifact_suffix": "scene",
       "log_name": "server-tests-scene",
       "timeout_minutes": 40,
@@ -4436,7 +4433,7 @@
     {
       "name": "Scene I3S Resources 1",
       "shard_name": "Scene I3S Resources 1",
-      "dispatch_rank": 9.4,
+      "dispatch_rank": 7.1,
       "artifact_suffix": "scene-i3s-resources-1",
       "log_name": "server-tests-scene-i3s-resources-1",
       "timeout_minutes": 40,
@@ -4456,7 +4453,7 @@
     {
       "name": "Scene I3S Resources 2",
       "shard_name": "Scene I3S Resources 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 8.8,
       "artifact_suffix": "scene-i3s-resources-2",
       "log_name": "server-tests-scene-i3s-resources-2",
       "timeout_minutes": 40,
@@ -4615,7 +4612,7 @@
     {
       "name": "STAC Protocol 2",
       "shard_name": "STAC Protocol 2",
-      "dispatch_rank": 13.6,
+      "dispatch_rank": 3.3,
       "artifact_suffix": "stac-protocol-2",
       "log_name": "server-tests-stac-protocol-2",
       "timeout_minutes": 25,
@@ -4672,7 +4669,7 @@
     {
       "name": "STAC Items and Collections",
       "shard_name": "STAC Items and Collections",
-      "dispatch_rank": 9.6,
+      "dispatch_rank": 8.8,
       "artifact_suffix": "stac-items-collections",
       "log_name": "server-tests-stac-items-collections",
       "timeout_minutes": 25,
@@ -4692,7 +4689,7 @@
     {
       "name": "Geocoding 1",
       "shard_name": "Geocoding 1",
-      "dispatch_rank": 9.4,
+      "dispatch_rank": 5.8,
       "artifact_suffix": "geocoding-1",
       "log_name": "server-tests-geocoding-1",
       "timeout_minutes": 25,
@@ -4721,7 +4718,7 @@
     {
       "name": "Geocoding 2",
       "shard_name": "Geocoding 2",
-      "dispatch_rank": 9.4,
+      "dispatch_rank": 4.5,
       "artifact_suffix": "geocoding-2",
       "log_name": "server-tests-geocoding-2",
       "timeout_minutes": 25,
@@ -4779,7 +4776,7 @@
     {
       "name": "Server Features Admin Operations Endpoints",
       "shard_name": "Server Features Admin Operations Endpoints",
-      "dispatch_rank": 19.1,
+      "dispatch_rank": 19.0,
       "artifact_suffix": "server-features-admin-operations-endpoints",
       "log_name": "server-tests-server-features-admin-operations-endpoints",
       "timeout_minutes": 32,
@@ -4905,7 +4902,7 @@
     {
       "name": "Server Features Admin Tiles and Scenes",
       "shard_name": "Server Features Admin Tiles and Scenes",
-      "dispatch_rank": 18.2,
+      "dispatch_rank": 18.0,
       "artifact_suffix": "server-features-admin-tiles-scenes",
       "log_name": "server-tests-server-features-admin-tiles-scenes",
       "timeout_minutes": 45,
@@ -4985,7 +4982,7 @@
     {
       "name": "Server Features Admin Layer Management 2",
       "shard_name": "Server Features Admin Layer Management 2",
-      "dispatch_rank": 21.4,
+      "dispatch_rank": 14.9,
       "artifact_suffix": "server-features-admin-layer-management-2",
       "log_name": "server-tests-server-features-admin-layer-management-2",
       "timeout_minutes": 45,
@@ -5025,7 +5022,7 @@
     {
       "name": "Server Features Admin Authentication and Credentials",
       "shard_name": "Server Features Admin Authentication and Credentials",
-      "dispatch_rank": 16.0,
+      "dispatch_rank": 15.9,
       "artifact_suffix": "server-features-admin-authentication-and-credentials",
       "log_name": "server-tests-server-features-admin-authentication-and-credentials",
       "timeout_minutes": 32,
@@ -5256,7 +5253,7 @@
     {
       "name": "Server Features Admin Authorization 2",
       "shard_name": "Server Features Admin Authorization 2",
-      "dispatch_rank": 16.7,
+      "dispatch_rank": 12.0,
       "artifact_suffix": "server-features-admin-authorization-2",
       "log_name": "server-tests-server-features-admin-authorization-2",
       "timeout_minutes": 32,
@@ -5299,7 +5296,7 @@
     {
       "name": "Server Features Admin Authorization Matrix",
       "shard_name": "Server Features Admin Authorization Matrix",
-      "dispatch_rank": 14.6,
+      "dispatch_rank": 14.4,
       "artifact_suffix": "server-features-admin-authorization-matrix",
       "log_name": "server-tests-server-features-admin-authorization-matrix",
       "timeout_minutes": 32,
@@ -5381,7 +5378,7 @@
     {
       "name": "Server Features Admin Release Control 2",
       "shard_name": "Server Features Admin Release Control 2",
-      "dispatch_rank": 11.9,
+      "dispatch_rank": 9.0,
       "artifact_suffix": "server-features-admin-release-control-2",
       "log_name": "server-tests-server-features-admin-release-control-2",
       "timeout_minutes": 32,
@@ -5571,7 +5568,7 @@
     {
       "name": "Server Features Admin Governance and Sharing 2",
       "shard_name": "Server Features Admin Governance and Sharing 2",
-      "dispatch_rank": 9.9,
+      "dispatch_rank": 9.6,
       "artifact_suffix": "server-features-admin-governance-sharing-2",
       "log_name": "server-tests-server-features-admin-governance-sharing-2",
       "timeout_minutes": 32,
@@ -5611,7 +5608,7 @@
     {
       "name": "Server Features Admin Governance and Sharing 3",
       "shard_name": "Server Features Admin Governance and Sharing 3",
-      "dispatch_rank": 10.5,
+      "dispatch_rank": 10.4,
       "artifact_suffix": "server-features-admin-governance-sharing-3",
       "log_name": "server-tests-server-features-admin-governance-sharing-3",
       "timeout_minutes": 32,
@@ -5651,7 +5648,7 @@
     {
       "name": "Server Features Console Sessions and Access 1",
       "shard_name": "Server Features Console Sessions and Access 1",
-      "dispatch_rank": 9.0,
+      "dispatch_rank": 5.0,
       "artifact_suffix": "server-features-console-sessions-access-1",
       "log_name": "server-tests-server-features-console-sessions-access-1",
       "timeout_minutes": 32,
@@ -5723,7 +5720,7 @@
     {
       "name": "Server Features Console and Alerts 1",
       "shard_name": "Server Features Console and Alerts 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 5.2,
       "artifact_suffix": "server-features-console-alerts-1",
       "log_name": "server-tests-server-features-console-alerts-1",
       "timeout_minutes": 32,
@@ -6135,7 +6132,7 @@
     {
       "name": "Server Features Admin Integrations and Automation 2",
       "shard_name": "Server Features Admin Integrations and Automation 2",
-      "dispatch_rank": 10.5,
+      "dispatch_rank": 9.4,
       "artifact_suffix": "server-features-admin-integrations-automation-2",
       "log_name": "server-tests-server-features-admin-integrations-automation-2",
       "timeout_minutes": 32,
@@ -6193,7 +6190,7 @@
     {
       "name": "Server Features Admin Integrations and Automation 3",
       "shard_name": "Server Features Admin Integrations and Automation 3",
-      "dispatch_rank": 8.2,
+      "dispatch_rank": 7.4,
       "artifact_suffix": "server-features-admin-integrations-automation-3",
       "log_name": "server-tests-server-features-admin-integrations-automation-3",
       "timeout_minutes": 32,
@@ -6449,7 +6446,7 @@
     {
       "name": "Server Features Sharing 1",
       "shard_name": "Server Features Sharing 1",
-      "dispatch_rank": 10.9,
+      "dispatch_rank": 9.3,
       "artifact_suffix": "server-features-sharing-1",
       "log_name": "server-tests-server-features-sharing-1",
       "timeout_minutes": 32,
@@ -6549,7 +6546,7 @@
     {
       "name": "Server Features Sharing OAuth and Portal",
       "shard_name": "Server Features Sharing OAuth and Portal",
-      "dispatch_rank": 10.4,
+      "dispatch_rank": 9.9,
       "artifact_suffix": "server-features-sharing-oauth-portal",
       "log_name": "server-tests-server-features-sharing-oauth-portal",
       "timeout_minutes": 32,
@@ -6650,7 +6647,7 @@
     {
       "name": "Server Features Analytics Studio Export and Reporting 2",
       "shard_name": "Server Features Analytics Studio Export and Reporting 2",
-      "dispatch_rank": 8.8,
+      "dispatch_rank": 8.2,
       "artifact_suffix": "server-features-analytics-studio-export-reporting-2",
       "log_name": "server-tests-server-features-analytics-studio-export-reporting-2",
       "timeout_minutes": 32,
@@ -6752,7 +6749,7 @@
     {
       "name": "Server Features Collaboration Mobile and Identity 1",
       "shard_name": "Server Features Collaboration Mobile and Identity 1",
-      "dispatch_rank": 10.6,
+      "dispatch_rank": 9.1,
       "artifact_suffix": "server-features-collaboration-mobile-identity-1",
       "log_name": "server-tests-server-features-collaboration-mobile-identity-1",
       "timeout_minutes": 32,
@@ -6974,7 +6971,7 @@
     {
       "name": "Server Features Spec Printing and Static Maps 3",
       "shard_name": "Server Features Spec Printing and Static Maps 3",
-      "dispatch_rank": 11.0,
+      "dispatch_rank": 9.3,
       "artifact_suffix": "server-features-spec-printing-staticmap-3",
       "log_name": "server-tests-server-features-spec-printing-staticmap-3",
       "timeout_minutes": 60,
@@ -7124,7 +7121,7 @@
     {
       "name": "Server Features Streaming Transports",
       "shard_name": "Server Features Streaming Transports",
-      "dispatch_rank": 13.5,
+      "dispatch_rank": 11.5,
       "artifact_suffix": "server-features-streaming-transports",
       "log_name": "server-tests-server-features-streaming-transports",
       "timeout_minutes": 42,
@@ -7974,7 +7971,7 @@
     {
       "name": "Server Features Packages and Temporal 1",
       "shard_name": "Server Features Packages and Temporal 1",
-      "dispatch_rank": 8.6,
+      "dispatch_rank": 5.8,
       "artifact_suffix": "server-features-packages-temporal-1",
       "log_name": "server-tests-server-features-packages-temporal-1",
       "timeout_minutes": 37,
@@ -8048,7 +8045,7 @@
     {
       "name": "Server Features Studio Packaging 1",
       "shard_name": "Server Features Studio Packaging 1",
-      "dispatch_rank": 11.3,
+      "dispatch_rank": 8.9,
       "artifact_suffix": "server-features-studio-packaging-1",
       "log_name": "server-tests-server-features-studio-packaging-1",
       "timeout_minutes": 32,
@@ -8150,7 +8147,7 @@
     {
       "name": "Server Features Identity",
       "shard_name": "Server Features Identity",
-      "dispatch_rank": 11.7,
+      "dispatch_rank": 11.6,
       "artifact_suffix": "server-features-identity",
       "log_name": "server-tests-server-features-identity",
       "timeout_minutes": 32,
@@ -8186,7 +8183,7 @@
     {
       "name": "Migration Source Imports",
       "shard_name": "Migration Source Imports",
-      "dispatch_rank": 21.6,
+      "dispatch_rank": 21.0,
       "artifact_suffix": "migration-source-imports",
       "log_name": "server-tests-migration-source-imports",
       "timeout_minutes": 35,
@@ -8195,7 +8192,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 27.4m of 29m (94%). The GeoServer/Geoservices source-import classes are 13.2m of the parent's 27.4m union. New shard 13.2m of 25m (53%); residual Migration 14.0m of 29m (48%).",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices",
       "paths": [
         "src/Honua.Core/Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
         "src/Honua.Core/Core/Features/Migration/",
@@ -8215,7 +8212,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
@@ -8226,10 +8222,8 @@
         "tests/dotnet/Honua.Server.Tests/Import/OgcWcsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/OgcWfsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/PostgresMigrationStyleApplicatorTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerAtomicityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionJobQueueTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
@@ -8258,7 +8252,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "#7678 capacity child of Cloud and Streaming Import. Rank is an estimate from TRX class spans; the capacity contract proves exact method ownership.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests)&(FullyQualifiedName~Honua.Server.Tests.Import.GeoParquetImportTests.|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelperTests.|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidationTests.|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpointTests.)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests)&(FullyQualifiedName~Honua.Server.Tests.Import.GeoParquetImportTests.|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelperTests.|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidationTests.|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpointTests.)",
       "paths": [
         "src/Honua.Core/Core/Features/FileImport/",
         "src/Honua.Core/Core/Features/Import/",
@@ -8280,8 +8274,9 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetUrlPreviewTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/IdempotentUrlImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportAuthorizationParityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportBackgroundServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinatorRecoveryTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
@@ -8313,7 +8308,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "#7678 capacity child of Cloud and Streaming Import: complement of its siblings, so it also owns future classes and methods. Rank is an estimate from TRX class spans; the capacity contract proves exact method ownership.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests)&FullyQualifiedName!~Honua.Server.Tests.Import.GeoParquetImportTests.&FullyQualifiedName!~Honua.Server.Tests.Import.ImportUrlEndpointTests.&FullyQualifiedName!~Honua.Server.Tests.Import.ImportSourceUrlValidationTests.&FullyQualifiedName!~Honua.Server.Tests.Import.ImportHttpClientHelperTests.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests)&FullyQualifiedName!~Honua.Server.Tests.Import.GeoParquetImportTests.&FullyQualifiedName!~Honua.Server.Tests.Import.ImportUrlEndpointTests.&FullyQualifiedName!~Honua.Server.Tests.Import.ImportSourceUrlValidationTests.&FullyQualifiedName!~Honua.Server.Tests.Import.ImportHttpClientHelperTests.",
       "paths": [
         "src/Honua.Core/Core/Features/FileImport/",
         "src/Honua.Core/Core/Features/Import/",
@@ -8335,8 +8330,9 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetUrlPreviewTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/IdempotentUrlImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportAuthorizationParityTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportBackgroundServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinatorRecoveryTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
@@ -8359,7 +8355,7 @@
     {
       "name": "GeoServices Catalog and ImageServer Support 1",
       "shard_name": "GeoServices Catalog and ImageServer Support 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.4,
       "artifact_suffix": "geoservices-catalog-and-imageserver-support-1",
       "log_name": "server-tests-geoservices-catalog-and-imageserver-support-1",
       "timeout_minutes": 40,
@@ -8392,7 +8388,7 @@
     {
       "name": "GeoServices Catalog and ImageServer Support 2",
       "shard_name": "GeoServices Catalog and ImageServer Support 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.8,
       "artifact_suffix": "geoservices-catalog-and-imageserver-support-2",
       "log_name": "server-tests-geoservices-catalog-and-imageserver-support-2",
       "timeout_minutes": 40,
@@ -8425,7 +8421,7 @@
     {
       "name": "GeoServices Catalog and ImageServer Support 3",
       "shard_name": "GeoServices Catalog and ImageServer Support 3",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 2.5,
       "artifact_suffix": "geoservices-catalog-and-imageserver-support-3",
       "log_name": "server-tests-geoservices-catalog-and-imageserver-support-3",
       "timeout_minutes": 40,
@@ -8458,7 +8454,7 @@
     {
       "name": "GeoServices Catalog and ImageServer Support 4",
       "shard_name": "GeoServices Catalog and ImageServer Support 4",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 4.5,
       "artifact_suffix": "geoservices-catalog-and-imageserver-support-4",
       "log_name": "server-tests-geoservices-catalog-and-imageserver-support-4",
       "timeout_minutes": 40,
@@ -8491,7 +8487,7 @@
     {
       "name": "GeoServices Catalog and ImageServer Support 5",
       "shard_name": "GeoServices Catalog and ImageServer Support 5",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 3.4,
       "artifact_suffix": "geoservices-catalog-and-imageserver-support-5",
       "log_name": "server-tests-geoservices-catalog-and-imageserver-support-5",
       "timeout_minutes": 40,
@@ -8557,7 +8553,7 @@
     {
       "name": "GeoServices ImageServer Rendering and Support 1",
       "shard_name": "GeoServices ImageServer Rendering and Support 1",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 8.6,
       "artifact_suffix": "geoservices-imageserver-rendering-and-support-1",
       "log_name": "server-tests-geoservices-imageserver-rendering-and-support-1",
       "timeout_minutes": 40,
@@ -8590,7 +8586,7 @@
     {
       "name": "GeoServices ImageServer Rendering and Support 2",
       "shard_name": "GeoServices ImageServer Rendering and Support 2",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 5.7,
       "artifact_suffix": "geoservices-imageserver-rendering-and-support-2",
       "log_name": "server-tests-geoservices-imageserver-rendering-and-support-2",
       "timeout_minutes": 40,
@@ -8689,7 +8685,7 @@
     {
       "name": "GeoServices ImageServer Raster Rendering 2",
       "shard_name": "GeoServices ImageServer Raster Rendering 2",
-      "dispatch_rank": 9.1,
+      "dispatch_rank": 5.9,
       "artifact_suffix": "geoservices-imageserver-raster-rendering-2",
       "log_name": "server-tests-geoservices-imageserver-raster-rendering-2",
       "timeout_minutes": 40,
@@ -8722,7 +8718,7 @@
     {
       "name": "OData Errors and Conformance",
       "shard_name": "OData Errors and Conformance",
-      "dispatch_rank": 9.5,
+      "dispatch_rank": 9.3,
       "artifact_suffix": "odata-errors-and-conformance",
       "log_name": "server-tests-odata-errors-and-conformance",
       "timeout_minutes": 30,
@@ -8749,7 +8745,7 @@
     {
       "name": "Server Features Capabilities",
       "shard_name": "Server Features Capabilities",
-      "dispatch_rank": 12.8,
+      "dispatch_rank": 12.7,
       "artifact_suffix": "server-features-capabilities",
       "log_name": "server-tests-server-features-capabilities",
       "timeout_minutes": 44,
@@ -8798,7 +8794,7 @@
     {
       "name": "MCP Authentication and Governance",
       "shard_name": "MCP Authentication and Governance",
-      "dispatch_rank": 9.8,
+      "dispatch_rank": 10.3,
       "artifact_suffix": "mcp-authentication-and-governance",
       "log_name": "server-tests-mcp-authentication-and-governance",
       "timeout_minutes": 25,
@@ -8863,7 +8859,7 @@
     {
       "name": "OGC API Tiles Endpoints and CRS 1",
       "shard_name": "OGC API Tiles Endpoints and CRS 1",
-      "dispatch_rank": 9.3,
+      "dispatch_rank": 4.9,
       "artifact_suffix": "ogc-api-tiles-endpoints-and-crs-1",
       "log_name": "server-tests-ogc-api-tiles-endpoints-and-crs-1",
       "timeout_minutes": 32,
@@ -8919,7 +8915,7 @@
     {
       "name": "Elevation and Terrain Analysis 1",
       "shard_name": "Elevation and Terrain Analysis 1",
-      "dispatch_rank": 9.0,
+      "dispatch_rank": 6.9,
       "artifact_suffix": "elevation-and-terrain-analysis-1",
       "log_name": "server-tests-elevation-and-terrain-analysis-1",
       "timeout_minutes": 25,

@@ -143,7 +143,7 @@ jobs:
           python3 scripts/ci/check-surface-vocabulary.test.py
           python3 scripts/ci/check-surface-vocabulary.py --base "$BASE_SHA"
   shared-hygiene:
-    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
+    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # light runner switch
   repo-hygiene:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.
