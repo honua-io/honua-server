@@ -114,7 +114,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             inlineSecret.GetRawText().Should().NotContain("inline-value-must-not-be-echoed");
             (await ConnectionNamesAsync(admin)).Should().NotContain(inlineName);
 
-            var created = await CallOkAsync(admin, "honua_admin_connections_create", new
+            using var connectionBody = await ProposeThenApplyAsync(admin, ("honua_admin_connections_create", "connections"), new
             {
                 name = connectionName,
                 host = builder.Host,
@@ -126,7 +126,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 sslRequired = false,
                 sslMode = "Disable",
             });
-            using var connectionBody = ResponseJson(created);
+            (await ConnectionNamesAsync(admin)).Should().ContainSingle(name => name == connectionName);
             var connectionId = connectionBody.RootElement.GetProperty("data").GetProperty("connectionId").GetString();
             connectionId.Should().NotBeNullOrWhiteSpace();
 
@@ -136,7 +136,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 .Should().Be(connectionId);
 
             var tableName = $"roster{suffix}";
-            var imported = await CallOkAsync(admin, "honua_admin_import_upload_url", new
+            using var importBody = await ProposeThenApplyAsync(admin, ("honua_admin_import_upload_url", "import/upload-url"), new
             {
                 sourceUrl = SourceUrl,
                 fileName = "parcels.geojson",
@@ -146,7 +146,6 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 overwriteExisting = true,
                 forceBackground = false,
             });
-            using var importBody = ResponseJson(imported);
             importBody.RootElement.TryGetProperty("success", out var success).Should().BeTrue(importBody.RootElement.GetRawText());
             success.GetBoolean().Should().BeTrue(importBody.RootElement.GetRawText());
             var schema = importBody.RootElement.TryGetProperty("schema", out var schemaValue)
@@ -242,6 +241,18 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         var structured = root.GetProperty("result").GetProperty("structuredContent");
         structured.GetProperty("status").GetString().Should().Be("RequiresApproval", structured.GetRawText());
         structured.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace(structured.GetRawText());
+    }
+
+    // MCP callers are agents, so a change over MCP is only a proposal and creates nothing. The
+    // administrator then makes the same change in the admin API, as a person in Console would.
+    private static async Task<JsonDocument> ProposeThenApplyAsync(
+        HttpClient admin, (string Tool, string AdminRoute) change, object arguments)
+    {
+        await CallProposalAsync(admin, change.Tool, arguments);
+        using var response = await admin.PostAsJsonAsync($"/api/v1/admin/{change.AdminRoute}", arguments);
+        var body = await response.Content.ReadAsStringAsync();
+        response.IsSuccessStatusCode.Should().BeTrue(body);
+        return JsonDocument.Parse(body);
     }
 
     private static async Task<JsonElement> CallOkAsync(HttpClient client, string name, object arguments)

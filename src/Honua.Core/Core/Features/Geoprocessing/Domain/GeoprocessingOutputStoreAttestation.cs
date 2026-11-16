@@ -8,7 +8,6 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
-/// <summary>Credential-free deployment attestation for a referenced-output volume.</summary>
 public sealed record GeoprocessingOutputStoreAttestation(
     string Provider,
     string StoreReference,
@@ -16,10 +15,8 @@ public sealed record GeoprocessingOutputStoreAttestation(
     string PersistenceClass,
     string BackupIdentity)
 {
-    /// <summary>Deployment-provisioned marker stored and backed up at the volume root.</summary>
     public const string FileName = ".honua-gp-store.json";
 
-    /// <summary>Creates evidence from a declared persistence and backup contract, never from a local path.</summary>
     public static GeoprocessingOutputStoreAttestation Create(GeoprocessingOutputStagingOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

@@ -10,50 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>pcloud.translate</c>
-/// process: decompresses a LAZ or Cloud-Optimized Point Cloud (COPC) source and,
-/// optionally, reprojects its horizontal datum, emitting an <em>uncompressed</em>
-/// LAS artifact (#1854).
-///
-/// This is the point-cloud counterpart to <see cref="GdalRasterReprojectJobExecutor"/>:
-/// it shells out to the PDAL <c>pdal translate</c> CLI (built on laz-perf for LAZ
-/// decompression, a native COPC reader, and PROJ for reprojection) rather than
-/// bundling any native bindings, so every managed assembly stays native-dep-free.
-/// It runs only inside the heavyweight worker image (it overrides
-/// <see cref="AcceptedRuntimeProfiles"/> to <c>{ "native" }</c>).
-///
-/// <para>
-/// The deliberate contract is: the worker does ONLY the work that genuinely needs
-/// native tooling — decompression and (when requested) datum reprojection — and
-/// returns plain uncompressed LAS. The server-side managed pipeline
-/// (<c>LasPointCloudReader</c> + <c>PointCloudTilesetBuilder</c> + <c>PntsTileWriter</c>,
-/// #1840) then tiles that LAS into 3D Tiles exactly as for a natively-uploaded LAS.
-/// No 3D-Tiles generation lives in the worker.
-/// </para>
-///
-/// <para>
-/// Reprojection target is fixed to EPSG:4979 (WGS-84 geographic 3D) — the CRS the
-/// managed tiler expects and the dataset registers under — so a projected source
-/// LAZ/COPC lands as geographic lon/lat/ellipsoidal-height ready for the
-/// geographic-pass-through tiler. The horizontal reprojection is requested only
-/// when a non-geographic <c>sourceSrs</c> is supplied; a source already in a
-/// geographic CRS is decompressed verbatim.
-/// </para>
-/// </summary>
 internal sealed partial class PdalPointCloudConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<PdalPointCloudConvertJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "pcloud.translate";
 
-    /// <summary>
-    /// The fixed reprojection target. Point clouds are tiled onto the WGS-84
-    /// ellipsoid with ellipsoidal height in meters, so a projected source is
-    /// reprojected to EPSG:4979 (geographic 3D) before tiling.
-    /// </summary>
     public const string TargetSrs = "EPSG:4979";
 
     private const string UncompressedLasContentType = "application/vnd.las";
@@ -61,20 +24,13 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -204,14 +160,6 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Builds the <c>pdal translate</c> argument vector: read
-    /// <paramref name="inputPath"/>, write an uncompressed LAS at
-    /// <paramref name="outputPath"/>, and — when <paramref name="sourceSrs"/> is
-    /// supplied — apply the reprojection filter from that source CRS to
-    /// <see cref="TargetSrs"/>. Each token is passed as a discrete argument (no
-    /// shell), so the validated CRS token cannot influence argument parsing.
-    /// </summary>
     internal static List<string> BuildTranslateArguments(string inputPath, string outputPath, string? sourceSrs, bool preserveInfrared = false)
     {
         var args = new List<string>
@@ -266,12 +214,6 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         return args;
     }
 
-    /// <summary>
-    /// Validates a CRS token to a conservative allow-shape before passing it to
-    /// the CLI: a bare positive integer (EPSG code) or an <c>AUTHORITY:CODE</c>
-    /// token. This blocks shell-influencing values and arbitrary PROJ strings.
-    /// Mirrors <see cref="GdalRasterReprojectJobExecutor"/>'s token guard.
-    /// </summary>
     internal static bool IsValidSrsToken(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -301,11 +243,6 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         return code.Length is > 0 and <= 16 && code.All(char.IsLetterOrDigit);
     }
 
-    /// <summary>
-    /// Returns whether a (pre-validated) CRS token names a geographic WGS-84 CRS
-    /// the tiler already accepts as a pass-through. Reprojection is skipped for
-    /// these so a geographic source is decompressed verbatim with no datum filter.
-    /// </summary>
     internal static bool IsGeographicSrs(string value)
     {
         var token = NormalizeSrs(value).Trim();

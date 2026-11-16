@@ -19,16 +19,8 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// Resolved low/high pixel-value bounds for a single band's display stretch.
-/// Values within <see cref="Lo"/>..<see cref="Hi"/> map linearly onto 0..255.
-/// </summary>
 internal readonly record struct StretchBounds(double Lo, double Hi);
 
-/// <summary>
-/// PostgreSQL-based raster store implementation using PostGIS raster functions.
-/// Provides GDAL-free raster operations leveraging SQL-based PostGIS capabilities.
-/// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
     private static string BuildExportDataExpression(RasterFormat format, string driver, string options)
@@ -94,7 +86,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         _featuresTable = SchemaSearchPath.QualifyTable(DatabaseSchema.FeaturesTable, schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<RasterInfo?> GetRasterInfoAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -135,7 +126,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return info;
     }
 
-    /// <inheritdoc />
     public async Task<RasterInfo[]> QueryRastersAsync(
         int layerId,
         RasterSelectionQuery query,
@@ -224,7 +214,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return rasters.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<RasterCatalogPage> QueryCatalogAsync(
         int layerId,
         RasterCatalogQuery query,
@@ -305,13 +294,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <summary>
-    /// Builds the shared <c>WITH ... filtered AS (...)</c> CTE that applies the layer, spatial
-    /// (envelope-intersects, index-backed via the GiST <c>ST_Envelope(raster)</c> expression index),
-    /// identity, and temporal predicates for the catalog query. The single-row <c>filter_env</c> CTE
-    /// is MATERIALIZED so its transformed envelope is treated as a constant, keeping the
-    /// <c>ST_Envelope(raster) &amp;&amp; fe.geom</c> comparison index-eligible.
-    /// </summary>
     private (string CtePrefix, List<(string Name, object Value)> Parameters) BuildCatalogFilterCte(
         int layerId,
         RasterCatalogQuery query)
@@ -417,11 +399,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return (ctePrefix, parameters);
     }
 
-    /// <summary>
-    /// Maps a non-envelope <see cref="RasterCatalogSpatialRelation"/> to the PostGIS relate applied
-    /// against the footprint rectangle (<c>ST_Envelope(rd.raster)</c>) and the exact filter geometry.
-    /// Esri semantics: the relationship reads "footprint &lt;relation&gt; query geometry".
-    /// </summary>
     private static string ExactSpatialPredicateSql(RasterCatalogSpatialRelation relation) => relation switch
     {
         RasterCatalogSpatialRelation.Contains => "ST_Contains(ST_Envelope(rd.raster), fs.geom)",
@@ -489,11 +466,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return rowsSql + ";\n" + aggregateSql;
     }
 
-    /// <summary>
-    /// Test-only hook: returns the <c>EXPLAIN (ANALYZE, FORMAT TEXT)</c> plan for the paged catalog
-    /// query so provider integration tests can assert the footprint predicate is served by an index
-    /// scan and that only a bounded number of rows are read. Never surfaced to clients.
-    /// </summary>
     internal async Task<string> ExplainCatalogQueryAsync(
         int layerId,
         RasterCatalogQuery query,
@@ -530,7 +502,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // same GDAL driver and creation options a populated export of this layer would use, so a
     // client tiling across the layer edge gets images of one shape on both sides of it.
 
-    /// <inheritdoc />
     public async Task<RasterResult> ExportEmptyExtentAsync(
         int layerId,
         RasterQuery query,
@@ -757,7 +728,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -1035,10 +1005,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // the cached band statistics/histograms; the rescale itself is pushed into the
     // PostGIS pipeline through ST_MapAlgebra so it composes with clip/band/resize.
 
-    /// <summary>
-    /// Builds the ST_MapAlgebra expression that linearly maps <paramref name="lo"/>..<paramref name="hi"/>
-    /// onto 0..255 with clamping. <c>[rast.val]</c> is the PostGIS per-pixel value token.
-    /// </summary>
     internal static string BuildStretchMapAlgebraExpression(double lo, double hi)
     {
         var loText = FormatStretchNumber(lo);
@@ -1046,11 +1012,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return $"LEAST(255.0, GREATEST(0.0, ([rast.val] - {loText}) * 255.0 / ({hiText} - {loText})))";
     }
 
-    /// <summary>
-    /// Wraps <paramref name="baseExpr"/> so each band is rescaled to an 8-bit band
-    /// using its resolved <see cref="StretchBounds"/>. Multi-band rasters are
-    /// re-assembled with ST_AddBand in band order.
-    /// </summary>
     internal static string BuildStretchedRasterExpression(string baseExpr, IReadOnlyList<StretchBounds> bounds)
     {
         if (bounds.Count == 0)
@@ -1088,13 +1049,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             ? $"SELECT COALESCE(bool_and(second_band_is_alpha), FALSE) FROM {_rasterDataTable} WHERE id = ANY(@rasterIds)"
             : $"SELECT second_band_is_alpha FROM {_rasterDataTable} WHERE id = @rasterId";
 
-    /// <summary>
-    /// Frames default tile presentation. Numeric PNGs display band one with an explicit alpha
-    /// derived before stretching: a valid minimum can become zero without becoming NoData.
-    /// Band two stays alpha only when <paramref name="preserveAlphaExpression"/> is true.
-    /// That expression must come from import metadata, not from matching pixel types:
-    /// a scientific two-band raster can share an unsigned type with a gray-plus-alpha PNG.
-    /// </summary>
     internal static string BuildTileDisplayRasterExpression(
         string sourceExpression, string gridExpression, RasterFormat format,
         IReadOnlyList<StretchBounds>? stretchBounds,
@@ -1167,12 +1121,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // formatted with InvariantCulture; the per-pixel formula text is a compile-time
     // constant, so this stays injection-safe (matching the stretch/colormap convention).
 
-    /// <summary>
-    /// Wraps <paramref name="baseExpr"/> in a two-raster <c>ST_MapAlgebra</c> that derives a
-    /// single analytic band (e.g. NDVI) from the infrared and visible source bands named by
-    /// <paramref name="ba"/>. Band ordinals are validated to be positive; the per-pixel
-    /// formula is a constant, so the result is injection-safe.
-    /// </summary>
     internal static string BuildBandArithmeticExpression(string baseExpr, RasterBandArithmetic ba)
     {
         if (ba.VisibleBand <= 0 || ba.InfraredBand <= 0)
@@ -1217,12 +1165,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // azimuth/altitude/z-factor, which are validated finite and formatted with InvariantCulture,
     // so this stays injection-safe (matching the stretch/colormap/band-math convention).
 
-    /// <summary>
-    /// Wraps <paramref name="baseExpr"/> in the PostGIS surface function selected by
-    /// <paramref name="terrain"/>, reading the configured elevation band. Hillshade honours the
-    /// azimuth/altitude/z-factor; slope/aspect emit degrees. The output is a single 32-bit-float
-    /// analytic band that composes with the downstream stretch/colormap steps.
-    /// </summary>
     internal static string BuildTerrainExpression(string baseExpr, RasterTerrainFunction terrain)
     {
         if (terrain.Band <= 0)
@@ -1286,40 +1228,10 @@ internal sealed class PostgresRasterStore : IRasterStore
     // 256x256 tile envelope. At native-or-finer zoom this is a strict no-op so high-zoom
     // tiles keep reading the full-resolution raster unchanged.
 
-    /// <summary>
-    /// WebMercator world span in metres (equator), matching the constant used by the
-    /// import service's tile-index math. A WebMercatorQuad tile at zoom <c>z</c> spans
-    /// <c>WebMercatorWorldSpanMeters / 2^z</c> metres across 256 pixels.
-    /// </summary>
     internal const double WebMercatorWorldSpanMeters = 40075016.686;
 
-    /// <summary>
-    /// Below this zoom the tile ground resolution is coarse enough relative to typical
-    /// source rasters that reducing the source first is worthwhile; at or above the native
-    /// resolution the reduction is a no-op so high-zoom tiles read the full-resolution
-    /// <c>raster</c> column. The SQL guard below additionally prevents any upsampling on a
-    /// per-source basis, so this threshold only bounds where we bother emitting the wrapper.
-    /// </summary>
     internal const int OverviewMaxZoom = 22;
 
-    /// <summary>
-    /// Wraps the source <paramref name="rasterToken"/> so a low-zoom tile reads a
-    /// resolution-reduced grid (metres/pixel â‰ˆ the requested tile's ground resolution)
-    /// instead of resampling the full-resolution raster. Returns the bare token unchanged
-    /// at native-or-finer zoom (<paramref name="level"/> &gt;= <see cref="OverviewMaxZoom"/>),
-    /// keeping the substitution a single-token no-op on the high-zoom path.
-    /// </summary>
-    /// <remarks>
-    /// The reduction applies only to sources already in EPSG:3857 (the tile CRS). Other
-    /// sources must reach the final reference-grid transform unchanged: projecting them onto
-    /// an automatically sized intermediate grid can discard cells even at finer tile zooms.
-    /// <c>GREATEST</c> guards
-    /// clamp the target pixel size against the source's own 3857 resolution so the rescale can
-    /// only ever coarsen â€” never upsample â€” making it a per-source no-op when the source is
-    /// already coarser than the tile. Residual sub-pixel drift from <c>ST_Rescale</c> keeping
-    /// the source origin is corrected by the subsequent reference-grid transform.
-    /// NearestNeighbor matches the tile path's existing (default) resampling/nodata semantics.
-    /// </remarks>
     internal static string BuildOverviewSourceExpression(int level, string rasterToken = "raster")
     {
         // At native-or-finer zoom there is nothing to reduce: emit the bare column so the
@@ -1341,10 +1253,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             $"'NearestNeighbor') ELSE {rasterToken} END";
     }
 
-    /// <summary>
-    /// Tile ground resolution (metres/pixel in EPSG:3857) for a WebMercatorQuad tile at
-    /// <paramref name="level"/>: world span / (256 px * 2^level).
-    /// </summary>
     internal static double TileGroundResolutionMeters(int level)
         => WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
 
@@ -1382,14 +1290,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     private static bool ShouldFrameClipExtent(RasterQuery query, bool hasOutputDimensions)
         => query.CoverClipExtent && hasOutputDimensions && query.ClipRegion is { Inverted: false };
 
-    /// <summary>
-    /// Builds the CTE chain (starting with a leading comma) that frames <paramref name="sourceCte"/>'s
-    /// <c>rast</c> onto the clip envelope and exposes the result as <c>transformed</c>. Binds
-    /// <c>@clipGeom</c>/<c>@clipSrid</c> (added by the clip-region <c>BuildClipExpression</c>),
-    /// <c>@outputWidth</c>/<c>@outputHeight</c> and, when <paramref name="outputSrid"/> is set,
-    /// <c>@outputSrid</c>. Bands without a NoData value get NoData 0 on the canvas so uncovered
-    /// pixels are still flagged NoData (transparent in PNG).
-    /// </summary>
     internal static string BuildClipExtentFrameCtes(string sourceCte, RasterClipRegion clip, int? outputSrid, string algorithm)
     {
         var sourceSrid = $"ST_SRID({sourceCte}.rast)";
@@ -1451,11 +1351,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // outside is preserved. The geometry parameters are bound by the caller via
     // <paramref name="geomParam"/>/<paramref name="sridParam"/> so this stays injection-safe.
 
-    /// <summary>
-    /// Wraps <paramref name="rasterExpr"/> in an ST_Clip honouring the clip region's SRID and
-    /// inversion flag. <paramref name="rasterColumnExpr"/> names the underlying raster column
-    /// used to resolve the native SRID and (for inverted clips) the envelope.
-    /// </summary>
     private static string BuildClipExpression(
         string rasterExpr,
         RasterClipRegion clip,
@@ -1498,12 +1393,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // Reuses the export pipeline's clip/stretch/colormap expression builders so the value
     // sampled at an identify point matches what exportImage would encode at the same pixel.
 
-    /// <summary>
-    /// Builds the rendered raster expression (clip -> stretch -> colormap) for an identify
-    /// sample over <paramref name="rasterColumnExpr"/>. <paramref name="resolveStretchBounds"/>
-    /// supplies the per-band stretch bounds from persisted statistics for the source raster
-    /// (single raster or mosaic).
-    /// </summary>
     private static async Task<string> BuildIdentifyRenderingExpressionAsync(
         RasterIdentifyRendering rendering,
         string rasterColumnExpr,
@@ -1557,13 +1446,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // Uses render-scoped parameter names so the renderingRule's own Clip does not collide with
     // the AOI clip parameters (@clipGeom/@clipSrid) the clipped-stats CTE already binds.
 
-    /// <summary>
-    /// Builds the rendered raster expression (renderingRule Clip -> stretch -> colormap) over
-    /// <paramref name="baseExpr"/> for computeStatisticsHistograms. Stretch bounds come from the
-    /// source raster's persisted statistics via <paramref name="resolveStretchBounds"/>, so the
-    /// stretch matches exportImage. <paramref name="rasterColumnExpr"/> is the raw raster column
-    /// expression used for SRID/envelope math inside the clip.
-    /// </summary>
     private static async Task<string> BuildRenderedStatsExpressionAsync(
         RasterIdentifyRendering rendering,
         string baseExpr,
@@ -1607,11 +1489,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    /// <summary>
-    /// Computes per-band statistics over the rendered (renderingRule Clip -> stretch -> colormap)
-    /// single raster, with no AOI geometry. Always computed fresh â€” the persisted statistics
-    /// describe the raw source pixels.
-    /// </summary>
     private async Task<RasterStatistics[]> GetRenderedStatisticsAsync(
         int layerId,
         long rasterId,
@@ -1650,9 +1527,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Computes per-band histograms over the rendered single raster (no AOI geometry).
-    /// </summary>
     private async Task<RasterHistogram[]> GetRenderedHistogramsAsync(
         int layerId,
         long rasterId,
@@ -1688,9 +1562,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Computes per-band statistics over the rendered mosaic (no AOI geometry).
-    /// </summary>
     private async Task<RasterStatistics[]> GetRenderedMosaicStatisticsAsync(
         int layerId,
         long[] rasterIds,
@@ -1746,9 +1617,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Computes per-band histograms over the rendered mosaic (no AOI geometry).
-    /// </summary>
     private async Task<RasterHistogram[]> GetRenderedMosaicHistogramsAsync(
         int layerId,
         long[] rasterIds,
@@ -1805,10 +1673,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // Maps single-band pixel values to an RGBA image via PostGIS ST_ColorMap,
     // interpolating between the supplied colour stops.
 
-    /// <summary>
-    /// Builds the ST_ColorMap colormap definition text from the colour stops, ordered
-    /// by descending value as PostGIS expects. Each line is <c>value r g b a</c>.
-    /// </summary>
     internal static string BuildColormapText(RasterColormap colormap)
     {
         var builder = new System.Text.StringBuilder(colormap.Entries.Count * 24);
@@ -1825,17 +1689,9 @@ internal sealed class PostgresRasterStore : IRasterStore
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Wraps <paramref name="baseExpr"/> in ST_ColorMap over band 1. The colormap text
-    /// is composed only of numeric tokens, so it is safe to embed as a SQL literal.
-    /// </summary>
     internal static string BuildColormapExpression(string baseExpr, RasterColormap colormap)
         => $"ST_ColorMap({baseExpr}, 1, '{BuildColormapText(colormap)}', 'INTERPOLATE')";
 
-    /// <summary>
-    /// Resolves per-band low/high stretch bounds for every band in
-    /// <paramref name="stats"/>, pairing each band with its histogram when supplied.
-    /// </summary>
     internal static IReadOnlyList<StretchBounds> BuildStretchBounds(
         RasterStretch stretch,
         RasterStatistics[] stats,
@@ -1853,11 +1709,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return bounds;
     }
 
-    /// <summary>
-    /// Resolves the low/high stretch bounds for a single band from the rendering
-    /// rule and the band statistics/histogram. The result always satisfies
-    /// <c>Hi &gt; Lo</c> and is finite.
-    /// </summary>
     internal static StretchBounds ResolveStretchBounds(
         RasterStretch stretch,
         int bandIndex,
@@ -2046,7 +1897,6 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private const int StretchHistogramBins = 256;
 
-    /// <inheritdoc />
     public async Task<RasterResult> ExportMosaicAsync(
         int layerId,
         long[] rasterIds,
@@ -2282,7 +2132,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, RasterIdentifyRendering? rendering = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -2370,7 +2219,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<PixelValueResult> IdentifyMosaicAsync(
         int layerId,
         long[] rasterIds,
@@ -2499,7 +2347,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult?> GetImageTileAsync(int layerId, long rasterId, int level, int row, int col, RasterFormat format = RasterFormat.PNG, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -2632,7 +2479,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult?> GetMosaicImageTileAsync(
         int layerId,
         long[] rasterIds,
@@ -2748,7 +2594,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult?> GetImageTileAsync(
         int layerId,
         long rasterId,
@@ -2816,7 +2661,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult?> GetMosaicImageTileAsync(
         int layerId,
         long[] rasterIds,
@@ -2942,7 +2786,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@tileSrid", window.Srid);
     }
 
-    /// <inheritdoc />
     public async Task<RasterStatistics[]> GetStatisticsAsync(int layerId, long rasterId, int[]? bands = null, RasterIdentifyRendering? rendering = null, CancellationToken cancellationToken = default)
     {
         // A renderingRule changes the pixels (clip/stretch/colormap), so the persisted raw-source
@@ -2975,7 +2818,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return stats.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<RasterStatistics[]> GetMosaicStatisticsAsync(
         int layerId,
         long[] rasterIds,
@@ -3027,12 +2869,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // Statistics persistence (compute-once-then-persist backfill, #1639)
     // =============================================================================
 
-    /// <summary>
-    /// Backfills per-raster band statistics: serializes concurrent cold readers behind a
-    /// transaction-scoped advisory lock (thundering-herd guard), computes ST_SummaryStats once,
-    /// persists the rows into <c>raster_statistics</c>, and returns them. If persistence is not
-    /// possible (e.g. a read-only connection) the computed values are still served.
-    /// </summary>
     private async Task<List<RasterStatistics>> BackfillRasterStatisticsAsync(
         DbConnection connection,
         int layerId,
@@ -3098,11 +2934,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    /// <summary>
-    /// Backfills layer-level mosaic statistics into <c>raster_layer_statistics</c>, pruning rows
-    /// persisted for a previous raster-id set of the same merge strategy. Follows the same
-    /// advisory-lock + compute-once-then-persist pattern as <see cref="BackfillRasterStatisticsAsync"/>.
-    /// </summary>
     private async Task<List<RasterStatistics>> BackfillLayerStatisticsAsync(
         DbConnection connection,
         int layerId,
@@ -3405,11 +3236,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Raises the statement timeout for the statistics-backfill transaction to the dedicated
-    /// compute budget. <c>SET LOCAL</c> is transaction-scoped, so the elevated budget reverts on
-    /// commit/rollback and never leaks back to the pooled connection's request-path statements.
-    /// </summary>
     private static async Task ApplyStatisticsComputeBudgetAsync(
         DbConnection connection,
         DbTransaction transaction,
@@ -3425,10 +3251,6 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private static int HashLockKey(long value) => unchecked((int)value ^ (int)(value >>> 32));
 
-    /// <summary>
-    /// Builds a deterministic identity for a layer's mosaic source set. Any raster added to or
-    /// removed from the layer changes the signature, which invalidates persisted mosaic rows.
-    /// </summary>
     private static string CreateMosaicSignature(long[] rasterIds)
     {
         var ordered = rasterIds.Distinct().Order().ToArray();
@@ -3437,7 +3259,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return string.Create(CultureInfo.InvariantCulture, $"{ordered.Length}:{Convert.ToHexStringLower(hash)}");
     }
 
-    /// <inheritdoc />
     public async Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -3471,7 +3292,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<RasterInfo?> GetPrimaryRasterInfoAsync(int layerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -3530,7 +3350,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<RasterHistogram[]> GetHistogramsAsync(
         int layerId,
         long rasterId,
@@ -3698,7 +3517,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return results.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<RasterHistogram[]> GetMosaicHistogramsAsync(
         int layerId,
         long[] rasterIds,
@@ -3883,7 +3701,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // whole-raster statistics never apply to a clip) and reuse the same ST_Clip
     // primitive proven by ComputeZonalStatisticsAsync.
 
-    /// <inheritdoc />
     public async Task<RasterStatistics[]> GetClippedStatisticsAsync(
         int layerId,
         long rasterId,
@@ -3925,7 +3742,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterStatistics[]> GetClippedMosaicStatisticsAsync(
         int layerId,
         long[] rasterIds,
@@ -3989,7 +3805,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterHistogram[]> GetClippedHistogramsAsync(
         int layerId,
         long rasterId,
@@ -4031,7 +3846,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterHistogram[]> GetClippedMosaicHistogramsAsync(
         int layerId,
         long[] rasterIds,
@@ -4095,7 +3909,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterBandVectorSet> ReadClippedBandVectorsAsync(
         int layerId,
         long[] rasterIds,
@@ -4462,12 +4275,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return bands;
     }
 
-    /// <summary>
-    /// Computes per-band histograms in a single SQL statement using a LATERAL join over
-    /// <c>unnest(@bands)</c>. Returns <c>null</c> when the batched query fails (e.g. PostGIS
-    /// rejects ST_Histogram on a uniform-value band) so the caller can fall back to the
-    /// per-band loop that preserves partial-failure semantics.
-    /// </summary>
     private async Task<RasterHistogram[]?> TryGetHistogramsBatchedAsync(
         DbConnection connection,
         int layerId,
@@ -4561,7 +4368,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<RasterZonalStatisticsRow[]> ComputeZonalStatisticsAsync(
         int layerId,
         long rasterId,
@@ -4726,7 +4532,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return rows.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -4766,7 +4571,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return rasters.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<long, RasterSensorMetadata>> GetSensorMetadataAsync(
         IReadOnlyCollection<long> rasterIds,
         CancellationToken cancellationToken = default)
@@ -4831,7 +4635,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return result;
     }
 
-    /// <inheritdoc />
     public async Task<int?> GetRasterLayerIdAsync(long rasterId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -4848,7 +4651,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return result is null or DBNull ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteRasterAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -4876,7 +4678,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return affected > 0;
     }
 
-    /// <inheritdoc />
     public async Task<RasterInfo?> UpdateRasterMetadataAsync(
         int layerId,
         long rasterId,
@@ -5007,13 +4808,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    /// <summary>
-    /// Builds the per-raster <c>source</c> CTE body (select list, FROM and WHERE) for a mosaic union
-    /// under <paramref name="ordering"/>: the seamline clip and join, the nadir sensor-metadata join
-    /// and the allowlisted attribute projection the ordered union reads. Shared by mosaic export and
-    /// mosaic identify so a contested pixel resolves identically in both (#4064). The CTE expects
-    /// <c>@layerId</c> and a <c>requested</c> CTE of raster ids.
-    /// </summary>
     private string BuildMosaicSourceSelect(
         string sourceRasterExpr,
         RasterMosaicOrdering ordering,
@@ -5149,10 +4943,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    /// <summary>
-    /// Resolves native COG creation options on the actual export connection.
-    /// Driver policy is session-specific; a GeoTIFF fallback cannot guarantee COG layout.
-    /// </summary>
     private static async Task<(string EffectiveFormat, string CreationOptionsClause)> ResolveCogOptionsAsync(
         DbConnection connection,
         int blockSize,

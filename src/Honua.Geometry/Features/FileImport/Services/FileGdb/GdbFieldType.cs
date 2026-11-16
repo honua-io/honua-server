@@ -11,9 +11,6 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.FileImport.Services.FileGdb;
 
-/// <summary>
-/// Field types in a FileGDB .gdbtable file.
-/// </summary>
 internal enum GdbFieldType : byte
 {
     Int16 = 0,

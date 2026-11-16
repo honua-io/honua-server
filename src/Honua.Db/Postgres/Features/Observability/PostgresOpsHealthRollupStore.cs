@@ -12,11 +12,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Observability;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IOpsHealthRollupStore"/> (#2553). Persists per-replica
-/// ops-health flushes into two bounded rollup tables (serving latency and vitals), downsamples the
-/// 5-minute and hourly tiers from the 1-minute tier, and prunes each tier to its retention cap.
-/// </summary>
 internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
 {
     // Tier discriminators persisted in the smallint `tier` column.

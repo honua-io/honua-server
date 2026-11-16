@@ -13,6 +13,10 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 public sealed partial class SensorThingsStreamEndpointsTests
 {
+    // Long enough for connect, publish and the first observation, then expires within the case.
+    private static readonly TimeSpan ExpiringCredentialLifetime = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan DurableCredentialLifetime = TimeSpan.FromSeconds(120);
+
     [IntegrationTheory]
     [Operation(Operations.Streaming)]
     [InlineData(false)]
@@ -51,7 +55,7 @@ public sealed partial class SensorThingsStreamEndpointsTests
         async Task<PortalTokenIssuance> IssueAsync(bool longLived = false) => await issuer.IssueAsync(
             new PortalTokenIssueRequest("sta-proof", "STA proof", "tenant-a", ["reader"],
                 PortalTokenClientType.Referer, referer,
-                DateTimeOffset.UtcNow.AddSeconds(expire && !longLived ? 45 : 120)), ct);
+                DateTimeOffset.UtcNow + (expire && !longLived ? ExpiringCredentialLifetime : DurableCredentialLifetime)), ct);
         PortalTokenIssuance credential;
         string Path(string token) => $"/sta/v1.1/ObservationsStream?datastreamId=1&token={token}";
         using var tenantA = _fixture.CreateAdminClient();

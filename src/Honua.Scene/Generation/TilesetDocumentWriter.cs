@@ -6,32 +6,8 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.Generation;
 
-/// <summary>
-/// Deterministic writer for the v1 3D Tiles <c>tileset.json</c> document.
-/// </summary>
-/// <remarks>
-/// Uses the source-generated <see cref="TilesetJsonContext"/> for AOT-safe
-/// serialization. Properties are written in declaration order; the document
-/// model contains no dictionaries so the resulting byte sequence is stable
-/// across runs given identical input.
-/// </remarks>
 public static class TilesetDocumentWriter
 {
-    /// <summary>
-    /// Builds an in-memory tileset document from a single-tile generation
-    /// result.
-    /// </summary>
-    /// <param name="boundingRegionDegrees">Bounding region in WGS-84 degrees [west, south, east, north].</param>
-    /// <param name="minHeightMeters">Minimum height across geometry, in meters.</param>
-    /// <param name="maxHeightMeters">Maximum height across geometry, in meters.</param>
-    /// <param name="geometricError">Geometric error in meters.</param>
-    /// <param name="tileContentUris">Ordered relative URIs of child tile content (e.g. <c>tile_0000.glb</c>).</param>
-    /// <param name="generatorTag">Optional generator label written into the asset block.</param>
-    /// <param name="styleReference">
-    /// Optional reference to the emitted style-metadata contract sidecar. When
-    /// supplied it is advertised under the root <c>extras.honua_style</c> block
-    /// so a client can discover the attribute-driven symbology spec.
-    /// </param>
     public static TilesetDocument Build(
         double[] boundingRegionDegrees,
         double minHeightMeters,
@@ -93,20 +69,6 @@ public static class TilesetDocumentWriter
         };
     }
 
-    /// <summary>
-    /// Builds a multi-level tileset document from a quadtree LOD partition
-    /// (#1200). Every <see cref="SceneTileNode"/> that carries content becomes a
-    /// <see cref="TileNode"/> with its own bounding region and tile content; the
-    /// tree refinement is "REPLACE" so a client swaps a coarse interior tile for
-    /// its finer children as the camera approaches.
-    /// </summary>
-    /// <param name="tree">The partition produced by <see cref="SceneQuadtreePartitioner"/>.</param>
-    /// <param name="content">
-    /// Maps a content-bearing node to its emitted content (relative GLB uri plus
-    /// the node's vertical extent in meters). Nodes with no features are skipped.
-    /// </param>
-    /// <param name="generatorTag">Optional generator label written into the asset block.</param>
-    /// <param name="styleReference">Optional style-metadata contract reference advertised under <c>extras</c>.</param>
     public static TilesetDocument BuildTree(
         SceneTileTree tree,
         IReadOnlyDictionary<SceneTileNode, SceneTileContent> content,
@@ -205,12 +167,6 @@ public static class TilesetDocumentWriter
         };
     }
 
-    /// <summary>
-    /// Unions the vertical extent (meters) of every content-bearing node in the
-    /// subtree rooted at <paramref name="node"/>. Returns <c>false</c> when no
-    /// descendant carries content, so callers can fall back to a degenerate
-    /// extent rather than producing an inverted [+inf,-inf] region.
-    /// </summary>
     private static bool TryGetDescendantHeightExtent(
         SceneTileNode node,
         IReadOnlyDictionary<SceneTileNode, SceneTileContent> content,
@@ -250,9 +206,6 @@ public static class TilesetDocumentWriter
         return found;
     }
 
-    /// <summary>
-    /// Serializes the tileset document to a deterministic UTF-8 byte sequence.
-    /// </summary>
     public static byte[] Serialize(TilesetDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -260,11 +213,4 @@ public static class TilesetDocumentWriter
     }
 }
 
-/// <summary>
-/// Content emitted for a single quadtree tile node: the relative GLB uri plus
-/// the node's vertical extent (meters) used to size its bounding region.
-/// </summary>
-/// <param name="Uri">Relative content uri (e.g. <c>tile_0003.glb</c>).</param>
-/// <param name="MinHeightMeters">Minimum vertex height in the node, meters.</param>
-/// <param name="MaxHeightMeters">Maximum vertex height in the node, meters.</param>
 public readonly record struct SceneTileContent(string Uri, double MinHeightMeters, double MaxHeightMeters);
