@@ -32,7 +32,7 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 
 > **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
 > in this release candidate. The supported production deployment is AWS ECS
-> Fargate with RDS PostGIS and Console in S3/CloudFront. Redis is not required.
+> Fargate with RDS PostGIS and Console in S3/CloudFront.
 > Docker Compose remains the local evaluation path, not a certified production target.
 
 | Pattern | 2026.1 tier | Best for | Image family | Rollout mechanism | honua-iac module |
@@ -273,7 +273,9 @@ A batch worker cannot read the API instance's local disk, so this path needs sha
 - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on that bucket for the API function's role, and the same for the Batch job role (`gp_batch_data_bucket_enabled` and `gp_batch_data_bucket_arn` in the `aws-serverless` module);
 - Redis (`ConnectionStrings__redis`) on both, as GP jobs already require.
 
-Without Redis, without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously. On ECS, background imports use the shared PostgreSQL job store and the servers' own job workers (`runner: in-process`). Configure the system database and shared operation key ring; Redis is not required. With multiple tasks, staged files must also be accessible to the task that executes the import.
+Without Redis, without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously.
+
+On ECS, background imports use the shared PostgreSQL job store and the servers' own job workers (`runner: in-process`). Configure the system database and shared operation key ring. With multiple tasks, staged files must also be accessible to the task that executes the import.
 
 ### Budget database connections on Lambda
 
@@ -327,7 +329,7 @@ See [Connection poolers and proxies](../../reference/configuration/data-sources/
 
 ## Ops control plane and batch-compute backends
 
-**ECS uses PostgreSQL for durable control-plane state.** Configure `ConnectionStrings__DefaultConnection` for every serving task. Durable execution jobs, queued imports, leases, deploy workflows and operation proposals share the system database; Redis is not required. Use the same `Database__Schema` when overriding the default system schema. Back up and restore this database together with the operation key-ring material described above. Database availability and its backup/failover policy determine the durability of this state.
+**ECS uses PostgreSQL for durable control-plane state.** Configure `ConnectionStrings__DefaultConnection` for every serving task. Durable execution jobs, queued imports, leases, deploy workflows and operation proposals share the system database. Use the same `Database__Schema` when overriding the default system schema. Back up and restore this database together with the operation key-ring material described above. Database availability and its backup/failover policy determine the durability of this state.
 
 **Share the operation key ring across tasks and workers.** Outside Development and Test, a configured system database requires `Operations__SecretChannel__KeyRingCertificatePath` (with the PKCS#12 file mounted), `Operations__SecretChannel__KeyRingCertificatePkcs12`, or `Operations__SecretChannel__KeyRingSecret`. Use the same configured material on the serving tasks and Batch workers, and retain it for the lifetime of the database. See the production key-ring guidance above before changing or restoring it. Shared job state does not make host-local files accessible to another task: use shared file storage for staged uploads and job outputs.
 
@@ -351,7 +353,7 @@ against a deployed environment.
 ## Troubleshoot
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
-- **Job/import endpoints return `503`** — on ECS, check the system PostgreSQL connection, shared operation key-ring configuration and required shared file storage. Redis is not required for these services.
+- **Job/import endpoints return `503`** — on ECS, check the system PostgreSQL connection, shared operation key-ring configuration and required shared file storage.
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps
