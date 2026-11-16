@@ -192,30 +192,30 @@ internal static class AdminEndpoints
                 TableDiscoveryJsonContext.Default.TableDiscoveryResponse,
                 context.RequestAborted);
         }
-        catch (ServiceUnavailableException ex)
-        {
-            AdminLog.TableDiscoveryFailed(logger, ex, id);
-
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status503ServiceUnavailable,
-                    "Database Connection Unavailable",
-                    "Unable to connect to the database. Test the connection and check its host, port, credentials, network access, and TLS settings.")
-                .ExecuteAsync(context);
-        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional catch-all request-handling boundary: logs and returns a generic
-            // admin problem-details response below.
+            // Intentional request boundary: log details and return a safe admin problem.
             AdminLog.TableDiscoveryFailed(logger, ex, id);
-
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status500InternalServerError,
-                    "Table Discovery Failed",
-                    "An error occurred while discovering tables. Please check the connection and try again.")
-                .ExecuteAsync(context);
+            await CreateTableDiscoveryProblem(context, ex).ExecuteAsync(context);
         }
+    }
+
+    private static IResult CreateTableDiscoveryProblem(HttpContext context, Exception exception)
+    {
+        if (exception is ServiceUnavailableException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "Database Connection Unavailable",
+                "Unable to connect to the database. Test the connection and check its host, port, credentials, network access, and TLS settings.");
+        }
+
+        return ProblemDetailsHelpers.CreateAdminProblem(
+            context,
+            StatusCodes.Status500InternalServerError,
+            "Table Discovery Failed",
+            "An error occurred while discovering tables. Please check the connection and try again.");
     }
 
     private static async Task<IResult> HandleGetOpenApiSpec(
