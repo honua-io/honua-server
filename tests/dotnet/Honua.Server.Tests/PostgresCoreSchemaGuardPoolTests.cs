@@ -83,7 +83,7 @@ public sealed class PostgresCoreSchemaGuardPoolTests(ITestOutputHelper output) :
             await using var count = _postgres.DataSource.CreateCommand(
                 "SELECT count(*) FROM pg_stat_activity WHERE datname = @database AND application_name = @application");
             count.Parameters.AddWithValue("database", _databaseName);
-            count.Parameters.AddWithValue("application", new NpgsqlConnectionStringBuilder(_connectionString).ApplicationName);
+            count.Parameters.AddWithValue("application", new NpgsqlConnectionStringBuilder(_connectionString).ApplicationName!);
             ((long)(await count.ExecuteScalarAsync())!).Should().Be(1);
         }
 
