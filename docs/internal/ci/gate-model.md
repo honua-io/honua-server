@@ -1666,6 +1666,9 @@ predates both the workflow-inventory generator and its template, it validates th
 existing documentation with the complete link and concept suite. A partial
 inventory generator/template pair or a failing generator remains an error. This
 compatibility path adds no jobs and preserves all documentation assertions.
+Reachability grades tracked pages that still exist after concept generation,
+so retired generated pages are not phantom orphans. Links to deleted pages
+continue to fail the link check. This changes no job or runner allocation.
 
 Older PR bases that lack the retired-cache policy load it from fetched trusted
 trunk. The explicit base/head diff is still checked, head-supplied policy cannot
