@@ -167,6 +167,8 @@ public sealed record OperationAuditInfo
 
     public string? RequestedBy { get; init; }
 
+    public string? RequestedByActorId { get; init; }
+
     public string? TenantId { get; init; }
 
     public string? Reason { get; init; }

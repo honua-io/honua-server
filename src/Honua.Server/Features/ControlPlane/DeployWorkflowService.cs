@@ -40,6 +40,7 @@ internal sealed partial class DeployWorkflowService
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
     private readonly IOptions<RestoreCellOptions>? _restoreOptions;
     private readonly IOperationProposalStore? _proposalStore;
+    private readonly OperationHumanApprovalAuthority? _humanApprovalAuthority;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -50,12 +51,14 @@ internal sealed partial class DeployWorkflowService
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
         IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
         IOptions<RestoreCellOptions>? restoreOptions = null,
-        IOperationProposalStore? proposalStore = null)
+        IOperationProposalStore? proposalStore = null,
+        OperationHumanApprovalAuthority? humanApprovalAuthority = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
         _restoreOptions = restoreOptions;
         _proposalStore = proposalStore;
+        _humanApprovalAuthority = humanApprovalAuthority;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -440,6 +443,8 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                RequestedByActorId = Honua.Infrastructure.Security.CanonicalSecurityActor.Resolve(principal) is { IsAuthoritative: true } actor
+                    ? actor.ActorId : null,
                 ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
                 // The tenant binding is captured from the validated identity here,
                 // so the protection window sealed at activation can bind recovery to the same pair.
@@ -602,6 +607,13 @@ internal sealed partial class DeployWorkflowService
             return operation;
         }
 
+        if (approvedProposal is null && (operation.Deploy.RequiresApproval
+            || operation.Deploy.TargetKind == DeployTargetKind.LocalCompose
+            || operation.Status == WorkflowOperationStatus.AwaitingApproval))
+        {
+            requestedBy = await VerifyManualApprovalAsync(operation, "submit", requestedBy, cancellationToken).ConfigureAwait(false);
+        }
+
         if (operation.BlockingReasons.Count > 0)
         {
             throw new ResourceConflictException(
@@ -635,13 +647,16 @@ internal sealed partial class DeployWorkflowService
         }
 
         var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
+        if (approvedProposal is not null || operation.Deploy.RequiresApproval || operation.Status == WorkflowOperationStatus.AwaitingApproval)
+            audit = audit with { ApprovedBy = requestedBy };
         if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
         {
             if (string.IsNullOrWhiteSpace(requestedBy) ||
-                (approvedProposal is null && string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase)))
+                (approvedProposal is null && (operation.Audit.RequestedByActorId is null
+                    || string.Equals(requestedBy, operation.Audit.RequestedByActorId, StringComparison.Ordinal))))
             {
                 throw new ResourceConflictException(
-                    "Separation of duties: a different principal must submit this Compose operation.");
+                    "Separation of duties: a different identified principal must submit this Compose operation; older plans must be recreated.");
             }
 
             audit = audit with { ApprovedBy = requestedBy };
@@ -760,6 +775,10 @@ internal sealed partial class DeployWorkflowService
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
+        await using var promotionLease = await RestoreDeployAdmission.AcquireWorkflowAsync(
+            _workflowStore!, operationId, cancellationToken).ConfigureAwait(false);
+        cancellationToken = promotionLease.Token;
+
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
         {
@@ -779,6 +798,8 @@ internal sealed partial class DeployWorkflowService
         {
             return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, preconditionDetail);
         }
+
+        requestedBy = await VerifyManualApprovalAsync(operation, "promote", requestedBy, cancellationToken).ConfigureAwait(false);
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
         var backend = target == null ? null : ResolveBackend(target);
@@ -937,6 +958,7 @@ internal sealed partial class DeployWorkflowService
         => audit with
         {
             RequestedBy = audit.RequestedBy ?? requestedBy,
+            ApprovedBy = requestedBy,
             Reason = string.IsNullOrWhiteSpace(reason)
                 ? audit.Reason
                 : string.IsNullOrWhiteSpace(audit.Reason)

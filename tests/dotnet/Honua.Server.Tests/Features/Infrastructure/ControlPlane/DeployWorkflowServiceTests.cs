@@ -1309,13 +1309,15 @@ public sealed partial class DeployWorkflowServiceTests
     private static DeployWorkflowService CreateService(
         TestWorkflowOperationStore store,
         IDeployBackend backend,
-        IOperatorApprovalEvaluator? approvalEvaluator = null)
+        IOperatorApprovalEvaluator? approvalEvaluator = null,
+        OperationHumanApprovalAuthority? humanApprovalAuthority = null)
         => new(
             new TestDeployTargetRegistry(),
             [store],
             [backend],
             approvalEvaluator ?? new StubApprovalEvaluator(),
-            NullLogger<DeployWorkflowService>.Instance);
+            NullLogger<DeployWorkflowService>.Instance,
+            humanApprovalAuthority: humanApprovalAuthority);
 
     private static DeployWorkflowReconciler CreateReconciler(
         TestWorkflowOperationStore store,

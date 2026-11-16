@@ -70,6 +70,7 @@ internal sealed class OperationHumanApprovalBinding
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(WorkflowOperationRecord))]
 [JsonSerializable(typeof(OperationHumanApprovalReview))]
 [JsonSerializable(typeof(OperationHumanApprovalCapability))]
 [JsonSerializable(typeof(OperationHumanApprovalBinding))]

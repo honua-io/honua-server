@@ -159,6 +159,26 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         return snapshot.Review;
     }
 
+    public async Task<DeployHumanApprovalReviewResponse> OpenDeployReviewAsync(string operationId, string action)
+    {
+        using var response = await Client.GetAsync(
+            $"/api/v1/admin/deploy/operations/{operationId}/approval-review/{action}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        return (await response.Content.ReadFromJsonAsync(
+            DeployControlJsonContext.Default.DeployHumanApprovalReviewResponse))!;
+    }
+
+    public async Task<HttpResponseMessage> SubmitDeployReviewAsync(
+        string operationId, string action, DeployHumanApprovalReviewResponse snapshot)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/admin/deploy/operations/{operationId}/{action}");
+        request.Headers.Add(OperationHumanApprovalAuthority.CapabilityHeader, snapshot.Review.Capability);
+        request.Content = JsonContent.Create(new { reason = "Reviewed deployment" });
+        return await Client.SendAsync(request);
+    }
+
     public async Task<HttpResponseMessage> ApproveAsync(string proposalId) =>
         await SubmitReviewAsync(proposalId, await OpenReviewAsync(proposalId));
 

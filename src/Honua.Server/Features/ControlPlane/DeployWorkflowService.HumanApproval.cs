@@ -35,6 +35,17 @@ internal sealed partial class DeployWorkflowService
         return operation;
     }
 
+    private async Task<string> VerifyManualApprovalAsync(
+        WorkflowOperationRecord operation, string action, string? actor, CancellationToken cancellationToken)
+    {
+        if (_humanApprovalAuthority is null || string.IsNullOrWhiteSpace(actor))
+            throw new HumanApprovalRequiredException();
+        var verified = await _humanApprovalAuthority.VerifyDeployAsync(operation, action,
+            new OperationProposalApprovalContext { ApprovedBy = actor, TenantId = operation.Audit.TenantId ?? string.Empty },
+            cancellationToken).ConfigureAwait(false);
+        return verified;
+    }
+
     private static bool MatchesApprovedPayload(string approvedPayload, DeployExecutionPayload payload, string? restoreOwnerId)
     {
         var approved = DeployExecutionPayload.Parse(approvedPayload);
