@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 TEXT_SUFFIXES = (
@@ -114,8 +115,16 @@ def string_literal_end(text: str, start: int) -> int | None:
     return quoted_literal_end(text, quote_index, '"')
 
 
-def strip_comments(s: str, *, mask_literals: bool = False) -> str:
-    """Remove C# comments; optionally mask literals while preserving offsets."""
+def strip_comments(s: str) -> str:
+    return transform_csharp(s, str)
+
+
+def mask_literals(s: str) -> str:
+    return transform_csharp(s, lambda literal: re.sub(r"[^\r\n]", " ", literal))
+
+
+def transform_csharp(s: str, transform_literal: Callable[[str], str]) -> str:
+    """Remove comments and transform literals before scanning C# source."""
     out, i, n = [], 0, len(s)
     while i < n:
         c = s[i]
@@ -135,7 +144,7 @@ def strip_comments(s: str, *, mask_literals: bool = False) -> str:
             end = string_literal_end(s, i)
         if end is not None:
             literal = s[i:end]
-            out.append(re.sub(r"[^\r\n]", " ", literal) if mask_literals else literal)
+            out.append(transform_literal(literal))
             i = end
             continue
         out.append(c)
@@ -156,7 +165,7 @@ def closing_brace(text: str, opening: int) -> int:
 
 
 def type_declarations(text: str) -> list[tuple[int, int, str, bool, list[str]]]:
-    text = strip_comments(text, mask_literals=True)
+    text = mask_literals(text)
     namespaces = [(match.start(), len(text) if match.group(2) == ";" else closing_brace(text, match.end() - 1),
                    match.group(1)) for match in NAMESPACE.finditer(text)]
     declarations = []
@@ -187,6 +196,15 @@ def has_external_base(spans: list[tuple[int, int, list[str]]], position: int, de
     return inner is not None and any(base and base not in declared for base in inner[2])
 
 
+def collect_partial_bases(sources: Iterable[str]) -> dict[str, list[str]]:
+    partial_bases: dict[str, list[str]] = {}
+    for text in sources:
+        for _, _, identity, partial, bases in type_declarations(text):
+            if partial:
+                partial_bases.setdefault(identity, []).extend(bases)
+    return partial_bases
+
+
 def scan(root: Path) -> list[str]:
     words: Counter[str] = Counter()
     sources: dict[str, str] = {}
@@ -202,11 +220,7 @@ def scan(root: Path) -> list[str]:
         words.update(WORD.findall(text))
 
     declared = {name for text in sources.values() for name in DECLARED_TYPE.findall(text)}
-    partial_bases: dict[str, list[str]] = {}
-    for text in sources.values():
-        for _, _, identity, partial, bases in type_declarations(text):
-            if partial:
-                partial_bases.setdefault(identity, []).extend(bases)
+    partial_bases = collect_partial_bases(sources.values())
     entries = set()
     for relative, text in sources.items():
         spans = None
@@ -223,51 +237,65 @@ def scan(root: Path) -> list[str]:
     return sorted(entries)
 
 
-def self_test() -> int:
+def literal_boundaries_pass() -> bool:
     for literal in ('"}"', "'}'", '@"}"', '$"}}"', '"""}"""', '$"{string.Join("}", Array.Empty<string>())}"'):
         source = f"class Writer : IBufferWriter<byte> {{ object value = {literal}; void Advance() {{ }} }}"
         if not has_external_base(type_spans(source), source.index("void Advance"), set()):
             print(f"self-test failed: literal {literal} truncated the containing type", file=sys.stderr)
-            return 1
+            return False
+    return True
+
+
+def write_sample_fixture(root: Path) -> None:
+    (root / "src" / "Sample.cs").write_text(
+        "public class Sample\n{\n"
+        "    public void Used() { }\n"
+        "    public void Unused() { }\n"
+        "    // Commented() is only mentioned in a comment\n"
+        "    public void Commented() { }\n"
+        "    public void Reflected() { }\n"
+        "    public override string ToString() => \"\";\n"
+        "    private void Caller() { Used(); var name = \"Reflected\"; }\n"
+        "    private void Masked() { var media = \"text/*\"; }\n"
+        "    private void MaskedCaller() { Masked(); var closing = \"*/\"; }\n"
+        "    private void Escaped() { var text = $\"a {{ b\"; var media = \"text/*\"; }\n"
+        "    private void EscapedCaller() { Escaped(); var closing = \"*/\"; }\n"
+        "}\n"
+        "public class Writer : System.Buffers.IBufferWriter<byte>\n{\n"
+        "    private const string ClosingBrace = \"}\";\n"
+        "    public void Advance(int count) { }\n"
+        "    private void Helper() { }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
+def write_partial_fixture(root: Path) -> None:
+    (root / "src" / "PartialBase.cs").write_text(
+        "namespace Streams; public partial class PartialWriter : System.Buffers.IBufferWriter<byte> { }",
+        encoding="utf-8",
+    )
+    (root / "src" / "PartialMethods.cs").write_text(
+        "namespace Streams; public partial class PartialWriter {\n"
+        "    public void CompleteBuffer() { }\n"
+        "    private void PartialHelper() { }\n}\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "Unrelated.cs").write_text(
+        "namespace Other { public partial class PartialWriter {\n"
+        "    public void UnrelatedMethod() { }\n} }\n",
+        encoding="utf-8",
+    )
+
+
+def self_test() -> int:
+    if not literal_boundaries_pass():
+        return 1
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "src").mkdir()
-        (root / "src" / "Sample.cs").write_text(
-            "public class Sample\n{\n"
-            "    public void Used() { }\n"
-            "    public void Unused() { }\n"
-            "    // Commented() is only mentioned in a comment\n"
-            "    public void Commented() { }\n"
-            "    public void Reflected() { }\n"
-            "    public override string ToString() => \"\";\n"
-            "    private void Caller() { Used(); var name = \"Reflected\"; }\n"
-            "    private void Masked() { var media = \"text/*\"; }\n"
-            "    private void MaskedCaller() { Masked(); var closing = \"*/\"; }\n"
-            "    private void Escaped() { var text = $\"a {{ b\"; var media = \"text/*\"; }\n"
-            "    private void EscapedCaller() { Escaped(); var closing = \"*/\"; }\n"
-            "}\n"
-            "public class Writer : System.Buffers.IBufferWriter<byte>\n{\n"
-            "    private const string ClosingBrace = \"}\";\n"
-            "    public void Advance(int count) { }\n"
-            "    private void Helper() { }\n"
-            "}\n",
-            encoding="utf-8",
-        )
-        (root / "src" / "PartialBase.cs").write_text(
-            "namespace Streams; public partial class PartialWriter : System.Buffers.IBufferWriter<byte> { }",
-            encoding="utf-8",
-        )
-        (root / "src" / "PartialMethods.cs").write_text(
-            "namespace Streams; public partial class PartialWriter {\n"
-            "    public void CompleteBuffer() { }\n"
-            "    private void PartialHelper() { }\n}\n",
-            encoding="utf-8",
-        )
-        (root / "src" / "Unrelated.cs").write_text(
-            "namespace Other { public partial class PartialWriter {\n"
-            "    public void UnrelatedMethod() { }\n} }\n",
-            encoding="utf-8",
-        )
+        write_sample_fixture(root)
+        write_partial_fixture(root)
         subprocess.run(["git", "init", "-q", str(root)], check=True)
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
         actual = scan(root)
