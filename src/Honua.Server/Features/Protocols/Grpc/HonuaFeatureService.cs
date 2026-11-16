@@ -448,14 +448,21 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return FilterResultGlobalIds(globalIds, committed);
         }
 
-        await PublishFeatureChangeEventsAsync(
-            request.ServiceId ?? "unknown",
-            request.LayerId,
-            layer,
-            requestBatch,
-            reported,
-            context).ConfigureAwait(false);
-        await gate.RunAfterAsync(result).ConfigureAwait(false);
+        try
+        {
+            await PublishFeatureChangeEventsAsync(
+                request.ServiceId ?? "unknown",
+                request.LayerId,
+                layer,
+                requestBatch,
+                reported,
+                context).ConfigureAwait(false);
+        }
+        finally
+        {
+            // The edit has committed, so its after-hooks run even when publishing its events fails.
+            await gate.RunAfterAsync(result).ConfigureAwait(false);
+        }
 
         return response;
 

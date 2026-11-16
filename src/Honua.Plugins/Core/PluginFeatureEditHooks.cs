@@ -29,7 +29,7 @@ internal sealed partial class PluginFeatureEditHooks(
             return [];
         }
 
-        var hookFeatures = rows.Select((row, position) => ToHookFeature(row, position, createdObjectId: null));
+        var hookFeatures = rows.Select(row => ToHookFeature(row, scope, createdObjectId: null));
         var outcome = await pipeline.ValidateAndRunBeforeHooksAsync(ToContext(scope, hookFeatures), cancellationToken)
             .ConfigureAwait(false);
         if (!outcome.HasRejections)
@@ -37,12 +37,11 @@ internal sealed partial class PluginFeatureEditHooks(
             return [];
         }
 
+        var known = rows.Select(static row => (Kind(row.Kind), row.Index)).ToHashSet();
         return outcome.Rejections
-            .Where(rejection => rejection.RequestIndex >= 0 && rejection.RequestIndex < rows.Count)
-            .Select(rejection => new FeatureEditHookRejection(
-                rows[rejection.RequestIndex].Kind,
-                rows[rejection.RequestIndex].Index,
-                rejection.Message))
+            .Select(rejection => known.Contains((rejection.Kind, rejection.RequestIndex))
+                ? new FeatureEditHookRejection(Kind(rejection.Kind), rejection.RequestIndex, rejection.Message)
+                : throw new InvalidOperationException("A plugin rejected an edit row that is not in the batch."))
             .DistinctBy(static rejection => (rejection.Kind, rejection.Index))
             .ToList();
     }
@@ -60,9 +59,8 @@ internal sealed partial class PluginFeatureEditHooks(
         }
 
         var committed = FeatureEditRows.Enumerate(batch)
-            .Select((row, position) => (Row: row, Position: position))
-            .Where(item => FeatureEditRows.IsCommitted(result, item.Row))
-            .Select(item => ToHookFeature(item.Row, item.Position, FeatureEditRows.ResultOf(result, item.Row)?.ObjectId))
+            .Where(row => FeatureEditRows.IsCommitted(result, row))
+            .Select(row => ToHookFeature(row, scope, FeatureEditRows.ResultOf(result, row)?.ObjectId))
             .ToList();
         if (committed.Count == 0)
         {
@@ -90,18 +88,30 @@ internal sealed partial class PluginFeatureEditHooks(
     private static EditHookContext ToContext(FeatureEditHookScope scope, IEnumerable<EditHookFeature> features)
         => new(scope.ServiceId, scope.LayerId, scope.LayerName, scope.UserName, scope.TraceId, [.. features]);
 
-    private static EditHookFeature ToHookFeature(FeatureEditRow row, int position, long? createdObjectId)
+    // RequestIndex counts rows of the same kind, as GeoServices applyEdits reports it to plugins.
+    private static EditHookFeature ToHookFeature(FeatureEditRow row, FeatureEditHookScope scope, long? createdObjectId)
     {
-        var kind = row.Kind switch
+        var objectId = row.Kind == FeatureEditOperationKind.Create ? createdObjectId : row.ObjectId;
+        var stored = objectId is { } key && scope.StoredRows is { } rows && rows.TryGetValue(key, out var found) ? found : null;
+        var feature = row.Feature ?? stored ?? Feature.Create(objectId ?? 0, geometry: null);
+        return new EditHookFeature(Kind(row.Kind), row.Index, objectId, objectId is { } id ? feature with { Id = id } : feature);
+    }
+
+    private static EditKind Kind(FeatureEditOperationKind kind)
+        => kind switch
         {
             FeatureEditOperationKind.Create => EditKind.Create,
             FeatureEditOperationKind.Update => EditKind.Update,
             _ => EditKind.Delete,
         };
-        var objectId = row.Kind == FeatureEditOperationKind.Create ? createdObjectId : row.ObjectId;
-        var feature = row.Feature ?? Feature.Create(objectId ?? 0, geometry: null);
-        return new EditHookFeature(kind, position, objectId, objectId is { } id ? feature with { Id = id } : feature);
-    }
+
+    private static FeatureEditOperationKind Kind(EditKind kind)
+        => kind switch
+        {
+            EditKind.Create => FeatureEditOperationKind.Create,
+            EditKind.Update => FeatureEditOperationKind.Update,
+            _ => FeatureEditOperationKind.Delete,
+        };
 
     private static partial class Log
     {

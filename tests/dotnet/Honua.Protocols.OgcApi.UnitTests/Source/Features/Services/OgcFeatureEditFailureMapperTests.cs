@@ -20,6 +20,7 @@ public sealed class OgcFeatureEditFailureMapperTests
     [InlineData("Geometry is required for create operation on a spatial layer", 1000, 400)]
     [InlineData("Create failed.", 1000, 500)]
     [InlineData("Something else.", 422, 400)]
+    [InlineData("Parcel owner not found in the registry.", 400, 400)]
     [InlineData("Feature is owned by another principal and cannot be modified under the owner-based edit policy.", 403, 403)]
     public void DetermineStatus_ClassifiesSafeWriterMessages(string message, int code, int expected)
     {

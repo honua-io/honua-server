@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
@@ -15,7 +16,8 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 // merges the stored row before the write, and create and replace send the whole row.
 internal static class OgcFeatureEditGate
 {
-    internal readonly record struct Target(HttpContext Context, int LayerId, MetadataV2Object Resource, string? ServiceName);
+    // LayerId is the storage layer the write goes to; hooks are told the published layer in Request.
+    internal readonly record struct Target(HttpContext Context, int LayerId, MetadataV2Object Resource, OgcFeaturesEditRequest Request);
 
     // Ended is the result that stops the edit before the write; any rejection fails the whole request.
     internal static async Task<(FeatureEditBatch Batch, FeatureEditResult? Ended)> PrepareAsync(
@@ -41,7 +43,7 @@ internal static class OgcFeatureEditGate
             Scope(target),
             new FeatureEditCheck(target.Resource, prepared.Batch),
             cancellationToken).ConfigureAwait(false);
-        return (prepared.Batch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(prepared.Batch, rejections));
+        return (prepared.Batch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(prepared.Batch, Safe(rejections)));
     }
 
     internal static Task RunAfterAsync(Target target, FeatureEditBatch batch, FeatureEditResult result)
@@ -57,9 +59,18 @@ internal static class OgcFeatureEditGate
 
     private static FeatureEditHookScope Scope(Target target)
         => new(
-            target.ServiceName ?? target.Resource.Metadata.Id,
-            target.LayerId,
+            target.Request.ServiceName ?? target.Resource.Metadata.Id,
+            target.Request.PublicLayerId ?? target.LayerId,
             target.Resource.Metadata.Name,
             target.Context.User?.Identity?.Name,
-            target.Context.TraceIdentifier);
+            target.Context.TraceIdentifier,
+            target.Request is { StoredFeature: { } stored, ObjectId: { } objectId }
+                ? new Dictionary<long, Feature> { [objectId] = stored }
+                : null);
+
+    private static IReadOnlyList<FeatureEditHookRejection> Safe(IReadOnlyList<FeatureEditHookRejection> rejections)
+        => [.. rejections.Select(static rejection => rejection with
+        {
+            Message = ErrorMessageSanitizer.Sanitize(rejection.Message, OgcFeatureEditFailureMapper.InvalidDataMessage),
+        })];
 }

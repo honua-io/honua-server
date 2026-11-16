@@ -62,6 +62,8 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue(
             "the stored colour completes a valid combination with the updated size");
         _written.Should().ContainSingle();
+        _hooks.BeforeBatches.Should().ContainSingle().Which.Updates.Should().ContainSingle()
+            .Which.Attributes.Should().Contain("color", "red", "validators judge the row the update produces");
     }
 
     [UnitTest]

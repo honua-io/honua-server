@@ -131,7 +131,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 {
                     Operation = OgcFeaturesEditOperation.Create,
                     Feature = feature,
-                    ServiceName = layerValidation.Service?.Metadata.Name
+                    ServiceName = layerValidation.Service?.Metadata.Name,
+                    PublicLayerId = publication.LayerIndex
                 },
                 cancellationToken);
             var createResult = editResult.CreateResults.FirstOrDefault();
@@ -306,7 +307,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
                     ObjectId = objectId,
                     IfMatch = ifMatch,
                     ExpectedStateToken = expectedStateToken,
-                    ServiceName = layerValidation.Service?.Metadata.Name
+                    ServiceName = layerValidation.Service?.Metadata.Name,
+                    PublicLayerId = publication.LayerIndex,
+                    StoredFeature = existing
                 },
                 cancellationToken);
             var deleteResult = editResult.DeleteResults.FirstOrDefault();
@@ -415,7 +418,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             throw new ValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request.ServiceName);
+        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request);
         var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
             gateTarget,
             _featureReader,
@@ -478,6 +481,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
             return StandardErrorHelpers.CreateForbidden(
                 context,
                 string.IsNullOrWhiteSpace(deleteResult.ErrorMessage) ? "Edit not permitted." : deleteResult.ErrorMessage);
+        }
+
+        if (deleteResult.ErrorCode == FeatureEditGate.RejectedErrorCode)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                string.IsNullOrWhiteSpace(deleteResult.ErrorMessage) ? "The delete was rejected." : deleteResult.ErrorMessage);
         }
 
         return IsNotFound(deleteResult)

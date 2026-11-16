@@ -42,7 +42,8 @@ internal sealed partial class HonuaFeatureService
             call.Request.LayerId,
             call.Layer.Resource.Metadata.Name,
             httpContext.User?.Identity?.Name,
-            httpContext.TraceIdentifier);
+            httpContext.TraceIdentifier,
+            storedRows);
         var check = new FeatureEditCheck(call.Layer.Resource, batch, row => EffectiveAttributes(row, storedRows));
         var rejections = await FeatureEditGate.CheckAsync(hooks, scope, check, call.Context.CancellationToken)
             .ConfigureAwait(false);
@@ -53,7 +54,14 @@ internal sealed partial class HonuaFeatureService
                 BoundEditValidationMessage(rejections[0].Message, "Invalid feature data.")));
         }
 
-        return new EditGate(batch, rejections, hooks, scope);
+        return new EditGate(
+            batch,
+            [.. rejections.Select(static rejection => rejection with
+            {
+                Message = BoundEditValidationMessage(rejection.Message, "Invalid feature data."),
+            })],
+            hooks,
+            scope);
     }
 
     // A partial update is checked as the stored row with the update's values applied.

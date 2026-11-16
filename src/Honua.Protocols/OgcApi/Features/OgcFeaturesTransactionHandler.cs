@@ -187,6 +187,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Operation = OgcFeaturesEditOperation.Batch,
                         RollbackOnFailure = true,
                         ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex,
                         BatchOperations = preparedBatch.PreparedOperations
                             .Select(static operation => new OgcFeaturesBatchEditOperation
                             {
@@ -546,7 +547,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch,
                         ExpectedStateToken = expectedStateToken,
-                        ServiceName = layerValidation.Service?.Metadata.Name
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex
                     },
                     cancellationToken,
                     geometryChangedOverride: geometryChangedForReplace);
@@ -934,7 +936,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         IfMatch = ifMatch,
                         ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
                         ExpectedStateToken = expectedStateToken,
-                        ServiceName = layerValidation.Service?.Metadata.Name
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex
                     },
                     cancellationToken,
                     geometryChangedOverride: patchRequest.HasGeometry);
@@ -1079,7 +1082,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request.ServiceName);
+        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request);
         var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
             gateTarget,
             _featureReader,

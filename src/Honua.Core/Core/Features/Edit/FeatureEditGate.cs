@@ -16,7 +16,8 @@ public sealed record FeatureEditCheck(
 // The pre-write checks every edit protocol shares: contingent values on the effective row, then the plugin before-hooks.
 public static class FeatureEditGate
 {
-    private const int RejectedErrorCode = 1000;
+    // A client error: the row was refused by a contingent-value rule or a plugin, not by a server fault.
+    public const int RejectedErrorCode = 400;
 
     public static async Task<IReadOnlyList<FeatureEditHookRejection>> CheckAsync(
         IFeatureEditHooks hooks,
@@ -39,7 +40,9 @@ public static class FeatureEditGate
             return rejected;
         }
 
-        var hookRejections = await hooks.RunBeforeAsync(scope, remaining, cancellationToken).ConfigureAwait(false);
+        var hookRejections = await hooks
+            .RunBeforeAsync(scope, WithEffectiveUpdates(remaining, check.EffectiveAttributes), cancellationToken)
+            .ConfigureAwait(false);
         return [.. rejected, .. ToBatchIndexes(batch, rejected, hookRejections)];
     }
 
@@ -159,9 +162,56 @@ public static class FeatureEditGate
             .Where(row => !droppedKeys.Contains((row.Kind, row.Index)))
             .GroupBy(static row => row.Kind)
             .ToDictionary(static group => group.Key, static group => group.Select(static row => row.Index).ToArray());
-        return found
-            .Where(rejection => kept.TryGetValue(rejection.Kind, out var indexes) && rejection.Index < indexes.Length)
-            .Select(rejection => rejection with { Index = kept[rejection.Kind][rejection.Index] });
+        return found.Select(rejection =>
+            kept.TryGetValue(rejection.Kind, out var indexes) && rejection.Index >= 0 && rejection.Index < indexes.Length
+                ? rejection with { Index = indexes[rejection.Index] }
+                : throw new InvalidOperationException("An edit hook rejected a row that is not in the batch."));
+    }
+
+    // Hooks and validators judge an update as the full row it produces, as GeoServices applyEdits gives it to them;
+    // the write still sends only what the caller submitted.
+    private static FeatureEditBatch WithEffectiveUpdates(
+        FeatureEditBatch batch,
+        Func<FeatureEditRow, IReadOnlyDictionary<string, object?>>? effectiveAttributes)
+    {
+        if (effectiveAttributes is null)
+        {
+            return batch;
+        }
+
+        var rows = FeatureEditRows.Enumerate(batch);
+        Feature Effective(Feature feature, FeatureEditRow row)
+        {
+            var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, value) in effectiveAttributes(row))
+            {
+                attributes[name] = value;
+            }
+
+            return feature with { Attributes = attributes.ToImmutable() };
+        }
+
+        if (!batch.Operations.IsDefaultOrEmpty)
+        {
+            return batch with
+            {
+                Operations =
+                [
+                    .. batch.Operations.Select((operation, position) =>
+                        operation.Kind == FeatureEditOperationKind.Update && operation.Feature is { } feature
+                            ? operation with { Feature = Effective(feature, rows[position]) }
+                            : operation),
+                ],
+            };
+        }
+
+        if (batch.Updates.IsDefaultOrEmpty)
+        {
+            return batch;
+        }
+
+        var updates = rows.Where(static row => row.Kind == FeatureEditOperationKind.Update).ToArray();
+        return batch with { Updates = [.. batch.Updates.Select((feature, index) => Effective(feature, updates[index]))] };
     }
 
     private static ImmutableArray<T> Keep<T>(

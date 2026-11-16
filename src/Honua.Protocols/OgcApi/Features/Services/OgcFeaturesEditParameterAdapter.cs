@@ -51,8 +51,13 @@ internal readonly record struct OgcFeaturesEditRequest
 
     public bool ClearAllProperties { get; init; }
 
-    // The service the collection was addressed through, as plugin edit hooks see it.
+    // The service and published layer the collection was addressed through, as plugin edit hooks see them.
     public string? ServiceName { get; init; }
+
+    public int? PublicLayerId { get; init; }
+
+    // The row as read before a delete, so a delete hook can judge it.
+    public Feature? StoredFeature { get; init; }
 
     /// <summary>
     /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the handler

@@ -87,6 +87,32 @@ public sealed class OgcFeaturesEditGateTests
     }
 
     [UnitTest]
+    public async Task RejectedDelete_IsAClientError_AndTheHookSeesThePublishedLayerAndTheStoredRow()
+    {
+        var hooks = new RecordingHooks { Reject = FeatureEditOperationKind.Delete };
+        var writer = new CountingWriter();
+        var request = new OgcFeaturesEditRequest
+        {
+            Operation = OgcFeaturesEditOperation.Delete,
+            ObjectId = 42,
+            ServiceName = "parks",
+            PublicLayerId = 3,
+            StoredFeature = Row(42, "red", "S"),
+        };
+
+        var result = await CreateHandlers(writer).Crud.ExecuteEditAsync(Context(hooks), 7, Resource(), request, CancellationToken.None);
+
+        writer.ApplyCount.Should().Be(0);
+        var row = result.DeleteResults.Should().ContainSingle().Subject;
+        OgcFeaturesCrudHandler.MapDeleteFailure(new DefaultHttpContext(), row, "42")
+            .Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var scope = hooks.Scopes.Should().ContainSingle().Subject;
+        scope.ServiceId.Should().Be("parks");
+        scope.LayerId.Should().Be(3, "plugins are scoped by the published layer, not the storage layer");
+        scope.StoredRows.Should().ContainKey(42);
+    }
+
+    [UnitTest]
     public async Task BatchWithOneInvalidRow_FailsTheWholeBatch()
     {
         var request = new OgcFeaturesEditRequest
@@ -245,6 +271,8 @@ public sealed class OgcFeaturesEditGateTests
 
         public List<FeatureEditBatch> BeforeBatches { get; } = [];
 
+        public List<FeatureEditHookScope> Scopes { get; } = [];
+
         public List<(FeatureEditBatch Batch, FeatureEditResult Result)> AfterCalls { get; } = [];
 
         public bool HasHooks => true;
@@ -255,6 +283,7 @@ public sealed class OgcFeaturesEditGateTests
             CancellationToken cancellationToken)
         {
             BeforeBatches.Add(batch);
+            Scopes.Add(scope);
             IReadOnlyList<FeatureEditHookRejection> rejections = Reject is { } kind
                 ? [new FeatureEditHookRejection(kind, 0, "rejected by plugin")]
                 : [];

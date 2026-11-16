@@ -42,6 +42,49 @@ public sealed class FeatureEditGateTests
     }
 
     [UnitTest]
+    public async Task CheckAsync_PartialUpdate_ShowsTheHooksTheEffectiveRow()
+    {
+        var hooks = new RejectingHooks("stored");
+        var partial = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty.Add("size", "S"));
+        var batch = FeatureEditBatch.Create(updates: [partial]);
+        var check = new FeatureEditCheck(
+            Resource(),
+            batch,
+            static row => Row("stored", "L").Attributes.SetItems(row.Feature!.Attributes));
+
+        var rejections = await FeatureEditGate.CheckAsync(hooks, Scope, check, CancellationToken.None);
+
+        rejections.Should().ContainSingle().Which.Message.Should().Be("blocked");
+        var seen = hooks.Seen.Should().ContainSingle().Which.Updates.Should().ContainSingle().Subject;
+        seen.Id.Should().Be(7);
+        seen.Attributes.Should().Contain("color", "red").And.Contain("size", "S");
+        batch.Updates[0].Attributes.Should().HaveCount(1);
+    }
+
+    [UnitTest]
+    public async Task CheckAsync_HookRejectionOutsideTheRemainingRows_FailsInsteadOfBeingDropped()
+    {
+        var hooks = new FixedHooks(new FeatureEditHookRejection(FeatureEditOperationKind.Create, 5, "lost"));
+        var batch = FeatureEditBatch.Create(creates: [Row("ok", "S"), Row("bad", "L")]);
+
+        var act = () => FeatureEditGate.CheckAsync(hooks, Scope, new FeatureEditCheck(Resource(), batch), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public void RejectedResult_ReportsAClientError()
+    {
+        var batch = FeatureEditBatch.Create(creates: [Row("a", "S")]);
+
+        var result = FeatureEditGate.RejectedResult(batch, [new(FeatureEditOperationKind.Create, 0, "no")]);
+
+        result.WasRolledBack.Should().BeTrue();
+        result.CreateResults.Should().ContainSingle().Which.ErrorCode.Should().Be(FeatureEditGate.RejectedErrorCode);
+        FeatureEditGate.RejectedErrorCode.Should().BeInRange(400, 499);
+    }
+
+    [UnitTest]
     public void WithRejectedRows_PutsEachRejectionBackAtItsBatchPosition()
     {
         var batch = FeatureEditBatch.Create(creates: [Row("a", "S"), Row("b", "S"), Row("c", "S")], deletes: [7, 8]);
@@ -118,6 +161,24 @@ public sealed class FeatureEditGateTests
             },
         ],
     };
+
+    private sealed class FixedHooks(FeatureEditHookRejection rejection) : IFeatureEditHooks
+    {
+        public bool HasHooks => true;
+
+        public Task<IReadOnlyList<FeatureEditHookRejection>> RunBeforeAsync(
+            FeatureEditHookScope scope,
+            FeatureEditBatch batch,
+            CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<FeatureEditHookRejection>>([rejection]);
+
+        public Task RunAfterAsync(
+            FeatureEditHookScope scope,
+            FeatureEditBatch batch,
+            FeatureEditResult result,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
 
     private sealed class RejectingHooks(string blockedName) : IFeatureEditHooks
     {

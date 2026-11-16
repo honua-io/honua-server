@@ -27,7 +27,7 @@ public sealed class PluginFeatureEditHooksTests
     {
         var pipeline = new RecordingPipeline
         {
-            Before = context => Reject(context, positions: [1, 2]),
+            Before = context => Reject(context, (EditKind.Create, 1), (EditKind.Update, 0)),
         };
         var batch = FeatureEditBatch.Create(
             creates: [Row(0, "a"), Row(0, "b")],
@@ -46,8 +46,8 @@ public sealed class PluginFeatureEditHooksTests
             .Should().Equal(
                 (EditKind.Create, 0, (long?)null),
                 (EditKind.Create, 1, (long?)null),
-                (EditKind.Update, 2, (long?)11),
-                (EditKind.Delete, 3, (long?)12));
+                (EditKind.Update, 0, (long?)11),
+                (EditKind.Delete, 0, (long?)12));
         rejections.Should().Equal(
             new FeatureEditHookRejection(FeatureEditOperationKind.Create, 1, "rejected"),
             new FeatureEditHookRejection(FeatureEditOperationKind.Update, 0, "rejected"));
@@ -56,7 +56,7 @@ public sealed class PluginFeatureEditHooksTests
     [UnitTest]
     public async Task RunBefore_OrderedOperations_CountsRowsPerKind()
     {
-        var pipeline = new RecordingPipeline { Before = context => Reject(context, positions: [3]) };
+        var pipeline = new RecordingPipeline { Before = context => Reject(context, (EditKind.Create, 1)) };
         var batch = FeatureEditBatch.Create(operations:
         [
             FeatureEditOperation.Update(Row(11, "u")),
@@ -69,6 +69,36 @@ public sealed class PluginFeatureEditHooksTests
 
         rejections.Should().ContainSingle()
             .Which.Should().Be(new FeatureEditHookRejection(FeatureEditOperationKind.Create, 1, "rejected"));
+    }
+
+    [UnitTest]
+    public async Task RunBefore_RejectionForARowOutsideTheBatch_FailsInsteadOfLettingTheRowThrough()
+    {
+        var pipeline = new RecordingPipeline
+        {
+            Before = static _ => new PluginEditOutcome(
+                [new PluginEditRejection(EditKind.Update, 4, 11, 1000, "rejected")],
+                BatchRejected: false),
+        };
+        var batch = FeatureEditBatch.Create(updates: [Row(11, "c")]);
+
+        var act = () => Hooks(pipeline).RunBeforeAsync(Scope, batch, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public async Task RunBefore_Delete_SeesTheStoredRowWhenTheProtocolReadIt()
+    {
+        var pipeline = new RecordingPipeline();
+        var scope = Scope with { StoredRows = new Dictionary<long, Feature> { [12] = Row(12, "stored") } };
+
+        await Hooks(pipeline).RunBeforeAsync(scope, FeatureEditBatch.Create(deletes: [12, 13]), CancellationToken.None);
+
+        var features = pipeline.BeforeContexts.Should().ContainSingle().Subject.Features;
+        features[0].Feature.Attributes["name"].Should().Be("stored");
+        features[1].Feature.Attributes.Should().BeEmpty();
+        features[1].ObjectId.Should().Be(13);
     }
 
     [UnitTest]
@@ -155,11 +185,11 @@ public sealed class PluginFeatureEditHooksTests
     private static Feature Row(long id, string name)
         => Feature.Create(id, geometry: null, ImmutableDictionary<string, object?>.Empty.Add("name", name));
 
-    private static PluginEditOutcome Reject(EditHookContext context, int[] positions)
+    private static PluginEditOutcome Reject(EditHookContext context, params (EditKind Kind, int Index)[] rows)
         =>
         new(
             [.. context.Features
-                .Where(feature => positions.Contains(feature.RequestIndex))
+                .Where(feature => rows.Contains((feature.Kind, feature.RequestIndex)))
                 .Select(static feature => new PluginEditRejection(feature.Kind, feature.RequestIndex, feature.ObjectId, 1000, "rejected"))],
             BatchRejected: false);
 
