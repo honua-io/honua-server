@@ -18,29 +18,24 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData v4 advanced features:
-/// - $batch operations
-/// - $apply aggregation
-/// - $search full-text search
-/// - $expand related entities
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
+public sealed class ODataAdvancedFeaturesTests : IClassFixture<ODataProHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync()
-    {
-        // All segments are relative literal path fragments (not user input), so none can be
-        // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
-        await _fixture.InitializeAsync();
-    }
+    private readonly HttpClient _client;
+    private WebAppFixture? _mutableFixture;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public ODataAdvancedFeaturesTests(ODataProHost host) => _client = host.Fixture.Client;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
+
+    // Cases that change data or send writes own a private host and schema.
+    private async Task<WebAppFixture> StartMutableFixtureAsync()
+        => _mutableFixture = await ODataProHost.StartPrivateAsync();
 
     #region Batch Operations Tests
 
@@ -50,6 +45,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithSingleGetRequest_ReturnsFeature()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -62,7 +58,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -82,7 +78,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithPutRequest_ReplacesFeature()
     {
-        var createdId = await _fixture.InsertFeatureAsync(TestLayerId, "Batch PUT Candidate");
+        var fixture = await StartMutableFixtureAsync();
+        var createdId = await fixture.InsertFeatureAsync(TestLayerId, "Batch PUT Candidate");
 
         var batchRequest = new ODataBatchRequest
         {
@@ -103,7 +100,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -125,6 +122,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithFeatureRefRequest_ReturnsCanonicalReference()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -137,7 +135,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -155,6 +153,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithFeatureValueRequest_ReturnsNotFound()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -167,7 +166,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -184,6 +183,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithMultipleRequests_ReturnsAllResponses()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(
@@ -203,7 +203,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -219,6 +219,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithCreateRequest_CreatesFeature()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -239,7 +240,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -259,8 +260,9 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithDeleteRequest_DeletesFeature()
     {
+        var fixture = await StartMutableFixtureAsync();
         // Create a feature to delete
-        var createdId = await _fixture.InsertFeatureAsync(TestLayerId, "To Delete");
+        var createdId = await fixture.InsertFeatureAsync(TestLayerId, "To Delete");
 
         var batchRequest = new ODataBatchRequest
         {
@@ -274,7 +276,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -292,6 +294,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithInvalidRequest_ReturnsError()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -304,7 +307,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -321,6 +324,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithInvalidUrl_ReturnsBadRequestInResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -333,7 +337,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -353,7 +357,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAtomicityGroupFailure_RollsBackChanges()
     {
-        var initialCount = await CountFeaturesAsync();
+        var fixture = await StartMutableFixtureAsync();
+        var initialCount = await CountFeaturesAsync(fixture);
 
         var batchRequest = new ODataBatchRequest
         {
@@ -384,7 +389,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -412,7 +417,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         invalidStatus.Should().Be(400);
         createStatus.Should().Be(424);
-        var finalCount = await CountFeaturesAsync();
+        var finalCount = await CountFeaturesAsync(fixture);
         finalCount.Should().Be(initialCount);
     }
 
@@ -421,6 +426,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithNamedKeyRequestForLayerZero_ReturnsFeature()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -433,7 +439,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -453,6 +459,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost(string url)
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -465,7 +472,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -482,6 +489,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithCollectionGetRequest_ReturnsCollectionPayload()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -494,7 +502,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -515,6 +523,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithCollectionGetFilterAndOrderBy_UsesSharedQueryPipeline()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(new ODataBatchRequestItem
@@ -527,7 +536,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -548,6 +557,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithContentIdReference_FollowsCreatedEntity()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(
@@ -575,7 +585,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -597,6 +607,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithFailedDependency_ReturnsDependencyFailed()
     {
+        var fixture = await StartMutableFixtureAsync();
         var batchRequest = new ODataBatchRequest
         {
             Requests = ImmutableArray.Create(
@@ -617,7 +628,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -639,6 +650,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithMultipartRequest_ReturnsMultipartResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         const string boundary = "batch_123";
         var payload = string.Join("\r\n",
         [
@@ -656,7 +668,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("multipart/mixed");
@@ -709,10 +721,10 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
             string.Equals(request.Protocol, "OData", StringComparison.OrdinalIgnoreCase));
     }
 
-    private async Task<long> CountFeaturesAsync()
+    private static async Task<long> CountFeaturesAsync(WebAppFixture fixture)
     {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        var schema = fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = @layerId;";
         command.Parameters.AddWithValue("layerId", TestLayerId);
@@ -754,7 +766,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithSimpleAggregate_ReturnsSumResult()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population with sum as TotalPopulation)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -776,7 +788,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithGroupBy_ReturnsGroupedResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=groupby((state), aggregate(population with sum as TotalPop))");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -800,7 +812,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithCount_ReturnsCountResult()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate($count as TotalCount)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -821,7 +833,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithAverage_ReturnsAverageResult()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population with avg as AvgPopulation)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -842,7 +854,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithMinMax_ReturnsMinMaxResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population with min as MinPop, population with max as MaxPop)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -865,7 +877,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithCompute_ReturnsComputedField()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=compute(population mul 2 as DoublePopulation)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -892,7 +904,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     {
         // floor() is the OData v4 canonical numeric function that makes histogram binning
         // first-class instead of requiring the x sub (x mod w) workaround (#1620).
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=compute(floor(area_sq_km) as FlooredArea)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -918,7 +930,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     {
         // floor(population div 1000000) buckets each city into a population band. This is the
         // real Analyst Workbench histogram query that previously required arithmetic workarounds.
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=compute(floor(population div 1000000) as PopBin)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -944,7 +956,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Apply_WithComputeModulo_ReturnsRemainder()
     {
         // mod is now part of the documented compute grammar (the binning building block).
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=compute(population mod 1000000 as PopRemainder)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -967,7 +979,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithFilter_ReturnsFilteredFeatures()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=filter(state eq 'California')");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -990,7 +1002,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithoutApplyParam_ReturnsError()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$apply");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})/$apply");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -1006,7 +1018,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithInvalidExpression_ReturnsError()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -1023,7 +1035,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_NonExistentLayer_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             "/odata/Features(99999)/$apply?$apply=aggregate(population with sum as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -1039,7 +1051,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithSimpleTerm_ReturnsMatchingFeatures()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=San");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1057,7 +1069,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithAndTerms_ReturnsIntersection()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=San AND California");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1083,7 +1095,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithOrTerms_ReturnsUnion()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=Seattle OR Phoenix");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1103,7 +1115,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithQuotedPhrase_ReturnsMatchingFeatures()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=\"Los Angeles\"");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1120,7 +1132,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithNotTerm_ExcludesMatches()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=NOT San");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1143,7 +1155,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithCount_ReturnsCountAndResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=City&$count=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1160,7 +1172,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithTopSkip_ReturnsPaginatedResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=City&$top=2&$skip=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1177,7 +1189,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search with filter/orderby/select/expand")]
     public async Task SearchEndpoint_WithFilterOrderBySelectAndExpand_AppliesAllOptions()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$search?$search=San&$filter=state eq 'California'&$orderby=ObjectId desc&$select=ObjectId,LayerId,name,state&$expand=Landmarks&$top=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1203,7 +1215,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithoutSearchParam_ReturnsError()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$search");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})/$search");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -1219,7 +1231,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_NonExistentLayer_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             "/odata/Features(99999)/$search?$search=test");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -1230,7 +1242,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$search")]
     public async Task SearchQueryOption_WithFilterOrderByAndSelect_AppliesAllOptions()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$search=San&$filter=state eq 'California'&$orderby=ObjectId desc&$select=ObjectId,LayerId,name,state&$top=2");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1260,7 +1272,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$search with $expand")]
     public async Task SearchQueryOption_WithExpand_IncludesRelatedEntities()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$search=San&$expand=Landmarks&$top=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1279,7 +1291,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features?$search")]
     public async Task SearchQueryOption_AllLayersRoute_WithLayerFilter_ReturnsResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features?$search=San&$filter=LayerId eq {TestLayerId} and state eq 'California'&$top=3");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1297,7 +1309,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$apply with $search")]
     public async Task SearchQueryOption_WithApplyCombination_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$search=San&$apply=aggregate(population with sum as TotalPopulation)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -1312,7 +1324,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$compute")]
     public async Task Features_WithCompute_ReturnsComputedProperty()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$top=1&$compute=population div 1000 as PopulationThousands");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1329,7 +1341,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$compute with $select")]
     public async Task Features_WithComputeAndSelect_ReturnsComputedAlias()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$top=1&$select=ObjectId,PopulationThousands&$compute=population div 1000 as PopulationThousands");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1347,7 +1359,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$compute with malformed delimiter")]
     public async Task Features_WithMalformedComputeDelimiter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$top=1&$compute=population div 1000 as PopulationThousands,");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -1363,7 +1375,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Features_WithExpand_ReturnsODataVersionHeader()
     {
         // Verify endpoint accepts $expand and returns OData headers
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$expand=Landmarks");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1376,7 +1388,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$expand")]
     public async Task Features_WithExpandAndFilter_ReturnsFilteredResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$expand=Landmarks&$filter=ObjectId eq 1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1405,7 +1417,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$expand")]
     public async Task Features_WithExpandAndTop_ReturnsPaginatedResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$expand=Landmarks&$top=5");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1422,7 +1434,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$expand with options")]
     public async Task Features_WithExpandOptions_ReturnsExpandedResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$expand=Landmarks($select=name)&$filter=ObjectId eq 1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1443,7 +1455,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$expand with nested path")]
     public async Task Features_WithNestedExpandPath_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$expand=Landmarks/SubItems");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

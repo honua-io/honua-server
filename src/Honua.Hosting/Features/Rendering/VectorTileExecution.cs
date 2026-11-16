@@ -45,7 +45,7 @@ internal static partial class VectorTileExecution
         int tileCol,
         int tileRow,
         int zoomLevel,
-        FeatureQuery query,
+        VectorTileQuery query,
         TileOptions tileOptions,
         TileLimits tileLimits,
         CancellationToken cancellationToken,
@@ -55,6 +55,12 @@ internal static partial class VectorTileExecution
         string? tileMatrixSetId = null,
         GridGeometry? gridGeometry = null)
     {
+        if (query.IsRefused)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Invalid query parameters", ["The request references a field that is not available."]);
+        }
+
         byte[]? tileData;
         try
         {
@@ -63,7 +69,7 @@ internal static partial class VectorTileExecution
                 tileCol,
                 tileRow,
                 zoomLevel,
-                query,
+                query.Value,
                 tileOptions,
                 tileLimits,
                 gridGeometry,

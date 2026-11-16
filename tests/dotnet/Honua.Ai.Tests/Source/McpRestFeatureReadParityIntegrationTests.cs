@@ -25,33 +25,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// REST/MCP parity for feature READS against a real PostGIS fixture holding real
-/// rows (#4389). MCP is a GA access path and the 2026.1 promise is that it applies
-/// the same resource-access policy as REST, so the question this class asks is the
-/// one that matters: for the SAME principal and the SAME layer, does MCP return
-/// exactly what REST returns, and nothing more?
-/// </summary>
-/// <remarks>
-/// Fixture shape (<c>tests/seed/server.yaml</c>):
-/// <list type="bullet">
-/// <item>layer 0 (<c>Test Layer</c>, objectids 1-5) carries an access policy that
-/// admits only <see cref="ReaderRole"/> — the ALLOWED layer;</item>
-/// <item>layer 1 (<c>Related Test Layer 1</c>, objectids 101-104) carries an access
-/// policy that admits only <see cref="RestrictedRole"/> — the DENIED layer.</item>
-/// </list>
-/// Both layers hold real rows, so "denied" is provably "zero records out of a
-/// populated layer" rather than "the layer happened to be empty".
-/// <para>
-/// The only substituted service is the generic MCP operator admission gate
-/// (<see cref="IOperatorAuthorizationEvaluator"/>), which every MCP tool consults
-/// before its own resource check. Admitting it isolates the decision under test —
-/// the per-layer resource policy that REST and MCP are supposed to share — exactly
-/// as <c>StudioMcpOwnershipParityIntegrationTests</c> does for Studio ownership.
-/// The metadata graph, the filter parser, the feature-query pipeline, the REST
-/// adapter, the MCP dispatcher and PostGIS all stay production services.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Mcp)]
@@ -65,10 +38,8 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
     private const string RestrictedRole = "feature-read-parity-restricted";
     private const string UnrelatedRole = "feature-read-parity-nobody";
 
-    /// <summary>Attribute value that only exists on the allowed layer's rows.</summary>
     private const string AllowedLayerMarker = "Test Feature";
 
-    /// <summary>Attribute value that only exists on the denied layer's rows.</summary>
     private const string DeniedLayerMarker = "Related Feature";
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
@@ -125,12 +96,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Acceptance criteria 1 and 2: one principal, one layer, both surfaces — the
-    /// same record set, asserted against the literal seeded denominator so the two
-    /// surfaces agreeing on the WRONG answer still fails; and neither surface
-    /// returns a row from the layer the same principal is denied.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -191,11 +156,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         (await ReadOverMcpAsync(restricted, DeniedLayerId)).Should().Equal(restrictedRows);
     }
 
-    /// <summary>
-    /// Acceptance criterion 3: a denied principal receives ZERO RECORDS over MCP —
-    /// not merely a refusal envelope. Asserted on a populated layer, over the
-    /// record-bearing read, the count-only read and the raw response text.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -225,10 +185,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         restBody.Should().NotContain(AllowedLayerMarker);
     }
 
-    /// <summary>
-    /// GeoServices reports errors in an Esri error envelope on HTTP 200; the refusal is
-    /// the <c>error.code</c>, and no record may ride alongside it.
-    /// </summary>
     private static void AssertGeoServicesForbidden(string body)
     {
         using var document = JsonDocument.Parse(body);
@@ -238,11 +194,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
             "a refused REST read must carry no feature records");
     }
 
-    /// <summary>
-    /// Asserts a refused MCP tool result carries no feature records in any of the
-    /// three places records can ride: the MCP projection, the GeoJSON collection,
-    /// and the raw serialized envelope.
-    /// </summary>
     private static void AssertZeroRecords(JsonElement result, string rowMarker)
     {
         result.GetProperty("isError").GetBoolean().Should().BeTrue();
@@ -390,7 +341,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         client.DefaultRequestHeaders.Add(ParityAuthHandler.RolesHeader, role);
     });
 
-    /// <summary>One comparable record, surface-independent.</summary>
     private sealed record FeatureRecord(
         long ObjectId,
         string? Name,
@@ -399,10 +349,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         double? X,
         double? Y);
 
-    /// <summary>
-    /// Admits the generic MCP operator gate so the per-layer resource policy is the
-    /// only authorization decision this class measures.
-    /// </summary>
     private sealed class AdmitEveryOperatorRequest : IOperatorAuthorizationEvaluator
     {
         public Task<AccessDecision> EvaluateAsync(
@@ -412,11 +358,6 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
             => Task.FromResult(AccessDecision.Allowed("feature-read parity fixture"));
     }
 
-    /// <summary>
-    /// Minimal authenticated identity carrying a stable subject plus the roles the
-    /// access policies name. Only the identity is synthesized; every authorization
-    /// decision below it is the production one.
-    /// </summary>
     private sealed class ParityAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,

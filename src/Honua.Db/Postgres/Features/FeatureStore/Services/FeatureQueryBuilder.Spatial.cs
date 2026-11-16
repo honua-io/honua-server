@@ -182,7 +182,7 @@ internal sealed partial class FeatureQueryBuilder
                 // The geography operands wrap the column in ST_Transform(col,4326)::geography, which
                 // is not GiST-index-usable and forces a full scan. Pair it with an && envelope
                 // pre-filter in the STORED CRS (mirroring the Intersects family) so the spatial
-                // index prunes candidates before the exact geodesic check runs. (#2740)
+                // index prunes candidates before the exact geodesic check runs.
                 var withinDistanceMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
                 var storageFilterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 var geographyFilter = BuildGeographyFilterExpression(filter, query, ref paramIndex);

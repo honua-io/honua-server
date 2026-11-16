@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.Ogc.Common;
 
@@ -154,7 +153,7 @@ public sealed record GeoJsonFeature
 }
 
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "FeatureCollection is the standard GeoJSON type name")]
-public sealed record FeatureCollection : ICollectionResponse<GeoJsonFeature>
+public sealed record FeatureCollection
 {
     [JsonPropertyName("type")]
     public string Type { get; init; } = "FeatureCollection";
@@ -174,12 +173,4 @@ public sealed record FeatureCollection : ICollectionResponse<GeoJsonFeature>
     [JsonPropertyName("timeStamp")]
     [JsonConverter(typeof(OgcTimestampJsonConverter))]
     public DateTimeOffset? TimeStamp { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<GeoJsonFeature> ICollectionResponse<GeoJsonFeature>.Items => Features.ToImmutableArray();
-    ImmutableArray<ILink>? ICollectionResponse<GeoJsonFeature>.Links => Links?.Cast<ILink>().ToImmutableArray();
-    IPaginationMetadata? ICollectionResponse<GeoJsonFeature>.Pagination =>
-        NumberMatched.HasValue || NumberReturned > 0
-            ? PaginationMetadata.Create(NumberMatched, NumberReturned, false)
-            : null;
 }

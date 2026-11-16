@@ -96,6 +96,18 @@ Open `http://localhost:8080/scenes/downtown-buildings/tileset.json` in a browser
 
 Nested assets resolve under the same prefix, for example `GET /scenes/downtown-buildings/tile_0000.glb`.
 
+## Scene output storage
+
+The packaged quickstart and production Compose configurations write generated scenes to
+`/var/lib/honua/storage/scenes-generated` on the persistent storage volume. For a custom
+container deployment, set `SceneGeneration__OutputRoot` to a writable persistent mount
+and grant the server user write permission. The default relative directory is unsuitable
+for a read-only container filesystem.
+
+`SCENE_OUTPUT_UNWRITABLE` (500) means local scene output could not be written. Check
+`SceneGeneration:OutputRoot`, mount permissions and free space before trying again.
+The response omits filesystem paths and underlying exception details.
+
 ## Troubleshoot
 
 - **`SCENE_FEATURE_LIMIT_EXCEEDED` (400)** — the layer exceeds `SceneGeneration:MaxFeatureCount`; raise the cap or pass a smaller `maxFeatureCount` with a filtered source layer.

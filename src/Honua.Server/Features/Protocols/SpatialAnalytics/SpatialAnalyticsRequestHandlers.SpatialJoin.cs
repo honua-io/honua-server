@@ -187,7 +187,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 case "intersects":
                     predicate = SpatialJoinPredicate.Intersects;
                     break;
-                // This endpoint's wire vocabulary is TARGET-SUBJECT (honua-server#3069):
+                // This endpoint's wire vocabulary is TARGET-SUBJECT:
                 // `contains` means the target layer (the layer named in the route)
                 // contains the join geometry and `within` means the target sits inside
                 // the join geometry, matching the "target features / join features"

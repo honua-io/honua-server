@@ -16,7 +16,4 @@ public class DuckDBOptions
 
     [Range(1, 100)]
     public int MaxConnections { get; set; } = 10;
-
-    [Range(1, 300)]
-    public int ConnectionTimeoutSeconds { get; set; } = 30;
 }

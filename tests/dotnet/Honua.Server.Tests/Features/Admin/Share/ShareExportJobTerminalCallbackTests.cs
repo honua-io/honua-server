@@ -17,10 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Admin.Share;
 
-/// <summary>
-/// Unit tests for <see cref="ShareExportJobTerminalCallback"/>, which reconciles a Share export run
-/// with the terminal state of its backing execution job (#1216).
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]
 public sealed class ShareExportJobTerminalCallbackTests

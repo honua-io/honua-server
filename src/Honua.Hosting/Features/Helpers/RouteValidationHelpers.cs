@@ -61,7 +61,7 @@ internal static class RouteValidationHelpers
         // GeoServices REST operation errors use HTTP 200 with an {"error":...}
         // envelope. Attachment routes are the only callers of this helper; route
         // validation must use the same formatter as the rest of FeatureServer rather
-        // than leaking the older HTTP 400 writer (#4076).
+        // than leaking the older HTTP 400 writer.
         await StandardErrorHelpers.CreateBadRequest(context, message, details).ExecuteAsync(context);
     }
 }

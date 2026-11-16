@@ -12,12 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="DefaultComplianceDependencyGate"/>. Pins the conservative
-/// detection contract: capabilities without a real signal must require an explicit
-/// operator attestation rather than report satisfied off the presence of an in-memory
-/// placeholder service.
-/// </summary>
 public sealed class ComplianceDependencyGateTests
 {
     [Trait("Tier", "Fast")]
@@ -113,7 +107,7 @@ public sealed class ComplianceDependencyGateTests
     public void DataResidency_NotSatisfied_WhenOnlyEnforcedFlagIsSet()
     {
         // Reviewer concern: Enforced=true flips the policy view but no egress code
-        // actually consults IDataResidencyPolicyProvider yet. Requires explicit attestation.
+        // actually consults DefaultDataResidencyPolicyProvider yet. Requires explicit attestation.
         var options = new ComplianceOptions
         {
             DataResidency = new ComplianceResidencyOptions { Enforced = true },

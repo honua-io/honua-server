@@ -17,11 +17,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for the propose idempotency gap (#1693): re-proposing an
-/// approval-tier operation with the same idempotency key previously minted a second
-/// AwaitingApproval proposal instead of folding onto the existing one.
-/// </summary>
 public sealed class OperationGatewayIdempotencyTests
 {
     [Fact]
@@ -301,7 +296,7 @@ public sealed class OperationGatewayIdempotencyTests
 
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref _calls) == 1)
+            if (auditEvent.Action == "operation.proposed" && Interlocked.Increment(ref _calls) == 1)
             {
                 return Task.FromException<string?>(new OperationCanceledException(cancellationToken));
             }
@@ -318,7 +313,7 @@ public sealed class OperationGatewayIdempotencyTests
 
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref _calls) == 1)
+            if (auditEvent.Action == "operation.proposed" && Interlocked.Increment(ref _calls) == 1)
             {
                 return Task.FromException<string?>(new InvalidOperationException("audit unavailable"));
             }

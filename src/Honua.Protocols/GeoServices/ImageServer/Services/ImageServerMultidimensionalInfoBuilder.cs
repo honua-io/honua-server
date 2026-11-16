@@ -138,8 +138,8 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
                 Unit = "ISO8601",
                 Extent = [min, max],
                 // A regular axis whose coordinate values we can enumerate; surfacing the
-                // values lets the slices operation enumerate one slice per coordinate
-                // (honua-server#1825). Irregular/extent-only axes leave Values null.
+                // values lets the slices operation enumerate one slice per coordinate.
+                // Irregular/extent-only axes leave Values null.
                 Values = values,
                 HasRegularIntervals = values is not null,
                 DimensionSize = size

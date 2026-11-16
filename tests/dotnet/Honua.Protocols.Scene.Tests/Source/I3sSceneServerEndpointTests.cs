@@ -23,16 +23,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Protocol-shape integration tests for the read-only Esri I3S SceneServer
-/// endpoints (#1202). The geometry-backed cases deliberately install a
-/// test-only provider to certify the deferred payload contract; they do not
-/// claim that production ships renderable I3S. Production-container coverage
-/// below verifies the ADR-0078 metadata-preview boundary separately.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
-public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
+public sealed class I3sSceneServerEndpointTests : IClassFixture<I3sSceneServerEndpointTests.SceneHosts>
 {
     private const string SceneId = "i3s-fixture";
     private const string ProtectedSceneId = "i3s-protected";
@@ -55,128 +48,136 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 
     private readonly WebAppFixture _enterpriseFixture;
     private readonly WebAppFixture _communityFixture;
-    private readonly string _fixtureRoot;
-    private HttpClient _authenticatedClient = null!;
+    private readonly HttpClient _authenticatedClient;
 
-    public I3sSceneServerEndpointTests()
+    public I3sSceneServerEndpointTests(SceneHosts hosts)
     {
-        _fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
-
-        _enterpriseFixture = BuildFixture(HonuaEdition.Enterprise);
-        _communityFixture = BuildFixture(HonuaEdition.Community);
+        _enterpriseFixture = hosts.Enterprise;
+        _communityFixture = hosts.Community;
+        _authenticatedClient = hosts.AuthenticatedClient;
     }
 
-    private WebAppFixture BuildFixture(HonuaEdition edition)
+    // Every case only reads, so one enterprise and one community host, with the extent and
+    // building scenes registered once, serve the whole class.
+    public sealed class SceneHosts : IAsyncLifetime
     {
-        var fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
+        private readonly string _fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
+
+        public SceneHosts()
+        {
+            Enterprise = BuildFixture(HonuaEdition.Enterprise);
+            Community = BuildFixture(HonuaEdition.Community);
+        }
+
+        public WebAppFixture Enterprise { get; }
+
+        public WebAppFixture Community { get; }
+
+        public HttpClient AuthenticatedClient { get; private set; } = null!;
+
+        private WebAppFixture BuildFixture(HonuaEdition edition)
+        {
+            var fixture = new WebAppFixture()
+                .ConfigureWebHost(builder =>
                 {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    builder.UseSetting("HONUA_DEV_AUTH", "false");
+                    builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                    builder.ConfigureAppConfiguration((_, configBuilder) =>
                     {
-                        [$"Scenes:Datasets:0:Id"] = SceneId,
-                        [$"Scenes:Datasets:0:Name"] = "I3S Fixture Scene",
-                        [$"Scenes:Datasets:0:Description"] = "Static scene used by I3S serving tests",
-                        [$"Scenes:Datasets:0:AssetRoot"] = _fixtureRoot,
+                        configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            [$"Scenes:Datasets:0:Id"] = SceneId,
+                            [$"Scenes:Datasets:0:Name"] = "I3S Fixture Scene",
+                            [$"Scenes:Datasets:0:Description"] = "Static scene used by I3S serving tests",
+                            [$"Scenes:Datasets:0:AssetRoot"] = _fixtureRoot,
 
-                        // Protected scene — requires an authenticated principal so
-                        // the I3S SceneServer access-policy enforcement is covered
-                        // (mirrors the gRPC and HTTP tileset RBAC parity tests).
-                        [$"Scenes:Datasets:1:Id"] = ProtectedSceneId,
-                        [$"Scenes:Datasets:1:Name"] = "I3S Protected Scene",
-                        [$"Scenes:Datasets:1:AssetRoot"] = _fixtureRoot,
-                        [$"Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
+                            // Protected scene — requires an authenticated principal so
+                            // the I3S SceneServer access-policy enforcement is covered
+                            // (mirrors the gRPC and HTTP tileset RBAC parity tests).
+                            [$"Scenes:Datasets:1:Id"] = ProtectedSceneId,
+                            [$"Scenes:Datasets:1:Name"] = "I3S Protected Scene",
+                            [$"Scenes:Datasets:1:AssetRoot"] = _fixtureRoot,
+                            [$"Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
 
-                        // Scene the stub geometry provider answers with null, so
-                        // the geometries route's honest 404 path is covered.
-                        [$"Scenes:Datasets:2:Id"] = NoGeometrySceneId,
-                        [$"Scenes:Datasets:2:Name"] = "I3S No-Geometry Scene",
-                        [$"Scenes:Datasets:2:AssetRoot"] = _fixtureRoot,
+                            // Scene the stub geometry provider answers with null, so
+                            // the geometries route's honest 404 path is covered.
+                            [$"Scenes:Datasets:2:Id"] = NoGeometrySceneId,
+                            [$"Scenes:Datasets:2:Name"] = "I3S No-Geometry Scene",
+                            [$"Scenes:Datasets:2:AssetRoot"] = _fixtureRoot,
+                        });
                     });
+                })
+                .ConfigureServices(services =>
+                {
+                    var licenseService = new TestLicenseEntitlementService(edition);
+                    services.AddSingleton<ILicenseEntitlementService>(licenseService);
+                    services.AddSingleton<ILicenseStatusProvider>(licenseService);
+                    // Test-only protocol-shape provider: this certifies the
+                    // deferred binary contract and must not be read as
+                    // evidence that a production host can render I3S.
+                    services.AddSingleton<ISceneNodeGeometryProvider, StubSceneNodeGeometryProvider>();
                 });
-            })
-            .ConfigureServices(services =>
+
+            return fixture;
+        }
+
+        public async Task InitializeAsync()
+        {
+            await Enterprise.InitializeAsync();
+            await Community.InitializeAsync();
+            AuthenticatedClient = Enterprise.CreateClient(
+                c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            await RegisterExtentSceneAsync();
+            await RegisterBuildingSceneAsync();
+        }
+
+        private async Task RegisterBuildingSceneAsync()
+        {
+            var registration = Enterprise.GetService<ISceneRegistrationService>();
+            await registration.RegisterAsync(new SceneDatasetRecord
             {
-                var licenseService = new TestLicenseEntitlementService(edition);
-                services.AddSingleton<ILicenseEntitlementService>(licenseService);
-                services.AddSingleton<ILicenseStatusProvider>(licenseService);
-                // Test-only protocol-shape provider: this certifies the
-                // deferred #1810 binary contract and must not be read as
-                // evidence that a production host can render I3S.
-                services.AddSingleton<ISceneNodeGeometryProvider, StubSceneNodeGeometryProvider>();
+                DatasetId = Guid.NewGuid(),
+                Id = BuildingSceneId,
+                Name = "I3S Building Scene",
+                AssetRoot = _fixtureRoot,
+                TilesetFileName = "tileset.json",
+                DatasetType = SceneDatasetType.Building,
+                Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
+                CachePolicy = SceneCachePolicy.Default,
+                IsPublic = true,
+                Status = SceneDatasetStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedBy = "test",
             });
+        }
 
-        return fixture;
-    }
-
-    public async Task InitializeAsync()
-    {
-        await _enterpriseFixture.InitializeAsync();
-        await _communityFixture.InitializeAsync();
-        _authenticatedClient = _enterpriseFixture.CreateClient(
-            c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-
-        await RegisterExtentSceneAsync();
-        await RegisterBuildingSceneAsync();
-    }
-
-    /// <summary>
-    /// Registers a database-backed Building scene so the I3S layerType mapping
-    /// (#1812) is exercised: the descriptor must advertise <c>Building</c>.
-    /// </summary>
-    private async Task RegisterBuildingSceneAsync()
-    {
-        var registration = _enterpriseFixture.GetService<ISceneRegistrationService>();
-        await registration.RegisterAsync(new SceneDatasetRecord
+        private async Task RegisterExtentSceneAsync()
         {
-            DatasetId = Guid.NewGuid(),
-            Id = BuildingSceneId,
-            Name = "I3S Building Scene",
-            AssetRoot = _fixtureRoot,
-            TilesetFileName = "tileset.json",
-            DatasetType = SceneDatasetType.Building,
-            Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
-            CachePolicy = SceneCachePolicy.Default,
-            IsPublic = true,
-            Status = SceneDatasetStatus.Active,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = "test",
-        });
-    }
+            var registration = Enterprise.GetService<ISceneRegistrationService>();
+            await registration.RegisterAsync(new SceneDatasetRecord
+            {
+                DatasetId = Guid.NewGuid(),
+                Id = ExtentSceneId,
+                Name = "I3S Extent Scene",
+                AssetRoot = _fixtureRoot,
+                TilesetFileName = "tileset.json",
+                DatasetType = SceneDatasetType.HostedTiles,
+                Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
+                CachePolicy = SceneCachePolicy.Default,
+                IsPublic = true,
+                Status = SceneDatasetStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedBy = "test",
+            });
+        }
 
-    /// <summary>
-    /// Registers a database-backed scene with a persisted extent so the
-    /// registration branch of <c>ResolveExtentAsync</c> populates the I3S
-    /// <c>fullExtent</c>. The scene is public so the descriptor is reachable
-    /// without auth.
-    /// </summary>
-    private async Task RegisterExtentSceneAsync()
-    {
-        var registration = _enterpriseFixture.GetService<ISceneRegistrationService>();
-        await registration.RegisterAsync(new SceneDatasetRecord
+        public async Task DisposeAsync()
         {
-            DatasetId = Guid.NewGuid(),
-            Id = ExtentSceneId,
-            Name = "I3S Extent Scene",
-            AssetRoot = _fixtureRoot,
-            TilesetFileName = "tileset.json",
-            DatasetType = SceneDatasetType.HostedTiles,
-            Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
-            CachePolicy = SceneCachePolicy.Default,
-            IsPublic = true,
-            Status = SceneDatasetStatus.Active,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = "test",
-        });
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _enterpriseFixture.DisposeAsync();
-        await _communityFixture.DisposeAsync();
+            AuthenticatedClient?.Dispose();
+            await Enterprise.DisposeAsync();
+            await Community.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -693,13 +694,6 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
-    /// <summary>
-    /// In-memory <see cref="ISceneNodeGeometryProvider"/> that transcodes a
-    /// single fixture square with the real <see cref="I3sGeometryTranscoder"/>,
-    /// proving the #1810 geometries route serves genuine transcoded bytes. It
-    /// returns <see langword="null"/> for the dedicated no-geometry scene so the
-    /// route's honest 404 path is exercised.
-    /// </summary>
     private sealed class StubSceneNodeGeometryProvider : ISceneNodeGeometryProvider
     {
         public Task<I3sTranscodedGeometry?> GetNodeGeometryAsync(
@@ -737,10 +731,6 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 
 }
 
-/// <summary>
-/// Production-profile registration tests kept separate from the protocol-shape
-/// fixture so no test-only geometry provider can leak into the assertion.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sProductionRouteRegistrationTests
 {

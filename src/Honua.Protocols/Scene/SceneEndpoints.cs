@@ -377,9 +377,9 @@ internal static partial class SceneEndpoints
         // AccessPolicyEvaluator treats "both policies null" as
         // require-authentication, which is the correct safe default for
         // catalog layers but wrong for hosted scene assets — Cesium browser
-        // clients cannot attach credentials to nested asset URLs (#849
-        // delivers signed-URL handoff). Skip the auth check when the scene
-        // explicitly opted out by leaving its access policy unset.
+        // clients cannot attach credentials to nested asset URLs. Skip the
+        // auth check when the scene explicitly opted out by leaving its
+        // access policy unset.
         var isProtected = scene.AccessPolicy is not null;
         var tokenTransport = SceneAccessTokenTransport.None;
         if (scene.AccessPolicy is { } accessPolicy)

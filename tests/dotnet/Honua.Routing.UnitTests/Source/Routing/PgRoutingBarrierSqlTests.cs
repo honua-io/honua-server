@@ -11,10 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Barrier exclusion must not inline every intersected edge gid into the edges
-/// SQL that pgRouting re-parses on each call (#6158).
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed partial class PgRoutingBarrierSqlTests
 {

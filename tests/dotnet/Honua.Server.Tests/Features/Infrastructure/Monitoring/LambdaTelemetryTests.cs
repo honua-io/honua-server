@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Verifies that the Lambda cold-start counter and init-duration histogram are
-/// emitted through the shared <see cref="LambdaTelemetry.MeterName"/> meter so
-/// they reach the existing Prometheus/OTLP exporters.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("HonuaTelemetry")]
 public sealed class LambdaTelemetryTests

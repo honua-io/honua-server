@@ -12,31 +12,26 @@ using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.Core.Features.Licensing.Domain;
-using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// HTTP-level OData endpoint tests verifying basic endpoint behavior.
-/// For comprehensive OData client integration tests, see ODataClientIntegrationTests.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataEndpointTests : IAsyncLifetime
+public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
+    private readonly HttpClient _client;
+    private WebAppFixture? _mutableFixture;
 
-    public async Task InitializeAsync()
-    {
-        // All segments are relative literal path fragments (not user input), so none can be
-        // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
-        await _fixture.InitializeAsync();
-    }
+    public ODataEndpointTests(ODataProHost host) => _client = host.Fixture.Client;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
+
+    // Cases that change data or send writes own a private host and schema.
+    private async Task<WebAppFixture> StartMutableFixtureAsync()
+        => _mutableFixture = await ODataProHost.StartPrivateAsync();
 
     [IntegrationTheory]
     [InlineData("query", false)]
@@ -56,9 +51,10 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     public async Task Features_PublicLayerDiffersFromStorage_FilterUsesPublicIdentity(string operation, bool conflicting)
     {
+        var fixture = await StartMutableFixtureAsync();
         const int publicLayerId = 17;
-        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+        var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
         provider.SetGraph(graph with
         {
             Revision = graph.Revision + 1,
@@ -66,8 +62,8 @@ public sealed class ODataEndpointTests : IAsyncLifetime
                 publication.PublicationType == MetadataV2LayerType.ODataEntitySet && publication.LayerIndex == TestLayerId
                     ? publication with { LayerIndex = publicLayerId }
                     : publication).ToArray()
-        }, schema: _fixture.CurrentSchema);
-        var id = await _fixture.InsertFeatureAsync(TestLayerId, "IdentityProbe");
+        }, schema: fixture.CurrentSchema);
+        var id = await fixture.InsertFeatureAsync(TestLayerId, "IdentityProbe");
         var filterLayerId = conflicting ? TestLayerId : publicLayerId;
         var filter = $"LayerId eq {filterLayerId} and ObjectId eq {id}";
         var collection = conflicting ? $"/odata/Layers({publicLayerId})/Features" : "/odata/Features";
@@ -85,7 +81,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         {
             request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
         }
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         var content = await response.Content.ReadAsStringAsync();
@@ -123,7 +119,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     {
         var apply = Uri.EscapeDataString("filter(LayerId eq 'invalid')/aggregate($count as n)");
 
-        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features?$apply={apply}");
+        var response = await _client.GetAsync($"/odata/Layers({TestLayerId})/Features?$apply={apply}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -133,7 +129,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata")]
     public async Task ServiceDocument_ReturnsEntitySets()
     {
-        var response = await _fixture.Client.GetAsync("/odata");
+        var response = await _client.GetAsync("/odata");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
@@ -155,7 +151,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata")]
     public async Task ServiceDocument_ReturnsODataVersionHeader()
     {
-        var response = await _fixture.Client.GetAsync("/odata");
+        var response = await _client.GetAsync("/odata");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
@@ -170,7 +166,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=none"));
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
@@ -190,7 +186,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -204,7 +200,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;q=1"));
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/xml;q=0"));
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
@@ -217,7 +213,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
         request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0, */*;q=1");
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
@@ -230,7 +226,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
         request.Headers.TryAddWithoutValidation("Accept", "application/json, */*;q=0.1");
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
@@ -241,7 +237,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsODataVersionHeader()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
@@ -253,7 +249,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$count")]
     public async Task FeaturesCount_ReturnsNumericCount()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$count");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})/$count");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -267,7 +263,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers({layerId})/Features/$count")]
     public async Task LayerFeaturesCount_ReturnsNumericCount()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features/$count");
+        var response = await _client.GetAsync($"/odata/Layers({TestLayerId})/Features/$count");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -281,7 +277,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features/$count")]
     public async Task FeaturesCount_AllLayers_ReturnsNumericCount()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features/$count?$filter=LayerId eq {TestLayerId}");
+        var response = await _client.GetAsync($"/odata/Features/$count?$filter=LayerId eq {TestLayerId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -295,7 +291,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features")]
     public async Task Features_AllLayers_WithLayerFilter_ReturnsCollection()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features?$filter=LayerId eq {TestLayerId}&$top=3");
+        var response = await _client.GetAsync($"/odata/Features?$filter=LayerId eq {TestLayerId}&$top=3");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -311,7 +307,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features?filter=...&top=...")]
     public async Task Features_AllLayers_AcceptsOData401QueryOptionsWithoutDollarPrefix()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features?filter=LayerId eq {TestLayerId}&top=2&count=true");
+        var response = await _client.GetAsync($"/odata/Features?filter=LayerId eq {TestLayerId}&top=2&count=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -326,7 +322,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features without layer filter")]
     public async Task Features_AllLayers_WithoutLayerFilter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Features");
+        var response = await _client.GetAsync("/odata/Features");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -336,7 +332,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features")]
     public async Task Features_AllLayers_WithLayerFilterAndAdditionalPredicate_ReturnsFilteredResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features?$filter=LayerId eq {TestLayerId} and population gt 1000000");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -353,7 +349,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features/$count")]
     public async Task FeaturesCount_AllLayers_WithLayerFilterAndAdditionalPredicate_ReturnsNumericCount()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features/$count?$filter=LayerId eq {TestLayerId} and population gt 1000000");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -368,7 +364,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features/$count without layer filter")]
     public async Task FeaturesCount_AllLayers_WithoutLayerFilter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Features/$count");
+        var response = await _client.GetAsync("/odata/Features/$count");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -378,7 +374,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features with multi-layer filter")]
     public async Task Features_AllLayers_WithMultipleLayerIds_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             "/odata/Features?$filter=LayerId eq 0 or LayerId eq 1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -392,7 +388,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         const string sentinel = "ODATA_LAYER_FILTER_SENTINEL";
         var malformedFilter = Uri.EscapeDataString($"LayerId eq {sentinel}(");
 
-        var response = await _fixture.Client.GetAsync($"/odata/Features?$filter={malformedFilter}");
+        var response = await _client.GetAsync($"/odata/Features?$filter={malformedFilter}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -410,7 +406,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ReturnsXmlDocument()
     {
-        var response = await _fixture.Client.GetAsync("/odata/$metadata");
+        var response = await _client.GetAsync("/odata/$metadata");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
@@ -434,7 +430,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
         request.Headers.TryAddWithoutValidation("OData-MaxVersion", "4.0");
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
@@ -450,7 +446,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers")]
     public async Task Layers_ReturnsCollection()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Layers");
+        var response = await _client.GetAsync("/odata/Layers");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
@@ -466,7 +462,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers/$count")]
     public async Task LayersCount_ReturnsNumericCount()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Layers/$count");
+        var response = await _client.GetAsync("/odata/Layers/$count");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -480,7 +476,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers({layerId})")]
     public async Task Layer_ById_ReturnsLayer()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})");
+        var response = await _client.GetAsync($"/odata/Layers({TestLayerId})");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -494,7 +490,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers?$filter=name")]
     public async Task Layers_WithFilter_ReturnsMatchingLayer()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$filter=name eq 'City Landmarks'");
+        var response = await _client.GetAsync("/odata/Layers?$filter=name eq 'City Landmarks'");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -510,7 +506,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers?$top=1&$skip=1")]
     public async Task Layers_WithTopAndSkip_ReturnsPaginatedResults()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$top=1&$skip=1");
+        var response = await _client.GetAsync("/odata/Layers?$top=1&$skip=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -525,7 +521,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers?$orderby=Name desc")]
     public async Task Layers_WithOrderBy_ReturnsOrderedResults()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$orderby=Name desc");
+        var response = await _client.GetAsync("/odata/Layers?$orderby=Name desc");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -544,7 +540,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsCollection()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
@@ -561,7 +557,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     public async Task Features_WithFormatMetadataFull_RejectsUnsupportedMetadataLevel()
     {
         var format = Uri.EscapeDataString("application/json;odata.metadata=full");
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=1&$format={format}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=1&$format={format}");
 
         // metadata=full is not supported; server should reject with 400
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -575,7 +571,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=none"));
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
@@ -594,7 +590,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -608,7 +604,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1&$format={format}");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -625,7 +621,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=none;q=0.1");
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=minimal;q=1.0");
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
@@ -645,7 +641,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=full;q=1.0");
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=minimal;q=0.5");
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
@@ -657,7 +653,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers({layerId})/Features")]
     public async Task LayerFeatures_ReturnsCollection()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features");
+        var response = await _client.GetAsync($"/odata/Layers({TestLayerId})/Features");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
@@ -673,7 +669,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId},{objectId})")]
     public async Task Feature_WithObjectId_ReturnsFeature()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId},1)");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId},1)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -687,7 +683,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task Feature_WithNamedKeys_ReturnsFeature()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
+        var response = await _client.GetAsync($"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -701,7 +697,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})/$ref")]
     public async Task FeatureReferenceEndpoint_ReturnsCanonicalReference()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)/$ref");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -717,7 +713,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})/$value")]
     public async Task FeatureValueEndpoint_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)/$value");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -732,7 +728,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers({layerId})/Features({objectId})")]
     public async Task LayerFeature_WithObjectId_ReturnsFeature()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features(1)");
+        var response = await _client.GetAsync($"/odata/Layers({TestLayerId})/Features(1)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -746,7 +742,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=5")]
     public async Task Features_WithTop_LimitsResults()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -761,7 +757,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$skip=2")]
     public async Task Features_WithSkip_SkipsResults()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=2");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=2");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -775,7 +771,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$count=true")]
     public async Task Features_WithCount_ReturnsCount()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$count=true");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$count=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -790,7 +786,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=objectid")]
     public async Task Features_WithOrderBy_ReturnsOrderedResults()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=objectid");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=objectid");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -804,7 +800,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=objectid desc")]
     public async Task Features_WithOrderByDesc_ReturnsDescendingResults()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=objectid desc");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=objectid desc");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -818,7 +814,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$select=ObjectId,LayerId")]
     public async Task Features_WithSelect_ReturnsOnlySelectedFields()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$select=ObjectId,LayerId");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -840,7 +836,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$select=ObjectId,,LayerId")]
     public async Task Features_WithMalformedSelectDelimiter_ReturnsODataError()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$select=ObjectId,,LayerId");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -851,7 +847,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,LayerId")]
     public async Task Features_WithLargeTop_UsesStreamingResponse()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$top=2000&$select=ObjectId,LayerId");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -876,7 +872,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,,LayerId")]
     public async Task Features_WithMalformedSelectDelimiter_WhenStreaming_ReturnsODataError()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$top=2000&$select=ObjectId,,LayerId");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -887,7 +883,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=-1")]
     public async Task Features_WithInvalidTop_ReturnsODataError()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
@@ -904,7 +900,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$skip=-1")]
     public async Task Features_WithInvalidSkip_ReturnsODataError()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
@@ -920,7 +916,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=bad-field")]
     public async Task Features_WithInvalidOrderBy_ReturnsODataError()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=bad-field");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=bad-field");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
@@ -935,7 +931,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId},{objectId})")]
     public async Task Features_NonExistentLayer_ReturnsODataNotFoundError()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Features(99999)");
+        var response = await _client.GetAsync("/odata/Features(99999)");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var content = await response.Content.ReadAsStringAsync();
@@ -951,7 +947,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ContainsEntityTypes()
     {
-        var response = await _fixture.Client.GetAsync("/odata/$metadata");
+        var response = await _client.GetAsync("/odata/$metadata");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -969,7 +965,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=2&$skip=0")]
     public async Task Features_WithTop_TreatsTopAsTotalCeiling()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=2&$skip=0");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=2&$skip=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();

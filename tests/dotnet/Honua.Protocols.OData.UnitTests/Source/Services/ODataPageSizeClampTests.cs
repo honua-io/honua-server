@@ -11,12 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Unit tests for the OData server-driven paging cap (OData:MaxPageSize, #1644).
-/// A very large $top on an ad hoc spatial query (geo.intersects + $select) must be
-/// clamped so the server never materializes an unbounded page; the streaming handler
-/// then emits an @odata.nextLink carrying the clamped $top so clients page through.
-/// </summary>
 public sealed class ODataPageSizeClampTests
 {
     private static ODataValidationService CreateService(int maxPageSize = 1000, int maxRecordCount = 10000)

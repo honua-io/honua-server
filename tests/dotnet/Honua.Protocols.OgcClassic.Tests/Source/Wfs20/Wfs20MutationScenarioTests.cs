@@ -16,9 +16,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Certification-depth WFS-T scenarios with a fresh schema for every case.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20MutationScenarioTests : IAsyncLifetime

@@ -45,11 +45,11 @@ public static class AdminServiceCollectionExtensions
 
         services.TryAddScoped<LayerValidationService>();
 
-        // Secure-connection governance (#354): host allowlist enforcement + connection
+        // Secure-connection governance: host allowlist enforcement + connection
         // audit trail. Scoped because it consumes the scoped IAuditLog sink.
         services.TryAddScoped<SecureConnectionGovernance>();
 
-        // Disconnected-sync conflict resolution (#2430). Scoped because it consumes the scoped
+        // Disconnected-sync conflict resolution. Scoped because it consumes the scoped
         // conflict repository, audit sink, and the protocol adapter's shared-edit-pipeline applier.
         services.TryAddScoped<ReplicaConflictResolutionService>();
 

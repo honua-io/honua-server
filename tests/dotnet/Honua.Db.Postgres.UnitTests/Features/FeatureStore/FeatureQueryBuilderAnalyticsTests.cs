@@ -10,13 +10,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// SQL-shape tests for the spatial analytics query builders. These assertions
-/// intentionally look for substrings that guard the review-driven fixes in
-/// <see cref="FeatureQueryBuilder"/>.Analytics.* so regressions (e.g. raw
-/// <c>geometry</c> references under bytea storage or a trailing LIMIT after
-/// buffer aggregation) fail loudly at unit-test time.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderAnalyticsTests
 {

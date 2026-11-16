@@ -9,9 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Unit tests for layout template registry and URL resolution.
-/// </summary>
 public sealed class LayoutTemplateRegistryTests
 {
     [Fact]

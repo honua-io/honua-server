@@ -37,7 +37,7 @@ internal static partial class FeatureServerEndpoints
         // Resolve the service and its accessible layers through the shared validation/access
         // pipeline, then project each layer's Metadata v2 contingent value groups onto the Esri
         // queryContingentValues definition shape. Layers without contingent values, and services
-        // with none at all, yield an empty contingentValuesDefinitions collection (#1878).
+        // with none at all, yield an empty contingentValuesDefinitions collection.
         var (accessibleLayers, accessError) = await ResolveAccessibleServiceLayersAsync(serviceId, context);
         if (accessError != null)
         {

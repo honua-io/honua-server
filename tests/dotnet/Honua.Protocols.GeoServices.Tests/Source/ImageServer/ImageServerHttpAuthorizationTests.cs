@@ -19,37 +19,12 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// #4423: HTTP-level authorization proof for the ImageServer read operations that return pixels
-/// or attribute values.
-/// <para>
-/// The whole <c>/rest/services/{id}/ImageServer</c> group is <c>.AllowAnonymous()</c> by design —
-/// "access is enforced by the handlers via the layer access policy" — so handler-internal policy
-/// is the only control on ~45 operations. Before this file, that policy was proven for two
-/// operations, both at unit level with a hand-built <c>DefaultHttpContext</c>, and
-/// <c>git grep -q 'Unauthorized' -- Source/ImageServer</c> returned nothing: there was no 401 or
-/// 403 test for any ImageServer operation through the HTTP stack, and every ImageServer test ran
-/// under the F1 development-authentication bypass, which returns an <c>admin</c> principal before
-/// any credential is read.
-/// </para>
-/// <para>
-/// This test restricts the published raster resource to a role, then drives the six operations
-/// that return imagery or pixel values — <c>exportImage</c>, <c>identify</c>, <c>getSamples</c>,
-/// <c>tile</c>, WMTS <c>GetTile</c> and WMTS <c>GetFeatureInfo</c> — three ways: as an entitled
-/// principal (positive control, which asserts the real pixel values the mosaic holds), as an
-/// anonymous caller, and as an authenticated principal holding a different role. Each denial is
-/// asserted past the status: the response must carry none of the pixel values, none of the raster
-/// names, and no image payload.
-/// </para>
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerHttpAuthorizationTests
 {
-    /// <summary>Role granted on the restricted raster resource.</summary>
     private const string EntitledRole = "imagery-reader";
 
-    /// <summary>A role the resource does not grant. Held by the authenticated-denied principal.</summary>
     private const string UnrelatedRole = "cartography-reader";
 
     private const string Referer = "https://imageserver-authorization-proof.example/";
@@ -58,26 +33,12 @@ public sealed class ImageServerHttpAuthorizationTests
 
     private static readonly string ImageServerBase = $"/rest/services/{LayerId}/ImageServer";
 
-    /// <summary>
-    /// The pixel values the Issue-522 mosaic holds. The entitled arm reads them back; every
-    /// denied response is asserted to carry none of them.
-    /// </summary>
     private static readonly string[] RasterNames = ["west", "east", "overlap-newest"];
 
-    /// <summary>
-    /// The seeded mosaic's east raster covers 3.5,1 and holds this value, so both the identify
-    /// and getSamples positive controls have a real oracle rather than a shape assertion.
-    /// </summary>
     private const double EastRasterValue = 40;
 
-    /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
     private const int GeoServicesTokenRequired = 499;
 
-    /// <summary>
-    /// getSamples takes its points in the Esri multipoint JSON form; the bare <c>x,y</c> form
-    /// accepted by identify is not a valid geometry here, and a denial asserted on an invalid
-    /// request would prove nothing about authorization.
-    /// </summary>
     private static readonly string GetSamplesUrl =
         $"{ImageServerBase}/getSamples?f=json&geometryType=esriGeometryMultipoint&geometry="
         + Uri.EscapeDataString("""{"points":[[3.5,1]],"spatialReference":{"wkid":4326}}""");
@@ -198,7 +159,6 @@ public sealed class ImageServerHttpAuthorizationTests
         }
     }
 
-    /// <summary>The six pixel- or value-returning operations named by #4423.</summary>
     private static IEnumerable<(string Name, string Url)> PixelReturningOperations()
     {
         yield return ("exportImage", $"{ImageServerBase}/exportImage?bbox=0,0,4,2&size=64,32&format=png&f=image");
@@ -216,11 +176,6 @@ public sealed class ImageServerHttpAuthorizationTests
             + "&I=128&J=128&INFOFORMAT=application/json");
     }
 
-    /// <summary>
-    /// The entitled principal reads the mosaic's actual pixel values. This is what makes the
-    /// denial assertions meaningful: the same routes, on the same data, in the same run, do
-    /// return imagery when the policy allows it.
-    /// </summary>
     private static async Task AssertEntitledReadsRealPixelsAsync(WebAppFixture fixture, string token)
     {
         using var identify = await SendAsync(
@@ -256,10 +211,6 @@ public sealed class ImageServerHttpAuthorizationTests
         }
     }
 
-    /// <summary>
-    /// Asserts a denial that goes past the status: no image bytes, no pixel value, no raster
-    /// identity in the response.
-    /// </summary>
     private static async Task AssertDeniedAsync(
         WebAppFixture fixture,
         string? token,
@@ -310,10 +261,6 @@ public sealed class ImageServerHttpAuthorizationTests
         }
     }
 
-    /// <summary>
-    /// Asserts an HTTP-200 GeoServices response is the error envelope for a denial, and never a
-    /// success-shaped payload.
-    /// </summary>
     private static void AssertGeoServicesDenialEnvelope(string body, string who, string operation)
     {
         body.Should().NotBeNullOrWhiteSpace(

@@ -12,20 +12,6 @@ using System.Text.Json;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for FeatureServer query input-validation edge cases
-/// (honua-server#1823). A class of malformed query inputs used to bypass up-front
-/// validation and crash at SQL-execution time as a 500; each must instead be
-/// rejected as a structured 400:
-/// <list type="bullet">
-/// <item>arithmetic errors in <c>where</c> (division/modulo by zero, overflow,
-/// invalid LOG/POWER/SQRT argument, bad CAST) raised at eval time;</item>
-/// <item>a numeric aggregate (avg/sum/stddev/var) applied to a string field;</item>
-/// <item>a <c>groupByFieldsForStatistics</c> referencing an unknown column.</item>
-/// </list>
-/// The seeded <c>test</c> layer (id 0) exposes a numeric <c>objectid</c> and a
-/// string <c>name</c> field.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
 public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime

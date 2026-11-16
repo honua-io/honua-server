@@ -68,6 +68,18 @@ class RetiredCacheTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.check().returncode, 0)
 
+    def test_nuget_lock_files_pass_but_similar_names_fail(self):
+        self.write("src/Worker/packages.lock.json", '{"StackExchange.Redis": "2.6.122"}\n')
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+        for path in ["src/Worker/packages.lock.json.bak", "src/Worker/Packages.Lock.json", "src/packages.lock.cs"]:
+            self.write(path, "StackExchange.Redis\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for path in ["src/Worker/packages.lock.json.bak", "src/Worker/Packages.Lock.json", "src/packages.lock.cs"]:
+            self.assertIn(f"{path}:1:", result.stdout)
+
     def test_other_ci_files_are_not_routing_data(self):
         for path in [".github/workflows/ci-shards.yml", "scripts/ci/fixtures/other-contracts.json",
                      ".github/ci-shards.json.bak"]:

@@ -7,13 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Crs;
 
-/// <summary>
-/// Unit tests for <see cref="GeoParquetProjJsonCatalog"/>. Assert that the embedded,
-/// pre-generated PROJJSON catalog resolves common output SRIDs to authoritative PROJJSON
-/// (each carrying the matching EPSG <c>id</c>), normalizes Web Mercator aliases to
-/// EPSG:3857, and reports unknown SRIDs as unresolvable so callers surface a precise error
-/// (issue #2844).
-/// </summary>
 public sealed class GeoParquetProjJsonCatalogTests
 {
     [Trait("Tier", "Fast")]

@@ -1,10 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.OData.Models;
 
@@ -29,27 +27,7 @@ public sealed class EntitySet
     public required string Url { get; init; }
 }
 
-public sealed record ODataLink : ILink
-{
-    public required string Href { get; init; }
-
-    public string? Rel { get; init; }
-
-    public string? Type { get; init; }
-
-    public string? Title { get; init; }
-
-    public static ODataLink CreateNextLink(string href)
-        => new()
-        {
-            Href = href,
-            Rel = "next",
-            Type = "application/json",
-            Title = "Next Page"
-        };
-}
-
-public sealed class ODataResponse : ICollectionResponse<object>
+public sealed class ODataResponse
 {
     [JsonPropertyName("@odata.context")]
     public string? Context { get; init; }
@@ -65,17 +43,6 @@ public sealed class ODataResponse : ICollectionResponse<object>
 
     [JsonPropertyName("value")]
     public required object[] Value { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<object> ICollectionResponse<object>.Items => Value.ToImmutableArray();
-    ImmutableArray<ILink>? ICollectionResponse<object>.Links =>
-        NextLink != null
-            ? ImmutableArray.Create<ILink>(ODataLink.CreateNextLink(NextLink))
-            : null;
-    IPaginationMetadata? ICollectionResponse<object>.Pagination =>
-        Count.HasValue || Value.Length > 0
-            ? PaginationMetadata.Create(Count, Value.Length, NextLink != null)
-            : null;
 }
 
 public sealed class ODataError

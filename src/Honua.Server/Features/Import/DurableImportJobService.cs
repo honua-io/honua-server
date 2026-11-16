@@ -312,7 +312,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
             UpdatedAt = now,
             CurrentPhase = "Queued",
             // Carries the accepting request's lineage and trace context across the queue boundary
-            // so the worker's execution span links back to the upload (#5474).
+            // so the worker's execution span links back to the upload.
             Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo
             {
                 OperationInstanceId = request.OperationInstanceId,

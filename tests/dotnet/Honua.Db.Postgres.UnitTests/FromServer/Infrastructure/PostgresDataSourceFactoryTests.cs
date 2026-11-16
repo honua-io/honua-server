@@ -11,12 +11,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for <see cref="PostgresDataSourceFactory"/> multiplexing resolution,
-/// connection pool default tuning, and session-settings delivery (physical-connection
-/// initializer vs. the libpq <c>options</c> startup parameter, which AWS RDS Proxy and
-/// transaction-mode poolers reject — issue #1638).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresDataSourceFactoryTests
 {

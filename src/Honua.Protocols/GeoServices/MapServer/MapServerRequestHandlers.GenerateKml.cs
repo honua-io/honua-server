@@ -528,7 +528,7 @@ internal static partial class MapServerEndpoints
     private static string ResolveDisplayField(MetadataV2Object resource, string objectIdField)
     {
         // A publisher-hidden field is never the display field: identify/find "value" and
-        // the KML placemark name would otherwise carry its value (#6098).
+        // the KML placemark name would otherwise carry its value.
         var configuredDisplayField = resource.Display?.DisplayField;
         if (!string.IsNullOrWhiteSpace(configuredDisplayField))
         {
@@ -830,8 +830,8 @@ internal static partial class MapServerEndpoints
 
         // KML polygons follow the right-hand rule (exterior CCW, holes CW). This in-memory writer
         // emits rings as stored, and stored data is frequently CW-exterior (Esri applyEdits,
-        // shapefile imports), so normalize before serializing to match the PostGIS ST_AsKML path
-        // (#2745). Normalization is a no-op for non-polygonal geometry.
+        // shapefile imports), so normalize before serializing to match the PostGIS ST_AsKML path.
+        // Normalization is a no-op for non-polygonal geometry.
         var wroteGeometry = TryWriteKmlGeometry(writer, RingWindingNormalizer.NormalizeToRightHandRule(geometry));
         writer.WriteEndElement();
         return wroteGeometry;
@@ -880,7 +880,7 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
-            // Internal attributes and publisher-hidden fields stay out of ExtendedData (#6098).
+            // Internal attributes and publisher-hidden fields stay out of ExtendedData.
             if (!IsPublicAttribute(key, hiddenFields))
             {
                 continue;

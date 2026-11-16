@@ -18,7 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>Real HTTP evidence for the synchronous service-area projection and its provider gates.</summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GenerateServiceAreasExecuteTests(GenerateServiceAreasExecuteTestsFixture fixture)
@@ -555,7 +554,6 @@ public sealed class GenerateServiceAreasExecuteTests(GenerateServiceAreasExecute
     }
 }
 
-/// <summary>Records the actual canonical requests reached through HTTP while reusing existing solver output.</summary>
 public sealed class GenerateServiceAreasExecuteTestsFixture : IAsyncLifetime
 {
     public ConcurrentQueue<ServiceAreaSolveRequest> Requests { get; } = new();

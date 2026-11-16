@@ -39,9 +39,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Wfs;
 
-/// <summary>
-/// Checks edit leases through the WFS transaction handler and shared writer decorators.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsMultiLayerTransactionLockTests
 {
@@ -245,7 +242,7 @@ public sealed class WfsMultiLayerTransactionLockTests
                     new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
                     new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()), limits),
                 new Wfs20SpatialServices(new OgcFeaturesGeometryServices(Substitute.For<IGeometryService>(),
-                    coordinateTransform, limits, NullLogger<OgcFeaturesGeometryServices>.Instance),
+                    coordinateTransform, limits),
                     coordinateTransform, Substitute.For<ICrsRegistry>()));
         }
 

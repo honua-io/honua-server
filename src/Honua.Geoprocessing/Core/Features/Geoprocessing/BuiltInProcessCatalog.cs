@@ -372,7 +372,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Data enrichment (#2283)
+        // Data enrichment
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -401,7 +401,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Layer-aware overlay operations (#2206, #2139)
+        // Layer-aware overlay operations
         // Managed (NetTopologySuite) overlay ops operating over TWO inline
         // FeatureCollections addressed by data URI — the layer-aware counterparts
         // of the single-WKB geometry.* primitives, so the high-frequency Esri
@@ -491,7 +491,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Proximity operations (#2139)
+        // Proximity operations
         // Managed nearest-feature distance tools. Distances are planar (CRS units);
         // geodesic conversion is not performed.
         // -----------------------------------------------------------------------
@@ -528,7 +528,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Euclidean proximity operations (#2240)
+        // Euclidean proximity operations
         // Raster proximity products implemented natively by the heavyweight GDAL
         // worker via gdal_proximity.py. Declared RuntimeProfile = native; the lean
         // image validates these plans but never executes them.
@@ -569,7 +569,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Statistics/summarization operations (#2140)
+        // Statistics/summarization operations
         // Managed table-producing aggregates over a single inline FeatureCollection.
         // Table outputs are null-geometry FeatureCollections (one feature per row).
         // -----------------------------------------------------------------------
@@ -862,7 +862,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 .. NativeRasterSourceParameters,
                 Param("zones", "Zones Inline", "Inline zone polygons as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path; zonesLayerId-resolved sourcing is a follow-on.", ProcessParameterValueType.Text, required: true),
                 // Reserved placeholder: the executor reads only the inline `zones`, so there is
-                // no layer access to gate (honua-server#3046 review). Give this a real
+                // no layer access to gate. Give this a real
                 // ProcessLayerAccess when the resolution path lands.
                 Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones. Optional today; reserved for submit-time zones-layer-to-zones resolution (a follow-on).", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.None),
                 Param("band", "Band", "1-based raster band to aggregate. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
@@ -1004,7 +1004,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Imagery / ML inference (1)
-        // Delegated cloud inference (#2241): Honua GP orchestrates, a configured
+        // Delegated cloud inference: Honua GP orchestrates, a configured
         // cloud endpoint runs the model. No model runtime is bundled and no
         // training/distributed inference exists here by design. Managed profile:
         // the lean dispatcher executes the delegation (it is an HTTP exchange),
@@ -1215,8 +1215,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                // Destructive target: gated on the layer DELETE grant, not a generic write
-                // (honua-server#3046 review).
+                // Destructive target: gated on the layer DELETE grant, not a generic write.
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true, layerAccess: ProcessLayerAccess.Delete),
                 Param("where", "Where", "ArcGIS SQL filter selecting features to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
                 Param("objectIds", "Object IDs", "Comma-separated feature identifiers to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
@@ -1232,7 +1231,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                // Mutating target: gated on the layer UPDATE grant (honua-server#3046 review).
+                // Mutating target: gated on the layer UPDATE grant.
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true, layerAccess: ProcessLayerAccess.Update),
                 Param("fieldName", "Field Name", "Simple identifier naming the field to update (letters, digits, underscore; no dotted paths).", ProcessParameterValueType.Text, required: true),
                 Param("expression", "Expression", "Constant or SQL expression evaluated per feature. Parsed by the same allow-listed expression gate FeatureServer.Edits.CalculateFieldValue uses.", ProcessParameterValueType.Text, required: true),
@@ -1244,7 +1243,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Data-import operations (1)
-        // First-class durable import pipeline (#1630). import.dataset owns the
+        // First-class durable import pipeline. import.dataset owns the
         // full fetch -> validate+chunk -> import -> publish -> tile ->
         // extent+MVT refresh -> provenance flow as ONE managed durable job,
         // composing the existing import / publishing / raster services. This is
@@ -1274,8 +1273,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("sourceSrid", "Source SRID", "Optional source spatial reference identifier when the source lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
                 Param("targetSrid", "Target SRID", "Optional target spatial reference identifier. Omit it to keep the source coordinate system; set it to reproject the imported geometries.", ProcessParameterValueType.Srid),
                 // Destination, never a source: the importer tiles INTO this layer and never
-                // reads it, so the submit gate must not demand a read grant on it
-                // (honua-server#3046 review).
+                // reads it, so the submit gate must not demand a read grant on it.
                 Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.Insert),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -1283,10 +1281,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // GeoETL transform operations (8)
-        // Reconciled from feat/geoetl-baseline onto the #1185 add-a-capability
-        // contract: each transform reads a FeatureCollection data URI on the
-        // canonical 'input' parameter and publishes a FeatureCollection data URI,
-        // carrying feature attributes through so they compose as workflow nodes.
+        // Add-a-capability contract: each transform reads a FeatureCollection
+        // data URI on the canonical 'input' parameter and publishes a
+        // FeatureCollection data URI, carrying feature attributes through so they
+        // compose as workflow nodes.
         // Managed NetTopologySuite only — no GDAL.
         // -----------------------------------------------------------------------
         new ProcessDefinition
@@ -1521,7 +1519,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // into the workflow, REUSING the one-shot Honua.Import readers' pagination /
         // streaming (GeoServicesRestClient, the OGC/WFS GeoJSON paging path, the catalog
         // query pipeline, and the external-PostGIS secure-connection handling) so a
-        // pipeline no longer has to bounce through a one-shot import to read from a
+        // pipeline does not have to bounce through a one-shot import to read from a
         // Honua layer, Esri FeatureServer, OGC API Features, WFS, or external PostGIS.
         // Each emits the standard FeatureCollection artifact downstream transforms
         // consume. An optional since/watermark is passed through for incremental
@@ -1538,7 +1536,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 // Declared as LayerId (not WholeNumber) because it IS a catalog layer
                 // reference: the submit-time per-layer read gate derives the layers a plan
                 // reads from the declared LayerId parameters, and this connector streams a
-                // catalog layer's features straight into a job artifact (honua-server#3046).
+                // catalog layer's features straight into a job artifact.
                 Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.LayerId, required: true),
                 Param("where", "Where", "Optional GeoServices-style SQL where clause filtering the features.", ProcessParameterValueType.Text),
                 Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter in the output CRS.", ProcessParameterValueType.Text),
@@ -1638,7 +1636,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // Managed writers / Npgsql only — no GDAL.
         // The catalog honua-layer sink (sink.honua-layer) loads into a named layer in the
         // Honua catalog database. It reaches the catalog NpgsqlDataSource through the
-        // optional IHonuaLayerSink capability (#2210), which is registered only when the
+        // optional IHonuaLayerSink capability, which is registered only when the
         // catalog database is present — so the geoprocessing dispatcher, constructed
         // unconditionally including in lean Postgres-free deployments, never takes a
         // Postgres dependency, and no catalog connection string is leaked through plan
@@ -1720,8 +1718,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Native GDAL worker operations (2)
-        // Reconciled from feat/gdal-heavy-worker onto the #1185 contract. These
-        // are the ONLY catalog processes that declare RuntimeProfile = native:
+        // These are the ONLY catalog processes that declare RuntimeProfile = native:
         // they execute OUT-OF-PROCESS in the heavyweight GDAL worker image
         // (gdalwarp / ogr2ogr via subprocess), never in the lean GDAL-free serving
         // image. The geoprocessing submit path reads ProcessDefinition.RuntimeProfile
@@ -1783,12 +1780,12 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // Point-cloud conversion (1)
         // LAZ/COPC decompression + optional projected-CRS reprojection executed
         // out-of-process by the heavyweight GDAL/PDAL worker via the `pdal
-        // translate` CLI (#1854). Declared RuntimeProfile = native so the submit
+        // translate` CLI. Declared RuntimeProfile = native so the submit
         // path stamps ExecutionJobSpec.RuntimeProfile = "native" and the claim
         // fence routes the job to the worker (PdalPointCloudConvertJobExecutor
         // handles exactly this id) and away from the lean dispatcher, which has no
         // executor for it. The native counterpart to the pure-managed LAS reader
-        // (LasPointCloudReader, #1840): the worker decompresses the cloud-optimized
+        // (LasPointCloudReader): the worker decompresses the cloud-optimized
         // / arithmetic-coded chunks the managed reader cannot decode and, when a
         // projected source CRS is supplied, reprojects to geographic EPSG:4979,
         // returning uncompressed LAS the managed scene tiler then turns into 3D
@@ -1829,8 +1826,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     ];
 
     // Native worker raster source selector for surface.* and raster.* entries.
-    // The native GDAL worker reads a base64 GeoTIFF directly from 'source'. As of
-    // #2264 the submit path also resolves a registered catalog raster from
+    // The native GDAL worker reads a base64 GeoTIFF directly from 'source'. The
+    // submit path also resolves a registered catalog raster from
     // `layerId`/`rasterId` and materializes it onto `source` before dispatch, so a
     // plan must supply at least one of: an inline `source`, a `layerId`, or a
     // `rasterId`. Inline `source` takes precedence when callers also retain a catalog

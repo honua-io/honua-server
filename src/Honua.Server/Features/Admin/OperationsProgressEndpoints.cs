@@ -702,7 +702,7 @@ internal static partial class OperationsProgressEndpoints
         }
 
         // Compare-and-set the Cancelled write so a worker's terminal Completed/Failed state that lands
-        // concurrently can never be overwritten (the TOCTOU follow-on tracked from honua-server#1593).
+        // concurrently can never be overwritten by a race between the read and the Cancelled write.
         // Benign Queued <-> Processing transitions are retried; terminal transitions surface as 409.
         IOperationProgress observedProgress = latestProgress;
         ICancellableOperationProgress observedCancellable = latestCancellable;

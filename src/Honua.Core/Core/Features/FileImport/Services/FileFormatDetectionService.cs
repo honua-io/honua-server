@@ -108,7 +108,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         // Well-Known Binary has no fixed magic string; it is identified structurally by a leading
         // byte-order flag (0x00 XDR / 0x01 NDR) followed by a valid geometry-type uint32 (also
         // EWKB with its SRID/Z/M flag bits). This runs before the text-decode branch because a WKB
-        // payload's low bytes are not printable text (honua-server#2353).
+        // payload's low bytes are not printable text.
         if (LooksLikeWkb(fileContent))
         {
             FileFormatDetectionLog.DetectedFromContentAnalysis(_logger, SupportedFileFormat.Wkb, fileName);
@@ -160,7 +160,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         // whose features carry an "attributes" object and an Esri geometry ("rings"/"paths"/
         // "points"/"x","y"), plus Esri markers such as "geometryType":"esriGeometry..." or
         // "spatialReference". These payloads must never fall through to the GeoJSON branch and
-        // be silently misinterpreted (honua-server#2352).
+        // be silently misinterpreted.
         if (trimmed.StartsWith('{') && LooksLikeEsriJson(trimmed))
         {
             return SupportedFileFormat.GeoServicesJson;

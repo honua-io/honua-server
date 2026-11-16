@@ -6,10 +6,6 @@ using Honua.Core.Features.Compliance.Services;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="DefaultComplianceControlCatalog"/>. Locks in the
-/// curated control set so a future change here is intentional, not accidental.
-/// </summary>
 public sealed class ComplianceControlCatalogTests
 {
     [Trait("Tier", "Fast")]

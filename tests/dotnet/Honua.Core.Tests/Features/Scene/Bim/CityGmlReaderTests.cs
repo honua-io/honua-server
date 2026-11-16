@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Bim;
 
-/// <summary>
-/// Unit tests for the pure-managed CityGML building reader (#1207).
-/// </summary>
 public sealed class CityGmlReaderTests
 {
     [UnitTest]
@@ -180,11 +177,6 @@ public sealed class CityGmlReaderTests
             "the bounded copy must stop just past the byte cap, not buffer the whole stream.");
     }
 
-    /// <summary>
-    /// A forward-only, read-only stream that yields an unbounded run of a single
-    /// byte without ever allocating its full length, recording how many bytes were
-    /// served so a test can prove the consumer stopped reading at a bound.
-    /// </summary>
     private sealed class EndlessByteStream : Stream
     {
         public long BytesServed { get; private set; }

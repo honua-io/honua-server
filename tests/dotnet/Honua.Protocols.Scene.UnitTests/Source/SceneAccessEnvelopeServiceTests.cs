@@ -9,12 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Unit tests for the HMAC-SHA256 scene access envelope service. The service
-/// is a pure function over <c>(sceneId, expiresAt, signingKey)</c>; these
-/// tests verify each negative path (tamper, expiry, wrong scene) without
-/// spinning up a web host.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAccessEnvelopeServiceTests
 {

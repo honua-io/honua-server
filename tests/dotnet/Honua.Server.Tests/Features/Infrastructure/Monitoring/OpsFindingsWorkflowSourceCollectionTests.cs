@@ -23,12 +23,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Producer-side coverage for #4840: the findings <c>workflow_operations</c> source derives its
-/// completeness and clocks from the store reads the deployment rules perform, not from the store
-/// being registered. Each step builds a fresh engine (the engine is scoped) over one shared
-/// collection ledger (a singleton), exactly as the host composes them.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsFindingsWorkflowSourceCollectionTests
 {
@@ -209,8 +203,8 @@ internal static class WorkflowSourceFixture
             Deploy = new DeployOperationSpec
             {
                 TargetId = targetId,
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "self-hosted",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
                 Environment = "prod",
                 TargetName = targetId,
                 DesiredRevision = revision,
@@ -230,8 +224,8 @@ internal static class WorkflowSourceFixture
             Deploy = new DeployOperationSpec
             {
                 TargetId = targetId,
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "self-hosted",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
                 Environment = "prod",
                 TargetName = targetId,
                 CurrentRevision = PriorArtifact,
@@ -251,8 +245,8 @@ internal static class WorkflowSourceFixture
                 .Select(targetId => new DeployTargetOptions
                 {
                     TargetId = targetId,
-                    TargetKind = DeployTargetKind.SelfHostedRolling,
-                    Backend = "self-hosted",
+                    TargetKind = DeployTargetKind.AwsEcs,
+                    Backend = "honua-aws-ecs-alb",
                     Environment = "prod",
                     TargetName = targetId,
                 })
@@ -330,10 +324,6 @@ internal static class WorkflowSourceFixture
             source.Coverage.ExpectedComponentIds);
     }
 
-    /// <summary>
-    /// Asserts a complete, correctly clocked source and that target A's divergence finding reaches the
-    /// gateway exactly once through each proposal surface; returns that finding's id.
-    /// </summary>
     public static async Task<string> AssertCompleteAndProposableAsync(
         IWorkflowOperationStore store,
         ControlPlaneOptions options,

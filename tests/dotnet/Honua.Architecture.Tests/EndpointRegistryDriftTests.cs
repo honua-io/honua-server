@@ -11,32 +11,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Drift guard for the audit finding (#1144): <see cref="EndpointRegistry"/> is a
-/// hand-curated catalog of every HTTP endpoint exposed by Honua.Server, and the
-/// reviewer flagged it as fragile against drift. This test scans the
-/// minimal-API <c>Map{Get,Post,Put,Delete,Patch}</c> calls under
-/// <c>src/Honua.Server/Features</c> and asserts that every literal route it
-/// finds is also present in <see cref="EndpointRegistry.All"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Scanning is intentionally text-based (regex over the source files) so the
-/// test does not pull in Roslyn workspace dependencies. It resolves
-/// <c>MapGroup</c> prefix chains for receivers assigned in the same file,
-/// normalises route constraints (<c>{id:guid}</c> → <c>{id}</c>) and the API
-/// versioning placeholder (<c>v{version:apiVersion}</c> → <c>v1</c>).
-/// </para>
-/// <para>
-/// Two cases are out of scope and are filtered before the comparison: (a)
-/// routes mapped via <c>MapMethods(...)</c> rather than the typed verb helpers
-/// (the spec explicitly names only the five verbs); and (b) routes whose
-/// receiver is a method parameter so the group prefix is not statically
-/// resolvable from a single file. Test-only probe routes
-/// (<c>/__test/...</c>) are also excluded — they only mount in the Test
-/// environment and would otherwise pollute the catalog.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class EndpointRegistryDriftTests
 {
@@ -58,12 +32,6 @@ public sealed class EndpointRegistryDriftTests
         @"\{(?<name>[^{}:]+):[^{}]+\}",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// Path prefixes considered "resolvable enough" to enforce. Anything that
-    /// does not start with one of these is assumed to be a fragment from a
-    /// helper method that takes the route group as a parameter; we cannot
-    /// statically resolve those without crossing method boundaries.
-    /// </summary>
     private static readonly string[] EnforcedPrefixes =
     {
         "/api/",
@@ -90,21 +58,11 @@ public sealed class EndpointRegistryDriftTests
         "/openapi.json",
     };
 
-    /// <summary>
-    /// Routes scanned from source files that are intentionally excluded from
-    /// the registry (test-only probes, etc.).
-    /// </summary>
     private static readonly HashSet<(string Method, string Path)> SourceExclusions = new()
     {
         ("GET", "/__test/cross-server-consume/proxy"),
     };
 
-    /// <summary>
-    /// Registry entries whose mapping intentionally lives outside the
-    /// features tree (Program.cs, Startup helpers, third-party middleware).
-    /// Adding to this set must come with a one-line comment justifying why
-    /// the route cannot be anchored to a feature file.
-    /// </summary>
     private static readonly HashSet<(string Method, string Path)> KnownNonFeatureRegistryEntries = new()
     {
         // Prometheus exporter mounted by ServiceDefaults.
@@ -209,17 +167,6 @@ public sealed class EndpointRegistryDriftTests
     private static bool StartsWithEnforcedPrefix(string path)
         => EnforcedPrefixes.Any(prefix => path.StartsWith(prefix, System.StringComparison.Ordinal));
 
-    /// <summary>
-    /// Source roots for every module physically extracted out of
-    /// <c>Honua.Server</c> (Honua.Ai, Honua.Geoprocessing, Honua.Geocoding,
-    /// Honua.Protocols.*, …). Endpoint Map* calls that moved with a carved-out
-    /// feature live here rather than under <c>Honua.Server/Features</c>, so the
-    /// reverse registry-anchoring scan must include them. The glob over
-    /// <c>src/Honua.*</c> picks up future extractions automatically;
-    /// <c>Honua.Server</c> itself is excluded because its features tree is
-    /// scanned directly and its non-feature host routes are catalogued in
-    /// <see cref="KnownNonFeatureRegistryEntries"/>.
-    /// </summary>
     private static IEnumerable<string> ExtractedModuleRoots(string repoRoot)
     {
         var srcRoot = ArchitectureTestHelpers.CombinePath(repoRoot, "src");
@@ -387,17 +334,6 @@ public sealed class EndpointRegistryDriftTests
         HashSet<string> GroupPrefixes,
         string CombinedSource);
 
-    /// <summary>
-    /// Forward-scan every <c>Map{Get,Post,Put,Delete,Patch}</c> route across the
-    /// <c>Honua.Server</c> features tree AND every extracted <c>src/Honua.*</c>
-    /// module (Honua.Ai, Honua.Geoprocessing, Honua.Protocols.*, …). As features
-    /// were carved out of <c>Honua.Server</c> their endpoint <c>Map*</c> calls
-    /// moved with them — e.g. the AnalysisContent <c>/generate</c> routes now live
-    /// in <c>Honua.Ai</c> — but every such route still has a registry obligation,
-    /// so the forward drift gate must scan those modules too. Host-wiring
-    /// resolution still anchors against the <c>Honua.Server</c> tree because the
-    /// extension methods are invoked from the server host.
-    /// </summary>
     private static List<DiscoveredEndpoint> ScanAllModuleEndpoints(string repoRoot)
     {
         var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);

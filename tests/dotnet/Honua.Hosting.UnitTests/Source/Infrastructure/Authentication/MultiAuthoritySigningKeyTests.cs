@@ -11,11 +11,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// A token's signature is accepted only with keys from the authority whose issuer
-/// the token names, even though the JwtBearer handler copies every provider's keys
-/// onto <see cref="TokenValidationParameters.IssuerSigningKeys"/> (honua-server#6165).
-/// </summary>
 public sealed class MultiAuthoritySigningKeyTests
 {
     private const string IssuerA = "https://idp-a.example/v2.0";

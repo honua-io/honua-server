@@ -66,7 +66,7 @@ internal static class ScheduledTickEndpoints
         }
 
         // A degraded start (database unreachable, or schema behind this build) answers a typed 503
-        // so Scheduler retries the tick (honua-server#5916).
+        // so Scheduler retries the tick.
         if (ControlPlaneNotReadyGuard.TryRefuse(context) is { } notReady)
         {
             return notReady;

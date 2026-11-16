@@ -394,7 +394,7 @@ internal static class OperationsEndpoints
 
     // A body that omits "fields" (or "parameters") binds that member as null. Normalize it at the
     // boundary: a null field list reached the admin approval payload and failed every destructive
-    // Admin proposal submitted through this endpoint (#3361).
+    // Admin proposal submitted through this endpoint.
     private static OperationRequest ToRequest(string operationId, OperationInvokeRequest request)
         => new()
         {

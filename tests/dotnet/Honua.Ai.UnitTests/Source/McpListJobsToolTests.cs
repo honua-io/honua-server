@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for the <c>honua_list_jobs</c> MCP tool: it adapts the
-/// canonical caller-scoped <see cref="IGeoprocessingJobService.ListJobsAsync"/>
-/// listing (status filter + cursor paging) into the JSON-RPC surface so an agent
-/// can find a job to feed <c>honua_cancel_job</c>.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpListJobsToolTests
 {

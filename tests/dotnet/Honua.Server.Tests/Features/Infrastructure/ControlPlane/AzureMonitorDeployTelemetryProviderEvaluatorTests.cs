@@ -12,12 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies the Azure Monitor deploy telemetry provider end-to-end through the multi-provider
-/// dispatcher with a faked Log Analytics query client (no live Azure subscription required). Mirrors
-/// <see cref="CloudWatchDeployTelemetryProviderEvaluatorTests"/> so the Azure evaluator is held to
-/// the same promote/rollback/wait contract as the AWS one.
-/// </summary>
 public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
 {
     private const string ErrorRateQuery = "requests | summarize errors=todouble(countif(success==false))/count()";
@@ -109,7 +103,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
         var decision = await evaluator.EvaluateAsync(CreateOperation(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-azmon",
-            ["telemetry.policy"] = "azure-aca-canary",
+            ["telemetry.policy"] = "kubernetes-canary",
             ["telemetry.prometheus.canary_job"] = "honua-canary"
         }));
 
@@ -367,8 +361,8 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
             Deploy = new DeployOperationSpec
             {
                 TargetId = "prod-api",
-                TargetKind = DeployTargetKind.AzureContainerApps,
-                Backend = "honua-azure-container-apps-revision",
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-kubernetes-argo-rollouts",
                 Environment = "production",
                 TargetName = "honua-server",
                 ArtifactReference = "ghcr.io/honua/server",
@@ -397,7 +391,6 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
 
         public string? LastEndpointOverride { get; private set; }
 
-        /// <summary>Queries answered by a successful, row-less result table.</summary>
         public HashSet<string> EmptyQueries { get; } = new(StringComparer.Ordinal);
 
         public Task<AzureMonitorScalarReading> GetScalarReadingAsync(

@@ -1,6 +1,6 @@
-# Contributing
+# Development guide
 
-Code style, architecture rules, and PR process for Honua Server. For dev environment setup, see [Getting Started](getting-started.md).
+Code style, architecture rules, and PR process for Honua Geo developers working on Honua Server. Honua Server does not accept outside code contributions; see [CONTRIBUTING.md](../../../../CONTRIBUTING.md). For dev environment setup, see [Getting Started](getting-started.md).
 
 ---
 

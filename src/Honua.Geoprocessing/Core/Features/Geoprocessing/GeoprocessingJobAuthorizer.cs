@@ -75,7 +75,7 @@ internal sealed class GeoprocessingJobAuthorizer
         if (!inherits)
         {
             // Record managed provenance while the submitter is resolvable, so a deferred approval
-            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            // resume on a replica that cannot re-resolve them fails closed.
             var membershipManaged = await JobSecurityContextCapture
                 .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
                 .ConfigureAwait(false);
@@ -177,7 +177,7 @@ internal sealed class GeoprocessingJobAuthorizer
         {
             // Carry the actual denied operation into both the structured security log and the
             // surfaced exception message so a mutating-process denial is distinguishable from a
-            // baseline Execute denial rather than reading as a generic "Execute" 403 (#2798).
+            // baseline Execute denial rather than reading as a generic "Execute" 403.
             GeoprocessingServiceLog.AuthorizationDenied(_logger, request.ResourceType.ToString(), request.Operation.ToString());
             throw new GeoprocessingAuthorizationException(
                 decision.RequiresAuthentication,
@@ -189,7 +189,7 @@ internal sealed class GeoprocessingJobAuthorizer
                 AuthorizationDenialReason.InsufficientGrant);
         }
 
-        // OAuth 2.1 scope narrowing (honua-server#2851). The grant model above decides what the
+        // OAuth 2.1 scope narrowing. The grant model above decides what the
         // principal MAY do; when the caller authenticated with a bearer token, its scopes can
         // only narrow that — never widen it. Non-OAuth principals (X-API-Key, interactive,
         // dev-bypass) are not scope-governed and pass through untouched. A scope denial is a
@@ -220,8 +220,7 @@ internal sealed class GeoprocessingJobAuthorizer
             // The parameter declares WHAT the process does to the layer, so each target is gated
             // on the grant that operation actually needs. A destination-only layer is not held
             // to a read the process never performs, and a destructive process is not gated on
-            // `insert` — delete-features needs `delete`, calculate-field needs `update`
-            // (honua-server#3046 review).
+            // `insert` — delete-features needs `delete`, calculate-field needs `update`.
             var operation = ToAuthorizationOperation(reference.Access);
             var isRead = operation == AuthorizationOperation.Query;
 
@@ -229,8 +228,8 @@ internal sealed class GeoprocessingJobAuthorizer
             // process gate. Without it, an execute-only delegated token (honua.mcp.execute with
             // no honua.mcp.read) could run a layer-sourced plan purely on the strength of the
             // underlying principal's roles — the token's deliberate lack of read authority was
-            // never consulted, and a mutating workflow could then sink that data
-            // (honua-server#3046 review). Checked before the grant evaluation because a scope
+            // never consulted, and a mutating workflow could then sink that data.
+            // Checked before the grant evaluation because a scope
             // denial is a property of the token and needs no catalog lookup.
             // A layer MUTATION here is performed by the process, not by the caller directly, so
             // the scope that delegates it is the mutating-process scope the tier gate already
@@ -238,7 +237,7 @@ internal sealed class GeoprocessingJobAuthorizer
             // scope except honua.mcp.full. Mapping it to Update made every normally delegated
             // mutating token fail this gate after passing the tier gate, so
             // data-management.calculate-field could not run with the advertised
-            // honua.mcp.execute.mutating scope (honua-server#3046 review). Reads stay on Read,
+            // honua.mcp.execute.mutating scope. Reads stay on Read,
             // which honua.mcp.read grants, so an execute-only token still cannot read a layer.
             var operatorOperation = isRead
                 ? OperatorOperation.Read

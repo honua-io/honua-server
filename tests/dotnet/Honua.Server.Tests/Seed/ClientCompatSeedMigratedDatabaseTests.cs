@@ -28,46 +28,6 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Server.Tests.Seed;
 
-/// <summary>
-/// Certification-substrate regression for the Lambda GA lane (honua-io/honua-release#282).
-///
-/// <c>scripts/cloud/lambda-certification.md</c> bootstraps the cert PostGIS database with
-/// <c>tests/seed/client-compat-v1.sql</c>, but that database has already been migrated by the
-/// standing Honua Lambda. The seed therefore has to apply to the migrated shape, not only to the
-/// fresh database <c>docker/client-compat</c> creates: on a migrated database the seed's own
-/// <c>CREATE TABLE IF NOT EXISTS</c> is a no-op and every INSERT meets the columns the migrations
-/// actually produce. The seed used to insert <c>honua.services.max_record_count</c>, a column the
-/// migrations have never created, so the cert bootstrap died with
-/// <c>42703 column "max_record_count" of relation "services" does not exist</c> and the lane could
-/// never reach a serving assertion.
-///
-/// This test reproduces the bootstrap end to end against a real PostGIS container: the production
-/// DbUp runner applies the real migration set, the seed is applied over it, and the fixture
-/// contract the lane asserts (<c>test_service/0</c> serving exactly the ten client-compat-v1 names,
-/// <c>test_service/10</c> accepting a run-owned add/delete) is verified through the FeatureServer
-/// query path of a host bound to that database.
-/// <para>
-/// It also pins what a <c>402</c> on that write is, and is not. Certification run 28
-/// (34320738962) failed <c>test_service/10/addFeatures</c> with HTTP 200 and body code 402 — the
-/// GeoServices shape of a refusal — with every earlier assertion green. The same seed, the same
-/// migrated schema and the same payload are driven here against two hosts that differ only in
-/// licensing: the unlicensed one is refused with that exact body and commits nothing, the licensed
-/// one accepts the write. FeatureServer editing is the Pro entitlement
-/// <c>editing.featureserver-edits</c>, so a 402 in certification is a deployment license, never
-/// fixture drift, a bad payload, or a regression in the write path.
-/// </para>
-/// <para>
-/// It then pins what the licensed answer has to look like. Run 31 (34381748849) is the first run
-/// past that 402 - the cert stack carries a Pro license now - and it failed inside the response
-/// instead: <c>Create assertion failed</c>, with nothing else in the job log, because a GeoServices
-/// edit reports a per-feature refusal inside <c>addResults</c> with HTTP 200 and no top-level
-/// <c>error</c>. The lane's assertion collapses five different answers into that one message, so
-/// each is asserted separately here over the same seed, schema and payload: exactly one slot, no
-/// per-slot <c>error</c>, <c>success:true</c>, an <c>objectId</c> of JSON number kind (the
-/// serializer omits a null one outright), and a top-level <c>success:true</c> that a rolled-back
-/// batch would not carry.
-/// </para>
-/// </summary>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class ClientCompatSeedMigratedDatabaseTests
@@ -77,11 +37,6 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
     private const string ServicePath = "/rest/services/test_service/FeatureServer/0";
     private const string ScratchPath = "/rest/services/test_service/FeatureServer/10";
 
-    /// <summary>
-    /// The ten names <c>scripts/cloud/lambda-certification.py</c> requires <c>test_service/0</c> to
-    /// serve. Fixed here rather than read back from the fixture so a seed that silently loses or
-    /// gains a record fails this test the same way it fails the certification lane.
-    /// </summary>
     private static readonly string[] _expectedFixtureNames =
     [
         "alpha", "beta", "delta", "epsilon", "eta", "gamma", "iota", "lambda", "theta", "zeta"
@@ -309,14 +264,6 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         finalCount.RootElement.GetProperty("count").GetInt32().Should().Be(10);
     }
 
-    /// <summary>
-    /// A host bound to the already-migrated certification database, exactly as the certified Lambda
-    /// image reads it. <paramref name="licensed"/> is the only difference between the two hosts this
-    /// test drives: GeoServices FeatureServer editing is gated on the Pro entitlement
-    /// <c>editing.featureserver-edits</c> (<c>FeatureServerEditsHandler</c>), so an unlicensed host
-    /// refuses the lane's <c>test_service/10</c> write and a licensed one accepts it — over the same
-    /// seed, the same migrated schema and the same payload.
-    /// </summary>
     private static WebApplicationFactory<Program> CreateHost(string connectionString, bool licensed)
         => ConfiguredWebApplicationFactory.Create(
             builder =>
@@ -373,10 +320,6 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         return await ReadServingJsonAsync("GET", path, response);
     }
 
-    /// <summary>
-    /// The raw response, for the one assertion that has to read a GeoServices refusal rather than
-    /// fail on it.
-    /// </summary>
     private static async Task<HttpResponseMessage> PostFormRawAsync(
         HttpClient client,
         string path,
@@ -396,11 +339,6 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         return await ReadServingJsonAsync("POST", path, response);
     }
 
-    /// <summary>
-    /// The GeoServices surface answers an operation failure with HTTP 200 and an <c>error</c>
-    /// envelope, so a status-only assertion would read a refused edit as a pass. Fail on either,
-    /// and carry the body into the message: a serving failure here has to name its own cause.
-    /// </summary>
     private static async Task<JsonDocument> ReadServingJsonAsync(
         string method,
         string path,

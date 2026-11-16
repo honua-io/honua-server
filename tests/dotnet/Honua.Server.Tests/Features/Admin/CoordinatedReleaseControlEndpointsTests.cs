@@ -21,13 +21,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// API-surface coverage for the Demo C coordinated platform-upgrade release endpoints: create, read,
-/// gate approve, and rollback. The conductor stage machine itself is covered by
-/// <see cref="Infrastructure.ControlPlane.CoordinatedReleaseReconcilerTests"/>. The composed container
-/// and metadata step executors are faked here so the endpoint surface is exercised without standing up
-/// live deploy backends.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]

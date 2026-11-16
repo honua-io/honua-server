@@ -17,10 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Comprehensive;
 
-/// <summary>
-/// Exercises shared endpoint, malformed-input, security, contract, performance,
-/// and test-infrastructure scenarios.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public class TestQualityValidationTests : IAsyncLifetime
@@ -46,9 +42,6 @@ public class TestQualityValidationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Validates that all critical API endpoints have comprehensive test coverage.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestQuality)]
     [Endpoint("GET /healthz/live")]
@@ -102,9 +95,6 @@ public class TestQualityValidationTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Runs comprehensive fuzzing tests to validate system robustness.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.FuzzTesting)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -150,9 +140,6 @@ public class TestQualityValidationTests : IAsyncLifetime
         criticalFailures.Should().Be(0, "No critical failures (500 errors) should occur during fuzzing");
     }
 
-    /// <summary>
-    /// Validates comprehensive security testing across all attack vectors.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.SecurityTesting)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -189,9 +176,6 @@ public class TestQualityValidationTests : IAsyncLifetime
 
     }
 
-    /// <summary>
-    /// Validates contract compliance for API specifications.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
@@ -238,9 +222,6 @@ public class TestQualityValidationTests : IAsyncLifetime
         _output.WriteLine($"HTTP Semantics Compliance: {semanticsResult.SuccessRate:P1}");
     }
 
-    /// <summary>
-    /// Validates comprehensive performance benchmarking.
-    /// </summary>
     [IntegrationTest]
     [Trait("Category", "Performance")]
     [Operation(Operations.PerformanceTesting)]
@@ -277,9 +258,6 @@ public class TestQualityValidationTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Validates test infrastructure quality and completeness.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /healthz/live")]

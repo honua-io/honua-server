@@ -52,7 +52,7 @@ internal static class ZarrEndpoints
             .WithDisplayName("Refresh Zarr Metadata")
             .WithSummary("Re-scan Zarr metadata from the backing store");
 
-        // Public datacube tile serving (#1835, Shape B): bind a registered Zarr
+        // Public datacube tile serving (Shape B): bind a registered Zarr
         // coverage slice (z/x/y + time + elevation + variable) to a PNG map tile.
         // Read-only; does not advertise an OGC conformance class, so it leaves the
         // CITE tile surfaces untouched.

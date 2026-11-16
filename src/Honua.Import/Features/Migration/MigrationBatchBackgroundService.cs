@@ -79,7 +79,7 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
         // published image boots so a fixture/harness can swap data providers — and
         // by primary providers that own no batch-run schema. Resolve them optionally
         // and no-op when absent so this hosted loop does not crash with an
-        // unregistered-service error every tick (mirrors #1687's startup guard).
+        // unregistered-service error every tick.
         var catalog = scope.ServiceProvider.GetService<IMigrationBatchRunCatalog>();
         var orchestrator = scope.ServiceProvider.GetService<IMigrationBatchOrchestrator>();
         if (catalog is null || orchestrator is null)

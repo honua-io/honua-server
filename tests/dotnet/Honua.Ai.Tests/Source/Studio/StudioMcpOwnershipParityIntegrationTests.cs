@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -14,26 +15,24 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// HTTP-level REST/MCP owner-policy parity proof for #3412. The generic MCP
-/// operator gate is explicitly admitted so the test isolates the loaded-owner
-/// decision both protocols share through <c>IStudioAuthorizationService</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithProductionJobSubstrate()
         .ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
         })
@@ -59,17 +58,10 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
     public async Task RestAndMcp_ApplyTheSameOwnerAndCrossUserDenialRules(string family)
     {
-        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
-        var aliceKey = await apiKeyStore.CreateAsync(
-            "mcp-owner-alice", ["studio:enduser"], null, null, CancellationToken.None);
-        var bobKey = await apiKeyStore.CreateAsync(
-            "mcp-owner-bob", ["studio:enduser"], null, null, CancellationToken.None);
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
-        using var aliceClient = _fixture.CreateClient(
-            client => client.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
-        using var bobClient = _fixture.CreateClient(
-            client => client.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+        var aliceOwnerId = Guid.NewGuid().ToString("D");
+        var bobOwnerId = Guid.NewGuid().ToString("D");
+        using var aliceClient = await CreateOwnerSessionAsync(aliceOwnerId);
+        using var bobClient = await CreateOwnerSessionAsync(bobOwnerId);
         var aliceMcp = new StudioMcpHttpClient(aliceClient);
         var bobMcp = new StudioMcpHttpClient(bobClient);
 
@@ -85,8 +77,9 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var created = await aliceMcp.CallToolRawAsync(
             "honua_studio_create_draft",
             $$"""{"packageKey":"owner-parity-map","family":"{{family}}","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("structuredContent").GetProperty("draftId").GetGuid();
-        created.GetProperty("structuredContent").GetProperty("ownerId").GetString()
+        var createdDraft = await ApproveMutationAsync(created);
+        var draftId = createdDraft.GetProperty("draftId").GetGuid();
+        createdDraft.GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
 
         // The owner succeeds through both adapters.
@@ -132,8 +125,38 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var aliceMcpUpdate = await aliceMcp.CallToolRawAsync(
             "honua_studio_update_draft",
             $$"""{"draftId":"{{draftId:D}}","generation":1,"packageKey":"owner-parity-map-v2","schemaVersion":"1.0"}""");
-        aliceMcpUpdate.GetProperty("structuredContent").GetProperty("ownerId").GetString()
+        var updatedDraft = await ApproveMutationAsync(aliceMcpUpdate);
+        updatedDraft.GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
+    }
+
+    private Task<HttpClient> CreateOwnerSessionAsync(string ownerId) =>
+        EmulatedHumanApprovalSession.CreateClientAsync(_fixture.Services, () => _fixture.CreateClient(),
+            [new() { Type = ClaimTypes.NameIdentifier, Value = ownerId }]);
+
+    private async Task<JsonElement> ApproveMutationAsync(JsonElement result)
+    {
+        var content = result.GetProperty("structuredContent");
+        string proposalId;
+        if (content.TryGetProperty("operation", out var operation))
+        {
+            var failed = result.TryGetProperty("isError", out var isError) && isError.GetBoolean();
+            failed.Should().BeFalse();
+            operation.GetProperty("status").GetString().Should().Be("RequiresApproval");
+            proposalId = operation.GetProperty("proposalId").GetString()!;
+        }
+        else
+        {
+            result.GetProperty("isError").GetBoolean().Should().BeTrue();
+            content.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+            proposalId = content.GetProperty("proposalId").GetString()!;
+        }
+
+        var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposalId);
+        handle.GetProperty("status").GetString().Should().Be("Completed");
+        using var payload = JsonDocument.Parse(
+            handle.GetProperty("result").GetProperty("details").GetProperty("payload").GetString()!);
+        return payload.RootElement.Clone();
     }
 
     [IntegrationTest]

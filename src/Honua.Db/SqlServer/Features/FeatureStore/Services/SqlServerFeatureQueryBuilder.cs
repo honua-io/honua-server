@@ -392,7 +392,7 @@ internal static partial class SqlServerFeatureQueryBuilder
                 $"{geomCol}.STEnvelope().STIntersects({filterExpr}.STEnvelope()) = 1",
             // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
             // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
-            // filter geometry to match the canonical PostGIS reference (#2068). Reversing the
+            // filter geometry to match the canonical PostGIS reference. Reversing the
             // operands inverts the relationship and returns the wrong (typically empty) result set.
             SpatialRelationship.Within =>
                 $"{filterExpr}.STWithin({geomCol}) = 1",

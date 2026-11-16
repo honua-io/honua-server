@@ -12,13 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the temporal extent endpoint introduced for ticket #379.
-/// Discovery is opt-in: layers without explicit Metadata V2 temporal metadata
-/// configuration must not surface a temporal extent even if they have a Date /
-/// DateTime column. The happy path therefore configures temporal metadata via the
-/// admin metadata updater before issuing the request.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime

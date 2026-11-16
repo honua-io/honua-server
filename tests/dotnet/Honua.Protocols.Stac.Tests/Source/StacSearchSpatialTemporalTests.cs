@@ -12,26 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Discriminating coverage for the three <c>/stac/search</c> parameters that honua-server#4425
-/// found unproven on the GA catalog surface: <c>bbox</c> (asserted only against a world bbox or a
-/// status code), <c>datetime</c> (exclusion only — no test ever asserted a matching item is
-/// present) and <c>intersects</c> (no .NET test existed at all).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Each test seeds two items whose only relevant difference is the property under test and then
-/// asserts an <b>exact id set</b>: the matching item present and the non-matching item absent. A
-/// parameter that was parsed and never applied — which is the silent-wrong-data failure mode for a
-/// catalog — fails the absence half, and a parameter that over-filters fails the presence half.
-/// Per-row re-checks of the same predicate, or a whole-world bbox, cannot distinguish either.
-/// </para>
-/// <para>
-/// The strong equivalent already exists in the Python certification lane
-/// (<c>tests/python/stac_client/test_cert_common_core.py</c>); this brings the same discipline into
-/// the .NET suite, which runs on the required gate.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 [Operation(Operations.StacSearch)]
@@ -274,10 +254,6 @@ public sealed class StacSearchSpatialTemporalTests : IAsyncLifetime
             });
     }
 
-    /// <summary>
-    /// Seeds a row with real geometry. The shared <c>InsertFeatureAsync</c> helper stores a NULL
-    /// geometry, which silently makes every spatial assertion in this class vacuous.
-    /// </summary>
     private async Task SeedAsync(int layerId, string wkt, IReadOnlyDictionary<string, string?> attributes)
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");

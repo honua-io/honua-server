@@ -467,7 +467,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? apiKeyName = null,
         IReadOnlyList<string>? permissions = null)
     {
-        // A key whose grants describe a layer-scoped write credential (#1637) is
+        // A key whose grants describe a layer-scoped write credential is
         // authenticated as a NON-admin principal: it never receives the admin role
         // and so cannot satisfy the admin authorization policy guarding admin
         // endpoints. Its write authority is enforced by the shared
@@ -475,7 +475,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         var isScopedWriteKey = LayerScopedWriteKey.IsScopedWriteKey(permissions);
 
         // A key is granted the blanket "admin" role only when its grants confer full
-        // administrative authority (issue #1985). The password-based bootstrap admin
+        // administrative authority. The password-based bootstrap admin
         // and the development bypass authenticate with null permissions and so remain
         // full admins; an unscoped key (or one carrying admin / * / admin:* grants)
         // likewise passes every admin endpoint. A key whose grants are genuinely

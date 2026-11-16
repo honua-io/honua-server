@@ -16,14 +16,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// Performance benchmarks for the Pro-tier spatial analytics endpoints. The
-/// ticket #342 acceptance criterion requires DBSCAN over 100,000 features to
-/// complete in under 5 seconds end-to-end on the reference PostGIS image used
-/// by the integration test harness. These tests bulk-load synthetic points
-/// into the canonical <c>features</c> table under the test schema so the
-/// measurement reflects the full HTTP → handler → SQL builder → PostGIS path.
-/// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Performance")]
 [Collection("Database")]
@@ -51,15 +43,6 @@ public sealed class SpatialAnalyticsPerformanceTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Seeds <see cref="SyntheticFeatureCount"/> synthetic point features into
-    /// the test schema's <c>features</c> table tagged with the shared test
-    /// layer id, then verifies that DBSCAN clustering via the REST endpoint
-    /// completes within the 5-second budget. The synthetic points are
-    /// deterministically scattered across a ~1° x 1° bounding box so the
-    /// workload is stable across runs while still producing a realistic mix
-    /// of noise and clusters.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.QueryClusters)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]

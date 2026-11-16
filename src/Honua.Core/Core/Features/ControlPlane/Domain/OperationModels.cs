@@ -128,19 +128,13 @@ public enum ExecutionJobStatus
 
 public enum DeployTargetKind
 {
-    Kubernetes,
+    Kubernetes = 0,
 
-    AwsEcs,
+    AwsEcs = 1,
 
-    AzureContainerApps,
+    AwsLambda = 3,
 
-    AwsLambda,
-
-    AzureFunctions,
-
-    SelfHostedRolling,
-
-    LocalCompose
+    LocalCompose = 6
 }
 
 public enum BatchComputeTargetKind
@@ -572,7 +566,7 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     public required ExecutionJobSpec Spec { get; init; }
 
     // -----------------------------------------------------------------------
-    // Claim and heartbeat fields (ticket #681)
+    // Claim and heartbeat fields
     // -----------------------------------------------------------------------
 
     public string? ClaimedBy { get; init; }
@@ -584,7 +578,7 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     public DateTimeOffset? CancellationRequestedAt { get; init; }
 
     // -----------------------------------------------------------------------
-    // Retry tracking (ticket #681)
+    // Retry tracking
     // -----------------------------------------------------------------------
 
     public int AttemptCount { get; init; }
@@ -592,7 +586,7 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     public DateTimeOffset? NextRetryAt { get; init; }
 
     // -----------------------------------------------------------------------
-    // Policies (ticket #681)
+    // Policies
     // -----------------------------------------------------------------------
 
     public JobRetryPolicy? RetryPolicy { get; init; }
@@ -602,7 +596,7 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     public JobTimeoutPolicy? TimeoutPolicy { get; init; }
 
     // -----------------------------------------------------------------------
-    // Artifact references (ticket #681)
+    // Artifact references
     // -----------------------------------------------------------------------
 
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();

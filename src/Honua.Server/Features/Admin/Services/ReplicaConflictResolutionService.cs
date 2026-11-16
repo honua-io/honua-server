@@ -96,7 +96,7 @@ internal sealed partial class ReplicaConflictResolutionService
         {
             // Already claimed. That is only terminal if the resolution actually finished — an
             // interrupted one is resumed here rather than reported as already-resolved, which is what
-            // stops a post-write failure from stranding the generation and audit evidence (#2430).
+            // stops a post-write failure from stranding the generation and audit evidence.
             //
             // Deferred-and-unfinalized records route here too: a defer whose audit failed is still
             // owed its evidence, and letting a later action supersede it would lose that permanently.
@@ -112,7 +112,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // The originating upload is still applying, so ClientEditApplied has not been decided yet.
             // Resolving now would plan against a provisional snapshot: a keep-server would be recorded
             // as a no-op and then the client edit would commit, leaving the feature holding the client
-            // state while the durable resolution claims the server state was kept (#2430).
+            // state while the durable resolution claims the server state was kept.
             Log.ResolutionDetectionInFlight(_logger, conflict.ConflictId);
             activity?.SetStatus(ActivityStatusCode.Error, "detection-in-flight");
             return Failure(
@@ -167,7 +167,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // Either a concurrent operator won the guarded claim, or a previous attempt by THIS
             // resolution claimed the conflict and then failed part-way through finalization. Only the
             // first is genuinely already-resolved; the second is resumable, and short-circuiting it
-            // would strand the produced generation and audit evidence forever (#2430).
+            // would strand the produced generation and audit evidence forever.
             return await ResumeOrRejectAsync(outcome.Record.Value, request, activity, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -177,7 +177,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // Re-plan from the record the atomic claim returned, not the pre-claim read. Detection
         // post-processing for the originating sync can promote ClientEditApplied between the two, and
         // planning from the stale snapshot would then record a keep-server resolution as a no-op while
-        // the client overwrite had in fact landed (#2430). The pre-claim plan above still runs first so
+        // the client overwrite had in fact landed. The pre-claim plan above still runs first so
         // a malformed or inapplicable request is rejected before anything is claimed.
         plan = ReplicaConflictResolutionPlanner.Plan(claimed, request.Action, request.Inputs);
         if (!plan.IsAccepted)
@@ -204,7 +204,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // Snapshot the row BEFORE the staleness probe and carry that token into the write. Capturing it
         // afterwards would already describe an edit the probe did not see, and the write would then
         // accept the very change the probe exists to reject; binding both to one snapshot makes them a
-        // single decision (#2430).
+        // single decision.
         string? expectedStateToken = null;
         var expectedRowAbsent = false;
         var tokenPersisted = true;
@@ -229,7 +229,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // Durable IMMEDIATELY, before the probe runs. Capture plus probe can outlast the lease,
                 // and a recovery that took the claim over in that window would re-apply against a still
                 // null persisted token — i.e. with no precondition at all — and overwrite whatever
-                // arrived meanwhile (#2430).
+                // arrived meanwhile.
                 tokenPersisted = await _conflictRepository.TryUpdateFinalizationStateAsync(
                         new ReplicaConflictFinalizationUpdate(
                             claimed.ConflictId,
@@ -260,7 +260,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // would let a retry resume straight to finalization (no-write plans) or take the claim over
             // with the check explicitly skipped, either way accepting or overwriting a post-conflict
             // edit this probe was about to detect. Release with a fresh token: the request's own token
-            // is typically the thing that was cancelled (#2430).
+            // is typically the thing that was cancelled.
             await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
@@ -270,7 +270,7 @@ internal sealed partial class ReplicaConflictResolutionService
         {
             // The guarded update matched nothing, so this request no longer owns the claim: a retry
             // took it over while the capture or probe was running. Continuing would write under an
-            // ownership another attempt now holds (#2430).
+            // ownership another attempt now holds.
             Log.ResolutionClaimLost(_logger, claimed.ConflictId);
             activity?.SetStatus(ActivityStatusCode.Error, "claim-lost");
             return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
@@ -325,7 +325,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // The write's own precondition caught an edit that arrived between the staleness probe
                 // and the write transaction, which is the window the probe alone cannot cover. Nothing
                 // was written, so the claim is released and the conflict goes back to reviewable with
-                // the same answer the probe would have given (#2430).
+                // the same answer the probe would have given.
                 await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionStale(
                     _logger, claimed.ConflictId, claimed.ServiceId, claimed.LayerId, claimed.ObjectId);
@@ -340,7 +340,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // WriteCommitted=false, which is exactly the resumable state, and a retry of the same
                 // request re-applies the (idempotent) write and finishes finalization. Releasing here
                 // would let the next attempt see this resolution's own change as a post-conflict edit
-                // and return Stale forever (#2430).
+                // and return Stale forever.
                 // Back-date the claim so the operator's retry can resume immediately instead of waiting
                 // out the lease. The lease exists to stop a second dispatch while an attempt is still
                 // running; here the attempt has demonstrably finished, it just cannot say how.
@@ -375,7 +375,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // the change log rather than trusting this flag alone (see ResumeOrRejectAsync).
             // The guarded update returns false when the row no longer carries this claim — a slow write
             // outlived the lease and the claim was released or replaced. Reporting success then would
-            // describe a resolution this request no longer owns, so it stops here (#2430).
+            // describe a resolution this request does not own, so it stops here.
             var markedCommitted = await _conflictRepository.TryUpdateFinalizationStateAsync(
                     new ReplicaConflictFinalizationUpdate(
                         claimed.ConflictId,
@@ -413,7 +413,7 @@ internal sealed partial class ReplicaConflictResolutionService
         {
             // Finalization failed, so the claim is deliberately retained and resumable. Back-date its
             // lease first: the attempt has demonstrably ended, and leaving a live lease would make the
-            // operator's own retry look like a concurrent duplicate for the length of it (#2430).
+            // operator's own retry look like a concurrent duplicate for the length of it.
             await ExpireClaimLeaseAsync(claimed, request).ConfigureAwait(false);
             throw;
         }
@@ -457,7 +457,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // Recorded by a current sync: completeness itself is the signal, so a record that already has
         // everything a resolution reads is settled immediately, and one that does not stays blocked no
         // matter how old it is. Ageing an incomplete record out is what skipped the staleness
-        // precondition and let a resolution overwrite edits made after an aborted sync (#2430).
+        // precondition and let a resolution overwrite edits made after an aborted sync.
         return IsDetectionIncomplete(conflict);
     }
 
@@ -502,7 +502,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // Operator and action alone are not the resolution's identity: a mergeFields carrying different
         // values, or a chooseGeometry naming the other side, is a DIFFERENT requested state. Matching
         // only actor and action let such a retry finalize the earlier committed write while the
-        // response and audit described the newly requested state, which never landed (#2430). The hash
+        // response and audit described the newly requested state, which never landed. The hash
         // is null only on claims taken before it existed, which fall back to the old check.
         var sameResolution = existing.ResolutionAction == request.Action
             && string.Equals(existing.ResolvedBy, request.Actor, StringComparison.Ordinal)
@@ -514,11 +514,11 @@ internal sealed partial class ReplicaConflictResolutionService
         }
 
         // The lease gates EVERY resume, not just the ones that re-dispatch a write. "Same operator,
-        // same action" cannot distinguish a crashed attempt from one still in flight, and a no-write
-        // plan used to skip straight to finalization: a retry arriving while the first request was
+        // same action" cannot distinguish a crashed attempt from one still in flight. If a no-write
+        // plan skipped straight to finalization, a retry arriving while the first request was
         // still inside its staleness probe would audit and report Applied, and the original — finding a
         // post-conflict edit — would then release the same timestamp-bound claim back to Pending,
-        // leaving a resolution reported as applied against a conflict that is reviewable again (#2430).
+        // leaving a resolution reported as applied against a conflict that is reviewable again.
         var claimAge = DateTimeOffset.UtcNow - (existing.ResolvedAt ?? DateTimeOffset.UtcNow);
         if (claimAge < ClaimLease)
         {
@@ -544,12 +544,12 @@ internal sealed partial class ReplicaConflictResolutionService
             // The write itself is the tie-breaker, because it is idempotent by construction: it sets a
             // known target state or deletes a known feature. So the attempt is simply re-run, with the
             // staleness probe skipped for exactly this case — the change it would trip over may be our
-            // own (#2430).
+            // own.
             //
             // The lease was already checked above, for every resume. Take ownership atomically before
             // re-dispatching. Recovery re-applies the write, so two
             // retries that both judged this claim abandoned would otherwise both re-apply, and a
-            // failure in one would release a claim the other had already committed against (#2430).
+            // failure in one would release a claim the other had already committed against.
             var takenOverAt = DateTimeOffset.UtcNow;
             var tookOver = await _conflictRepository.TryTakeOverClaimAsync(
                     existing.ConflictId,
@@ -574,7 +574,7 @@ internal sealed partial class ReplicaConflictResolutionService
             {
                 // The claim's pre-write phase never became durable, so there is no snapshot to bind the
                 // recovered write to — and recovery skips the staleness probe by design. Writing with no
-                // precondition would overwrite whatever is in the row now (#2430).
+                // precondition would overwrite whatever is in the row now.
                 await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionStale(
                     _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);
@@ -586,7 +586,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // The RETAINED token, never one derived now. Recovery skips the staleness probe on purpose
             // (the change it would trip over may be this resolution's own write), so a retry-time token
             // would describe whatever is in the row at this moment — including a normal edit that landed
-            // during the lease — and the precondition would then happily overwrite it (#2430).
+            // during the lease — and the precondition would then happily overwrite it.
             var reapplied = await ApplyResolutionWriteAsync(
                     existing,
                     plan,
@@ -602,8 +602,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // answer that cannot destroy data — but simply releasing would strand the conflict: if
                 // the write DID land, every later attempt's staleness probe trips over this resolution's
                 // own change and returns Stale forever. So the conflict is re-baselined onto the state
-                // that is actually there before being released, and the operator re-reviews against it
-                // (#2430).
+                // that is actually there before being released, and the operator re-reviews against it.
                 await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
                 await RebaselineAsync(existing, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionStale(
@@ -646,7 +645,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // The re-applied write outlived the lease and another retry restamped resolved_at.
                 // Continuing would finalize a row this request no longer owns, and if the replacement
                 // then fails and releases its claim the conflict is pending behind a feature change
-                // this request committed (#2430).
+                // this request committed.
                 Log.ResolutionClaimLost(_logger, existing.ConflictId);
                 return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
             }
@@ -658,7 +657,7 @@ internal sealed partial class ReplicaConflictResolutionService
         {
             // No-write resumes take ownership too. Finalization and release are both bound to the claim
             // timestamp, so stamping a new one fences the attempt being taken over: it can no longer
-            // release this conflict back to Pending after this resume has reported it applied (#2430).
+            // release this conflict back to Pending after this resume has reported it applied.
             var noWriteTakeoverAt = DateTimeOffset.UtcNow;
             var tookOverNoWrite = await _conflictRepository.TryTakeOverClaimAsync(
                     existing.ConflictId,
@@ -679,7 +678,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // The takeover says nothing about whether the attempt being replaced had finished its
             // staleness probe, and a no-write resume goes straight to audit and finalization. Re-run the
             // probe under the new ownership so a post-conflict edit cannot be recorded as resolved by a
-            // retry while the original was about to report it stale (#2430).
+            // retry while the original was about to report it stale.
             if (request.Action != ReplicaConflictResolutionAction.Defer &&
                 await HasPostConflictEditAsync(existing, cancellationToken).ConfigureAwait(false))
             {
@@ -750,7 +749,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // Persist the produced generation first, but leave the resolution PENDING until the audit
         // evidence is durable. Marking it finalized before the audit would make an audit-sink failure
         // permanent: the retry would see a complete resolution and answer already-resolved, and the
-        // required evidence would never be written (#2430).
+        // required evidence would never be written.
         var stampedGeneration = await _conflictRepository.TryUpdateFinalizationStateAsync(
                 new ReplicaConflictFinalizationUpdate(
                     claimed.ConflictId,
@@ -791,7 +790,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // outlive the lease and a retry can take the claim over by restamping resolved_at. Clearing
             // the local pending flag and reporting Applied would then describe a resolution this
             // request no longer owns, and if the replacement fails the durable conflict stays
-            // unfinalized behind a success response (#2430).
+            // unfinalized behind a success response.
             Log.ResolutionClaimLost(_logger, claimed.ConflictId);
             return null;
         }
@@ -826,7 +825,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // behind the refreshed state makes every later probe find the very edit the envelope
             // describes and answer Stale forever — and it must not be newer either, which would hide a
             // real edit from the probe. Reading it between the two state reads gives both, because the
-            // confirmation covers the whole span (#2430).
+            // confirmation covers the whole span.
             var snapshot = await _applier
                 .CaptureStateTokenAsync(
                     conflict.ServiceId,
@@ -909,7 +908,7 @@ internal sealed partial class ReplicaConflictResolutionService
 
         // Only the inputs the selected action actually consumes. The others are documented as ignored,
         // so folding them in would make a resumable request differ from the semantically identical
-        // minimal one — leaving the unfinalized resolution stranded (#2430).
+        // minimal one — leaving the unfinalized resolution stranded.
         if (request.Action == ReplicaConflictResolutionAction.ChooseGeometry)
         {
             builder.Append(request.Inputs.GeometrySource?.Trim().ToLowerInvariant()).Append('\u001f');
@@ -922,7 +921,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // planned edit hashes identically: the planner matches operator-supplied names to schema
             // fields case-insensitively, and a payload's key order is not meaningful. Without both,
             // retrying `status` as `STATUS` looked like a different request and stranded the claim's
-            // finalization (#2430). Value text is the secondary sort so two keys differing only by
+            // finalization. Value text is the secondary sort so two keys differing only by
             // case stay order-independent too.
             foreach (var field in fieldValues
                 .Select(field => (Key: field.Key.ToLowerInvariant(), Value: field.Value.GetRawText()))
@@ -987,7 +986,7 @@ internal sealed partial class ReplicaConflictResolutionService
             // Claim-bound, not a whole-record write: two retries can both judge an expired claim
             // abandoned, and once the first has released it a third request can claim it again. An
             // unconditional release would clear that replacement claim and let its feature write
-            // proceed with no ownership (#2430). A release that no longer matches is a no-op.
+            // proceed with no ownership. A release that does not match the current claim is a no-op.
             if (conflict is { ResolvedBy: { } resolvedBy, ResolutionAction: { } action, ResolvedAt: { } resolvedAt })
             {
                 await _conflictRepository

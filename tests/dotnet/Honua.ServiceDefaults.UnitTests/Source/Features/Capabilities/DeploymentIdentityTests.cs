@@ -10,10 +10,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// Unit coverage for the immutable deployment-revision grammar and configuration
-/// resolution that back the manifest and streaming capability projections (#3038, REQ-004).
-/// </summary>
 public sealed class DeploymentIdentityTests
 {
     private const string ValidSha = "0123456789abcdef0123456789abcdef01234567";
