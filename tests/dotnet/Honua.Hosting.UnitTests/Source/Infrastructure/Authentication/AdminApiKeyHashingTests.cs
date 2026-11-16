@@ -23,7 +23,7 @@ public sealed class AdminApiKeyHashingTests
         AdminApiKeyHashing.Verify(material, saltedHash, RandomNumberGenerator.GetBytes(32)).Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(31)]
