@@ -854,7 +854,7 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActi
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
-// Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
+// Discovery is a scoped projection: an explicit environment mapping never replaces caller authorization.
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
     .ValidateOnStart();
