@@ -1764,6 +1764,7 @@ Full CI job savings are unmeasured.
 All cases remain in the OData Core Endpoints shard on selected PR runs and
 twice-daily full trunk runs. This changes no runner count, required check name,
 required aggregate dependency, workflow or shard definition.
+
 ### OData, OGC classic and STAC collection host lifetime
 
 The OData, OGC classic and STAC test assemblies serialize their database-backed
