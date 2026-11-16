@@ -17170,6 +17170,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_WithInvalidSalt_RejectsOtherwiseValidLegacyKey",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation",
@@ -17214,6 +17216,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation"
       ],
